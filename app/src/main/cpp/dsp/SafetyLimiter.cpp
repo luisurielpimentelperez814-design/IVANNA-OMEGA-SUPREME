@@ -193,12 +193,13 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         if (blockGain < gain) {
             gain = m_attackCoef * gain + (1.0f - m_attackCoef) * blockGain;
             if (gain < blockGain) gain = blockGain;
-        } else {
-            gain = m_releaseCoef * gain + (1.0f - m_releaseCoef) * 1.0f;
-            if (!std::isfinite(gain)) gain = 1.0f;
-            if (gain > 1.0f) gain = 1.0f;
-            if (gain < 0.0f) gain = 0.0f;
+        } else if (gain < blockGain) {
+            gain = m_releaseCoef * gain + (1.0f - m_releaseCoef) * blockGain;
+            if (gain > blockGain) gain = blockGain;
         }
+        if (!std::isfinite(gain)) gain = 1.0f;
+        if (gain > 1.0f) gain = 1.0f;
+        if (gain < 0.0f) gain = 0.0f;
 
         // Entrada defensiva: nunca permitir que NaN/Inf llegue al
         // multiplicador ni al estado audible. El limiter es la última barrera.

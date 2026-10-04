@@ -1072,7 +1072,12 @@ static int32_t omega_process(effect_handle_t self,
                 isVoiced = metrics.isVoiced;
             }
 
-            ctx->adaptiveEngine->analyzeAudio(L, chunk);
+            alignas(64) float monoAnalysis[128];
+            const int analysisLen = std::min(chunk, 128);
+            for (int n = 0; n < analysisLen; ++n) {
+                monoAnalysis[n] = 0.5f * (L[n] + R[n]);
+            }
+            ctx->adaptiveEngine->analyzeAudio(monoAnalysis, analysisLen);
             ctx->adaptiveEngine->computeAdaptiveParameters(aiDominantClass, pitchHz, isVoiced, pitchConf);
             ctx->adaptiveEngine->smoothParameters();
             

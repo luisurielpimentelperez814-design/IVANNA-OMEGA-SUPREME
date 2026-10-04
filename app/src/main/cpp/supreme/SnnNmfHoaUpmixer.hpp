@@ -100,8 +100,8 @@ public:
 
         for (size_t ch = 0; ch < HOA_CHANNELS; ++ch) {
             const float w = kMaxReOrderWeight[ch];
-            const float signL = (ch % 2 == 1) ? 1.0f : 0.85f;
-            const float signR = (ch % 2 == 1) ? -0.85f : 1.0f;
+            const float signL = 1.0f;
+            const float signR = (ch % 2 == 1) ? -1.0f : 1.0f;
             hrtfSphericalGainL_[ch] = w * signL * 0.25f;
             hrtfSphericalGainR_[ch] = w * signR * 0.25f;
         }
@@ -323,7 +323,7 @@ public:
 #endif
             // Acumulación particionada UPOLA de 4 etapas (reflexiones tempranas coherentes)
             const float partL = binL + 0.14f * upolaHistoryL_[0] - 0.06f * upolaHistoryL_[2];
-            const float partR = binR + 0.14f * upolaHistoryR_[1] - 0.06f * upolaHistoryR_[3];
+            const float partR = binR + 0.14f * upolaHistoryR_[0] - 0.06f * upolaHistoryR_[2];
 
             upolaHistoryL_[3] = upolaHistoryL_[2];
             upolaHistoryL_[2] = upolaHistoryL_[1];

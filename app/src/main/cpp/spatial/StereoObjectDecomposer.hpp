@@ -67,7 +67,9 @@ public:
             if (outObjects[0]) outObjects[0][i] = mid;
             if (outObjects[1]) outObjects[1][i] = sideL;
             if (outObjects[2]) outObjects[2][i] = sideR;
-            if (outObjects[3]) outObjects[3][i] = sideL * 0.35f;
+            // FIX BALANCE R: outObjects[3] (ambiente difuso) no debe inyectar una señal mono asimétrica (+sideL)
+            // al renderizador espacial porque al ser paneada al centro cancela el canal derecho.
+            if (outObjects[3]) outObjects[3][i] = 0.0f;
             objL_[0 * kMaxBlock + i] = mid;
             objR_[0 * kMaxBlock + i] = mid;
             objL_[1 * kMaxBlock + i] = sideL;

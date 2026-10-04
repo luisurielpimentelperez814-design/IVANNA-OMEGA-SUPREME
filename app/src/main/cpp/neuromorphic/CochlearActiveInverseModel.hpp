@@ -360,21 +360,24 @@ private:
                 bpf_v = vmlaq_f32(bpf_v, na1v, y1v);
                 bpf_v = vmlaq_f32(bpf_v, na2v, y2v);
 
-                // Actualizar historia biquad
-                x2v = x1v;
-                x1v = xv;
-                y2v = y1v;
-                y1v = bpf_v;
-
                 // ─── Denormal flush + Suavizado fisiológico de membrana basolateral OHC ─
                 const float32x4_t denormThresh = vdupq_n_f32(1.0e-15f);
-                const uint32x4_t isDenorm = vcltq_f32(vabsq_f32(bpf_v), denormThresh);
+                uint32x4_t isDenorm = vcltq_f32(vabsq_f32(bpf_v), denormThresh);
                 bpf_v = vbslq_f32(isDenorm, vdupq_n_f32(0.0f), bpf_v);
+
+                // Actualizar historia biquad de forma limpia y desnormalizada
+                x2v = x1v;
+                x1v = xv;
+                isDenorm = vcltq_f32(vabsq_f32(y1v), denormThresh);
+                y2v = vbslq_f32(isDenorm, vdupq_n_f32(0.0f), y1v);
+                y1v = bpf_v;
 
                 float32x4_t memState_v = vld1q_f32(ch.membraneState + bg);
                 float32x4_t memCoeff_v = vld1q_f32(ch.membraneCoeff + bg);
                 const float32x4_t rect_v = vabsq_f32(bpf_v);
                 memState_v = vaddq_f32(memState_v, vmulq_f32(memCoeff_v, vsubq_f32(rect_v, memState_v)));
+                isDenorm = vcltq_f32(vabsq_f32(memState_v), denormThresh);
+                memState_v = vbslq_f32(isDenorm, vdupq_n_f32(0.0f), memState_v);
                 vst1q_f32(ch.membraneState + bg, memState_v);
 
                 // ─── Heun OHC envelope (RK2, primer orden, sin divisiones) ─
@@ -386,6 +389,8 @@ private:
                 const float32x4_t k2v   = vmulq_f32(vsubq_f32(Ev, predv), coef);
                 envv = vmlaq_f32(envv, vdupq_n_f32(0.5f), vaddq_f32(k1v, k2v));
                 envv = vmaxq_f32(envv, vdupq_n_f32(0.0f));
+                isDenorm = vcltq_f32(envv, denormThresh);
+                envv = vbslq_f32(isDenorm, vdupq_n_f32(0.0f), envv);
 
                 // ─── Cancelación NL de prestina: Δ_NL = bpf * (α·env² + 0.05·env) ───
                 const float32x4_t env2v = vmulq_f32(envv, envv);
@@ -414,16 +419,16 @@ private:
                                  - ch.b0[b] * ch.x2[b]
                                  + ch.na1[b] * ch.y1[b]
                                  + ch.na2[b] * ch.y2[b];
-                ch.x2[b] = ch.x1[b];
-                ch.x1[b] = x;
-                ch.y2[b] = ch.y1[b];
-                ch.y1[b] = bpf;
-
                 // Flush denormals to 0.0f (previene micro-pausas y ruido de fondo granular)
                 float bpf_clean = bpf;
                 if (std::fabs(bpf_clean) < 1.0e-15f) bpf_clean = 0.0f;
-                if (std::fabs(ch.y1[b]) < 1.0e-15f) ch.y1[b] = 0.0f;
-                if (std::fabs(ch.y2[b]) < 1.0e-15f) ch.y2[b] = 0.0f;
+                float y1_clean = ch.y1[b];
+                if (std::fabs(y1_clean) < 1.0e-15f) y1_clean = 0.0f;
+
+                ch.x2[b] = ch.x1[b];
+                ch.x1[b] = x;
+                ch.y2[b] = y1_clean;
+                ch.y1[b] = bpf_clean;
 
                 // Suavizado fisiológico de membrana basolateral OHC (anti-sizzle / anti-hormigas)
                 const float rect = (bpf_clean >= 0.0f) ? bpf_clean : -bpf_clean;
@@ -436,14 +441,14 @@ private:
                 const float pred = ch.env[b] + k1;
                 const float k2   = (E - pred) * coef;
                 float env_new    = ch.env[b] + 0.5f * (k1 + k2);
-                if (env_new < 0.0f) env_new = 0.0f;
+                if (env_new < 1.0e-15f) env_new = 0.0f;
                 ch.env[b] = env_new;
 
                 // Cancelación NL de prestina: Δ_NL = bpf * (α·env² + 0.05·env)
                 const float env2 = env_new * env_new;
                 float nl = alpha_p * env2 + 0.05f * env_new;
                 if (nl > 0.45f) nl = 0.45f;
-                nl_cancel_sum += bpf * nl;
+                nl_cancel_sum += bpf_clean * nl;
             }
 #endif
             // Preserva 100% de la señal directa de banda ancha x (0 dB pérdida de volumen)

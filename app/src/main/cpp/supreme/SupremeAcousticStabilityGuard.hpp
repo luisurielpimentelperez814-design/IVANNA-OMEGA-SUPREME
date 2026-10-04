@@ -263,7 +263,7 @@ public:
     static constexpr size_t NUM_MODULES = static_cast<size_t>(AcousticModuleId::Count);
     static constexpr float kDefaultCeilingLinear = 0.985f;     // -0.72 dBFS (bajo el umbral 0.95 del SafetyLimiter)
     static constexpr float kStageHardSafetyLimit = 1.25f;     // Techo máximo por etapa interna antes de gobernación
-    static constexpr float kMaxSampleJumpLimit   = 1.15f;     // Umbral físico de salto impulsivo
+    static constexpr float kMaxSampleJumpLimit   = 2.45f;     // Umbral físico de salto impulsivo (evita artefactos en transientes y agudos a volumen alto)
     static constexpr float kMaxEnergyGrowthRatio = 2.60f;     // Máximo crecimiento RMS permitido por etapa (8.3 dB)
     static constexpr float kMaxDcOffsetLimit     = 0.12f;     // Umbral de alerta DC offset
 
@@ -342,6 +342,26 @@ public:
             ModuleOperationalState::Active);
         inputBlockRms_  = inMetrics.rmsTotal;
         inputBlockPeak_ = inMetrics.peakAbs;
+
+        // Zero-Pop al cambiar de canción o pausar: si el bloque de entrada es reposo/silencio,
+        // limpiar historia de frontera, offset DC y estados de amortiguamiento para no proyectar derivadas contra el siguiente tema.
+        if (inputBlockPeak_ < 1.0e-4f) {
+            hasBoundaryHistory_ = false;
+            lastOutSampleL_ = 0.0f;
+            lastOutSampleR_ = 0.0f;
+            lastOutDerivL_  = 0.0f;
+            lastOutDerivR_  = 0.0f;
+            dcInPrevL_ = 0.0f;
+            dcInPrevR_ = 0.0f;
+            dcOutPrevL_ = 0.0f;
+            dcOutPrevR_ = 0.0f;
+            feedbackDamping_ = 1.0f;
+            headroomGain_ = 1.0f;
+            for (size_t s = 0; s < NUM_MODULES; ++s) {
+                stageGain_[s] = 1.0f;
+                stageHasHistory_[s] = false;
+            }
+        }
     }
 
     /**
@@ -362,6 +382,24 @@ public:
             ModuleOperationalState::Active);
         inputBlockRms_  = inMetrics.rmsTotal;
         inputBlockPeak_ = inMetrics.peakAbs;
+
+        if (inputBlockPeak_ < 1.0e-4f) {
+            hasBoundaryHistory_ = false;
+            lastOutSampleL_ = 0.0f;
+            lastOutSampleR_ = 0.0f;
+            lastOutDerivL_  = 0.0f;
+            lastOutDerivR_  = 0.0f;
+            dcInPrevL_ = 0.0f;
+            dcInPrevR_ = 0.0f;
+            dcOutPrevL_ = 0.0f;
+            dcOutPrevR_ = 0.0f;
+            feedbackDamping_ = 1.0f;
+            headroomGain_ = 1.0f;
+            for (size_t s = 0; s < NUM_MODULES; ++s) {
+                stageGain_[s] = 1.0f;
+                stageHasHistory_[s] = false;
+            }
+        }
     }
 
     /**
@@ -672,13 +710,12 @@ public:
         // Si la energía acumulada de la cadena supera el crecimiento físico permitido
         // respecto a la entrada original del bloque, activar amortiguamiento suave de feedback.
         float targetDamping = 1.0f;
-        // FIX (voces robotizadas): 1.45x (3.2 dB) peleaba contra el propio EQ/graves
-        // y el objetivo cambiaba bloque a bloque -> modulacion de amplitud a la
-        // frecuencia de bloque. Se permite 2x (6 dB) de crecimiento legitimo.
-        if (inputBlockRms_ > 1.0e-4f && rawRms > inputBlockRms_ * 2.0f) {
-            targetDamping = std::clamp((inputBlockRms_ * 2.0f) / rawRms, 0.15f, 1.0f);
-        } else if (rawRms > safeCeiling * 0.78f) {
-            targetDamping = std::clamp((safeCeiling * 0.78f) / rawRms, 0.20f, 1.0f);
+        // FIX (voces robotizadas y distorsión a volumen alto): 2.2x (6.8 dB) de crecimiento legítimo
+        // y techo de 0.92 con damping acotado a 0.40 para evitar bombeo y clics en picos dinámicos.
+        if (inputBlockRms_ > 1.0e-4f && rawRms > inputBlockRms_ * 2.2f) {
+            targetDamping = std::clamp((inputBlockRms_ * 2.2f) / rawRms, 0.40f, 1.0f);
+        } else if (rawRms > safeCeiling * 0.92f) {
+            targetDamping = std::clamp((safeCeiling * 0.92f) / rawRms, 0.40f, 1.0f);
         }
 
         // 2. Procesamiento muestra a muestra libre de bloqueos

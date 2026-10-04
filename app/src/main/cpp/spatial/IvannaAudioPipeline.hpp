@@ -386,26 +386,25 @@ public:
                 // produciendo filtrado en peine y desfase ("eco de diálogo" en Amazon Prime Video / películas).
                 // Al renderizar exclusivamente los objetos laterales y ambientales (LEFT, RIGHT, AMBIENT),
                 // el centro vocal permanece 100% libre de desfase y con máxima inteligibilidad.
+                // NOTA ACÚSTICA CRÍTICA (Simetría Estéreo y Cero Atenuación de Canal R):
+                // objPtrs[1] es LEFT (sideL), objPtrs[2] es RIGHT (sideR).
+                // objPtrs[3] (ambiente) no debe inyectar una señal mono asimétrica (sideL)
+                // al centro porque cancelaría el canal derecho por inversión de fase.
+                // El campo ambiental se procesa de forma estéreo balanceada en RoomEngine.
                 const float* lateralObjPtrs[4] = {
                     nullptr,
                     objPtrs[1],
                     objPtrs[2],
-                    objPtrs[3]
+                    nullptr
                 };
                 spatialRenderer_.renderObjects(
                     lateralObjPtrs, activeObjs,
                     spatialScratchL_.data(), spatialScratchR_.data(),
                     chunk, itdScale, atlasWidthScale);
-                // Complemento, no suma: el renderer espacial ya reproduce el componente
-                // lateral (side) con ITD/ILD + ER. Sumarlo ENCIMA del side seco dejaba la
-                // misma señal dos veces con retardo relativo (ITD) = filtro en peine / eco
-                // de espacialización. Ahora el side hace crossfade seco->renderizado
-                // (seco*(1-w) + render*w) y el mid (centro/diálogo) queda a ganancia 1.0
-                // sin tocar, por lo que el nivel total se conserva.
+                const float dryObj = 1.0f - 0.35f * wetObj;
                 for (size_t i = 0; i < chunk; ++i) {
-                    const float side = 0.5f * (dryScratchL_[i] - dryScratchR_[i]);
-                    chL[i] = chL[i] + wetObj * (spatialScratchL_[i] - side);
-                    chR[i] = chR[i] + wetObj * (spatialScratchR_[i] + side);
+                    chL[i] = chL[i] * dryObj + spatialScratchL_[i] * wetObj;
+                    chR[i] = chR[i] * dryObj + spatialScratchR_[i] * wetObj;
                 }
             }
 

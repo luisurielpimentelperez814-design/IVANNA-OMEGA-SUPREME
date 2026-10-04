@@ -16,6 +16,10 @@ AntiDolbyState::AntiDolbyState() {
     widenerMultiplier.store(1.0f, std::memory_order_relaxed);
     targetWidener.store(1.0f, std::memory_order_relaxed);
     smoothedWidener.store(1.0f, std::memory_order_relaxed);
+    targetEqBoost.store(0.0f, std::memory_order_relaxed);
+    smoothedEqBoost.store(0.0f, std::memory_order_relaxed);
+    targetSpreadMul.store(1.0f, std::memory_order_relaxed);
+    smoothedSpreadMul.store(1.0f, std::memory_order_relaxed);
 }
 
 void AntiDolbyState::reset() noexcept {
@@ -68,9 +72,9 @@ void AntiDolbyState::updateFromClassification(float speech, float music, float b
 
     // EQ 2-4kHz: boost si speech > threshold
     if (speech > SPEECH_THRESHOLD) {
-        eqBoost2k4k.store(2.0f, std::memory_order_relaxed);  // +2dB
+        targetEqBoost.store(2.0f, std::memory_order_relaxed);  // +2dB
     } else {
-        eqBoost2k4k.store(0.0f, std::memory_order_relaxed);
+        targetEqBoost.store(0.0f, std::memory_order_relaxed);
     }
 
     // Exciter: solo <120Hz si bass > threshold
@@ -154,9 +158,9 @@ void AntiDolbyState::updateFromNeuralContext(uint8_t contextClass, float confide
     }
 
     targetWidener.store(tgtWidener, std::memory_order_relaxed);
-    eqBoost2k4k.store(tgtEqBoost, std::memory_order_relaxed);
+    targetEqBoost.store(tgtEqBoost, std::memory_order_relaxed);
     exciterLowOnly.store(lowExciter, std::memory_order_relaxed);
-    spatialSpreadMul.store(spreadMul, std::memory_order_relaxed);
+    targetSpreadMul.store(spreadMul, std::memory_order_relaxed);
     bassExciterLevel.store(exciterLvl, std::memory_order_relaxed);
 }
 
@@ -176,6 +180,19 @@ void AntiDolbyState::tick(float dt) noexcept {
 
     smoothedWidener.store(curSmooth, std::memory_order_relaxed);
     widenerMultiplier.store(curSmooth, std::memory_order_release);
+
+    // Suavizado continuo C1 de presencia y apertura espacial (anti-zipper / anti-tronidos)
+    const float curTgtEq = targetEqBoost.load(std::memory_order_relaxed);
+    float curSmoothEq    = smoothedEqBoost.load(std::memory_order_relaxed);
+    curSmoothEq         += alpha * (curTgtEq - curSmoothEq);
+    smoothedEqBoost.store(curSmoothEq, std::memory_order_relaxed);
+    eqBoost2k4k.store(curSmoothEq, std::memory_order_release);
+
+    const float curTgtSpr = targetSpreadMul.load(std::memory_order_relaxed);
+    float curSmoothSpr    = smoothedSpreadMul.load(std::memory_order_relaxed);
+    curSmoothSpr         += alpha * (curTgtSpr - curSmoothSpr);
+    smoothedSpreadMul.store(curSmoothSpr, std::memory_order_relaxed);
+    spatialSpreadMul.store(curSmoothSpr, std::memory_order_release);
 }
 
 void AntiDolbyState::setAttackTau(float seconds) noexcept {

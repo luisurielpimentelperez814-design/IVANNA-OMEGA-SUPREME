@@ -560,7 +560,7 @@ private fun CognitiveEvolutionTab() {
         NeonMagenta,
         "Spatial · Room · MicroReality · HumanPerception Judge"
     ) {
-        val metrics = listOf(
+        val metrics: List<Pair<String, Float?>> = listOf(
             "Prioridad Profundidad" to cogPct(1),
             "Prioridad Microdinámica" to cogPct(2),
             "Prioridad Claridad Vocal" to cogPct(3),
@@ -586,7 +586,7 @@ private fun CognitiveEvolutionTab() {
                     )
                 }
                 LinearProgressIndicator(
-                    progress = { value.coerceIn(0f, 1f) },
+                    progress = { (value ?: 0f).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(3.dp),
                     color = NeonMagenta,
                     trackColor = ObsidianEdge
@@ -600,15 +600,22 @@ private fun CognitiveEvolutionTab() {
         PhosphorGreen,
         "Arbitraje de Conflictos · Rush Xanadu Memory · PID Homeostático · CMA-ES + Q-Learning"
     ) {
-        val execMetrics = listOf(
+        val r6 = realPct(6)
+        val r7 = realPct(7)
+        val r8 = realPct(8)
+        val roomDimensions = if (r6 != null && r7 != null && r8 != null) {
+            "%.1f×%.1f×%.1f m".format(r6, r7, r8)
+        } else {
+            "—"
+        }
+        val execMetrics: List<Pair<String, String>> = listOf(
             "Coherencia Executive Brain" to fmtPct(cogPct(10)),
-            "Conflictos Arbitrados (Flags)" to cogPct(11)?.let { "0x%02X".format(it.toInt()) } ?: "—",
+            "Conflictos Arbitrados (Flags)" to (cogPct(11)?.let { "0x%02X".format(it.toInt()) } ?: "—"),
             "Estabilidad Homeostática (Fase 13)" to fmtPct(cogPct(12)),
             "Coherencia Digital Twin (Fase 14)" to fmtPct(cogPct(13)),
-            "Fitness CMA-ES / Q-Learning (Fase 15)" to cogPct(14)?.let { "%.3f".format(it) } ?: "—",
-            "Consolidaciones Memoria (Fase 12)" to cogPct(15)?.let { "${it.toInt()} estados" } ?: "—",
-            "Sala Inferida (W×D×H)" to (if (realPct(6) != null && realPct(7) != null && realPct(8) != null)
-                "%.1f×%.1f×%.1f m".format(realPct(6), realPct(7), realPct(8)) else "—"),
+            "Fitness CMA-ES / Q-Learning (Fase 15)" to (cogPct(14)?.let { "%.3f".format(it) } ?: "—"),
+            "Consolidaciones Memoria (Fase 12)" to (cogPct(15)?.let { "${it.toInt()} estados" } ?: "—"),
+            "Sala Inferida (W×D×H)" to roomDimensions,
             "Realismo Perceptual Compuesto" to fmtPct(realPct(5))
         )
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
