@@ -80,24 +80,28 @@ jobs:
           echo "::error::No apareció una corrida EXITOSA de build.yml para ${SHA} en 40 min — supply chain de un release sin build validado es inaceptable."
           exit 1
 
-      # ── Descarga cross-run VÁLIDA: run-id + github-token ────────────────────
-      - name: Download APK artifact (cross-run por SHA)
+      # ── Descarga desde el GitHub Release (build.yml ya NO sube artefactos de ──
+      # ── Actions: publica en el release y poda los artefactos viejos) ─────────
+      # Los artefactos `apk-build-<sha>` / `magisk-module-bundle-<sha>` ya no
+      # existen, así que download-artifact@v4 fallaba en cada tag v*. La versión
+      # se deriva de module.prop (misma fuente única que publish-release).
+      - name: Download APK + Magisk module from GitHub Release (mismo SHA)
         if: steps.mode.outputs.dry == '0'
-        uses: actions/download-artifact@v4
-        with:
-          name: apk-build-${{ github.sha }}
-          run-id: ${{ steps.buildrun.outputs.id }}
-          github-token: ${{ github.token }}
-          path: artifacts/apk
-
-      - name: Download Magisk module artifact (cross-run por SHA)
-        if: steps.mode.outputs.dry == '0'
-        uses: actions/download-artifact@v4
-        with:
-          name: magisk-module-bundle-${{ github.sha }}
-          run-id: ${{ steps.buildrun.outputs.id }}
-          github-token: ${{ github.token }}
-          path: artifacts/magisk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="${{ github.sha }}"
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          [ -n "$VERSION" ] || { echo "::error::module.prop sin version="; exit 1; }
+          mkdir -p artifacts/apk artifacts/magisk
+          gh release download "$VERSION" --repo "${{ github.repository }}" \
+            --pattern "ivanna-omega-supreme-${SHA}.apk" --dir artifacts/apk --clobber \
+            || { echo "::error::El release $VERSION no contiene el APK del commit ${SHA} (¿build.yml publicó otro commit?)"; exit 1; }
+          gh release download "$VERSION" --repo "${{ github.repository }}" \
+            --pattern "ivanna_omega_supreme_${VERSION}.zip" --dir artifacts/magisk --clobber \
+            || { echo "::error::El release $VERSION no contiene el módulo Magisk"; exit 1; }
+          ls -lhR artifacts/
 
       # Verificación dura: en la ruta de release, sin APK o sin módulo NO se sigue.
       - name: Verificar que los artefactos del release están presentes
