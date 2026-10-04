@@ -441,6 +441,9 @@ class IvannaGlobalEffectManager(
     // ── Cierra y libera efectos de una sesión ─────────────────────────────────
     fun closeSession(audioSession: Int) {
         activeSessions.remove(audioSession)?.let { releaseEffects(it) }
+        // El origen (video/streaming) del perfil por contenido debe seguir a las
+        // sesiones vivas: al cerrar la última de video ya no se debe seguir en MOVIE.
+        if (!isVideoStreamingActive) ContentProfileEngine.noteSource(null, false)
         Log.i(TAG, "Sesión $audioSession cerrada")
     }
 
@@ -670,6 +673,7 @@ class IvannaGlobalEffectManager(
         }
 
         activeSessions.clear()
+        ContentProfileEngine.noteSource(null, false)
 
         Log.i(
             TAG,
