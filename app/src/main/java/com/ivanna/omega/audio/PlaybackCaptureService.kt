@@ -435,6 +435,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // publishHaasTelemetry(). d419777a lo uso sin declararlo -> "Unresolved
         // reference" en compileDebugKotlin: ese era el CI rojo.
         private var lastResyncMs = 0L
+        // true => forzar el delta simple (diagnostico A/B). Normalmente false.
+        @Volatile private var deltaFallback = false
 
         // REFINAMIENTO MAGISTRAL: Controladores de Latencia, Timing, Anti-Pop, Presupuesto y Gobernador
         private val adaptiveLatency    = AdaptiveLatencyController(SAMPLE_RATE)
@@ -523,6 +525,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // Rampa limpia en cada (re)arranque del motor: el procesado entra
             // desde 0 hasta el nivel de fusión Haas en ~0.5 s.
             resetMixRamp()
+            // v2.5.0: motor de reinyeccion diferencial (nativo). prepare() reserva memoria: aqui,
+            // fuera del hilo de audio. Si falla/no carga, el bucle cae al delta simple.
+            runCatching {
+                DSPBridge.reinjectPrepare(SAMPLE_RATE, BLOCK_FRAMES)
+                // Topes por banda: graves conservadores (estabilidad/sin cancelaciones), medios con cuerpo, agudos libres.
+                DSPBridge.reinjectSetBandCaps(REINJECT_CAP_LOW, REINJECT_CAP_MID, REINJECT_CAP_HIGH)
+            }
             // FIX (desface acumulado, p.ej. al pausar/reanudar video): al
             // (re)arrancar el motor se purga la cola del AudioTrack — si se
             // reusa un track con frames viejos en cola, suenan DESPUÉS del
@@ -835,11 +844,23 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // el procesado completo para telemetria/visualizadores; `deltaBuf` va al track.
                     val outBuf = if (LEGACY_HAAS_MIX) buffer else deltaBuf
                     if (!LEGACY_HAAS_MIX) {
-                        val invN = 1f / read
-                        val dg = gEnd - gStart
-                        for (i in 0 until read) {
-                            val g = gStart + dg * (i * invN)
-                            deltaBuf[i] = (buffer[i] - dryRef[i]) * g
+                        // v2.5.0: reinyeccion DIFERENCIAL nativa. El original suena por su via (0 ms);
+                        // aqui solo va g_banda*Delta, alineado con el seco y con la ganancia por banda
+                        // limitada por la coherencia medida con el original al retardo real L (anti-peine).
+                        // `gEnd` conserva la rampa de arranque/cambio de fuente => es la intensidad.
+                        val lat = adaptiveLatency.measuredLatencyMs
+                        DSPBridge.reinjectSetLatencyMs(if (lat > 1f) lat else DEFAULT_LISTENER_LATENCY_MS)
+                        DSPBridge.reinjectSetIntensity(gEnd)
+                        val nativeOk = !deltaFallback &&
+                            DSPBridge.reinjectProcess(dryRef, buffer, deltaBuf, frames)
+                        if (!nativeOk) {
+                            // Respaldo (motor nativo no cargado): delta simple con rampa por muestra.
+                            val invN = 1f / read
+                            val dg = gEnd - gStart
+                            for (i in 0 until read) {
+                                val g = gStart + dg * (i * invN)
+                                deltaBuf[i] = (buffer[i] - dryRef[i]) * g
+                            }
                         }
                     }
 
@@ -1000,8 +1021,15 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // (~150/s a 320 frames) metia jitter en el hilo de audio. Cada 16 bloques
         // (~9 Hz, ~107 ms) sobra para medir cola y publicar telemetría refinada.
         private var telemetryTick = 0
+        private val reinjectTel = FloatArray(16)
         private fun publishHaasTelemetry() {
             if ((++telemetryTick and 15) != 0) return
+            // ~cada 2 s: telemetria REAL del reinyector diferencial (medida, no constante).
+            if ((telemetryTick and 255) == 0 && DSPBridge.reinjectTelemetry(reinjectTel)) {
+                val t = reinjectTel
+                Log.i(TAG, "Reinject: L=%.1f ms dspLag=%.2f smp conf=%.2f coh[%.2f %.2f %.2f] g[%.2f %.2f %.2f] riesgoPeine=%.3f inmersion=%.2f techo=%.2f"
+                    .format(t[0], t[1], t[2], t[3], t[4], t[5], t[9], t[10], t[11], t[12], t[13], t[14]))
+            }
             try {
                 OmegaMetrics.updateRefinedTelemetry(
                     latencyMs = adaptiveLatency.measuredLatencyMs,
@@ -1135,7 +1163,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             } catch (e: Throwable) { Log.w(TAG, "latency probe: ${e.message}") }
         }
 
-        private fun resetMixRamp() { mixGain = 0f; mixGainTarget = if (LEGACY_HAAS_MIX) HAAS_SAFE_GAIN else DELTA_BLEND_SOLO }
+        private fun resetMixRamp() {
+            mixGain = 0f; mixGainTarget = if (LEGACY_HAAS_MIX) HAAS_SAFE_GAIN else DELTA_BLEND_SOLO
+            // Historial/alineacion del reinyector: un arranque limpio no debe heredar el retardo de otra fuente.
+            runCatching { DSPBridge.reinjectReset() }
+        }
 
         companion object {
             private const val TAG = "CaptureEngine"
@@ -1147,6 +1179,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             private const val LEGACY_HAAS_MIX = false
             private const val DELTA_BLEND_SOLO = 0.6f        // (1-g)*seco + g*procesado en el oyente
             private const val DELTA_BLEND_WITH_MODULE = 0.45f
+            // Latencia asumida hasta que AdaptiveLatencyController tenga una medicion (cola de salida tipica).
+            private const val DEFAULT_LISTENER_LATENCY_MS = 30f
+            private const val REINJECT_CAP_LOW  = 0.25f
+            private const val REINJECT_CAP_MID  = 0.70f
+            private const val REINJECT_CAP_HIGH = 1.00f
             // Punto de fusión Haas validado empíricamente en dispositivo:
             // original 100% + procesado al 50% (−6 dB) — sin eco discreto.
             // Ajustes finos 2026-09-17: 0.5 (-6.0 dB) -> 0.425 (-7.4 dB) -> 0.40 (-8.0 dB).

@@ -40,6 +40,7 @@
 #include "../include/StereoWidener.h"
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
+#include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
@@ -1027,6 +1028,69 @@ JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject, jfloat score) {
     g_voice_protect_score.store(
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
+}
+
+// ── REINYECCION DIFERENCIAL DE RUTA A (v2.5.0) ─────────────────────────────
+// Reemplaza el delta (procesado - seco) en Kotlin: alinea el seco con el procesado
+// (latencia propia del DSP, fraccional), mide la coherencia delta<->seco al retardo L
+// del oyente por banda y limita la ganancia para que el peine quede < ~0.8 dB.
+// Un solo hilo de captura llama a process(); los setters son atomics (cualquier hilo).
+static ivanna::DifferentialReinjector g_reinjector;
+static std::atomic<bool> g_reinjectorReady{false};
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectPrepare(JNIEnv*, jobject, jint sampleRate, jint maxFrames) {
+    g_reinjectorReady.store(false, std::memory_order_release);   // fuera de RT: reserva memoria aqui
+    g_reinjector.prepare(static_cast<float>(sampleRate), static_cast<int>(maxFrames));
+    g_reinjectorReady.store(true, std::memory_order_release);
+}
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectReset(JNIEnv*, jobject) {
+    if (g_reinjectorReady.load(std::memory_order_acquire)) g_reinjector.reset();
+}
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectSetIntensity(JNIEnv*, jobject, jfloat v) {
+    g_reinjector.setIntensity(v);
+}
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectSetLatencyMs(JNIEnv*, jobject, jfloat ms) {
+    g_reinjector.setListenerLatencyMs(ms);
+}
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectSetBandCaps(JNIEnv*, jobject, jfloat lo, jfloat mid, jfloat hi) {
+    g_reinjector.setBandCaps(lo, mid, hi);
+}
+// dry/wet/out: estereo intercalado, mismo tamano. Devuelve false si no esta listo (el llamador cae al delta simple).
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectProcess(
+    JNIEnv* env, jobject, jfloatArray dry, jfloatArray wet, jfloatArray out, jint nFrames) {
+    if (!g_reinjectorReady.load(std::memory_order_acquire) || !dry || !wet || !out || nFrames <= 0) return JNI_FALSE;
+    const int n = std::min({(int)nFrames, 2048, (int)(env->GetArrayLength(dry) / 2),
+                            (int)(env->GetArrayLength(wet) / 2), (int)(env->GetArrayLength(out) / 2)});
+    if (n <= 0) return JNI_FALSE;
+    jfloat* d = env->GetFloatArrayElements(dry, nullptr);
+    jfloat* w = env->GetFloatArrayElements(wet, nullptr);
+    jfloat* o = env->GetFloatArrayElements(out, nullptr);
+    if (d && w && o) {
+        // Voz detectada (VoiceProtectionController) => el techo de inmersion baja (inteligibilidad primero).
+        g_reinjector.setContentHint(g_voice_protect_score.load(std::memory_order_relaxed), 0.f);
+        g_reinjector.process(d, w, o, n);
+    }
+    if (d) env->ReleaseFloatArrayElements(dry, d, JNI_ABORT);
+    if (w) env->ReleaseFloatArrayElements(wet, w, JNI_ABORT);
+    if (o) env->ReleaseFloatArrayElements(out, o, 0);
+    return (d && w && o) ? JNI_TRUE : JNI_FALSE;
+}
+// Telemetria real (no constantes): [latMs, dspLag, lagConf, coh0..2, ratio0..2, gain0..2, combRisk, immersion, ceiling] = 16 floats.
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectTelemetry(JNIEnv* env, jobject, jfloatArray out) {
+    if (!out || env->GetArrayLength(out) < 16) return 0;
+    const auto t = g_reinjector.telemetry();
+    float v[16] = {t.listenerLatencyMs, t.dspLagSamples, t.lagConfidence,
+                   t.corr[0], t.corr[1], t.corr[2], t.deltaToDry[0], t.deltaToDry[1], t.deltaToDry[2],
+                   t.gain[0], t.gain[1], t.gain[2], t.combRisk, t.immersion, t.immersionCeiling, 0.f};
+    env->SetFloatArrayRegion(out, 0, 16, v);
+    return 15;
 }
 
 struct NonBlockingDspProcessGuard {

@@ -262,6 +262,30 @@ object DSPBridge {
         }
     }
 
+    // ── Reinyeccion diferencial de Ruta A (v2.5.0) ──────────────────────────
+    // Output = Dry + g_banda * Delta; aqui solo se calcula el termino Delta*g (el Dry ya suena por la via original).
+    fun reinjectPrepare(sampleRate: Int, maxFrames: Int) { if (loaded) nativeReinjectPrepare(sampleRate, maxFrames) }
+    fun reinjectReset() { if (loaded) nativeReinjectReset() }
+    /** Intensidad perceptual 0..1 (slider / rampa de arranque). */
+    fun reinjectSetIntensity(v: Float) { if (loaded) nativeReinjectSetIntensity(v) }
+    /** Latencia real que ve el oyente entre el original y lo reinyectado (ms). */
+    fun reinjectSetLatencyMs(ms: Float) { if (loaded) nativeReinjectSetLatencyMs(ms) }
+    /** Techos por banda (graves/medios/agudos), 0..1. */
+    fun reinjectSetBandCaps(low: Float, mid: Float, high: Float) { if (loaded) nativeReinjectSetBandCaps(low, mid, high) }
+    /** false => el motor nativo no esta listo; el llamador usa el delta simple. */
+    fun reinjectProcess(dry: FloatArray, wet: FloatArray, out: FloatArray, numFrames: Int): Boolean =
+        loaded && nativeReinjectProcess(dry, wet, out, numFrames)
+    /** Telemetria real: [latMs, dspLag, lagConf, coh x3, delta/seco x3, ganancia x3, riesgoPeine, inmersion, techo, 0]. */
+    fun reinjectTelemetry(out: FloatArray): Boolean = loaded && out.size >= 16 && nativeReinjectTelemetry(out) > 0
+
+    private external fun nativeReinjectPrepare(sampleRate: Int, maxFrames: Int)
+    private external fun nativeReinjectReset()
+    private external fun nativeReinjectSetIntensity(v: Float)
+    private external fun nativeReinjectSetLatencyMs(ms: Float)
+    private external fun nativeReinjectSetBandCaps(lo: Float, mid: Float, hi: Float)
+    private external fun nativeReinjectProcess(dry: FloatArray, wet: FloatArray, out: FloatArray, nFrames: Int): Boolean
+    private external fun nativeReinjectTelemetry(out: FloatArray): Int
+
     private external fun nativeInit(sampleRate: Int)
     private external fun nativeSetParams(
         drive: Float, wet: Float, mix: Float,
