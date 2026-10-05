@@ -132,6 +132,8 @@ public:
         hopCount_ = 0; analyses_ = 0;
         for (int b = 0; b < kBands; ++b) { gCur_[b] = gNext_[b] = 0.f; coh_[b] = 1.f; ratio_[b] = 0.f; }
         ceilCur_ = 0.f; ceilNext_ = 0.f;
+        transFast_[0] = transFast_[1] = 0.f;
+        transSlow_[0] = transSlow_[1] = 0.f;
     }
 
     // ── Controles (cualquier hilo, lock-free) ───────────────────────────────
@@ -212,11 +214,25 @@ public:
             for (int c = 0; c < 2; ++c) {
                 const float delta = fin(wet[2 * i + c]) - aligned[c];
                 dsum += delta;
+
+                // FASE 3: Separación inteligente entre información original (timbre, ataques, dinámica)
+                // e información reconstruida (espacio, profundidad, ambiente, microdetalle).
+                // En transitorios rápidos, la reinyección se atenúa para no colorear el ataque seco (0 ms).
+                const float absDry = std::fabs(aligned[c]);
+                transFast_[c] += 0.08f * (absDry - transFast_[c]);
+                transSlow_[c] += 0.005f * (absDry - transSlow_[c]);
+                const float attackDiff = std::max(0.0f, transFast_[c] - transSlow_[c]);
+                const float attackMask = std::clamp(attackDiff * 5.0f, 0.0f, 1.0f);
+                const float transientPreserve = 1.0f - 0.70f * attackMask;
+
                 float bandsDelta[kBands];
                 split(fDelta_, c, delta, bandsDelta);
                 for (int b = 0; b < kBands; ++b) {
                     const float g = gCur_[b] + (gNext_[b] - gCur_[b]) * a;   // rampa por muestra
-                    o[c] += g * bandsDelta[b];
+                    const float bandMod = (b == 0) ? (transientPreserve * 0.90f) :
+                                          (b == 1) ? transientPreserve :
+                                                     (1.0f - 0.30f * attackMask);
+                    o[c] += g * bandsDelta[b] * bandMod;
                 }
             }
             xMono_[wi] = 0.5f * (dryRing_[0][wi] + dryRing_[1][wi]);
@@ -508,6 +524,7 @@ private:
 
     float  gCur_[kBands] = {0, 0, 0}, gNext_[kBands] = {0, 0, 0};
     float  ceilCur_ = 0.f, ceilNext_ = 0.f;
+    float  transFast_[2] = {0.f, 0.f}, transSlow_[2] = {0.f, 0.f};
 
     std::atomic<float> intensity_{0.6f}, latencyMs_{30.f}, speech_{0.f}, tonal_{0.f};
     std::atomic<float> cap_[kBands] = {{0.25f}, {0.70f}, {1.0f}};

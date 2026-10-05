@@ -1023,6 +1023,9 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_tinyml_kernel)
 
+# ── IVANNA Acoustic Unity Engine (v2.6.0) ──
+ivanna_add_test(test_acoustic_unity_engine)
+
 
 
 

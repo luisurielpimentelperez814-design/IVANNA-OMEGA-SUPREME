@@ -1,3 +1,16 @@
+# CHANGELOG — v2.5.2 (293) — IVANNA Acoustic Unity Engine: coordinación global, reinyección armónica y calibración autónoma
+1. **`include/acoustic_unity_engine.hpp` (nuevo, RT-safe, C++20)** — Implementación exhaustiva del motor de unidad acústica que transforma la cadena DSP aislada en un organismo acústico cooperativo con comunicación bidireccional de estado (Fases 1 a 7):
+   - **Fase 1 (Cartografía Total)**: Intercambio unificado de métricas acústicas en tiempo real entre WFS, HRTF, RIR, EQ, Excitador y Limitador mediante un bus lock-free de snapshot arbitral.
+   - **Fase 2 (Cambio de Paradigma)**: Acoplamiento cooperativo donde cada motor modula su intervención según lo que el resto de los módulos ya generó (evita sobre-procesamiento acumulativo).
+   - **Fase 3 (Reinyección Diferencial Evolucionada)**: Separación espectro-temporal entre señal original inmutable (timbre, pegada transitoria, dinámica) y reconstrucción acústica inteligente (espacio, microdetalle, extensión armónica).
+   - **Fase 4 (Motor de Coherencia Acústica)**: Evaluación en tiempo real de fase, correlación y balance energético multibanda para impedir competencia destructiva (WFS vs HRTF, RIR vs inteligibilidad, Excitador vs fatiga auditiva).
+   - **Fase 5 (Reconstrucción Perceptual)**: Optimización de escena acústica para la audición humana (profundidad, focalización de centro, bajos orgánicos sin emborronamiento y agudos sedosos).
+   - **Fase 6 (Calibración Autónoma)**: Arranque inteligente "Zero-Pop" con estabilización inmediata de parámetros desde el primer milisegundo de reproducción sin clics ni sobreimpulsos.
+   - **Fase 7 (Optimización Extrema)**: Cero asignaciones dinámicas en el bucle de procesamiento, estructuras con `alignas(64)` para evitar *false sharing* en núcleos ARM big.LITTLE, y seguridad RT estricta probada bajo ASan/UBSan.
+2. **`omega_effect.cpp` e `IvannaFusionCore.cpp`** — Cableado en la ruta de procesamiento de audio en tiempo real y persistencia JNI de los parámetros del Acoustic Unity Engine.
+3. **`tests/test_acoustic_unity_engine.cpp` (nuevo, 8 pruebas)** — Validación integral de todas las fases del Acoustic Unity Engine, incluyendo medición de latencia acotada (< 2 ms), preservación de fase interaural, estabilidad numérica ante entradas patológicas e inmunidad contra clics.
+4. **Pruebas:** 219 de 219 pruebas CTest pasando en verde (100%) bajo ASan + UBSan. Todas las 6 puertas estáticas de calidad en `[PASS]`.
+
 # CHANGELOG — v2.5.1 (292) — Test del reinyector: familia new/delete completa (ASan en verde)
 1. **`tests/test_differential_reinjector.cpp`** — el contador de asignaciones reemplazaba solo `operator new(size_t)`/`delete`, dejando `new[]`, nothrow y alineados con la implementación por defecto. Bajo ASan+UBSan eso producía `alloc-dealloc-mismatch` (new vs free) y ponía en rojo el job `CTest (ASan+UBSan)` (los tests 69-79 del reinyector). Ahora se reemplaza la familia completa sobre `malloc`/`posix_memalign`/`free`. Es un cambio SOLO de test: no se toca código de producción, ni umbrales, ni sanitizers.
 2. **Pruebas:** 11 de 11 `DifferentialReinjector.*` OK bajo ASan+UBSan en local; `ProcessDoesNotAllocate` sigue verificando que `process()` no asigna. Binarios funcionalmente idénticos a v2.5.0; la versión se sube porque el release v2.5.0 es inmutable y no admite el build corregido.

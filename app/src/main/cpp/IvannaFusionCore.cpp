@@ -16,6 +16,7 @@ std::atomic<float> g_upmixing_immersivity{1.25f};
 #include "IvannaSuperAgentMemory.hpp"
 #include "IvannaAudioClassifier.hpp"
 #include "include/acoustic_reality_hyperengine.hpp"
+#include "include/acoustic_unity_engine.hpp"
 #include <iostream>
 #include <atomic>
 

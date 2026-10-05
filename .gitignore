@@ -29,6 +29,8 @@ google-services.json
 Thumbs.db
 coverage/
 node_modules/
+dist/
+bun.lock
 .cxx/
 app/release/
 

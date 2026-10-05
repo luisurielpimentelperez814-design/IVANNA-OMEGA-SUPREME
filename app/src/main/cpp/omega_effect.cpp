@@ -23,6 +23,7 @@
 #include "supreme/SupremeTransitionEnvelope.hpp"
 #include "supreme/SupremeAcousticStabilityGuard.hpp"
 #include "include/omega_wave_stages.hpp"
+#include "include/acoustic_unity_engine.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -1023,6 +1024,23 @@ static int32_t omega_process(effect_handle_t self,
         std::memcpy(dryBufL, L, (size_t)chunk * sizeof(float));
         std::memcpy(dryBufR, R, (size_t)chunk * sizeof(float));
 
+        // ── IVANNA ACOUSTIC UNITY ENGINE (v2.6.0): Organismo Acústico Unificado ──
+        auto* unityCls = fc ? fc->getClassifier() : nullptr;
+        const float unityVoice = (unityCls) ? unityCls->getVoiceConfidence() : 0.0f;
+        const float unityTonality = (fc && fc->getProsodyEngine())
+            ? fc->getProsodyEngine()->getMetrics().pitchConfidence : 0.0f;
+        const bool unityUpmix = (fc && fc->getUpmixer().isUpmixingEnabled());
+        const bool unityWfs = (fc && fc->isWfsEnabled());
+        const bool unityRir = (ctx->rirConvolver && ctx->pendingSnap.room_rt60_s >= 0.01f);
+        const float unityHarm = ctx->pendingSnap.harmonic_gain;
+
+        ivanna::unity::AcousticUnityEngine::instance().coordinateAcousticOrganism(
+            dryBufL, dryBufR, (size_t)chunk,
+            unityVoice, unityTonality,
+            unityUpmix, unityWfs, unityRir, unityHarm);
+
+        const auto unityCtx = ivanna::unity::AcousticUnityEngine::instance().getContext();
+
         ctx->stabilityGuard.beginBlock(L, R, (size_t)chunk, true);
 
         // Render binaural de objetos (VBAP + HRTF) + DSP de salida
@@ -1135,7 +1153,7 @@ static int32_t omega_process(effect_handle_t self,
                 ivanna::supreme::AcousticModuleId::None;
             const float sideTarget = spatialAlreadyActive
                 ? 1.0f
-                : std::clamp(ctx->antiDolby->currentWidener(), 0.75f, 1.35f);
+                : std::clamp(ctx->antiDolby->currentWidener() * unityCtx.msWidenerMultiplier, 0.75f, 1.35f);
             // FIX (tronido al cambiar de música o al activar módulo espacial):
             // sideTarget salta entre 1.0 y currentWidener() (0.75-1.35) cuando
             // spatialAlreadyActive cambia de estado entre bloques. La EMA fija
@@ -1173,7 +1191,7 @@ static int32_t omega_process(effect_handle_t self,
                 ctx->pendingSnap.room_wet, ctx->pendingSnap.room_rt60_s);
             const bool isVoiceActive = (ctx->fusionCore && ctx->fusionCore->getProsodyEngine() &&
                                         ctx->fusionCore->getProsodyEngine()->getMetrics().isVoiced);
-            const float voiceDuck = isVoiceActive ? 0.25f : 1.0f;
+            const float voiceDuck = isVoiceActive ? (0.25f * unityCtx.rirWetDuckFactor) : unityCtx.rirWetDuckFactor;
             const float desiredRirWet = (!ctx->thermalSkipRIR && ctx->pendingSnap.room_rt60_s >= 0.01f)
                 ? std::clamp(limitedSnapWet * voiceDuck, 0.0f, 0.45f)
                 : 0.0f;
