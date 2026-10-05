@@ -28,13 +28,40 @@
 #pragma GCC diagnostic ignored "-Wmismatched-new-delete"
 static std::atomic<long> g_allocs{0};
 static std::atomic<bool> g_count{false};
-void* operator new(std::size_t n) {
+// Familia COMPLETA de new/delete sobre malloc/free: reemplazar solo una parte
+// mezcla la asignacion de ASan (new) con free() y dispara alloc-dealloc-mismatch.
+static void* counted_alloc(std::size_t n) {
     if (g_count.load(std::memory_order_relaxed)) g_allocs.fetch_add(1, std::memory_order_relaxed);
-    if (void* p = std::malloc(n ? n : 1)) return p;
+    return std::malloc(n ? n : 1);
+}
+static void* counted_alloc_aligned(std::size_t n, std::size_t al) {
+    if (g_count.load(std::memory_order_relaxed)) g_allocs.fetch_add(1, std::memory_order_relaxed);
+    if (al < sizeof(void*)) al = sizeof(void*);
+    void* p = nullptr;
+    return posix_memalign(&p, al, n ? n : 1) == 0 ? p : nullptr;
+}
+void* operator new(std::size_t n) { if (void* p = counted_alloc(n)) return p; throw std::bad_alloc(); }
+void* operator new[](std::size_t n) { if (void* p = counted_alloc(n)) return p; throw std::bad_alloc(); }
+void* operator new(std::size_t n, const std::nothrow_t&) noexcept { return counted_alloc(n); }
+void* operator new[](std::size_t n, const std::nothrow_t&) noexcept { return counted_alloc(n); }
+void* operator new(std::size_t n, std::align_val_t a) {
+    if (void* p = counted_alloc_aligned(n, static_cast<std::size_t>(a))) return p;
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t n, std::align_val_t a) {
+    if (void* p = counted_alloc_aligned(n, static_cast<std::size_t>(a))) return p;
     throw std::bad_alloc();
 }
 void operator delete(void* p) noexcept { std::free(p); }
+void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+void operator delete(void* p, const std::nothrow_t&) noexcept { std::free(p); }
+void operator delete[](void* p, const std::nothrow_t&) noexcept { std::free(p); }
+void operator delete(void* p, std::align_val_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::align_val_t) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
 
 using ivanna::DifferentialReinjector;
 
