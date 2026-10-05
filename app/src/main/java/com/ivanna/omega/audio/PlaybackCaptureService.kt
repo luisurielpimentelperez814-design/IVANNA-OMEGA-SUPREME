@@ -69,6 +69,18 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private const val BLOCK_FRAMES   = 320
         private const val BLOCK_SAMPLES  = BLOCK_FRAMES * CHANNEL_COUNT
 
+        // Anillo de AudioRecord en BLOQUES. El valor anterior (BLOCK_SAMPLES * 4 BYTES)
+        // eran exactamente 1 bloque = 6.67 ms: cualquier jitter del hilo de captura
+        // (GC, planificador, un bloque lento del DSP) > 6.67 ms desbordaba el anillo y
+        // perdía muestras (micro-corte / tronido). Con 4 bloques (26.7 ms, igual que la
+        // pista de salida) el jitter se absorbe y NO añade latencia en régimen: read()
+        // devuelve en cuanto hay un bloque y el DSP (<1 ms) drena el atraso enseguida.
+        private const val REC_BUFFER_BLOCKS = 4
+
+        /** Bytes del anillo de AudioRecord (PCM_FLOAT = 4 B/muestra). */
+        internal fun recordBufferBytes(minRecBytes: Int): Int =
+            maxOf(minRecBytes, BLOCK_SAMPLES * Float.SIZE_BYTES * REC_BUFFER_BLOCKS)
+
         const val CHANNEL_ID    = "ivanna_playback_channel"
         const val NOTIFICATION_ID = 2
         // Notificación de "me rindo" — ID distinto para no reemplazar la
@@ -614,7 +626,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
                     .build())
-                .setBufferSizeInBytes(maxOf(minRec, BLOCK_SAMPLES * 4)) // PCM_FLOAT=4B: nunca menos de 1 bloque (un read BLOCKING con buffer menor espera entregas parciales y suma latencia)
+                .setBufferSizeInBytes(recordBufferBytes(minRec)) // >= 4 bloques: absorbe jitter sin overrun (ver REC_BUFFER_BLOCKS)
                 .setAudioPlaybackCaptureConfig(captureConfig)
                 .build()
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
@@ -661,7 +673,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // Es el dato base contra el que se compara cualquier tuning
             // posterior de BLOCK_FRAMES o buffers, en dispositivo, via logcat.
             Log.i(TAG, "HaasLatency init: recBuf=%.1f ms, trackBuf=%.1f ms, bloque=%.2f ms".format(
-                minRec / 8f / (SAMPLE_RATE / 1000f),
+                recordBufferBytes(minRec) / 8f / (SAMPLE_RATE / 1000f),
                 minTrack / 8f / (SAMPLE_RATE / 1000f),
                 BLOCK_FRAMES * 1000f / SAMPLE_RATE))
             audioSessionId = audioTrack?.audioSessionId ?: 0
