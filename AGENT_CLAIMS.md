@@ -2092,6 +2092,22 @@ este mismo flanco.
 
 ---
 
+### Auditoría de audio Ruta A (APK) — tronidos / agudos / bajo — 2026-10-04 (sesión Claude/chat, indicación directa del propietario)
+
+**Entregado y empujado a `main` (verificado por MEDICION en host con g++ + tests, NO en dispositivo):**
+- `e3277ce9` (v2.4.45) `ParametricEQ`: las bandas 0 y 7 se documentaban como shelf pero eran campanas. Medido a 48 kHz, `low=+6`: +6.9 dB @80 Hz pero solo +3.1 @40 y +1.3 @25 (sin sub-grave, bombo gordo). `high=+6`: +5.8/+6.7/+5.5 dB @4/5/8 kHz (plateau en la zona mas sensible del oido). Ahora shelves reales (low 90 Hz, high 10 kHz). Test nuevo `test_eq_shelf_response` (7 casos). `ParametricEQ` solo vive en Ruta A: el modulo Magisk (Ruta B) no cambia.
+- `0aef4464` (v2.4.46) `DSPState`: arranque con `mix=0.72` + `master=+0.8 dB` = +3.4 dB ocultos pre-limitador (el propio `dsp_types.h` ya documentaba ese defecto). Ahora neutro, con migracion de esquema v2 en `DSPStatePrefs` (solo toca valores que siguen en el default viejo).
+
+**Medido y DESCARTADO como causa (no tocar sin evidencia nueva):** `HarmonicExciter` por defecto: inarmonico <= -68 dBc a 3.5/5/7 kHz (sin aliasing audible). `SafetyLimiter` en senoides: THD 0.00% a 100 Hz/1 kHz, 0.4% a 50 Hz con entrada a 0 dBFS.
+
+**Hallazgos SIN cambiar (decision del dueño de flanco / riesgo en Ruta B):**
+1. `SafetyLimiter::computeGainForPeak` converge a thr+1/8 ≈ -2.8 dBFS: una entrada a 0 dBFS sale a 0.72. Pierde ~2.7 dB de nivel y aumenta la atenuacion de bloque. Se comparte con `omega_effect` (Ruta B, que el propietario reporta "perfecto"), por eso no se toco.
+2. Reinyeccion por DELTA (`PlaybackCaptureService`): salida = seco(t) + g·(procesado−seco)(t−L). Cuando el limitador/compresor atenuan, el delta lleva −k·seco(t−L): peine con L≈20-40 ms => coloracion "robotica". Es limite de arquitectura de Ruta A (el stream original no se puede silenciar); candidato a rediseño, no a parche.
+3. `HarmonicExciter.process`: a indice impar del sobremuestreo `dryL = left[i>>1]` ya fue sobrescrito por `outL` del indice par (solo afecta la referencia de pico del escalado; efecto audible no medido).
+4. `AudioRecord` usa `maxOf(minRec, BLOCK_SAMPLES*4)` = 1 bloque (6.7 ms) como piso; si `minRec` fuera menor, un jitter > 6.7 ms provocaria overrun (micro-corte). No verificado en dispositivo cual es `minRec` real.
+
+**Pendiente en dispositivo:** escucha real de EQ y arranque; confirmar el valor de `minRec` y overruns con logcat. Flanco DSP: no reclamo exclusividad, solo deje constancia.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:
