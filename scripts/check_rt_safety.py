@@ -54,6 +54,8 @@ RT_ENTRY_TARGETS: List[Tuple[str, str]] = [
     ("spatial/HybridRenderer.hpp", "HybridRenderer::renderPlanar"),
     ("spatial/RoomSimulator.hpp", "RoomSimulator::processStereo"),
     ("jni/ivanna_omega_jni.cpp", "drainPendingDspParamsLocked"),
+    ("jni/ivanna_omega_jni.cpp", "Java_com_ivanna_omega_dsp_DSPBridge_nativeReinjectProcess"),
+    ("include/differential_reinjector.hpp", "DifferentialReinjector::process"),
     ("include/omega_wave_stages.hpp", "ClickFreeStageBase::process"),
     # Las 16 etapas de la cadena declarativa unificada:
     ("include/omega_wave_stages.hpp", "PhaseOracleControlStage::onProcessWet"),

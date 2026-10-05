@@ -391,6 +391,7 @@ ivanna_add_test(test_limiter_hires_timing)
 # inviolable con senos +5 dBFS/impulsos/ruido/percusión, y release limpio. Medido; los
 # defaults de setParams() (-4 dBFS) perderían 2.8 dB y ninguna ruta los usa.
 ivanna_add_test(test_limiter_route_params)
+ivanna_add_test(test_differential_reinjector)
 
 # ── Rescatados del olvido (flanco Tests host): huérfanos sin target ──────────
 # test_audio_regression.cpp (677 líneas): cada TEST_F documenta un bug real de
