@@ -386,6 +386,12 @@ ivanna_add_test(test_harmonic_exciter_fundamental)
 # comportamiento temporal real del limiter a 48k y 384k.
 ivanna_add_test(test_limiter_hires_timing)
 
+# ── SafetyLimiter con los parámetros REALES de las rutas A y B (-1 dBFS / -0.1 dBFS) ──
+# Transparente bajo el umbral, sin aplastar masters calientes (<= 1 dB a 0 dBFS), techo
+# inviolable con senos +5 dBFS/impulsos/ruido/percusión, y release limpio. Medido; los
+# defaults de setParams() (-4 dBFS) perderían 2.8 dB y ninguna ruta los usa.
+ivanna_add_test(test_limiter_route_params)
+
 # ── Rescatados del olvido (flanco Tests host): huérfanos sin target ──────────
 # test_audio_regression.cpp (677 líneas): cada TEST_F documenta un bug real de
 # campo (tronidos, clipping, inestabilidad) con commit, síntoma y condición de

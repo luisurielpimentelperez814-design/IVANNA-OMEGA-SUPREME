@@ -1,3 +1,8 @@
+# CHANGELOG — v2.4.50 (290) — Limitador: comportamiento real fijado por tests
+1. **`tests/test_limiter_route_params.cpp` (nuevo, 5 tests)** — MEDIDO: con los parámetros que usan ambas rutas (umbral -1 dBFS, techo -0.1 dBFS) el SafetyLimiter es transparente bajo -1 dBFS (<0.05 dB), 0 dBFS sale a -0.66 dBFS y +3 dBFS a -0.55 dBFS. El hallazgo previo (-2.8 dB a 0 dBFS) solo ocurre con los defaults de `setParams()` (-4 dBFS), que ninguna ruta usa: no se toca el limitador. Los tests fijan transparencia, no aplastar masters calientes, dinámica sobre el umbral, techo inviolable con +5 dBFS/impulsos/ruido/percusión, y release limpio.
+2. **Documentación:** conteo CTest sincronizado a 200 de 200 (README, LÉAME, telemetría) y seguimiento de los hallazgos 1-4 en `AGENT_CLAIMS.md`.
+3. **Pruebas:** 200 de 200 host OK; check_docs_claims PASS.
+
 # CHANGELOG — v2.4.49 (289) — Documentacion sincronizada con la suite CTest real
 1. **`README.md` / `LÉAME.md` / `telemetry/ctest_summary.json`** — CI regenera `ctest_summary.json` con el total REAL de CTest y `check_docs_claims` (Fase 0) exige que la documentación coincida: la doc decía 182 mientras la suite real tiene 195 (incluye los 6 tests nuevos del excitador), lo que rompía la puerta Fase 0 del job CTest (fallo visto en el run del commit 0aef446). Conteos y ancla de §15 sincronizados a 195 (reproducido en local: FAIL con 7 desajustes -> PASS).
 2. **Pruebas:** 195 de 195 host OK; check_docs_claims PASS tras regenerar el resumen desde el log real.

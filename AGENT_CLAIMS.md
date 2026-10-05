@@ -2584,3 +2584,11 @@ Archivos que toqué: `.github/workflows/build.yml` (publish-release, validación
 local con solo ver el daemon vivo. Plan: JNI expone avance de `effect_frames` -> `MagiskBridge.isEffectProcessing`
 -> `AudioBackendSelector`. Archivos: `ivanna_omega_jni.cpp`, `NativeBridge.kt`, `AudioBackendSelector.kt`.
 **Otros agentes:** elijan un flanco distinto. Estado: en curso (verificación por lectura/g++, no en dispositivo).
+
+### Auditoría de audio Ruta A — seguimiento hallazgos 1, 3, 4 — 2026-10-04 (sesión Claude/chat, indicación directa del propietario)
+
+- **Hallazgo 3 (referencia seca del exciter): CORREGIDO** (v2.4.47). Y se halló y corrigió la causa raíz medida de los agudos ásperos: el shaper sumaba la fundamental amplificada al seco (+3.4 dB a 3.5 kHz con los defaults, dependiente del nivel). Ahora solo armónicos (fundamental añadida 0.48 -> 0.002). Test `test_harmonic_exciter_fundamental` (falla con el código anterior). Solo Ruta A: `omega_effect` no usa `HarmonicExciter`.
+- **Hallazgo 4 (piso de AudioRecord): CONFIRMADO Y CORREGIDO** (v2.4.48). `BLOCK_SAMPLES * 4` BYTES = 1 bloque (6.67 ms). Ahora >= 4 bloques (26.7 ms) vía `recordBufferBytes()`. Sin compilar Kotlin localmente; pendiente logcat en dispositivo (`HaasLatency init`).
+- **Hallazgo 1 (limitador thr+1/8): DESCARTADO por medición como defecto de producción.** Ambas rutas llaman `setParams(0.891251f, 0.98855f)` (umbral -1 dBFS): transparente bajo -1 dBFS, 0 dBFS -> -0.66 dBFS, +3 dBFS -> -0.55 dBFS. La pérdida de 2.8 dB solo existe con los defaults de `setParams()` (-4 dBFS), que ninguna ruta usa. No se tocó el limitador; `test_limiter_route_params` fija el comportamiento real (5 tests: transparencia, no aplastar masters calientes, dinámica, techo inviolable con +5 dBFS/impulsos/ruido/percusión, release).
+- **Hallazgo 2 (reinyección por delta): SIN CAMBIAR** — límite de arquitectura de Ruta A, candidato a rediseño, requiere decisión del propietario.
+- Lección operativa: `telemetry/ctest_summary.json` se regenera en CI con el total real y `check_docs_claims` exige que README/LÉAME coincidan; cada test nuevo obliga a sincronizar los conteos (hoy 200/200).
