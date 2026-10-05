@@ -1,3 +1,7 @@
+# CHANGELOG — v2.5.3 (294) — APK con firma estable (corrige "app no instalada" al actualizar)
+1. **`.github/workflows/build.yml`** — el CI generaba un keystore nuevo en cada ejecución, de modo que cada APK salía firmado con una llave distinta (verificado: v2.5.0 y v2.5.1 tenían huellas de certificado diferentes). Android rechaza actualizar una app con otra firma y el instalador mostraba "app no instalada". Ahora el keystore se toma del secreto `ANDROID_KEYSTORE_B64` y todas las versiones futuras comparten la misma firma.
+2. **Aviso de migración (una sola vez):** el APK instalado hoy está firmado con una llave efímera que ya no existe, así que v2.5.3 requiere desinstalar la versión anterior antes de instalarla. A partir de v2.5.3 las actualizaciones se instalan encima sin perder datos. Sin cambios de código DSP.
+
 # CHANGELOG — v2.5.2 (293) — IVANNA Acoustic Unity Engine: coordinación global, reinyección armónica y calibración autónoma
 1. **`include/acoustic_unity_engine.hpp` (nuevo, RT-safe, C++20)** — Implementación exhaustiva del motor de unidad acústica que transforma la cadena DSP aislada en un organismo acústico cooperativo con comunicación bidireccional de estado (Fases 1 a 7):
    - **Fase 1 (Cartografía Total)**: Intercambio unificado de métricas acústicas en tiempo real entre WFS, HRTF, RIR, EQ, Excitador y Limitador mediante un bus lock-free de snapshot arbitral.

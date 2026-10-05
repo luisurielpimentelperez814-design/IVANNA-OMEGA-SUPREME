@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.2
-versionCode=293
+version=v2.5.3
+versionCode=294
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.2 (IVANNA Acoustic Unity Engine: coordinacion global armonica, fase, correlacion y calibracion autonoma con 219/219 CTest)
+description=v2.5.3 (APK con firma estable: ya se actualiza sobre la instalacion previa sobre v2.5.2 (IVANNA Acoustic Unity Engine: coordinacion global armonica, fase, correlacion y calibracion autonoma con 219/219 CTest)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
