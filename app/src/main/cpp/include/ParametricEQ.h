@@ -8,7 +8,9 @@ public:
     ParametricEQ() noexcept;
     void reset() noexcept;
     void setSampleRate(float sr) noexcept;
-    void setBand(int band, float freq, float q, float gainDb) noexcept;
+    void setBand(int band, float freq, float q, float gainDb) noexcept;       // campana (peaking)
+    void setLowShelf(int band, float freq, float q, float gainDb) noexcept;   // shelving real hacia graves
+    void setHighShelf(int band, float freq, float q, float gainDb) noexcept;  // shelving real hacia agudos
     void setParams(const DSPParams& p) noexcept;
     void process(float* left, float* right, int frames) noexcept;
     // Compensación de ganancia de salida calculada en setParams() cuando las
@@ -16,6 +18,8 @@ public:
     // antes de pasárselo a g_gain, manteniendo el headroom del SafetyLimiter.
     float getOutputCompensationDb() const noexcept { return eqOutputCompensationDb_; }
 private:
+    enum class Shape { Peak, LowShelf, HighShelf };
+    void setBandShaped(int band, Shape shape, float freq, float q, float gainDb) noexcept;
     struct Biquad {
         float b0=1,b1=0,b2=0,a1=0,a2=0,x1=0,x2=0,y1=0,y2=0;
         inline float processSample(float x) noexcept {

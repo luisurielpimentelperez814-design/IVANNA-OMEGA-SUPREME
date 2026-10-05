@@ -403,6 +403,9 @@ gtest_discover_tests(test_oem_stability_suite)
 # ── test_adaptive_eq_stress: 10 s @ 48 kHz contra ParametricEQ real ─────────
 ivanna_add_test(test_adaptive_eq_stress)
 
+# ── Curva real del ParametricEQ: shelves verdaderos (graves profundos / agudos sin plateau) ──
+ivanna_add_test(test_eq_shelf_response)
+
 # ── test_ivannalab: suite host del laboratorio de medición IvannaLab ────────
 # Coordinación pendiente del flanco IvannaLab (commit 2c0826c3, marcado
 # unconfirmed): engancharlo exigía añadir ivannalab.cpp a ivanna_dsp_under_test,

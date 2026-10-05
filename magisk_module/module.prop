@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.4.44
-versionCode=284
+version=v2.4.45
+versionCode=285
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.4.44 (Anti-crackling and zero-pop on volume/track change + full stereo right-channel symmetry) sobre v2.4.43
+description=v2.4.45 (EQ con shelves reales: graves profundos y agudos sin fatiga) sobre v2.4.44
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

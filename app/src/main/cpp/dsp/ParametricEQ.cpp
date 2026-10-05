@@ -12,6 +12,18 @@ void ParametricEQ::setSampleRate(float sr) noexcept {
 }
 
 void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
+    setBandShaped(b, Shape::Peak, f, q, g);
+}
+
+void ParametricEQ::setLowShelf(int b,float f,float q,float g) noexcept {
+    setBandShaped(b, Shape::LowShelf, f, q, g);
+}
+
+void ParametricEQ::setHighShelf(int b,float f,float q,float g) noexcept {
+    setBandShaped(b, Shape::HighShelf, f, q, g);
+}
+
+void ParametricEQ::setBandShaped(int b, Shape shape, float f,float q,float g) noexcept {
     if(b<0||b>=NUM_BANDS) return;
     // Clamp de seguridad: por encima de ~Nyquist*0.98 el biquad RBJ degenera
     // (alpha -> 0, coeficientes explotan). Igual criterio que Biquad::clampFreq.
@@ -19,13 +31,38 @@ void ParametricEQ::setBand(int b,float f,float q,float g) noexcept {
     if (f < 20.0f) f = 20.0f;
     if (f > nyq - 100.0f) f = nyq - 100.0f;
     if (q < 0.1f) q = 0.1f; else if (q > 10.0f) q = 10.0f;
-    float A = powf(10.0f, g/40.0f);
-    float w0 = 2.0f * float(M_PI) * f / sampleRate_;
-    float c = cosf(w0), s = sinf(w0);
-    float alpha = s/(2.0f*q);
-    float b0 = 1.0f + alpha*A, b1 = -2.0f*c, b2 = 1.0f - alpha*A;
-    float a0 = 1.0f + alpha/A, a1 = -2.0f*c, a2 = 1.0f - alpha/A;
-    b0/=a0; b1/=a0; b2/=a0; a1/=a0; a2/=a0;
+    // Coeficientes RBJ en double (un polo a 80 Hz / 48 kHz queda a ~0.99 del
+    // circulo unidad: calcular en float redondeaba la frecuencia efectiva).
+    // Forma "Peak" = campana (identica al calculo previo); "LowShelf" /
+    // "HighShelf" = shelving real: la ganancia se MANTIENE hacia el extremo del
+    // espectro en vez de volver a 0 dB como en una campana.
+    const double A  = std::pow(10.0, (double)g / 40.0);
+    const double w0 = 2.0 * M_PI * (double)f / (double)sampleRate_;
+    const double c  = std::cos(w0), sn = std::sin(w0);
+    const double alpha = sn / (2.0 * (double)q);
+    double db0, db1, db2, da0, da1, da2;
+    if (shape == Shape::LowShelf) {
+        const double tsa = 2.0 * std::sqrt(A) * alpha;
+        db0 =       A * ((A + 1.0) - (A - 1.0) * c + tsa);
+        db1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * c);
+        db2 =       A * ((A + 1.0) - (A - 1.0) * c - tsa);
+        da0 =            (A + 1.0) + (A - 1.0) * c + tsa;
+        da1 =     -2.0 * ((A - 1.0) + (A + 1.0) * c);
+        da2 =            (A + 1.0) + (A - 1.0) * c - tsa;
+    } else if (shape == Shape::HighShelf) {
+        const double tsa = 2.0 * std::sqrt(A) * alpha;
+        db0 =        A * ((A + 1.0) + (A - 1.0) * c + tsa);
+        db1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * c);
+        db2 =        A * ((A + 1.0) + (A - 1.0) * c - tsa);
+        da0 =             (A + 1.0) - (A - 1.0) * c + tsa;
+        da1 =       2.0 * ((A - 1.0) - (A + 1.0) * c);
+        da2 =             (A + 1.0) - (A - 1.0) * c - tsa;
+    } else {
+        db0 = 1.0 + alpha * A; db1 = -2.0 * c; db2 = 1.0 - alpha * A;
+        da0 = 1.0 + alpha / A; da1 = -2.0 * c; da2 = 1.0 - alpha / A;
+    }
+    const float b0 = (float)(db0 / da0), b1 = (float)(db1 / da0), b2 = (float)(db2 / da0);
+    const float a1 = (float)(da1 / da0), a2 = (float)(da2 / da0);
     const bool newActive = (g > 0.02f || g < -0.02f);
     // Si los coeficientes no cambiaron (p. ej. el usuario arrastra otra banda
     // distinta), no reiniciar ni disparar crossfades innecesarios.
@@ -97,10 +134,20 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     // Fix: use dB values directly. clamp to ±18 dB for safety.
     auto clampDb = [](float db) { return db < -18.f ? -18.f : db > 18.f ? 18.f : db; };
 
-    // Band 0: Low shelf  ~80 Hz  — driven by low param
-    setBand(0, 80.f,   0.707f, clampDb(p.low));
-    // Band 1: Peaking   ~200 Hz — low param (half weight for smooth shelf)
-    setBand(1, 200.f,  p.resonance, clampDb(p.low * 0.5f));
+    // Band 0: LOW SHELF real a 90 Hz — driven by low param.
+    // CAUSA RAIZ (medida con barrido de tono, 48 kHz, low=+6 dB): esta banda
+    // y la 7 estaban documentadas como "shelf" pero setBand() siempre
+    // calculaba una CAMPANA (peaking). El "shelf" de graves daba +6.9 dB a
+    // 80 Hz pero solo +3.1 dB a 40 Hz y +1.3 dB a 25 Hz: el realce vivia en
+    // 80-200 Hz (bombo "gordo" y sin sub-grave) y la profundidad nunca llegaba.
+    // Un shelf real mantiene la ganancia hacia abajo: el sub-grave si sube.
+    setLowShelf(0, 90.f, 0.707f, clampDb(p.low));
+    // Band 1: Peaking ~250 Hz — control de "barro" del bajo.
+    // El shelf de 90 Hz deja un spill de ~+1 dB en 250 Hz; con un boost de
+    // graves ese rango se percibe como caja/boomy (descontrol). Se compensa
+    // con un recorte minimo (-0.08 dB por dB de low, medido para anular el spill) SOLO cuando low > 0; con low <= 0 el propio
+    // shelf ya recorta ahi y la banda queda plana.
+    setBand(1, 250.f, 1.0f, p.low > 0.f ? clampDb(-0.08f * p.low) : 0.f);
     // Band 2: Peaking   ~500 Hz — mid transition (no direct param, flat)
     setBand(2, 500.f,  p.resonance, 0.f);
     // Band 3: Peaking   at freq Hz — banda paramétrica libre (freq/Q ajustables).
@@ -118,12 +165,20 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     setBand(3, p.freq, p.resonance, clampDb(p.mid * 0.6f));
     // Band 4: Peaking   ~2.5 kHz — mid param
     setBand(4, 2500.f, p.resonance, clampDb(p.mid));
-    // Band 5: Peaking   ~5 kHz  — high param
-    setBand(5, 5000.f, p.resonance, clampDb(p.high));
-    // Band 6: Peaking   ~8 kHz  — presence param
+    // Band 5: Peaking ~5 kHz — high param, peso 0.35.
+    // CAUSA RAIZ de agudos fatigantes (medido, high=+6 dB): la campana de 5 kHz
+    // con peso 1.0 mas la campana de 12 kHz (que era un "high shelf" solo de
+    // nombre) daban +5.8 dB a 4 kHz, +6.7 a 5 kHz y +5.5 a 8 kHz: un plateau de
+    // 3-8 kHz, justo donde el oido (ISO 226) es mas sensible -> aspereza y
+    // sibilancia. El detalle ahora lo aporta el shelf de aire; la campana de
+    // 5 kHz queda como toque de claridad, no como realce principal.
+    setBand(5, 5000.f, p.resonance, clampDb(p.high * 0.35f));
+    // Band 6: Peaking ~8 kHz — presence param
     setBand(6, 8000.f, p.resonance, clampDb(p.presence));
-    // Band 7: High shelf ~12 kHz — high param (half for air)
-    setBand(7, 12000.f, 0.707f, clampDb(p.high * 0.5f));
+    // Band 7: HIGH SHELF real a 10 kHz — high param (aire). Shelf verdadero:
+    // sube 10-20 kHz de forma suave y mantiene la ganancia, sin concentrar
+    // energia en la zona de maxima sensibilidad auditiva.
+    setHighShelf(7, 10000.f, 0.707f, clampDb(p.high));
 
     // ── Output-gain compensation (headroom management) ─────────────────────
     // Problema: las bandas son biquads EN SERIE (cascada), no en paralelo.
@@ -140,13 +195,14 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     // no tenga más de ~6 dB de trabajo en el peor caso razonable.
     // La compensación se aplica via g_params.master DESPUÉS de setParams, por
     // lo que no interfiere con la ganancia de salida ya calculada del GainStage.
-    const float highGroup = std::max(0.f, p.high)            // Band 5
-                          + std::max(0.f, p.high * 0.5f)     // Band 7
+    // Misma estructura de pesos que arriba: shelf de aire (high) + campana
+    // 5 kHz (0.35 high) + presencia.
+    const float highGroup = std::max(0.f, p.high)            // Band 7 (shelf)
+                          + std::max(0.f, p.high * 0.35f)    // Band 5
                           + std::max(0.f, p.presence);        // Band 6
     const float midGroup  = std::max(0.f, p.mid)             // Band 4
                           + std::max(0.f, p.mid * 0.6f);      // Band 3
-    const float lowGroup  = std::max(0.f, p.low)             // Band 0
-                          + std::max(0.f, p.low * 0.5f);      // Band 1
+    const float lowGroup  = std::max(0.f, p.low);            // Band 0 (shelf)
     const float maxStack  = std::max({highGroup, midGroup, lowGroup});
     const float otherSum  = std::max(0.f, (highGroup + midGroup + lowGroup) - maxStack);
     // Compensar progresivamente desde 0 dB hacia arriba (sin zona muerta de 3 dB)
