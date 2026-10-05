@@ -239,9 +239,19 @@ jobs:
           sha256sum ivanna_daemon | tee daemon_sha256.txt
 
       - name: Provision Android keystores for Release signing
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.android" "$HOME/.config/.android"
+          # Firma ESTABLE: sin ella cada build sale con una llave distinta y Android
+          # rechaza actualizar ("app no instalada"). El keystore vive en el secreto.
+          if [ -n "${ANDROID_KEYSTORE_B64:-}" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
+            echo "OK: firma estable desde el secreto ANDROID_KEYSTORE_B64"
+          else
+            echo "::warning::Sin ANDROID_KEYSTORE_B64: se firma con llave efimera y el APK NO podra actualizar una instalacion previa"
+          fi
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
             keytool -genkeypair -v \
               -keystore "$HOME/.android/debug.keystore" \
