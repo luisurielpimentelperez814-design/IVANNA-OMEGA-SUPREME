@@ -77,6 +77,14 @@ private:
     // Techo interno del exciter (anti clipping digital)
     float excScaleL_ = 1.f, excScaleR_ = 1.f;
     float excRelCoef_ = 0.999f;
+
+    // Ortogonalización contra la fundamental (solo armónicos, cero ganancia lineal).
+    // Regresión de 1 tap en línea: g = <exc,h>/<h,h> con promedios de ~3 ms a tasa OS.
+    // exc − g·h elimina la componente en fase con la entrada (la ganancia lineal del
+    // shaper) y deja únicamente los productos no lineales (H2, H3, ...).
+    float fundCrossL_ = 0.f, fundPowL_ = 0.f, fundGainL_ = 0.f;
+    float fundCrossR_ = 0.f, fundPowR_ = 0.f, fundGainR_ = 0.f;
+    float fundCoef_ = 0.99f;
     int lastSampleRate_ = 0;
 };
 

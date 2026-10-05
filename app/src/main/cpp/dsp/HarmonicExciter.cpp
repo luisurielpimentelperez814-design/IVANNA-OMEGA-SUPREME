@@ -29,6 +29,8 @@ void HarmonicExciter::reset() {
     chebR_.reset();
     excScaleL_ = 1.0f;
     excScaleR_ = 1.0f;
+    fundCrossL_ = fundPowL_ = fundGainL_ = 0.0f;
+    fundCrossR_ = fundPowR_ = fundGainR_ = 0.0f;
     wetNow_ = wet_;
     driveNow_ = drive_;
     lastSampleRate_ = 0;
@@ -100,6 +102,9 @@ void HarmonicExciter::setParams(const DSPParams& p) {
     hpfR_.setHighpass(hpfFc, 0.707, sampleRateOS);
 
     excRelCoef_ = std::exp(-1.0f / ((float)srInt * OS_FACTOR * 0.020f));
+    // Promedio de la regresión de fundamental: 3 ms (>= 9 periodos del contenido
+    // que pasa el HPF de 3 kHz → rizado de 2f atenuado > 35 dB).
+    fundCoef_ = std::exp(-1.0f / ((float)srInt * OS_FACTOR * 0.003f));
 }
 
 static inline __attribute__((always_inline)) float softClip(float x, float drive) {
@@ -159,6 +164,7 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
     lastL_ = left[frames - 1];
     lastR_ = right[frames - 1];
 
+    float dryCacheL = 0.0f, dryCacheR = 0.0f;
     for (int i = 0; i < osFrames; ++i) {
         float l = osLeft_[i];
         float r = osRight_[i];
@@ -179,11 +185,40 @@ void HarmonicExciter::process(float* __restrict__ left, float* __restrict__ righ
             excR = softClip(hR, drive) - hR;
         }
 
+        // SOLO ARMÓNICOS: el shaper (softClip−x o Chebyshev) trae una componente lineal
+        // en la fundamental (medido: +7.5 dB a 3.5 kHz con drive .6 / wet .8, nivel -20 dBFS)
+        // que se sumaba al seco como realce de 3-8 kHz dependiente del nivel. Se resta la
+        // parte en fase con la entrada del shaper; queda H2/H3/... sin ganancia lineal.
+        {
+            fundCrossL_ = fundCoef_ * fundCrossL_ + (1.0f - fundCoef_) * (excL * hL);
+            fundPowL_   = fundCoef_ * fundPowL_   + (1.0f - fundCoef_) * (hL * hL);
+            fundCrossR_ = fundCoef_ * fundCrossR_ + (1.0f - fundCoef_) * (excR * hR);
+            fundPowR_   = fundCoef_ * fundPowR_   + (1.0f - fundCoef_) * (hR * hR);
+            if (fundPowL_ > 1.0e-8f) fundGainL_ = std::clamp(fundCrossL_ / fundPowL_, -8.0f, 8.0f);
+            if (fundPowR_ > 1.0e-8f) fundGainR_ = std::clamp(fundCrossR_ / fundPowR_, -8.0f, 8.0f);
+            excL -= fundGainL_ * hL;
+            excR -= fundGainR_ * hR;
+        }
+
         excL = osLpfL_.process(excL);
         excR = osLpfR_.process(excR);
 
-        float dryL = left[i >> 1];
-        float dryR = right[i >> 1];
+        // Referencia SECA original: a índice impar left[i>>1] ya contiene la salida del
+        // índice par (procesada). Se usa el seco interpolado (par: muestra; impar: punto
+        // medio con la siguiente, aún sin tocar).
+        float dryL, dryR;
+        if ((i & 1) == 0) {
+            dryL = left[i >> 1];
+            dryR = right[i >> 1];
+            dryCacheL = dryL;
+            dryCacheR = dryR;
+        } else {
+            const int k1 = (i >> 1) + 1;
+            const float nxL = (k1 < frames) ? left[k1]  : dryCacheL;
+            const float nxR = (k1 < frames) ? right[k1] : dryCacheR;
+            dryL = 0.5f * (dryCacheL + nxL);
+            dryR = 0.5f * (dryCacheR + nxR);
+        }
         const float peakRefL = std::max(std::fabs(l), std::fabs(dryL));
         const float peakRefR = std::max(std::fabs(r), std::fabs(dryR));
         const float headL = std::max(0.0f, 1.0f - peakRefL);

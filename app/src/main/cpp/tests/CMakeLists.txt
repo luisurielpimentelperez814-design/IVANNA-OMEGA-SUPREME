@@ -372,6 +372,13 @@ ivanna_add_test(test_audio_quality_metrics)
 # caso y falla si cualquiera de los dos límites se rompe otra vez.
 ivanna_add_test(test_harmonic_exciter_overshoot)
 
+# ── Excitador: SOLO armónicos (sin ganancia lineal en la fundamental) ─────────
+# Medido: el shaper sumaba la fundamental amplificada al seco (+3.4 dB a 3.5 kHz con los
+# defaults de arranque) = realce de 3-8 kHz dependiente del nivel. 6 tests: ganancia lineal
+# < 0.02 a 6 niveles x 3 frecuencias, peor caso drive/wet, armónicos presentes, drive
+# efectivo, sin ráfaga en el onset y acotado/finito.
+ivanna_add_test(test_harmonic_exciter_fundamental)
+
 # ── Timing hi-res del SafetyLimiter: barrera de regresión del bug 2026-08-27 ──
 # setSampleRate()/setParams() nunca se llamaban: soft-knee anulado (threshold
 # == ceiling) y ataque/release a 48 kHz fijos (a 384 kHz: ataque 12 ms,
