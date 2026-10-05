@@ -1026,7 +1026,12 @@ static int32_t omega_process(effect_handle_t self,
 
         // ── IVANNA ACOUSTIC UNITY ENGINE (v2.6.0): Organismo Acústico Unificado ──
         auto* unityCls = fc ? fc->getClassifier() : nullptr;
-        const float unityVoice = (unityCls) ? unityCls->getVoiceConfidence() : 0.0f;
+        float unityProbs[NUM_CLASSES] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+        if (unityCls) unityCls->getClassProbabilities(unityProbs);
+        const float unityVoice = std::clamp(
+            std::isfinite(unityProbs[static_cast<size_t>(AudioContextClass::VOICE)])
+                ? unityProbs[static_cast<size_t>(AudioContextClass::VOICE)] : 0.0f,
+            0.0f, 1.0f);
         const float unityTonality = (fc && fc->getProsodyEngine())
             ? fc->getProsodyEngine()->getMetrics().pitchConfidence : 0.0f;
         const bool unityUpmix = (fc && fc->getUpmixer().isUpmixingEnabled());
