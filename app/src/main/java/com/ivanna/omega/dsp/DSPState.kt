@@ -13,7 +13,15 @@ data class DSPState(
     // Core parameters — CALIBRACIÓN MAGISTRAL v4.0 (alineados con dsp_types.h + ParameterStore)
     val drive: Float     = 0.48f,  // Drive rico en armónicos pares sin aliasing
     val wet: Float       = 0.38f,  // Exciter wet 38% (presencia cristalina y cuerpo)
-    val mix: Float       = 0.72f,
+    // CALIBRACION DE ARRANQUE (gain staging): GainStage.inputGain_ =
+    // dbToLin((mix - 0.5) * 12). Con mix=0.72 el audio recibia +2.64 dB ANTES
+    // del EQ, y con master=+0.8 dB otros +0.8 dB a la salida: +3.4 dB estaticos
+    // que empujan los picos de un master moderno (~-0.5..-1 dBFS) por encima de
+    // 0 dBFS y obligan al SafetyLimiter (umbral -4 dBFS) a trabajar en cada
+    // bloque fuerte -> bombeo/crujido al subir nivel. dsp_types.h ya documenta
+    // este mismo defecto para DSPParams. 0.50 = 0 dB (neutro); el volumen lo
+    // pone el sistema, no una ganancia oculta.
+    val mix: Float       = 0.50f,
     val alpha: Float     = 0.35f,  // Comp threshold -15.6 dB (preserva micro-dinámica)
     val beta: Float      = 0.08f,  // Ratio ~2.5:1 (musical y cinematográfico)
     val gamma: Float     = 0.72f,  // Attack 31ms, release 176ms
@@ -25,7 +33,7 @@ data class DSPState(
     var mid: Float      = 0.8f,
     var high: Float     = 1.8f,
     var presence: Float = 1.6f,
-    var master: Float   = 0.8f,
+    var master: Float   = 0.0f,   // dB; 0 = sin ganancia oculta (ver comentario de mix)
 
     // Compressor
     val compThreshold: Float = -16.0f,

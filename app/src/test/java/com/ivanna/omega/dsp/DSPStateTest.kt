@@ -21,6 +21,15 @@ class DSPStateTest {
     }
 
     @Test
+    fun `boot gain staging adds no hidden gain before the limiter`() {
+        // GainStage.inputGain_ = dbToLin((mix - 0.5) * 12): mix 0.5 = 0 dB.
+        // Antes mix=0.72 (+2.64 dB) y master=+0.8 dB sumaban +3.4 dB pre-limitador.
+        val s = DSPState()
+        assertEquals(0f, (s.mix - 0.5f) * 12f, 0.001f)
+        assertEquals(0f, s.master, 0.001f)
+    }
+
+    @Test
     fun `omega metrics defaults are sane`() {
         val m = com.ivanna.omega.audio.OmegaMetrics()
         assertTrue(m.latencyMs > 0f)

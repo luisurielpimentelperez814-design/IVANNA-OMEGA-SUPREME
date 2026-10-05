@@ -37,7 +37,13 @@ object DSPStatePrefs {
     private const val TAG = "DSPStatePrefs"
     private const val PREFS_NAME = "ivanna_dsp_state"
     private const val KEY_SCHEMA = "__schema_version"
-    private const val CURRENT_SCHEMA = 1
+    // v2 (2.4.46): los defaults de arranque mix=0.72 / master=+0.8 dB sumaban
+    // +3.4 dB estaticos pre-limitador (ver DSPState.mix). Al cargar un estado
+    // v1 se migran SOLO los campos que siguen exactamente en el default viejo:
+    // un valor que el usuario movio a mano no se toca.
+    private const val CURRENT_SCHEMA = 2
+    private const val LEGACY_MIX_DEFAULT = 0.72f
+    private const val LEGACY_MASTER_DEFAULT = 0.8f
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -86,10 +92,14 @@ object DSPStatePrefs {
             d
         }
 
+        val migrateLegacyGain = version < 2
+        val loadedMix = fl("mix", default.mix, 0f, 1f)
+        val loadedMaster = fl("master", default.master, -18f, 18f)
+
         return DSPState(
             drive          = fl("drive",          default.drive,          0f,    4f),
             wet            = fl("wet",            default.wet,            0f,    1f),
-            mix            = fl("mix",            default.mix,            0f,    1f),
+            mix            = if (migrateLegacyGain && loadedMix == LEGACY_MIX_DEFAULT) default.mix else loadedMix,
             alpha          = fl("alpha",          default.alpha,          0f,    1f),
             beta           = fl("beta",           default.beta,           0f,    1f),
             gamma          = fl("gamma",          default.gamma,          0f,    1f),
@@ -99,7 +109,7 @@ object DSPStatePrefs {
             mid            = fl("mid",            default.mid,          -18f,   18f),
             high           = fl("high",           default.high,         -18f,   18f),
             presence       = fl("presence",       default.presence,     -18f,   18f),
-            master         = fl("master",         default.master,       -18f,   18f),
+            master         = if (migrateLegacyGain && loadedMaster == LEGACY_MASTER_DEFAULT) default.master else loadedMaster,
             compThreshold  = fl("compThreshold",  default.compThreshold, -60f,   0f),
             compRatio      = fl("compRatio",      default.compRatio,      1f,   20f),
             exciterDrive   = fl("exciterDrive",   default.exciterDrive,   0f,    1f),
