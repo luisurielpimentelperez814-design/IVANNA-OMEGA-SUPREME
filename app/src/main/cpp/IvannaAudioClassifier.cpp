@@ -292,6 +292,17 @@ uint8_t IvannaAudioClassifier::getDominantClass() const noexcept {
     return 0;
 }
 
+float IvannaAudioClassifier::getVoiceConfidence() const noexcept {
+    AIModelOutput* fresh = m_cleanOutput.load(std::memory_order_acquire);
+    if (fresh != m_readingOutput) {
+        m_readingOutput = m_cleanOutput.exchange(m_readingOutput, std::memory_order_acq_rel);
+    }
+    if (m_readingOutput && m_readingOutput->is_valid) {
+        return m_readingOutput->probabilities[static_cast<size_t>(AudioContextClass::VOICE)];
+    }
+    return 0.0f;
+}
+
 bool IvannaAudioClassifier::getModelOutput(AIModelOutput& out) const noexcept {
     AIModelOutput* fresh = m_cleanOutput.load(std::memory_order_acquire);
     if (fresh != m_readingOutput) {
