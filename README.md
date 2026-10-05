@@ -16,7 +16,7 @@
 
 [![Release](https://img.shields.io/badge/Release-v2.4.44%20%28Build%20284%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.4.44&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![CTest](https://img.shields.io/badge/CTest-182%2F182%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
+[![CTest](https://img.shields.io/badge/CTest-195%2F195%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
 [![Static Gates](https://img.shields.io/badge/Static%20Gates-6%2F6%20VERIFIED-00F0FF?style=for-the-badge&logo=checkmarx&logoColor=fff)](scripts/)
 [![C++ Standard](https://img.shields.io/badge/Standard-C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge&logo=c%2B%2B&logoColor=000)](app/src/main/cpp/CMakeLists.txt)
 [![RT-Audio Safety](https://img.shields.io/badge/RT--Safety-0%20Malloc%20%C2%B7%200%20Locks%20%C2%B7%20Lock--Free-22C55E?style=for-the-badge&logo=speedtest&logoColor=fff)](scripts/check_rt_safety.py)
@@ -44,7 +44,7 @@
 | **IV. Inteligencia & Atlas v2.4.44** | [**§7. Atlas de Escena Musical de 12 Estilos (`IVW1` 8 774 Parámetros)**](#-7-atlas-de-escena-musical-12-estilos-pesos-ivw1-y-motores-físicos-de-sala) · [**§8. Fusión en Lazo Cerrado (`OmniHolographicSingularityEngine`)**](#-8-fusión-maestra-en-lazo-cerrado-omniholographicsingularityengine--declarativeunifiedpipeline) |
 | **V. Ejes Supremos & Biomecánica** | [**§9. Los 5 Ejes Supremos + Inversión Coclear PINN (0 lookahead)**](#-9-los-5-ejes-de-supremacía-cuántico-neuromórfica--inversión-coclear-pinn) · [**§10. Motor de Reconstrucción de Realidad (Fases 0–15)**](#-10-hipermotor-de-reconstrucción-de-realidad-acústica-fases-015) |
 | **VI. Acústica Medida & Hardware** | [**§11. Datasets Reales: 255 SOFA · 7D SAF · 200 BRIR**](#-11-entrenamiento-conjunto-sofa-255-aes69--saf-manifold-7-d--rir-200-salas) · [**§12. Cadena DSP de 9 Etapas & DAC USB-C Directo**](#-12-cadena-dsp-de-9-etapas-ruta-isócrona-usb-c-dac-y-bluetooth-master-path) |
-| **VII. Kernel, UI & Auditoría** | [**§13. Daemon Root, SHM v5 & UI Aurora Obsidiana**](#-13-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) · [**§14. Comparativa Industrial frente a Dolby, Dirac y V4A**](#-14-comparativa-técnica-frente-a-los-estándares-industriales) · [**§15. Matriz de Verificación CI (`182/182 CTest`) & Despliegue**](#-15-matriz-de-verificación-determinista-6-puertas--182182-ctest-e-instalación) |
+| **VII. Kernel, UI & Auditoría** | [**§13. Daemon Root, SHM v5 & UI Aurora Obsidiana**](#-13-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) · [**§14. Comparativa Industrial frente a Dolby, Dirac y V4A**](#-14-comparativa-técnica-frente-a-los-estándares-industriales) · [**§15. Matriz de Verificación CI (`195/195 CTest`) & Despliegue**](#-15-matriz-de-verificación-determinista-6-puertas--195195-ctest-e-instalación) |
 
 ---
 
@@ -104,7 +104,7 @@ Todas las cifras declaradas a continuación están respaldadas por suites de ver
 | **Atlas de Inteligencia Musical** | **12 estilos maestros · 8 774 pesos `IVW1`** | `app/src/main/cpp/scene/IvannaMusicIntelligenceEngine.hpp` |
 | **Dimensiones del Código Nativo** | **356 archivos C/C++20 (118 857 LOC)** | Directorio auditado `app/src/main/cpp/` |
 | **Capa de Control e Instrumentación** | **220 archivos Kotlin (52 650 LOC)** | Directorio auditado `app/src/main/java/` |
-| **Verificación Host CTest** | **182/182 pruebas en verde (100%)** | `telemetry/ctest_summary.json` (ejecución Release, ASan y UBSan) |
+| **Verificación Host CTest** | **195/195 pruebas en verde (100%)** | `telemetry/ctest_summary.json` (ejecución Release, ASan y UBSan) |
 | **Puertas Estáticas de Calidad** | **6 de 6 puertas aprobadas (`[PASS]`)** | `scripts/check_*.py` (RT-Safety, JNI, Headers, Kotlin, Flags, Docs) |
 
 ---
@@ -512,11 +512,11 @@ La interfaz de usuario está construida desde cero en **Jetpack Compose** con el
 | **Atlas Musical con Detección Automática** | **12 estilos · Red `IVW1` 8 774 pesos** | Modos genéricos (Música/Cine) | Manual por perfiles | Manual por audífonos |
 | **Base de Datos Espacial Anatómica** | **255 SOFA + 7D SAF + 200 BRIR reales** | Sintética 5.1/7.1 virtual | Convolución mono/estéreo | Curvas de frecuencia |
 | **Transición de Pistas y Volumen** | **Zero-Pop Atómico (cero clics/crujidos)** | Discontinuidades audibles | Clics frecuentes | Clics en cambio de app |
-| **Suite de Verificación Automatizada** | **6 Puertas Estáticas + 182/182 CTest** | Caja negra sin auditoría | Sin tests automatizados | Pruebas propietarias |
+| **Suite de Verificación Automatizada** | **6 Puertas Estáticas + 195/195 CTest** | Caja negra sin auditoría | Sin tests automatizados | Pruebas propietarias |
 
 ---
 
-## ✦ 15. Matriz de Verificación Determinista (`6 Puertas + 182/182 CTest`) e Instalación
+## ✦ 15. Matriz de Verificación Determinista (`6 Puertas + 195/195 CTest`) e Instalación
 
 <div align="center">
   <img src="docs/release_media/ivanna_verification_matrix.svg" alt="Matriz de Verificación Determinista de 6 Puertas" width="100%" />
@@ -575,7 +575,7 @@ python3 scripts/check_kotlin_wrapper_wiring.py
 python3 scripts/check_rt_safety.py
 python3 scripts/check_docs_claims.py
 
-# 3. Compilar y ejecutar la suite completa de 182/182 pruebas CTest en host (Release)
+# 3. Compilar y ejecutar la suite completa de 195/195 pruebas CTest en host (Release)
 cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
 cmake --build build-tests -j$(nproc)
 ctest --test-dir build-tests --output-on-failure

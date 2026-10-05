@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.4.48
-versionCode=288
+version=v2.4.49
+versionCode=289
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.4.48 (AudioRecord: anillo de 4 bloques contra overrun sobre v2.4.47 (Excitador: solo armónicos (sin ganancia lineal) sobre v2.4.46 (arranque sin ganancia oculta pre-limitador) sobre v2.4.45
+description=v2.4.49 (Documentacion sincronizada con la suite CTest real sobre v2.4.48 (AudioRecord: anillo de 4 bloques contra overrun sobre v2.4.47 (Excitador: solo armónicos (sin ganancia lineal) sobre v2.4.46 (arranque sin ganancia oculta pre-limitador) sobre v2.4.45
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
