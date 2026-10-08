@@ -114,8 +114,8 @@ data class OmegaMetrics(
                 hrtfActive     = hrtf,
                 rmsLevel       = tele?.getOrNull(0) ?: cur.rmsLevel,
                 peakLevel      = tele?.getOrNull(1) ?: cur.peakLevel,
-                cpuPercent     = tele?.getOrNull(3)?.let { it * 100f } ?: cur.cpuPercent,
-                dspLoadPercent = tele?.getOrNull(3)?.let { it * 100f } ?: cur.dspLoadPercent,
+                // OJO: tele[3] es target_gain (0..2), NO carga de CPU. La carga DSP real la
+                // publica PlaybackCaptureService (AudioThreadBudgetGuard); aquí no se toca.
                 spatialWidth   = tele?.getOrNull(6) ?: cur.spatialWidth
             )
         }

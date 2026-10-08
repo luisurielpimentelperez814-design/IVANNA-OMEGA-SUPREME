@@ -222,10 +222,9 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeGetClipCount() else 0
             } catch (_: Throwable) { 0 }
 
-            val cpuPercent = try {
-                val telemetry = IvannaNativeLib.nativeGetAdaptiveTelemetry()
-                if (telemetry != null && telemetry.size > 3) telemetry[3] * 100f else 0f
-            } catch (_: Throwable) { 0f }
+            // FIX: telemetry[3] es target_gain (0..2), no CPU: antes se mostraba la ganancia
+            // objetivo como "% de CPU". Sin fuente nativa real de CPU → 0 = sin medición.
+            val cpuPercent = 0f
 
             val yamnetCategory = try {
                 if (IvannaNpeEngine.isReady) IvannaNpeNative.nativeGetDetectedGenre() else "—"

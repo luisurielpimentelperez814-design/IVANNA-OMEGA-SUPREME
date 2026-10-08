@@ -1,3 +1,7 @@
+# CHANGELOG — v2.5.5 (296) — ENGINE: la ganancia objetivo ya no se muestra como carga de CPU
+1. **`OmegaMetrics.refreshFromNative` (mío, 2.4.33)** y **`IvannaBridgePlayer`** — usaban `nativeGetAdaptiveTelemetry()[3]` como CPU/DSP load, pero ese índice es `target_gain` (0..2): ganancia 1.0 aparecía como 100 % de carga. Se elimina; la carga DSP real sigue viniendo de `AudioThreadBudgetGuard` vía `PlaybackCaptureService`.
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.5.4 (295) — ADAPTIVE: escala de intensidad 0–100 hacia el motor nativo
 1. **`ControlTabScreen.kt` / `BrainScreen.kt`** — `nativeSetAdaptiveControls` espera intensidad en 0..100 (`g_adaptiveUiIntensity` se clampa a 0..100, igual que `AdaptiveEngineScreen`), pero CONTROL y BRAIN enviaban 0..1: el motor recibía como máximo 1 % de intensidad. Ahora todas las llamadas usan 0..100.
 2. **Pruebas:** sin toolchain Android local; validación en CI.
