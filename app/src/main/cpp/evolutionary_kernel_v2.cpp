@@ -246,6 +246,22 @@ struct EvoSaveHeader { uint32_t magic, version, populationSize, genomeSize; };
 static std::string g_savePath;
 static std::mutex  g_saveMutex;
 
+// Serializa a TODOS los escritores de g_population (evolución del hilo de pd_engine,
+// INICIAR/PASO desde la UI, carga de estado). Antes no había ningún candado: INICIAR
+// regeneraba la población mientras el hilo de fondo la evolucionaba (data race).
+// Orden de bloqueo: g_evoMutex → g_saveMutex.
+static std::mutex g_evoMutex;
+
+// Mejor genoma publicado para lectores en tiempo real (audio_orchestrator lo lee desde el
+// procesamiento de audio): seqlock — el lector nunca bloquea ni toma el mutex.
+static std::atomic<uint32_t> g_bestSeq {0};   // impar = escritura en curso
+static uint8_t g_bestGenome[GENOME_SIZE];
+static void publishBestGenomeLocked() {
+    g_bestSeq.fetch_add(1, std::memory_order_acq_rel);
+    std::memcpy(g_bestGenome, g_population.individuals[0].genome, GENOME_SIZE);
+    g_bestSeq.fetch_add(1, std::memory_order_release);
+}
+
 static bool savePopulationLocked() {
     if (g_savePath.empty()) return false;
     FILE* f = std::fopen(g_savePath.c_str(), "wb");
@@ -260,6 +276,7 @@ static bool savePopulationLocked() {
 extern "C" {
 
 void evo_initialize_population() {
+    std::lock_guard<std::mutex> evoLk(g_evoMutex);
     std::uniform_int_distribution<int> dist(0, 255);
     for (auto& ind : g_population.individuals) {
         for (auto& g : ind.genome) g = dist(g_rng);
@@ -271,10 +288,12 @@ void evo_initialize_population() {
     g_population.bestFitness = g_population.individuals[0].fitness;
     g_lastBestFitness = g_population.bestFitness;
     g_stallCount = 0;
+    publishBestGenomeLocked();
     g_initialized.store(true, std::memory_order_release);
 }
 
 void evo_evolve_generation() {
+    std::lock_guard<std::mutex> evoLk(g_evoMutex);
     std::uniform_int_distribution<int> crossoverDist(0, GENOME_SIZE - 1);
     std::uniform_real_distribution<float> prob(0.0f, 1.0f);
     std::uniform_int_distribution<int> byteRange(0, 255);
@@ -321,6 +340,7 @@ void evo_evolve_generation() {
               [](const auto& a, const auto& b){ return a.fitness > b.fitness; });
     g_population.generation++;
     g_population.bestFitness = g_population.individuals[0].fitness;
+    publishBestGenomeLocked();
 
     if (g_population.generation % EVO_AUTOSAVE_INTERVAL == 0) {
         std::lock_guard<std::mutex> lk(g_saveMutex);
@@ -344,8 +364,19 @@ int evo_get_generation() {
 
 void evo_get_best_genome(uint8_t* out, int len) {
     if (!out || len < 1) return;
-    std::memcpy(out, g_population.individuals[0].genome,
-                std::min(len, GENOME_SIZE));
+    uint8_t tmp[GENOME_SIZE];
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const uint32_t s1 = g_bestSeq.load(std::memory_order_acquire);
+        if (s1 & 1u) continue;                       // escritor activo: reintentar
+        std::memcpy(tmp, g_bestGenome, GENOME_SIZE);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (g_bestSeq.load(std::memory_order_relaxed) == s1) {
+            std::memcpy(out, tmp, std::min(len, GENOME_SIZE));
+            return;
+        }
+    }
+    // Contención extrema (improbable): se conserva el contenido previo de `out`.
+
 }
 
 void evo_update_audio_cues(float loudness, float transient, float spatial) {
@@ -381,11 +412,13 @@ void evo_set_save_path(const char* path) {
 }
 
 int evo_save_state() {
+    std::lock_guard<std::mutex> evoLk(g_evoMutex);
     std::lock_guard<std::mutex> lk(g_saveMutex);
     return savePopulationLocked() ? 1 : 0;
 }
 
 int evo_load_state() {
+    std::lock_guard<std::mutex> evoLk(g_evoMutex);
     std::lock_guard<std::mutex> lk(g_saveMutex);
     if (g_savePath.empty()) return 0;
     FILE* f = std::fopen(g_savePath.c_str(), "rb");
@@ -399,7 +432,7 @@ int evo_load_state() {
     if (ok) {
         Population loaded;
         ok = std::fread(&loaded, sizeof(loaded), 1, f) == 1;
-        if (ok) g_population = loaded;
+        if (ok) { g_population = loaded; publishBestGenomeLocked(); }
     }
     std::fclose(f); return ok ? 1 : 0;
 }

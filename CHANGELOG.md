@@ -1,3 +1,9 @@
+# CHANGELOG — v2.5.10 (301) — EVOLUTIVO: kernel serializado y genoma publicado sin bloqueo
+1. **`evolutionary_kernel_v2.cpp`** — `evo_initialize_population`, `evo_evolve_generation`, guardar y cargar estado se serializan con `g_evoMutex` (orden g_evoMutex → g_saveMutex). Antes INICIAR/PASO de la UI regeneraban la población mientras el hilo de fondo de `pd_engine` la evolucionaba: data race real sobre `g_population`.
+2. **Mejor genoma por seqlock** (`g_bestSeq`/`g_bestGenome`): `evo_get_best_genome` — lo lee `audio_orchestrator` desde el procesamiento de audio — ya no puede ver un genoma a medio escribir ni bloquea; se publica tras init, cada generación y carga.
+3. **Verificación local:** arnés + estrés de 3 s con 4 hilos (evolución, reinicios con cambio de población, lector de genoma, paso con convergencia): sin bloqueos, fitness finito, 110 M lecturas.
+4. **Pruebas:** CTest en CI.
+
 # CHANGELOG — v2.5.9 (300) — EVOLUTIVO: población y generaciones llegan de verdad al kernel
 1. **`evolutionary_kernel_v2.cpp` / `.h`** — población activa en runtime (`evo_set_population_size`, 32..128, los mejores N del arreglo ordenado) y tope de generaciones (`evo_set_max_generations`; el paso con convergencia devuelve 0 al alcanzarlo). Antes POBLACIÓN y GENERACIONES eran constantes: el JNI hacía `(void)popSize`.
 2. **`evolutionary_kernel_jni.cpp` / `IvannaNativeLib.kt`** — `nativeInitializeEvolution` ahora respeta ambos parámetros y nuevo `nativeSetEvolutionParams` los ajusta en caliente SIN reiniciar la población.
