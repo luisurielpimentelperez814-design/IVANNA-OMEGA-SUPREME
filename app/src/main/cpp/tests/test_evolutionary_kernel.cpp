@@ -25,6 +25,11 @@ float evo_best_fitness(void);
 int   evo_get_generation(void);
 void  evo_set_mutation_rate(float rate);
 float evo_get_mutation_rate(void);
+void  evo_set_population_size(int n);
+int   evo_get_population_size(void);
+void  evo_set_max_generations(int n);
+int   evo_evolve_step_with_convergence(void);
+JNIEXPORT void JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvolutionParams(JNIEnv*, jobject, jint, jint);
 
 JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(JNIEnv*, jobject, jint, jint);
 JNIEXPORT jboolean JNICALL Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(JNIEnv*, jobject);
@@ -93,3 +98,45 @@ TEST(EvolutionaryKernelV2, UnifiedJniSymbolsEndToEnd) {
     Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetMutationRate(&env, nullptr, 0.01f);
 }
 
+
+TEST(EvolutionaryKernelV2, ActivePopulationSizeIsClampedAndKeepsElitism) {
+    evo_set_max_generations(0);
+    evo_set_population_size(1);      // por debajo del mínimo (2*ELITE_COUNT) → 32
+    EXPECT_EQ(evo_get_population_size(), 32);
+    evo_set_population_size(100000); // por encima de la capacidad física → 128
+    EXPECT_EQ(evo_get_population_size(), 128);
+
+    evo_set_population_size(48);
+    EXPECT_EQ(evo_get_population_size(), 48);
+    evo_initialize_population();
+    float best = evo_best_fitness();
+    for (int i = 1; i <= 15; ++i) {
+        evo_evolve_generation();
+        const float now = evo_best_fitness();
+        ASSERT_TRUE(std::isfinite(now));
+        EXPECT_GE(now, best - 1e-4f) << "el elitismo debe conservarse con población activa reducida";
+        best = now;
+    }
+    evo_set_population_size(128);
+}
+
+TEST(EvolutionaryKernelV2, GenerationCapStopsTheLoopAndLiveTuningDoesNotReset) {
+    JNIEnv env{};
+    evo_set_population_size(128);
+    evo_set_max_generations(0);
+    evo_initialize_population();
+    Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvolutionParams(&env, nullptr, 64, 5);
+    EXPECT_EQ(evo_get_population_size(), 64);
+
+    int guard = 0;
+    while (evo_evolve_step_with_convergence() && guard++ < 50) {}
+    EXPECT_EQ(evo_get_generation(), 5) << "debe detenerse exactamente en el tope de generaciones";
+
+    // Ajustar en caliente NO reinicia el progreso (a diferencia de nativeInitializeEvolution).
+    Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvolutionParams(&env, nullptr, 96, 0);
+    EXPECT_EQ(evo_get_generation(), 5);
+    EXPECT_EQ(evo_get_population_size(), 96);
+
+    evo_set_population_size(128);
+    evo_set_max_generations(0);
+}

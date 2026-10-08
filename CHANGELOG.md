@@ -1,3 +1,9 @@
+# CHANGELOG — v2.5.9 (300) — EVOLUTIVO: población y generaciones llegan de verdad al kernel
+1. **`evolutionary_kernel_v2.cpp` / `.h`** — población activa en runtime (`evo_set_population_size`, 32..128, los mejores N del arreglo ordenado) y tope de generaciones (`evo_set_max_generations`; el paso con convergencia devuelve 0 al alcanzarlo). Antes POBLACIÓN y GENERACIONES eran constantes: el JNI hacía `(void)popSize`.
+2. **`evolutionary_kernel_jni.cpp` / `IvannaNativeLib.kt`** — `nativeInitializeEvolution` ahora respeta ambos parámetros y nuevo `nativeSetEvolutionParams` los ajusta en caliente SIN reiniciar la población.
+3. **`BrainScreen.kt` / `IvannaControlPanel.kt`** — los sliders llamaban `nativeInitializeEvolution` en cada evento táctil (CONTROL) o al soltar (mi 2.4.38), lo que regeneraba la población y borraba el progreso. Ahora usan el ajuste en caliente; rango real 32..128 (antes 10..200 aparentaba más de lo que el motor soportaba).
+4. **Pruebas:** 2 tests nuevos en `test_evolutionary_kernel.cpp`; la lógica del kernel se verificó localmente con un arnés (clamp, elitismo con población reducida, parada exacta en el tope, sin reinicio al ajustar). El resto (Kotlin/JNI) se valida en CI.
+
 # CHANGELOG — v2.5.8 (299) — ENGINE: AI ANALYSIS con género y confianza reales del NPE
 1. **`OmegaMetrics.refreshFromNative`** — ahora publica género y confianza del NPE (`getDetectedGenre`, `getSynthClassify()[1]`) para el bloque AI ANALYSIS del panel ENGINE, que se quedaba en «— · 0 % confidence» salvo con el bridge reproduciendo.
 2. **`IvannaBridgePlayer.kt`** — la confianza se leía de `getSynthClassify()[0]` (que es el id de cluster) en vez de `[1]` (confidence), así que mostraba 0 % o 100 %.

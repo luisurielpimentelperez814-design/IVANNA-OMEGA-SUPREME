@@ -116,6 +116,12 @@ static std::atomic<bool> g_initialized {false};
 // significativa del mejor fitness. La UI la usa para detener el bucle.
 static constexpr float EVO_CONVERGENCE_EPS   = 1e-5f;
 static constexpr int   EVO_CONVERGENCE_STALL = 25;
+// Tamaño de población ACTIVO (runtime) y tope de generaciones. El arreglo físico sigue
+// siendo POPULATION_SIZE (formato de guardado estable); la población activa son los
+// mejores N individuos (el arreglo se mantiene ordenado por fitness). Mínimo 2*ELITE_COUNT
+// porque la selección por torneo toma padres de los primeros 2*ELITE_COUNT.
+static std::atomic<int> g_activePop {POPULATION_SIZE};
+static std::atomic<int> g_maxGenerations {0};   // 0 = sin tope
 static float g_lastBestFitness = 0.0f;
 static int   g_stallCount      = 0;
 
@@ -274,7 +280,7 @@ void evo_evolve_generation() {
     std::uniform_int_distribution<int> byteRange(0, 255);
 
     const int elites = ELITE_COUNT;
-    const int gen    = POPULATION_SIZE;
+    const int gen    = std::clamp(g_activePop.load(std::memory_order_relaxed), 2 * ELITE_COUNT, POPULATION_SIZE);
 
     // Generar descendencia via crossover + mutación adaptativa
     // Tasa de mutación: más alta cuando la población ha convergido (varianza baja)
@@ -320,6 +326,14 @@ void evo_evolve_generation() {
         std::lock_guard<std::mutex> lk(g_saveMutex);
         savePopulationLocked();
     }
+}
+
+void evo_set_population_size(int n) {
+    g_activePop.store(std::clamp(n, 2 * ELITE_COUNT, POPULATION_SIZE), std::memory_order_relaxed);
+}
+int evo_get_population_size(void) { return g_activePop.load(std::memory_order_relaxed); }
+void evo_set_max_generations(int n) {
+    g_maxGenerations.store(n > 0 ? n : 0, std::memory_order_relaxed);
 }
 
 float evo_best_fitness() { return g_population.bestFitness; }
@@ -408,6 +422,8 @@ int evo_evolve_step_with_convergence(void) {
         ++g_stallCount;
     }
     g_lastBestFitness = after;
+    const int cap = g_maxGenerations.load(std::memory_order_relaxed);
+    if (cap > 0 && static_cast<int>(g_population.generation) >= cap) return 0;  // tope de generaciones alcanzado
     return (g_stallCount >= EVO_CONVERGENCE_STALL) ? 0 : 1;
 }
 

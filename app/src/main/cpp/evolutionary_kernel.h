@@ -20,6 +20,9 @@ int  evo_load_state(void);
 void evo_update_audio_cues(float loudness, float transient, float spatial);
 void evo_set_mutation_rate(float rate);
 float evo_get_mutation_rate(void);
+void evo_set_population_size(int n);   // población activa (clamp 32..128), sin reiniciar
+int  evo_get_population_size(void);
+void evo_set_max_generations(int n);   // 0 = sin tope
 
 #ifdef __cplusplus
 }

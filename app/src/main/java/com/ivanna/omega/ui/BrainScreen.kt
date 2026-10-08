@@ -257,15 +257,15 @@ private fun EvolutionTab(
                 Column(Modifier.weight(1f)) {
                     Text("POBLACIÓN", color = TextSecondary, fontSize = 10.sp)
                     Slider(
-                        value = prefs.evoPopSize.toFloat(),
+                        value = prefs.evoPopSize.toFloat().coerceIn(32f, 128f),
                         onValueChange = { updatePrefs { s -> s.copy(evoPopSize = it.toInt()) } },
                         onValueChangeFinished = {
-                            // Soltar el slider aplica al motor si la evolución ya corre
-                            // (antes sólo tenía efecto tras volver a pulsar INICIAR).
+                            // Aplica en caliente SIN reiniciar la población (nativeInitializeEvolution
+                            // la regeneraría y perdería el progreso).
                             if (isRunning && IvannaNativeLib.isLoaded)
-                                runCatching { IvannaNativeLib.nativeInitializeEvolution(prefs.evoPopSize, prefs.evoGenerations) }
+                                runCatching { IvannaNativeLib.nativeSetEvolutionParams(prefs.evoPopSize, prefs.evoGenerations) }
                         },
-                        valueRange = 10f..200f,
+                        valueRange = 32f..128f,
                         colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan, inactiveTrackColor = ObsidianEdge)
                     )
                     Text("${prefs.evoPopSize}", color = AuroraCyan, fontSize = 10.sp,
@@ -278,7 +278,7 @@ private fun EvolutionTab(
                         onValueChange = { updatePrefs { s -> s.copy(evoGenerations = it.toInt()) } },
                         onValueChangeFinished = {
                             if (isRunning && IvannaNativeLib.isLoaded)
-                                runCatching { IvannaNativeLib.nativeInitializeEvolution(prefs.evoPopSize, prefs.evoGenerations) }
+                                runCatching { IvannaNativeLib.nativeSetEvolutionParams(prefs.evoPopSize, prefs.evoGenerations) }
                         },
                         valueRange = 10f..500f,
                         colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan, inactiveTrackColor = ObsidianEdge)

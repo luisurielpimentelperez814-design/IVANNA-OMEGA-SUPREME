@@ -963,13 +963,13 @@ fun IvannaControlPanel(
             Spacer(Modifier.height(6.dp))
             AuroraSlider(
                 "TAMAÑO POBLACIÓN",
-                evoPopSize.toFloat(), 10f..200f,
+                evoPopSize.toFloat().coerceIn(32f, 128f), 32f..128f,
                 displayValue = { "${it.toInt()}" }
             ) { v ->
                 evoPopSize = v.toInt()
                 AdaptiveControlsPrefs.save(context, AdaptiveControlsPrefs.load(context).copy(evoPopSize = evoPopSize))
                 if (IvannaNativeLib.isLoaded && evoEnabled) {
-                    runCatching { IvannaNativeLib.nativeInitializeEvolution(evoPopSize, evoGenerations) }
+                    runCatching { IvannaNativeLib.nativeSetEvolutionParams(evoPopSize, evoGenerations) }
                 }
             }
             AuroraSlider(
@@ -980,7 +980,7 @@ fun IvannaControlPanel(
                 evoGenerations = v.toInt()
                 AdaptiveControlsPrefs.save(context, AdaptiveControlsPrefs.load(context).copy(evoGenerations = evoGenerations))
                 if (IvannaNativeLib.isLoaded && evoEnabled) {
-                    runCatching { IvannaNativeLib.nativeInitializeEvolution(evoPopSize, evoGenerations) }
+                    runCatching { IvannaNativeLib.nativeSetEvolutionParams(evoPopSize, evoGenerations) }
                 }
             }
             AuroraSlider(

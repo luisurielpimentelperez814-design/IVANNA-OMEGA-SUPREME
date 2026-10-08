@@ -93,6 +93,8 @@ object IvannaNativeLib {
     // migraron a nativeGetEvoBestFitness(), respaldada por v2. Eliminada
     // para no dejar otra declaración-trampa para el próximo caller.
     external fun nativeGetGeneration(): Int
+    /** Ajusta en caliente población activa (32..128) y tope de generaciones (0 = sin tope) sin reiniciar. */
+    external fun nativeSetEvolutionParams(populationSize: Int, maxGenerations: Int)
     external fun nativeEvolveStep(): Boolean
     external fun nativeSetMutationRate(rate: Float)
     external fun nativeGetMutationRate(): Float

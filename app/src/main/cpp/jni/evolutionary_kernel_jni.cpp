@@ -13,6 +13,9 @@ int   evo_evolve_step_with_convergence(void);
 int   evo_get_generation(void);
 void  evo_set_mutation_rate(float rate);
 float evo_get_mutation_rate(void);
+void  evo_set_population_size(int n);
+int   evo_get_population_size(void);
+void  evo_set_max_generations(int n);
 
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject) {
@@ -22,8 +25,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(JNIEnv*, jobject)
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(
     JNIEnv*, jobject, jint popSize, jint generations) {
-    (void)popSize;
-    (void)generations;
+    // Antes se ignoraban ambos parámetros. Ahora fijan población activa y tope de generaciones.
+    evo_set_population_size(static_cast<int>(popSize));
+    evo_set_max_generations(static_cast<int>(generations));
 #if defined(__EXCEPTIONS)
     try {
         evo_initialize_population();
@@ -39,6 +43,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(
     evo_initialize_population();
     return evo_is_initialized() ? JNI_TRUE : JNI_FALSE;
 #endif
+}
+
+// Ajuste en caliente (sliders): NO reinicia la población ni el progreso.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvolutionParams(
+    JNIEnv*, jobject, jint popSize, jint maxGenerations) {
+    evo_set_population_size(static_cast<int>(popSize));
+    evo_set_max_generations(static_cast<int>(maxGenerations));
 }
 
 JNIEXPORT jboolean JNICALL
