@@ -1,3 +1,8 @@
+# CHANGELOG — v2.5.8 (299) — ENGINE: AI ANALYSIS con género y confianza reales del NPE
+1. **`OmegaMetrics.refreshFromNative`** — ahora publica género y confianza del NPE (`getDetectedGenre`, `getSynthClassify()[1]`) para el bloque AI ANALYSIS del panel ENGINE, que se quedaba en «— · 0 % confidence» salvo con el bridge reproduciendo.
+2. **`IvannaBridgePlayer.kt`** — la confianza se leía de `getSynthClassify()[0]` (que es el id de cluster) en vez de `[1]` (confidence), así que mostraba 0 % o 100 %.
+3. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.5.7 (298) — CONTROL: reconstrucción de realidad con telemetría real (sin cifras de relleno)
 1. **`IvannaControlPanel.kt` → AcousticRealityReconstructionCard** — cuando no había datos nativos mostraba cifras fijas (realismo 88 %, sala 6.8×8.6×3.5 m, RT60 0.38 s, juez humano 90 %, homeostasis 96 %, gemelo digital 92 %, EVO 89 %…). Ahora lee `safeGet*OrNull` y muestra «—» hasta que el hilo del motor adaptativo (que alimenta al `AcousticRealityOrchestrator` con métricas de audio reales y publica cada ciclo) entrega un ciclo vivo; desde entonces todo son valores medidos. HUD NPE: CONF. ya no muestra un porcentaje cuando el género es «—».
 2. **Cadena verificada:** adaptive_decision_engine → orchestrateCycle → stateBus → JNI (null si la secuencia no supera a la sembrada, v2.4.40) → UI.

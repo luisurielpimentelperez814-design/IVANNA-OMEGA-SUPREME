@@ -233,7 +233,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             val yamnetConfidence = try {
                 if (IvannaNpeEngine.isReady) {
                     val sig = IvannaNpeNative.nativeGetSynthClassify()
-                    if (sig.isNotEmpty()) sig[0] else 0f
+                    if (sig.size > 1) sig[1] else 0f  // [cluster_id, confidence, ...]: antes leía el id de cluster
                 } else 0f
             } catch (_: Throwable) { 0f }
 

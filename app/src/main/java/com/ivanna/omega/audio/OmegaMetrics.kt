@@ -108,8 +108,14 @@ data class OmegaMetrics(
             val capturing = com.ivanna.omega.audio.PlaybackCaptureService.isCapturing.value
             val hrtf = runCatching { lib.nativeGetSpatialState().contains("HRTF_ON") }.getOrDefault(false)
             val tele = runCatching { lib.nativeGetAdaptiveTelemetry() }.getOrNull()
+            // Género / confianza reales del NPE (misma fuente que el HUD de CONTROL).
+            val npeReady = com.ivanna.omega.neuromorphic.IvannaNpeEngine.isReady
+            val genre = if (npeReady) runCatching { com.ivanna.omega.neuromorphic.IvannaNpeEngine.getDetectedGenre() }.getOrNull() else null
+            val conf = if (npeReady) runCatching { com.ivanna.omega.neuromorphic.IvannaNpeEngine.getSynthClassify().getOrNull(1) }.getOrNull() else null
             val cur = _shared.value
             _shared.value = cur.copy(
+                yamnetCategory   = genre?.takeIf { it.isNotBlank() } ?: "\u2014",
+                yamnetConfidence = if (genre.isNullOrBlank() || genre == "\u2014") 0f else (conf ?: 0f).coerceIn(0f, 1f),
                 dspActive      = running || capturing,
                 hrtfActive     = hrtf,
                 rmsLevel       = tele?.getOrNull(0) ?: cur.rmsLevel,
