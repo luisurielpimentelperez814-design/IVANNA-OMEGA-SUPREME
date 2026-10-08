@@ -1,3 +1,7 @@
+# CHANGELOG — v2.5.6 (297) — BRAIN: telemetría perceptual con unidades y estado vacío honesto
+1. **`BrainScreen.kt` → PerceptualTab** — mostraba 5 valores crudos sin unidad (RMS/Pico lineales, "CPU" que en realidad era ganancia objetivo) y quedaba vacía sin motor. Ahora presenta 9 magnitudes reales del motor adaptativo (RMS/Pico en dBFS, reducción de ganancia en dB, ganancia objetivo ×, compresión, exciter, ancho espacial, margen de seguridad y protección de voz en %) y un mensaje claro si el motor no responde.
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.5.5 (296) — ENGINE: la ganancia objetivo ya no se muestra como carga de CPU
 1. **`OmegaMetrics.refreshFromNative` (mío, 2.4.33)** y **`IvannaBridgePlayer`** — usaban `nativeGetAdaptiveTelemetry()[3]` como CPU/DSP load, pero ese índice es `target_gain` (0..2): ganancia 1.0 aparecía como 100 % de carga. Se elimina; la carga DSP real sigue viniendo de `AudioThreadBudgetGuard` vía `PlaybackCaptureService`.
 2. **Pruebas:** sin toolchain Android local; validación en CI.

@@ -179,40 +179,52 @@ private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null)
 // ── Tab PERCEPTUAL ────────────────────────────────────────────────────────────
 @Composable
 private fun PerceptualTab() {
-    var snapshot by remember { mutableStateOf<Map<String,Float>>(emptyMap()) }
+    // Fila = (etiqueta, texto con unidad, progreso 0..1). null = motor nativo sin datos.
+    var rows by remember { mutableStateOf<List<Triple<String, String, Float>>?>(null) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            if (IvannaNativeLib.isLoaded) {
-                val tele = runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull()
-                if (tele != null) {
-                    snapshot = mapOf(
-                        "RMS"         to (tele.getOrElse(0) { 0f }),
-                        "Peak"        to (tele.getOrElse(1) { 0f }),
-                        "GR"          to (tele.getOrElse(2) { 0f }),
-                        "CPU"         to (tele.getOrElse(3) { 0f }),
-                        "Voice Prot." to (tele.getOrElse(8) { 0f })
-                    )
-                }
+            val tele = if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull() else null
+            rows = if (tele == null || tele.size < 10) null else {
+                fun dbfs(lin: Float) = if (lin > 1e-6f) 20f * kotlin.math.log10(lin) else -120f
+                fun norm01(v: Float) = if (v.isFinite()) v.coerceIn(0f, 1f) else 0f
+                fun pct(v: Float) = "%.0f %%".format(norm01(v) * 100f)
+                val rmsDb = dbfs(tele[0]); val peakDb = dbfs(tele[1])
+                listOf(
+                    Triple("RMS", "%.1f dBFS".format(rmsDb), norm01((rmsDb + 60f) / 60f)),
+                    Triple("Pico", "%.1f dBFS".format(peakDb), norm01((peakDb + 60f) / 60f)),
+                    Triple("Reducción de ganancia", "%.1f dB".format(tele[2]), norm01(kotlin.math.abs(tele[2]) / 12f)),
+                    Triple("Ganancia objetivo", "%.2f ×".format(tele[3]), norm01(tele[3] / 2f)),
+                    Triple("Compresión aplicada", pct(tele[4]), norm01(tele[4])),
+                    Triple("Reducción de exciter", pct(tele[5]), norm01(tele[5])),
+                    Triple("Ancho espacial", pct(tele[6]), norm01(tele[6] / 1.5f)),
+                    Triple("Margen de seguridad", pct(tele[7]), norm01(tele[7])),
+                    Triple("Protección de voz", pct(tele[8]), norm01(tele[8]))
+                )
             }
             kotlinx.coroutines.delay(100)
         }
     }
 
-    GlassCard("TELEMETRÍA PERCEPTUAL", NeonMagenta, "ISO 226 · Bark/Mel · 10Hz") {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            snapshot.forEach { (label, value) ->
+    GlassCard("TELEMETRÍA PERCEPTUAL", NeonMagenta, "Motor adaptativo · 10 Hz") {
+        val data = rows
+        if (data == null) {
+            Text("Motor nativo sin datos — activa el procesamiento para ver la telemetría.",
+                color = TextSecondary, fontSize = 11.sp)
+        } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            data.forEach { (label, text, progress) ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(label, color = TextSecondary, fontSize = 11.sp)
-                    Text("%.3f".format(value), color = NeonMagenta, fontSize = 11.sp,
+                    Text(text, color = NeonMagenta, fontSize = 11.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }
                 LinearProgressIndicator(
-                    progress = { (value ?: 0f).coerceIn(0f, 1f) },
+                    progress = { progress },
                     modifier = Modifier.fillMaxWidth().height(3.dp),
                     color = NeonMagenta,
                     trackColor = ObsidianEdge
