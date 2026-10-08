@@ -141,6 +141,9 @@ class SaFEngine(private val context: Context) {
      * generación). Si el hardware no soporta float estéreo, el warning se
      * loguea y el usuario sigue pudiendo responder — útil para diagnóstico.
      */
+    /** Vuelve a reproducir el estímulo de [direction] (botón REPETIR TONO). No toca la calibración. */
+    fun replayStimulus(direction: SaFDirection) = playStimulus(direction)
+
     private fun playStimulus(direction: SaFDirection) {
         playerScope.launch {
             runCatching { player.play(direction) }

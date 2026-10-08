@@ -128,7 +128,8 @@ fun SaFCalibrationScreen(
                 direction = state.currentDir,
                 iteration = state.iteration,
                 onCorrect = { engine.feedFeedback(state.currentDir, true) },
-                onWrong   = { engine.feedFeedback(state.currentDir, false) }
+                onWrong   = { engine.feedFeedback(state.currentDir, false) },
+                onReplay  = { engine.replayStimulus(state.currentDir) }
             )
             SaFPhase.DONE        -> DonePanel(
                 params      = state.params,
@@ -222,7 +223,8 @@ private fun CalibPanel(
     direction : SaFDirection,
     iteration : Int,
     onCorrect : () -> Unit,
-    onWrong   : () -> Unit
+    onWrong   : () -> Unit,
+    onReplay  : () -> Unit = {}
 ) {
     // Pulse animation for direction arrow
     val inf = rememberInfiniteTransition(label = "pulse")
@@ -289,6 +291,16 @@ private fun CalibPanel(
                             )
                     )
                 }
+            }
+
+            // Repetir el tono actual sin responder (útil si no se oyó bien o hubo ruido ambiente)
+            OutlinedButton(
+                onClick  = onReplay,
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan),
+                border   = BorderStroke(1.dp, AuroraCyan.copy(0.6f))
+            ) {
+                Text("🔊  REPETIR TONO", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(4.dp))

@@ -1,3 +1,7 @@
+# CHANGELOG — v2.5.11 (302) — SAF: botón REPETIR TONO en la calibración HRTF
+1. **`SaFEngine.replayStimulus`** y **`SaFCalibrationScreen`** — nuevo botón para volver a oír el tono actual sin responder ni avanzar la calibración (antes cada tono sonaba una sola vez, al avanzar, sin posibilidad de repetirlo).
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.5.10 (301) — EVOLUTIVO: kernel serializado y genoma publicado sin bloqueo
 1. **`evolutionary_kernel_v2.cpp`** — `evo_initialize_population`, `evo_evolve_generation`, guardar y cargar estado se serializan con `g_evoMutex` (orden g_evoMutex → g_saveMutex). Antes INICIAR/PASO de la UI regeneraban la población mientras el hilo de fondo de `pd_engine` la evolucionaba: data race real sobre `g_population`.
 2. **Mejor genoma por seqlock** (`g_bestSeq`/`g_bestGenome`): `evo_get_best_genome` — lo lee `audio_orchestrator` desde el procesamiento de audio — ya no puede ver un genoma a medio escribir ni bloquea; se publica tras init, cada generación y carga.
