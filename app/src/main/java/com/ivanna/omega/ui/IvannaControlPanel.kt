@@ -820,7 +820,7 @@ fun IvannaControlPanel(
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatBlock("GÉNERO", npeGenre, NeonMagenta, Modifier.weight(1.4f))
-                StatBlock("CONF.", "%.0f%%".format(npeClassifyConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
+                StatBlock("CONF.", if (npeGenre == "\u2014" || npeGenre.isBlank()) "\u2014" else "%.0f%%".format(npeClassifyConfidence * 100f), PhosphorGreen, Modifier.weight(1f))
                 StatBlock("ASPEREZA", "%.1f%%".format(npeClassifyThd), AmberSignal, Modifier.weight(1f))
             }
             val npeSig = remember(npeInferenceUs) { IvannaNpeEngine.getSynthSignature() }
@@ -1071,11 +1071,12 @@ fun IvannaControlPanel(
 private fun AcousticRealityReconstructionCard() {
     val context = LocalContext.current
     var axesState by remember { mutableStateOf(SupremeAxesPrefs.load(context)) }
+    // null = el orquestador aún no ha corrido un ciclo vivo con audio real (no hay medición).
     var telemetry by remember {
-        mutableStateOf(com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetrySnapshot())
+        mutableStateOf(com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetryOrNull())
     }
     var cogTelemetry by remember {
-        mutableStateOf(com.ivanna.omega.core.NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot())
+        mutableStateOf(com.ivanna.omega.core.NativeBridge.safeGetCognitiveTelemetryOrNull())
     }
 
     LaunchedEffect(axesState.realityReconstructionEnabled) {
@@ -1090,40 +1091,36 @@ private fun AcousticRealityReconstructionCard() {
         )
         while (isActive) {
             telemetry = withContext(Dispatchers.Default) {
-                com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetrySnapshot()
+                com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetryOrNull()
             }
             cogTelemetry = withContext(Dispatchers.Default) {
-                com.ivanna.omega.core.NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()
+                com.ivanna.omega.core.NativeBridge.safeGetCognitiveTelemetryOrNull()
             }
             delay(300L)
         }
     }
 
-    val presence    = if (telemetry.size > 0) telemetry[0] else 0.84f
-    val naturalness = if (telemetry.size > 1) telemetry[1] else 0.91f
-    val separation  = if (telemetry.size > 2) telemetry[2] else 0.86f
-    val fatigue     = if (telemetry.size > 3) telemetry[3] else 0.11f
-    val immersion   = if (telemetry.size > 4) telemetry[4] else 0.89f
-    val realism     = if (telemetry.size > 5) telemetry[5] else 0.88f
-    val roomW       = if (telemetry.size > 6) telemetry[6] else 6.8f
-    val roomD       = if (telemetry.size > 7) telemetry[7] else 8.6f
-    val roomH       = if (telemetry.size > 8) telemetry[8] else 3.5f
-    val roomRt60    = if (telemetry.size > 9) telemetry[9] else 0.38f
-    val microGain   = if (telemetry.size > 11) telemetry[11] else 1.18f
-    val coherence   = if (telemetry.size > 15) telemetry[15] else 0.92f
-
-    val topPriorityIdx = if (cogTelemetry.size > 0) cogTelemetry[0].toInt() else 0
+    val rt: (Int) -> Float? = { i -> telemetry?.getOrNull(i)?.takeIf { it.isFinite() } }
+    val ct: (Int) -> Float? = { i -> cogTelemetry?.getOrNull(i)?.takeIf { it.isFinite() } }
+    val pct0: (Float?) -> String = { v -> v?.let { "%.0f%%".format(it * 100f) } ?: "—" }
+    val pct1: (Float?) -> String = { v -> v?.let { "%.1f%%".format(it * 100f) } ?: "—" }
+    val presence = rt(0); val naturalness = rt(1); val separation = rt(2)
+    val fatigue = rt(3); val immersion = rt(4); val realism = rt(5)
+    val roomW = rt(6); val roomD = rt(7); val roomH = rt(8); val roomRt60 = rt(9)
+    val microGain = rt(11); val coherence = rt(15)
+    val topPriorityIdx = ct(0)?.toInt()
     val topPriorityLabel = when (topPriorityIdx) {
+        null -> "—"
         0 -> "1º PROFUNDIDAD"
         1 -> "1º MICRODINÁMICA"
         2 -> "1º CLARIDAD VOCAL"
         else -> "1º EXP. AMBIENTAL"
     }
-    val humanJudgeVerdict = if (cogTelemetry.size > 8) cogTelemetry[8] else 0.90f
-    val execCoherence     = if (cogTelemetry.size > 10) cogTelemetry[10] else 0.91f
-    val homeostasisIdx    = if (cogTelemetry.size > 12) cogTelemetry[12] else 0.96f
-    val digitalTwinIdx    = if (cogTelemetry.size > 13) cogTelemetry[13] else 0.92f
-    val evoFitness        = if (cogTelemetry.size > 14) cogTelemetry[14] else 0.89f
+    val humanJudgeVerdict = ct(8)
+    val execCoherence     = ct(10)
+    val homeostasisIdx    = ct(12)
+    val digitalTwinIdx    = ct(13)
+    val evoFitness        = ct(14)
 
     GlassCard(
         title = "RECONSTRUCCIÓN DE REALIDAD & CEREBRO EJECUTIVO (FASES 1–15)",
@@ -1148,19 +1145,19 @@ private fun AcousticRealityReconstructionCard() {
         ) {
             StatBlock(
                 label = "REALISMO",
-                value = "%.1f%%".format(realism * 100f),
+                value = pct1(realism),
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
                 label = "PRESENCIA",
-                value = "%.0f%%".format(presence * 100f),
+                value = pct0(presence),
                 accent = AuroraCyan,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
                 label = "NATURALIDAD",
-                value = "%.0f%%".format(naturalness * 100f),
+                value = pct0(naturalness),
                 accent = NeonMagenta,
                 modifier = Modifier.weight(1f)
             )
@@ -1172,20 +1169,20 @@ private fun AcousticRealityReconstructionCard() {
         ) {
             StatBlock(
                 label = "SEPARACIÓN",
-                value = "%.0f%%".format(separation * 100f),
+                value = pct0(separation),
                 accent = AuroraCyan,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
                 label = "INMERSIÓN 4D",
-                value = "%.0f%%".format(immersion * 100f),
+                value = pct0(immersion),
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
                 label = "FATIGA",
-                value = "%.0f%%".format(fatigue * 100f),
-                accent = if (fatigue > 0.35f) CoralWarn else PhosphorGreen,
+                value = pct0(fatigue),
+                accent = if ((fatigue ?: 0f) > 0.35f) CoralWarn else PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1196,19 +1193,19 @@ private fun AcousticRealityReconstructionCard() {
         ) {
             StatBlock(
                 label = "RECINTO 4D",
-                value = "%.1f×%.1f×%.1fm".format(roomW, roomD, roomH),
+                value = if (roomW != null && roomD != null && roomH != null) "%.1f×%.1f×%.1fm".format(roomW, roomD, roomH) else "—",
                 accent = AmberSignal,
                 modifier = Modifier.weight(1.3f)
             )
             StatBlock(
                 label = "RT60 SALA",
-                value = "%.2fs".format(roomRt60),
+                value = roomRt60?.let { "%.2fs".format(it) } ?: "—",
                 accent = AuroraCyan,
                 modifier = Modifier.weight(0.85f)
             )
             StatBlock(
                 label = "INTELIGIB.",
-                value = "%.2f×".format(microGain),
+                value = microGain?.let { "%.2f×".format(it) } ?: "—",
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(0.85f)
             )
@@ -1226,13 +1223,13 @@ private fun AcousticRealityReconstructionCard() {
             )
             StatBlock(
                 label = "JUEZ HUMANO",
-                value = "%.0f%%".format(humanJudgeVerdict * 100f),
+                value = pct0(humanJudgeVerdict),
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(0.9f)
             )
             StatBlock(
                 label = "HOMEOSTASIS",
-                value = "%.0f%%".format(homeostasisIdx * 100f),
+                value = pct0(homeostasisIdx),
                 accent = NeonMagenta,
                 modifier = Modifier.weight(0.9f)
             )
@@ -1244,19 +1241,19 @@ private fun AcousticRealityReconstructionCard() {
         ) {
             StatBlock(
                 label = "EXEC BRAIN",
-                value = "%.0f%%".format(execCoherence * 100f),
+                value = pct0(execCoherence),
                 accent = AuroraCyan,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
                 label = "DIGITAL TWIN",
-                value = "%.0f%%".format(digitalTwinIdx * 100f),
+                value = pct0(digitalTwinIdx),
                 accent = AmberSignal,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
                 label = "EVO CMA-ES/Q",
-                value = "%.1f%%".format(evoFitness * 100f),
+                value = pct1(evoFitness),
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
@@ -1267,7 +1264,7 @@ private fun AcousticRealityReconstructionCard() {
             label = "INTENSIDAD DE RECONSTRUCCIÓN DEL EVENTO",
             value = axesState.realityIntensity,
             range = 0f..1f,
-            displayValue = { "%.0f%% · Coherencia %.0f%%".format(it * 100f, coherence * 100f) }
+            displayValue = { "%.0f%% · Coherencia %s".format(it * 100f, pct0(coherence)) }
         ) { v ->
             val next = axesState.copy(realityIntensity = v)
             axesState = next

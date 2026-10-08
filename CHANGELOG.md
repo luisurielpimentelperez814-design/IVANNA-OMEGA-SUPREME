@@ -1,3 +1,8 @@
+# CHANGELOG — v2.5.7 (298) — CONTROL: reconstrucción de realidad con telemetría real (sin cifras de relleno)
+1. **`IvannaControlPanel.kt` → AcousticRealityReconstructionCard** — cuando no había datos nativos mostraba cifras fijas (realismo 88 %, sala 6.8×8.6×3.5 m, RT60 0.38 s, juez humano 90 %, homeostasis 96 %, gemelo digital 92 %, EVO 89 %…). Ahora lee `safeGet*OrNull` y muestra «—» hasta que el hilo del motor adaptativo (que alimenta al `AcousticRealityOrchestrator` con métricas de audio reales y publica cada ciclo) entrega un ciclo vivo; desde entonces todo son valores medidos. HUD NPE: CONF. ya no muestra un porcentaje cuando el género es «—».
+2. **Cadena verificada:** adaptive_decision_engine → orchestrateCycle → stateBus → JNI (null si la secuencia no supera a la sembrada, v2.4.40) → UI.
+3. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.5.6 (297) — BRAIN: telemetría perceptual con unidades y estado vacío honesto
 1. **`BrainScreen.kt` → PerceptualTab** — mostraba 5 valores crudos sin unidad (RMS/Pico lineales, "CPU" que en realidad era ganancia objetivo) y quedaba vacía sin motor. Ahora presenta 9 magnitudes reales del motor adaptativo (RMS/Pico en dBFS, reducción de ganancia en dB, ganancia objetivo ×, compresión, exciter, ancho espacial, margen de seguridad y protección de voz en %) y un mensaje claro si el motor no responde.
 2. **Pruebas:** sin toolchain Android local; validación en CI.
