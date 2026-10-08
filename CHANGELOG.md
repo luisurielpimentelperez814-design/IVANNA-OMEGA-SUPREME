@@ -1,3 +1,7 @@
+# CHANGELOG — v2.5.4 (295) — ADAPTIVE: escala de intensidad 0–100 hacia el motor nativo
+1. **`ControlTabScreen.kt` / `BrainScreen.kt`** — `nativeSetAdaptiveControls` espera intensidad en 0..100 (`g_adaptiveUiIntensity` se clampa a 0..100, igual que `AdaptiveEngineScreen`), pero CONTROL y BRAIN enviaban 0..1: el motor recibía como máximo 1 % de intensidad. Ahora todas las llamadas usan 0..100.
+2. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.5.3 (294) — APK con firma estable (corrige "app no instalada" al actualizar)
 1. **`.github/workflows/build.yml`** — el CI generaba un keystore nuevo en cada ejecución, de modo que cada APK salía firmado con una llave distinta (verificado: v2.5.0 y v2.5.1 tenían huellas de certificado diferentes). Android rechaza actualizar una app con otra firma y el instalador mostraba "app no instalada". Ahora el keystore se toma del secreto `ANDROID_KEYSTORE_B64` y todas las versiones futuras comparten la misma firma.
 2. **Aviso de migración (una sola vez):** el APK instalado hoy está firmado con una llave efímera que ya no existe, así que v2.5.3 requiere desinstalar la versión anterior antes de instalarla. A partir de v2.5.3 las actualizaciones se instalan encima sin perder datos. Sin cambios de código DSP.

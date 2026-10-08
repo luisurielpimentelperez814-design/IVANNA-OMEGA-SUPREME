@@ -216,7 +216,7 @@ fun ControlTabScreen(
             // Fuera de modo manual el cambio se quedaba sólo en AudioState: el motor
             // adaptativo nunca se enteraba. Misma llamada que usa BRAIN → ADAPTATIVO.
             if (IvannaNativeLib.isLoaded)
-                runCatching { IvannaNativeLib.nativeSetAdaptiveControls(mode.ordinal, AudioStateManager.audioState.value.adaptiveIntensity) }
+                runCatching { IvannaNativeLib.nativeSetAdaptiveControls(mode.ordinal, AudioStateManager.audioState.value.adaptiveIntensity * 100f) }
             if (audioState.manualModeEnabled)
                 adaptiveBack.applyManualState(AudioStateManager.audioState.value)
         },
@@ -224,7 +224,7 @@ fun ControlTabScreen(
         onAdaptiveIntensityChange = { percent ->
             AudioStateManager.updateState { it.copy(adaptiveIntensity = percent / 100f) }
             if (IvannaNativeLib.isLoaded)
-                runCatching { IvannaNativeLib.nativeSetAdaptiveControls(AudioStateManager.audioState.value.adaptiveMode.ordinal, percent / 100f) }
+                runCatching { IvannaNativeLib.nativeSetAdaptiveControls(AudioStateManager.audioState.value.adaptiveMode.ordinal, percent.coerceIn(0f, 100f)) }
             if (audioState.manualModeEnabled)
                 adaptiveBack.applyManualState(AudioStateManager.audioState.value)
         },

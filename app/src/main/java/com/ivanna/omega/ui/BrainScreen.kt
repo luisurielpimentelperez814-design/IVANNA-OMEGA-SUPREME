@@ -122,7 +122,7 @@ private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null)
                         onClick = {
                             AudioStateManager.updateState { it.copy(adaptiveMode = mode) }
                             if (IvannaNativeLib.isLoaded)
-                                runCatching { IvannaNativeLib.nativeSetAdaptiveControls(mode.ordinal, audioState.adaptiveIntensity) }
+                                runCatching { IvannaNativeLib.nativeSetAdaptiveControls(mode.ordinal, audioState.adaptiveIntensity * 100f) }
                         },
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = if (sel) NeonMagenta.copy(alpha = 0.25f) else ObsidianEdge,
@@ -134,7 +134,7 @@ private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null)
             IvannaSliderRowBrain("INTENSIDAD", audioState.adaptiveIntensity, 0f, 1f, "%") { v ->
                 AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
                 if (IvannaNativeLib.isLoaded)
-                    runCatching { IvannaNativeLib.nativeSetAdaptiveControls(audioState.adaptiveMode.ordinal, v) }
+                    runCatching { IvannaNativeLib.nativeSetAdaptiveControls(audioState.adaptiveMode.ordinal, v * 100f) }
             }
             IvannaSliderRowBrain("SAFETY MARGIN", audioState.safetyMargin, 0.5f, 1f, "") { v ->
                 AudioStateManager.updateState { it.copy(safetyMargin = v) }
