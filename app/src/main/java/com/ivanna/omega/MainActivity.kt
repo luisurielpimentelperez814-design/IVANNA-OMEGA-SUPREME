@@ -550,7 +550,7 @@ fun OmegaApp() {
             }
             // Alias legacy: antes redirigía a BRAIN (duplicado de onOpenAdaptive);
             // ahora resuelve al dashboard magistral, que es lo que su nombre dice.
-            composable("adaptive_dash")    { nav.navigate(IvannaRoute.MAGISTRAL) { popUpTo("dashboard") } }
+            composable("adaptive_dash")    { LaunchedEffect(Unit) { nav.navigate(IvannaRoute.MAGISTRAL) { popUpTo("dashboard") } } }
 
             // ── Sección SONIDO ────────────────────────────────────────────
             composable(IvannaRoute.SOUND) {
@@ -560,8 +560,8 @@ fun OmegaApp() {
                 )
             }
             // Alias legacy
-            composable("ope")      { nav.navigate(IvannaRoute.SOUND) { popUpTo("dashboard") } }
-            composable("binaural") { nav.navigate(IvannaRoute.SOUND) { popUpTo("dashboard") } }
+            composable("ope")      { LaunchedEffect(Unit) { nav.navigate(IvannaRoute.SOUND) { popUpTo("dashboard") } } }
+            composable("binaural") { LaunchedEffect(Unit) { nav.navigate(IvannaRoute.SOUND) { popUpTo("dashboard") } } }
 
             // ── Sección CEREBRO ───────────────────────────────────────────
             composable(IvannaRoute.BRAIN) {
@@ -605,7 +605,7 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable("auditory")   { nav.navigate("spatial_audio") { popUpTo("dashboard") } }
+            composable("auditory")   { LaunchedEffect(Unit) { nav.navigate("spatial_audio") { popUpTo("dashboard") } } }
 
             // ── Sección SISTEMA ───────────────────────────────────────────
             composable(IvannaRoute.SYSTEM) {
@@ -617,7 +617,7 @@ fun OmegaApp() {
                         .windowInsetsPadding(WindowInsets.systemBars)
                 )
             }
-            composable(IvannaRoute.TELEMETRY) { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } }
+            composable(IvannaRoute.TELEMETRY) { LaunchedEffect(Unit) { nav.navigate(IvannaRoute.SYSTEM) { popUpTo("dashboard") } } }
             composable("adaptive_profiles") {
                 com.ivanna.omega.ui.AdaptiveProfilesScreen(
                     modifier = Modifier.fillMaxSize().background(Carbon)

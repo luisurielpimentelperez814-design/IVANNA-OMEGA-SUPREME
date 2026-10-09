@@ -1,3 +1,8 @@
+# CHANGELOG — v2.5.13 (304) — NAVEGACIÓN: rutas alias sin navegar durante la composición
+1. **`MainActivity.kt`** — las rutas alias (`ope`, `binaural`, `telemetry`, `auditory`, `adaptive_dash`) llamaban `nav.navigate(...)` directamente en el cuerpo del `composable`: efecto secundario durante la composición que puede navegar varias veces o dejar una pantalla vacía parpadeando. Ahora usan `LaunchedEffect(Unit)` (misma redirección, ejecutada una vez).
+2. **`ControlTabScreen.kt`** — los botones OPE y TELEMETRÍA de CONTROL navegan directo a `IvannaRoute.SOUND` / `IvannaRoute.SYSTEM` con `launchSingleTop`, sin pasar por el alias.
+3. **Pruebas:** sin toolchain Android local; validación en CI.
+
 # CHANGELOG — v2.5.12 (303) — PROFILER: solo mediciones reales, sin cifras ni flags de adorno
 1. **`NeonProfilerPanel.kt`** — el panel mostraba datos fijos o inventados: «HEAP HILO AUDIO 0.00 B», «NEON activo», GFLOPS estimados con un modelo de 1200 ops/muestra, «32 Q-Registers», y leía `cpuPercent` (que ya no se publica falso). Ahora muestra: latencia ida y vuelta medida; CPU de la app (delta de `Process.getElapsedCpuTime`); heap nativo (`Debug.getNativeHeapAllocatedSize`) y Java; CPU del dispositivo desde `/proc/cpuinfo` (NEON/ASIMD, FP16, dotprod, i8mm, bf16); y presupuesto DSP, salud de buffer, jitter, underruns, bypasses, anti-pop y resyncs de `OmegaMetrics`.
 2. **Flags de compilación reales** — el card ARMV8 TARGET FLAGS afirmaba `-mcpu=cortex-a76 -march=armv8.2-a+fp16 -ffast-math -flto`, pero el CMake usa `-march=armv8-a+fp+simd -fno-fast-math` y no hay LTO. `CMakeLists.txt` inyecta ahora `BASE_FLAGS` como `IVANNA_NATIVE_FLAGS` y la UI las lee del binario con el nuevo `nativeGetBuildFlags()` (`ivanna_omega_jni.cpp`; «unknown» en builds host).
