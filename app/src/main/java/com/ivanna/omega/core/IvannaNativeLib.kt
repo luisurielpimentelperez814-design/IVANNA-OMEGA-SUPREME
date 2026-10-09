@@ -118,6 +118,8 @@ object IvannaNativeLib {
     ): Int
     external fun nativeReleaseSpatialEngine(): Boolean
     external fun nativeGetSpatialState(): String
+    /** Flags de compilación reales del .so cargado (inyectadas por CMake). */
+    external fun nativeGetBuildFlags(): String
     external fun nativeSetSpatialParams(params: String): Boolean
 
     // ═══════════════════════════════════════════════════════════════════════

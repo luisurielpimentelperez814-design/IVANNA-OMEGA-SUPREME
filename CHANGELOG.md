@@ -1,3 +1,9 @@
+# CHANGELOG — v2.5.12 (303) — PROFILER: solo mediciones reales, sin cifras ni flags de adorno
+1. **`NeonProfilerPanel.kt`** — el panel mostraba datos fijos o inventados: «HEAP HILO AUDIO 0.00 B», «NEON activo», GFLOPS estimados con un modelo de 1200 ops/muestra, «32 Q-Registers», y leía `cpuPercent` (que ya no se publica falso). Ahora muestra: latencia ida y vuelta medida; CPU de la app (delta de `Process.getElapsedCpuTime`); heap nativo (`Debug.getNativeHeapAllocatedSize`) y Java; CPU del dispositivo desde `/proc/cpuinfo` (NEON/ASIMD, FP16, dotprod, i8mm, bf16); y presupuesto DSP, salud de buffer, jitter, underruns, bypasses, anti-pop y resyncs de `OmegaMetrics`.
+2. **Flags de compilación reales** — el card ARMV8 TARGET FLAGS afirmaba `-mcpu=cortex-a76 -march=armv8.2-a+fp16 -ffast-math -flto`, pero el CMake usa `-march=armv8-a+fp+simd -fno-fast-math` y no hay LTO. `CMakeLists.txt` inyecta ahora `BASE_FLAGS` como `IVANNA_NATIVE_FLAGS` y la UI las lee del binario con el nuevo `nativeGetBuildFlags()` (`ivanna_omega_jni.cpp`; «unknown» en builds host).
+3. **Intrinsics**: descripciones corregidas (`vrecpeq_f32` es sólo estimación, `vdupq_n_s16` es difusión, no multiplicación) y etiquetas con los módulos que de verdad los usan.
+4. **Verificación local:** la definición de CMake probada con Ninja y Makefiles; pasan jni_wiring, kotlin_wrapper_wiring, header_wiring, rt_safety, build_flags y docs_claims. Kotlin/NDK se validan en CI.
+
 # CHANGELOG — v2.5.11 (302) — SAF: botón REPETIR TONO en la calibración HRTF
 1. **`SaFEngine.replayStimulus`** y **`SaFCalibrationScreen`** — nuevo botón para volver a oír el tono actual sin responder ni avanzar la calibración (antes cada tono sonaba una sola vez, al avanzar, sin posibilidad de repetirlo).
 2. **Pruebas:** sin toolchain Android local; validación en CI.

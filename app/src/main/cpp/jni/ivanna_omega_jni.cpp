@@ -683,6 +683,11 @@ static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
     env->ReleaseFloatArrayElements(src, p, JNI_ABORT);
     return true;
 }
+// Banderas con las que se compiló ESTE binario (las inyecta CMakeLists.txt desde BASE_FLAGS).
+// En builds host (CTest) que no pasan por ese CMake queda "unknown".
+#ifndef IVANNA_NATIVE_FLAGS
+#define IVANNA_NATIVE_FLAGS "unknown"
+#endif
 extern "C" {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DSPBridge (com.ivanna.omega.dsp.DSPBridge) — called at app startup
@@ -690,6 +695,11 @@ extern "C" {
 JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeVersion(JNIEnv* env, jobject) {
     return env->NewStringUTF("IVANNA OMEGA SUPREME v1.1-OPE | GORE TNS © 2026");
+}
+// Perfilador: flags de compilación reales del binario cargado (no texto fijo en la UI).
+JNIEXPORT jstring JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetBuildFlags(JNIEnv* env, jobject) {
+    return env->NewStringUTF(IVANNA_NATIVE_FLAGS);
 }
 // ── FIX: mutex DSP — declarado antes de nativeInit, nativeSetParams y nativeProcess ──
 static std::mutex g_dspProcessMutex;

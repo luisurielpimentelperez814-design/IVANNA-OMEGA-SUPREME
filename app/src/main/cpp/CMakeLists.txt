@@ -27,6 +27,9 @@ endif()
 
 # ── Definiciones globales ─────────────────────────────────────────────────────
 add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
+# Flags reales de compilación → nativeGetBuildFlags() (el perfilador de la UI las muestra tal cual).
+string(REPLACE ";" " " IVANNA_NATIVE_FLAGS_STR "${BASE_FLAGS}")
+add_compile_definitions(IVANNA_NATIVE_FLAGS="${IVANNA_NATIVE_FLAGS_STR} -std=c++20")
 
 # ────────────────────────────────────────────────────────────────────────────
 # Target: libivanna_omega.so (APK NDK library)
