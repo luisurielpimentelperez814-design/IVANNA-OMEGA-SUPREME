@@ -1071,7 +1071,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private fun runVoiceClassification() {
             try {
                 val vc = voiceController ?: return
+                val t0 = System.nanoTime()
                 val (hint, scores) = vc.processAudioWithScores(voiceSnapshot)
+                val us = (System.nanoTime() - t0) / 1000L
+                if (scores.isValid) {
+                    AudioPipeline.publishLiveClassification(
+                        scores.speech, scores.music, scores.bass, us, "CRNN TFLite")
+                }
                 OmegaEngineBridge.pushYamnetScores(
                     speech = scores.speech, music = scores.music,
                     classId = 0, confidence = maxOf(scores.speech, scores.music)

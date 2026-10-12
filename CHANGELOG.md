@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.14 (305) — TinyML honesto y clasificador vivo
+- Panel TinyML sin cifras inventadas: fuente real (CRNN/heurística) y tiempo medido\n- Clasificador del hilo de fondo publica scores y latencia a la UI
+
 # CHANGELOG — v2.5.13 (304) — NAVEGACIÓN: rutas alias sin navegar durante la composición
 1. **`MainActivity.kt`** — las rutas alias (`ope`, `binaural`, `telemetry`, `auditory`, `adaptive_dash`) llamaban `nav.navigate(...)` directamente en el cuerpo del `composable`: efecto secundario durante la composición que puede navegar varias veces o dejar una pantalla vacía parpadeando. Ahora usan `LaunchedEffect(Unit)` (misma redirección, ejecutada una vez).
 2. **`ControlTabScreen.kt`** — los botones OPE y TELEMETRÍA de CONTROL navegan directo a `IvannaRoute.SOUND` / `IvannaRoute.SYSTEM` con `launchSingleTop`, sin pasar por el alias.

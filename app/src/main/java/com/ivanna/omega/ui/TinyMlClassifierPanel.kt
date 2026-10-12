@@ -54,11 +54,13 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                            else -> "AMBIENT" }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        GlassCard("TINYML CONVNEXT 1D INT8 CLASSIFIER", NeonMagenta,
-            subtitle = "Lock-Free SPSC Ring Buffer · 32-Band Log-Mel · quantized INT8 softmax") {
+        GlassCard("CLASIFICADOR DE ESCENA", NeonMagenta,
+            subtitle = "Fuente y tiempo medidos en vivo; sin datos hasta que el motor procese audio") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SpscCard("SPSC RING BUFFER", "512 / 2048 Samples", AuroraCyan, Modifier.weight(1f))
-                SpscCard("INFERENCE LATENCY", "8.1 μs", PhosphorGreen, Modifier.weight(1f))
+                SpscCard("FUENTE", if (yamnet.valid) yamnet.source else "SIN DATOS", AuroraCyan, Modifier.weight(1f))
+                SpscCard("TIEMPO DE CLASIFICACIÓN",
+                    if (yamnet.valid && yamnet.inferenceUs > 0L) "%.1f ms".format(yamnet.inferenceUs / 1000f) else "—",
+                    PhosphorGreen, Modifier.weight(1f))
             }
         }
 
@@ -77,12 +79,6 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                 SoftBar("Music / Polyphonic Harmonics", music,     NeonMagenta)
                 SoftBar("Transient / Impact Peaks",     transient, AmberSignal)
                 SoftBar("Ambient / Noise Floor",        ambient,   PhosphorGreen)
-                HorizontalDivider(color = ObsidianEdge, thickness = 0.5.dp)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    MetaItem("MEL BANDS",     "32 Bands Log2",   TextMuted)
-                    MetaItem("QUANT SCALE",   "Q.7 / Q.8 Fixed", TextMuted)
-                    MetaItem("MUTEX STATUS",  "Lock-Free SPSC",  PhosphorGreen)
-                }
             }
         }
 

@@ -33,7 +33,11 @@ class AudioPipeline {
         val speech: Float = 0f,
         val music: Float = 0f,
         val bass: Float = 0f,
-        val valid: Boolean = false
+        val valid: Boolean = false,
+        /** Tiempo medido de clasificación (µs); 0 = sin medición. */
+        val inferenceUs: Long = 0L,
+        /** Origen real del resultado: "CRNN TFLite" o "Heurística espectral". */
+        val source: String = "—"
     )
 
     companion object {
@@ -67,6 +71,12 @@ class AudioPipeline {
         // planos en un SimpleResult para evitar la dependencia de orden de init.
         private val _sharedYamnet = MutableStateFlow(SharedYamnetResult())
         val sharedYamnetResult: StateFlow<SharedYamnetResult> = _sharedYamnet.asStateFlow()
+
+        /** Publicación desde el clasificador vivo (hilo de fondo, nunca el de audio). */
+        fun publishLiveClassification(speech: Float, music: Float, bass: Float,
+                                      inferenceUs: Long, source: String) {
+            _sharedYamnet.value = SharedYamnetResult(speech, music, bass, true, inferenceUs, source)
+        }
     }
 
     private val tag = "IVANNA.Pipeline"
@@ -304,7 +314,7 @@ class AudioPipeline {
                 AudioEngine.nativeSetAntiDolbyScoresStatic(speechScore, musicScore, bassScore)
                 _yamnetResult.value = YamnetResult(speechScore, musicScore, bassScore, true)
                 // 3J: exponer globalmente para TelemetryDashboard
-                _sharedYamnet.value = SharedYamnetResult(speechScore, musicScore, bassScore, true)
+                _sharedYamnet.value = SharedYamnetResult(speechScore, musicScore, bassScore, true, 0L, "Heurística espectral")
             } catch (_: Exception) {}
         }
     }
