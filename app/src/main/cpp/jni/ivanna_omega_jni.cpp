@@ -41,6 +41,7 @@
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
+#include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
@@ -333,6 +334,13 @@ static std::atomic<float> g_lastAdaptiveExcReduction{0.0f};
 static std::atomic<float> g_lastAdaptiveSpatialWidth{1.0f};
 static std::atomic<float> g_lastAdaptiveSafetyMargin{1.0f};
 static std::atomic<float> g_lastAdaptiveVoiceProtect{0.0f};
+// v2.5.15 — salidas del arbitraje unificado (Fase 3) del ADE que se calculaban y NADIE aplicaba en
+// Ruta A (rir_wet_scale, ms_widener_scale, eq_tilt_db). Se aplican mezcladas por la fuerza adaptativa.
+static std::atomic<float> g_lastAdaptiveRirWetScale{1.0f};
+static std::atomic<float> g_lastAdaptiveMsWidenerScale{1.0f};
+static std::atomic<float> g_lastAdaptiveEqTiltDb{0.0f};
+// Interruptor del usuario para el Acoustic Unity Engine (default ON = comportamiento de v2.5.14).
+static std::atomic<bool>  g_unity_enabled{true};
 static std::atomic<float> g_lastRawRms{0.0f};
 // Adaptive Control Center: modula el mismo motor adaptativo productivo (Calibración Magistral STUDIO 82% por defecto).
 static std::atomic<int>   g_adaptiveUiMode{2};      // 0=OFF,1=NATURAL,2=STUDIO,3=EXTREME
@@ -395,6 +403,9 @@ static void adaptiveSnapshotLoop() {
             g_lastAdaptiveSpatialWidth.store(st.spatial_width,           std::memory_order_release);
             g_lastAdaptiveSafetyMargin.store(st.safety_margin,           std::memory_order_release);
             g_lastAdaptiveVoiceProtect.store(st.voice_protection_amount, std::memory_order_release);
+            g_lastAdaptiveRirWetScale   .store(st.rir_wet_scale,         std::memory_order_release);
+            g_lastAdaptiveMsWidenerScale.store(st.ms_widener_scale,      std::memory_order_release);
+            g_lastAdaptiveEqTiltDb      .store(st.eq_tilt_db,            std::memory_order_release);
         }
         std::this_thread::sleep_for(
             std::chrono::milliseconds(20));
@@ -1176,6 +1187,22 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // buffers en g_ats
     std::memcpy(g_ats.dryL, g_ats.chL, n * sizeof(float));
     std::memcpy(g_ats.dryR, g_ats.chR, n * sizeof(float));
+    // ── v2.5.15 · ACOUSTIC UNITY ENGINE en Ruta A ────────────────────────────
+    // Hasta v2.5.14 solo corría en Ruta B (audioserver); la ruta que usa la app no lo llamaba.
+    // Lee el ORIGINAL (pre-cadena) y publica el contexto/presupuestos que se consumen más abajo.
+    // tonalityHint = 0: Ruta A no mide tonalidad (no hay motor de prosodia en este proceso), así que no
+    // se inventa; la escena "música audiófila" solo existe donde hay medición (Ruta B).
+    auto& unityEngine = ivanna::unity::AcousticUnityEngine::instance();
+    unityEngine.setEnabled(g_unity_enabled.load(std::memory_order_relaxed));
+    unityEngine.setSampleRate(static_cast<float>(g_params.sampleRate));
+    unityEngine.coordinateAcousticOrganism(
+        g_ats.dryL, g_ats.dryR, static_cast<size_t>(n),
+        g_voice_protect_score.load(std::memory_order_relaxed), 0.0f,
+        g_upmixing_enabled.load(std::memory_order_relaxed),
+        g_wfs_enabled.load(std::memory_order_relaxed),
+        g_rirConvolver.load(std::memory_order_acquire) != nullptr,
+        g_params.drive);
+    const ivanna::unity::AcousticUnityContext unityCtx = unityEngine.getContext();
     // FIX (Fase C, pulido de oído absoluto): processInput() (trim de
     // entrada, derivado de p.mix, ±6dB) corría DESPUÉS de EQ/Compressor/
     // Exciter/Widener — violando el orden de una cadena de ganancia
@@ -1242,6 +1269,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_ats.peakGuardScale = targetSc;
         }
     }
+    // v2.5.15: eq_tilt_db (atenuación de fatiga en agudos) del ADE: calculado y publicado, nunca aplicado.
+    g_eq.setFatigueTilt(blend_adaptive_from_neutral(
+        0.0f, std::clamp(g_lastAdaptiveEqTiltDb.load(std::memory_order_relaxed), -3.0f, 0.0f),
+        adaptive_ui_strength()));
     g_eq.process(g_ats.chL, g_ats.chR, n);
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
     // exciter_reduction ahora se aplican a los módulos DSP REALES
@@ -1266,14 +1297,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         1.0f,
         std::clamp(g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f),
         adaptiveStrength);
-    const float compAmountUi = blend_adaptive_from_neutral(
+    // v2.5.15: la compresión ADICIONAL sugerida cede ante la pérdida de cresta MEDIDA (dynamicsBudget) y la
+    // reducción del exciter sube si la salida medida gana demasiado agudo (harmonicBudget). El piso de
+    // seguridad del Perceptual Guard (más abajo) se aplica DESPUÉS y sigue mandando.
+    const float compAmountUi = unityCtx.dynamicsBudget * blend_adaptive_from_neutral(
         0.0f,
         std::clamp(g_lastAdaptiveCompAmount.load(std::memory_order_relaxed), 0.f, 1.f),
         adaptiveStrength);
-    const float excReductionUi = blend_adaptive_from_neutral(
+    const float excReductionUi = std::max(1.0f - unityCtx.harmonicBudget, blend_adaptive_from_neutral(
         0.0f,
         std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
-        adaptiveStrength);
+        adaptiveStrength));
     g_ats.targetGainSmooth += 0.05f * (targetGainUi - g_ats.targetGainSmooth);
     g_ats.compAmountSmooth += 0.05f * (compAmountUi - g_ats.compAmountSmooth);
     g_ats.excReductionSmooth += 0.05f * (excReductionUi - g_ats.excReductionSmooth);
@@ -1577,6 +1611,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_lastAdaptiveSpatialWidth.store(st.spatial_width,           std::memory_order_relaxed);
             g_lastAdaptiveSafetyMargin.store(st.safety_margin,           std::memory_order_relaxed);
             g_lastAdaptiveVoiceProtect.store(st.voice_protection_amount, std::memory_order_relaxed);
+            g_lastAdaptiveRirWetScale   .store(st.rir_wet_scale,         std::memory_order_relaxed);
+            g_lastAdaptiveMsWidenerScale.store(st.ms_widener_scale,      std::memory_order_relaxed);
+            g_lastAdaptiveEqTiltDb      .store(st.eq_tilt_db,            std::memory_order_relaxed);
             g_lastAdaptiveApplied.fetch_add(1, std::memory_order_relaxed);
         }
         // 6) APLICAR UN parámetro audible: spatial_width, combinando DOS
@@ -1599,7 +1636,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             adaptiveStrength);
         g_ats.widthSmooth += 0.02f * (widthTarget - g_ats.widthSmooth);  // ~50 bloques a τ
         const float adaptiveWidenAmount = std::max(0.f, g_ats.widthSmooth - 1.f);
-        const float combinedWidenAmount = std::max(widenAmountFromCorrelation, adaptiveWidenAmount);
+        // v2.5.15: tercer solicitante (Unity: fuente estrecha y sin voz) y permiso espacial. El permiso es
+        // el MÁS CONSERVADOR entre la escala del ADE (voz => 0.25) y el presupuesto MEDIDO sobre la salida
+        // real (sobre-expansión / pérdida de correlación): nadie compone, el más estricto manda.
+        const float unityWidenAsk = std::max(0.f, unityCtx.msWidenerMultiplier - 1.f);
+        const float widenPermission = std::min(
+            blend_adaptive_from_neutral(1.0f,
+                std::clamp(g_lastAdaptiveMsWidenerScale.load(std::memory_order_relaxed), 0.f, 1.f),
+                adaptiveStrength),
+            unityCtx.spatialBudget);
+        const float combinedWidenAmount =
+            std::max({widenAmountFromCorrelation, adaptiveWidenAmount, unityWidenAsk}) * widenPermission;
         const bool spatialHierarchyActive = (g_upmixing_enabled.load(std::memory_order_relaxed) ||
                                              g_wfs_enabled.load(std::memory_order_relaxed));
         const float targetWidenAmount = spatialHierarchyActive ? 0.0f : combinedWidenAmount;
@@ -1637,6 +1684,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             // nativeInitDSP aún no corrió: nada que convolver, passthrough.
         } else {
         static uint64_t s_rirLastGen = 0;
+        // v2.5.15: wet BASE pedida por el usuario/snapshot. Antes setWetDry() solo se llamaba cuando llegaba
+        // una generación nueva del snapshot, así que ningún factor por bloque podía actuar sobre la sala.
+        static float s_rirWetBase = 0.0f;
         ivanna::OmegaDspSnapshot rirSnap{};
         if (ivanna::effectControlBus().readLatest(rirSnap, s_rirLastGen)) {
             auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
@@ -1646,9 +1696,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             const float rt60 = rirSnap.room_rt60_s;
             const float wet  = rirSnap.room_wet;
             if (rt60 < 0.01f || wet <= 0.001f) {
+                s_rirWetBase = 0.0f;
                 s_rirConvolver->setWetDry(0.f);
                 s_rirConvolver->unload();
             } else if (!s_rirDataset || s_rirDataset->roomCount() == 0) {
+                s_rirWetBase = wet;
                 s_rirConvolver->setWetDry(wet);
                 if (s_rirConvolver->needsMasterStudioBrirSynthesis(rt60, (int)g_params.sampleRate)) {
                     g_rirPendingSynthRt60.store(rt60, std::memory_order_release);
@@ -1668,8 +1720,23 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
                     g_rirWorkerCv.notify_one();
                     s_rirLastIdx = (int32_t)roomIdx;
                 }
+                s_rirWetBase = wet;
                 s_rirConvolver->setWetDry(wet);
             }
+        }
+        // v2.5.15: permiso de sala por bloque = el MÁS CONSERVADOR entre (a) la escala del ADE (voz => 0.65),
+        // (b) el duck de voz del Unity Engine (solo con escena de diálogo: es lo único que Ruta A mide) y
+        // (c) el presupuesto de sala MEDIDO (EXP/PHASE/CLAR sobre la salida real). Sin componer factores.
+        if (s_rirWetBase > 0.001f) {
+            const float unityDuck =
+                (unityCtx.scene == ivanna::unity::DominantAcousticScene::DialogueVocal)
+                    ? unityCtx.rirWetDuckFactor : 1.0f;
+            const float rirPermission = std::min({
+                blend_adaptive_from_neutral(1.0f,
+                    std::clamp(g_lastAdaptiveRirWetScale.load(std::memory_order_relaxed), 0.f, 1.f),
+                    adaptiveStrength),
+                unityDuck, unityCtx.roomReverbBudget});
+            s_rirConvolver->setWetDry(s_rirWetBase * rirPermission);
         }
         if (s_rirConvolver->isLoaded()) {
             const bool extActive = (s_rirConvolver->wetDry() > 0.001f);
@@ -1785,6 +1852,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
         g_ats.pdOutR[i] = g_dcBlockR.process(g_ats.pdOutR[i]);
     }
+    // v2.5.15: lazo cerrado — se mide el RESULTADO final (original vs salida) ANTES de la rampa de
+    // arranque, para que ésta no sesgue la medición; luego se aplica el arranque en frío Hermite C1
+    // (identidad una vez calentado; se rearma tras >= 250 ms de silencio).
+    unityEngine.observeOutcome(g_ats.dryL, g_ats.dryR, g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
+    unityEngine.applyColdStart(g_ats.pdOutL, g_ats.pdOutR, static_cast<size_t>(n));
 
     if (g_lab_auto_enabled.load(std::memory_order_relaxed)) {
         static thread_local int s_labFeedCounter = 0;
@@ -2329,6 +2401,60 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsVolterraEnabled(
     JNIEnv*, jobject) {
     return g_volterra_enabled.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JNI API: Acoustic Unity Engine (v2.5.15) — interruptor y telemetría medida
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Apaga/enciende la coordinación (contexto neutro cuando está apagada). Se publica también como bit
+// OMEGA_FLAG_UNITY_OFF del snapshot para que la Ruta B (audioserver) siga el mismo interruptor.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUnityEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_unity_enabled.store(on, std::memory_order_release);
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        if (on) snap.flags &= ~ivanna::OMEGA_FLAG_UNITY_OFF;
+        else    snap.flags |=  ivanna::OMEGA_FLAG_UNITY_OFF;
+        bus.publish(snap);
+    }
+    LOGI("[IvannaNativeLib] Acoustic Unity Engine set to %d", on);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsUnityEnabled(JNIEnv*, jobject) {
+    return g_unity_enabled.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
+}
+
+// [0..15] medidor de lazo cerrado: corrDry, corrWet, expansionDb, hfExcessDb, crestDryDb, crestWetDb,
+//         crestLossDb, exceso EXP/PHASE/CLAR/FATIGUE (dB, <0 = holgura), presupuestos
+//         spatial/room/exciter/dynamics, confianza.
+// [16] escena (0 neutro,1 diálogo,2 música,3 cine,4 gaming,5 ambiente) [17] prob. de voz
+// [18] ensanche pedido (multiplicador) [19] duck de sala [20..23] presupuestos publicados en el
+// contexto: espacial, armónico, sala, dinámica. Es el estado de la Ruta A (este proceso).
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnityTelemetry(JNIEnv* env, jobject) {
+    constexpr int kN = 24;
+    jfloat v[kN] = {};
+    auto& eng = ivanna::unity::AcousticUnityEngine::instance();
+    eng.loopTelemetry(v);
+    const auto c = eng.getContext();
+    v[16] = static_cast<float>(static_cast<int>(c.scene));
+    v[17] = c.voiceProbability;
+    v[18] = c.msWidenerMultiplier;
+    v[19] = c.rirWetDuckFactor;
+    v[20] = c.spatialBudget;
+    v[21] = c.harmonicBudget;
+    v[22] = c.roomReverbBudget;
+    v[23] = c.dynamicsBudget;
+    jfloatArray out = env->NewFloatArray(kN);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, kN, v);
+    return out;
 }
 
 JNIEXPORT void JNICALL

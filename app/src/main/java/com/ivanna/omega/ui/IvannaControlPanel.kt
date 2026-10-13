@@ -178,6 +178,24 @@ fun IvannaControlPanel(
             if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsAtiEnabled() }.getOrDefault(true) else true
         )
     }
+    // v2.5.15: Acoustic Unity Engine — interruptor persistente (su propio SharedPreferences) que se
+    // reaplica al nativo al componer, y telemetría MEDIDA (original vs salida) refrescada cada 500 ms.
+    val unityPrefs = remember { context.getSharedPreferences("ivanna_unity", android.content.Context.MODE_PRIVATE) }
+    var unityEnabled by remember { mutableStateOf(unityPrefs.getBoolean("enabled", true)) }
+    var unityTelemetry by remember { mutableStateOf(FloatArray(0)) }
+    LaunchedEffect(Unit) {
+        if (IvannaNativeLib.isLoaded) {
+            runCatching { IvannaNativeLib.nativeSetUnityEnabled(unityEnabled) }
+            // La UI muestra el estado REAL del motor nativo, no el supuesto.
+            unityEnabled = runCatching { IvannaNativeLib.nativeIsUnityEnabled() }.getOrDefault(unityEnabled)
+        }
+        while (isActive) {
+            if (IvannaNativeLib.isLoaded) {
+                unityTelemetry = runCatching { IvannaNativeLib.nativeGetUnityTelemetry() }.getOrDefault(FloatArray(0))
+            }
+            delay(500)
+        }
+    }
 
     // Persistencia inmediata en cada cambio para todos los controles del panel.
     // FIX: phaseOracleIntensity y omegaMode sólo se guardaban en DisposableEffect
@@ -566,6 +584,28 @@ fun IvannaControlPanel(
                     atiEnabled = en
                     if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAtiEnabled(en) }
                 }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlagToggle("UNITY MEDIDO", unityEnabled, PhosphorGreen, Modifier.weight(1f)) { en ->
+                    unityEnabled = en
+                    unityPrefs.edit().putBoolean("enabled", en).apply()
+                    if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetUnityEnabled(en) }
+                }
+                val ut = unityTelemetry
+                Text(
+                    when {
+                        ut.size < 24 -> "Sin medición (motor nativo no activo)"
+                        ut[15] < 1f  -> "Calibrando medición…"
+                        else ->
+                            "corr ${"%.2f".format(ut[0])}→${"%.2f".format(ut[1])}  cresta ${"%+.1f".format(-ut[6])} dB  agudos ${"%+.1f".format(ut[3])} dB\n" +
+                            "presupuestos  espacio ${"%.0f".format(ut[11] * 100f)}%  sala ${"%.0f".format(ut[12] * 100f)}%  " +
+                            "armónicos ${"%.0f".format(ut[13] * 100f)}%  dinámica ${"%.0f".format(ut[14] * 100f)}%"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted,
+                    modifier = Modifier.weight(2f)
+                )
             }
         }
 

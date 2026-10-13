@@ -336,6 +336,11 @@ object IvannaNativeLib {
     external fun nativeIsFastRpcEnabled(): Boolean
     external fun nativeSetAtiEnabled(enabled: Boolean)
     external fun nativeIsAtiEnabled(): Boolean
+    // ═══ Acoustic Unity Engine (v2.5.15): interruptor y telemetría del lazo cerrado MEDIDO ═════
+    // Telemetría [0..23]: ver nativeGetUnityTelemetry en ivanna_omega_jni.cpp.
+    external fun nativeSetUnityEnabled(enabled: Boolean)
+    external fun nativeIsUnityEnabled(): Boolean
+    external fun nativeGetUnityTelemetry(): FloatArray
     external fun nativeSetSpscRingFactor(factor: Float)
     external fun nativeGetSpscRingFactor(): Float
 
