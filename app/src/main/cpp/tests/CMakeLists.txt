@@ -1025,6 +1025,7 @@ gtest_discover_tests(test_tinyml_kernel)
 
 # ── IVANNA Acoustic Unity Engine (v2.6.0) ──
 ivanna_add_test(test_acoustic_unity_engine)
+ivanna_add_test(test_unity_closed_loop)
 
 
 

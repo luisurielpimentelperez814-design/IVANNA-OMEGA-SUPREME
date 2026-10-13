@@ -285,6 +285,7 @@ struct omega_effect_context_t {
     // llamadas para no perder los valores ya recibidos.
     bool                     localWriterOpen;
     ivanna::OmegaDspSnapshot pendingSnap;
+    float lastVoiceProb = 0.0f;   // v2.5.15: probabilidad VOICE medida (clasificador) para el motor adaptativo
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
     ivanna::spatial::IvannaAudioPipeline* audioPipeline;
     ivanna::unified::DeclarativeUnifiedPipeline* unifiedPipeline;
@@ -1026,12 +1027,18 @@ static int32_t omega_process(effect_handle_t self,
 
         // ── IVANNA ACOUSTIC UNITY ENGINE (v2.6.0): Organismo Acústico Unificado ──
         auto* unityCls = fc ? fc->getClassifier() : nullptr;
+        // v2.5.15: interruptor del usuario (bit OMEGA_FLAG_UNITY_OFF del snapshot) y frecuencia real.
+        ivanna::unity::AcousticUnityEngine::instance().setEnabled(
+            (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_UNITY_OFF) == 0u);
+        ivanna::unity::AcousticUnityEngine::instance().setSampleRate(
+            (ctx->config.outputCfg.samplingRate != 0) ? (float)ctx->config.outputCfg.samplingRate : 48000.0f);
         float unityProbs[NUM_CLASSES] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
         if (unityCls) unityCls->getClassProbabilities(unityProbs);
         const float unityVoice = std::clamp(
             std::isfinite(unityProbs[static_cast<size_t>(AudioContextClass::VOICE)])
                 ? unityProbs[static_cast<size_t>(AudioContextClass::VOICE)] : 0.0f,
             0.0f, 1.0f);
+        ctx->lastVoiceProb = unityVoice;
         const float unityTonality = (fc && fc->getProsodyEngine())
             ? fc->getProsodyEngine()->getMetrics().pitchConfidence : 0.0f;
         const bool unityUpmix = (fc && fc->getUpmixer().isUpmixingEnabled());
@@ -1045,6 +1052,10 @@ static int32_t omega_process(effect_handle_t self,
             unityUpmix, unityWfs, unityRir, unityHarm);
 
         const auto unityCtx = ivanna::unity::AcousticUnityEngine::instance().getContext();
+        // v2.5.15 — armónicos: exc_red (motor adaptativo: se escribía y publicaba pero NADIE lo aplicaba)
+        // y presupuesto armónico MEDIDO. Gana el más conservador (min), nunca se componen.
+        if (fc) fc->setHarmonicCoordination(std::min(
+            1.0f - std::clamp(ctx->pendingSnap.exc_red, 0.0f, 1.0f), unityCtx.harmonicBudget));
 
         ctx->stabilityGuard.beginBlock(L, R, (size_t)chunk, true);
 
@@ -1156,9 +1167,14 @@ static int32_t omega_process(effect_handle_t self,
             const bool spatialAlreadyActive =
                 ctx->stabilityGuard.arbitration().activeSpatialModule !=
                 ivanna::supreme::AcousticModuleId::None;
-            const float sideTarget = spatialAlreadyActive
+            const float sideAsk = spatialAlreadyActive
                 ? 1.0f
                 : std::clamp(ctx->antiDolby->currentWidener() * unityCtx.msWidenerMultiplier, 0.75f, 1.35f);
+            // v2.5.15: si la salida medida ya es demasiado lateral / pierde correlación (spatialBudget < 1),
+            // se recorta solo el ensanche (>1); un estrechamiento (<1) no se toca.
+            const float sideTarget = (sideAsk > 1.0f)
+                ? 1.0f + (sideAsk - 1.0f) * unityCtx.spatialBudget
+                : sideAsk;
             // FIX (tronido al cambiar de música o al activar módulo espacial):
             // sideTarget salta entre 1.0 y currentWidener() (0.75-1.35) cuando
             // spatialAlreadyActive cambia de estado entre bloques. La EMA fija
@@ -1196,7 +1212,12 @@ static int32_t omega_process(effect_handle_t self,
                 ctx->pendingSnap.room_wet, ctx->pendingSnap.room_rt60_s);
             const bool isVoiceActive = (ctx->fusionCore && ctx->fusionCore->getProsodyEngine() &&
                                         ctx->fusionCore->getProsodyEngine()->getMetrics().isVoiced);
-            const float voiceDuck = isVoiceActive ? (0.25f * unityCtx.rirWetDuckFactor) : unityCtx.rirWetDuckFactor;
+            // v2.5.15: antes 0.25 * rirWetDuckFactor — con escena DialogueVocal (factor 0.25) la sala caía
+            // a 0.0625 (-24 dB) en vez de los -12 dB documentados. Ahora el más conservador manda (min)
+            // y el presupuesto de sala medido (EXP/PHASE/CLAR) participa en el mismo min.
+            const float voiceDuck = std::min(
+                isVoiceActive ? std::min(0.25f, unityCtx.rirWetDuckFactor) : unityCtx.rirWetDuckFactor,
+                unityCtx.roomReverbBudget);
             const float desiredRirWet = (!ctx->thermalSkipRIR && ctx->pendingSnap.room_rt60_s >= 0.01f)
                 ? std::clamp(limitedSnapWet * voiceDuck, 0.0f, 0.45f)
                 : 0.0f;
@@ -1327,6 +1348,11 @@ static int32_t omega_process(effect_handle_t self,
         // SafetyLimiter que corre al final de la Ruta A.
         if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
 
+        // v2.5.15: lazo cerrado — original vs salida final (tras el limitador). El resultado de este
+        // bloque fija los presupuestos que el Unity Engine publica en el siguiente.
+        ivanna::unity::AcousticUnityEngine::instance().observeOutcome(
+            dryBufL, dryBufR, L, R, (size_t)chunk);
+
         const auto chunkBands = ctx->bandMeter.processBlock(L, R, (size_t)chunk);
         bandAccum.low  += chunkBands.low;
         bandAccum.mid  += chunkBands.mid;
@@ -1404,8 +1430,9 @@ static int32_t omega_process(effect_handle_t self,
             rawM.band_low_energy  = __builtin_sqrtf(bandAccum.low  * invFrames);
             rawM.band_mid_energy  = __builtin_sqrtf(bandAccum.mid  * invFrames);
             rawM.band_high_energy = __builtin_sqrtf(bandAccum.high * invFrames);
-            rawM.voice_score      = (ctx->adaptiveEngine && ctx->fusionCore && ctx->fusionCore->getProsodyEngine() &&
-                                     ctx->fusionCore->getProsodyEngine()->getMetrics().isVoiced) ? 0.72f : 0.35f;
+            // v2.5.15: antes una constante inventada (0.72 si "voiced", 0.35 si no) que el motor adaptativo
+            // trataba como probabilidad real. Ahora la probabilidad VOICE medida por el clasificador.
+            rawM.voice_score      = ctx->lastVoiceProb;
             rawM.wfs_active       = (ctx->pendingSnap.wfs_enabled != 0u) ? 1.0f : 0.0f;
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
             rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;

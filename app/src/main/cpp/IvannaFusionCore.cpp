@@ -417,7 +417,7 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
     static constexpr float kMixBase = 0.12f;
     static constexpr float kHarmSlew = 1.0f / 8000.0f;
 
-    const float effectiveHarmTarget = m_goldenEarActive ? m_harmGainTarget_ : 0.0f;
+    const float effectiveHarmTarget = m_goldenEarActive ? (m_harmGainTarget_ * m_harmCoordScale_) : 0.0f;
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         // Perseguir el target UNA muestra más (slew por muestra, sin zipper).
         if (m_harmSmoothed_ < effectiveHarmTarget)

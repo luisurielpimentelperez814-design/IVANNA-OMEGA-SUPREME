@@ -137,6 +137,9 @@ constexpr uint32_t OMEGA_FLAG_ATLAS_LEGACY_ER        = (1u << 18); // 1 = usar E
 constexpr uint32_t OMEGA_FLAG_ATLAS_LEGACY_SHAPER    = (1u << 19); // 1 = usar softClip legacy en vez de Chebyshev T2+T3
 constexpr uint32_t OMEGA_FLAG_ATLAS_STYLE_SHIFT      = 20u;        // bits 20..23: (manualStyle + 1) & 0xF (0 = Auto)
 constexpr uint32_t OMEGA_FLAG_ATLAS_STYLE_MASK       = (0xFu << 20u);
+// v2.5.15: 1 = interruptor del usuario APAGA la coordinación del Acoustic Unity Engine (contexto
+// neutro). Semántica "_OFF": un snapshot por defecto (bit en 0) conserva el comportamiento previo.
+constexpr uint32_t OMEGA_FLAG_UNITY_OFF              = (1u << 24);
 
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {

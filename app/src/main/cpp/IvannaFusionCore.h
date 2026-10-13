@@ -217,6 +217,13 @@ public:
             m_goldenEarActive = (gain > 0.001f);
         }
     }
+    // v2.5.15: permiso de coordinación [0,1] sobre la ganancia armónica del usuario. Lo fijan
+    // exc_red del motor adaptativo y el presupuesto armónico medido del Unity Engine; process()
+    // lo integra con el mismo slew por muestra (sin escalones). 1.0 = sin recorte.
+    void setHarmonicCoordination(float scale) noexcept {
+        if (std::isfinite(scale)) m_harmCoordScale_ = std::clamp(scale, 0.0f, 1.0f);
+    }
+    float getHarmonicCoordination() const noexcept { return m_harmCoordScale_; }
     void setCompressorParams(float thresholdDb, float ratio) noexcept {
         if (std::isfinite(thresholdDb) && std::isfinite(ratio)) {
             m_compThresholdDb_ = std::clamp(thresholdDb, -60.0f, 0.0f);
@@ -325,6 +332,7 @@ private:
     float m_compThresholdDb_      = -12.0f;
     float m_compRatio_            = 1.0f;
     float m_compEnv_              = 0.0f;
+    float m_harmCoordScale_       = 1.0f;
     float m_routeBassDb_          = 0.0f;
     float m_routeDialogDb_        = 0.0f;
     float m_routeWidenerMult_     = 1.0f;
