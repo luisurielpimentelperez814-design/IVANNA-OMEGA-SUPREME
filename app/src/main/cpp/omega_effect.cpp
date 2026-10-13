@@ -285,6 +285,8 @@ struct omega_effect_context_t {
     // llamadas para no perder los valores ya recibidos.
     bool                     localWriterOpen;
     ivanna::OmegaDspSnapshot pendingSnap;
+    float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE (antes descartado)
+    float adaptImmScale = 1.0f;   // v2.5.15: upmix_immersivity del ADE (antes descartado)
     float lastVoiceProb = 0.0f;   // v2.5.15: probabilidad VOICE medida (clasificador) para el motor adaptativo
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
     ivanna::spatial::IvannaAudioPipeline* audioPipeline;
@@ -1054,6 +1056,7 @@ static int32_t omega_process(effect_handle_t self,
         const auto unityCtx = ivanna::unity::AcousticUnityEngine::instance().getContext();
         // v2.5.15 — armónicos: exc_red (motor adaptativo: se escribía y publicaba pero NADIE lo aplicaba)
         // y presupuesto armónico MEDIDO. Gana el más conservador (min), nunca se componen.
+        if (fc) fc->setSpatialCoordination(ctx->adaptWfsScale, ctx->adaptImmScale);
         if (fc) fc->setHarmonicCoordination(std::min(
             1.0f - std::clamp(ctx->pendingSnap.exc_red, 0.0f, 1.0f), unityCtx.harmonicBudget));
 
@@ -1445,6 +1448,8 @@ static int32_t omega_process(effect_handle_t self,
                     ctx->pendingSnap.target_gain = std::clamp(adSt.target_gain, 0.50f, 1.0f);
                     ctx->pendingSnap.comp_amount = std::clamp(adSt.compressor_amount, 0.0f, 1.0f);
                     ctx->pendingSnap.exc_red     = std::clamp(adSt.exciter_reduction, 0.0f, 1.0f);
+                    ctx->adaptWfsScale = std::clamp(adSt.wfs_spread_scale,  0.5f, 1.0f);
+                    ctx->adaptImmScale = std::clamp(adSt.upmix_immersivity, 0.5f, 1.0f);
                 }
             }
         }

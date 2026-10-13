@@ -250,7 +250,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         std::memcpy(hoaL, buffer->left,  Ivanna::BLOCK_SIZE * sizeof(float));
         std::memcpy(hoaR, buffer->right, Ivanna::BLOCK_SIZE * sizeof(float));
 
-        m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed));
+        m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed) * m_immCoordScale_);
         m_upmixer.processBlock(hoaL, hoaR, m_hoaField, Ivanna::BLOCK_SIZE);
         m_hoaDecoder.processBlock(m_hoaField, hoaL, hoaR, Ivanna::BLOCK_SIZE);
 
@@ -262,7 +262,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             buffer->right[i] = ivanna::supreme::SupremeTransitionEnvelope::mixConstantPower(buffer->right[i], hoaR[i], env);
         }
     } else if (!m_upmixEnv_.isSilent()) {
-        m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed));
+        m_upmixer.setImmersivity(g_upmixing_immersivity.load(std::memory_order_relaxed) * m_immCoordScale_);
         m_upmixer.processBlock(buffer->left, buffer->right, m_hoaField, Ivanna::BLOCK_SIZE);
         m_hoaDecoder.processBlock(m_hoaField, buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
     } else {
@@ -274,7 +274,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         if (m_wfsFade > 0.0f && m_wfsInit) {
             const int n = Ivanna::BLOCK_SIZE;
             for (int i = 0; i < n; ++i) { m_wfsOutL[i] = 0.f; m_wfsOutR[i] = 0.f; }
-            const float spread = g_wfs_spread.load(std::memory_order_relaxed);
+            const float spread = g_wfs_spread.load(std::memory_order_relaxed) * m_wfsCoordScale_;
             const auto realitySnap = ivanna::reality::AcousticRealityOrchestrator::instance().stateBus().readLatestSnapshot();
             if (realitySnap.enabled && realitySnap.sequence > 0) {
                 m_wfs.setRoomDimensions(

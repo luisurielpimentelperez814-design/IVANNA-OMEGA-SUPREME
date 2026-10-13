@@ -224,6 +224,13 @@ public:
         if (std::isfinite(scale)) m_harmCoordScale_ = std::clamp(scale, 0.0f, 1.0f);
     }
     float getHarmonicCoordination() const noexcept { return m_harmCoordScale_; }
+    // v2.5.15: escalas de coordinación espacial [0.5,1] del arbitraje unificado del ADE (wfs_spread_scale,
+    // upmix_immersivity: se calculaban y publicaban, nadie las aplicaba). Multiplican, en el punto de uso,
+    // al valor del usuario (g_wfs_spread / g_upmixing_immersivity); 1.0 = sin recorte.
+    void setSpatialCoordination(float wfsSpreadScale, float immersivityScale) noexcept {
+        if (std::isfinite(wfsSpreadScale))   m_wfsCoordScale_ = std::clamp(wfsSpreadScale, 0.5f, 1.0f);
+        if (std::isfinite(immersivityScale)) m_immCoordScale_ = std::clamp(immersivityScale, 0.5f, 1.0f);
+    }
     void setCompressorParams(float thresholdDb, float ratio) noexcept {
         if (std::isfinite(thresholdDb) && std::isfinite(ratio)) {
             m_compThresholdDb_ = std::clamp(thresholdDb, -60.0f, 0.0f);
@@ -333,6 +340,8 @@ private:
     float m_compRatio_            = 1.0f;
     float m_compEnv_              = 0.0f;
     float m_harmCoordScale_       = 1.0f;
+    float m_wfsCoordScale_        = 1.0f;
+    float m_immCoordScale_        = 1.0f;
     float m_routeBassDb_          = 0.0f;
     float m_routeDialogDb_        = 0.0f;
     float m_routeWidenerMult_     = 1.0f;
