@@ -17,7 +17,15 @@ public:
     // bandas apiladas superan 6 dB — el JNI la lee y la resta de g_params.master
     // antes de pasárselo a g_gain, manteniendo el headroom del SafetyLimiter.
     float getOutputCompensationDb() const noexcept { return eqOutputCompensationDb_; }
+    // v2.5.15: atenuación progresiva de agudos (bandas 5-7: 1/3, 2/3 y 1 del valor) pedida por el
+    // arbitraje de fatiga del motor adaptativo (eq_tilt_db, -3..0 dB). Se cuantiza a pasos de 0.25 dB y
+    // solo reconstruye los biquads cuando cambia (el crossfade anti-zipper de 15 ms evita clics).
+    void setFatigueTilt(float db) noexcept;
+    float getFatigueTilt() const noexcept { return fatigueTiltDb_; }
 private:
+    float fatigueTiltDb_ = 0.f;
+    DSPParams lastParams_{};
+    bool haveParams_ = false;
     enum class Shape { Peak, LowShelf, HighShelf };
     void setBandShaped(int band, Shape shape, float freq, float q, float gainDb) noexcept;
     struct Biquad {

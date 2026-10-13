@@ -419,6 +419,7 @@ ivanna_add_test(test_adaptive_eq_stress)
 
 # ── Curva real del ParametricEQ: shelves verdaderos (graves profundos / agudos sin plateau) ──
 ivanna_add_test(test_eq_shelf_response)
+ivanna_add_test(test_eq_fatigue_tilt)
 
 # ── test_ivannalab: suite host del laboratorio de medición IvannaLab ────────
 # Coordinación pendiente del flanco IvannaLab (commit 2c0826c3, marcado

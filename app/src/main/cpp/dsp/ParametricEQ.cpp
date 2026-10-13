@@ -127,6 +127,8 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     // Validación: barrido de tono + FFT — el -3 dB del shelf debe coincidir
     // con la frecuencia pedida a 44.1/48/96 kHz.
     setSampleRate(static_cast<float>(p.sampleRate));
+    if (&p != &lastParams_) lastParams_ = p;
+    haveParams_ = true;
 
     // p.low / p.mid / p.high / p.presence arrive as dB values directly from Kotlin
     // (DSPBridge.setParams passes them verbatim — they are NOT 0..1 scalars).
@@ -172,13 +174,13 @@ void ParametricEQ::setParams(const DSPParams& p) noexcept {
     // 3-8 kHz, justo donde el oido (ISO 226) es mas sensible -> aspereza y
     // sibilancia. El detalle ahora lo aporta el shelf de aire; la campana de
     // 5 kHz queda como toque de claridad, no como realce principal.
-    setBand(5, 5000.f, p.resonance, clampDb(p.high * 0.35f));
+    setBand(5, 5000.f, p.resonance, clampDb(p.high * 0.35f + fatigueTiltDb_ * (1.0f / 3.0f)));
     // Band 6: Peaking ~8 kHz — presence param
-    setBand(6, 8000.f, p.resonance, clampDb(p.presence));
+    setBand(6, 8000.f, p.resonance, clampDb(p.presence + fatigueTiltDb_ * (2.0f / 3.0f)));
     // Band 7: HIGH SHELF real a 10 kHz — high param (aire). Shelf verdadero:
     // sube 10-20 kHz de forma suave y mantiene la ganancia, sin concentrar
     // energia en la zona de maxima sensibilidad auditiva.
-    setHighShelf(7, 10000.f, 0.707f, clampDb(p.high));
+    setHighShelf(7, 10000.f, 0.707f, clampDb(p.high + fatigueTiltDb_));
 
     // ── Output-gain compensation (headroom management) ─────────────────────
     // Problema: las bandas son biquads EN SERIE (cascada), no en paralelo.
@@ -249,6 +251,14 @@ void ParametricEQ::process(float* l,float* r,int frames) noexcept {
         l[i]=L; r[i]=R;
     }
 #pragma clang diagnostic pop
+}
+
+void ParametricEQ::setFatigueTilt(float db) noexcept {
+    if (!std::isfinite(db)) return;
+    const float q = std::round(std::clamp(db, -3.0f, 0.0f) * 4.0f) * 0.25f;   // pasos de 0.25 dB
+    if (q == fatigueTiltDb_) return;
+    fatigueTiltDb_ = q;
+    if (haveParams_) setParams(lastParams_);   // reconstruye bandas 5-7 con el nuevo tilt
 }
 
 } // namespace ivanna
