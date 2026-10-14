@@ -1,0 +1,43 @@
+name: Reporte de dispositivo (¡el más útil!)
+description: Cuéntanos cómo funciona IVANNA en tu equipo
+labels: ["device-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        La validación en dispositivos reales es lo que más falta. Gracias por probar y reportar con honestidad:
+        también nos sirve saber qué **no** funcionó.
+  - type: input
+    id: dispositivo
+    attributes: { label: "Modelo y SoC", placeholder: "Xiaomi 13 · Snapdragon 8 Gen 2" }
+    validations: { required: true }
+  - type: input
+    id: android
+    attributes: { label: "Android / ROM", placeholder: "Android 14 · HyperOS 1.0" }
+    validations: { required: true }
+  - type: dropdown
+    id: ruta
+    attributes:
+      label: Ruta probada
+      options: ["Ruta A (sin root)", "Ruta B (root + Magisk)", "Ambas"]
+    validations: { required: true }
+  - type: input
+    id: salida
+    attributes: { label: "Salida de audio", placeholder: "Altavoz · auriculares con cable · USB-C DAC · Bluetooth (códec)" }
+    validations: { required: true }
+  - type: dropdown
+    id: carga
+    attributes:
+      label: ¿Cargó el efecto / se oyó el procesado?
+      options: ["Sí, y se nota", "Sí, pero no noto diferencia", "No cargó", "No estoy seguro"]
+    validations: { required: true }
+  - type: textarea
+    id: notas
+    attributes:
+      label: Qué escuchaste y con qué contenido
+      description: Música/película/streaming, perfil usado y qué mejoró o empeoró (clics, eco, fatiga, graves, voz…).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs o diagnóstico (opcional)
+      render: shell

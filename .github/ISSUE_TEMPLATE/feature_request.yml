@@ -1,0 +1,19 @@
+name: Idea o mejora
+description: Propón algo nuevo o una mejora de lo existente
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: ¿Qué problema o necesidad resuelve?
+    validations: { required: true }
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+      description: Cómo lo imaginas. Si afecta al DSP, indica cómo se mediría la mejora.
+    validations: { required: true }
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IVANNA OMEGA SUPREME — motor de audio para Android</title>
+<meta name="description" content="Motor de audio para Android en C++20 y Kotlin: DSP en tiempo real, HRTF binaural, salas medidas, WFS y un coordinador acústico en lazo cerrado. Ruta sin root y ruta con root (Magisk). Código abierto y verificable.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="IVANNA OMEGA SUPREME — motor de audio para Android">
+<meta property="og:description" content="DSP en tiempo real, HRTF binaural, salas medidas y coordinación acústica en lazo cerrado. Con pruebas, puertas de calidad y reportes honestos de lo medido.">
+<meta property="og:image" content="https://luisurielpimentelperez814-design.github.io/IVANNA-OMEGA-SUPREME/release_media/ivanna_home.png">
+<meta name="theme-color" content="#0b1020">
+<style>
+:root{--bg:#f6f8fc;--card:#ffffff;--fg:#0f172a;--muted:#475569;--accent:#0e7490;--line:#d8e0ee}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1020;--card:#121a30;--fg:#e8eefc;--muted:#9fb0d0;--accent:#5eead4;--line:#22305a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:960px;margin:0 auto;padding:28px 18px 64px}
+h1{font-size:clamp(1.8rem,5vw,2.6rem);line-height:1.15;margin:.2em 0}h2{margin:1.8em 0 .5em;font-size:1.35rem}
+p.lead{color:var(--muted);font-size:1.1rem;max-width:62ch}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+a.btn{padding:10px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);text-decoration:none;font-weight:600}
+a.btn.primary{background:var(--accent);color:#04121a;border-color:transparent}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.card h3{margin:.1em 0 .3em;font-size:1.05rem}.card p{margin:0;color:var(--muted)}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.shots img{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem}
+pre{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;overflow-x:auto}
+footer{margin-top:44px;color:var(--muted);font-size:.9rem}a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+<p style="margin:0;color:var(--muted)">Código abierto · Android · C++20 + Kotlin</p>
+<h1>IVANNA OMEGA SUPREME</h1>
+<p class="lead">Un motor de audio para Android que trata el procesado como un solo sistema: DSP en tiempo real, HRTF binaural, salas medidas, síntesis de campo de ondas y un coordinador que <strong>mide el resultado</strong> para que ningún módulo estropee lo que otro construyó.</p>
+<div class="btns">
+  <a class="btn primary" href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/latest">Descargar última versión</a>
+  <a class="btn" href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME">Código en GitHub</a>
+  <a class="btn" href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new/choose">Reportar mi dispositivo</a>
+</div>
+
+<h2>Dos rutas, según tu equipo</h2>
+<div class="grid">
+  <div class="card"><h3>Ruta A — sin root</h3><p>El motor procesa dentro de la app. Funciona en cualquier Android compatible, sin tocar el sistema.</p></div>
+  <div class="card"><h3>Ruta B — con root (Magisk)</h3><p>Un efecto en <code>audioserver</code> y un daemon de control procesan el audio de todo el sistema (Spotify, YouTube…).</p></div>
+</div>
+
+<h2>Qué lo distingue</h2>
+<div class="grid">
+  <div class="card"><h3>Coordinación en lazo cerrado</h3><p>Compara el original con la salida final y mide expansión estéreo, fase, cresta y agudos para repartir cuánto aplica cada módulo.</p></div>
+  <div class="card"><h3>Pensado para tiempo real</h3><p>Sin reservas de memoria ni bloqueos en el hilo de audio; una puerta de CI lo verifica en cada cambio.</p></div>
+  <div class="card"><h3>Honesto sobre lo verificado</h3><p>Pruebas en host con ASan/UBSan, puertas estáticas y un informe que separa «medido» de «escuchado en un dispositivo».</p></div>
+  <div class="card"><h3>Nada de código muerto</h3><p>Las auditorías cablean de punta a punta cada control: interfaz → JNI → nativo → DSP.</p></div>
+</div>
+
+<h2>Capturas</h2>
+<div class="shots">
+  <img src="release_media/ivanna_home.png" alt="Pantalla principal de IVANNA" loading="lazy">
+  <img src="release_media/audio_profiles.png" alt="Perfiles de audio" loading="lazy">
+  <img src="release_media/rir_panel.png" alt="Panel de salas (RIR)" loading="lazy">
+  <img src="release_media/telemetria_nael.png" alt="Telemetría" loading="lazy">
+</div>
+
+<h2>Probarlo desde el código</h2>
+<pre><code>git clone https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
+cd IVANNA-OMEGA-SUPREME
+bash scripts/run_ctest.sh          # suite completa en host
+for g in scripts/check_*.py; do python3 "$g"; done</code></pre>
+
+<h2>Súmate</h2>
+<p>Lo que más falta es <strong>validación en dispositivos reales</strong>. Cuéntanos qué equipo usas y qué escuchaste:
+<a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new/choose">reporte de dispositivo</a>,
+<a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/discussions">Discussions</a>,
+<a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/blob/main/CONTRIBUTING.md">guía para contribuir</a>.</p>
+
+<footer>
+  Creado por Luis Uriel Pimentel Pérez · <a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/blob/main/SECURITY.md">Seguridad</a> ·
+  <a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/blob/main/THIRD_PARTY_NOTICES.md">Avisos de terceros</a>
+</footer>
+</main>
+</body>
+</html>

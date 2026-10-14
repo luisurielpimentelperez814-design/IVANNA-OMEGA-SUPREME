@@ -2,10 +2,10 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/release_media/ivanna_omega_hero.svg">
-  <img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.4.44 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
+  <img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.16 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
 </picture>
 
-# ⬡ IVANNA OMEGA SUPREME `v2.4.44` ⬡
+# ⬡ IVANNA OMEGA SUPREME `v2.5.16` ⬡
 ### **Sistema Operativo de Supremacía Neuroacústica, Sincronía A/V Cero-Desfase y Reconstrucción Holográfica de Realidad Acústica en Lazo Cerrado para Android**
 #### *Arquitectura Nativa en C++20 · SIMD ARM64 NEON · Inversión Biomecánica Coclear PINN · Blindaje $C^2$ Cero-Artefactos · Atlas de Escena Musical de 12 Estilos*
 
@@ -14,9 +14,9 @@
 
 ---
 
-[![Release](https://img.shields.io/badge/Release-v2.4.44%20%28Build%20284%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
-[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.4.44&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![CTest](https://img.shields.io/badge/CTest-211%2F211%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
+[![Release](https://img.shields.io/badge/Release-v2.5.16%20%28Build%20307%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
+[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.16&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
+[![CTest](https://img.shields.io/badge/CTest-245%2F245%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
 [![Static Gates](https://img.shields.io/badge/Static%20Gates-6%2F6%20VERIFIED-00F0FF?style=for-the-badge&logo=checkmarx&logoColor=fff)](scripts/)
 [![C++ Standard](https://img.shields.io/badge/Standard-C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge&logo=c%2B%2B&logoColor=000)](app/src/main/cpp/CMakeLists.txt)
 [![RT-Audio Safety](https://img.shields.io/badge/RT--Safety-0%20Malloc%20%C2%B7%200%20Locks%20%C2%B7%20Lock--Free-22C55E?style=for-the-badge&logo=speedtest&logoColor=fff)](scripts/check_rt_safety.py)
@@ -587,6 +587,19 @@ export ANDROID_NDK_HOME=/path/to/android-ndk-r26
 
 ---
 
+## ✦ Comunidad: probar, reportar, contribuir
+
+Lo que más hace falta es **validación en dispositivos reales**: una prueba bien documentada vale tanto como un parche.
+
+- **Probar y contar qué pasó** → [Reporte de dispositivo](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new/choose) (modelo, Android, ruta A/B, qué escuchaste; también sirve saber qué *no* funcionó).
+- **Preguntas, ideas y tu configuración** → [Discussions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/discussions).
+- **Contribuir código, pruebas o documentación** → [CONTRIBUTING.md](CONTRIBUTING.md) y los issues `good first issue` / `help wanted`.
+- **Reglas de convivencia** → [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) · **Vulnerabilidades** → [SECURITY.md](SECURITY.md) · **Material de terceros** → [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) · **Cómo citarlo** → [CITATION.cff](CITATION.cff).
+
+Si el proyecto te resulta útil, una ⭐ ayuda a que más gente lo encuentre. Solo se agradecen las honestas: no se piden ni intercambian estrellas.
+
+---
+
 <div align="center">
 
 ### ⬡ Autoría y Propiedad Intelectual ⬡
@@ -600,6 +613,6 @@ export ANDROID_NDK_HOME=/path/to/android-ndk-r26
 ---
 
 *Construido muestra a muestra. Auditado commit a commit. Verificado línea por línea.*  
-**IVANNA OMEGA SUPREME `v2.4.44` · 2026**
+**IVANNA OMEGA SUPREME `v2.5.16` · 2026**
 
 </div>

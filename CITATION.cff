@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "Si usas IVANNA OMEGA SUPREME en investigación o en un proyecto derivado, cítalo así."
+title: "IVANNA OMEGA SUPREME"
+type: software
+version: "2.5.16"
+date-released: "2026-10-14"
+repository-code: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME"
+url: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME"
+abstract: >-
+  Motor de audio para Android (C++20 nativo, Kotlin/Compose) con procesado DSP en tiempo real, HRTF binaural,
+  respuestas al impulso de sala, síntesis de campo de ondas y un coordinador acústico en lazo cerrado,
+  con ruta sin root dentro de la app y ruta con root mediante módulo Magisk.
+keywords:
+  - android
+  - audio
+  - dsp
+  - spatial audio
+  - hrtf
+  - psychoacoustics
+  - magisk
+authors:
+  - family-names: "Pimentel Pérez"
+    given-names: "Luis Uriel"

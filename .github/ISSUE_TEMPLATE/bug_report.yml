@@ -1,0 +1,40 @@
+name: Error
+description: Algo no funciona como debería
+labels: ["bug"]
+body:
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: ¿Qué pasa?
+      description: Qué esperabas y qué ocurrió en realidad.
+    validations: { required: true }
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducirlo
+      placeholder: "1. Abrir… 2. Activar… 3. Reproducir en…"
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Versión de IVANNA
+      description: Ajustes de la app o `version.properties` (ej. 2.5.16).
+    validations: { required: true }
+  - type: dropdown
+    id: ruta
+    attributes:
+      label: Ruta de audio
+      options: ["Ruta A (sin root, dentro de la app)", "Ruta B (con root, módulo Magisk)", "No lo sé"]
+    validations: { required: true }
+  - type: input
+    id: dispositivo
+    attributes:
+      label: Dispositivo, Android y (si aplica) versión de Magisk
+      placeholder: "Pixel 7 · Android 15 · Magisk 28.1"
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs relevantes
+      description: "`adb logcat -s IvannaOmegaEffect IvannaNativeLib` o el diagnóstico de la app. Quita datos personales."
+      render: shell
