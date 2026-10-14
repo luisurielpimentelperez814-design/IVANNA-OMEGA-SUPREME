@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.23 (314) — Experiencia auditiva viva
+- Seleccionar un vídeo (o ELEGIR VIDEO) lo reproduce con el reproductor del sistema mientras el motor procesa el audio; antes la selección no hacía nada
+
 # CHANGELOG — v2.5.22 (313) — Ficha de ingeniería
 - docs/ENGINEERING.md: cifras medidas, decisiones de diseño, verificación y límites; enlace en README
 

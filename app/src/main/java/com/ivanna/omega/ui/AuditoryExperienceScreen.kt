@@ -34,6 +34,32 @@ val CardBorder = Color(0xFF223050)       // ObsidianEdge
 val ButtonBackground = Color(0xFF0D1524) // ObsidianGlass
 val TextGray = Color(0xFF93A8C6)         // TextSecondary
 
+/** Abre un vídeo con el reproductor del sistema. El motor DSP ya procesa el audio
+ *  del sistema (captura activa), así que el vídeo suena a través de IVANNA. */
+private fun openVideoInSystemPlayer(context: android.content.Context, uri: android.net.Uri): Boolean =
+    runCatching {
+        val i = android.content.Intent(android.content.Intent.ACTION_VIEW)
+            .setDataAndType(uri, "video/*")
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                      android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(i); true
+    }.getOrDefault(false)
+
+/** content:// del vídeo vía MediaStore (File:// no se puede compartir sin FileProvider). */
+private fun mediaStoreUriFor(context: android.content.Context, file: File): android.net.Uri? =
+    runCatching {
+        context.contentResolver.query(
+            android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(android.provider.MediaStore.Video.Media._ID),
+            "${android.provider.MediaStore.Video.Media.DATA}=?", arrayOf(file.absolutePath), null
+        )?.use { c ->
+            if (c.moveToFirst())
+                android.content.ContentUris.withAppendedId(
+                    android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, c.getLong(0))
+            else null
+        }
+    }.getOrNull()
+
 @Composable
 fun AuditoryExperienceScreen(
     modifier: Modifier = Modifier,
@@ -53,6 +79,15 @@ fun AuditoryExperienceScreen(
     val context = LocalContext.current
     var videoFiles by remember { mutableStateOf<List<File>>(emptyList()) }
     var selectedVideo by remember { mutableStateOf<File?>(null) }
+    var statusMsg by remember { mutableStateOf<String?>(null) }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            statusMsg = if (openVideoInSystemPlayer(context, uri)) "Reproduciendo — el audio pasa por el motor IVANNA"
+                        else "No hay reproductor de vídeo disponible"
+        }
+    }
 
     // Escaneo asíncrono para no bloquear la UI
     LaunchedEffect(videoFolderPath) {
@@ -92,12 +127,29 @@ fun AuditoryExperienceScreen(
                         onClick = { 
                             selectedVideo = file
                             onVideoSelected(file)
+                            val uri = mediaStoreUriFor(context, file)
+                            statusMsg = when {
+                                uri == null -> "No pude abrir ese archivo; usa ELEGIR VIDEO"
+                                openVideoInSystemPlayer(context, uri) -> "Reproduciendo — el audio pasa por el motor IVANNA"
+                                else -> "No hay reproductor de vídeo disponible"
+                            }
                         }
                     )
                 }
             }
         }
 
+        statusMsg?.let {
+            Text(it, color = CyanAccent, fontSize = 11.sp, textAlign = TextAlign.Center)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        Button(
+            onClick = { picker.launch(arrayOf("video/*")) },
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ButtonBackground, contentColor = Color.White),
+            modifier = Modifier.fillMaxWidth().height(48.dp).border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+        ) { Text("ELEGIR VIDEO", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+        Spacer(modifier = Modifier.height(10.dp))
         Button(
             onClick = onEnterMotorClick,
             shape = RoundedCornerShape(12.dp),
