@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.17 (308) — Barra de posición del reproductor viva
+- BridgePlayerCard recibe posición, duración y seek reales del reproductor (antes quedaba muerta con valores por defecto)
+
 # CHANGELOG — v2.5.16 (307) — Controles muertos de la Ruta B: ahora llegan al audio del sistema
 1. **Hallazgo:** la app solo abre el bus de control como LECTOR, así que `OmegaControlBus::publish()` desde el JNI devolvía `false`: los toggles Volterra H2, FastRPC cDSP y ATI (y los 5 controles del panel Atlas) solo cambiaban la Ruta A. El daemon, además, reconstruía `snapshot.flags` desde cero y borraba esos bits. Con Spotify/YouTube (Ruta B) esos controles no hacían nada.
 2. **`include/omega_user_flags.hpp` (nuevo)** — canal real app → socket del daemon → estado → snapshot → `omega_effect`, con tabla blanca de bits (Volterra, FastRPC, ATI, 4 de Atlas, Unity) y arquetipo manual codificado en los bits 20..23. Lógica pura + cliente de socket (mejor esfuerzo, solo hilo de UI).
