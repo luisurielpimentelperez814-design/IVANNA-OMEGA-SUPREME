@@ -237,6 +237,7 @@ private fun ProfilesTab(onOpenProfiles: () -> Unit) {
 
 @Composable
 private fun TelemetryTab() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var telemetry by remember { mutableStateOf<FloatArray?>(null) }
     // v2.3.0: telemetría térmica + DSP tier via prop de sistema
     var thermalTempC  by remember { mutableStateOf("--") }
@@ -253,11 +254,13 @@ private fun TelemetryTab() {
             // El ThermalGovernor escribe persist.ivanna.thermal_tier y persist.ivanna.thermal_temp
             val tierProp = runCatching {
                 Runtime.getRuntime().exec("getprop persist.ivanna.thermal_tier")
-                    .inputStream.bufferedReader().readLine()?.trim() ?: "0"
-            }.getOrElse { "0" }
+                    .inputStream.bufferedReader().readLine()?.trim() ?: ""
+            }.getOrElse { "" }
 
-            val tierInt = tierProp.toIntOrNull() ?: 0
+            // Sin prop (ThermalGovernor no la escribió): NO se asume "FULL".
+            val tierInt = tierProp.toIntOrNull() ?: -1
             thermalTier = when (tierInt) {
+                -1 -> "SIN DATO"
                 0 -> "FULL ✅"
                 1 -> "REDUCED ⚡"
                 2 -> "LIMITED 🌡️"
@@ -265,14 +268,13 @@ private fun TelemetryTab() {
                 4 -> "BYPASS ❌"
                 else -> "UNKNOWN"
             }
-            thermalTempC = when (tierInt) {
-                0 -> "< 45°C"
-                1 -> "45-55°C"
-                2 -> "55-65°C"
-                3 -> "65-75°C"
-                4 -> "> 75°C"
-                else -> "--"
-            }
+            // Temperatura REAL medida (sensor de batería, único accesible sin root).
+            thermalTempC = runCatching {
+                val st = ctx.registerReceiver(null,
+                    android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+                val t = st?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+                if (t == null || t == Int.MIN_VALUE) "--" else "%.1f °C (batería)".format(t / 10f)
+            }.getOrDefault("--")
             dspQuality = when (tierInt) {
                 0 -> "100%"
                 1 -> "85%"
@@ -281,7 +283,7 @@ private fun TelemetryTab() {
                 4 -> "0% (bypass)"
                 else -> "--"
             }
-            rirActive = tierInt < 2
+            rirActive = tierInt in 0..1
 
             kotlinx.coroutines.delay(2000) // cada 2s — mismo intervalo que ThermalGovernor
         }
@@ -293,12 +295,13 @@ private fun TelemetryTab() {
         "REDUCED ⚡"   -> AuroraCyan
         "LIMITED 🌡️"  -> AmberSignal
         "PROTECTED 🔥" -> NeonMagenta
+        "SIN DATO"     -> TextMuted
         else            -> Color.Red
     }
     GlassCard("ESTADO TÉRMICO DSP", tierColor, "ThermalGovernor v2.3.0 · polling 2s") {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("SoC Temperatura", color = TextSecondary, fontSize = 10.sp)
+                Text("Temperatura", color = TextSecondary, fontSize = 10.sp)
                 Text(thermalTempC, color = tierColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -312,7 +315,7 @@ private fun TelemetryTab() {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("RIR Convolución", color = TextSecondary, fontSize = 10.sp)
                 Text(
-                    if (rirActive) "ACTIVA" else "SUSPENDIDA (calor)",
+                    if (thermalTier == "SIN DATO") "SIN DATO" else if (rirActive) "ACTIVA" else "SUSPENDIDA (calor)",
                     color = if (rirActive) PhosphorGreen else NeonMagenta,
                     fontSize = 10.sp, fontWeight = FontWeight.Bold
                 )
@@ -328,8 +331,8 @@ private fun TelemetryTab() {
     Spacer(Modifier.height(8.dp))
 
     // ── Card de telemetría de audio ───────────────────────────────────────────
-    GlassCard("TELEMETRÍA EN VIVO", PhosphorGreen, "10Hz · Motor A · Pipeline completo") {
-        val labels = listOf("RMS","Peak dB","GR dB","CPU %","Target","CompAmt","ExcRed","SpatW","VoiceProt","Running")
+    GlassCard("TELEMETRÍA EN VIVO", PhosphorGreen, "Motor adaptativo · refresco 2 s") {
+        val labels = listOf("RMS","Peak","GR dB","Ganancia objetivo","Compresión","Reducción excitador","Ancho espacial","Margen seguridad","Protección de voz","Ajustes aplicados")
         val colors = listOf(AuroraCyan, Color.Red, NeonMagenta, PhosphorGreen,
             AuroraCyan, NeonMagenta, AuroraCyan, PhosphorGreen, NeonMagenta, AuroraCyan)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -338,7 +341,7 @@ private fun TelemetryTab() {
                     val c = colors[i]
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(labels[i], color = TextSecondary, fontSize = 10.sp)
-                        Text("%.4f".format(v), color = c, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        Text(if (i == 9) "%.0f".format(v) else "%.4f".format(v), color = c, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     }
                     LinearProgressIndicator(
                         progress = { v.coerceIn(0f, 1f) },

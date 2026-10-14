@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.24 (315) — Telemetría del sistema honesta
+- Etiquetas de telemetría corregidas al layout real del motor; sin dato térmico ya no se asume FULL; temperatura real de batería
+
 # CHANGELOG — v2.5.23 (314) — Experiencia auditiva viva
 - Seleccionar un vídeo (o ELEGIR VIDEO) lo reproduce con el reproductor del sistema mientras el motor procesa el audio; antes la selección no hacía nada
 
