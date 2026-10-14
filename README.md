@@ -5,6 +5,12 @@
   <img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.16 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
 </picture>
 
+<a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new?labels=device-report&title=Reporte+de+dispositivo">
+  <img src="docs/release_media/ivanna_promo_flyer.png" alt="IVANNA OMEGA SUPREME — busco probadores de dispositivos reales" width="420" />
+</a>
+
+> **¿Tienes un teléfono Android?** Ayúdame a probarlo y [cuéntame cómo suena](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new?labels=device-report&title=Reporte+de+dispositivo). Si te gusta el proyecto, una ⭐ ayuda a que más gente lo encuentre.
+
 # ⬡ IVANNA OMEGA SUPREME `v2.5.16` ⬡
 ### **Sistema Operativo de Supremacía Neuroacústica, Sincronía A/V Cero-Desfase y Reconstrucción Holográfica de Realidad Acústica en Lazo Cerrado para Android**
 #### *Arquitectura Nativa en C++20 · SIMD ARM64 NEON · Inversión Biomecánica Coclear PINN · Blindaje $C^2$ Cero-Artefactos · Atlas de Escena Musical de 12 Estilos*

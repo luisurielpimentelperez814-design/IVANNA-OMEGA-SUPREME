@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.18 (309) — Flyer en README
+- README muestra el flyer promocional y la invitación a probar en dispositivos reales
+
 # CHANGELOG — v2.5.17 (308) — Barra de posición del reproductor viva
 - BridgePlayerCard recibe posición, duración y seek reales del reproductor (antes quedaba muerta con valores por defecto)
 
