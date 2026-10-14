@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.20 (311) — Telemetría cognitiva sin valores inventados
+- NativeBridge.safeGet* ya no devuelven constantes inventadas: array vacío si no hay snapshot vivo
+
 # CHANGELOG — v2.5.19 (310) — Pantalla de motores sin porcentajes inventados
 - EnginesStatusScreen muestra — cuando no hay telemetría nativa viva (antes 88/90/96%…)
 
