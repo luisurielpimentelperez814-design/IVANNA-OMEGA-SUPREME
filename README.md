@@ -20,6 +20,7 @@
 
 ---
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Release](https://img.shields.io/badge/Release-v2.5.16%20%28Build%20307%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.16&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
 [![CTest](https://img.shields.io/badge/CTest-245%2F245%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
@@ -622,3 +623,8 @@ Si el proyecto te resulta útil, una ⭐ ayuda a que más gente lo encuentre. So
 **IVANNA OMEGA SUPREME `v2.5.16` · 2026**
 
 </div>
+
+---
+
+### 📄 Licencia
+Código propio bajo **Apache License 2.0** ([LICENSE](LICENSE), [NOTICE](NOTICE)): puedes usarlo, modificarlo y distribuirlo, incluso comercialmente, conservando el aviso de autoría. Incluye concesión de patentes. Datasets y modelos de terceros conservan su propia licencia (ver [#59](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/59)).

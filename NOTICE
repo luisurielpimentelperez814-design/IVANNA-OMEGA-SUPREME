@@ -1,0 +1,15 @@
+IVANNA OMEGA SUPREME
+Copyright 2026 Luis Uriel Pimentel Pérez (GORE TNS)
+
+Este producto incluye software desarrollado por Luis Uriel Pimentel Pérez
+y se distribuye bajo la Licencia Apache, Versión 2.0 (ver LICENSE).
+
+Componentes de terceros (bibliotecas, datasets HRTF/SOFA/RIR, modelos
+entrenados) conservan SUS PROPIAS licencias y avisos de origen. La licencia
+Apache-2.0 de este repositorio cubre el código propio; no relicencia material
+de terceros. El inventario y verificación de licencias de datasets y modelos
+está en seguimiento en el issue #59.
+
+This product includes software developed by Luis Uriel Pimentel Pérez and is
+licensed under the Apache License, Version 2.0 (see LICENSE). Third-party
+libraries, HRTF/SOFA/RIR datasets and trained models keep their own licenses.

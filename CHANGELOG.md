@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.21 (312) — Licencia Apache-2.0
+- Se añade LICENSE (Apache-2.0) y NOTICE; el código propio queda legalmente reutilizable
+
 # CHANGELOG — v2.5.20 (311) — Telemetría cognitiva sin valores inventados
 - NativeBridge.safeGet* ya no devuelven constantes inventadas: array vacío si no hay snapshot vivo
 
