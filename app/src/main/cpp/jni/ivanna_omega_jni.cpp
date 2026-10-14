@@ -42,6 +42,7 @@
 #include "../include/SafetyLimiter.h"
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
+#include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
@@ -2392,8 +2393,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetVolterraEnabled(
     if (bus.readLatest(snap, seen)) {
         if (on) snap.flags |= ivanna::OMEGA_FLAG_VOLTERRA_ON;
         else    snap.flags &= ~ivanna::OMEGA_FLAG_VOLTERRA_ON;
-        bus.publish(snap);
+        bus.publish(snap);   // no-op en la app (solo lector del bus): se conserva por si el bus es escribible
     }
+    // v2.5.16: el camino que SÍ llega a la Ruta B (audioserver) es app -> daemon -> snapshot.
+    ivanna::omegaSendUserFlag("volterra", on ? 1 : 0);
     LOGI("[IvannaNativeLib] Volterra H2 Anti-Lossy Reconstruction set to %d", on);
 }
 
@@ -2407,21 +2410,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsVolterraEnabled(
 // JNI API: Acoustic Unity Engine (v2.5.15) — interruptor y telemetría medida
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Apaga/enciende la coordinación (contexto neutro cuando está apagada). Se publica también como bit
-// OMEGA_FLAG_UNITY_OFF del snapshot para que la Ruta B (audioserver) siga el mismo interruptor.
+// Apaga/enciende la coordinación (contexto neutro cuando está apagada). También viaja como bit
+// OMEGA_FLAG_UNITY_OFF por SET_USER_FLAGS (daemon) para que la Ruta B (audioserver) siga el interruptor.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUnityEnabled(
     JNIEnv*, jobject, jboolean enabled) {
     const bool on = (enabled == JNI_TRUE);
     g_unity_enabled.store(on, std::memory_order_release);
-    auto& bus = ivanna::effectControlBus();
-    ivanna::OmegaDspSnapshot snap;
-    uint64_t seen = 0;
-    if (bus.readLatest(snap, seen)) {
-        if (on) snap.flags &= ~ivanna::OMEGA_FLAG_UNITY_OFF;
-        else    snap.flags |=  ivanna::OMEGA_FLAG_UNITY_OFF;
-        bus.publish(snap);
-    }
+    // app -> daemon -> snapshot (bit _OFF: 1 = apagado). La app solo es LECTORA del bus: publish() no llega.
+    ivanna::omegaSendUserFlag("unityOff", on ? 0 : 1);
     LOGI("[IvannaNativeLib] Acoustic Unity Engine set to %d", on);
 }
 
@@ -2468,8 +2465,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFastRpcEnabled(
     if (bus.readLatest(snap, seen)) {
         if (on) snap.flags |= ivanna::OMEGA_FLAG_FASTRPC_ON;
         else    snap.flags &= ~ivanna::OMEGA_FLAG_FASTRPC_ON;
-        bus.publish(snap);
+        bus.publish(snap);   // no-op en la app (solo lector del bus)
     }
+    ivanna::omegaSendUserFlag("fastrpc", on ? 1 : 0);   // v2.5.16: camino real hacia la Ruta B
     LOGI("[IvannaNativeLib] Qualcomm Hexagon cDSP FastRPC Offload set to %d", on);
 }
 
@@ -2490,8 +2488,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAtiEnabled(
     if (bus.readLatest(snap, seen)) {
         if (on) snap.flags |= ivanna::OMEGA_FLAG_ATI_ON;
         else    snap.flags &= ~ivanna::OMEGA_FLAG_ATI_ON;
-        bus.publish(snap);
+        bus.publish(snap);   // no-op en la app (solo lector del bus)
     }
+    ivanna::omegaSendUserFlag("ati", on ? 1 : 0);   // v2.5.16: camino real hacia la Ruta B
     LOGI("[IvannaNativeLib] Active Transducer Inversion (ATI) set to %d", on);
 }
 

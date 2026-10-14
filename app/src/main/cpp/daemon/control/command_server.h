@@ -110,6 +110,12 @@ struct OmegaDspState {
     float supreme_mso_itd_ns          = 0.0f;
     bool  supreme_ebpf_bypass_active  = false;
     bool  reality_recon_enabled       = true;
+
+    // v2.5.16 — bits de USUARIO enviados por la app con SET_USER_FLAGS (Volterra, FastRPC, ATI, Atlas,
+    // Unity). Al FINAL del struct a propósito (kDefaultState inicializa por posición). mask = bits que el
+    // usuario ya tocó; value = su valor. Con mask = 0 el snapshot es idéntico al de v2.5.15.
+    uint32_t user_flags_mask  = 0u;
+    uint32_t user_flags_value = 0u;
 };
 
 class CommandServer {

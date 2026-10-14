@@ -4,6 +4,7 @@
 #include "../core/shm_manager.h"
 #include "../../include/omega_shared.h"
 #include "../../include/omega_control_bus.h"
+#include "../../include/omega_user_flags.hpp"   // v2.5.16: SET_USER_FLAGS (tabla blanca de bits)
 #include "../../ivanna_hires_config.hpp"
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -129,6 +130,8 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     if (s.supreme_farrow_mso_enabled)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_FARROW_MSO_ON;
     if (s.supreme_ebpf_bypass_active)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON;
     if (s.reality_recon_enabled)       snap.flags |= ivanna::OMEGA_FLAG_REALITY_RECON_ON;
+    // v2.5.16: bits de usuario (antes el daemon los borraba al armar `flags` desde cero).
+    snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
     if (!ivanna::controlBus().publish(snap)) return 0;
     return ivanna::controlBus().lastPublishedGeneration();
 }
@@ -191,6 +194,24 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.upmixing_immersivity = _jsonFloat(json,"upmixingImmersivity", m_state.upmixing_immersivity);
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_USER_FLAGS")==0) {
+        // v2.5.16: Volterra / FastRPC / ATI / Atlas / Unity. TABLA BLANCA (omega_user_flags.hpp): solo esos
+        // bits se aceptan, cada clave ausente no cambia nada. Cierra app -> daemon -> snapshot -> audioserver.
+        uint32_t mask = m_state.user_flags_mask, value = m_state.user_flags_value;
+        int accepted = 0;
+        for (const auto& e : ivanna::kOmegaUserFlagTable)
+            accepted += ivanna::omega_user_flag_apply(e.key, _jsonFloat(json, e.key, ivanna::OMEGA_USER_FLAG_UNSET), mask, value) ? 1 : 0;
+        accepted += ivanna::omega_user_flag_apply(ivanna::kOmegaUserFlagStyleKey,
+                        _jsonFloat(json, ivanna::kOmegaUserFlagStyleKey, ivanna::OMEGA_USER_FLAG_UNSET), mask, value) ? 1 : 0;
+        if (accepted > 0) {
+            m_state.user_flags_mask  = mask;
+            m_state.user_flags_value = value;
+            uint64_t gen = publishCurrentState(m_state);
+            n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+        } else {
+            n = buildRichReply(reply,reply_sz,false,action,"rejected",0,"SYSTEM_WIDE","\"sin claves validas\"");
+        }
 
     } else if (strcmp(action,"SET_WFS")==0) {
         // Comando dedicado del puente JNI (nativeSetWfsEnabled/nativeSetWfsSpread).

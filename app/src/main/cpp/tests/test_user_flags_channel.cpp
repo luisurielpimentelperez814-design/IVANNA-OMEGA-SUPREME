@@ -1,0 +1,151 @@
+// v2.5.16 — Canal de bits de usuario app -> daemon -> snapshot -> omega_effect.
+// La app solo abre el bus como LECTOR, así que los toggles Volterra/FastRPC/ATI/Atlas/Unity no llegaban a la
+// Ruta B (audioserver) y el daemon reconstruía `flags` desde cero sin ellos. Estos tests prueban:
+//  1) la tabla blanca y la codificación (lógica pura) contra el DECODIFICADOR real de omega_effect,
+//  2) el CommandServer REAL compilado en host: comando JSON -> snapshot publicado -> lectura cross-bus.
+#include <gtest/gtest.h>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <set>
+#include <unistd.h>
+#include "include/omega_user_flags.hpp"
+#include "daemon/control/command_server.h"
+
+using namespace ivanna;
+
+// Réplica EXACTA del decodificador de omega_effect.cpp (omega_apply_room): estilo manual desde bits 20..23.
+static int decodeStyle(uint32_t flags) {
+    const int enc = static_cast<int>((flags & OMEGA_FLAG_ATLAS_STYLE_MASK) >> OMEGA_FLAG_ATLAS_STYLE_SHIFT);
+    return (enc > 0 && enc <= 12) ? (enc - 1) : -1;
+}
+
+TEST(UserFlagsPure, EveryWhitelistedKeyMapsToItsBitAndTogglesIt) {
+    for (const auto& e : kOmegaUserFlagTable) {
+        uint32_t mask = 0, value = 0;
+        ASSERT_TRUE(omega_user_flag_apply(e.key, 1.0f, mask, value)) << e.key;
+        EXPECT_EQ(mask, e.bit) << e.key;
+        EXPECT_EQ(value, e.bit) << e.key;
+        ASSERT_TRUE(omega_user_flag_apply(e.key, 0.0f, mask, value)) << e.key;
+        EXPECT_EQ(mask, e.bit);
+        EXPECT_EQ(value, 0u) << e.key;                       // apagar limpia el bit pero conserva la máscara
+    }
+}
+
+TEST(UserFlagsPure, UnknownUnsetAndNonFiniteAreIgnored) {
+    uint32_t mask = 0, value = 0;
+    EXPECT_FALSE(omega_user_flag_apply("rootShell", 1.0f, mask, value));          // fuera de la tabla blanca
+    EXPECT_FALSE(omega_user_flag_apply(nullptr, 1.0f, mask, value));
+    EXPECT_FALSE(omega_user_flag_apply("volterra", OMEGA_USER_FLAG_UNSET, mask, value));
+    EXPECT_FALSE(omega_user_flag_apply("volterra", std::nanf(""), mask, value));
+    EXPECT_FALSE(omega_user_flag_apply("volterra", INFINITY, mask, value));
+    EXPECT_EQ(mask, 0u);
+    EXPECT_EQ(value, 0u);
+}
+
+TEST(UserFlagsPure, WhitelistNeverTouchesDaemonOwnedBitsAndHasNoOverlap) {
+    const uint32_t daemonOwned =
+        0x03u | OMEGA_FLAG_COCHLEAR_ON | OMEGA_FLAG_SUPREME_LATTICE_ON | OMEGA_FLAG_SUPREME_MICROCHIRP_ON |
+        OMEGA_FLAG_SUPREME_CVNN_ON | OMEGA_FLAG_SUPREME_SNN_HOA_ON | OMEGA_FLAG_SUPREME_PINNA_ON |
+        OMEGA_FLAG_SUPREME_FARROW_MSO_ON | OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON | OMEGA_FLAG_REALITY_RECON_ON;
+    uint32_t seen = 0;
+    for (const auto& e : kOmegaUserFlagTable) {
+        EXPECT_EQ(e.bit & daemonOwned, 0u) << e.key;
+        EXPECT_EQ(e.bit & seen, 0u) << "solapa " << e.key;
+        EXPECT_EQ(__builtin_popcount(e.bit), 1) << e.key;
+        seen |= e.bit;
+    }
+    EXPECT_EQ(OMEGA_FLAG_ATLAS_STYLE_MASK & (daemonOwned | seen), 0u);
+}
+
+TEST(UserFlagsPure, AtlasStyleRoundTripsThroughTheRealDecoder) {
+    for (int idx = -1; idx < 12; ++idx) {
+        uint32_t mask = 0, value = 0;
+        ASSERT_TRUE(omega_user_flag_apply(kOmegaUserFlagStyleKey, static_cast<float>(idx), mask, value));
+        EXPECT_EQ(mask, OMEGA_FLAG_ATLAS_STYLE_MASK);
+        EXPECT_EQ(decodeStyle(omega_user_flags_merge(0u, mask, value)), idx) << "estilo " << idx;
+    }
+    uint32_t mask = 0, value = 0;                              // fuera de rango => automático, nunca basura
+    ASSERT_TRUE(omega_user_flag_apply(kOmegaUserFlagStyleKey, 99.0f, mask, value));
+    EXPECT_EQ(decodeStyle(omega_user_flags_merge(0u, mask, value)), -1);
+}
+
+TEST(UserFlagsPure, MergeOnlyChangesMaskedBits) {
+    const uint32_t daemon = OMEGA_FLAG_COCHLEAR_ON | OMEGA_FLAG_REALITY_RECON_ON | 0x02u;
+    EXPECT_EQ(omega_user_flags_merge(daemon, 0u, 0xFFFFFFFFu), daemon);                     // sin máscara: idéntico
+    const uint32_t m = OMEGA_FLAG_VOLTERRA_ON | OMEGA_FLAG_UNITY_OFF;
+    const uint32_t r = omega_user_flags_merge(daemon, m, OMEGA_FLAG_UNITY_OFF);
+    EXPECT_EQ(r & daemon, daemon);                                                          // bits del daemon intactos
+    EXPECT_EQ(r & OMEGA_FLAG_VOLTERRA_ON, 0u);
+    EXPECT_NE(r & OMEGA_FLAG_UNITY_OFF, 0u);
+    EXPECT_EQ(omega_user_flags_merge(r, m, OMEGA_FLAG_UNITY_OFF), r);                       // idempotente
+}
+
+TEST(UserFlagsPure, SenderWithoutDaemonReturnsQuicklyAndDoesNotCrash) {
+    const auto t0 = std::chrono::steady_clock::now();
+    omegaSendUserFlag("volterra", 1);
+    omegaSendUserFlag(nullptr, 1);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    EXPECT_LT(ms, 600);                                        // timeout 200 ms: nunca cuelga el hilo de UI
+}
+
+// ── CommandServer REAL: JSON -> snapshot publicado en el bus -> lector ───────
+namespace {
+const char* kBus = "./omega_user_flags_bus_test";
+struct Harness {
+    OmegaControlBus reader;
+    uint64_t seen = 0;
+    Harness() {
+        ::unlink(kBus);
+        EXPECT_TRUE(controlBus().openWriter(kBus));            // el singleton que usa el daemon
+        EXPECT_TRUE(reader.openReader(kBus));
+    }
+    ~Harness() { controlBus().close(); reader.close(); ::unlink(kBus); }
+    uint32_t latestFlags() {
+        OmegaDspSnapshot s{};
+        EXPECT_TRUE(reader.readLatest(s, seen));
+        EXPECT_TRUE(s.isCrcValid());
+        return s.flags;
+    }
+};
+}
+
+TEST(UserFlagsDaemon, SetUserFlagsReachesSnapshotAndSurvivesOtherCommands) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1.2}", reply, sizeof reply);
+    const uint32_t base = h.latestFlags();
+    EXPECT_EQ(base & OMEGA_FLAG_UNITY_OFF, 0u);                // sin tocar: comportamiento previo exacto
+
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_USER_FLAGS\",\"unityOff\":1}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    uint32_t f = h.latestFlags();
+    EXPECT_NE(f & OMEGA_FLAG_UNITY_OFF, 0u);
+    EXPECT_EQ(f & ~OMEGA_FLAG_UNITY_OFF, base & ~OMEGA_FLAG_UNITY_OFF);   // el resto de bits no cambió
+
+    // Un comando posterior de OTRA área republica el snapshot: el bit del usuario debe seguir ahí.
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":0.9}", reply, sizeof reply);
+    EXPECT_NE(h.latestFlags() & OMEGA_FLAG_UNITY_OFF, 0u);
+
+    cs.handleJsonCommand("{\"action\":\"SET_USER_FLAGS\",\"unityOff\":0,\"volterra\":0,\"atlasStyle\":4}", reply, sizeof reply);
+    f = h.latestFlags();
+    EXPECT_EQ(f & OMEGA_FLAG_UNITY_OFF, 0u);
+    EXPECT_EQ(f & OMEGA_FLAG_VOLTERRA_ON, 0u);                 // apagar Volterra ahora SÍ llega al snapshot
+    EXPECT_EQ(decodeStyle(f), 4);
+}
+
+TEST(UserFlagsDaemon, RejectsCommandsWithoutWhitelistedKeys) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1.0}", reply, sizeof reply);
+    const uint32_t before = h.latestFlags();
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_USER_FLAGS\",\"cochlear\":1,\"flags\":4294967295}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
+    OmegaDspSnapshot s{};
+    uint64_t seen = h.seen;
+    EXPECT_FALSE(h.reader.readLatest(s, seen));                // no se publicó nada nuevo
+    EXPECT_EQ(before & OMEGA_FLAG_COCHLEAR_ON, 0u);
+}

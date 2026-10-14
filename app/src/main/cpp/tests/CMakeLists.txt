@@ -199,6 +199,21 @@ gtest_discover_tests(test_upmixing_control_plane)
 # removido por redundante con el código de salida y vulnerable a contaminación
 # cruzada de stdout entre tests bajo ctest -j (falso positivo confirmado).
 
+# ── test_user_flags_channel (v2.5.16): app -> daemon -> snapshot -> efecto ────────────
+# Compila el CommandServer REAL + omega_control_bus.cpp + shm_manager.cpp en host: un comando JSON
+# SET_USER_FLAGS debe terminar como bit del snapshot publicado (y sobrevivir a otros comandos).
+add_executable(test_user_flags_channel
+  test_user_flags_channel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/control/command_server.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/omega_control_bus.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/shm_manager.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../daemon/core/android_log_compat.cpp
+)
+target_include_directories(test_user_flags_channel PRIVATE .. ../include host_stubs)   # android/log.h de command_server.cpp
+target_compile_options(test_user_flags_channel PRIVATE -Wall -Wextra)
+target_link_libraries(test_user_flags_channel PRIVATE GTest::gtest_main Threads::Threads)
+gtest_discover_tests(test_user_flags_channel)
+
 # RIR dataset (200 salas medidas, integrado 2026-08-12): valida el loader
 # contra el CSV+WAV reales shippeados en magisk_module/, no fixtures
 # inventados. La ruta se pasa como macro de compilación, resuelta en
