@@ -19,7 +19,7 @@ una propuesta de corrección. Se acusará recibo lo antes posible y se coordinar
 - Escalada de privilegios mediante el socket `omega_command_socket`, el SHM del bus de control o el módulo.
 - Lectura/escritura fuera de límites en el procesado nativo (JNI, DSP, parseo de datasets `IHR1`/`IVW1`/SOFA).
 - Carga de datasets o modelos manipulados que puedan ejecutar código o bloquear el audio del sistema.
-- Fugas de datos de audio o de telemetría fuera del dispositivo (la app no debería enviar nada por red).
+- Fugas de datos de audio o de telemetría fuera del dispositivo. Lo que sale por diseño está documentado en `docs/PRIVACIDAD_Y_SEGURIDAD.md` (texto del asistente Gemini, opcional; sincronización Firebase, opt-in). Cualquier otro tráfico es un hallazgo.
 
 Fuera de alcance: requerir root o desbloqueo de bootloader por diseño, ataques que exigen acceso físico ya
 desbloqueado, y reportes sin impacto de seguridad demostrable (usa un issue normal).
