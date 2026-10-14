@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.22 (313) — Ficha de ingeniería
+- docs/ENGINEERING.md: cifras medidas, decisiones de diseño, verificación y límites; enlace en README
+
 # CHANGELOG — v2.5.21 (312) — Licencia Apache-2.0
 - Se añade LICENSE (Apache-2.0) y NOTICE; el código propio queda legalmente reutilizable
 

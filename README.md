@@ -41,6 +41,8 @@
 
 ---
 
+> 🧑‍💻 **¿Evalúas el trabajo en 5 minutos?** Lee la [Ficha de ingeniería](docs/ENGINEERING.md): cifras medidas, decisiones de diseño, cómo verificarlo y límites honestos.
+
 ### 🧭 Matriz de Navegación Rápida
 
 | Área Arquitectónica | Módulos y Enlaces Directos |
