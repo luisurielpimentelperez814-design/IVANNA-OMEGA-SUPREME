@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.19 (310) — Pantalla de motores sin porcentajes inventados
+- EnginesStatusScreen muestra — cuando no hay telemetría nativa viva (antes 88/90/96%…)
+
 # CHANGELOG — v2.5.18 (309) — Flyer en README
 - README muestra el flyer promocional y la invitación a probar en dispositivos reales
 

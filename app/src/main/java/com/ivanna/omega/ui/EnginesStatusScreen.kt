@@ -290,16 +290,19 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             )
 
             // ── 10. Hipermotor de Realidad Acústica y Evolución Cognitiva (Fases 1–15) ──
-            val realSnap = com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetrySnapshot()
-            val cogSnap  = com.ivanna.omega.core.NativeBridge.safeGetCognitiveEvolutionTelemetrySnapshot()
-            val realismPct  = if (realSnap.size > 5) (realSnap[5] * 100f).toInt() else 88
-            val judgePct    = if (cogSnap.size > 8) (cogSnap[8] * 100f).toInt() else 90
-            val homeoPct    = if (cogSnap.size > 12) (cogSnap[12] * 100f).toInt() else 96
-            val twinPct     = if (cogSnap.size > 13) (cogSnap[13] * 100f).toInt() else 92
-            val evoFitPct   = if (cogSnap.size > 14) (cogSnap[14] * 100f).toInt() else 89
-            val memCount    = if (cogSnap.size > 15) cogSnap[15].toInt() else 1
+            val realSnap = com.ivanna.omega.core.NativeBridge.safeGetRealityTelemetryOrNull() ?: FloatArray(0)
+            val cogSnap  = com.ivanna.omega.core.NativeBridge.safeGetCognitiveTelemetryOrNull() ?: FloatArray(0)
+            // Sin telemetría viva (snapshot vacío) NO se inventan porcentajes: "—".
+            fun snapPct(a: FloatArray, i: Int): String =
+                if (a.size > i) "${(a[i] * 100f).toInt()}%" else "—"
+            val realismPct  = snapPct(realSnap, 5)
+            val judgePct    = snapPct(cogSnap, 8)
+            val homeoPct    = snapPct(cogSnap, 12)
+            val twinPct     = snapPct(cogSnap, 13)
+            val evoFitPct   = snapPct(cogSnap, 14)
+            val memCount    = if (cogSnap.size > 15) cogSnap[15].toInt().toString() else "—"
             val topPrioIdx  = if (cogSnap.size > 0) cogSnap[0].toInt() else 0
-            val topPrioName = when (topPrioIdx) {
+            val topPrioName = if (cogSnap.isEmpty()) "—" else when (topPrioIdx) {
                 0 -> "Profundidad"
                 1 -> "Microdinámica"
                 2 -> "Claridad Vocal"
@@ -310,14 +313,14 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             EngineCard(
                 icon   = Icons.Default.Psychology,
                 title  = "SISTEMA NERVIOSO SUPERIOR · COGNICIÓN (FASES 1–15)",
-                status = "${if (realityActive) "ACTIVO" else "BYPASS"} · Realismo $realismPct% · Juez $judgePct% · Homeostasis $homeoPct%",
+                status = "${if (realityActive) "ACTIVO" else "BYPASS"} · Realismo $realismPct · Juez $judgePct · Homeostasis $homeoPct",
                 ok     = nativeLoaded && realityActive,
                 detail = buildString {
                     append("Fases 1–8 (Órganos Acústicos): Genome · MicroReality · TimeMachine (SOURCE→ROOM→AIR→EAR) · RoomProjection · Intensidad ${(supState.realityIntensity * 100f).toInt()}%\n")
                     append("Fase 9 (AcousticCognitiveCore): Prioridad 1º = $topPrioName\n")
-                    append("Fase 10 (Specialist Network): Spatial=${"%.0f".format(cogSnap.getOrElse(5) { 0.88f } * 100f)}% · Room=${"%.0f".format(cogSnap.getOrElse(6) { 0.87f } * 100f)}% · Micro=${"%.0f".format(cogSnap.getOrElse(7) { 0.89f } * 100f)}% · HumanJudge=$judgePct%\n")
-                    append("Fase 11–13 (ExecutiveBrain + Memory + Homeostasis): Coherencia=${"%.0f".format(cogSnap.getOrElse(10) { 0.91f } * 100f)}% · Obs=$memCount · Estabilidad=$homeoPct%\n")
-                    append("Fase 14–15 (DigitalAcousticTwin + CMA-ES/Q-Learning): Twin=$twinPct% · Fitness=$evoFitPct%")
+                    append("Fase 10 (Specialist Network): Spatial=${snapPct(cogSnap, 5)} · Room=${snapPct(cogSnap, 6)} · Micro=${snapPct(cogSnap, 7)} · HumanJudge=$judgePct\n")
+                    append("Fase 11–13 (ExecutiveBrain + Memory + Homeostasis): Coherencia=${snapPct(cogSnap, 10)} · Obs=$memCount · Estabilidad=$homeoPct\n")
+                    append("Fase 14–15 (DigitalAcousticTwin + CMA-ES/Q-Learning): Twin=$twinPct · Fitness=$evoFitPct")
                 }
             )
 
