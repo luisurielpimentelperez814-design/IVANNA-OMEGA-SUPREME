@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.27 (318) — COGNITIVO 9–15 explica su estado real
+- Eje líder distingue: sin motor, desactivado, midiendo, módulo externo, sin audio\n- Mapeo de índices UI↔JNI verificado para las 3 tarjetas (fases 9–15)
+
 # CHANGELOG — v2.5.26 (317) — Sliders sin lag y cognitivo con estado claro
 - SupremeAxesPrefs.save coalesce disco+daemon (150 ms) en vez de escribir ~40 claves por evento de arrastre\n- Pestaña COGNITIVO distingue: motor no cargado / desactivado / esperando audio
 

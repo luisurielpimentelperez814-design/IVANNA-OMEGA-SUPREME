@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AdaptiveMode
 import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.neuromorphic.PiLstmBridge
 import com.ivanna.omega.ui.theme.*
@@ -510,6 +511,8 @@ private fun CognitiveEvolutionTab() {
     var realityIntensity by remember { mutableFloatStateOf(axesState.realityIntensity) }
     var realityTele by remember { mutableStateOf(NativeBridge.safeGetRealityTelemetryOrNull()) }
     var cogTele by remember { mutableStateOf(NativeBridge.safeGetCognitiveTelemetryOrNull()) }
+    var daemonUp by remember { mutableStateOf(false) }
+    var adaptiveRunning by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -518,6 +521,8 @@ private fun CognitiveEvolutionTab() {
         while (true) {
             realityTele = NativeBridge.safeGetRealityTelemetryOrNull()
             cogTele = NativeBridge.safeGetCognitiveTelemetryOrNull()
+            daemonUp = OmegaEngineBridge.isConnected
+            adaptiveRunning = runCatching { IvannaNativeLib.nativeIsAdaptiveEngineRunning() }.getOrDefault(false)
             kotlinx.coroutines.delay(250L)
         }
     
@@ -570,7 +575,9 @@ private fun CognitiveEvolutionTab() {
                 "EJE LÍDER ACTUAL: ${topAxisIdx?.let { priorityNames[it] } ?: when {
                     !IvannaNativeLib.isLoaded -> "— (motor nativo no cargado)"
                     !realityEnabled           -> "— (reconstrucción desactivada)"
-                    else                      -> "— (esperando audio: reproduce algo con el motor activo)"
+                    adaptiveRunning           -> "— (motor midiendo; primer ciclo en curso)"
+                    daemonUp                  -> "— (el módulo procesa el audio fuera de la app: su telemetría cognitiva aún no se exporta aquí; activa la captura de la app para medirla)"
+                    else                      -> "— (sin audio en el motor de la app: activa la captura y reproduce algo)"
                 }}",
                 color = PhosphorGreen,
                 fontSize = 11.sp,
