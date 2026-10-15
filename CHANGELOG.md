@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.28 (319) — Test de flags de usuario sin carrera
+- test_user_flags_channel usa un bus único por instancia (fallaba intermitente en paralelo bajo ASan)
+
 # CHANGELOG — v2.5.27 (318) — COGNITIVO 9–15 explica su estado real
 - Eje líder distingue: sin motor, desactivado, midiendo, módulo externo, sin audio\n- Mapeo de índices UI↔JNI verificado para las 3 tarjetas (fases 9–15)
 

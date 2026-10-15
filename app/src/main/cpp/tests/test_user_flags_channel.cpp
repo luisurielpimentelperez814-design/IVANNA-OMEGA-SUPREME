@@ -4,7 +4,9 @@
 //  1) la tabla blanca y la codificación (lógica pura) contra el DECODIFICADOR real de omega_effect,
 //  2) el CommandServer REAL compilado en host: comando JSON -> snapshot publicado -> lectura cross-bus.
 #include <gtest/gtest.h>
+#include <atomic>
 #include <chrono>
+#include <string>
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -91,10 +93,18 @@ TEST(UserFlagsPure, SenderWithoutDaemonReturnsQuicklyAndDoesNotCrash) {
 
 // ── CommandServer REAL: JSON -> snapshot publicado en el bus -> lector ───────
 namespace {
-const char* kBus = "./omega_user_flags_bus_test";
+// Ruta ÚNICA por instancia (pid + contador): CTest corre estos tests en paralelo y un
+// archivo compartido hacía que uno hiciera unlink()/open() sobre el bus de otro
+// (falló intermitente solo bajo ASan, que alarga la ventana de la carrera).
+std::string makeBusPath() {
+    static std::atomic<int> n{0};
+    return "./omega_user_flags_bus_test_" + std::to_string(::getpid()) + "_" + std::to_string(n.fetch_add(1));
+}
 struct Harness {
     OmegaControlBus reader;
     uint64_t seen = 0;
+    const std::string busPath = makeBusPath();
+    const char* kBus = busPath.c_str();
     Harness() {
         ::unlink(kBus);
         EXPECT_TRUE(controlBus().openWriter(kBus));            // el singleton que usa el daemon
