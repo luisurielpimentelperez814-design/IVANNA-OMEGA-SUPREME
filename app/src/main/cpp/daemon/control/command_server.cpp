@@ -60,6 +60,14 @@ const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
     p+=8; while(*p==' '||*p==':'||*p=='"') p++; int i=0; while(*p&&*p!='"'&&i<bufSz-1) buf[i++]=*p++; buf[i]='\0'; return buf;
 }
 
+// Lee un valor string simple {"key":"valor"} (sin escapes). buf queda vacio si no existe.
+static void _jsonString(const char* j, const char* key, char* buf, int bufSz) {
+    buf[0]='\0'; char search[48]; snprintf(search,sizeof(search),"\"%s\"",key);
+    const char* p=strstr(j,search); if(!p) return;
+    p+=strlen(search); while(*p==' '||*p==':') p++; if(*p!='"') return; p++;
+    int i=0; while(*p&&*p!='"'&&i<bufSz-1) buf[i++]=*p++; buf[i]='\0';
+}
+
 static OmegaSharedState* getSharedState() noexcept {
     void* base = ivanna::shmManager().base();
     if (!base) return nullptr;
@@ -134,6 +142,33 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
     if (!ivanna::controlBus().publish(snap)) return 0;
     return ivanna::controlBus().lastPublishedGeneration();
+}
+
+// ── Comandos de la capa Magisk (texto/JSON) que antes se confirmaban sin efecto ──
+// handleTextCommand respondia {"ok":true,"text_echo":...} a TODO lo que no fuera
+// SET_PF_DRIVE/TELEMETRY: los controles de las pantallas Magisk (preset, bypass,
+// reverb, PF, recargar) parecian aplicarse y no hacian nada. Ahora cada uno muta
+// el estado real publicado al bus; lo desconocido responde ok:false.
+static bool applyPresetByName(OmegaDspState& st, const std::string& nameIn) {
+    std::string n; for (char c : nameIn) n.push_back((char)((c>='A'&&c<='Z')?c-'A'+'a':c));
+    while (!n.empty() && (n.back()=='\n'||n.back()=='\r'||n.back()==' ')) n.pop_back();
+    if (n=="ivanna omega" || n=="ivanna_omega" || n=="omega") {          // perfil magistral por defecto
+        st.spatial_width=1.55f; st.harmonic_gain=0.78f; st.compressor=-5.5f;
+        st.high_cut_hz=19500.f; st.anti_dolby=0.85f; st.loudness_tgt=-16.f; st.bass_boost=0.f;
+    } else if (n=="spatial") {                                             // escena amplia
+        st.spatial_width=1.80f; st.harmonic_gain=0.50f; st.widener_mult=1.25f;
+    } else if (n=="warm") {                                                // calido, menos aire
+        st.spatial_width=1.20f; st.harmonic_gain=0.60f; st.bass_boost=3.0f; st.high_cut_hz=16000.f; st.widener_mult=1.0f;
+    } else if (n=="flat" || n=="neutral") {                                // sin color
+        st.spatial_width=1.0f; st.harmonic_gain=0.0f; st.bass_boost=0.f; st.dialog_boost=0.f;
+        st.widener_mult=1.0f; st.high_cut_hz=22000.f;
+    } else return false;
+    return true;
+}
+static int pfIndexForName(const std::string& k) {
+    static const char* names[13] = {"DRIVE","WET","MIX","ALPHA","BETA","GAMMA","FREQ","RESONANCE","LOW","MID","HIGH","PRESENCE","MASTER"};
+    for (int i=0;i<13;i++) if (k==names[i]) return i;
+    return -1;
 }
 static bool hasActiveConsumer() noexcept { return ivanna::controlBus().isWriterOpen(); }
 static int buildRichReply(char* buf, int sz, bool ok, const char* command, const char* status, uint64_t generation, const char* route, const char* errorMsg) noexcept {
@@ -474,6 +509,17 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             "{\"ok\":true,\"action\":\"SET_PINNA_METRICS\",\"generation\":%llu,\"concha\":%.3f,\"helix\":%.3f,\"fosa\":%.3f}",
             (unsigned long long)gen, concha, helix, fosa);
 
+    } else if (strcmp(action,"SET_HARMONIC_GAIN")==0) {
+        m_state.harmonic_gain = _clamp(_jsonFloat(json,"gain",m_state.harmonic_gain), 0.f, 2.f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_PRESET")==0) {
+        char pn[64]; _jsonString(json,"preset",pn,sizeof(pn));
+        bool okp = applyPresetByName(m_state, pn);
+        uint64_t gen = okp ? publishCurrentState(m_state) : 0;
+        n = buildRichReply(reply,reply_sz,okp,action, okp?(gen>0?"applied":"accepted_pending_consumer"):"unknown_preset", gen, "SYSTEM_WIDE", okp?nullptr:"\"preset desconocido\"");
+
     } else if (strcmp(action,"PING")==0) {
         n = snprintf(reply,reply_sz,
             "{\"ok\":true,\"command\":\"PING\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"pong\":true,\"uptime_ms\":%llu,\"error\":null}",
@@ -648,6 +694,7 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
     pthread_mutex_lock(&m_mutex);
     ivanna::shmManager().bumpHealthCounter(3); // comandos_procesados (canal texto)
     std::string t(text);
+    while (!t.empty() && (t.back()=='\n'||t.back()=='\r'||t.back()==' ')) t.pop_back();
     int n=0;
     // GET_TELEMETRY (2026-09-04): el boton TELEMETRY del panel enviaba este
     // comando de texto y no existia handler (solo el JSON GET_STATUS) ->
@@ -670,8 +717,65 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
         n=snprintf(reply,(size_t)reply_sz,
             "temp=%.1f latency=%.3f frames=%llu bypass=%d samplerate=%d version=2.3.1",
             -1.0f, 0.0, 0ULL, 0, 48000);
+    } else if (t.find("SET_PF_")==0 && t.find(':')!=std::string::npos) {
+        std::string key = t.substr(7, t.find(':')-7);
+        int idx = pfIndexForName(key);
+        const char* arg = t.c_str()+t.find(':')+1; char* e=nullptr; float v=strtof(arg,&e);
+        if (idx<0 || e==arg || !std::isfinite(v)) {
+            ivanna::shmManager().noteCommandResult(false);
+            n=snprintf(reply,reply_sz,"{\"ok\":false,\"error\":\"parametro PF invalido\"}");
+        } else {
+            // FREQ es Hz; el resto son factores. Solo se acota a un rango fisico razonable.
+            v = (idx==6) ? _clamp(v,20.f,24000.f) : _clamp(v,-10.f,10.f);
+            m_state.pf_params[idx]=v;
+            uint64_t gen=publishCurrentState(m_state);
+            ivanna::shmManager().noteCommandResult(true);
+            n=snprintf(reply,reply_sz,"{\"ok\":true,\"pf_%s\":%.3f,\"gen\":%llu}",
+                       key.c_str(),v,(unsigned long long)gen);
+        }
+    } else if (t.find("SET_BYPASS:")==0) {
+        const char* arg=t.c_str()+11; bool on = (strtof(arg,nullptr) > 0.5f);
+        m_state.user_flags_mask |= ivanna::OMEGA_FLAG_MASTER_BYPASS;
+        if (on) m_state.user_flags_value |= ivanna::OMEGA_FLAG_MASTER_BYPASS;
+        else    m_state.user_flags_value &= ~ivanna::OMEGA_FLAG_MASTER_BYPASS;
+        uint64_t gen=publishCurrentState(m_state);
+        ivanna::shmManager().noteCommandResult(true);
+        n=snprintf(reply,reply_sz,"{\"ok\":true,\"bypass\":%s,\"gen\":%llu}",on?"true":"false",(unsigned long long)gen);
+    } else if (t.find("SET_REVERB:")==0) {
+        const char* arg=t.c_str()+11; char* e=nullptr; float v=strtof(arg,&e);
+        if (e==arg || !std::isfinite(v)) v=0.f;
+        v=_clamp(v,0.f,1.f);
+        m_state.room_wet=v;
+        // rt60==0 = convolver apagado: con wet>0 y sala sin elegir se usa la mediana del dataset.
+        if (v<=0.001f) m_state.room_rt60_s=0.f;
+        else if (m_state.room_rt60_s<0.1f) m_state.room_rt60_s=0.723f;
+        uint64_t gen=publishCurrentState(m_state);
+        ivanna::shmManager().noteCommandResult(true);
+        n=snprintf(reply,reply_sz,"{\"ok\":true,\"reverb_wet\":%.3f,\"rt60\":%.3f,\"gen\":%llu}",
+                   v,(double)m_state.room_rt60_s,(unsigned long long)gen);
+    } else if (t.find("SET_PRESET:")==0) {
+        bool okp = applyPresetByName(m_state, t.substr(11));
+        uint64_t gen = okp ? publishCurrentState(m_state) : 0;
+        ivanna::shmManager().noteCommandResult(okp);
+        if (okp) n=snprintf(reply,reply_sz,"{\"ok\":true,\"preset\":\"%s\",\"gen\":%llu}",t.c_str()+11,(unsigned long long)gen);
+        else     n=snprintf(reply,reply_sz,"{\"ok\":false,\"error\":\"preset desconocido\"}");
+    } else if (tUpper=="RELOAD_PARAMS" || tUpper=="RELOAD") {
+        // Re-publica el estado completo al bus (el consumidor lo relee en el siguiente bloque).
+        uint64_t gen=publishCurrentState(m_state);
+        ivanna::shmManager().noteCommandResult(gen>0);
+        n=snprintf(reply,reply_sz,"{\"ok\":%s,\"reloaded\":true,\"gen\":%llu}",gen>0?"true":"false",(unsigned long long)gen);
+    } else if (tUpper=="STATUS" || tUpper=="GET_STATUS") {
+        uint64_t gen=ivanna::controlBus().lastPublishedGeneration();
+        n=snprintf(reply,reply_sz,
+            "gen=%llu consumer=%s bypass=%d reverb_wet=%.3f rt60=%.3f spatial_width=%.3f harmonic_gain=%.3f intensity=%.3f",
+            (unsigned long long)gen, hasActiveConsumer()?"omega_effect":"none",
+            (m_state.user_flags_mask & m_state.user_flags_value & ivanna::OMEGA_FLAG_MASTER_BYPASS)?1:0,
+            (double)m_state.room_wet,(double)m_state.room_rt60_s,
+            (double)m_state.spatial_width,(double)m_state.harmonic_gain,(double)m_state.intensity);
     } else {
-        n=snprintf(reply,reply_sz,"{\"ok\":true,\"text_echo\":\"%s\"}",t.c_str());
+        // Antes: {"ok":true,"text_echo":...} — confirmaba comandos que no hacian nada.
+        ivanna::shmManager().noteCommandResult(false);
+        n=snprintf(reply,reply_sz,"{\"ok\":false,\"error\":\"comando de texto desconocido\"}");
     }
     pthread_mutex_unlock(&m_mutex);
     return n;

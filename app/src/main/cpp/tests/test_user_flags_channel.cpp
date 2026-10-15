@@ -159,3 +159,52 @@ TEST(UserFlagsDaemon, RejectsCommandsWithoutWhitelistedKeys) {
     EXPECT_FALSE(h.reader.readLatest(s, seen));                // no se publicó nada nuevo
     EXPECT_EQ(before & OMEGA_FLAG_COCHLEAR_ON, 0u);
 }
+
+// ── Comandos de texto/JSON de las pantallas Magisk: cada uno debe MUTAR el snapshot ──
+// Antes handleTextCommand respondia {"ok":true,"text_echo":...} a todo salvo SET_PF_DRIVE, asi que
+// preset / bypass / reverb / PF / recargar parecian aplicarse y no llegaban al efecto.
+TEST(MagiskTextCommands, EveryControlReachesTheSnapshotAndUnknownIsRejected) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+
+    ASSERT_GT(cs.handleTextCommand("SET_BYPASS:1", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    EXPECT_NE(snap().flags & OMEGA_FLAG_MASTER_BYPASS, 0u);
+    cs.handleTextCommand("SET_BYPASS:0", reply, sizeof reply);
+    EXPECT_EQ(snap().flags & OMEGA_FLAG_MASTER_BYPASS, 0u);
+
+    cs.handleTextCommand("SET_REVERB:0.7", reply, sizeof reply);
+    OmegaDspSnapshot s = snap();
+    EXPECT_NEAR(s.room_wet, 0.7f, 1e-4f);
+    EXPECT_GT(s.room_rt60_s, 0.1f);                            // wet>0 enciende el convolver
+    cs.handleTextCommand("SET_REVERB:0.0", reply, sizeof reply);
+    s = snap();
+    EXPECT_EQ(s.room_rt60_s, 0.f);                             // wet=0 => bypass real
+
+    cs.handleTextCommand("SET_PF_MASTER:0.91", reply, sizeof reply);
+    EXPECT_NEAR(snap().pf_params[12], 0.91f, 1e-4f);
+    cs.handleTextCommand("SET_PF_FREQ:1500", reply, sizeof reply);
+    EXPECT_NEAR(snap().pf_params[6], 1500.f, 1e-2f);
+
+    ASSERT_GT(cs.handleTextCommand("SET_PRESET:Warm", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    s = snap();
+    EXPECT_NEAR(s.spatial_width, 1.20f, 1e-4f);
+    EXPECT_NEAR(s.bass_boost_db, 3.0f, 1e-4f);
+
+    cs.handleJsonCommand("{\"action\":\"SET_HARMONIC_GAIN\",\"gain\":0.42}", reply, sizeof reply);
+    EXPECT_NEAR(snap().harmonic_gain, 0.42f, 1e-4f);
+    cs.handleJsonCommand("{\"action\":\"SET_PRESET\",\"preset\":\"Spatial\"}", reply, sizeof reply);
+    EXPECT_NEAR(snap().spatial_width, 1.80f, 1e-4f);
+
+    ASSERT_GT(cs.handleTextCommand("RELOAD_PARAMS", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"reloaded\":true"), std::string::npos) << reply;
+
+    ASSERT_GT(cs.handleTextCommand("SET_PRESET:NoExiste", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
+    ASSERT_GT(cs.handleTextCommand("HACER_ALGO_RARO:1", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
+    EXPECT_EQ(std::string(reply).find("text_echo"), std::string::npos);
+}
