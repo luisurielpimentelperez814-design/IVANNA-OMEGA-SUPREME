@@ -41,7 +41,9 @@ class PerceptualViewModel(application: Application) : AndroidViewModel(applicati
         val neuralConfidencePercent : Int = 0,
         // ANTES: siempre false.
         // AHORA: OmegaMetrics.shared.dspActive || IvannaNativeLib.isLoaded.
-        val isBridgeConnected : Boolean = false
+        val isBridgeConnected : Boolean = false,
+        // IPC real con el daemon del módulo Magisk (socket), distinto de "motor nativo cargado".
+        val isMagiskConnected : Boolean = false
     )
 
     private val _uiState    = MutableStateFlow(UiState())
@@ -61,9 +63,13 @@ class PerceptualViewModel(application: Application) : AndroidViewModel(applicati
         // 1. Colectar decisiones del PerceptualDecisionEngine
         viewModelScope.launch {
             perceptualEngine.snapshot.collect { snapshot ->
+                // Latencia REAL de la decisión (antes: 0.8 + (1-confianza)*0.5, inventada).
+                val t0 = System.nanoTime()
                 val decision = decisionEngine.evaluate(snapshot)
-                _dspDecision.value = decision
-                decisionEngine.dispatchDecision(decision)
+                val measuredMs = (System.nanoTime() - t0) / 1_000_000f
+                val measured = decision.copy(executionLatencyMs = measuredMs)
+                _dspDecision.value = measured
+                decisionEngine.dispatchDecision(measured)
             }
         }
 
@@ -130,7 +136,8 @@ class PerceptualViewModel(application: Application) : AndroidViewModel(applicati
                 fatigueHistory         = newFat,
                 immersionHistory       = newImm,
                 neuralConfidencePercent = confidencePct,
-                isBridgeConnected      = bridgeOk
+                isBridgeConnected      = bridgeOk,
+                isMagiskConnected      = com.ivanna.omega.magisk.OmegaEngineBridge.isConnected
             )
         }
     }
@@ -149,14 +156,30 @@ class PerceptualViewModel(application: Application) : AndroidViewModel(applicati
         decisionEngine.updateProfile(neutral)
     }
 
+    private var saveJob: kotlinx.coroutines.Job? = null
+
+    /** Slider del Cortex: actualiza perfil + motor de decisión al instante y persiste con debounce. */
     fun setAggressiveness(value: Float) {
-        _dspDecision.value = _dspDecision.value.copy(
-            confidence = value.coerceIn(0f, 1f)
-        )
+        val v = value.coerceIn(0f, 1f)
+        val updated = _userProfile.value.copy(aggressiveness = v)
+        _userProfile.value = updated
+        decisionEngine.updateProfile(updated)
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(200L)
+            profileManager.saveProfile(updated)
+        }
+        // Re-evalúa YA con el último snapshot para que el cambio se refleje sin esperar el próximo ciclo.
+        val snap = perceptualEngine.snapshot.value
+        val t0 = System.nanoTime()
+        val d = decisionEngine.evaluate(snap)
+        _dspDecision.value = d.copy(executionLatencyMs = (System.nanoTime() - t0) / 1_000_000f)
+        decisionEngine.dispatchDecision(_dspDecision.value)
     }
 
     fun resetToNeutralProfile() {
-        _dspDecision.value = DSPDecision()
+        resetToNeutral()
+        setAggressiveness(_userProfile.value.aggressiveness)
     }
 
     override fun onCleared() {

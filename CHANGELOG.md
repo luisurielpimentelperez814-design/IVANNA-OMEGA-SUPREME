@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.29 (320) — 
+
+
 # CHANGELOG — v2.5.28 (319) — Test de flags de usuario sin carrera
 - test_user_flags_channel usa un bus único por instancia (fallaba intermitente en paralelo bajo ASan)
 

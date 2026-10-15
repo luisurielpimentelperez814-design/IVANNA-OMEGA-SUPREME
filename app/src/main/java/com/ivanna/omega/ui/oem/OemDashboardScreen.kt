@@ -71,14 +71,14 @@ fun OemDashboardScreen(
             NavModuleCard("AUDIO ESPACIAL · HRTF · SOFA",
                 "Posición 3D · Sujeto HRTF · Validación SHA256",
                 Icons.Default.SurroundSound, AuroraCyan,
-                indicator = if (state.hrtfReady) "ACTIVO" else "INACTIVO",
-                indicatorOk = state.hrtfReady, onClick = onOpenSpatial)
+                indicator = if (state.hrtfOn) "ACTIVO" else if (state.hrtfReady || state.hrtfLoaded) "LISTO" else "INACTIVO",
+                indicatorOk = state.hrtfOn, onClick = onOpenSpatial)
 
             NavModuleCard("ACÚSTICA · SAF · RIR",
                 "Sala activa · RT60 · Difusión · Ambiente",
                 Icons.Default.Waves, PhosphorGreen,
-                indicator = if (state.reverbLevel > 0.05f) "PROCESANDO" else "EN ESPERA",
-                indicatorOk = state.reverbLevel > 0.05f, onClick = onOpenAcoustic)
+                indicator = when { state.rirOn && state.rirLoaded -> "ACTIVO"; state.rirLoaded -> "LISTO"; state.rirOn -> "CARGANDO"; else -> "DESACTIVADA" },
+                indicatorOk = state.rirOn && state.rirLoaded, onClick = onOpenAcoustic)
 
             NavModuleCard("IA ADAPTATIVA",
                 state.dominantLabel.let { if (it == "—") "Sin señal activa" else "Detectado: $it · Confianza ${(maxOf(state.probVoice, state.probMusic, state.probBass) * 100).toInt()}%" },
@@ -254,7 +254,7 @@ private fun SignalMetersCard(state: OemState) {
             DspChiplet("COMP", state.compAmount > 0.1f, AmberSignal)
             DspChiplet("EXC",  state.exciterRed < 0.9f, NeonMagenta)
             DspChiplet("WIDE", state.spatialWidth > 0.5f, PhosphorGreen)
-            DspChiplet("HRTF", state.hrtfReady, AuroraCyan)
+            DspChiplet("HRTF", state.hrtfOn, AuroraCyan)
             DspChiplet("LIM",  state.safetyMargin < 0.1f, CoralWarn)
         }
     }

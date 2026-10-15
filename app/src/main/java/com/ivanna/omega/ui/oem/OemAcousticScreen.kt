@@ -47,10 +47,10 @@ fun OemAcousticScreen(state: OemState, onBack: () -> Unit) {
                     Text("SALA ACTIVA · RIR DATASET", color = TextMuted, fontSize = 8.sp,
                         fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     Surface(shape = RoundedCornerShape(4.dp),
-                        color = if (state.reverbLevel > 0.05f) PhosphorGreen.copy(0.15f)
+                        color = if (state.rirOn && state.rirLoaded) PhosphorGreen.copy(0.15f)
                                 else ObsidianEdge) {
-                        Text(if (state.reverbLevel > 0.05f) "PROCESANDO" else "EN ESPERA",
-                            color = if (state.reverbLevel > 0.05f) PhosphorGreen else TextMuted,
+                        Text(if (state.rirOn && state.rirLoaded) "ACTIVO" else if (state.rirLoaded) "LISTO" else "DESACTIVADA",
+                            color = if (state.rirOn && state.rirLoaded) PhosphorGreen else TextMuted,
                             fontSize = 8.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                     }

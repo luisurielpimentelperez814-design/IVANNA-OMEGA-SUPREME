@@ -52,6 +52,14 @@ class CognitiveDashboardActivity : ComponentActivity() {
 }
 
 @Composable
+private fun appVersionName(): String {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    return remember {
+        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?"
+    }
+}
+
+@Composable
 fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
     val state by vm.uiState.collectAsState()
     val dspDecision by vm.dspDecision.collectAsState()
@@ -72,7 +80,7 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
         ) {
             Column {
                 Text(
-                    text = "IVANNA OMEGA SUPREME v6.0",
+                    text = "IVANNA OMEGA SUPREME v${appVersionName()}",
                     color = Color(0xFFF1F8FF),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
@@ -87,8 +95,16 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
             }
 
             Text(
-                text = if (state.isBridgeConnected) "● MAGISK IPC ONLINE" else "○ IPC DISCONNECTED",
-                color = if (state.isBridgeConnected) Color(0xFF23F09A) else Color(0xFFFF5C4D),
+                text = when {
+                    state.isMagiskConnected -> "● MAGISK IPC ONLINE"
+                    state.isBridgeConnected -> "● MOTOR NATIVO (sin módulo)"
+                    else                    -> "○ SIN MOTOR"
+                },
+                color = when {
+                    state.isMagiskConnected -> Color(0xFF23F09A)
+                    state.isBridgeConnected -> Color(0xFFF7B733)
+                    else                    -> Color(0xFFFF5C4D)
+                },
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
@@ -160,8 +176,8 @@ fun CognitiveDashboardScreen(vm: PerceptualViewModel = viewModel()) {
                     Text("${state.neuralConfidencePercent}%", color = Color(0xFF23F09A), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
                 Column {
-                    Text("Inference Latency", color = Color(0xFF93A8C6), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    Text("${dspDecision.executionLatencyMs} µs", color = Color(0xFF6FF3FF), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("Decision Time (medido)", color = Color(0xFF93A8C6), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text(if (dspDecision.executionLatencyMs > 0f) "%.3f ms".format(dspDecision.executionLatencyMs) else "—", color = Color(0xFF6FF3FF), fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
                 Column {
                     Text("Spatial Mode", color = Color(0xFF93A8C6), fontSize = 10.sp, fontFamily = FontFamily.Monospace)

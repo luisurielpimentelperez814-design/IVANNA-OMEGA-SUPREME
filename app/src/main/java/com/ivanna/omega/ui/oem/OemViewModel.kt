@@ -121,6 +121,13 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         val hrtfReady   = IvannaSpatialManager.ready
         val hrtfSubject = IvannaSpatialManager.activeSubject
         val hrtfLoaded  = IvannaSpatialManager.isHrtfDatasetLoaded()
+        // Estado real de las dos tarjetas: lo que el usuario aplicó (panel Espacial)
+        // + si el dataset está realmente cargado en el motor.
+        val spCfg = runCatching { com.ivanna.omega.spatial.SpatialControlStore.load(getApplication()) }.getOrNull()
+        val hrtfOn = (spCfg?.hrtfEnabled == true) && (hrtfLoaded || hrtfReady)
+        val rirLoaded = runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)
+        val rirOn = spCfg?.rirEnabled == true
+        val rirWetNow = if (rirOn && rirLoaded) (spCfg?.rirWet ?: 0f).coerceIn(0f, 1f) else 0f
 
         // ── SAF ───────────────────────────────────────────────────────────────
         val safConverged  = runCatching { SaFBridge.nativeSaFIsConverged()  }.getOrDefault(false)
@@ -229,6 +236,10 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             evoGeneration  = evoGeneration,
             phaseState     = phaseState,
             hrtfReady      = hrtfReady,
+            hrtfOn         = hrtfOn,
+            rirOn          = rirOn,
+            rirLoaded      = rirLoaded,
+            reverbLevel    = rirWetNow,
             hrtfSubject    = hrtfSubject,
             hrtfLoaded     = hrtfLoaded,
             safConverged   = safConverged,

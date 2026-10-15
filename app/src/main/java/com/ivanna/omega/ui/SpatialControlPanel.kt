@@ -53,6 +53,33 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
     val metrics by OmegaMetrics.shared.collectAsState()
     var hrtfSubjectReply by remember { mutableStateOf("") }
 
+    // Salas RIR: fuente REAL = dataset nativo (APK extraído a filesDir/rir, o el de root si
+    // existe). Antes se leía solo /data/adb/ivanna_omega/rir (ruta root, ilegible para la
+    // app sin root) → "IR: no desplegadas" aunque las 200 IR vienen dentro del APK.
+    var rooms by remember { mutableStateOf<List<Pair<String, Float>>>(emptyList()) }
+    var roomsChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            OmegaEngineBridge.ensureRirDataset(context)
+            repeat(20) {
+                val n = OmegaEngineBridge.rirRoomCount()
+                if (n > 0) {
+                    rooms = (0 until n).mapNotNull { i ->
+                        OmegaEngineBridge.rirRoomInfo(i)?.split('|')?.let { f ->
+                            f[0].removeSuffix(".wav") to (f.getOrNull(1)?.toFloatOrNull() ?: 0f)
+                        }
+                    }
+                    roomsChecked = true
+                    return@withContext
+                }
+                kotlinx.coroutines.delay(500L)
+            }
+            // Respaldo: metadata.csv de la ruta root, si existe.
+            rooms = parseRirRooms(File("/data/adb/ivanna_omega/rir/metadata.csv"))
+            roomsChecked = true
+        }
+    }
+
     fun syncHybrid(s: AdaptiveControlsState) {
         AdaptiveControlsPrefs.save(context, s)
         adaptivePrefs = s
@@ -84,6 +111,13 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         // Sujeto → ancla SAF + daemon
         val idx = SpatialControlStore.SUBJECTS.indexOf(c.hrtfSubject)
         if (IvannaNativeLib.isLoaded && idx >= 0) runCatching { SaFBridge.setSubjectIndexHint(idx) }
+        // Sala RIR elegida → motor nativo + daemon (antes el índice solo se guardaba).
+        if (c.rirEnabled && rooms.isNotEmpty()) {
+            val ri = c.rirRoom.coerceIn(0, rooms.size - 1)
+            runCatching { OmegaEngineBridge.setRoom(rooms[ri].second, c.rirWet, ri) }
+        } else if (!c.rirEnabled) {
+            runCatching { OmegaEngineBridge.disableRoom() }
+        }
         // RIR wet → DSPBridge (wet espacial real) + daemon (reverb)
         if (DSPBridge.isLoaded) runCatching {
             // FIX: mix=0.8→0.5 (neutro). mix>0.5 → +3.6dB pre-EQ → biquad inestable → tronido
@@ -124,7 +158,6 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
     ).firstOrNull { it.exists() }
     val rirDir = File("/data/adb/ivanna_omega/rir")
     val rirMeta = File(rirDir, "metadata.csv")
-    val rooms = remember { parseRirRooms(rirMeta) }
 
     Column(
         Modifier.fillMaxSize().background(ObsidianVoid)
@@ -191,7 +224,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                     }) { Text("▶", fontSize = 12.sp) }
                 }
             } else {
-                Text("IR: no desplegadas — usando síntesis algorítmica",
+                Text(if (!roomsChecked) "IR: cargando dataset…" else "IR: dataset no disponible — usando síntesis algorítmica",
                     color = AmberSignal, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             }
         }

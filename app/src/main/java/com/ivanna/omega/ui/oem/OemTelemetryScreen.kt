@@ -175,7 +175,7 @@ fun OemTelemetryScreen(
                 TelRow("P(silencio)",       "${"%.3f".format(state.probSilence)}", TextMuted)
                 TelRow("Percusividad",      "${"%.3f".format(state.percussiveness)}", AuroraCyan)
                 TelRow("Tonalidad",         "${"%.3f".format(state.tonality)}", AuroraCyan)
-                TelRow("Reverb detectado",  "${"%.3f".format(state.reverbLevel)}", PhosphorGreen)
+                TelRow("Reverb aplicado (RIR)",  "${"%.3f".format(state.reverbLevel)}", PhosphorGreen)
                 TelRow("Rango dinámico",    "${"%.1f".format(state.dynRange)} dB", AuroraCyan)
                 TelRow("Centroide espect.", "${state.spectralCentroid.toInt()} Hz", TextSecondary)
             }
