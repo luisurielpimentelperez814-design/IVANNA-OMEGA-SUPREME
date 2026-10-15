@@ -567,7 +567,11 @@ private fun CognitiveEvolutionTab() {
                 NativeBridge.safeSetRealityIntensity(v)
             }
             Text(
-                "EJE LÍDER ACTUAL: ${topAxisIdx?.let { priorityNames[it] } ?: "— (motor nativo no disponible)"}",
+                "EJE LÍDER ACTUAL: ${topAxisIdx?.let { priorityNames[it] } ?: when {
+                    !IvannaNativeLib.isLoaded -> "— (motor nativo no cargado)"
+                    !realityEnabled           -> "— (reconstrucción desactivada)"
+                    else                      -> "— (esperando audio: reproduce algo con el motor activo)"
+                }}",
                 color = PhosphorGreen,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,

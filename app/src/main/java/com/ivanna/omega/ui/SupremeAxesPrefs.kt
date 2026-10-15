@@ -109,8 +109,23 @@ object SupremeAxesPrefs {
         ).also { _stateFlow.value = it }
     }
 
+    // Debounce: arrastrar un slider llama a save() decenas de veces por segundo; cada
+    // llamada escribía ~40 claves de SharedPreferences y armaba/enviaba el JSON completo
+    // al daemon en el hilo de UI → touch entorpecido. El estado en memoria (_stateFlow)
+    // se actualiza al instante; disco + daemon se coalescen y salen una vez al soltar.
+    @Volatile private var pendingSaveJob: kotlinx.coroutines.Job? = null
+
     fun save(context: Context, s: SupremeAxesState) {
         _stateFlow.value = s
+        val appCtx = context.applicationContext
+        pendingSaveJob?.cancel()
+        pendingSaveJob = ioScope.launch {
+            kotlinx.coroutines.delay(150L)
+            writeNow(appCtx, _stateFlow.value)
+        }
+    }
+
+    private fun writeNow(context: Context, s: SupremeAxesState) {
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putBoolean("warpedLatticeEnabled", s.warpedLatticeEnabled)
             .putBoolean("warpedLatticeMicroChirp", s.warpedLatticeMicroChirp)

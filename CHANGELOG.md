@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.26 (317) — Sliders sin lag y cognitivo con estado claro
+- SupremeAxesPrefs.save coalesce disco+daemon (150 ms) en vez de escribir ~40 claves por evento de arrastre\n- Pestaña COGNITIVO distingue: motor no cargado / desactivado / esperando audio
+
 # CHANGELOG — v2.5.25 (316) — Touch fluido: sondeos fuera del hilo principal
 - 12 bucles de telemetría JNI/IPC pasan a Dispatchers.Default (antes en el hilo de UI)\n- getprop térmico y extracción de RIR fuera del hilo principal\n- Comandos al daemon desde la UI se coalescen por acción (el último valor gana) en vez de cola ilimitada
 
