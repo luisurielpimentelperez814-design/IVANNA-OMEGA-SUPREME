@@ -56,6 +56,7 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
     var fitnessMax  by remember { mutableDoubleStateOf(Double.MIN_VALUE) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         while (isActive) {
             if (IvannaNativeLib.isLoaded) {
                 runCatching {
@@ -85,6 +86,8 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
                 }
             }
             delay(500L)
+        }
+    
         }
     }
 

@@ -246,6 +246,7 @@ private fun TelemetryTab() {
     var rirActive     by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         while (true) {
             if (IvannaNativeLib.isLoaded)
                 telemetry = runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull()
@@ -286,6 +287,8 @@ private fun TelemetryTab() {
             rirActive = tierInt in 0..1
 
             kotlinx.coroutines.delay(2000) // cada 2s — mismo intervalo que ThermalGovernor
+        }
+    
         }
     }
 

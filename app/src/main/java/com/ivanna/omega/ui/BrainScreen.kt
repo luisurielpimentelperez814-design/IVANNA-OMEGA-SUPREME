@@ -183,6 +183,7 @@ private fun PerceptualTab() {
     var rows by remember { mutableStateOf<List<Triple<String, String, Float>>?>(null) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         while (true) {
             val tele = if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull() else null
@@ -203,7 +204,9 @@ private fun PerceptualTab() {
                     Triple("Protección de voz", pct(tele[8]), norm01(tele[8]))
                 )
             }
-            kotlinx.coroutines.delay(100)
+            kotlinx.coroutines.delay(250)
+        }
+    
         }
     }
 
@@ -345,6 +348,7 @@ private fun LabTab() {
     var neuralBenchUs by remember { mutableStateOf<FloatArray?>(null) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         while (true) {
             if (IvannaNativeLib.isLoaded) {
                 perceptualCues = IvannaNativeLib.guardedNative(null) { IvannaNativeLib.nativeGetPerceptualCues() }
@@ -354,6 +358,8 @@ private fun LabTab() {
                 labAutoEnabled = IvannaNativeLib.guardedNative(labAutoEnabled) { IvannaNativeLib.nativeIsLabAutoEnabled() }
             }
             kotlinx.coroutines.delay(500L)
+        }
+    
         }
     }
 
@@ -506,12 +512,15 @@ private fun CognitiveEvolutionTab() {
     var cogTele by remember { mutableStateOf(NativeBridge.safeGetCognitiveTelemetryOrNull()) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         NativeBridge.safeSetRealityReconstructionEnabled(realityEnabled)
         NativeBridge.safeSetRealityIntensity(realityIntensity)
         while (true) {
             realityTele = NativeBridge.safeGetRealityTelemetryOrNull()
             cogTele = NativeBridge.safeGetCognitiveTelemetryOrNull()
             kotlinx.coroutines.delay(250L)
+        }
+    
         }
     }
 

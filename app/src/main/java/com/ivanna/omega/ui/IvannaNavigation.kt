@@ -130,6 +130,7 @@ fun MainScaffold(
                 val bands     = remember { mutableStateOf<FloatArray?>(null) }
                 val audioChar = remember { mutableStateOf<FloatArray?>(null) }  // [rms,peak,percussiveness,tonality,reverb,dynRange,centroid,spread]
                 LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                     while (true) {
                         if (IvannaNativeLib.isLoaded) {
                             runCatching {
@@ -140,7 +141,9 @@ fun MainScaffold(
                         }
                         kotlinx.coroutines.delay(200)
                     }
-                }
+                
+        }
+    }
                 AdaptiveDashboard(
                     telemetry    = telemetry.value,
                     bandEnergies = bands.value,

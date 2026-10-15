@@ -59,6 +59,7 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
     var liveScopeSamples by remember { mutableStateOf<FloatArray?>(null) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         while (isActive) {
             delay(50L); tick = System.currentTimeMillis()
             if (IvannaNpeEngine.isReady) {
@@ -89,6 +90,8 @@ internal fun FftOscilloscopePanel(modifier: Modifier = Modifier) {
             } else if (IvannaNativeLib.isLoaded) {
                 runCatching { bandEnergies = IvannaNativeLib.nativeGetBandEnergies() }
             }
+        }
+    
         }
     }
 

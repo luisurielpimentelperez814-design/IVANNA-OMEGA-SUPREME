@@ -402,7 +402,7 @@ fun SofaAfRirSafPanelScreen(
                             selected = sel,
                             onClick  = {
                                 if (idx == -2) {
-                                    if (!rirDatasetLoaded) OmegaEngineBridge.ensureRirDataset(ctx)
+                                    if (!rirDatasetLoaded) Thread({ OmegaEngineBridge.ensureRirDataset(ctx) }, "rir-extract").start()
                                     showRoomPicker = true
                                 } else { rirRoomIdx = idx; applyRir(); persist() }
                             },

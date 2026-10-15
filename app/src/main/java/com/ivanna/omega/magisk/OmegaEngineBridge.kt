@@ -166,6 +166,25 @@ object OmegaEngineBridge {
         Thread(r, "omega-bridge-io").apply { isDaemon = true }
     }
 
+    private val pendingByAction = java.util.concurrent.ConcurrentHashMap<String, JSONObject>()
+    private val drainScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun drainPending() {
+        try {
+            while (true) {
+                val key = pendingByAction.keys.firstOrNull() ?: break
+                val p = pendingByAction.remove(key) ?: continue
+                sendCommandBlocking(p)
+            }
+        } finally {
+            drainScheduled.set(false)
+            // Carrera: un comando pudo llegar entre el último poll y el reset.
+            if (pendingByAction.isNotEmpty() && drainScheduled.compareAndSet(false, true)) {
+                ioExecutor.execute { drainPending() }
+            }
+        }
+    }
+
     @Synchronized
     private fun sendCommandBlocking(payload: JSONObject): Boolean {
         return try {
@@ -194,7 +213,17 @@ object OmegaEngineBridge {
             android.os.Looper.getMainLooper()?.thread === Thread.currentThread()
         }.getOrDefault(false)
         if (isMainThread) {
-            ioExecutor.execute { sendCommandBlocking(payload) }
+            // Arrastrar un slider dispara decenas de comandos/s; con un ejecutor de
+            // cola ilimitada cada uno esperaba su ida y vuelta al daemon (hasta 2 s
+            // de timeout si el canal estaba stale) y la cola crecía sin tope: el
+            // daemon recibía valores viejos tarde. Ahora el ÚLTIMO payload de cada
+            // acción reemplaza al pendiente (estado, no eventos) y un solo drenaje
+            // corre en el hilo de E/S.
+            val key = payload.optString("action", "")
+            pendingByAction[key] = payload
+            if (drainScheduled.compareAndSet(false, true)) {
+                ioExecutor.execute { drainPending() }
+            }
             return isConnected
         }
         return sendCommandBlocking(payload)

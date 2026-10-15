@@ -184,6 +184,7 @@ fun IvannaControlPanel(
     var unityEnabled by remember { mutableStateOf(unityPrefs.getBoolean("enabled", true)) }
     var unityTelemetry by remember { mutableStateOf(FloatArray(0)) }
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeSetUnityEnabled(unityEnabled) }
             // La UI muestra el estado REAL del motor nativo, no el supuesto.
@@ -194,6 +195,8 @@ fun IvannaControlPanel(
                 unityTelemetry = runCatching { IvannaNativeLib.nativeGetUnityTelemetry() }.getOrDefault(FloatArray(0))
             }
             delay(500)
+        }
+    
         }
     }
 
@@ -339,6 +342,7 @@ fun IvannaControlPanel(
     val rmsHistory = remember { mutableStateListOf<Float>().apply { repeat(32) { add(-60f) } } }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         kotlinx.coroutines.delay(800)
         while (true) {
             // FIX (HUD "en vivo" mostraba datos congelados de la última
@@ -405,9 +409,12 @@ fun IvannaControlPanel(
 
             kotlinx.coroutines.delay(750)
         }
+    
+        }
     }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         kotlinx.coroutines.delay(1200)
         while (true) {
             try {
@@ -427,6 +434,8 @@ fun IvannaControlPanel(
                 Log.w("IvannaControlPanel", "Kernel evolutivo no disponible todavía", e)
             }
             kotlinx.coroutines.delay(2000)
+        }
+    
         }
     }
 

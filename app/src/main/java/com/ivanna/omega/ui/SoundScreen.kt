@@ -329,10 +329,13 @@ private fun BinauralTab(
     }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         syncHybridToNative(prefs)
         while (true) {
             hybridTele = NativeBridge.safeGetHybridMagistralTelemetry()
             kotlinx.coroutines.delay(250L)
+        }
+    
         }
     }
 

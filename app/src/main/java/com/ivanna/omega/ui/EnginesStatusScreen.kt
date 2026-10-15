@@ -63,6 +63,7 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
     var adaptTelemetry by remember { mutableStateOf<FloatArray?>(null) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         while (true) {
             backendMode  = AudioBackendSelector.mode.value
             nativeLoaded = IvannaNativeLib.isLoaded
@@ -104,6 +105,8 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             }
 
             delay(500)
+        }
+    
         }
     }
 
