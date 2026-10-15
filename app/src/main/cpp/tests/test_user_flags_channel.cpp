@@ -185,6 +185,8 @@ TEST(MagiskTextCommands, EveryControlReachesTheSnapshotAndUnknownIsRejected) {
 
     cs.handleTextCommand("SET_PF_MASTER:0.91", reply, sizeof reply);
     EXPECT_NEAR(snap().pf_params[12], 0.91f, 1e-4f);
+    cs.handleTextCommand("SET_PF_MID:-12.5", reply, sizeof reply);
+    EXPECT_NEAR(snap().pf_params[9], -12.5f, 1e-4f);            // ±18 dB, no se recorta a ±10
     cs.handleTextCommand("SET_PF_FREQ:1500", reply, sizeof reply);
     EXPECT_NEAR(snap().pf_params[6], 1500.f, 1e-2f);
 

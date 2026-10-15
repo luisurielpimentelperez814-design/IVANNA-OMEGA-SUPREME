@@ -726,7 +726,11 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
             n=snprintf(reply,reply_sz,"{\"ok\":false,\"error\":\"parametro PF invalido\"}");
         } else {
             // FREQ es Hz; el resto son factores. Solo se acota a un rango fisico razonable.
-            v = (idx==6) ? _clamp(v,20.f,24000.f) : _clamp(v,-10.f,10.f);
+            // Mismos rangos que DSPState.pushToNative (.safe): drive 0..4, wet/mix/alpha/beta/gamma 0..1,
+            // freq 20..20000 Hz, resonancia 0.1..10, low/mid/high/presence/master ±18 dB.
+            static const float lo[13]={0.f,0.f,0.f,0.f,0.f,0.f,20.f,0.1f,-18.f,-18.f,-18.f,-18.f,-18.f};
+            static const float hi[13]={4.f,1.f,1.f,1.f,1.f,1.f,20000.f,10.f,18.f,18.f,18.f,18.f,18.f};
+            v = _clamp(v,lo[idx],hi[idx]);
             m_state.pf_params[idx]=v;
             uint64_t gen=publishCurrentState(m_state);
             ivanna::shmManager().noteCommandResult(true);
