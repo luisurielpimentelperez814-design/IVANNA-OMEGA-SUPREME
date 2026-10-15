@@ -116,6 +116,11 @@ struct OmegaDspState {
     // usuario ya tocó; value = su valor. Con mask = 0 el snapshot es idéntico al de v2.5.15.
     uint32_t user_flags_mask  = 0u;
     uint32_t user_flags_value = 0u;
+
+    // v2.5.33 — el primer vector PF que envia la app (valores por defecto de sus sliders al arrancar)
+    // solo fija la linea base: no debe mover el sonido del sistema. Los cambios POSTERIORES se derivan
+    // a los campos que omega_effect si consume (ver derivePfEffects).
+    bool pf_baseline_set = false;
 };
 
 class CommandServer {

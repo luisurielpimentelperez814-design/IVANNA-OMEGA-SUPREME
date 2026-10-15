@@ -210,3 +210,28 @@ TEST(MagiskTextCommands, EveryControlReachesTheSnapshotAndUnknownIsRejected) {
     EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
     EXPECT_EQ(std::string(reply).find("text_echo"), std::string::npos);
 }
+
+// Los sliders PF (EQ/compresor del panel DSP) deben llegar al efecto, pero el primer vector (defaults
+// de la app al arrancar) solo fija la linea base: no cambia el sonido del sistema.
+TEST(MagiskTextCommands, PfSlidersReachEffectFieldsButBootDefaultsDoNot) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+    cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
+    cs.handleJsonCommand("{\"action\":\"SET_USER_FLAGS\",\"unityOff\":0}", reply, sizeof reply);
+    OmegaDspSnapshot before = snap();
+    const char* boot = "{\"action\":\"SET_PF_PARAMS\",\"params\":[0.45,0.32,0.7,0.375,0.105,0.72,1000,0.707,0,0,0,0,0]}";
+    cs.handleJsonCommand(boot, reply, sizeof reply);
+    OmegaDspSnapshot s0 = snap();
+    EXPECT_EQ(s0.compressor, before.compressor);               // el arranque NO mueve el sonido
+    EXPECT_EQ(s0.comp_amount, before.comp_amount);
+    EXPECT_EQ(s0.eq_gains[0], before.eq_gains[0]);
+
+    cs.handleJsonCommand("{\"action\":\"SET_PF_PARAMS\",\"params\":[0.45,0.32,0.7,0.5,0.2,0.72,1000,0.707,0,3,0,0,0]}", reply, sizeof reply);
+    OmegaDspSnapshot s1 = snap();
+    EXPECT_NEAR(s1.compressor, -12.f, 1e-3f);                  // -24 + 0.5*24
+    EXPECT_NEAR(s1.comp_amount, 0.2f*19.f/7.f, 1e-3f);
+    EXPECT_NEAR(s1.eq_gains[3], s0.eq_gains[3] + 3.f, 1e-3f);  // mid +3 dB desplaza el EQ global
+    EXPECT_NEAR(s1.eq_gains[9], s0.eq_gains[9] + 3.f, 1e-3f);
+}

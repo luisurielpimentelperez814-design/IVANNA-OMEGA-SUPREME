@@ -1,4 +1,5 @@
 // daemon/control/command_server.cpp - BUILD OK 832 líneas, REAL telemetry, sin hardcode
+#include <algorithm>
 #include "command_server.h"
 #include <cstddef>
 #include "../core/shm_manager.h"
@@ -164,6 +165,25 @@ static bool applyPresetByName(OmegaDspState& st, const std::string& nameIn) {
         st.widener_mult=1.0f; st.high_cut_hz=22000.f;
     } else return false;
     return true;
+}
+
+// pf_params no los lee omega_effect: los sliders EQ/compresor del panel DSP llegaban a Ruta B y no sonaban.
+// Se derivan, con las MISMAS formulas que la app aplica a las sesiones AudioEffect (DSPState.pushToNative),
+// a los campos que el efecto si consume. Solo lo que el usuario cambia (delta contra el valor previo):
+//   alpha -> umbral del compresor (dB) = -24 + alpha*24      (tope -0.5: el efecto exige umbral < 0)
+//   beta  -> cantidad de compresion: ratio 1+19*beta  =>  comp_amount = min(1, 19*beta/7)   (efecto: ratio 1+7*amount)
+//   mid   -> EQ global: el delta en dB se suma a las 10 bandas (acotado a ±15 dB como SET_EQ_BANDS)
+// drive/wet/mix/gamma/freq/resonance/low/high/presence/master no tienen consumidor en el efecto: se guardan.
+static void derivePfEffects(OmegaDspState& st, const float* prev, bool alphaBetaToo, bool midDeltaOk) {
+    if (alphaBetaToo) {
+        if (st.pf_params[3] != prev[3]) st.compressor = std::min(-0.5f, -24.f + st.pf_params[3]*24.f);
+        if (st.pf_params[4] != prev[4]) st.comp_amount = std::min(1.f, std::max(0.f, st.pf_params[4]*19.f/7.f));
+    }
+    if (midDeltaOk && st.pf_params[9] != prev[9]) {
+        const float d = st.pf_params[9]-prev[9];
+        for (int i=0;i<OMEGA_EQ_BANDS;i++) st.eq_gains[i] = std::min(15.f, std::max(-15.f, st.eq_gains[i]+d));
+        st.eq_calibrated = true;
+    }
 }
 static int pfIndexForName(const std::string& k) {
     static const char* names[13] = {"DRIVE","WET","MIX","ALPHA","BETA","GAMMA","FREQ","RESONANCE","LOW","MID","HIGH","PRESENCE","MASTER"};
@@ -381,7 +401,10 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
     } else if (strcmp(action,"SET_PF_PARAMS")==0) {
+        float prev[13]; memcpy(prev,m_state.pf_params,sizeof prev);
         _jsonFloatArray(json,"params",m_state.pf_params,13);
+        if (m_state.pf_baseline_set) derivePfEffects(m_state, prev, true, true);
+        m_state.pf_baseline_set = true;
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
@@ -731,7 +754,9 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
             static const float lo[13]={0.f,0.f,0.f,0.f,0.f,0.f,20.f,0.1f,-18.f,-18.f,-18.f,-18.f,-18.f};
             static const float hi[13]={4.f,1.f,1.f,1.f,1.f,1.f,20000.f,10.f,18.f,18.f,18.f,18.f,18.f};
             v = _clamp(v,lo[idx],hi[idx]);
+            float prev[13]; memcpy(prev,m_state.pf_params,sizeof prev);
             m_state.pf_params[idx]=v;
+            derivePfEffects(m_state, prev, true, m_state.pf_baseline_set);
             uint64_t gen=publishCurrentState(m_state);
             ivanna::shmManager().noteCommandResult(true);
             n=snprintf(reply,reply_sz,"{\"ok\":true,\"pf_%s\":%.3f,\"gen\":%llu}",
