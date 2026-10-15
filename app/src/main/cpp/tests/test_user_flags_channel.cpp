@@ -235,3 +235,23 @@ TEST(MagiskTextCommands, PfSlidersReachEffectFieldsButBootDefaultsDoNot) {
     EXPECT_NEAR(s1.eq_gains[3], s0.eq_gains[3] + 3.f, 1e-3f);  // mid +3 dB desplaza el EQ global
     EXPECT_NEAR(s1.eq_gains[9], s0.eq_gains[9] + 3.f, 1e-3f);
 }
+
+// El panel de calibracion WFS manda SET_WFS_LAYOUT; el daemon lo rechazaba (accion desconocida).
+TEST(MagiskTextCommands, WfsLayoutReachesSnapshotWithoutTouchingEnableOrSpread) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+    cs.handleJsonCommand("{\"action\":\"SET_WFS\",\"wfsEnabled\":1,\"wfsSpread\":1.18}", reply, sizeof reply);
+    snap();
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_WFS_LAYOUT\",\"wfsSpeakerX\":[1,2,3,4,5,6,7],"
+        "\"wfsSpeakerY\":[0.5,0.5,0.5,0.5,0.5,0.5,0.5],\"wfsSpeakerZ\":[9,8,7,6,5,4,3]}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    OmegaDspSnapshot s = snap();
+    EXPECT_NEAR(s.wfs_speaker_x[6], 7.f, 1e-3f);
+    EXPECT_NEAR(s.wfs_speaker_z[0], 9.f, 1e-3f);
+    EXPECT_EQ(s.wfs_enabled, 1u);                              // no lo pisa
+    EXPECT_NEAR(s.wfs_spread, 1.18f, 1e-3f);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_WFS_LAYOUT\",\"wfsSpeakerX\":[1,2,3]}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
+}

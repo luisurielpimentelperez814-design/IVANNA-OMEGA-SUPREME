@@ -284,6 +284,22 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
+    } else if (strcmp(action,"SET_WFS_LAYOUT")==0) {
+        // nativeSetWfsSpeakerLayout (panel de calibracion WFS) enviaba esta accion y el daemon la
+        // rechazaba como desconocida: la geometria del array nunca llegaba al efecto. Solo layout:
+        // no toca wfs_enabled ni wfs_spread. Exige los 3 ejes completos (7 floats) o rechaza.
+        float lx[7], ly[7], lz[7];
+        const bool okx=_jsonFloatArray(json,"wfsSpeakerX", lx, 7);
+        const bool oky=_jsonFloatArray(json,"wfsSpeakerY", ly, 7);
+        const bool okz=_jsonFloatArray(json,"wfsSpeakerZ", lz, 7);
+        if (okx && oky && okz) {
+            for (int i=0;i<7;i++) { m_state.wfs_speaker_x[i]=lx[i]; m_state.wfs_speaker_y[i]=ly[i]; m_state.wfs_speaker_z[i]=lz[i]; }
+            uint64_t gen = publishCurrentState(m_state);
+            n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+        } else {
+            n = buildRichReply(reply,reply_sz,false,action,"invalid_layout",0,"SYSTEM_WIDE","\"layout incompleto (se esperan 7 puntos en X, Y y Z)\"");
+        }
+
     } else if (strcmp(action,"SET_INTENSITY")==0) {
         m_state.intensity = _clamp(_jsonFloat(json,"intensity",m_state.intensity),0.f,1.f);
         uint64_t gen = publishCurrentState(m_state);
