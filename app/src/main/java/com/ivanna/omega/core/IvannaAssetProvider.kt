@@ -20,6 +20,29 @@ object IvannaAssetProvider {
     private const val ASSET_ROOT = "ivanna_omega"
 
     @Volatile private var extractedRoot: File? = null
+    private val bgRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun versionCodeOf(context: Context): Long = runCatching {
+        val pi = context.packageManager.getPackageInfo(context.packageName, 0)
+        if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode else @Suppress("DEPRECATION") pi.versionCode.toLong()
+    }.getOrDefault(0L)
+
+    /** Copia un asset a `out` via fichero temporal + rename (nunca queda a medias). */
+    @JvmStatic
+    fun copyAssetAtomic(context: Context, assetPath: String, out: File): Boolean {
+        if (out.exists() && out.length() > 0L) return true
+        return runCatching {
+            out.parentFile?.mkdirs()
+            val tmp = File(out.parentFile, out.name + ".part")
+            context.assets.open(assetPath).use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+            tmp.renameTo(out) || (tmp.delete().let { false })
+        }.onFailure { Log.w(TAG, "copy $assetPath: ${it.message}") }.getOrDefault(false)
+    }
+
+    /** Copia recursiva y completa de un arbol de assets (bloqueante; llamar fuera del hilo UI). */
+    @JvmStatic
+    fun copyTreeBlocking(context: Context, assetPath: String, dstDir: File) =
+        copyAssetTree(context, assetPath, dstDir)
 
     @Synchronized
     fun modelDir(context: Context): File {
@@ -27,33 +50,35 @@ object IvannaAssetProvider {
         if (sys.isDirectory) return sys
         extractedRoot?.let { return it }
         val dst = File(context.filesDir, ASSET_ROOT)
-        if (!dst.isDirectory || !File(dst, "hrtf/kemar.ihr1").exists()) {
+        // La extraccion es COMPLETA y verificable: un marcador por versionCode se
+        // escribe solo al terminar. Antes se daba por buena la carpeta si existia
+        // kemar.ihr1, asi que un proceso muerto a mitad de la copia en segundo plano
+        // dejaba SOFA/HRTF/RIR incompletos para siempre ("datasets no se despliegan").
+        val marker = File(dst, ".extract_complete_v${versionCodeOf(context)}")
+        if (!marker.exists()) {
             dst.mkdirs()
             val priorityRel = listOf(
                 "SAF_model_total.json",
                 "pca_basis.bin",
-                "hrtf/kemar.ihr1",
-                "rir/metadata.csv",
-                "rir/rir_0051.wav",
-                "rir/rir_0122.wav",
-                "rir/rir_0169.wav",
-                "rir/rir_0081.wav",
-                "rir/rir_0063.wav"
+                "hrtf/kemar.ihr1"
             )
-            for (rel in priorityRel) {
-                val out = File(dst, rel)
-                if (!out.exists() || out.length() == 0L) {
-                    out.parentFile?.mkdirs()
-                    runCatching {
-                        context.assets.open("$ASSET_ROOT/$rel").use { input ->
-                            out.outputStream().use { o -> input.copyTo(o) }
-                        }
-                    }
-                }
+            for (rel in priorityRel) copyAssetAtomic(context, "$ASSET_ROOT/$rel", File(dst, rel))
+            // El RIR (~2 MB, 200 salas) se copia COMPLETO y en sincronia: el loader
+            // nativo indexa lo que encuentre en disco y con solo 5 WAV marcaba
+            // "cargado" con 5 salas.
+            copyAssetTree(context, "$ASSET_ROOT/rir", File(dst, "rir"))
+            if (bgRunning.compareAndSet(false, true)) {
+                Thread({
+                    try {
+                        copyAssetTree(context, ASSET_ROOT, dst)
+                        marker.parentFile?.listFiles { f -> f.name.startsWith(".extract_complete_") }
+                            ?.forEach { it.delete() }
+                        marker.writeText("ok")
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "extraccion en segundo plano incompleta: ${t.message}")
+                    } finally { bgRunning.set(false) }
+                }, "IvannaAssetBgExtract").start()
             }
-            Thread({
-                runCatching { copyAssetTree(context, ASSET_ROOT, dst) }
-            }, "IvannaAssetBgExtract").start()
         }
         extractedRoot = dst
         return dst
@@ -68,11 +93,7 @@ object IvannaAssetProvider {
         val am = context.assets
         val entries = am.list(assetPath).orEmpty()
         if (entries.isEmpty()) {
-            runCatching {
-                am.open(assetPath).use { input ->
-                    File(dstDir.parentFile, dstDir.name).outputStream().use { out -> input.copyTo(out) }
-                }
-            }.onFailure { Log.w(TAG, "copy $assetPath: ${it.message}") }
+            copyAssetAtomic(context, assetPath, File(dstDir.parentFile, dstDir.name))
             return
         }
         dstDir.mkdirs()

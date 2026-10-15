@@ -477,40 +477,10 @@ object OmegaEngineBridge {
         if (isRirDatasetLoaded()) return true
         return runCatching {
             val dst = java.io.File(ctx.filesDir, "rir")
-            val meta = java.io.File(dst, "metadata.csv")
-            val priorityFiles = listOf(
-                "metadata.csv",
-                "rir_0051.wav",
-                "rir_0122.wav",
-                "rir_0169.wav",
-                "rir_0081.wav",
-                "rir_0063.wav"
-            )
-            if (!meta.exists()) {
-                dst.mkdirs()
-                for (name in priorityFiles) {
-                    val out = java.io.File(dst, name)
-                    if (!out.exists() || out.length() == 0L) {
-                        runCatching {
-                            ctx.assets.open("ivanna_omega/rir/$name").use { i ->
-                                out.outputStream().use { o -> i.copyTo(o) }
-                            }
-                        }
-                    }
-                }
-                Thread({
-                    runCatching {
-                        ctx.assets.list("ivanna_omega/rir")?.forEach { name ->
-                            val out = java.io.File(dst, name)
-                            if (!out.exists() || out.length() == 0L) {
-                                ctx.assets.open("ivanna_omega/rir/$name").use { i ->
-                                    out.outputStream().use { o -> i.copyTo(o) }
-                                }
-                            }
-                        }
-                    }
-                }, "IvannaRirBgExtract").start()
-            }
+            // Copia COMPLETA (200 WAV + metadata, ~2 MB) y atomica ANTES de indexar:
+            // el loader nativo descarta filas sin WAV y marcaba "cargado" con 5 salas.
+            // Idempotente: salta lo ya copiado. Llamar fuera del hilo UI.
+            com.ivanna.omega.core.IvannaAssetProvider.copyTreeBlocking(ctx, "ivanna_omega/rir", dst)
             nativeSetRirDataDir(dst.absolutePath)
         }.getOrDefault(false)
     }

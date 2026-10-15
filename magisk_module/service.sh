@@ -74,7 +74,9 @@ rm -f "$STATE/omega_shm"
 
 echo "$(date) iniciando ivanna_daemon" >> "$LOG"
 
-"$DAEMON" >> "$LOG" 2>&1 &
+# --tcp-port 12121: fallback loopback que la app ya intenta (OmegaEngineBridge). Sin el, si SELinux
+# bloquea el socket abstracto para el dominio de la app, el panel queda DESCONECTADO para siempre.
+"$DAEMON" --tcp-port 12121 >> "$LOG" 2>&1 &
 
 PID=$!
 echo "$PID" > "$STATE/daemon.pid"
