@@ -127,6 +127,9 @@ struct OmegaDspState {
     bool  aux_field_enabled = false;
     float aux_field_xover_hz = 120.f;
     float aux_field_coherence = 1.f;
+    // v2.5.44: dinamica espacial temporal ("4D") -> snapshot.temporal_field. Al FINAL del struct.
+    bool  temporal_field_enabled = false;
+    float temporal_field_amount = 0.6f;
 };
 
 class CommandServer {

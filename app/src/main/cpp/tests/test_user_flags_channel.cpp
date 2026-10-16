@@ -304,3 +304,43 @@ TEST(AuxFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
     omega_aux_field_decode(snap().flags, o, x, c);
     EXPECT_FALSE(o); EXPECT_NEAR(x, 100.f, 1e-3f);               // claves ausentes conservan crossover y coherencia
 }
+
+TEST(TemporalFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
+    for (bool on : {false, true})
+        for (float a : {0.f, 3.f/7.f, 1.f}) {
+            bool o = !on; float d = -1;
+            omega_temporal_field_decode(omega_temporal_field_encode(on, a), o, d);
+            EXPECT_EQ(o, on); EXPECT_NEAR(d, a, 1e-3f);
+        }
+    bool o; float d;
+    omega_temporal_field_decode(omega_temporal_field_encode(true, 9.f), o, d);
+    EXPECT_NEAR(d, 1.f, 1e-3f);                                   // fuera de rango acotado
+    omega_temporal_field_decode(omega_temporal_field_encode(true, std::nanf("")), o, d);
+    EXPECT_TRUE(std::isfinite(d));
+    omega_temporal_field_decode(0u, o, d);
+    EXPECT_FALSE(o);                                              // escritor antiguo (campo 0) = apagado
+
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+    cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    omega_temporal_field_decode(snap().temporal_field, o, d);
+    EXPECT_FALSE(o);                                              // por defecto apagado: el audio no se toca
+
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalEnabled\":1,\"temporalAmount\":0.5}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    const OmegaDspSnapshot s1 = snap();
+    omega_temporal_field_decode(s1.temporal_field, o, d);
+    EXPECT_TRUE(o); EXPECT_NEAR(d, 4.f/7.f, 1e-3f);
+
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    omega_temporal_field_decode(snap().temporal_field, o, d);
+    EXPECT_TRUE(o);                                               // sobrevive a comandos de otras areas
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"temporal_field\":true"), std::string::npos) << reply;
+    cs.handleJsonCommand("{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalEnabled\":0}", reply, sizeof reply);
+    omega_temporal_field_decode(snap().temporal_field, o, d);
+    EXPECT_FALSE(o); EXPECT_NEAR(d, 4.f/7.f, 1e-3f);              // clave ausente conserva la profundidad
+}

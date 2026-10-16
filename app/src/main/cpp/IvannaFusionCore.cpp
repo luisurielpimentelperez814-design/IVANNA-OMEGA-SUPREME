@@ -30,6 +30,8 @@ extern std::atomic<float> g_wfs_spread;
 extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
+extern std::atomic<bool>  g_temporal_field_enabled;
+extern std::atomic<float> g_temporal_field_amount;
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
 // maximo — un saturador al 5% de THD inyectado en la ruta caliente de Ruta B
@@ -103,6 +105,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_upmixEnv_.setImmediate(1.0f);
     m_wfs.init(48000.0f, Ivanna::BLOCK_SIZE, 16);
     m_aux.prepare(48000.0f);
+    m_temporal.prepare(48000.0f);
     m_wfsInit = true;
     m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
@@ -151,6 +154,11 @@ void IvannaFusionEngine::setWfsEnabled(bool enable) noexcept {
 bool IvannaFusionEngine::isWfsEnabled() const noexcept {
     return g_wfs_enabled.load(std::memory_order_relaxed);
 }
+void IvannaFusionEngine::setTemporalField(bool enabled, float amount) noexcept {
+    if (std::isfinite(amount)) g_temporal_field_amount.store(amount, std::memory_order_relaxed);
+    g_temporal_field_enabled.store(enabled, std::memory_order_relaxed);
+}
+
 void IvannaFusionEngine::setAuxField(bool enabled, float xoverHz, float coherence) noexcept {
     if (std::isfinite(xoverHz))   g_aux_field_xover_hz.store(xoverHz, std::memory_order_relaxed);
     if (std::isfinite(coherence)) g_aux_field_coherence.store(coherence, std::memory_order_relaxed);
@@ -348,6 +356,11 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
                     g_aux_field_xover_hz.load(std::memory_order_relaxed),
                     g_aux_field_coherence.load(std::memory_order_relaxed));
     m_aux.process(buffer->left, buffer->right, BLOCK_SIZE);
+    // 4D: dinámica espacial temporal (despues del campo AUX: los graves ya son coherentes y esta etapa solo toca
+    // el lateral > 250 Hz; el centro no cambia). Apagada = bit-exacto.
+    m_temporal.setParams(g_temporal_field_enabled.load(std::memory_order_relaxed),
+                         g_temporal_field_amount.load(std::memory_order_relaxed));
+    m_temporal.process(buffer->left, buffer->right, BLOCK_SIZE);
 
     // ── Compresor Dinámico + Perfil de Ruta + Trim EQ/Intensidad (Slew por muestra) ──
     {

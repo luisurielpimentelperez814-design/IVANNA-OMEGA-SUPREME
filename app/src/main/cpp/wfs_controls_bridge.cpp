@@ -15,3 +15,5 @@ std::atomic<float> g_wfs_spread{1.18f};
 std::atomic<bool>  g_aux_field_enabled{false};
 std::atomic<float> g_aux_field_xover_hz{120.0f};
 std::atomic<float> g_aux_field_coherence{1.0f};
+std::atomic<bool>  g_temporal_field_enabled{false};
+std::atomic<float> g_temporal_field_amount{0.6f};

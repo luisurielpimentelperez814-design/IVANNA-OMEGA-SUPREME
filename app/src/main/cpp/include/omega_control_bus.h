@@ -149,6 +149,17 @@ constexpr uint32_t OMEGA_FLAG_AUX_XOVER_SHIFT        = 26u;
 constexpr uint32_t OMEGA_FLAG_AUX_XOVER_MASK         = (0x7u << 26u);
 constexpr uint32_t OMEGA_FLAG_AUX_COH_SHIFT          = 29u;
 constexpr uint32_t OMEGA_FLAG_AUX_COH_MASK           = (0x7u << 29u);
+// v2.5.44 — Dinámica espacial temporal ("4D", TemporalSpatialDynamics.hpp). Campo propio (no cabe en flags):
+//   bit 0 = activo ; bits 1..3 = profundidad, nivel 0..7 -> nivel/7 (0..1)
+inline uint32_t omega_temporal_field_encode(bool on, float amount) noexcept {
+    const float a = (amount == amount) ? amount : 0.6f;
+    int lv = static_cast<int>(a * 7.f + 0.5f); lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
+    return (on ? 1u : 0u) | (static_cast<uint32_t>(lv) << 1u);
+}
+inline void omega_temporal_field_decode(uint32_t field, bool& on, float& amount) noexcept {
+    on = (field & 1u) != 0u;
+    amount = static_cast<float>((field >> 1u) & 0x7u) / 7.f;
+}
 inline uint32_t omega_aux_field_encode(bool on, float xoverHz, float coherence) noexcept {
     const float xo = (xoverHz == xoverHz) ? xoverHz : 120.f;
     const float co = (coherence == coherence) ? coherence : 1.f;
@@ -188,7 +199,7 @@ struct OmegaDspSnapshot {
 
     // ── Route Arbiter ─────────────────────────────────────────────────────────
     int32_t  active_route;     // RouteMode cast a int32_t
-    uint32_t _pad1;            // alineación
+    uint32_t temporal_field;   // v2.5.44: Dinámica espacial temporal (antes _pad1; 0 = apagado, compatible con escritores antiguos)
     uint64_t consumer_generation; // Última generation que omega_effect confirmó aplicar
 
     // ── Intensidad global ─────────────────────────────────────────────────────

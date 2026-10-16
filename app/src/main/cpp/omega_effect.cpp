@@ -419,6 +419,12 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         ivanna::omega_aux_field_decode(s.flags, auxOn, auxXo, auxCoh);
         fc->setAuxField(auxOn, auxXo, auxCoh);
     }
+    // 4D: dinamica espacial temporal (campo temporal_field del snapshot).
+    {
+        bool tOn = false; float tAmt = 0.6f;
+        ivanna::omega_temporal_field_decode(s.temporal_field, tOn, tAmt);
+        fc->setTemporalField(tOn, tAmt);
+    }
 }
 
 static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
