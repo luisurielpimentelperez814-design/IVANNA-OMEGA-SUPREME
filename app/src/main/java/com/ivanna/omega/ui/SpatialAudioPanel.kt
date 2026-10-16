@@ -90,7 +90,7 @@ fun SpatialAudioPanel(
             IvannaSpatialManager.setReverbLevel(state.objectReverbLevel)
             if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet) else OmegaEngineBridge.disableRoom()
             if (state.safEnabled) {
-                runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
+                runCatching { SaFBridge.nativeSaFInit(com.ivanna.omega.core.IvannaAssetProvider.safModelFile(context)?.absolutePath ?: "/data/adb/ivanna_omega/SAF_model.json") }
                 val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
                 OmegaEngineBridge.pushSafLatentQ(
                     FloatArray(7) { i -> q.getOrElse(i) { 0f } * state.safIntensity },
@@ -223,7 +223,7 @@ fun SpatialAudioPanel(
             RowSwitch("SAF activo", state.safEnabled) { on ->
                 update { it.copy(safEnabled = on) }
                 if (on) {
-                    runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
+                    runCatching { SaFBridge.nativeSaFInit(com.ivanna.omega.core.IvannaAssetProvider.safModelFile(context)?.absolutePath ?: "/data/adb/ivanna_omega/SAF_model.json") }
                     // FIX (descableado): el switch solo inicializaba el modelo local
                     // pero nunca enviaba q[7] al daemon — omega_effect.cpp nunca
                     // recibía la calibración real. SaFRoomBridge.getParams() es el

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.OmegaMetrics
+import com.ivanna.omega.core.IvannaAssetProvider
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.dsp.DSPBridge
@@ -77,6 +78,21 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
             // Respaldo: metadata.csv de la ruta root, si existe.
             rooms = parseRirRooms(File("/data/adb/ivanna_omega/rir/metadata.csv"))
             roomsChecked = true
+        }
+    }
+
+    // v2.5.31 — estado REAL de los datasets (SOFA/HRTF/RIR/SAF): despliegue desde el APK + conteo en disco.
+    // Antes los textos de este panel solo miraban /system/etc y /data/adb (rutas de root): sin root decían
+    // «no desplegado» aunque los datasets estuvieran extraídos en filesDir.
+    var dsStatus by remember { mutableStateOf<IvannaAssetProvider.Status?>(null) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            IvannaAssetProvider.ensureDeployed(context)
+            while (true) {
+                val st = IvannaAssetProvider.status(context)
+                dsStatus = st
+                kotlinx.coroutines.delay(if (st.extracting) 1000L else 5000L)
+            }
         }
     }
 
@@ -147,16 +163,14 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
 
     // Estado real de carga de datasets (filesystem, no simulado)
     // Buscar IHR1 activo en rutas prioritarias (Magisk mount primero)
+    val hrtfDirNow = remember(dsStatus) { IvannaAssetProvider.hrtfDir(context) }
     val ihr1 = listOf(
-        File("/system/etc/ivanna_omega/hrtf/${HrtfSubjectSelector.resolveSubjectId(cfg.hrtfSubject)}.ihr1"),
-        File("/system/etc/ivanna_omega/hrtf/kemar.ihr1"),
+        File(hrtfDirNow, "${HrtfSubjectSelector.resolveSubjectId(cfg.hrtfSubject)}.ihr1"),
+        File(hrtfDirNow, "kemar.ihr1"),
         File("/data/adb/ivanna_omega/hrtf_dataset.ihr1")
     ).firstOrNull { it.exists() }
-    val safModel = listOf(
-        File("/system/etc/ivanna_omega/SAF_model.json"),
-        File("/data/adb/ivanna_omega/SAF_model.json")
-    ).firstOrNull { it.exists() }
-    val rirDir = File("/data/adb/ivanna_omega/rir")
+    val safModel = remember(dsStatus) { IvannaAssetProvider.safModelFile(context) }
+    val rirDir = remember(dsStatus) { IvannaAssetProvider.rirDir(context) }
     val rirMeta = File(rirDir, "metadata.csv")
 
     Column(
@@ -242,6 +256,35 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 },
                 color = if (model?.exists() == true) PhosphorGreen else AmberSignal,
                 fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+
+        // ── DATASETS (v2.5.31): SOFA / HRTF / RIR / SAF desplegados y verificados ──
+        PanelCard("DATASETS — DESPLIEGUE", AuroraCyan) {
+            val st = dsStatus
+            if (st == null) {
+                Text("Comprobando datasets…", color = AmberSignal, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            } else {
+                listOf(st.sofa, st.hrtf, st.rir, st.saf).forEach { d ->
+                    val origen = when (d.source) {
+                        IvannaAssetProvider.Source.MODULE -> "módulo Magisk"
+                        IvannaAssetProvider.Source.ROOT -> "/data/adb"
+                        IvannaAssetProvider.Source.APK_EXTRACTED -> "APK (sin root)"
+                        IvannaAssetProvider.Source.MISSING -> "no desplegado"
+                    }
+                    val cuenta = if (d.expected > 0) "${d.files}/${d.expected}" else "${d.files}"
+                    Text(
+                        "${if (d.complete) "✓" else "…"} ${d.name}: $cuenta · ${d.bytes / 1024 / 1024} MB · $origen",
+                        color = if (d.complete) PhosphorGreen else AmberSignal,
+                        fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                }
+                if (st.extracting) {
+                    Text("Extrayendo datasets del APK en segundo plano…", color = AmberSignal,
+                        fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                }
+                TextButton(onClick = {
+                    Thread({ IvannaAssetProvider.redeploy(context) }, "IvannaRedeploy").start()
+                }) { Text("RE-DESPLEGAR DATASETS", fontSize = 10.sp) }
+            }
         }
 
         // ── UPMIXER 4-STEMS 3D (B2: setUpmixerEnabled + setStemPosition) ──
