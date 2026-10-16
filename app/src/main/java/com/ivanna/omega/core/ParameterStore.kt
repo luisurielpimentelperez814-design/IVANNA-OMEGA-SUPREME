@@ -127,6 +127,7 @@ class ParameterStore(context: Context) {
         private const val KEY_HAPTIC_ENABLED  = "bass_haptic_enabled"
         private const val KEY_HAPTIC_STRENGTH = "bass_haptic_strength"
         private const val KEY_HAPTIC_RUMBLE   = "bass_haptic_rumble"
+        private const val KEY_HAPTIC_TRIM     = "bass_haptic_trim_ms"
         private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
     }
 
@@ -394,8 +395,10 @@ class ParameterStore(context: Context) {
     fun isBassHapticEnabled(): Boolean = safeGetBoolean(KEY_HAPTIC_ENABLED, false)
     fun getBassHapticStrength(): Float = safeGetFloat(KEY_HAPTIC_STRENGTH, 0.7f)
     fun getBassHapticRumble(): Float = safeGetFloat(KEY_HAPTIC_RUMBLE, 0f)
-    fun setBassHaptic(enabled: Boolean, strength: Float, rumble: Float = getBassHapticRumble()) =
+    fun getBassHapticTrimMs(): Float = safeGetFloat(KEY_HAPTIC_TRIM, 0f)
+    fun setBassHaptic(enabled: Boolean, strength: Float, rumble: Float = getBassHapticRumble(), trimMs: Float = getBassHapticTrimMs()) =
         prefs.edit().putBoolean(KEY_HAPTIC_ENABLED, enabled)
+            .putFloat(KEY_HAPTIC_TRIM, trimMs.coerceIn(-100f, 200f))
             .putFloat(KEY_HAPTIC_STRENGTH, strength.coerceIn(0f, 1f))
             .putFloat(KEY_HAPTIC_RUMBLE, rumble.coerceIn(0f, 1f)).apply()
 }

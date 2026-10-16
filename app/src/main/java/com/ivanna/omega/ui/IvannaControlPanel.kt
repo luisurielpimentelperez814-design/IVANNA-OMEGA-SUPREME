@@ -95,6 +95,7 @@ fun IvannaControlPanel(
     initialBassHapticEnabled: Boolean = false,
     initialBassHapticStrength: Float = 0.7f,
     initialBassHapticRumble: Float = 0f,
+    initialBassHapticTrimMs: Float = 0f,
     bassHapticSupported: Boolean = true,
     initialAuxXoverHz: Float = 120f,
     initialAuxCoherence: Float = 1f,
@@ -125,7 +126,7 @@ fun IvannaControlPanel(
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
-    onBassHapticChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
+    onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
     onOpenHiRes: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
@@ -310,6 +311,14 @@ fun IvannaControlPanel(
     var hapticEnabled by remember { mutableStateOf(initialBassHapticEnabled && bassHapticSupported) }
     var hapticStrength by remember { mutableStateOf(initialBassHapticStrength) }
     var hapticRumble by remember { mutableStateOf(initialBassHapticRumble) }
+    var hapticTrim by remember { mutableStateOf(initialBassHapticTrimMs) }
+    var hapticSyncText by remember { mutableStateOf(com.ivanna.omega.audio.BassHaptics.describeSync()) }
+    LaunchedEffect(hapticEnabled) {
+        while (hapticEnabled) {
+            hapticSyncText = com.ivanna.omega.audio.BassHaptics.describeSync()
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
     var auxXover by remember { mutableFloatStateOf(initialAuxXoverHz) }
     var auxCoherence by remember { mutableFloatStateOf(initialAuxCoherence) }
 
@@ -878,20 +887,40 @@ fun IvannaControlPanel(
             rightSlot = {
                 Switch(hapticEnabled, enabled = bassHapticSupported, onCheckedChange = {
                     hapticEnabled = it
-                    onBassHapticChange(it, hapticStrength, hapticRumble)
+                    onBassHapticChange(it, hapticStrength, hapticRumble, hapticTrim)
                 })
             }
         ) {
             AuroraSlider("FUERZA DE VIBRACIÓN", hapticStrength, 0f..1f,
                 displayValue = { "${Math.round(it * 100f)} %" }) {
                 hapticStrength = it
-                onBassHapticChange(hapticEnabled, it, hapticRumble)
+                onBassHapticChange(hapticEnabled, it, hapticRumble, hapticTrim)
             }
             AuroraSlider("RETUMBO (sub sostenido)", hapticRumble, 0f..1f,
                 displayValue = { if (it <= 0f) "OFF" else "${Math.round(it * 100f)} %" }) {
                 hapticRumble = it
-                onBassHapticChange(hapticEnabled, hapticStrength, it)
+                onBassHapticChange(hapticEnabled, hapticStrength, it, hapticTrim)
             }
+            AuroraSlider("SINCRONÍA (ajuste fino)", hapticTrim, -100f..200f,
+                displayValue = { "${Math.round(it)} ms" }) {
+                hapticTrim = it
+                onBassHapticChange(hapticEnabled, hapticStrength, hapticRumble, it)
+            }
+            if (hapticEnabled) {
+                Text(hapticSyncText, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
+            OutlinedButton(
+                enabled = bassHapticSupported,
+                onClick = {
+                    // Un toque: campo coherente por AUX/DAC + háptica con retumbo suave (las tres piezas ya existentes)
+                    auxEnabled = true
+                    onAuxFieldChange(true, auxXover, auxCoherence)
+                    hapticEnabled = true
+                    hapticStrength = 0.7f
+                    hapticRumble = 0.3f
+                    onBassHapticChange(true, 0.7f, 0.3f, hapticTrim)
+                }
+            ) { Text("PERFIL 4D PARA AUX / DAC") }
         }
 
         GlassCard(

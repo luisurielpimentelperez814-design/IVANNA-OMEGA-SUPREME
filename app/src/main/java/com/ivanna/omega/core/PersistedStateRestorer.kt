@@ -58,7 +58,7 @@ object PersistedStateRestorer {
             // Modo AUX/altavoces: restaura estado, crossover y coherencia (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetAuxField(paramStore.isAuxFieldEnabled(), paramStore.getAuxXoverHz(), paramStore.getAuxCoherence()) }
             // Háptica de graves (4D): vive en Kotlin (ruta A), no depende de la librería nativa.
-            runCatching { com.ivanna.omega.audio.BassHaptics.configure(ctx, paramStore.isBassHapticEnabled(), paramStore.getBassHapticStrength(), paramStore.getBassHapticRumble()) }
+            runCatching { com.ivanna.omega.audio.BassHaptics.configure(ctx, paramStore.isBassHapticEnabled(), paramStore.getBassHapticStrength(), paramStore.getBassHapticRumble(), paramStore.getBassHapticTrimMs().toInt()) }
             runCatching { IvannaNativeLib.nativeSetSpscRingFactor(acPrefs.spscRingFactor) }
             runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_SPSC_RING_FACTOR\",\"factor\":${acPrefs.spscRingFactor}}") }
         }
