@@ -813,6 +813,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // OBJETIVO 3: ANTI-POP PROFESIONAL, DC-BLOCKING & SOFT-CEILING FINAL
                     budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.OUTPUT_STAGE) {
                         antiPopEngine.process(buffer, frames)
+                        // 4D: háptica de graves sobre el bloque final (sin asignaciones; la vibración corre en otro hilo)
+                        BassHaptics.onBlock(buffer, frames)
                         // FIX (clipping post-DSPBridge en Ruta A): CinematicEngineHost,
                         // IvannaSpatialEngine, IvannaNpeEngine y vibratoryProcessor corren
                         // DESPUÉS de DSPBridge.process() (y por tanto después del

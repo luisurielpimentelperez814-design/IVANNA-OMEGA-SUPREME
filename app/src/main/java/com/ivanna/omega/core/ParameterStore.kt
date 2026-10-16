@@ -124,6 +124,8 @@ class ParameterStore(context: Context) {
         private const val KEY_AUX_ENABLED = "aux_field_enabled"
         private const val KEY_AUX_XOVER   = "aux_field_xover_hz"
         private const val KEY_AUX_COH     = "aux_field_coherence"
+        private const val KEY_HAPTIC_ENABLED  = "bass_haptic_enabled"
+        private const val KEY_HAPTIC_STRENGTH = "bass_haptic_strength"
         private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
     }
 
@@ -386,4 +388,11 @@ class ParameterStore(context: Context) {
         prefs.edit().putBoolean(KEY_AUX_ENABLED, enabled)
             .putFloat(KEY_AUX_XOVER, xoverHz.coerceIn(60f, 200f))
             .putFloat(KEY_AUX_COH, coherence.coerceIn(0f, 1f)).apply()
+
+    // ── Háptica de graves (4D) ── apagada por defecto
+    fun isBassHapticEnabled(): Boolean = safeGetBoolean(KEY_HAPTIC_ENABLED, false)
+    fun getBassHapticStrength(): Float = safeGetFloat(KEY_HAPTIC_STRENGTH, 0.7f)
+    fun setBassHaptic(enabled: Boolean, strength: Float) =
+        prefs.edit().putBoolean(KEY_HAPTIC_ENABLED, enabled)
+            .putFloat(KEY_HAPTIC_STRENGTH, strength.coerceIn(0f, 1f)).apply()
 }

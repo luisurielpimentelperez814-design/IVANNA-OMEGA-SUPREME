@@ -92,6 +92,9 @@ fun IvannaControlPanel(
     initialWfsEnabled: Boolean = true,
     initialWfsSpread: Float = 1.18f,
     initialAuxFieldEnabled: Boolean = false,
+    initialBassHapticEnabled: Boolean = false,
+    initialBassHapticStrength: Float = 0.7f,
+    bassHapticSupported: Boolean = true,
     initialAuxXoverHz: Float = 120f,
     initialAuxCoherence: Float = 1f,
     onExciterChange: (Float) -> Unit,
@@ -121,6 +124,7 @@ fun IvannaControlPanel(
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
+    onBassHapticChange: (Boolean, Float) -> Unit = { _, _ -> },
     onOpenVisualizer: () -> Unit = {},
     onOpenHiRes: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
@@ -302,6 +306,8 @@ fun IvannaControlPanel(
     var wfsEnabled by remember { mutableStateOf(initialWfsEnabled) }
     var wfsSpread by remember { mutableFloatStateOf(initialWfsSpread) }
     var auxEnabled by remember { mutableStateOf(initialAuxFieldEnabled) }
+    var hapticEnabled by remember { mutableStateOf(initialBassHapticEnabled && bassHapticSupported) }
+    var hapticStrength by remember { mutableStateOf(initialBassHapticStrength) }
     var auxXover by remember { mutableFloatStateOf(initialAuxXoverHz) }
     var auxCoherence by remember { mutableFloatStateOf(initialAuxCoherence) }
 
@@ -856,6 +862,28 @@ fun IvannaControlPanel(
                 displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
                 auxCoherence = it
                 onAuxFieldChange(auxEnabled, auxXover, it)
+            }
+        }
+
+        GlassCard(
+            title = "HÁPTICA DE GRAVES · 4D",
+            accent = AuroraCyan,
+            subtitle = when {
+                !bassHapticSupported -> "Este teléfono no tiene motor de vibración"
+                hapticEnabled -> "Activo: el teléfono vibra con cada golpe de bombo/sub (solo con el motor de la app activo)"
+                else -> "El golpe de graves también se siente: vibración sincronizada con bombo y sub. Apagado = sin vibración"
+            },
+            rightSlot = {
+                Switch(hapticEnabled, enabled = bassHapticSupported, onCheckedChange = {
+                    hapticEnabled = it
+                    onBassHapticChange(it, hapticStrength)
+                })
+            }
+        ) {
+            AuroraSlider("FUERZA DE VIBRACIÓN", hapticStrength, 0f..1f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                hapticStrength = it
+                onBassHapticChange(hapticEnabled, it)
             }
         }
 
