@@ -40,6 +40,8 @@ add_library(ivanna_omega SHARED
     # audioRouteBridgeLoop() no podía abrir OMEGA_EFFECT_LOCAL_BUS_PATH.
     daemon/core/omega_control_bus.cpp
     saf_phi_infinity.cpp
+    # Módulo 1 (Fase Cero): pronosticador LPC 5–10 ms (analysis-only, sin JNI aún)
+    predictive_audio_engine.cpp
         neuromorphic/AntiDolbyAI.cpp
         IvannaTinyMLKernel.cpp
     saf_runtime.cpp

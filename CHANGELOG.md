@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Módulo 1 (Fase Cero): pronosticador LPC de 5–10 ms
+1. **Qué es:** `predictive_audio_engine.{hpp,cpp}` — extrapola los próximos 5–10 ms de forma de onda con predicción lineal de Burg (orden ≤ 32) y recursión en punto fijo entero (coef. int32 Q dinámico, datos Q8, acumulador int64). **Solo análisis:** no modifica el audio.
+2. **Validación en lazo cerrado:** cada pronóstico se compara con las muestras reales que llegan; `confidence = 1 − NMSE_lejano`. En ruido o sin señal el motor reporta `valid=false` en vez de aparentar acierto. Onset por residuo de predicción (sin lookahead).
+3. **Medido en host, señales sintéticas** (`test_predictive_audio_engine`, 11 pruebas, limpio bajo ASan+UBSan): tono de 3 parciales → NMSE 0.016 a 5 ms y 0.054 a 10 ms; ruido blanco → confianza 0; onset detectado en la misma muestra del ataque, 0 falsos positivos en tono estable; el camino entero iguala al de referencia en double (0.016061 vs 0.016057). CTest +11.
+4. **Corrección de diseño durante el desarrollo:** con coeficientes int16 el pronóstico era peor que predecir silencio (NMSE 1.9–6.1, medido): los coeficientes de orden alto son mal condicionados. Por eso int32.
+5. **Límites (no maquillados):** un pronóstico no elimina latencia ni anticipa un ataque percusivo (lo detecta al ocurrir); en música real la confianza será menor que en tonos sintéticos y NO se ha medido. `zeroCrossHz` solo es fiable en señales casi senoidales.
+6. **Pendiente:** cablear a la ruta de audio (p. ej. pre-armado de ganancia del `SafetyLimiter`) y medir en dispositivo (Moto G85); hoy está compilado en `libivanna_omega.so` pero sin consumidores ni JNI.
+
 # CHANGELOG — v2.5.108 (399) — bounded HAL output-rate servo
 
 - Added HardwareClockRateServo: converts valid hardware clock drift estimates into a variable-rate ASRC command, requires three valid samples, clamps to ±500 ppm, limits slew to 25 ppm/update, and returns unity ratio when unlocked or invalid.
