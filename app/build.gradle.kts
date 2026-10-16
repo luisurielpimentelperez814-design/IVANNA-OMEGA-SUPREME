@@ -108,7 +108,9 @@ android {
 
     androidResources {
         noCompress += listOf("tflite")
-        ignoreAssetsPatterns += "*.sofa"
+        // v2.5.31: ANTES se ignoraba "*.sofa" y el APK no llevaba NINGÚN SOFA (HRTF AES69 + 200 HpIR ARI):
+        // IvannaAssetProvider extraía una carpeta sofa/ vacía y los paneles decían "no desplegado" sin root.
+        // Los SOFA son parte del producto: viajan en el APK (se extraen a filesDir en segundo plano).
     }
 
     buildFeatures {

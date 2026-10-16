@@ -113,6 +113,7 @@ jobs:
           run_check rt_safety             python3 scripts/check_rt_safety.py
           run_check build_flags           python3 scripts/check_build_flags.py
           run_check docs_claims           python3 scripts/check_docs_claims.py
+          run_check datasets_deploy       python3 scripts/check_datasets_deploy.py
           if command -v cppcheck >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck; }; then
             run_check cppcheck cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
               app/src/main/cpp/omega_effect.cpp \

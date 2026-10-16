@@ -114,7 +114,7 @@ Todas las cifras declaradas a continuación están respaldadas por suites de ver
 | **Dimensiones del Código Nativo** | **356 archivos C/C++20 (118 857 LOC)** | Directorio auditado `app/src/main/cpp/` |
 | **Capa de Control e Instrumentación** | **220 archivos Kotlin (52 650 LOC)** | Directorio auditado `app/src/main/java/` |
 | **Verificación Host CTest** | **248/248 pruebas en verde (100%)** | `telemetry/ctest_summary.json` (ejecución Release, ASan y UBSan) |
-| **Puertas Estáticas de Calidad** | **6 de 6 puertas aprobadas (`[PASS]`)** | `scripts/check_*.py` (RT-Safety, JNI, Headers, Kotlin, Flags, Docs) |
+| **Puertas Estáticas de Calidad** | **7 de 7 puertas aprobadas (`[PASS]`)** | `scripts/check_*.py` (RT-Safety, JNI, Headers, Kotlin, Flags, Docs, Datasets) |
 
 ---
 
@@ -576,7 +576,7 @@ El repositorio prohíbe cualquier regresión técnica mediante 6 scripts de vali
 git clone --recurse-submodules https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
 cd IVANNA-OMEGA-SUPREME
 
-# 2. Ejecutar las 6 puertas estáticas de aseguramiento de calidad
+# 2. Ejecutar las 7 puertas estáticas de aseguramiento de calidad
 python3 scripts/check_build_flags.py
 python3 scripts/check_header_wiring.py
 python3 scripts/check_jni_wiring.py

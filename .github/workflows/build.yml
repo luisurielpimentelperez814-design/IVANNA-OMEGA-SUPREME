@@ -476,7 +476,10 @@ jobs:
             echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
           fi
           ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
-          ( cd magisk_module && zip -r "$GITHUB_WORKSPACE/$ZIPNAME" . -x "*.git*" -x "system/etc/ivanna_omega/sofa/*" -x "*.sofa" )
+          # v2.5.31: ANTES se excluían system/etc/ivanna_omega/sofa/* y *.sofa del zip, así que customize.sh
+          # nunca encontraba los SOFA (HpIR ARI + HRTF AES69) y el módulo los daba por "no encontrado".
+          # Los datasets SOFA/RIR/HRTF/SAF SIEMPRE viajan en el zip; la validación de abajo lo exige.
+          ( cd magisk_module && zip -r "$GITHUB_WORKSPACE/$ZIPNAME" . -x "*.git*" )
           # El zip DEBE contener META-INF, module.prop, daemon, effect, sepolicy.rule y BUILD_INFO
           unzip -l "$ZIPNAME" | grep -q "META-INF/com/google/android/update-binary" || { echo "ERROR: zip sin META-INF"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "module.prop"                               || { echo "ERROR: zip sin module.prop"; exit 1; }
@@ -484,6 +487,20 @@ jobs:
           unzip -l "$ZIPNAME" | grep -q "system/vendor/lib64/soundfx/libomega_effect.so" || { echo "ERROR: zip sin effect lib"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"                             || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "BUILD_INFO"                                || { echo "ERROR: zip sin BUILD_INFO"; exit 1; }
+          # Datasets (v2.5.31): el zip debe contener EXACTAMENTE lo que hay en el árbol del módulo.
+          # Antes los .sofa se excluían en silencio y el despliegue SOFA fallaba sin que ningún chequeo lo viera.
+          DS="magisk_module/system/etc/ivanna_omega"
+          for pair in "sofa:*.sofa" "rir:*.wav" "hrtf:*.ihr1"; do
+            d="${pair%%:*}"; pat="${pair#*:}"
+            EXP=$(find "$DS/$d" -type f -name "$pat" | wc -l)
+            GOT=$(unzip -Z1 "$ZIPNAME" | grep -c "^system/etc/ivanna_omega/$d/.*\.${pat#*.}$" || true)
+            [ "$EXP" -gt 0 ] || { echo "ERROR: el árbol del módulo no tiene datasets $d"; exit 1; }
+            [ "$EXP" = "$GOT" ] || { echo "ERROR: zip con $GOT/$EXP archivos de $d (dataset incompleto)"; exit 1; }
+            echo "dataset $d: $GOT/$EXP en el zip"
+          done
+          unzip -Z1 "$ZIPNAME" | grep -q "^system/etc/ivanna_omega/rir/metadata.csv$" || { echo "ERROR: zip sin rir/metadata.csv"; exit 1; }
+          unzip -Z1 "$ZIPNAME" | grep -q "^system/etc/ivanna_omega/hrtf/hrtf_index.json$" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
+          unzip -Z1 "$ZIPNAME" | grep -q "^saf/SAF_model.json$" || { echo "ERROR: zip sin saf/SAF_model.json"; exit 1; }
           unzip -t "$ZIPNAME" || { echo "ERROR: zip corrupto o con fallo CRC"; exit 1; }
           # Extracción + validación del daemon DENTRO del zip
           rm -f extracted_daemon

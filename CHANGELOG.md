@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.36 (327) — Datasets SOFA / RIR / SAF: ahora SÍ se despliegan
+1. **Causa raíz (APK):** `app/build.gradle.kts` tenía `ignoreAssetsPatterns += "*.sofa"` → el APK no llevaba NINGÚN SOFA (HRTF AES69 + 200 HpIR ARI) y `IvannaAssetProvider` extraía una carpeta `sofa/` vacía. Ahora los SOFA viajan en el APK (el APK crece por ello).
+2. **Causa raíz (módulo Magisk):** `build.yml` excluía `system/etc/ivanna_omega/sofa/*` y `*.sofa` del zip, así que `customize.sh` imprimía «SOFA no encontrado»; además al árbol del módulo le faltaban los 200 HpIR de `sofa/ari/` (el despliegue recursivo «de ARI» nunca tuvo qué copiar). Se quitan las exclusiones, se añaden los 200 archivos y el CI exige que el zip contenga EXACTAMENTE los SOFA/RIR/HRTF del árbol (239 / 200 / 12) y el SAF.
+3. **`IvannaAssetProvider` (sin root)** — resolución por dataset (módulo → `/data/adb` → APK extraído): antes, con un módulo viejo instalado no se extraía nada. Extracción con archivos `.part` + rename atómico, copia solo si el tamaño difiere y marcador `.deployed_v<versionCode>` escrito únicamente sin fallos (antes bastaba que existiera `kemar.ihr1` para no reintentar jamás). `status()` cuenta archivos reales frente a lo empaquetado.
+4. **Controles y estado reales:** tarjeta «DATASETS — DESPLIEGUE» en Control Espacial (SOFA/HRTF/RIR/SAF con conteo, MB y origen) con botón «RE-DESPLEGAR DATASETS»; los textos «SAF no desplegado» / «Dataset: …» ya no solo miran rutas de root; `SpatialAudioPanel` inicializa SAF con la ruta resuelta en vez de `/data/adb/...` fija.
+5. **Puerta nueva `scripts/check_datasets_deploy.py` (7.ª):** paridad APK↔módulo, cabeceras mágicas (HDF5/IHR1/RIFF, sin punteros Git-LFS), RIR = filas de `metadata.csv`, SHA-256 del índice HRTF, SAF idéntico en 3 sitios y ninguna exclusión de datasets en Gradle ni en los workflows. Verificada con prueba de mutación: falla con las tres regresiones originales.
+6. **Pendiente en dispositivo:** instalar el APK/zip y confirmar en el panel «DATASETS» los conteos 239 / 12 / 200 + SAF. El tamaño del APK aumenta (~80 MB de SOFA).
+
 # CHANGELOG — v2.5.35 (326) — 
 
 

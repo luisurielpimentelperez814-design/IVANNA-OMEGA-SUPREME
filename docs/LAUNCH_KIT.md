@@ -31,7 +31,7 @@ para que el primer contacto sea honesto y verificable. Sin cuentas falsas, sin i
 | Afirmación | Evidencia |
 |---|---|
 | Coordina los módulos DSP midiendo el resultado real (original vs. salida) | `include/acoustic_unity_engine.hpp`, `test_unity_closed_loop` |
-| 245 pruebas de host en verde, ASan/UBSan, 6 puertas estáticas en CI | `telemetry/ctest_summary.json`, pestaña *Actions* |
+| 245 pruebas de host en verde, ASan/UBSan, 7 puertas estáticas en CI | `telemetry/ctest_summary.json`, pestaña *Actions* |
 | Verificación de tiempo real (sin `malloc`/locks en el hilo de audio) | `scripts/check_rt_safety.py` |
 | Dos rutas: sin root (en la app) y con root (Magisk + daemon) | `README.md` §2 |
 | Los controles de usuario llegan de la UI al audio del sistema (Ruta B) | `test_user_flags_channel` (CommandServer real) |
