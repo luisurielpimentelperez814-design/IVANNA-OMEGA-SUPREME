@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.41 (332) — Háptica de graves 4D
+Nueva háptica de graves: el teléfono vibra con cada golpe de bombo/sub detectado en el audio procesado (Ruta A). Detector probado en JVM; apagado por defecto; no actúa en Ruta B.
+
 # CHANGELOG — v2.5.40 (331) — 
 
 
