@@ -1,4 +1,5 @@
 #include "../include/SafetyLimiter.h"
+#include "../include/true_peak.hpp"
 #include <algorithm>
 #include <cmath>  // std::max — el NDK (libc++) no lo incluye transitivamente
 #include <cstring>
@@ -145,6 +146,14 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
         peak = std::max(peak, std::max(al, ar));
     }
 #endif
+
+    // v2.5.36 — PICO REAL: el DAC reconstruye la onda entre muestras, así que el pico que importa es el
+    // inter-muestra (interpolación 4x). Antes solo se miraba |muestra| y picos de hasta +3 dB sobre el techo
+    // llegaban a la salida de 3.5 mm. truePeak4x() omite los intervalos silenciosos: coste despreciable.
+    if (!nonFinite) {
+        peak = std::max(peak, std::max(truePeak4x(L, frames), truePeak4x(R, frames)));
+        if (!std::isfinite(peak)) { nonFinite = true; peak = 0.f; }
+    }
 
     // Transparencia absoluta: material limpio sin reduccion residual sale
     // bit-exacto — y con la MISMA latencia (cero) que cuando el limiter actua.
