@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.44 (335) — 4D temporal
+Nueva dinámica espacial temporal (4D): el ancho lateral respira con la música — enfoque en cada golpe, apertura en las colas — reutilizando el TransientDetector existente. Centro y graves intactos, bit-exacto apagado. Ruta A y B, control en el panel y en el perfil 4D.
+
 # CHANGELOG — v2.5.43 (334) — Sincronía háptica por ruta
 La háptica de graves se sincroniza con la salida real: retardo por latencia de la ruta (Bluetooth por códec; cable/USB 0) más ajuste fino, y perfil 4D de un toque para AUX/DAC.
 
