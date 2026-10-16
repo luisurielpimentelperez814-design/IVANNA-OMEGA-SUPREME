@@ -140,6 +140,29 @@ constexpr uint32_t OMEGA_FLAG_ATLAS_STYLE_MASK       = (0xFu << 20u);
 // v2.5.15: 1 = interruptor del usuario APAGA la coordinación del Acoustic Unity Engine (contexto
 // neutro). Semántica "_OFF": un snapshot por defecto (bit en 0) conserva el comportamiento previo.
 constexpr uint32_t OMEGA_FLAG_UNITY_OFF              = (1u << 24);
+// v2.5.36 — Modo AUX/altavoces (campo de presion coherente, AuxFieldCoherence.hpp). Cero cambio de ABI:
+//   bit 25      = modo activo
+//   bits 26..28 = crossover, paso 0..7  -> 60 + 20*paso Hz (60..200)
+//   bits 29..31 = coherencia de graves, nivel 0..7 -> nivel/7 (0..1)
+constexpr uint32_t OMEGA_FLAG_AUX_FIELD_ON           = (1u << 25);
+constexpr uint32_t OMEGA_FLAG_AUX_XOVER_SHIFT        = 26u;
+constexpr uint32_t OMEGA_FLAG_AUX_XOVER_MASK         = (0x7u << 26u);
+constexpr uint32_t OMEGA_FLAG_AUX_COH_SHIFT          = 29u;
+constexpr uint32_t OMEGA_FLAG_AUX_COH_MASK           = (0x7u << 29u);
+inline uint32_t omega_aux_field_encode(bool on, float xoverHz, float coherence) noexcept {
+    const float xo = (xoverHz == xoverHz) ? xoverHz : 120.f;
+    const float co = (coherence == coherence) ? coherence : 1.f;
+    int xs = static_cast<int>((xo - 60.f) / 20.f + 0.5f); xs = xs < 0 ? 0 : (xs > 7 ? 7 : xs);
+    int cs = static_cast<int>(co * 7.f + 0.5f);           cs = cs < 0 ? 0 : (cs > 7 ? 7 : cs);
+    return (on ? OMEGA_FLAG_AUX_FIELD_ON : 0u)
+         | (static_cast<uint32_t>(xs) << OMEGA_FLAG_AUX_XOVER_SHIFT)
+         | (static_cast<uint32_t>(cs) << OMEGA_FLAG_AUX_COH_SHIFT);
+}
+inline void omega_aux_field_decode(uint32_t flags, bool& on, float& xoverHz, float& coherence) noexcept {
+    on = (flags & OMEGA_FLAG_AUX_FIELD_ON) != 0u;
+    xoverHz   = 60.f + 20.f * static_cast<float>((flags & OMEGA_FLAG_AUX_XOVER_MASK) >> OMEGA_FLAG_AUX_XOVER_SHIFT);
+    coherence = static_cast<float>((flags & OMEGA_FLAG_AUX_COH_MASK) >> OMEGA_FLAG_AUX_COH_SHIFT) / 7.f;
+}
 
 // CRC32 simple (tabla inline, no requiere zlib)
 inline uint32_t omega_crc32(const void* data, size_t len) noexcept {

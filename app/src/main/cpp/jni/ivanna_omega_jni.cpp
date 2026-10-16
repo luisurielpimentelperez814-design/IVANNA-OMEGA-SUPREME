@@ -128,6 +128,9 @@ extern std::atomic<bool> g_upmixing_enabled;
 extern std::atomic<float> g_upmixing_immersivity;
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
+extern std::atomic<bool>  g_aux_field_enabled;
+extern std::atomic<float> g_aux_field_xover_hz;
+extern std::atomic<float> g_aux_field_coherence;
 
 // FASE 3 (IvannaLab auto-feed): gate ON/OFF + contador de feeds. El feed
 // real ocurre dentro de nativeProcess (post-procesado) con throttle 1/100
@@ -2914,6 +2917,41 @@ static void omegaSendWfsToDaemon(bool enabled, float spread) noexcept {
         if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
     }
     ::close(fd);
+}
+
+// ── Modo AUX/altavoces: puente app→daemon (SET_AUX_FIELD), mismo patron que WFS ──
+static void omegaSendAuxFieldToDaemon(bool enabled, float xoverHz, float coherence) noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000}; // 200 ms — solo hilo UI, nunca RT
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[160];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_AUX_FIELD\",\"auxEnabled\":%d,\"auxXoverHz\":%.1f,\"auxCoherence\":%.4f}",
+            enabled ? 1 : 0, static_cast<double>(xoverHz), static_cast<double>(coherence));
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAuxField(
+    JNIEnv*, jobject, jboolean enabled, jfloat xoverHz, jfloat coherence) {
+    const bool en = (enabled == JNI_TRUE);
+    const float xo = std::isfinite(xoverHz)   ? std::clamp(xoverHz, 60.0f, 200.0f) : 120.0f;
+    const float co = std::isfinite(coherence) ? std::clamp(coherence, 0.0f, 1.0f)  : 1.0f;
+    g_aux_field_xover_hz.store(xo, std::memory_order_relaxed);
+    g_aux_field_coherence.store(co, std::memory_order_relaxed);
+    g_aux_field_enabled.store(en, std::memory_order_relaxed);     // ruta A (en proceso)
+    omegaSendAuxFieldToDaemon(en, xo, co);                        // ruta B (audioserver, via daemon)
 }
 
 JNIEXPORT void JNICALL

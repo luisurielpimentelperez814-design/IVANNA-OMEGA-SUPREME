@@ -55,6 +55,8 @@ object PersistedStateRestorer {
             // Wave Field Synthesis (WFS) & SPSC Ring Buffer
             runCatching { IvannaNativeLib.nativeSetWfsEnabled(paramStore.isWfsEnabled()) }
             runCatching { IvannaNativeLib.nativeSetWfsSpread(paramStore.getWfsSpread()) }
+            // Modo AUX/altavoces: restaura estado, crossover y coherencia (ruta A + daemon/ruta B).
+            runCatching { IvannaNativeLib.nativeSetAuxField(paramStore.isAuxFieldEnabled(), paramStore.getAuxXoverHz(), paramStore.getAuxCoherence()) }
             runCatching { IvannaNativeLib.nativeSetSpscRingFactor(acPrefs.spscRingFactor) }
             runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_SPSC_RING_FACTOR\",\"factor\":${acPrefs.spscRingFactor}}") }
         }

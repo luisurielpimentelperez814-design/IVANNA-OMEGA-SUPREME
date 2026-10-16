@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.37 (328) — 
+
+
 # CHANGELOG — v2.5.36 (327) — Datasets SOFA / RIR / SAF: ahora SÍ se despliegan
 1. **Causa raíz (APK):** `app/build.gradle.kts` tenía `ignoreAssetsPatterns += "*.sofa"` → el APK no llevaba NINGÚN SOFA (HRTF AES69 + 200 HpIR ARI) y `IvannaAssetProvider` extraía una carpeta `sofa/` vacía. Ahora los SOFA viajan en el APK (el APK crece por ello).
 2. **Causa raíz (módulo Magisk):** `build.yml` excluía `system/etc/ivanna_omega/sofa/*` y `*.sofa` del zip, así que `customize.sh` imprimía «SOFA no encontrado»; además al árbol del módulo le faltaban los 200 HpIR de `sofa/ari/` (el despliegue recursivo «de ARI» nunca tuvo qué copiar). Se quitan las exclusiones, se añaden los 200 archivos y el CI exige que el zip contenga EXACTAMENTE los SOFA/RIR/HRTF del árbol (239 / 200 / 12) y el SAF.

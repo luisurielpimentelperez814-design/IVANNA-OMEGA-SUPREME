@@ -1047,3 +1047,15 @@ ivanna_add_test(test_unity_closed_loop)
 
 
 
+
+
+# ── Campo de presion coherente para AUX/altavoces (2.5.36) ──
+add_executable(test_aux_field_coherence test_aux_field_coherence.cpp)
+target_link_libraries(test_aux_field_coherence PRIVATE GTest::gtest_main)
+target_include_directories(test_aux_field_coherence PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_aux_field_coherence PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_aux_field_coherence PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_aux_field_coherence PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_aux_field_coherence)

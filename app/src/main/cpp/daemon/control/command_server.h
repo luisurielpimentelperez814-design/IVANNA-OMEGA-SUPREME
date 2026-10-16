@@ -121,6 +121,12 @@ struct OmegaDspState {
     // solo fija la linea base: no debe mover el sonido del sistema. Los cambios POSTERIORES se derivan
     // a los campos que omega_effect si consume (ver derivePfEffects).
     bool pf_baseline_set = false;
+
+    // v2.5.36 — Modo AUX/altavoces (campo de presion coherente). Se publica codificado en los bits 25..31
+    // de snapshot.flags (omega_aux_field_encode). Al FINAL del struct (kDefaultState inicializa por posicion).
+    bool  aux_field_enabled = false;
+    float aux_field_xover_hz = 120.f;
+    float aux_field_coherence = 1.f;
 };
 
 class CommandServer {

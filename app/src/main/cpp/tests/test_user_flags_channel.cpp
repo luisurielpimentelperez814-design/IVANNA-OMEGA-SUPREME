@@ -255,3 +255,49 @@ TEST(MagiskTextCommands, WfsLayoutReachesSnapshotWithoutTouchingEnableOrSpread) 
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_WFS_LAYOUT\",\"wfsSpeakerX\":[1,2,3]}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
 }
+
+// Modo AUX/altavoces: app -> SET_AUX_FIELD -> snapshot (flags 25..31) -> decodificador de omega_effect.
+TEST(AuxFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
+    for (bool on : {false, true}) {
+        for (float xo : {60.f, 80.f, 120.f, 200.f}) {
+            for (float co : {0.f, 3.f/7.f, 1.f}) {
+                bool o = !on; float x = 0, c = 0;
+                omega_aux_field_decode(omega_aux_field_encode(on, xo, co), o, x, c);
+                EXPECT_EQ(o, on); EXPECT_NEAR(x, xo, 1e-3f); EXPECT_NEAR(c, co, 1e-3f);
+            }
+        }
+    }
+    bool o; float x, c;                                          // fuera de rango y NaN: acotado, nunca basura
+    omega_aux_field_decode(omega_aux_field_encode(true, 9999.f, 7.f), o, x, c);
+    EXPECT_NEAR(x, 200.f, 1e-3f); EXPECT_NEAR(c, 1.f, 1e-3f);
+    omega_aux_field_decode(omega_aux_field_encode(true, std::nanf(""), std::nanf("")), o, x, c);
+    EXPECT_TRUE(std::isfinite(x) && std::isfinite(c));
+    // No pisa los bits que posee el daemon ni los de usuario.
+    const uint32_t aux = OMEGA_FLAG_AUX_FIELD_ON | OMEGA_FLAG_AUX_XOVER_MASK | OMEGA_FLAG_AUX_COH_MASK;
+    EXPECT_EQ(aux & (0x03u | OMEGA_FLAG_COCHLEAR_ON | OMEGA_FLAG_REALITY_RECON_ON | OMEGA_FLAG_UNITY_OFF | OMEGA_FLAG_ATLAS_STYLE_MASK), 0u);
+    for (const auto& e : kOmegaUserFlagTable) EXPECT_EQ(e.bit & aux, 0u) << e.key;
+
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+    cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    OmegaDspSnapshot s0 = snap();
+    omega_aux_field_decode(s0.flags, o, x, c);
+    EXPECT_FALSE(o);                                              // por defecto apagado: el audio no se toca
+
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_AUX_FIELD\",\"auxEnabled\":1,\"auxXoverHz\":100,\"auxCoherence\":0.5}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    OmegaDspSnapshot s1 = snap();
+    omega_aux_field_decode(s1.flags, o, x, c);
+    EXPECT_TRUE(o); EXPECT_NEAR(x, 100.f, 1e-3f); EXPECT_NEAR(c, 4.f/7.f, 1e-3f);     // 0.5 -> nivel 4/7 (resolucion 1/7)
+    EXPECT_EQ(s1.flags & ~aux, s0.flags & ~aux);                  // el resto de bits intacto
+
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    omega_aux_field_decode(snap().flags, o, x, c);
+    EXPECT_TRUE(o);                                               // sobrevive a comandos de otras areas
+    cs.handleJsonCommand("{\"action\":\"SET_AUX_FIELD\",\"auxEnabled\":0}", reply, sizeof reply);
+    omega_aux_field_decode(snap().flags, o, x, c);
+    EXPECT_FALSE(o); EXPECT_NEAR(x, 100.f, 1e-3f);               // claves ausentes conservan crossover y coherencia
+}

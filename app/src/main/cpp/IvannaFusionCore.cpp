@@ -27,6 +27,9 @@ extern std::atomic<float> g_hrtf_wet_dry;
 extern std::atomic<bool>  g_hrtf_flush_req;
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
+extern std::atomic<bool>  g_aux_field_enabled;
+extern std::atomic<float> g_aux_field_xover_hz;
+extern std::atomic<float> g_aux_field_coherence;
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
 // maximo — un saturador al 5% de THD inyectado en la ruta caliente de Ruta B
@@ -99,6 +102,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_upmixEnv_.configure(48000.0f, 10.0f, 18.0f, 35.0f);
     m_upmixEnv_.setImmediate(1.0f);
     m_wfs.init(48000.0f, Ivanna::BLOCK_SIZE, 16);
+    m_aux.prepare(48000.0f);
     m_wfsInit = true;
     m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
@@ -147,6 +151,11 @@ void IvannaFusionEngine::setWfsEnabled(bool enable) noexcept {
 bool IvannaFusionEngine::isWfsEnabled() const noexcept {
     return g_wfs_enabled.load(std::memory_order_relaxed);
 }
+void IvannaFusionEngine::setAuxField(bool enabled, float xoverHz, float coherence) noexcept {
+    if (std::isfinite(xoverHz))   g_aux_field_xover_hz.store(xoverHz, std::memory_order_relaxed);
+    if (std::isfinite(coherence)) g_aux_field_coherence.store(coherence, std::memory_order_relaxed);
+    g_aux_field_enabled.store(enabled, std::memory_order_relaxed);
+}
 void IvannaFusionEngine::setWfsSpread(float spread) noexcept {
     if (std::isfinite(spread)) g_wfs_spread.store(spread, std::memory_order_relaxed);
 }
@@ -188,7 +197,11 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     if (g_hrtf_flush_req.exchange(false, std::memory_order_acq_rel)) {
         m_hrtf->flushHistory();
     }
-    m_hrtf->setWetDry(g_hrtf_wet_dry.load(std::memory_order_relaxed));
+    // Modo AUX/altavoces: el renderizado binaural (HRTF, HOA->binaural, WFS de array virtual) esta
+    // pensado para audifonos y por altavoces degrada la imagen y el timbre. En modo AUX se apagan
+    // por sus propias envolventes (sin cortes) y el campo coherente de graves toma su lugar.
+    const bool auxField = g_aux_field_enabled.load(std::memory_order_relaxed);
+    m_hrtf->setWetDry(auxField ? 0.0f : g_hrtf_wet_dry.load(std::memory_order_relaxed));
 
     // Intelligent Upmixing + HOA Binaural Decoder (Mayor impacto en audio espacial)
     //
@@ -217,7 +230,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // IMPLEMENTATION_NOTES.md, no un hueco. `m_hoaField` es miembro (no
     // variable local) para no reservar memoria en el camino caliente en
     // cada bloque activo -- Upmixer solo redimensiona si BLOCK_SIZE cambia.
-    const bool wantWfs = g_wfs_enabled.load(std::memory_order_relaxed);
+    const bool wantWfs = g_wfs_enabled.load(std::memory_order_relaxed) && !auxField;
     const float fadeStep = (m_sampleRateF > 0.f)
         ? static_cast<float>(Ivanna::BLOCK_SIZE) / (0.020f * m_sampleRateF)
         : 1.0f;
@@ -240,8 +253,8 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
-    const bool upmixingActive = m_upmixer.isUpmixingEnabled() ||
-                                 g_upmixing_enabled.load(std::memory_order_relaxed);
+    const bool upmixingActive = (m_upmixer.isUpmixingEnabled() ||
+                                 g_upmixing_enabled.load(std::memory_order_relaxed)) && !auxField;
     m_upmixEnv_.setTarget(upmixingActive ? 1.0f : 0.0f);
     if (m_upmixEnv_.isTransitioning()) {
         // Transición suave entre HOA Upmixer + Decoder y HrtfManager sin clics
@@ -329,6 +342,12 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             }
         }
     }
+
+    // ── Campo de presion coherente para AUX/altavoces (graves en fase y misma presion en ambos lados) ──
+    m_aux.setParams(auxField,
+                    g_aux_field_xover_hz.load(std::memory_order_relaxed),
+                    g_aux_field_coherence.load(std::memory_order_relaxed));
+    m_aux.process(buffer->left, buffer->right, BLOCK_SIZE);
 
     // ── Compresor Dinámico + Perfil de Ruta + Trim EQ/Intensidad (Slew por muestra) ──
     {

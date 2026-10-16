@@ -376,6 +376,8 @@ object IvannaNativeLib {
     // ═══ Wave Field Synthesis (renderer ya implementado/testeado en
     // spatial/WfsRenderer.cpp — faltaba el cableado UI→JNI→daemon) ═══
     external fun nativeSetWfsEnabled(enabled: Boolean)
+    /** Modo AUX/altavoces: campo de presion coherente (graves en fase). crossover 60..200 Hz, coherencia 0..1. */
+    external fun nativeSetAuxField(enabled: Boolean, crossoverHz: Float, coherence: Float)
     external fun nativeSetWfsSpread(spread: Float)
     external fun nativeSetWfsSpeakerLayout(x: FloatArray, y: FloatArray, z: FloatArray)
 

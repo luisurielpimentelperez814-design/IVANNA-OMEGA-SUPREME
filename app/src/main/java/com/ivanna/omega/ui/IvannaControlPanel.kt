@@ -91,6 +91,9 @@ fun IvannaControlPanel(
     initialHoaImmersivity: Float = 1.25f,
     initialWfsEnabled: Boolean = true,
     initialWfsSpread: Float = 1.18f,
+    initialAuxFieldEnabled: Boolean = false,
+    initialAuxXoverHz: Float = 120f,
+    initialAuxCoherence: Float = 1f,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -117,6 +120,7 @@ fun IvannaControlPanel(
     onHoaImmersivityChange: (Float) -> Unit = {},
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
+    onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
     onOpenHiRes: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
@@ -297,6 +301,9 @@ fun IvannaControlPanel(
     var hoaImmersivity by remember { mutableFloatStateOf(initialHoaImmersivity) }
     var wfsEnabled by remember { mutableStateOf(initialWfsEnabled) }
     var wfsSpread by remember { mutableFloatStateOf(initialWfsSpread) }
+    var auxEnabled by remember { mutableStateOf(initialAuxFieldEnabled) }
+    var auxXover by remember { mutableFloatStateOf(initialAuxXoverHz) }
+    var auxCoherence by remember { mutableFloatStateOf(initialAuxCoherence) }
 
     
     // ── Persistencia automática al salir de la pantalla ──
@@ -823,6 +830,32 @@ fun IvannaControlPanel(
             AuroraSlider("INMERSIVIDAD HOA", hoaImmersivity, 0f..2f) {
                 hoaImmersivity = it
                 onHoaImmersivityChange(it)
+            }
+        }
+
+        GlassCard(
+            title = "MODO AUX · ALTAVOCES",
+            accent = PhosphorGreen,
+            subtitle = if (auxEnabled)
+                "Activo: graves en fase y misma presión en ambos lados · HRTF, HOA y WFS binaurales en pausa"
+            else
+                "Para salida por AUX/amplificador: graves coherentes (Linkwitz-Riley 4º orden). Apagado = audio intacto",
+            rightSlot = {
+                Switch(auxEnabled, onCheckedChange = {
+                    auxEnabled = it
+                    onAuxFieldChange(it, auxXover, auxCoherence)
+                })
+            }
+        ) {
+            AuroraSlider("CRUCE DE GRAVES", auxXover, 60f..200f, unit = " Hz",
+                displayValue = { "${(60 + 20 * Math.round((it - 60f) / 20f)).coerceIn(60, 200)} Hz" }) {
+                auxXover = it
+                onAuxFieldChange(auxEnabled, it, auxCoherence)
+            }
+            AuroraSlider("COHERENCIA DE GRAVES", auxCoherence, 0f..1f,
+                displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
+                auxCoherence = it
+                onAuxFieldChange(auxEnabled, auxXover, it)
             }
         }
 

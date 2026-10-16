@@ -117,6 +117,9 @@ fun ControlTabScreen(
         initialHoaImmersivity = paramStore.getHoaImmersivity(),
         initialWfsEnabled = paramStore.isWfsEnabled(),
         initialWfsSpread = paramStore.getWfsSpread(),
+        initialAuxFieldEnabled = paramStore.isAuxFieldEnabled(),
+        initialAuxXoverHz = paramStore.getAuxXoverHz(),
+        initialAuxCoherence = paramStore.getAuxCoherence(),
         initialPhaseOracleIntensity = audioState.phaseOracleIntensity,
         metrics              = metrics,
         adaptiveTelemetry    = adaptiveTelemetry,
@@ -253,6 +256,11 @@ fun ControlTabScreen(
             paramStore.setWfsEnabled(enabled)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetWfsEnabled(enabled) }
+        },
+        onAuxFieldChange = { en, xo, co ->
+            paramStore.setAuxField(en, xo, co)
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetAuxField(en, xo.coerceIn(60f, 200f), co.coerceIn(0f, 1f)) }
         },
         onWfsSpreadChange = { v ->
             paramStore.setWfsSpread(v)

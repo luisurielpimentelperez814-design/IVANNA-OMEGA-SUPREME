@@ -413,6 +413,12 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     fc->setVolterraEnabled(allowVolterra);
     fc->setFastRpcEnabled((s.flags & ivanna::OMEGA_FLAG_FASTRPC_ON) != 0);
     fc->setAtiEnabled((s.flags & ivanna::OMEGA_FLAG_ATI_ON) != 0);
+    // Modo AUX/altavoces (bits 25..31 del snapshot: activo + crossover + coherencia).
+    {
+        bool auxOn = false; float auxXo = 120.f, auxCoh = 1.f;
+        ivanna::omega_aux_field_decode(s.flags, auxOn, auxXo, auxCoh);
+        fc->setAuxField(auxOn, auxXo, auxCoh);
+    }
 }
 
 static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,

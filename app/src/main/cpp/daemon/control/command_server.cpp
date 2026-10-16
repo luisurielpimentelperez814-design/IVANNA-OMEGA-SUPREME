@@ -139,6 +139,8 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     if (s.supreme_farrow_mso_enabled)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_FARROW_MSO_ON;
     if (s.supreme_ebpf_bypass_active)  snap.flags |= ivanna::OMEGA_FLAG_SUPREME_EBPF_BYPASS_ON;
     if (s.reality_recon_enabled)       snap.flags |= ivanna::OMEGA_FLAG_REALITY_RECON_ON;
+    // v2.5.36: modo AUX/altavoces.
+    snap.flags |= ivanna::omega_aux_field_encode(s.aux_field_enabled, s.aux_field_xover_hz, s.aux_field_coherence);
     // v2.5.16: bits de usuario (antes el daemon los borraba al armar `flags` desde cero).
     snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
     if (!ivanna::controlBus().publish(snap)) return 0;
@@ -283,6 +285,20 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         if (_jsonFloatArray(json,"wfsSpeakerZ", lz, 7)) for (int i=0;i<7;i++) m_state.wfs_speaker_z[i]=lz[i];
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_AUX_FIELD")==0) {
+        // Modo AUX/altavoces. Claves ausentes conservan el valor actual. El crossover se acota a 60..200 Hz
+        // y la coherencia a 0..1 (la resolucion publicada es 20 Hz / 1/7: ver omega_aux_field_encode).
+        m_state.aux_field_enabled   = _jsonFloat(json,"auxEnabled", m_state.aux_field_enabled ? 1.f : 0.f) > 0.5f;
+        m_state.aux_field_xover_hz  = _clamp(_jsonFloat(json,"auxXoverHz", m_state.aux_field_xover_hz), 60.f, 200.f);
+        m_state.aux_field_coherence = _clamp(_jsonFloat(json,"auxCoherence", m_state.aux_field_coherence), 0.f, 1.f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"SET_AUX_FIELD\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"enabled\":%s,\"xover_hz\":%.0f,\"coherence\":%.3f,\"consumer\":%s}",
+            gen>0?"true":"false", gen>0?"applied":"accepted_pending_consumer", (unsigned long long)gen,
+            m_state.aux_field_enabled?"true":"false", (double)(60.f+20.f*std::floor((m_state.aux_field_xover_hz-60.f)/20.f+0.5f)),
+            (double)std::floor(m_state.aux_field_coherence*7.f+0.5f)/7.0,
+            hasActiveConsumer()?"\"omega_effect\"":"null");
 
     } else if (strcmp(action,"SET_WFS_LAYOUT")==0) {
         // nativeSetWfsSpeakerLayout (panel de calibracion WFS) enviaba esta accion y el daemon la

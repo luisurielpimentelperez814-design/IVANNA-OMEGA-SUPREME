@@ -21,3 +21,10 @@
 
 std::atomic<bool>  g_wfs_enabled{true};
 std::atomic<float> g_wfs_spread{1.18f};
+
+// Modo AUX/altavoces (campo de presion coherente). Mismo patron que g_wfs_*: el proceso app los
+// define aqui (wfs_controls_bridge.cpp) y libomega_effect.so en su stub (wfs_globals_effect.cpp);
+// NO duplicar en un mismo target (ODR). Apagado por defecto: sin tocar el audio hasta que se active.
+std::atomic<bool>  g_aux_field_enabled{false};
+std::atomic<float> g_aux_field_xover_hz{120.0f};
+std::atomic<float> g_aux_field_coherence{1.0f};

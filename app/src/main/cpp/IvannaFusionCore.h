@@ -7,6 +7,7 @@
 #include "spatial/IntelligentUpmixer.hpp"
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/WfsRenderer.hpp"
+#include "spatial/AuxFieldCoherence.hpp"
 #include "spatial/RoomGeometryConfig.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
 
@@ -46,6 +47,7 @@ public:
     explicit IvannaFusionEngine(float sampleRate) : IvannaFusionEngine() {
         sampleRate_ = sampleRate;
         m_sampleRateF = sampleRate;
+        m_aux.prepare(sampleRate);
         m_upmixer.prepare(sampleRate);
         m_hoaDecoder.prepare(sampleRate, 8);
     }
@@ -65,6 +67,8 @@ public:
     // paralelo. setWfsSpeakerLayout configura la geometría 3D real del
     // WfsRenderer (llamado desde omega_apply_snapshot, hilo de control, NO
     // el hilo de audio — mismo criterio ya establecido para setObject()).
+    /// Modo AUX/altavoces: escribe los mismos atomics que lee process() cada bloque.
+    void setAuxField(bool enabled, float xoverHz, float coherence) noexcept;
     void setWfsEnabled(bool enable) noexcept;
     bool isWfsEnabled() const noexcept;
     void setWfsSpread(float spread) noexcept;
@@ -305,6 +309,7 @@ private:
     // switch duro en el callback. Cero allocs en el hot path: los buffers
     // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
     ivanna::spatial::WfsRenderer m_wfs;
+    ivanna::dsp::AuxFieldCoherence m_aux;   // modo AUX/altavoces: graves coherentes (ver AuxFieldCoherence.hpp)
     ivanna::supreme::SupremeTransitionEnvelope m_upmixEnv_{};
     bool  m_wfsInit      = false;
     float m_wfsFade      = 0.0f;    // 0 = bypass, 1 = WFS pleno

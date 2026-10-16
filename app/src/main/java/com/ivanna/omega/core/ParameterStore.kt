@@ -121,6 +121,9 @@ class ParameterStore(context: Context) {
         private const val KEY_HOA_UPMIXING_ENABLED = "hoa_upmixing_enabled"
         private const val KEY_WFS_ENABLED = "wfs_enabled"
         private const val KEY_WFS_SPREAD  = "wfs_spread"
+        private const val KEY_AUX_ENABLED = "aux_field_enabled"
+        private const val KEY_AUX_XOVER   = "aux_field_xover_hz"
+        private const val KEY_AUX_COH     = "aux_field_coherence"
         private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
     }
 
@@ -374,4 +377,13 @@ class ParameterStore(context: Context) {
     fun getWfsSpread(): Float = safeGetFloat(KEY_WFS_SPREAD, 1.18f)
     fun setWfsSpread(value: Float) =
         prefs.edit().putFloat(KEY_WFS_SPREAD, value.coerceIn(0f, 2f)).apply()
+
+    // ── Modo AUX/altavoces (campo de presion coherente) ── apagado por defecto: no toca el audio hasta activarlo
+    fun isAuxFieldEnabled(): Boolean = safeGetBoolean(KEY_AUX_ENABLED, false)
+    fun getAuxXoverHz(): Float = safeGetFloat(KEY_AUX_XOVER, 120f)
+    fun getAuxCoherence(): Float = safeGetFloat(KEY_AUX_COH, 1f)
+    fun setAuxField(enabled: Boolean, xoverHz: Float, coherence: Float) =
+        prefs.edit().putBoolean(KEY_AUX_ENABLED, enabled)
+            .putFloat(KEY_AUX_XOVER, xoverHz.coerceIn(60f, 200f))
+            .putFloat(KEY_AUX_COH, coherence.coerceIn(0f, 1f)).apply()
 }
