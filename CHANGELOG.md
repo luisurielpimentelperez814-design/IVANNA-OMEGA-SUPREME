@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.45 (336) — 4D adaptativo
+La dinámica espacial 4D se adapta a la música: la profundidad escala con la densidad de golpes medida (techo = slider). Ruta A y B.
+
 # CHANGELOG — v2.5.44 (335) — 4D temporal
 Nueva dinámica espacial temporal (4D): el ancho lateral respira con la música — enfoque en cada golpe, apertura en las colas — reutilizando el TransientDetector existente. Centro y graves intactos, bit-exacto apagado. Ruta A y B, control en el panel y en el perfil 4D.
 
