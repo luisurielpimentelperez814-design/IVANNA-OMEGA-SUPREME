@@ -378,6 +378,9 @@ object IvannaNativeLib {
     external fun nativeSetWfsEnabled(enabled: Boolean)
     /** Modo AUX/altavoces: campo de presion coherente (graves en fase). crossover 60..200 Hz, coherencia 0..1. */
     external fun nativeSetAuxField(enabled: Boolean, crossoverHz: Float, coherence: Float)
+
+    /** 4D: dinámica espacial temporal — el lateral se recoge en cada golpe y se abre en lo sostenido. amount 0..1. */
+    external fun nativeSetTemporalField(enabled: Boolean, amount: Float)
     external fun nativeSetWfsSpread(spread: Float)
     external fun nativeSetWfsSpeakerLayout(x: FloatArray, y: FloatArray, z: FloatArray)
 

@@ -92,6 +92,8 @@ fun IvannaControlPanel(
     initialWfsEnabled: Boolean = true,
     initialWfsSpread: Float = 1.18f,
     initialAuxFieldEnabled: Boolean = false,
+    initialTemporalFieldEnabled: Boolean = false,
+    initialTemporalFieldAmount: Float = 0.6f,
     initialBassHapticEnabled: Boolean = false,
     initialBassHapticStrength: Float = 0.7f,
     initialBassHapticRumble: Float = 0f,
@@ -126,6 +128,7 @@ fun IvannaControlPanel(
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
+    onTemporalFieldChange: (Boolean, Float) -> Unit = { _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
     onOpenHiRes: () -> Unit = {},
@@ -308,6 +311,8 @@ fun IvannaControlPanel(
     var wfsEnabled by remember { mutableStateOf(initialWfsEnabled) }
     var wfsSpread by remember { mutableFloatStateOf(initialWfsSpread) }
     var auxEnabled by remember { mutableStateOf(initialAuxFieldEnabled) }
+    var temporalEnabled by remember { mutableStateOf(initialTemporalFieldEnabled) }
+    var temporalAmount by remember { mutableStateOf(initialTemporalFieldAmount) }
     var hapticEnabled by remember { mutableStateOf(initialBassHapticEnabled && bassHapticSupported) }
     var hapticStrength by remember { mutableStateOf(initialBassHapticStrength) }
     var hapticRumble by remember { mutableStateOf(initialBassHapticRumble) }
@@ -877,6 +882,27 @@ fun IvannaControlPanel(
         }
 
         GlassCard(
+            title = "DINÁMICA ESPACIAL · 4D",
+            accent = PhosphorGreen,
+            subtitle = if (temporalEnabled)
+                "Activo: en cada golpe la imagen se enfoca; en las colas se abre · el centro no cambia, los graves tampoco"
+            else
+                "La cuarta dimensión es el tiempo: el ancho lateral respira con la música (golpe = enfoque, cola = apertura). Apagado = audio intacto",
+            rightSlot = {
+                Switch(temporalEnabled, onCheckedChange = {
+                    temporalEnabled = it
+                    onTemporalFieldChange(it, temporalAmount)
+                })
+            }
+        ) {
+            AuroraSlider("PROFUNDIDAD TEMPORAL", temporalAmount, 0f..1f,
+                displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
+                temporalAmount = it
+                onTemporalFieldChange(temporalEnabled, it)
+            }
+        }
+
+        GlassCard(
             title = "HÁPTICA DE GRAVES · 4D",
             accent = AuroraCyan,
             subtitle = when {
@@ -912,9 +938,11 @@ fun IvannaControlPanel(
             OutlinedButton(
                 enabled = bassHapticSupported,
                 onClick = {
-                    // Un toque: campo coherente por AUX/DAC + háptica con retumbo suave (las tres piezas ya existentes)
+                    // Un toque: campo coherente por AUX/DAC + dinámica espacial temporal + háptica con retumbo suave
                     auxEnabled = true
                     onAuxFieldChange(true, auxXover, auxCoherence)
+                    temporalEnabled = true
+                    onTemporalFieldChange(true, temporalAmount)
                     hapticEnabled = true
                     hapticStrength = 0.7f
                     hapticRumble = 0.3f
