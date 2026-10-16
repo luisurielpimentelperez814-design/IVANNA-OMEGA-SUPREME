@@ -343,4 +343,15 @@ TEST(TemporalFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
     cs.handleJsonCommand("{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalEnabled\":0}", reply, sizeof reply);
     omega_temporal_field_decode(snap().temporal_field, o, d);
     EXPECT_FALSE(o); EXPECT_NEAR(d, 4.f/7.f, 1e-3f);              // clave ausente conserva la profundidad
+
+    bool au = false;                                              // modo adaptativo: bit 4, por defecto activo en el daemon
+    omega_temporal_field_decode(s1.temporal_field, o, d, au);
+    EXPECT_TRUE(au);
+    cs.handleJsonCommand("{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalAuto\":0}", reply, sizeof reply);
+    omega_temporal_field_decode(snap().temporal_field, o, d, au);
+    EXPECT_FALSE(au); EXPECT_NEAR(d, 4.f/7.f, 1e-3f);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"temporal_auto\":false"), std::string::npos) << reply;
+    omega_temporal_field_decode(0u, o, d, au);
+    EXPECT_FALSE(au);                                             // escritor antiguo = profundidad fija
 }

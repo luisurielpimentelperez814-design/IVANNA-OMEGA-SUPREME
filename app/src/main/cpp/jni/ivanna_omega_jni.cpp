@@ -133,6 +133,7 @@ extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
 extern std::atomic<bool>  g_temporal_field_enabled;
 extern std::atomic<float> g_temporal_field_amount;
+extern std::atomic<bool>  g_temporal_field_auto;
 
 // FASE 3 (IvannaLab auto-feed): gate ON/OFF + contador de feeds. El feed
 // real ocurre dentro de nativeProcess (post-procesado) con throttle 1/100
@@ -2957,7 +2958,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAuxField(
 }
 
 // ── Dinamica espacial temporal ("4D"): puente app→daemon (SET_TEMPORAL_FIELD) ──
-static void omegaSendTemporalFieldToDaemon(bool enabled, float amount) noexcept {
+static void omegaSendTemporalFieldToDaemon(bool enabled, float amount, bool autoMode) noexcept {
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return;
     struct timeval tv{0, 200000};
@@ -2972,8 +2973,8 @@ static void omegaSendTemporalFieldToDaemon(bool enabled, float amount) noexcept 
     if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
         char json[128];
         int n = std::snprintf(json, sizeof(json),
-            "{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalEnabled\":%d,\"temporalAmount\":%.4f}",
-            enabled ? 1 : 0, static_cast<double>(amount));
+            "{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalEnabled\":%d,\"temporalAmount\":%.4f,\"temporalAuto\":%d}",
+            enabled ? 1 : 0, static_cast<double>(amount), autoMode ? 1 : 0);
         if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
     }
     ::close(fd);
@@ -2981,12 +2982,14 @@ static void omegaSendTemporalFieldToDaemon(bool enabled, float amount) noexcept 
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetTemporalField(
-    JNIEnv*, jobject, jboolean enabled, jfloat amount) {
+    JNIEnv*, jobject, jboolean enabled, jfloat amount, jboolean autoMode) {
     const bool en = (enabled == JNI_TRUE);
+    const bool au = (autoMode == JNI_TRUE);
     const float am = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.6f;
     g_temporal_field_amount.store(am, std::memory_order_relaxed);
+    g_temporal_field_auto.store(au, std::memory_order_relaxed);
     g_temporal_field_enabled.store(en, std::memory_order_relaxed);   // ruta A (en proceso)
-    omegaSendTemporalFieldToDaemon(en, am);                          // ruta B (audioserver, via daemon)
+    omegaSendTemporalFieldToDaemon(en, am, au);                          // ruta B (audioserver, via daemon)
 }
 
 JNIEXPORT void JNICALL

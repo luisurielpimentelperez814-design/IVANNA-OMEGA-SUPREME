@@ -14,6 +14,15 @@
 // aquí solo se reutiliza. El gain lateral se suaviza: ataque 3 ms, relajación ~140 ms, con 25 ms de retención
 // tras un golpe para que no tiemble.
 //
+// LEY ADAPTATIVA (modo auto, opcional): la profundidad efectiva escala con la DENSIDAD de golpes medida en la
+// propia música, no con un valor fijo:
+//     r  = golpes por segundo (flancos de subida del detector, media móvil de 2 s)
+//     s  = 1 - exp(-r / 3)                       (0 sin golpes → ~0.63 a 3/s → ~0.86 a 6/s)
+//     a_ef = a_usuario · (0.4 + 0.6·s)           (el slider es el TECHO; nunca se supera)
+// Música densa en ataques (electrónica, rock) recibe todo el enfoque; ambiente/cuerdas sostenidas, un 40 % (el
+// bloom sigue ahí pero sin pegar cada nota). Es una heurística de diseño con coeficientes elegidos a mano: acotada y
+// probada, NO validada con escucha — por eso se puede apagar y el slider manda.
+//
 // Propiedades garantizadas (y probadas en tests/test_temporal_spatial.cpp):
 //   · El canal CENTRAL (M = (L+R)/2) no se toca nunca: L'+R' == L+R. Compatible en mono y no cambia el centro.
 //   · Solo se modifica el lateral POR ENCIMA de ~250 Hz (dos pasa-altos de 1er orden): los graves, que el modo AUX
@@ -55,6 +64,12 @@ public:
         if (std::isfinite(amount)) amount_ = std::clamp(amount, 0.0f, 1.0f);
     }
 
+    /// Modo adaptativo: la profundidad efectiva sigue la densidad de golpes (ver ley arriba).
+    void setAuto(bool on) noexcept { auto_ = on; }
+    /// Profundidad efectiva ahora (= amount si auto está apagado) — telemetría / tests.
+    float effectiveAmount() const noexcept { return auto_ ? amount_ * autoGain_ : amount_; }
+    float hitRate() const noexcept { return rate_; }
+
     bool  isActive() const noexcept { return enabled_ || fade_ > 0.0f; }
     float fade()     const noexcept { return fade_; }
     /// Ganancia lateral actual (1 = sin cambio) — telemetría / tests.
@@ -63,6 +78,7 @@ public:
     void reset() noexcept {
         detector_.reset();
         g_ = 1.0f; hold_ = 0; fade_ = 0.0f;
+        rate_ = 0.0f; autoGain_ = 0.4f; prevHit_ = false;
         lp1_ = lp2_ = 0.0f;
     }
 
@@ -76,9 +92,18 @@ public:
         while (done < n) {
             const std::size_t c = std::min(n - done, kMaxChunk);
             for (std::size_t i = 0; i < c; ++i) mid_[i] = 0.5f * (L[done + i] + R[done + i]);
-            if (detector_.processBlock(mid_, c)) hold_ = holdLen_;
-            const float gTight = 1.0f - kTightPerAmount * amount_;
-            const float gBloom = 1.0f + kBloomPerAmount * amount_;
+            const bool hit = detector_.processBlock(mid_, c);
+            if (hit) hold_ = holdLen_;
+            {   // densidad de golpes: flancos de subida, media móvil de 2 s
+                const float dt = static_cast<float>(c) / sr_;
+                const float inst = (hit && !prevHit_) ? (1.0f / dt) : 0.0f;
+                rate_ += (inst - rate_) * std::min(1.0f, dt / 2.0f);
+                prevHit_ = hit;
+                autoGain_ = 0.4f + 0.6f * (1.0f - std::exp(-rate_ / 3.0f));
+            }
+            const float amt = effectiveAmount();
+            const float gTight = 1.0f - kTightPerAmount * amt;
+            const float gBloom = 1.0f + kBloomPerAmount * amt;
             for (std::size_t i = 0; i < c; ++i) {
                 const float target = (hold_ > 0) ? gTight : gBloom;
                 if (hold_ > 0) --hold_;
@@ -108,6 +133,9 @@ private:
     int   holdLen_ = 0;
     bool  enabled_ = false;
     float amount_ = 0.6f;
+    bool  auto_ = false;
+    float rate_ = 0.0f, autoGain_ = 0.4f;
+    bool  prevHit_ = false;
     float g_ = 1.0f, fade_ = 0.0f, lp1_ = 0.0f, lp2_ = 0.0f;
     int   hold_ = 0;
     float mid_[kMaxChunk] = {};

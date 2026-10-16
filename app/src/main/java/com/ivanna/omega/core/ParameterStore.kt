@@ -130,6 +130,7 @@ class ParameterStore(context: Context) {
         private const val KEY_HAPTIC_TRIM     = "bass_haptic_trim_ms"
         private const val KEY_TEMPORAL_ENABLED = "temporal_field_enabled"
         private const val KEY_TEMPORAL_AMOUNT  = "temporal_field_amount"
+        private const val KEY_TEMPORAL_AUTO    = "temporal_field_auto"
         private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
     }
 
@@ -396,8 +397,9 @@ class ParameterStore(context: Context) {
     // ── Dinámica espacial temporal (4D) ── apagada por defecto: no toca el audio hasta activarla
     fun isTemporalFieldEnabled(): Boolean = safeGetBoolean(KEY_TEMPORAL_ENABLED, false)
     fun getTemporalFieldAmount(): Float = safeGetFloat(KEY_TEMPORAL_AMOUNT, 0.6f)
-    fun setTemporalField(enabled: Boolean, amount: Float) =
-        prefs.edit().putBoolean(KEY_TEMPORAL_ENABLED, enabled)
+    fun isTemporalFieldAdaptive(): Boolean = safeGetBoolean(KEY_TEMPORAL_AUTO, true)
+    fun setTemporalField(enabled: Boolean, amount: Float, adaptive: Boolean = isTemporalFieldAdaptive()) =
+        prefs.edit().putBoolean(KEY_TEMPORAL_ENABLED, enabled).putBoolean(KEY_TEMPORAL_AUTO, adaptive)
             .putFloat(KEY_TEMPORAL_AMOUNT, amount.coerceIn(0f, 1f)).apply()
 
     // ── Háptica de graves (4D) ── apagada por defecto

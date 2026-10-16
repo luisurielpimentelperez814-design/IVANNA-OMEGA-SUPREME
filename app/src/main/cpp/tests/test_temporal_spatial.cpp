@@ -91,3 +91,41 @@ TEST(TemporalField, AmountZeroIsTransparent) {
     run(t, L, R);
     for (size_t i = 0; i < L.size(); ++i) { ASSERT_NEAR(L[i], L0[i], 1e-6f); ASSERT_NEAR(R[i], R0[i], 1e-6f); }
 }
+
+static void kickTrain(std::vector<float>& L, std::vector<float>& R, size_t n, size_t every) {
+    makeWide(L, R, n, false);
+    for (size_t k = 2000; k + 2400 < n; k += every)
+        for (size_t i = 0; i < 2400; ++i) {
+            const float tt = i / kSr, e = std::exp(-tt * 40.f);
+            const float x = 0.8f * std::sin(2 * kPi * 70.f * tt) * e;
+            L[k + i] += x; R[k + i] += x;
+        }
+}
+
+TEST(TemporalField, AdaptiveLawScalesWithHitDensityAndNeverExceedsCeiling) {
+    TemporalSpatialDynamics sparse; sparse.prepare(kSr); sparse.setParams(true, 0.8f); sparse.setAuto(true);
+    std::vector<float> L, R; makeWide(L, R, 48000 * 6, false);          // sostenido, sin golpes
+    run(sparse, L, R);
+    EXPECT_NEAR(sparse.effectiveAmount(), 0.8f * 0.4f, 0.03f) << "sin golpes: 40 % del techo";
+
+    TemporalSpatialDynamics dense; dense.prepare(kSr); dense.setParams(true, 0.8f); dense.setAuto(true);
+    kickTrain(L, R, 48000 * 8, 12000);                                     // 4 golpes por segundo
+    run(dense, L, R);
+    EXPECT_GT(dense.hitRate(), 2.5f);
+    EXPECT_GT(dense.effectiveAmount(), 0.8f * 0.75f) << "música densa en ataques: cerca del techo";
+    EXPECT_LE(dense.effectiveAmount(), 0.8f + 1e-6f) << "el slider es el techo";
+
+    TemporalSpatialDynamics fixed; fixed.prepare(kSr); fixed.setParams(true, 0.8f); fixed.setAuto(false);
+    run(fixed, L, R);
+    EXPECT_FLOAT_EQ(fixed.effectiveAmount(), 0.8f) << "auto apagado: profundidad fija";
+}
+
+TEST(TemporalField, AdaptiveStillKeepsCenterUntouched) {
+    TemporalSpatialDynamics t; t.prepare(kSr); t.setParams(true, 1.f); t.setAuto(true);
+    std::vector<float> L, R; kickTrain(L, R, 96000, 12000);
+    auto L0 = L, R0 = R;
+    run(t, L, R);
+    double worst = 0;
+    for (size_t i = 0; i < L.size(); ++i) worst = std::max(worst, double(std::fabs((L[i] + R[i]) - (L0[i] + R0[i]))));
+    EXPECT_LT(worst, 1e-5);
+}

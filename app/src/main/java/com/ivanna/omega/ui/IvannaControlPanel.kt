@@ -94,6 +94,7 @@ fun IvannaControlPanel(
     initialAuxFieldEnabled: Boolean = false,
     initialTemporalFieldEnabled: Boolean = false,
     initialTemporalFieldAmount: Float = 0.6f,
+    initialTemporalFieldAdaptive: Boolean = true,
     initialBassHapticEnabled: Boolean = false,
     initialBassHapticStrength: Float = 0.7f,
     initialBassHapticRumble: Float = 0f,
@@ -128,7 +129,7 @@ fun IvannaControlPanel(
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
-    onTemporalFieldChange: (Boolean, Float) -> Unit = { _, _ -> },
+    onTemporalFieldChange: (Boolean, Float, Boolean) -> Unit = { _, _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
     onOpenHiRes: () -> Unit = {},
@@ -313,6 +314,7 @@ fun IvannaControlPanel(
     var auxEnabled by remember { mutableStateOf(initialAuxFieldEnabled) }
     var temporalEnabled by remember { mutableStateOf(initialTemporalFieldEnabled) }
     var temporalAmount by remember { mutableStateOf(initialTemporalFieldAmount) }
+    var temporalAdaptive by remember { mutableStateOf(initialTemporalFieldAdaptive) }
     var hapticEnabled by remember { mutableStateOf(initialBassHapticEnabled && bassHapticSupported) }
     var hapticStrength by remember { mutableStateOf(initialBassHapticStrength) }
     var hapticRumble by remember { mutableStateOf(initialBassHapticRumble) }
@@ -891,14 +893,29 @@ fun IvannaControlPanel(
             rightSlot = {
                 Switch(temporalEnabled, onCheckedChange = {
                     temporalEnabled = it
-                    onTemporalFieldChange(it, temporalAmount)
+                    onTemporalFieldChange(it, temporalAmount, temporalAdaptive)
                 })
             }
         ) {
-            AuroraSlider("PROFUNDIDAD TEMPORAL", temporalAmount, 0f..1f,
+            AuroraSlider(if (temporalAdaptive) "PROFUNDIDAD MÁXIMA" else "PROFUNDIDAD TEMPORAL", temporalAmount, 0f..1f,
                 displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
                 temporalAmount = it
-                onTemporalFieldChange(temporalEnabled, it)
+                onTemporalFieldChange(temporalEnabled, it, temporalAdaptive)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "ADAPTATIVO · escala con la densidad de golpes (el slider es el techo)",
+                    style = MaterialTheme.typography.labelSmall, color = TextSecondary,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(temporalAdaptive, onCheckedChange = {
+                    temporalAdaptive = it
+                    onTemporalFieldChange(temporalEnabled, temporalAmount, it)
+                })
             }
         }
 
@@ -942,7 +959,7 @@ fun IvannaControlPanel(
                     auxEnabled = true
                     onAuxFieldChange(true, auxXover, auxCoherence)
                     temporalEnabled = true
-                    onTemporalFieldChange(true, temporalAmount)
+                    onTemporalFieldChange(true, temporalAmount, temporalAdaptive)
                     hapticEnabled = true
                     hapticStrength = 0.7f
                     hapticRumble = 0.3f

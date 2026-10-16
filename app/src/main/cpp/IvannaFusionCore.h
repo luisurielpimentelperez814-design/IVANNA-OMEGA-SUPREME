@@ -71,7 +71,7 @@ public:
     // el hilo de audio — mismo criterio ya establecido para setObject()).
     /// Modo AUX/altavoces: escribe los mismos atomics que lee process() cada bloque.
     void setAuxField(bool enabled, float xoverHz, float coherence) noexcept;
-    void setTemporalField(bool enabled, float amount) noexcept;   // dinámica espacial temporal ("4D")
+    void setTemporalField(bool enabled, float amount, bool autoMode = false) noexcept;   // dinámica espacial temporal ("4D")
     void setWfsEnabled(bool enable) noexcept;
     bool isWfsEnabled() const noexcept;
     void setWfsSpread(float spread) noexcept;

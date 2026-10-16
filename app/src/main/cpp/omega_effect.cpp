@@ -421,9 +421,9 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     }
     // 4D: dinamica espacial temporal (campo temporal_field del snapshot).
     {
-        bool tOn = false; float tAmt = 0.6f;
-        ivanna::omega_temporal_field_decode(s.temporal_field, tOn, tAmt);
-        fc->setTemporalField(tOn, tAmt);
+        bool tOn = false, tAuto = false; float tAmt = 0.6f;
+        ivanna::omega_temporal_field_decode(s.temporal_field, tOn, tAmt, tAuto);
+        fc->setTemporalField(tOn, tAmt, tAuto);
     }
 }
 

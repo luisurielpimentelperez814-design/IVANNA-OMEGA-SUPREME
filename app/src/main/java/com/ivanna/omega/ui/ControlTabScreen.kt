@@ -120,6 +120,7 @@ fun ControlTabScreen(
         initialAuxFieldEnabled = paramStore.isAuxFieldEnabled(),
         initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
         initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
+        initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
         initialBassHapticEnabled = paramStore.isBassHapticEnabled(),
         initialBassHapticStrength = paramStore.getBassHapticStrength(),
         initialBassHapticRumble = paramStore.getBassHapticRumble(),
@@ -269,10 +270,10 @@ fun ControlTabScreen(
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetAuxField(en, xo.coerceIn(60f, 200f), co.coerceIn(0f, 1f)) }
         },
-        onTemporalFieldChange = { en, am ->
-            paramStore.setTemporalField(en, am)
+        onTemporalFieldChange = { en, am, ad ->
+            paramStore.setTemporalField(en, am, ad)
             if (IvannaNativeLib.isLoaded)
-                runCatching { IvannaNativeLib.nativeSetTemporalField(en, am.coerceIn(0f, 1f)) }
+                runCatching { IvannaNativeLib.nativeSetTemporalField(en, am.coerceIn(0f, 1f), ad) }
         },
         onBassHapticChange = { en, st, ru, tr ->
             paramStore.setBassHaptic(en, st, ru, tr)

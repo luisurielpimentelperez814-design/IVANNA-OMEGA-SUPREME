@@ -32,6 +32,7 @@ extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
 extern std::atomic<bool>  g_temporal_field_enabled;
 extern std::atomic<float> g_temporal_field_amount;
+extern std::atomic<bool>  g_temporal_field_auto;
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
 // maximo — un saturador al 5% de THD inyectado en la ruta caliente de Ruta B
@@ -154,7 +155,8 @@ void IvannaFusionEngine::setWfsEnabled(bool enable) noexcept {
 bool IvannaFusionEngine::isWfsEnabled() const noexcept {
     return g_wfs_enabled.load(std::memory_order_relaxed);
 }
-void IvannaFusionEngine::setTemporalField(bool enabled, float amount) noexcept {
+void IvannaFusionEngine::setTemporalField(bool enabled, float amount, bool autoMode) noexcept {
+    g_temporal_field_auto.store(autoMode, std::memory_order_relaxed);
     if (std::isfinite(amount)) g_temporal_field_amount.store(amount, std::memory_order_relaxed);
     g_temporal_field_enabled.store(enabled, std::memory_order_relaxed);
 }
@@ -358,6 +360,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     m_aux.process(buffer->left, buffer->right, BLOCK_SIZE);
     // 4D: dinámica espacial temporal (despues del campo AUX: los graves ya son coherentes y esta etapa solo toca
     // el lateral > 250 Hz; el centro no cambia). Apagada = bit-exacto.
+    m_temporal.setAuto(g_temporal_field_auto.load(std::memory_order_relaxed));
     m_temporal.setParams(g_temporal_field_enabled.load(std::memory_order_relaxed),
                          g_temporal_field_amount.load(std::memory_order_relaxed));
     m_temporal.process(buffer->left, buffer->right, BLOCK_SIZE);
