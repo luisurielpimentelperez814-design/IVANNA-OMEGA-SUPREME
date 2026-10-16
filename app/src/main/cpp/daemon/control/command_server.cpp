@@ -604,7 +604,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     } else if (strcmp(action,"GET_STATUS")==0 || strcmp(action,"STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u}",
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u,\"aux_field\":%s,\"aux_xover_hz\":%.0f,\"aux_coherence\":%.3f}",
             (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
             m_state.intensity, m_state.eq_calibrated?"true":"false",
             m_state.listen_phon, m_state.ref_phon, m_state.compressor, m_state.spatial_width,
@@ -617,7 +617,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.supreme_farrow_mso_enabled?"true":"false",
             m_state.supreme_ebpf_bypass_active?"true":"false",
             (unsigned long long)m_state.last_update,
-            m_state.self_heal_restarts, m_state.clients_served);
+            m_state.self_heal_restarts, m_state.clients_served,
+            m_state.aux_field_enabled?"true":"false", (double)m_state.aux_field_xover_hz, (double)m_state.aux_field_coherence);
 
     } else if (strcmp(action,"GET_TELEMETRY")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();

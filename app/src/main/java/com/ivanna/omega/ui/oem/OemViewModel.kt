@@ -124,7 +124,10 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         // Estado real de las dos tarjetas: lo que el usuario aplicó (panel Espacial)
         // + si el dataset está realmente cargado en el motor.
         val spCfg = runCatching { com.ivanna.omega.spatial.SpatialControlStore.load(getApplication()) }.getOrNull()
-        val hrtfOn = (spCfg?.hrtfEnabled == true) && (hrtfLoaded || hrtfReady)
+        val auxStore = runCatching { com.ivanna.omega.core.ParameterStore(getApplication()) }.getOrNull()
+        val auxOn = auxStore?.isAuxFieldEnabled() == true
+        // Con el modo AUX activo el HRTF binaural esta en pausa en el motor: la tarjeta no debe decir ACTIVO.
+        val hrtfOn = (spCfg?.hrtfEnabled == true) && (hrtfLoaded || hrtfReady) && !auxOn
         val rirLoaded = runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)
         val rirOn = spCfg?.rirEnabled == true
         val rirWetNow = if (rirOn && rirLoaded) (spCfg?.rirWet ?: 0f).coerceIn(0f, 1f) else 0f
@@ -237,6 +240,9 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             phaseState     = phaseState,
             hrtfReady      = hrtfReady,
             hrtfOn         = hrtfOn,
+            auxOn          = auxOn,
+            auxXoverHz     = auxStore?.getAuxXoverHz() ?: 120f,
+            auxCoherence   = auxStore?.getAuxCoherence() ?: 1f,
             rirOn          = rirOn,
             rirLoaded      = rirLoaded,
             reverbLevel    = rirWetNow,
@@ -270,6 +276,17 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             spectralCentroid = centroidHz,
             safetyMargin   = if (hasSignal) 1f else 0f,
         )
+    }
+
+    /** Enciende/apaga el modo AUX/altavoces: persiste, aplica en la app y lo manda al daemon (ruta B). */
+    fun toggleAuxField() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val p = com.ivanna.omega.core.ParameterStore(getApplication())
+            val en = !p.isAuxFieldEnabled()
+            p.setAuxField(en, p.getAuxXoverHz(), p.getAuxCoherence())
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetAuxField(en, p.getAuxXoverHz(), p.getAuxCoherence()) }
+        }
     }
 
     // ── Acciones ──────────────────────────────────────────────────────────────

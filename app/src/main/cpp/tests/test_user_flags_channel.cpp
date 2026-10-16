@@ -297,6 +297,9 @@ TEST(AuxFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1}", reply, sizeof reply);
     omega_aux_field_decode(snap().flags, o, x, c);
     EXPECT_TRUE(o);                                               // sobrevive a comandos de otras areas
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"aux_field\":true"), std::string::npos) << reply;   // el estado real es consultable
+    EXPECT_NE(std::string(reply).find("\"aux_xover_hz\":100"), std::string::npos) << reply;
     cs.handleJsonCommand("{\"action\":\"SET_AUX_FIELD\",\"auxEnabled\":0}", reply, sizeof reply);
     omega_aux_field_decode(snap().flags, o, x, c);
     EXPECT_FALSE(o); EXPECT_NEAR(x, 100.f, 1e-3f);               // claves ausentes conservan crossover y coherencia

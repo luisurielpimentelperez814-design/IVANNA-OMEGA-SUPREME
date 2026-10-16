@@ -39,6 +39,10 @@ data class OemState(
     val dominantClass    : Int = -1,
     val hrtfReady        : Boolean = false,
     val hrtfOn           : Boolean = false,
+    // Modo AUX/altavoces (campo de presion coherente): config real guardada y aplicada al motor.
+    val auxOn            : Boolean = false,
+    val auxXoverHz       : Float = 120f,
+    val auxCoherence     : Float = 1f,
     val rirOn            : Boolean = false,
     val rirLoaded        : Boolean = false,
     val hrtfSubject      : String = "—",

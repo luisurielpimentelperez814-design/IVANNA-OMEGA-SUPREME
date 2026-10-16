@@ -34,6 +34,7 @@ fun OemDashboardScreen(
     onOpenAi: () -> Unit,
     onOpenThermal: () -> Unit,
     onOpenTelemetry: () -> Unit,
+    onToggleAux: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().background(ObsidianVoid)
@@ -71,8 +72,15 @@ fun OemDashboardScreen(
             NavModuleCard("AUDIO ESPACIAL · HRTF · SOFA",
                 "Posición 3D · Sujeto HRTF · Validación SHA256",
                 Icons.Default.SurroundSound, AuroraCyan,
-                indicator = if (state.hrtfOn) "ACTIVO" else if (state.hrtfReady || state.hrtfLoaded) "LISTO" else "INACTIVO",
+                indicator = if (state.hrtfOn) "ACTIVO" else if (state.auxOn) "EN PAUSA (AUX)" else if (state.hrtfReady || state.hrtfLoaded) "LISTO" else "INACTIVO",
                 indicatorOk = state.hrtfOn, onClick = onOpenSpatial)
+
+            NavModuleCard("MODO AUX · ALTAVOCES",
+                if (state.auxOn) "Graves coherentes · cruce ${(60 + 20 * Math.round((state.auxXoverHz - 60f) / 20f)).coerceIn(60, 200)} Hz · coherencia ${Math.round(state.auxCoherence * 7f) * 100 / 7} %"
+                else "Toca para activar: salida por AUX / amplificador",
+                Icons.Default.Speaker, AmberSignal,
+                indicator = if (state.auxOn) "ACTIVO" else "APAGADO",
+                indicatorOk = state.auxOn, onClick = onToggleAux)
 
             NavModuleCard("ACÚSTICA · SAF · RIR",
                 "Sala activa · RT60 · Difusión · Ambiente",

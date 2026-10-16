@@ -675,6 +675,7 @@ fun OmegaApp() {
                     onOpenAi        = { nav.navigate("oem_ai") },
                     onOpenThermal   = { nav.navigate("oem_thermal") },
                     onOpenTelemetry = { nav.navigate("oem_telemetry") },
+                    onToggleAux     = { vm.toggleAuxField() },
                 )
             }
             composable("oem_spatial") {
