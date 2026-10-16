@@ -16,6 +16,10 @@ build/
 *.jar
 *.so
 *.sofa
+# Los SOFA de assets/ y del modulo SON parte del producto (puerta 0.6 check_datasets_deploy.py): sin esta
+# excepcion `git add -A` los omitia en silencio y 23 HpIR de ari/ nunca llegaron al repo ni al zip.
+!app/src/main/assets/ivanna_omega/sofa/**/*.sofa
+!magisk_module/system/etc/ivanna_omega/sofa/**/*.sofa
 *.tmp
 *.temp
 *.swp
