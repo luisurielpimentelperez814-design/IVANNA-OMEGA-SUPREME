@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.43 (334) — Sincronía háptica por ruta
+La háptica de graves se sincroniza con la salida real: retardo por latencia de la ruta (Bluetooth por códec; cable/USB 0) más ajuste fino, y perfil 4D de un toque para AUX/DAC.
+
 # CHANGELOG — v2.5.42 (333) — Retumbo háptico
 La háptica de graves suma una capa de retumbo opcional (apagada por defecto) que sigue el sub sostenido entre golpes, con tope del 60 %.
 
