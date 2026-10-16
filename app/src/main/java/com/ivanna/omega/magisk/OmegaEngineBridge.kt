@@ -476,11 +476,9 @@ object OmegaEngineBridge {
     fun ensureRirDataset(ctx: android.content.Context): Boolean {
         if (isRirDatasetLoaded()) return true
         return runCatching {
-            val dst = java.io.File(ctx.filesDir, "rir")
-            // Copia COMPLETA (200 WAV + metadata, ~2 MB) y atomica ANTES de indexar:
-            // el loader nativo descarta filas sin WAV y marcaba "cargado" con 5 salas.
-            // Idempotente: salta lo ya copiado. Llamar fuera del hilo UI.
-            com.ivanna.omega.core.IvannaAssetProvider.copyTreeBlocking(ctx, "ivanna_omega/rir", dst)
+            // Dataset COMPLETO (200 WAV + metadata, ~2 MB) en disco ANTES de indexar: el loader nativo descarta
+            // filas sin WAV y marcaba "cargado" con 5 salas. Idempotente. Llamar fuera del hilo UI.
+            val dst = com.ivanna.omega.core.IvannaAssetProvider.ensureRirComplete(ctx)
             nativeSetRirDataDir(dst.absolutePath)
         }.getOrDefault(false)
     }

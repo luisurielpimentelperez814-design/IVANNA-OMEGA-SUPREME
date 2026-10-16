@@ -109,6 +109,21 @@ object IvannaAssetProvider {
         return false
     }
 
+    /**
+     * Garantiza, de forma SÍNCRONA, las 200 salas RIR (+ metadata.csv, ~2 MB) y devuelve el directorio a indexar.
+     * El indexador nativo descarta las filas cuyo WAV no existe y marcaba "dataset cargado" con las 5 salas del
+     * arranque rápido; con el árbol completo en disco carga las 200. Si el módulo/root ya trae el dataset se usa
+     * ese. Llamar fuera del hilo principal.
+     */
+    @Synchronized
+    fun ensureRirComplete(context: Context): File {
+        val external = candidates(context, "rir").firstOrNull { !it.absolutePath.startsWith(extractedRoot(context).absolutePath) && hasContent(it) }
+        if (external != null) return external
+        val dst = File(extractedRoot(context), "rir")
+        copyTree(context, "$ASSET_ROOT/rir", dst)
+        return dst
+    }
+
     /** Fuerza una reextracción completa (botón «Re-desplegar» del panel). */
     fun redeploy(context: Context) { ensureDeployed(context, force = true) }
 
