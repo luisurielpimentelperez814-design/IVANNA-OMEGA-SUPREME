@@ -56,6 +56,15 @@ class BassHapticAnalyzerTest {
         assertEquals(0, run(quiet).size)
     }
 
+    @Test fun rumbleFollowsSustainedSubAndIsCapped() {
+        assertEquals(0, BassHapticAnalyzer.rumbleAmplitude(0.3f, 0f))
+        assertEquals(0, BassHapticAnalyzer.rumbleAmplitude(0.01f, 1f))
+        val soft = BassHapticAnalyzer.rumbleAmplitude(0.1f, 1f)
+        val loud = BassHapticAnalyzer.rumbleAmplitude(0.45f, 1f)
+        assertTrue("más sub → más retumbo", loud > soft)
+        assertTrue("tope 60 %", loud <= 153)
+    }
+
     @Test fun strengthScalesAmplitudeAndZeroDisables() {
         val k = kicks(2, 0.5)
         val full = run(k, 1f).first().second

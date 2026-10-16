@@ -94,6 +94,7 @@ fun IvannaControlPanel(
     initialAuxFieldEnabled: Boolean = false,
     initialBassHapticEnabled: Boolean = false,
     initialBassHapticStrength: Float = 0.7f,
+    initialBassHapticRumble: Float = 0f,
     bassHapticSupported: Boolean = true,
     initialAuxXoverHz: Float = 120f,
     initialAuxCoherence: Float = 1f,
@@ -124,7 +125,7 @@ fun IvannaControlPanel(
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
-    onBassHapticChange: (Boolean, Float) -> Unit = { _, _ -> },
+    onBassHapticChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
     onOpenHiRes: () -> Unit = {},
     onOpenAdaptive: () -> Unit = {},
@@ -308,6 +309,7 @@ fun IvannaControlPanel(
     var auxEnabled by remember { mutableStateOf(initialAuxFieldEnabled) }
     var hapticEnabled by remember { mutableStateOf(initialBassHapticEnabled && bassHapticSupported) }
     var hapticStrength by remember { mutableStateOf(initialBassHapticStrength) }
+    var hapticRumble by remember { mutableStateOf(initialBassHapticRumble) }
     var auxXover by remember { mutableFloatStateOf(initialAuxXoverHz) }
     var auxCoherence by remember { mutableFloatStateOf(initialAuxCoherence) }
 
@@ -876,14 +878,19 @@ fun IvannaControlPanel(
             rightSlot = {
                 Switch(hapticEnabled, enabled = bassHapticSupported, onCheckedChange = {
                     hapticEnabled = it
-                    onBassHapticChange(it, hapticStrength)
+                    onBassHapticChange(it, hapticStrength, hapticRumble)
                 })
             }
         ) {
             AuroraSlider("FUERZA DE VIBRACIÓN", hapticStrength, 0f..1f,
                 displayValue = { "${Math.round(it * 100f)} %" }) {
                 hapticStrength = it
-                onBassHapticChange(hapticEnabled, it)
+                onBassHapticChange(hapticEnabled, it, hapticRumble)
+            }
+            AuroraSlider("RETUMBO (sub sostenido)", hapticRumble, 0f..1f,
+                displayValue = { if (it <= 0f) "OFF" else "${Math.round(it * 100f)} %" }) {
+                hapticRumble = it
+                onBassHapticChange(hapticEnabled, hapticStrength, it)
             }
         }
 

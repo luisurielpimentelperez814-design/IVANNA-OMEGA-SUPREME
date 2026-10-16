@@ -120,6 +120,7 @@ fun ControlTabScreen(
         initialAuxFieldEnabled = paramStore.isAuxFieldEnabled(),
         initialBassHapticEnabled = paramStore.isBassHapticEnabled(),
         initialBassHapticStrength = paramStore.getBassHapticStrength(),
+        initialBassHapticRumble = paramStore.getBassHapticRumble(),
         bassHapticSupported = com.ivanna.omega.audio.BassHaptics.isSupported(context),
         initialAuxXoverHz = paramStore.getAuxXoverHz(),
         initialAuxCoherence = paramStore.getAuxCoherence(),
@@ -265,9 +266,9 @@ fun ControlTabScreen(
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetAuxField(en, xo.coerceIn(60f, 200f), co.coerceIn(0f, 1f)) }
         },
-        onBassHapticChange = { en, st ->
-            paramStore.setBassHaptic(en, st)
-            com.ivanna.omega.audio.BassHaptics.configure(context, en, st)
+        onBassHapticChange = { en, st, ru ->
+            paramStore.setBassHaptic(en, st, ru)
+            com.ivanna.omega.audio.BassHaptics.configure(context, en, st, ru)
         },
         onWfsSpreadChange = { v ->
             paramStore.setWfsSpread(v)

@@ -27,6 +27,7 @@ object BassHaptics {
 
     @Volatile private var enabled = false
     @Volatile private var strength = 0.7f
+    @Volatile private var rumble = 0f
     @Volatile private var vibrator: Vibrator? = null
     @Volatile private var worker: Thread? = null
     @Volatile private var resetRequested = false
@@ -39,8 +40,9 @@ object BassHaptics {
 
     /** Aplica estado desde UI/arranque. Seguro llamarlo desde cualquier hilo. */
     @Synchronized
-    fun configure(context: Context, enable: Boolean, strength01: Float) {
+    fun configure(context: Context, enable: Boolean, strength01: Float, rumble01: Float = 0f) {
         strength = strength01.coerceIn(0f, 1f)
+        rumble = rumble01.coerceIn(0f, 1f)
         if (enable == enabled && (!enable || worker?.isAlive == true)) return
         if (enable) {
             val v = resolve(context)
@@ -83,6 +85,7 @@ object BassHaptics {
     private fun startWorker(v: Vibrator) {
         if (worker?.isAlive == true) return
         val amplitudeControl = v.hasAmplitudeControl()
+        var lastRumbleNs = 0L
         worker = Thread({
             while (enabled && !Thread.currentThread().isInterrupted) {
                 val amp = pending.getAndSet(0)
@@ -93,6 +96,17 @@ object BassHaptics {
                     else if (amp >= 120) VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)
                     else null
                     if (effect != null) runCatching { v.vibrate(effect) }
+                    lastRumbleNs = System.nanoTime()
+                } else if (amplitudeControl) {
+                    // Retumbo: sigue el sub sostenido entre golpes, cada ~40 ms (solo si el usuario lo subió)
+                    val now = System.nanoTime()
+                    if (now - lastRumbleNs >= 40_000_000L) {
+                        val r = BassHapticAnalyzer.rumbleAmplitude(analyzer.level, rumble)
+                        if (r >= BassHapticAnalyzer.MIN_AMPLITUDE) {
+                            runCatching { v.vibrate(VibrationEffect.createOneShot(45L, r)) }
+                            lastRumbleNs = now
+                        }
+                    }
                 }
                 LockSupport.parkNanos(4_000_000L)
             }

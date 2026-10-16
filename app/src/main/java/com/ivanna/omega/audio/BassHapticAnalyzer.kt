@@ -54,7 +54,8 @@ class BassHapticAnalyzer(private val sampleRate: Int = 48_000) {
     private fun coeff(tauSec: Float): Float = (1.0 - exp(-1.0 / (tauSec * sampleRate))).toFloat()
 
     /** Última envolvente de graves (0..1 aprox.), útil para mostrar un medidor real en la UI. */
-    val level: Float get() = env
+    @Volatile private var published = 0f
+    val level: Float get() = published
 
     fun reset() { z1 = 0f; z2 = 0f; env = 0f; ref = 0f; cooldown = 0; armed = true }
 
@@ -73,6 +74,7 @@ class BassHapticAnalyzer(private val sampleRate: Int = 48_000) {
             env += (a - env) * (if (a > env) atk else rel)
             ref += (env - ref) * refC
         }
+        published = env
         if (cooldown > 0) cooldown -= n
         // Re-armado con histéresis: un golpe (o un sub sostenido) dispara UNA vez y no vuelve a disparar hasta que
         // la envolvente cae cerca de la referencia.
@@ -87,6 +89,17 @@ class BassHapticAnalyzer(private val sampleRate: Int = 48_000) {
     }
 
     companion object {
+        /**
+         * Capa de retumbo: amplitud 0..255 que sigue la energía de sub SOSTENIDA (no solo el ataque). 0 si queda
+         * por debajo del piso o de lo que el motor puede reproducir. Pura: la usa el hilo de vibración.
+         */
+        fun rumbleAmplitude(level: Float, strength: Float): Int {
+            if (strength <= 0f || level < FLOOR) return 0
+            val norm = ((level - FLOOR) / (FULL_SCALE - FLOOR)).coerceIn(0f, 1f)
+            val amp = (MIN_AMPLITUDE + sqrt(norm) * strength.coerceIn(0f, 1f) * 0.6f * (255 - MIN_AMPLITUDE)).toInt()
+            return amp.coerceIn(0, 153)  // tope 60 %: el retumbo acompaña, no tapa al golpe
+        }
+
         const val CUTOFF_HZ = 100.0
         const val Q = 0.7071067811865476
         const val ONSET_RATIO = 1.8f
