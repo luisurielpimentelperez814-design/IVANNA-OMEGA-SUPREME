@@ -94,11 +94,15 @@ public:
         if (eA <= 1.0e-20) { r.residualRmsDb = -200.0f; r.coherence = 1.0f; return r; }
         if (r.identical) { r.residualRmsDb = -200.0f; r.coherence = 1.0f; r.audibleContribution = false; return r; }
 
-        // 2) Retardo de grupo por correlación cruzada normalizada (submuestreo grueso + fino).
+        // 2) Retardo de grupo por correlación cruzada normalizada.
+        //    Búsqueda gruesa (±kMaxDelaySearch) + refinado ±16 + vecindad EXACTA de 0 (±64).
+        //    El paso grueso (>= 8 muestras) puede saltarse un pico estrecho (señales con agudos
+        //    o periódicas): sin la vecindad de 0 un retardo real de 0 se medía como -48 con
+        //    coherencia 0.85 y un residuo de -70 dB salía "audible" en las 5 bandas. Ante un
+        //    empate numérico (señal periódica) manda el retardo de menor magnitud.
         const int step = std::max(1, n / 4096);
         int bestLag = 0; double bestCorr = -2.0;
-        // Coarse:
-        for (int lag = -kMaxDelaySearch; lag <= kMaxDelaySearch; lag += std::max(step, 8)) {
+        auto consider = [&](int lag) noexcept {
             double num = 0.0, dA = 0.0, dB = 0.0;
             for (int i = 0; i < n; i += step) {
                 const int j = i + lag;
@@ -108,21 +112,15 @@ public:
                 dB  += (double)B[j] * (double)B[j];
             }
             const double c = num / (std::sqrt(dA * dB) + 1.0e-30);
-            if (c > bestCorr) { bestCorr = c; bestLag = lag; }
-        }
-        // Fine (±16 muestras alrededor del grueso, paso 1):
-        for (int lag = bestLag - 16; lag <= bestLag + 16; ++lag) {
-            double num = 0.0, dA = 0.0, dB = 0.0;
-            for (int i = 0; i < n; i += step) {
-                const int j = i + lag;
-                if (j < 0 || j >= n) continue;
-                num += (double)A[i] * (double)B[j];
-                dA  += (double)A[i] * (double)A[i];
-                dB  += (double)B[j] * (double)B[j];
+            if (c > bestCorr + 1.0e-9 ||
+                (c > bestCorr - 1.0e-9 && std::abs(lag) < std::abs(bestLag))) {
+                bestCorr = c; bestLag = lag;
             }
-            const double c = num / (std::sqrt(dA * dB) + 1.0e-30);
-            if (c > bestCorr) { bestCorr = c; bestLag = lag; }
-        }
+        };
+        for (int lag = -kMaxDelaySearch; lag <= kMaxDelaySearch; lag += std::max(step, 8)) consider(lag);
+        const int coarseBest = bestLag;
+        for (int lag = coarseBest - 16; lag <= coarseBest + 16; ++lag) consider(lag);
+        for (int lag = -64; lag <= 64; ++lag) consider(lag);
         r.delaySamples = (float)bestLag;
         r.coherence = (float)bestCorr;
 
