@@ -137,6 +137,8 @@ extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
 extern std::atomic<bool>  g_temporal_field_enabled;
+extern std::atomic<float> g_temporal_arc_tension;
+extern std::atomic<float> g_temporal_arc_impact;
 extern std::atomic<float> g_temporal_field_amount;
 extern std::atomic<bool>  g_temporal_field_auto;
 extern std::atomic<float> g_room_corr_db[10];
@@ -1876,6 +1878,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // ya está en el techo, así que no hay «bombeo»). Latencia +1.5 ms solo mientras esté activo.
     g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));
     g_punch.setImpactBias(ivanna::fourd::arcImpact());   // el drop del arco narrativo 4D realza el golpe (guardas intactas)
+    g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);   // y modula el espacio: se abre antes, se recoge en el impacto
+    g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
     g_punch.process(g_ats.pdOutL, g_ats.pdOutR, n);
     // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
     // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
@@ -2229,6 +2233,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // NHO/Spatial saldrían sin protección hacia el DAC.
     g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));   // v2.5.41
     g_punch.setImpactBias(ivanna::fourd::arcImpact());
+    g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);
+    g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
     g_punch.process(oL, oR, n);
     // Cancelación de diafonía de la Cadena 4D antes del limitador (ver nativeProcess).
     ivanna::fourd::applyOutputPlanar(oL, oR, n);

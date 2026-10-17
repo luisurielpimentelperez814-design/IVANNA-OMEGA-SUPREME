@@ -33,6 +33,8 @@ extern std::atomic<float> g_aux_field_coherence;
 extern std::atomic<bool>  g_temporal_field_enabled;
 extern std::atomic<float> g_temporal_field_amount;
 extern std::atomic<bool>  g_temporal_field_auto;
+extern std::atomic<float> g_temporal_arc_tension;
+extern std::atomic<float> g_temporal_arc_impact;
 extern std::atomic<float> g_room_corr_db[10];
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
@@ -371,6 +373,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // 4D: dinámica espacial temporal (despues del campo AUX: los graves ya son coherentes y esta etapa solo toca
     // el lateral > 250 Hz; el centro no cambia). Apagada = bit-exacto.
     m_temporal.setAuto(g_temporal_field_auto.load(std::memory_order_relaxed));
+    m_temporal.setArc(g_temporal_arc_tension.load(std::memory_order_relaxed), g_temporal_arc_impact.load(std::memory_order_relaxed));
     m_temporal.setParams(g_temporal_field_enabled.load(std::memory_order_relaxed),
                          g_temporal_field_amount.load(std::memory_order_relaxed));
     m_temporal.process(buffer->left, buffer->right, BLOCK_SIZE);
