@@ -77,7 +77,7 @@ bool SafHRTFBridge::initialize(
 
     __android_log_print(ANDROID_LOG_INFO, BRIDGE_TAG,
         "SAF activo (SOFA=%s) q0=[%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f]",
-        sofaOk ? "medido" : "sintetico",
+        sofaOk ? (m_sofa.isReconstructedFromMasterBasis() ? "reconstruido-PCA(mediciones no leidas)" : "medido") : "sintetico",
         m_q[0], m_q[1], m_q[2], m_q[3], m_q[4], m_q[5], m_q[6]);
     return true;
 }

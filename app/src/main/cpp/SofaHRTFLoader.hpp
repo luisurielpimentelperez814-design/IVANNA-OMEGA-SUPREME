@@ -21,13 +21,22 @@ public:
         FILE_NOT_FOUND,     // El path no existe o no hay permisos de lectura
         CORRUPT,            // Tamaño insuficiente o error de I/O en cabecera
         NOT_HDF5,           // El archivo existe pero no tiene firma HDF5 válida
-        VALID_NOT_PARSED,   // Firma HDF5 OK — archivo SOFA válido, no se parsea
-                            // en runtime (usar tools/sofa_to_ihr1.py offline)
+        VALID_NOT_PARSED,   // Firma HDF5 OK. El archivo NO se parsea: las mediciones SOFA no
+                            // se leen en runtime (usar tools/sofa_to_ihr1.py offline) y el
+                            // HRIR sale de la base maestra SOFA-PCA (ver load()).
     };
 
     bool   load(const std::string& path);
     bool   loadCached(const std::string& path);
     Status lastStatus() const noexcept { return lastStatus_; }
+
+    // true cuando el HRIR de hrtf() fue RECONSTRUIDO desde la base maestra SOFA-PCA y no leído
+    // del archivo. load()==true solo prueba que el archivo empieza con la firma HDF5; el "sujeto"
+    // se elige buscando su id en la RUTA, no en el contenido. Quien registre o muestre esta HRTF
+    // no debe presentarla como una medición del archivo.
+    bool isReconstructedFromMasterBasis() const noexcept {
+        return lastStatus_ == Status::VALID_NOT_PARSED;
+    }
 
     const HRTFIR& hrtf() const { return m_hrtf; }
 

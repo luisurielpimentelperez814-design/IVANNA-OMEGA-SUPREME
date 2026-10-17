@@ -82,10 +82,10 @@ bool SofaHRTFLoader::load(const std::string& path) {
         return false;
     }
 
-    // Archivo SOFA AES69 válido confirmado.
-    // Reconstruimos el par HRIR de 128 taps por oído usando la variedad PCA
-    // entrenada sobre las 255 mediciones SOFA + 12 datasets IHR1 (p0 + V * q_subj)
-    // para que cualquier consumidor de SofaHRTFLoader reciba un HRIR real de 48 kHz.
+    // Solo se ha comprobado la FIRMA HDF5: el contenido del archivo no se lee ni se valida.
+    // El par HRIR de 128 taps por oído se RECONSTRUYE con la variedad PCA entrenada sobre las
+    // 255 mediciones SOFA + 12 datasets IHR1 (p0 + V * q_subj). Esto NO es una carga de las
+    // mediciones del archivo: el sujeto (q_subj) se elige buscando su id en la RUTA.
     lastStatus_ = Status::VALID_NOT_PARSED;
     m_hrtf.sampleRate = 48000.0f;
     constexpr int kLen = ivanna::master::kMasterHrirLen;
@@ -110,7 +110,7 @@ bool SofaHRTFLoader::load(const std::string& path) {
         m_hrtf.right[n] = r;
     }
 
-    LOGI("SofaHRTFLoader: SOFA AES69 válido (%ld bytes, firma HDF5 OK) -> HRIR reconstruido desde base maestra SOFA-PCA (%d taps/oído).",
+    LOGI("SofaHRTFLoader: firma HDF5 OK (%ld bytes); mediciones del archivo NO leídas -> HRIR RECONSTRUIDO desde base maestra SOFA-PCA (%d taps/oído).",
          (long)size, kLen);
     return true;
 }
