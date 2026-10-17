@@ -26,7 +26,6 @@ object Ivanna4DNative {
 
     // ── Interruptor maestro ──────────────────────────────────────────────────
     @JvmStatic external fun nativeFourDSetEnabled(on: Boolean)
-    @JvmStatic external fun nativeFourDIsEnabled(): Boolean
 
     // ── Sub-controles ────────────────────────────────────────────────────────
     @JvmStatic external fun nativeFourDSetHaptics(on: Boolean)
@@ -42,8 +41,4 @@ object Ivanna4DNative {
 
     // ── Telemetría ───────────────────────────────────────────────────────────
     @JvmStatic external fun nativeFourDStatusJson(): String
-
-    // ── Instrumentación (no usadas por la ruta de audio real) ────────────────
-    @JvmStatic external fun nativeFourDFeedInterleaved(interleaved: FloatArray, frames: Int, channels: Int)
-    @JvmStatic external fun nativeFourDApplyOutput(interleaved: FloatArray, frames: Int, channels: Int)
 }

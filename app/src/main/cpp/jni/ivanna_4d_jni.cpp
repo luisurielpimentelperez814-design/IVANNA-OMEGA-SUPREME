@@ -46,18 +46,8 @@ std::string statusJson() {
 } // namespace
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDShutdown(JNIEnv*, jobject) {
-    ivanna::fourd::shutdown();
-}
-
-extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDSetEnabled(JNIEnv*, jobject, jboolean on) {
     ivanna::fourd::setEnabled(truthy(on));
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDIsEnabled(JNIEnv*, jobject) {
-    return ivanna::fourd::enabled() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -114,36 +104,4 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDStatusJson(JNIEnv* env, jobject) {
     const std::string js = statusJson();
     return env->NewStringUTF(js.c_str());
-}
-
-// Alimentación/etapa de salida desde Kotlin: solo para herramientas y pruebas de
-// instrumentación (la ruta de audio real usa ImeBridge en C++).
-extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDFeedInterleaved(
-    JNIEnv* env, jobject, jfloatArray interleaved, jint frames, jint channels) {
-    if (!interleaved || frames <= 0 || channels <= 0) return;
-    jfloat* p = env->GetFloatArrayElements(interleaved, nullptr);
-    if (!p) return;
-    const jsize len = env->GetArrayLength(interleaved);
-    const int usable = (static_cast<int>(len) / channels < static_cast<int>(frames))
-        ? static_cast<int>(len) / channels : static_cast<int>(frames);
-    if (usable > 0) ivanna::fourd::feedInterleaved(p, usable, static_cast<int>(channels));
-    env->ReleaseFloatArrayElements(interleaved, p, JNI_ABORT);
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDApplyOutput(
-    JNIEnv* env, jobject, jfloatArray interleaved, jint frames, jint channels) {
-    if (!interleaved || frames <= 0 || channels <= 0) return;
-    jfloat* p = env->GetFloatArrayElements(interleaved, nullptr);
-    if (!p) return;
-    const jsize len = env->GetArrayLength(interleaved);
-    const int usable = (static_cast<int>(len) / channels < static_cast<int>(frames))
-        ? static_cast<int>(len) / channels : static_cast<int>(frames);
-    if (usable > 0) {
-        ivanna::fourd::applyOutputInterleaved(p, usable, static_cast<int>(channels));
-        env->ReleaseFloatArrayElements(interleaved, p, 0);   // 0 = write back
-    } else {
-        env->ReleaseFloatArrayElements(interleaved, p, JNI_ABORT);
-    }
 }
