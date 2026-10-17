@@ -50,7 +50,9 @@ private data class FourDState(
 @Composable
 fun FourDPredictionPanel(modifier: Modifier = Modifier) {
     var st by remember { mutableStateOf(FourDState()) }
-    val store = remember { ParameterStore(LocalContext.current.applicationContext) }
+    // LocalContext.current es @Composable: se lee FUERA del lambda de remember (dentro no compila).
+    val appContext = LocalContext.current.applicationContext
+    val store = remember { ParameterStore(appContext) }
     var haptics by remember { mutableStateOf(store.is4dHapticsOn()) }
     var crosstalk by remember { mutableStateOf(store.is4dCrosstalkOn()) }
     var leadMs by remember { mutableStateOf(store.get4dLeadMs()) }
