@@ -280,6 +280,11 @@ class IVANNAApplication : Application() {
             }.onFailure { Log.w(TAG, "HardwareProbe: ${it.message}") }
         }
 
+        // ── Fotoholografía·Nanotomix: lazo de control del ancho estéreo ────
+        // Restaura el estado guardado (apagado por defecto) y corre en hilo de fondo a 20 Hz.
+        runCatching { com.ivanna.omega.fotoholo.FotoHoloEngine.start(this@IVANNAApplication, appScope) }
+            .onFailure { Log.w(TAG, "FotoHoloEngine: ${it.message}") }
+
         // ── Arrancar cerebro perceptual ───────────────────────────────────
         // Forzar inicialización lazy + arrancar polling de telemetría 10Hz
         appScope.launch(kotlinx.coroutines.Dispatchers.Default) {
