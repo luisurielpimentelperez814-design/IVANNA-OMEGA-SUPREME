@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.50 (341) — EQ real en Ruta B
+Los 10 sliders de EQ moldean el espectro en el módulo (antes solo la media como trim).
+
 # CHANGELOG — v2.5.49 (340) — Corrección acústica de sala
 Medición con micrófono (27 tonos 1/3 oct, latencia real) y corrección tonal en Ruta A y B; ABI v6 (reinstalar módulo).
 
