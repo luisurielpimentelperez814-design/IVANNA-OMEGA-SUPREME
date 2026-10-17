@@ -46,6 +46,12 @@ object BassHaptics {
     @Volatile private var rumble = 0f
     @Volatile private var trimMs = 0
     @Volatile private var autoLatencyMs = 0
+    // Latencia REAL de la salida medida por RoomMeasurement (sonda de 1 kHz). Reemplaza la estimación por códec mientras
+    // la ruta de salida siga siendo la misma con la que se midió. Incluye la latencia de entrada del micrófono, así que
+    // es una cota superior: el ajuste fino sigue disponible.
+    @Volatile private var measuredLatencyMs = -1
+    @Volatile private var measuredRoute: OutputRoute? = null
+    @Volatile private var currentRoute: OutputRoute = OutputRoute.UNKNOWN
     @Volatile private var routeLabel = "—"
     @Volatile private var vibrator: Vibrator? = null
     @Volatile private var worker: Thread? = null
@@ -56,10 +62,24 @@ object BassHaptics {
     val bassLevel: Float get() = analyzer.level
 
     /** Retardo efectivo (ms) que se aplica ahora entre el análisis y la vibración. */
-    fun effectiveSyncMs(): Int = (autoLatencyMs - MOTOR_LATENCY_MS + trimMs).coerceIn(0, 500)
+    fun effectiveSyncMs(): Int {
+        val m = measuredLatencyMs
+        val base = if (m >= 0 && measuredRoute == currentRoute) m else autoLatencyMs
+        return (base - MOTOR_LATENCY_MS + trimMs).coerceIn(0, 500)
+    }
+
+    /** Guarda la latencia real medida para la ruta de salida actual (se invalida sola si la ruta cambia). */
+    fun setMeasuredLatency(context: Context, ms: Int) {
+        val am = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
+        val route = runCatching { AudioRouteManager.detectOutputRoute(am) }.getOrDefault(OutputRoute.UNKNOWN)
+        currentRoute = route
+        measuredRoute = route
+        measuredLatencyMs = ms.coerceIn(0, 500)
+    }
 
     /** Texto para la UI: ruta de salida detectada y retardo aplicado. */
-    fun describeSync(): String = "Salida: $routeLabel · retardo háptico ${effectiveSyncMs()} ms"
+    fun describeSync(): String =
+        "Salida: $routeLabel · retardo háptico ${effectiveSyncMs()} ms" + if (measuredLatencyMs >= 0 && measuredRoute == currentRoute) " (latencia medida)" else ""
 
     /** true si este teléfono tiene motor de vibración. */
     fun isSupported(context: Context): Boolean = resolve(context)?.hasVibrator() == true
@@ -127,6 +147,8 @@ object BassHaptics {
     private fun refreshRoute(app: Context) {
         val am = app.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return
         val route = runCatching { AudioRouteManager.detectOutputRoute(am) }.getOrDefault(OutputRoute.UNKNOWN)
+        currentRoute = route
+        if (measuredRoute != null && measuredRoute != route) { measuredLatencyMs = -1; measuredRoute = null }
         when (route) {
             OutputRoute.BLUETOOTH -> {
                 val p = BluetoothAudioProfiler.currentProfile()

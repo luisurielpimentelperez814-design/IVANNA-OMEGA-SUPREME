@@ -78,6 +78,7 @@ fun ControlTabScreen(
             when (val out = com.ivanna.omega.audio.RoomMeasurement.run(context) { roomProgress = it }) {
                 is com.ivanna.omega.audio.RoomMeasurement.Outcome.Success -> {
                     paramStore.setRoomCorrection(out.gainsDb, true)
+                    runCatching { com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, out.latencyMs) }   // háptica con latencia real
                     roomGains = out.gainsDb; roomEnabled = true
                     applyRoom(out.gainsDb, true)
                     roomStatus = "Medición lista · retardo de la salida medido: ${out.latencyMs} ms"
