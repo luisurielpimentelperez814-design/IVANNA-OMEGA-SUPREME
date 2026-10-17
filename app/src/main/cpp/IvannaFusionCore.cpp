@@ -378,7 +378,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     m_userEq.setTarget(m_userEqDb_);
     m_userEq.process(buffer->left, buffer->right, BLOCK_SIZE);
     // NPE neuromórfico (Ruta B): NHO + LIF + banco coclear + inhibición lateral + OHC + AGC. Apagado = bit-exacto.
-    m_npe.setParams(m_npeOn_, m_npeHarm_, m_npeLat_, m_npeOhc_, m_npeMasterDb_);
+    m_npe.setParams(m_npeOn_ && !m_npeShed_, m_npeHarm_, m_npeLat_, m_npeOhc_, m_npeMasterDb_);
     m_npe.process(buffer->left, buffer->right, BLOCK_SIZE);
     // Corrección acústica de sala medida (RoomProbe → 10 biquads peaking de AutoEqFilter). Todo en 0 = bit-exacto.
     {

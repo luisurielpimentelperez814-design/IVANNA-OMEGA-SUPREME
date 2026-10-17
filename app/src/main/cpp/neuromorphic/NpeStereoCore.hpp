@@ -43,7 +43,7 @@ public:
     void reset() noexcept {
         nho_.reset();
         envBank_.reset();
-        agcGain_ = 1.0f; rms_ = 0.0f; fade_ = 0.0f;
+        agcGain_ = 1.0f; rms_ = 0.0f; fade_ = 0.0f; desired_ = 1.0f; agcTick_ = 0;
     }
 
     /// Hilo de audio, al inicio del bloque. Rangos = los de Ruta A.
@@ -100,9 +100,12 @@ public:
             // AGC: envolvente del programa (no de la onda) y paso por muestra acotado
             const float inst = 0.5f * (std::fabs(yL) + std::fabs(yR));
             rms_ += (inst > rms_ ? aAtt_ : aRel_) * (inst - rms_);
-            const float rmsDb = 20.0f * std::log10(std::max(rms_, 1.0e-6f));
-            const float desired = std::pow(10.0f, (kAgcTargetDb - rmsDb) * 0.05f);
-            agcGain_ = std::clamp(agcGain_ + std::clamp(kAgcRate * 0.0004f * (desired - agcGain_), -0.0005f, 0.0005f), 0.25f, 4.0f);
+            // log10/pow solo cada 16 muestras (la envolvente tiene tau >= 10 ms): ~16x menos CPU en audioserver.
+            if ((agcTick_++ & 15u) == 0u) {
+                const float rmsDb = 20.0f * std::log10(std::max(rms_, 1.0e-6f));
+                desired_ = std::pow(10.0f, (kAgcTargetDb - rmsDb) * 0.05f);
+            }
+            agcGain_ = std::clamp(agcGain_ + std::clamp(kAgcRate * 0.0004f * (desired_ - agcGain_), -0.0005f, 0.0005f), 0.25f, 4.0f);
             yL *= agcGain_ * masterLin_; yR *= agcGain_ * masterLin_;
 
             auto knee = [](float x) {
@@ -127,7 +130,8 @@ private:
     float sr_ = 48000.0f, aAtt_ = 0.0f, aRel_ = 0.0f, fadeStep_ = 0.0f;
     bool  enabled_ = false;
     float harmonic_ = 0.2f, lateral_ = 0.2f, ohc_ = 0.3f, masterLin_ = 1.0f;
-    float agcGain_ = 1.0f, rms_ = 0.0f, fade_ = 0.0f;
+    float agcGain_ = 1.0f, rms_ = 0.0f, fade_ = 0.0f, desired_ = 1.0f;
+    uint32_t agcTick_ = 0;
     int   lastSpikes_ = 0;
 };
 

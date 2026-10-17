@@ -1004,6 +1004,7 @@ static int32_t omega_process(effect_handle_t self,
     // FIX CRÍTICO-2 (artefactos/clicks): setEnabled/setIntensity producen cambios de
     // estado si se llaman por cada chunk dentro de while(offset < frames). Aquí se
     // configuran antes del loop; dentro del loop solo corre process(L, R, chunk).
+    if (ctx->fusionCore) ctx->fusionCore->setNpeShed(ctx->thermalSkipVolterra);   // NPE: mismo recorte térmico/CPU
     const bool wantVolterraPre = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
     if (ctx->volterraEngine) {
         ctx->volterraEngine->setEnabled(wantVolterraPre);

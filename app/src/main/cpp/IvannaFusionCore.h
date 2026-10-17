@@ -275,6 +275,8 @@ public:
     void setNpe(bool on, float harmonic, float lateral, float ohc, float masterDb) noexcept {
         m_npeOn_ = on; m_npeHarm_ = harmonic; m_npeLat_ = lateral; m_npeOhc_ = ohc; m_npeMasterDb_ = masterDb;
     }
+    /// Recorte por térmico/CPU (mismo criterio que Volterra): el NPE se desvanece (20 ms) y vuelve solo.
+    void setNpeShed(bool shed) noexcept { m_npeShed_ = shed; }
     int npeSpikes() const noexcept { return m_npe.lastSpikes(); }
     void setIntensity(float intensity) noexcept {
         if (std::isfinite(intensity)) {
@@ -321,7 +323,7 @@ private:
     // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
     ivanna::spatial::WfsRenderer m_wfs;
     ivanna::neuromorphic::NpeStereoCore m_npe;        // NPE neuromórfico en Ruta B (apagado = bit-exacto)
-    bool  m_npeOn_ = false;
+    bool  m_npeOn_ = false, m_npeShed_ = false;
     float m_npeHarm_ = 0.2f, m_npeLat_ = 0.2f, m_npeOhc_ = 0.3f, m_npeMasterDb_ = 0.0f;
     ivanna::dsp::RoomCorrectionEq m_userEq;           // EQ de 10 bandas del usuario (antes solo se aplicaba su media como trim)
     float m_userEqDb_[10] = {};
