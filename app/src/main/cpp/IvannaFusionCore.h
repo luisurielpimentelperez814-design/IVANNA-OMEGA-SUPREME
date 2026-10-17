@@ -52,6 +52,7 @@ public:
         m_aux.prepare(sampleRate);
         m_temporal.prepare(sampleRate);
         m_room.prepare(sampleRate);
+        m_userEq.prepare(sampleRate);
         m_upmixer.prepare(sampleRate);
         m_hoaDecoder.prepare(sampleRate, 8);
     }
@@ -257,15 +258,12 @@ public:
     void setEqGains(const float* gains, int n,
                     float listenPhon, float refPhon) noexcept {
         if (!gains || n <= 0) return;
-        float sumDb = 0.0f;
-        int validCount = 0;
-        for (int i = 0; i < n; ++i) {
-            if (std::isfinite(gains[i])) {
-                sumDb += std::clamp(gains[i], -18.0f, 18.0f);
-                ++validCount;
-            }
-        }
-        const float meanEqDb = (validCount > 0) ? (sumDb / static_cast<float>(validCount)) : 0.0f;
+        // Antes: solo la MEDIA de las ganancias se aplicaba como trim (los sliders no moldeaban el espectro en
+        // Ruta B). Ahora cada banda se aplica de verdad (biquads peaking, mismas frecuencias que la UI); el trim
+        // conserva solo el ajuste por curva de loudness (phonDelta).
+        for (int i = 0; i < 10; ++i)
+            m_userEqDb_[i] = (i < n && std::isfinite(gains[i])) ? std::clamp(gains[i], -12.0f, 12.0f) : 0.0f;
+        const float meanEqDb = 0.0f;
         const float phonDelta = (std::isfinite(listenPhon) && std::isfinite(refPhon) && refPhon > 0.0f)
             ? std::clamp((refPhon - listenPhon) * 0.05f, -3.0f, 3.0f)
             : 0.0f;
@@ -315,6 +313,8 @@ private:
     // switch duro en el callback. Cero allocs en el hot path: los buffers
     // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
     ivanna::spatial::WfsRenderer m_wfs;
+    ivanna::dsp::RoomCorrectionEq m_userEq;           // EQ de 10 bandas del usuario (antes solo se aplicaba su media como trim)
+    float m_userEqDb_[10] = {};
     ivanna::dsp::RoomCorrectionEq m_room;             // corrección de sala medida (RoomProbe) — bit-exacto con todo en 0
     ivanna::dsp::TemporalSpatialDynamics m_temporal;  // 4D: el lateral se recoge en cada golpe y se abre en lo sostenido
     ivanna::dsp::AuxFieldCoherence m_aux;   // modo AUX/altavoces: graves coherentes (ver AuxFieldCoherence.hpp)

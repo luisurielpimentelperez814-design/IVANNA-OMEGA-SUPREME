@@ -152,3 +152,20 @@ TEST(RoomCorrectionEq, EndToEndMeasuredWithRealTonesFlattensASimulatedRoom) {
     std::printf("[ROOM] desviacion RMS 63Hz-4kHz medida con tonos reales: %.2f dB -> %.2f dB\n", before, aft);
     EXPECT_LT(aft, 0.6 * before) << "medido con tonos reales: antes " << before << " dB, después " << aft << " dB";
 }
+
+// EQ del usuario en Ruta B: antes solo la media de las 10 ganancias llegaba al audio. Con la etapa real, una banda
+// moldea SU zona y no mueve el resto.
+TEST(RoomCorrectionEq, UserBandShapesItsOwnRegionOnly) {
+    RoomCorrectionEq q; q.prepare(kSr);
+    float g[10] = {}; g[5] = 6.0f;                           // +6 dB en 1 kHz
+    auto gainAt = [&](float f) {
+        std::vector<float> L(48000), R;
+        for (size_t i = 0; i < L.size(); ++i) L[i] = 0.1f * std::sin(2.0 * 3.14159265358979 * f * i / kSr);
+        R = L;
+        for (int k = 0; k < 40; ++k) { q.setTarget(g); q.process(L.data() + k * 1024, R.data() + k * 1024, 1024); }
+        const float a = ivanna::room::lockInAmplitude(L.data() + 24000, 16384, kSr, f);
+        return ivanna::room::toDb(a / 0.1f);
+    };
+    EXPECT_NEAR(gainAt(1000.f), 6.0f, 0.6f);
+    EXPECT_LT(std::fabs(gainAt(100.f)), 0.5f);
+}

@@ -109,6 +109,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_aux.prepare(48000.0f);
     m_temporal.prepare(48000.0f);
     m_room.prepare(48000.0f);
+    m_userEq.prepare(48000.0f);
     m_wfsInit = true;
     m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
@@ -372,6 +373,9 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     m_temporal.setParams(g_temporal_field_enabled.load(std::memory_order_relaxed),
                          g_temporal_field_amount.load(std::memory_order_relaxed));
     m_temporal.process(buffer->left, buffer->right, BLOCK_SIZE);
+    // EQ del usuario (10 bandas, 31.5 Hz–16 kHz). Todo en 0 = bit-exacto.
+    m_userEq.setTarget(m_userEqDb_);
+    m_userEq.process(buffer->left, buffer->right, BLOCK_SIZE);
     // Corrección acústica de sala medida (RoomProbe → 10 biquads peaking de AutoEqFilter). Todo en 0 = bit-exacto.
     {
         float roomTarget[10];
