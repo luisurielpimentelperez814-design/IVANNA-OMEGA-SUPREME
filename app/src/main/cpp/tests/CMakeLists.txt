@@ -97,6 +97,10 @@ ivanna_add_test(test_hoa_gain_matrix)
 # Header-only, sin estado compartido: no entra a ivanna_dsp_under_test.
 ivanna_add_test(test_transient_detector)
 
+# Capa de inmersión (immersion/): módulos nuevos header-only, sin estado
+# compartido, probados aquí antes de cablearse al audio thread.
+ivanna_add_test(test_arousal_conductor)
+
 # FIX (gap encontrado en auditoría de Fase 3): test_adaptive_engine.cpp
 # existía desde el merge de feature/safetylimiter pero no estaba
 # enganchado a ningún target de CMake — CI nunca lo compilaba ni corría.
