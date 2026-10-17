@@ -1070,3 +1070,16 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_temporal_spatial PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_temporal_spatial)
+
+# ── Cadena 4D de excitación (conductor predictivo 5–10 ms, háptica multibanda,
+#    cancelación de diafonía para AUX y dosímetro de exposición WHO/H.870) ──
+add_executable(test_4d_ultra_chain test_4d_ultra_chain.cpp)
+target_link_libraries(test_4d_ultra_chain PRIVATE GTest::gtest_main)
+target_include_directories(test_4d_ultra_chain PRIVATE .. ../include ../spatial
+  ../neuromorphic ../supreme ../music_intelligence ../dsp host_stubs)
+target_compile_options(test_4d_ultra_chain PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_4d_ultra_chain PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_4d_ultra_chain PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_4d_ultra_chain)
