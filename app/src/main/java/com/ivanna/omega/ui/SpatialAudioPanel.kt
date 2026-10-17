@@ -158,6 +158,9 @@ fun SpatialAudioPanel(
             }
         )
 
+        // ── Fotoholografía·Nanotomix: escena paramétrica + ancho estéreo adaptativo ──
+        FotoHoloCard()
+
         // ── HRTF ──────────────────────────────────────────────────────────
         SpatialCard("HRTF BINAURAL", "Dataset IHR1 medido · deploy Magisk con SHA256") {
             RowSwitch("HRTF activo", state.hrtfEnabled) { on ->
