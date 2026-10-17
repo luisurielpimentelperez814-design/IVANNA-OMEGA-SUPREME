@@ -128,6 +128,16 @@ add_library(ivanna_omega SHARED
     music_intelligence/ImeBridge.cpp
     jni/ivanna_ime_jni.cpp
 
+    # Cadena 4D de excitación — CABLEADO PUNTA A PUNTA (v2.5.47)
+    # Los 6 módulos 4D (ExcitationConductor, MultibandHapticMapper, CrosstalkCanceller,
+    # HeadTrackerFusion, ExposureDosimeter, FourDExcitationChain) existían y se probaban
+    # en host, pero NO se compilaban en libivanna_omega.so: sin esta línea el producto
+    # nunca los alcanzaba desde el dispositivo (no había símbolos, ni JNI, ni UI).
+    # FourDControlSurface posee UNA instancia global por proceso (el SceneTargetBus es
+    # singleton por proceso) y la alimenta desde los mismos puntos que el IME.
+    music_intelligence/FourDControlSurface.cpp
+    jni/ivanna_4d_jni.cpp
+
     # System audio integration
     shm_hyperplane.cpp
     # FIX (auditoria 2026-08-07): omega_daemon.cpp SACADO de la libreria.
