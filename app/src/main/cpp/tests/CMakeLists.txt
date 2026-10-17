@@ -648,6 +648,29 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_hrtf_personalizer_wiring COMMAND test_hrtf_personalizer_wiring)
 
+# Cadena HRTF de la rejilla: HRTFDatabase (carga desde .ihr1 medidos) ->
+# HRTFInterpolator -> BinauralRenderer/HybridRenderer (fallback observable).
+# Causa raiz que fija: g_hrtfDatabase era `= {}` (ceros) y nada la llenaba.
+# Usa los .ihr1 reales (KEMAR/CIPIC) del APK via IVANNA_HRTF_ASSET_DIR.
+get_filename_component(IVANNA_HRTF_ASSET_DIR
+  "${CMAKE_SOURCE_DIR}/../../assets/ivanna_omega/hrtf" ABSOLUTE)
+add_executable(test_hrtf_database
+  test_hrtf_database.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
+)
+target_link_libraries(test_hrtf_database PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_hrtf_database PRIVATE .. ../include ../spatial host_stubs)
+target_compile_definitions(test_hrtf_database PRIVATE
+  IVANNA_HRTF_ASSET_DIR="${IVANNA_HRTF_ASSET_DIR}"
+)
+target_compile_options(test_hrtf_database PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_hrtf_database PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_hrtf_database PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_hrtf_database COMMAND test_hrtf_database)
+
 # ── Eje Supremo Neuroacústico: Inversión Biomecánica Coclear Activa ───────────
 # CochlearActiveInverseModel.hpp es header-only (cero .cpp propios):
 # no requiere fuentes en ivanna_dsp_under_test ni librería auxiliar.
