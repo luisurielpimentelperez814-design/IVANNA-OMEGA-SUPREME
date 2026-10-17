@@ -1144,7 +1144,7 @@ gtest_discover_tests(test_macro_arc_conductor)
 
 add_executable(test_npe_core test_npe_core.cpp ../phase_oracle.cpp)
 target_link_libraries(test_npe_core PRIVATE GTest::gtest_main)
-target_include_directories(test_npe_core PRIVATE .. ../include ../neuromorphic host_stubs)
+target_include_directories(test_npe_core PRIVATE .. ../include ../neuromorphic ../dsp host_stubs)
 target_compile_options(test_npe_core PRIVATE -Wall -Wextra)
 if(IVANNA_SAN_FLAGS)
   target_compile_options(test_npe_core PRIVATE ${IVANNA_SAN_FLAGS})

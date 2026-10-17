@@ -42,7 +42,9 @@
 #include "../include/SafetyLimiter.h"
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
-#include "../spatial/RoomProbe.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
+#include "../spatial/RoomProbe.hpp"
+#include "../neuromorphic/NpeStereoCore.hpp"
+#include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
@@ -3054,6 +3056,40 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNpeModule(
                          std::isfinite(lateralInhib) ? std::clamp(lateralInhib, 0.0f, 1.0f) : 0.2f,
                          std::isfinite(ohcCompression) ? std::clamp(ohcCompression, 0.0f, 1.0f) : 0.3f,
                          std::isfinite(masterDb) ? std::clamp(masterDb, -24.0f, 12.0f) : 0.0f);
+}
+
+/**
+ * Prueba de NULL del motor NPE: ¿cuánto AÑADE de verdad? Procesa 2 s de una señal sintética tipo música (grave con
+ * ataques + medios + agudos) por NpeStereoCore (el mismo núcleo que corre en el módulo) apagado (A) y encendido (B)
+ * con los parámetros dados, alinea por retardo y mide el residuo por 5 bandas (NeuromorphicAbHarness).
+ * Devuelve [residuo global dB, cambio de ganancia dB, coherencia, bandas audibles, delta dB de 5 bandas...] (9 valores).
+ * Señal sintética: orienta, no sustituye una escucha A/B.
+ */
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeNpeAbNull(
+    JNIEnv* env, jobject, jfloat harmonicGain, jfloat lateralInhib, jfloat ohcCompression, jfloat masterDb) {
+    constexpr int kN = 96000, kBlock = 1024;
+    constexpr float kSr = 48000.0f, kTwoPi = 6.28318530718f;
+    std::vector<float> aL(kN), aR, bL, bR;
+    for (int i = 0; i < kN; ++i) {
+        const float t = static_cast<float>(i) / kSr;
+        const float beat = std::exp(-std::fmod(t, 0.5f) * 9.0f);            // ataque cada 0.5 s
+        aL[i] = 0.35f * beat * std::sin(kTwoPi * 60.0f * t) + 0.16f * std::sin(kTwoPi * 440.0f * t)
+              + 0.10f * std::sin(kTwoPi * 2500.0f * t) + 0.04f * std::sin(kTwoPi * 9000.0f * t);
+    }
+    aR = aL; bL = aL; bR = aL;
+    ivanna::neuromorphic::NpeStereoCore core;
+    core.prepare(kSr);
+    core.setParams(true, harmonicGain, lateralInhib, ohcCompression, masterDb);
+    for (int k = 0; k + kBlock <= kN; k += kBlock) core.process(bL.data() + k, bR.data() + k, kBlock);
+    ivanna::measure::AbHarness h;
+    h.prepare(kSr);
+    const ivanna::measure::AbReport r = h.measure(aL.data(), bL.data(), kN);
+    float out[9] = {r.residualRmsDb, r.gainDb, r.coherence, static_cast<float>(r.audibleBands),
+                    r.bands[0].deltaDb, r.bands[1].deltaDb, r.bands[2].deltaDb, r.bands[3].deltaDb, r.bands[4].deltaDb};
+    jfloatArray arr = env->NewFloatArray(9);
+    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 9, out);
+    return arr;
 }
 
 /** Amplitud (lineal, pico) de la componente a `freqHz` en samples[0..count): detección síncrona (RoomProbe). */

@@ -52,6 +52,16 @@ object PiLstmBridge {
     @Volatile private var moduleBypass = false
     @Volatile private var moduleMasterDb = 0f
 
+    /**
+     * Prueba de NULL del NPE (mismo núcleo que corre en el módulo, señal sintética): cuánto AÑADE el motor con estos
+     * parámetros. null si el motor nativo no está cargado. Ver IvannaNativeLib.nativeNpeAbNull.
+     */
+    fun measureContribution(harmonic: Float, lateral: Float, ohc: Float, masterDb: Float): FloatArray? {
+        if (!IvannaNativeLib.isLoaded) return null
+        return runCatching { IvannaNativeLib.nativeNpeAbNull(harmonic, lateral.coerceIn(0f, 1f), ohc.coerceIn(0f, 1f), masterDb.coerceIn(-24f, 12f)) }
+            .getOrNull()?.takeIf { it.size >= 9 }
+    }
+
     /** Arranque: fija solo el estado de bypass del módulo y lo publica (sin tocar los demás parámetros del motor). */
     fun restoreModuleNpe(bypass: Boolean) { moduleBypass = bypass; pushModuleNpe() }
 

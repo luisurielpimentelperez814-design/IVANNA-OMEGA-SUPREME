@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 #include "neuromorphic/NpeStereoCore.hpp"
+#include "dsp/NeuromorphicAbHarness.hpp"
 
 using ivanna::neuromorphic::NpeStereoCore;
 namespace {
@@ -65,4 +66,19 @@ TEST(NpeStereoCore, SwitchingOnIsClickFree) {
     float maxJump = 0;                                             // salto muestra a muestra frente al original
     for (int i = 1024; i < 2048; ++i) maxJump = std::max(maxJump, std::fabs((L[i] - L0[i]) - (L[i - 1] - L0[i - 1])));
     EXPECT_LT(maxJump, 0.02f);                                     // fundido de 20 ms, sin escalón
+}
+
+// La prueba de NULL (la misma que expone la UI): apagado no añade nada; encendido añade algo medible y se reporta por bandas.
+TEST(NpeStereoCore, NullTestReportsWhatTheEngineAdds) {
+    auto base = music(96000);
+    auto off = base, offR = base, on = base, onR = base;
+    NpeStereoCore c0; c0.prepare(kSr); c0.setParams(false, 0.6f, 0.2f, 0.3f, 0.f); run(c0, off, offR);
+    NpeStereoCore c1; c1.prepare(kSr); c1.setParams(true, 0.6f, 0.2f, 0.3f, 0.f);  run(c1, on, onR);
+    ivanna::measure::AbHarness h; h.prepare(kSr);
+    const auto rOff = h.measure(base.data(), off.data(), 96000);
+    const auto rOn  = h.measure(base.data(), on.data(), 96000);
+    EXPECT_TRUE(rOff.identical);                                   // apagado: residuo nulo exacto
+    EXPECT_FALSE(rOn.identical);
+    EXPECT_GT(rOn.residualRmsDb, -60.0f);                          // encendido: aporte medible
+    EXPECT_GE(rOn.audibleBands, 1);
 }

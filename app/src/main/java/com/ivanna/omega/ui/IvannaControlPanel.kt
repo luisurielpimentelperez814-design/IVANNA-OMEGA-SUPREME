@@ -1132,6 +1132,21 @@ fun IvannaControlPanel(
                 onNpeManifoldChange(it)
             }
             Spacer(Modifier.height(6.dp))
+            var npeNullText by remember { mutableStateOf("") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(
+                    onClick = {
+                        val r = com.ivanna.omega.neuromorphic.PiLstmBridge.measureContribution(npeHarmonic, npeLateralInhib, npeOhcCompression, npeMasterGain)
+                        npeNullText = if (r == null) "No disponible: motor nativo no cargado" else {
+                            val names = arrayOf("sub", "cuerpo", "definición", "presencia", "aire")
+                            "Aporte del NPE (señal de prueba): residuo ${"%.1f".format(java.util.Locale.US, r[0])} dB · ganancia ${"%+.1f".format(java.util.Locale.US, r[1])} dB · " +
+                                "${r[3].toInt()} de 5 bandas audibles (" + names.indices.joinToString(" ") { "${names[it]} ${"%.0f".format(java.util.Locale.US, r[4 + it])}" } + " dB). Orienta, no sustituye escuchar."
+                        }
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                ) { Text("MEDIR APORTE DEL NPE", fontSize = 10.sp) }
+            }
+            if (npeNullText.isNotEmpty()) Text(npeNullText, color = TextSecondary, fontSize = 10.sp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,

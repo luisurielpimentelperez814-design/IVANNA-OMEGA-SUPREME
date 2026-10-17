@@ -385,6 +385,12 @@ object IvannaNativeLib {
     /** Motor NPE neuromórfico en el MÓDULO (Ruta B, omega_effect): encendido, inhibición lateral, compresión OHC, master (dB). */
     external fun nativeSetNpeModule(enabled: Boolean, lateralInhib: Float, ohcCompression: Float, masterDb: Float)
 
+    /**
+     * Prueba de NULL del NPE (señal sintética, mismo núcleo que corre en el módulo): [residuo dB, cambio de ganancia dB,
+     * coherencia, bandas audibles, delta dB sub/cuerpo/definición/presencia/aire]. Mide cuánto AÑADE el motor.
+     */
+    external fun nativeNpeAbNull(harmonicGain: Float, lateralInhib: Float, ohcCompression: Float, masterDb: Float): FloatArray?
+
     /** Amplitud (lineal) de la componente a `freqHz` en samples[0..count) — detección síncrona nativa (RoomProbe). */
     external fun nativeRoomLockIn(samples: FloatArray, count: Int, sampleRate: Int, freqHz: Float): Float
 
