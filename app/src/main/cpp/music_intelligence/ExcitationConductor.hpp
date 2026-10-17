@@ -94,7 +94,15 @@ public:
         //    refractario. transientRate ya está normalizado [0,1] por el extractor.
         const float tr = std::clamp(f.transientRate, 0.0f, 1.0f);
         const float d  = tr - prevTransient_;
-        const bool newOnset = (d > 0.04f) && (tMs_ - lastOnsetMs_ >= refractoryMs_);
+        // UMBRAL MEDIDO (v2.5.47, hallazgo de la integración punta a punta): el umbral
+        // 0.04 era invisible al extractor REAL. El synthetic del banco host mueve
+        // transientRate en saltos de 0.80, pero MusicFeatureExtractor normaliza
+        // transientRate = onsets/bloque * 8 (≈0.017 para un bombo aislado), de modo
+        // que con música real d (salto) ≈0.017 < 0.04 -> el conductor NUNCA se armaba:
+        // la excitación anticipada era inalcanzable en el dispositivo. El umbral se
+        // baja a 0.008 (holgura >2x sobre el salto medido) conservando el refractario
+        // de 40 ms, que es lo que de verdad impide doble disparo.
+        const bool newOnset = (d > 0.008f) && (tMs_ - lastOnsetMs_ >= refractoryMs_);
         if (newOnset) {
             if (lastOnsetMs_ >= 0.0f) {
                 const float ioi = tMs_ - lastOnsetMs_;
