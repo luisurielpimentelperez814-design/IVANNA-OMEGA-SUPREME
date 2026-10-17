@@ -1,3 +1,10 @@
+# CHANGELOG — v2.5.62 (353) — Detección de capacidades del Moto G85 y política de permisos
+1. **`feat(hardware)` (`hardware/HardwareProbe.kt`)** — sondea lo que el teléfono tiene de verdad (sensores, cámaras listadas, vibración, rutas y formatos de audio, GLES/Vulkan, USB host) **sin pedir permisos ni activar nada**; corre al arrancar fuera del hilo principal y deja evidencia en logcat (`IvannaHW`). Lo no detectado se reporta como «no detectado», no se supone.
+2. **`feat(hardware)` (`PermissionPolicy` + `PermissionGate`)** — distingue «nunca pedido» de «denegado para siempre/revocado». La medición de sala (CONTROL) pide el micrófono solo al pulsar MEDIR y, si el sistema ya no muestra el diálogo, explica y abre Ajustes; el resto de la app sigue operativo. 7 pruebas JVM compiladas y ejecutadas con Kotlin real.
+3. **`fix(manifest)`** — quita `FOREGROUND_SERVICE_MEDIA_PLAYBACK`: el único servicio usa solo `mediaProjection`.
+4. **`docs`** — `docs/HARDWARE_MOTO_G85_ESTADO.md`: hallazgos, clasificación por función y procedimiento de prueba física.
+5. **Alcance honesto:** sin acceso al Moto G85 ni SDK de Android en el entorno de trabajo; el código con APIs de Android lo compila el CI y **nada se midió en el teléfono**. Pendientes: `POST_NOTIFICATIONS`, migrar captura de sistema/asistente al nuevo gestor, `testDebugUnitTest` en CI. «Fotoholografiananotomix» sigue siendo investigación (`research/deh6_optics`, fuera del APK).
+
 # CHANGELOG — v2.5.61 (352) — Sincronización de controles espaciales A/B, SaFOptimizer saneado y módulo de investigación DEH6
 1. **`fix(sync)` (`jni/ivanna_omega_jni.cpp`)** — unifica la sincronización de los controles espaciales entre la Ruta A (en proceso) y la Ruta B (daemon): lo que el usuario mueve en la UI llega a ambas rutas por el mismo camino.
 2. **`fix(spatial)` (`SaFOptimizer.kt`)** — sanea el optimizador SAF, valida los 5 errores direccionales y reporta el sujeto HRTF realmente usado (no el solicitado).
