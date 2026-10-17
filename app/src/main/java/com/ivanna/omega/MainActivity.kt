@@ -251,6 +251,39 @@ fun OmegaApp() {
             }
         }
 
+        // La captura de audio del sistema (AudioPlaybackCapture) exige RECORD_AUDIO además del
+        // consentimiento de MediaProjection. Sin él el AudioRecord queda sin inicializar y la captura
+        // falla en silencio. El micrófono se pide aquí, solo cuando el usuario activa la captura.
+        val micForCaptureLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) {
+                projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+            } else {
+                val st = com.ivanna.omega.hardware.PermissionGate.stateFor(context, android.Manifest.permission.RECORD_AUDIO)
+                android.widget.Toast.makeText(
+                    context, com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(st), android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+        val startCapture: () -> Unit = {
+            val micState = com.ivanna.omega.hardware.PermissionGate.stateFor(context, android.Manifest.permission.RECORD_AUDIO)
+            when (micState) {
+                com.ivanna.omega.hardware.PermissionState.GRANTED ->
+                    projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                com.ivanna.omega.hardware.PermissionState.OPEN_SETTINGS -> {
+                    android.widget.Toast.makeText(
+                        context, com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(micState), android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    com.ivanna.omega.hardware.PermissionGate.openAppSettings(context)
+                }
+                else -> {
+                    com.ivanna.omega.hardware.PermissionGate.markRequested(context, android.Manifest.permission.RECORD_AUDIO)
+                    micForCaptureLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        }
+
         val adaptiveBackend = remember { AdaptiveBackend(context) }
         val voiceProtectionManager = remember {
             com.ivanna.omega.audio.VoiceProtectionManager(
@@ -286,7 +319,7 @@ fun OmegaApp() {
                 }
                 LaunchedEffect(Unit) {
                     if (!captureActive) {
-                        projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                        startCapture()
                     }
                 }
                 LaunchedEffect(pendingBandProfileId) {
@@ -367,7 +400,7 @@ fun OmegaApp() {
                 // + PlaybackCaptureService.processBlock()) pero nadie lo instanciaba aquí.
                 LaunchedEffect(Unit) {
                     if (!captureActive) {
-                        projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                        startCapture()
                     }
                 }
                 val labSnapshot by IvannaLabMonitor.snapshot.collectAsState()
@@ -404,7 +437,7 @@ fun OmegaApp() {
                         }
                         if (!captureActive) {
                             androidx.compose.material3.OutlinedButton(
-                                onClick = { projectionLauncher.launch(projectionManager.createScreenCaptureIntent()) },
+                                onClick = { startCapture() },
                                 border = androidx.compose.foundation.BorderStroke(1.dp, CyanGlow)
                             ) { androidx.compose.material3.Text("ACTIVAR", color = CyanGlow, fontSize = 11.sp) }
                         }
