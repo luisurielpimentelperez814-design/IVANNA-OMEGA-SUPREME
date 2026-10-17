@@ -12,6 +12,7 @@
 #include "music_intelligence/SceneTargetBus.hpp"
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 using namespace ivanna;
@@ -279,4 +280,33 @@ TEST(FourDControlSurface, OutputMeteringFallsBackToInputWhenStopped) {
     const float doseBefore = fourd::status().exposureDose;
     for (int b = 0; b < 200; ++b) fourd::feedPlanar(loud.data(), loud.data(), kBlock);  // sin más medición de salida
     EXPECT_GT(fourd::status().exposureDose, doseBefore) << "no volvió a medir la entrada";
+}
+
+// Un bloque con NaN/Inf no debe envenenar el estado de la cadena (extractor con memoria).
+TEST(FourDControlSurface, NonFiniteInputDoesNotPoisonState) {
+    fourd::shutdown();
+    fourd::ensureInit(48000.f, kBlock);
+    fourd::setEnabled(true);
+    fourd::setDosimeterMode(0);
+    fourd::setDosimeterCalibration(100.0f);
+    std::vector<float> l(kBlock), r(kBlock), bad(kBlock);
+    unsigned rng = 99u;
+    for (int i = 0; i < kBlock; ++i) bad[i] = (i % 7 == 0) ? std::nanf("") : std::numeric_limits<float>::infinity();
+    long n0 = 0;
+    for (int b = 0; b < kBeatBlocks * 6; ++b) {
+        fillKickHatsBlock(l, r, n0, rng); n0 += kBlock;
+        if (b % 5 == 0) {   // intercala bloques envenenados en entrada y en medición de salida
+            fourd::feedPlanar(bad.data(), bad.data(), kBlock);
+            fourd::meterOutputPlanar(bad.data(), bad.data(), kBlock);
+        }
+        fourd::feedPlanar(l.data(), r.data(), kBlock);
+        fourd::publishAnticipatedScene();
+    }
+    const auto st = fourd::status();
+    EXPECT_TRUE(std::isfinite(st.confidence));
+    EXPECT_TRUE(std::isfinite(st.anticipation));
+    EXPECT_TRUE(std::isfinite(st.exposureDose));
+    EXPECT_TRUE(std::isfinite(st.exposureLaeq));
+    EXPECT_TRUE(std::isfinite(st.hapticTotal));
+    EXPECT_TRUE(st.armed) << "los bloques válidos deberían seguir armando el conductor";
 }

@@ -48,6 +48,7 @@
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
 #include "../spatial/IvannaAudioPipeline.hpp"
 #include "../music_intelligence/ImeBridge.hpp"
+#include "../music_intelligence/FourDControlSurface.hpp"   // Cadena 4D: alimentación, diafonía y dosímetro (v2.5.48)
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../include/dc_blocker.hpp"
@@ -1179,6 +1180,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // Alimentar MusicIntelligenceEngine (IME) con el bloque estéreo intercalado seco
     // (RT-safe: verifica atómicamente enabled, cero malloc, seqlock).
     ivanna::ime::imeFeedBlock(data, n);
+    // Cadena 4D (v2.5.48): se alimenta con la señal SECA, antes de la cadena DSP, porque la
+    // predicción de golpes necesita los transitorios sin procesar. Apagada por defecto: con la
+    // cadena desactivada ambas llamadas retornan sin tocar un solo bit ni reservar memoria.
+    ivanna::fourd::feedInterleaved(data, n, 2);
+    ivanna::fourd::publishAnticipatedScene();
     // FIX CRÍTICO: 'data' viene INTERCALADO estéreo [L0,R0,L1,R1,...].
     // El código anterior pasaba el mismo puntero como left y right → mono aliasado.
     // Fix: de-intercalar a buffers L/R reales (thread_local: sin stack overhead),
@@ -1854,11 +1860,17 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // ── SafetyLimiter + DC-block: ÚLTIMAS etapas reales de la Ruta A ────────
     // Corren DESPUÉS de M/S adaptativo, RIR, Volterra, Coclear y los 5 Ejes
     // Supremos para impedir cualquier pico > 0 dBFS o DC residual hacia AudioTrack.
+    // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
+    // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
+    ivanna::fourd::applyOutputPlanar(g_ats.pdOutL, g_ats.pdOutR, n);
     g_safety_limiter.process(g_ats.pdOutL, g_ats.pdOutR, n);
     for (int i = 0; i < n; ++i) {
         g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
         g_ats.pdOutR[i] = g_dcBlockR.process(g_ats.pdOutR[i]);
     }
+    // Dosímetro sobre la señal FINAL (lo que llega al oído): la cadena DSP puede subir el nivel
+    // respecto a la entrada, así que medir la entrada seca subestimaría la exposición real.
+    ivanna::fourd::meterOutputPlanar(g_ats.pdOutL, g_ats.pdOutR, n);
     // v2.5.15: lazo cerrado — se mide el RESULTADO final (original vs salida) ANTES de la rampa de
     // arranque, para que ésta no sesgue la medición; luego se aplica el arranque en frío Hermite C1
     // (identidad una vez calentado; se rearma tras >= 250 ms de silencio).
@@ -2024,6 +2036,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         return;
     }
     drainPendingDspParamsLocked();
+    // Cadena 4D (v2.5.48): alimentación con la entrada SECA (lBuf/rBuf aún sin DSP).
+    // Apagada por defecto = retorno inmediato, cero bits alterados.
+    ivanna::fourd::feedPlanar(lBuf, rBuf, n);
+    ivanna::fourd::publishAnticipatedScene();
     // DSP chain
     // Adaptive decisions: mismos atomics que actualiza nativeProcess cuando
     // consumeIfNewer() trae un AdaptiveState nuevo. thread_local smooth
@@ -2190,6 +2206,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // SafetyLimiter DESPUÉS de PDEngine — único punto de limiting, sobre la
     // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
     // NHO/Spatial saldrían sin protección hacia el DAC.
+    // Cancelación de diafonía de la Cadena 4D antes del limitador (ver nativeProcess).
+    ivanna::fourd::applyOutputPlanar(oL, oR, n);
     g_safety_limiter.process(oL, oR, n);
     // FIX (safety net — mismo motivo que en nativeProcess, ver ese
     // comentario extenso): NaN/Inf nunca se saneaba en esta ruta tampoco.
@@ -2199,6 +2217,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         if (!std::isfinite(oL[i])) { oL[i] = 0.f; g_ats.blkNanRecoveries++; }
         if (!std::isfinite(oR[i])) { oR[i] = 0.f; g_ats.blkNanRecoveries++; }
     }
+    // Dosímetro sobre la señal final saneada (ver nativeProcess).
+    ivanna::fourd::meterOutputPlanar(oL, oR, n);
     jfloat* pL = env->GetFloatArrayElements(outL, nullptr);
     jfloat* pR = env->GetFloatArrayElements(outR, nullptr);
     if (pL) { memcpy(pL, oL, n*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }

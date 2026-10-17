@@ -62,6 +62,14 @@ ivanna::ime::SceneApply g_baseScene{};
 uint32_t g_ownSeq = 0;
 bool     g_haveBase = false;
 
+// Un bloque con NaN/Inf envenenaría el extractor (estado con memoria) y todas las magnitudes
+// derivadas; se descarta ese bloque en la entrada. La suma es una sola pasada barata.
+inline bool blockFinite(const float* x, int n) noexcept {
+    float acc = 0.0f;
+    for (int i = 0; i < n; ++i) acc += x[i];
+    return std::isfinite(acc);
+}
+
 inline bool active() noexcept {
     return g_ready.load(std::memory_order_acquire) && g_chain != nullptr;
 }
@@ -148,7 +156,7 @@ void feedPlanar(const float* L, const float* R, int frames) noexcept {
     int done = 0;
     while (done < frames) {
         const int n = std::min(kChunk, frames - done);
-        c->analyze(L + done, rr + done, n);
+        if (blockFinite(L + done, n) && blockFinite(rr + done, n)) c->analyze(L + done, rr + done, n);
         done += n;
     }
 }
@@ -169,7 +177,7 @@ void feedInterleaved(const float* interleaved, int frames, int channels) noexcep
         } else {
             for (int i = 0; i < n; ++i) { l[i] = p[i * channels]; r[i] = p[i * channels + 1]; }
         }
-        c->analyze(l, r, n);
+        if (blockFinite(l, n) && blockFinite(r, n)) c->analyze(l, r, n);
         done += n;
     }
 }
@@ -199,7 +207,7 @@ void meterOutputPlanar(const float* L, const float* R, int frames) noexcept {
     int done = 0;
     while (done < frames) {
         const int n = std::min(kChunk, frames - done);
-        c->meterOutput(L + done, rr + done, n);
+        if (blockFinite(L + done, n) && blockFinite(rr + done, n)) c->meterOutput(L + done, rr + done, n);
         done += n;
     }
 }
