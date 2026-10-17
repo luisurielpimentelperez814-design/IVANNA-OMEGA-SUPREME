@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <new>
 #include <vector>
 
@@ -122,15 +123,15 @@ HrtfDbResult hrtfDatabaseBuild(const HrtfDbMeasured& m,
         return HrtfDbResult::AlreadyLoaded;
     }
 
-    std::vector<Dir> dirs;
-    try {
-        dirs.reserve(m.numPositions);
-    } catch (const std::bad_alloc&) {
+    // Reserva SIN excepciones: el build Android compila con -fno-exceptions, donde un
+    // try/catch no compila (rompia el APK aunque los tests de host pasaran).
+    std::unique_ptr<Dir[]> dirs(new (std::nothrow) Dir[m.numPositions]);
+    if (!dirs) {
         g_state.store(kEmpty, std::memory_order_release);
         return HrtfDbResult::OutOfMemory;
     }
     for (size_t p = 0; p < m.numPositions; ++p) {
-        dirs.push_back(toDir(m.azDeg[p], m.elDeg[p]));  // reserve() ya cubrio la capacidad
+        dirs[p] = toDir(m.azDeg[p], m.elDeg[p]);
     }
 
     HrtfDbResult result = HrtfDbResult::Ok;
@@ -231,23 +232,22 @@ HrtfDbResult hrtfDatabaseBuild(const HrtfDbMeasured& m,
 
 HrtfDbResult hrtfDatabaseLoadFile(const char* path, int expectedSampleRateHz) noexcept {
     if (!path) return HrtfDbResult::InvalidArgs;
-    try {
-        ivanna::ihr1::Dataset ds;
-        if (!ivanna::ihr1::read(path, ds)) return HrtfDbResult::FileUnreadable;
+    // Sin try/catch: el build Android usa -fno-exceptions. ihr1::read() ya acota la reserva
+    // (cabecera <= 8192 x 8192 y tamaño de archivo EXACTO), así que una cabecera corrupta no
+    // puede pedir memoria que el archivo no respalde.
+    ivanna::ihr1::Dataset ds;
+    if (!ivanna::ihr1::read(path, ds)) return HrtfDbResult::FileUnreadable;
 
-        HrtfDbMeasured m;
-        m.azDeg        = ds.az.data();
-        m.elDeg        = ds.el.data();
-        m.left         = ds.L.data();
-        m.right        = ds.R.data();
-        m.numPositions = static_cast<size_t>(ds.numPositions());
-        m.irLen        = static_cast<size_t>(ds.irLen);
-        m.sampleRateHz = ds.sampleRateHz;
-        // IHR1 sale de sofa_to_ihr1.py con convencion SOFA: az positivo = izquierda.
-        return hrtfDatabaseBuild(m, /*azimuthLeftPositive=*/true, expectedSampleRateHz);
-    } catch (const std::bad_alloc&) {
-        return HrtfDbResult::OutOfMemory;
-    }
+    HrtfDbMeasured m;
+    m.azDeg        = ds.az.data();
+    m.elDeg        = ds.el.data();
+    m.left         = ds.L.data();
+    m.right        = ds.R.data();
+    m.numPositions = static_cast<size_t>(ds.numPositions());
+    m.irLen        = static_cast<size_t>(ds.irLen);
+    m.sampleRateHz = ds.sampleRateHz;
+    // IHR1 sale de sofa_to_ihr1.py con convencion SOFA: az positivo = izquierda.
+    return hrtfDatabaseBuild(m, /*azimuthLeftPositive=*/true, expectedSampleRateHz);
 }
 
 const char* hrtfDatabaseLoadFromCandidates(const char* const* paths, size_t count) noexcept {
