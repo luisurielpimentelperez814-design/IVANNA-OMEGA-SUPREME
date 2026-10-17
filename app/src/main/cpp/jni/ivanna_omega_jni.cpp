@@ -42,6 +42,7 @@
 #include "../include/SafetyLimiter.h"
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
+#include "../spatial/RoomProbe.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
@@ -135,6 +136,7 @@ extern std::atomic<float> g_aux_field_coherence;
 extern std::atomic<bool>  g_temporal_field_enabled;
 extern std::atomic<float> g_temporal_field_amount;
 extern std::atomic<bool>  g_temporal_field_auto;
+extern std::atomic<float> g_room_corr_db[10];
 
 // FASE 3 (IvannaLab auto-feed): gate ON/OFF + contador de feeds. El feed
 // real ocurre dentro de nativeProcess (post-procesado) con throttle 1/100
@@ -2983,6 +2985,72 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAuxField(
     g_aux_field_coherence.store(co, std::memory_order_relaxed);
     g_aux_field_enabled.store(en, std::memory_order_relaxed);     // ruta A (en proceso)
     omegaSendAuxFieldToDaemon(en, xo, co);                        // ruta B (audioserver, via daemon)
+}
+
+// ── Corrección acústica de sala: puente app→daemon (SET_ROOM_CORRECTION) + medición ──
+static void omegaSendRoomCorrectionToDaemon(const float* g) noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000};
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[320];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_ROOM_CORRECTION\",\"roomCorrDb\":[%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f]}",
+            (double)g[0], (double)g[1], (double)g[2], (double)g[3], (double)g[4],
+            (double)g[5], (double)g[6], (double)g[7], (double)g[8], (double)g[9]);
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetRoomCorrection(
+    JNIEnv* env, jobject, jfloatArray gainsDb) {
+    float g[10] = {};
+    if (gainsDb != nullptr && env->GetArrayLength(gainsDb) >= 10) {
+        env->GetFloatArrayRegion(gainsDb, 0, 10, g);
+        for (int i = 0; i < 10; ++i) g[i] = std::isfinite(g[i]) ? std::clamp(g[i], -12.0f, 12.0f) : 0.0f;
+    }
+    for (int i = 0; i < 10; ++i) g_room_corr_db[i].store(g[i], std::memory_order_relaxed);   // ruta A (en proceso)
+    omegaSendRoomCorrectionToDaemon(g);                                                       // ruta B (audioserver, via daemon)
+}
+
+/** Amplitud (lineal, pico) de la componente a `freqHz` en samples[0..count): detección síncrona (RoomProbe). */
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeRoomLockIn(
+    JNIEnv* env, jobject, jfloatArray samples, jint count, jint sampleRate, jfloat freqHz) {
+    if (samples == nullptr || count <= 0) return 0.0f;
+    const jsize have = env->GetArrayLength(samples);
+    const jint n = std::min<jint>(count, have);
+    jfloat* p = env->GetFloatArrayElements(samples, nullptr);
+    if (p == nullptr) return 0.0f;
+    const float a = ivanna::room::lockInAmplitude(p, static_cast<std::size_t>(n), static_cast<float>(sampleRate), freqHz);
+    env->ReleaseFloatArrayElements(samples, p, JNI_ABORT);
+    return a;
+}
+
+/** Diseña la corrección (10 ganancias en dB) a partir de 27 niveles (dB) y 27 SNR (dB). Vacío si no hay referencia. */
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeRoomDesign(
+    JNIEnv* env, jobject, jfloatArray levelDb, jfloatArray snrDb, jint sampleRate) {
+    if (levelDb == nullptr || snrDb == nullptr ||
+        env->GetArrayLength(levelDb) < ivanna::room::kProbePoints || env->GetArrayLength(snrDb) < ivanna::room::kProbePoints)
+        return env->NewFloatArray(0);
+    float lv[ivanna::room::kProbePoints], sn[ivanna::room::kProbePoints], out[ivanna::room::kBands];
+    env->GetFloatArrayRegion(levelDb, 0, ivanna::room::kProbePoints, lv);
+    env->GetFloatArrayRegion(snrDb, 0, ivanna::room::kProbePoints, sn);
+    if (!ivanna::room::designCorrection(lv, sn, static_cast<float>(sampleRate), out)) return env->NewFloatArray(0);
+    jfloatArray arr = env->NewFloatArray(ivanna::room::kBands);
+    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, ivanna::room::kBands, out);
+    return arr;
 }
 
 // ── Dinamica espacial temporal ("4D"): puente app→daemon (SET_TEMPORAL_FIELD) ──

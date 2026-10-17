@@ -33,6 +33,7 @@ extern std::atomic<float> g_aux_field_coherence;
 extern std::atomic<bool>  g_temporal_field_enabled;
 extern std::atomic<float> g_temporal_field_amount;
 extern std::atomic<bool>  g_temporal_field_auto;
+extern std::atomic<float> g_room_corr_db[10];
 
 // FIX (distorsion armonica): la aproximacion x/(1+|x|) tenia ~4.8% de error
 // maximo — un saturador al 5% de THD inyectado en la ruta caliente de Ruta B
@@ -107,6 +108,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_wfs.init(48000.0f, Ivanna::BLOCK_SIZE, 16);
     m_aux.prepare(48000.0f);
     m_temporal.prepare(48000.0f);
+    m_room.prepare(48000.0f);
     m_wfsInit = true;
     m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
@@ -155,6 +157,12 @@ void IvannaFusionEngine::setWfsEnabled(bool enable) noexcept {
 bool IvannaFusionEngine::isWfsEnabled() const noexcept {
     return g_wfs_enabled.load(std::memory_order_relaxed);
 }
+void IvannaFusionEngine::setRoomCorrection(const float* gainsDb10) noexcept {
+    if (gainsDb10 == nullptr) return;
+    for (int b = 0; b < 10; ++b)
+        g_room_corr_db[b].store(std::isfinite(gainsDb10[b]) ? gainsDb10[b] : 0.0f, std::memory_order_relaxed);
+}
+
 void IvannaFusionEngine::setTemporalField(bool enabled, float amount, bool autoMode) noexcept {
     g_temporal_field_auto.store(autoMode, std::memory_order_relaxed);
     if (std::isfinite(amount)) g_temporal_field_amount.store(amount, std::memory_order_relaxed);
@@ -364,6 +372,13 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     m_temporal.setParams(g_temporal_field_enabled.load(std::memory_order_relaxed),
                          g_temporal_field_amount.load(std::memory_order_relaxed));
     m_temporal.process(buffer->left, buffer->right, BLOCK_SIZE);
+    // Corrección acústica de sala medida (RoomProbe → 10 biquads peaking de AutoEqFilter). Todo en 0 = bit-exacto.
+    {
+        float roomTarget[10];
+        for (int b = 0; b < 10; ++b) roomTarget[b] = g_room_corr_db[b].load(std::memory_order_relaxed);
+        m_room.setTarget(roomTarget);
+        m_room.process(buffer->left, buffer->right, BLOCK_SIZE);
+    }
 
     // ── Compresor Dinámico + Perfil de Ruta + Trim EQ/Intensidad (Slew por muestra) ──
     {

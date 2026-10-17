@@ -18,3 +18,4 @@ std::atomic<float> g_aux_field_coherence{1.0f};
 std::atomic<bool>  g_temporal_field_enabled{false};
 std::atomic<float> g_temporal_field_amount{0.6f};
 std::atomic<bool>  g_temporal_field_auto{true};
+std::atomic<float> g_room_corr_db[10]{};   // corrección acústica de sala (dB por banda de octava); 0 = apagado

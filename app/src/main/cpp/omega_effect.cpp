@@ -425,6 +425,8 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         ivanna::omega_temporal_field_decode(s.temporal_field, tOn, tAmt, tAuto);
         fc->setTemporalField(tOn, tAmt, tAuto);
     }
+    // Corrección acústica de sala medida (snapshot v6: room_corr_db[10]).
+    fc->setRoomCorrection(s.room_corr_db);
 }
 
 static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,

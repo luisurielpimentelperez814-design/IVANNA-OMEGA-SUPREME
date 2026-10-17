@@ -143,6 +143,8 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.flags |= ivanna::omega_aux_field_encode(s.aux_field_enabled, s.aux_field_xover_hz, s.aux_field_coherence);
     // v2.5.44: dinamica espacial temporal.
     snap.temporal_field = ivanna::omega_temporal_field_encode(s.temporal_field_enabled, s.temporal_field_amount, s.temporal_field_auto);
+    // v2.5.49: corrección acústica de sala.
+    for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) snap.room_corr_db[i] = s.room_corr_db[i];
     // v2.5.16: bits de usuario (antes el daemon los borraba al armar `flags` desde cero).
     snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
     if (!ivanna::controlBus().publish(snap)) return 0;
@@ -316,6 +318,19 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             (double)std::floor(m_state.temporal_field_amount*7.f+0.5f)/7.0,
             m_state.temporal_field_auto?"true":"false",
             hasActiveConsumer()?"\"omega_effect\"":"null");
+
+    } else if (strcmp(action,"SET_ROOM_CORRECTION")==0) {
+        // Corrección acústica de sala medida con el micrófono (RoomProbe). roomCorrDb = 10 ganancias en dB, una por
+        // banda de octava; se acotan a -12..+12. Todas en 0 = apagado. Sin la clave, conserva lo anterior.
+        float g[10] = {};
+        if (_jsonFloatArray(json,"roomCorrDb", g, 10))
+            for (int i=0;i<10;i++) m_state.room_corr_db[i] = _clamp(g[i], -12.f, 12.f);
+        uint64_t gen = publishCurrentState(m_state);
+        bool active=false; for (int i=0;i<10;i++) if (std::fabs(m_state.room_corr_db[i])>0.05f) active=true;
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"SET_ROOM_CORRECTION\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"active\":%s,\"consumer\":%s}",
+            gen>0?"true":"false", gen>0?"applied":"accepted_pending_consumer", (unsigned long long)gen,
+            active?"true":"false", hasActiveConsumer()?"\"omega_effect\"":"null");
 
     } else if (strcmp(action,"SET_WFS_LAYOUT")==0) {
         // nativeSetWfsSpeakerLayout (panel de calibracion WFS) enviaba esta accion y el daemon la
@@ -621,7 +636,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     } else if (strcmp(action,"GET_STATUS")==0 || strcmp(action,"STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u,\"aux_field\":%s,\"aux_xover_hz\":%.0f,\"aux_coherence\":%.3f,\"temporal_field\":%s,\"temporal_amount\":%.3f,\"temporal_auto\":%s}",
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u,\"aux_field\":%s,\"aux_xover_hz\":%.0f,\"aux_coherence\":%.3f,\"temporal_field\":%s,\"temporal_amount\":%.3f,\"temporal_auto\":%s,\"room_corr\":%s}",
             (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
             m_state.intensity, m_state.eq_calibrated?"true":"false",
             m_state.listen_phon, m_state.ref_phon, m_state.compressor, m_state.spatial_width,
@@ -637,7 +652,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.self_heal_restarts, m_state.clients_served,
             m_state.aux_field_enabled?"true":"false", (double)m_state.aux_field_xover_hz, (double)m_state.aux_field_coherence,
             m_state.temporal_field_enabled?"true":"false", (double)m_state.temporal_field_amount,
-            m_state.temporal_field_auto?"true":"false");
+            m_state.temporal_field_auto?"true":"false",
+            [&]{ for (int i=0;i<10;i++) if (std::fabs(m_state.room_corr_db[i])>0.05f) return "true"; return "false"; }());
 
     } else if (strcmp(action,"GET_TELEMETRY")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();

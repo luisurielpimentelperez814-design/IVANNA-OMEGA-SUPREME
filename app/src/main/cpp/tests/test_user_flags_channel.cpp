@@ -355,3 +355,35 @@ TEST(TemporalFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
     omega_temporal_field_decode(0u, o, d, au);
     EXPECT_FALSE(au);                                             // escritor antiguo = profundidad fija
 }
+
+TEST(RoomCorrectionChannel, DaemonPublishesMeasuredCorrectionAndItSurvivesOtherCommands) {
+    EXPECT_EQ(OMEGA_CTRL_VERSION, 6u);                           // snapshot v6: + room_corr_db[10]
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 512u);
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+    cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    for (float v : snap().room_corr_db) EXPECT_EQ(v, 0.f);       // por defecto apagado: el audio no se toca
+
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_ROOM_CORRECTION\",\"roomCorrDb\":[0,3.0,-4.3,0,0,0,1.9,0,0,99]}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"active\":true"), std::string::npos) << reply;
+    const OmegaDspSnapshot s1 = snap();
+    EXPECT_NEAR(s1.room_corr_db[1], 3.0f, 1e-4f);
+    EXPECT_NEAR(s1.room_corr_db[2], -4.3f, 1e-4f);
+    EXPECT_NEAR(s1.room_corr_db[6], 1.9f, 1e-4f);
+    EXPECT_NEAR(s1.room_corr_db[9], 12.0f, 1e-4f);               // fuera de rango: acotado a +12
+
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    EXPECT_NEAR(snap().room_corr_db[2], -4.3f, 1e-4f);           // sobrevive a comandos de otras áreas
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"room_corr\":true"), std::string::npos) << reply;
+
+    cs.handleJsonCommand("{\"action\":\"SET_ROOM_CORRECTION\"}", reply, sizeof reply);          // sin clave: conserva
+    EXPECT_NEAR(snap().room_corr_db[2], -4.3f, 1e-4f);
+    cs.handleJsonCommand("{\"action\":\"SET_ROOM_CORRECTION\",\"roomCorrDb\":[0,0,0,0,0,0,0,0,0,0]}", reply, sizeof reply);
+    for (float v : snap().room_corr_db) EXPECT_EQ(v, 0.f);       // ceros = apagado
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"room_corr\":false"), std::string::npos) << reply;
+}

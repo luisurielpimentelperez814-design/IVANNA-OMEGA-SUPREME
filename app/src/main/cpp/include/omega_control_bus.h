@@ -108,7 +108,7 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // ABI v5 (2026-09-26): añadidos los 5 Ejes de Supremacía Cuántico-Neuromórfica
 // (8 flags OMEGA_FLAG_SUPREME_* + 11 escalares supreme_*) manteniendo
 // sizeof(OmegaDspSnapshot) <= 512 bytes y copia trivial cross-process.
-constexpr uint16_t OMEGA_CTRL_VERSION = 5u;
+constexpr uint16_t OMEGA_CTRL_VERSION = 6u;   // v6 (2.5.49): + room_corr_db[10] (corrección acústica de sala medida)
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
@@ -319,6 +319,11 @@ struct OmegaDspSnapshot {
     uint32_t supreme_snn_spikes;      // Espigas activas SNN INT8 en Ruta B
     float    supreme_subsample_delay; // Retardo inverso sub-muestra en Ruta B
     uint64_t effect_frames;    // Total de frames procesados por omega_effect (monotónico)
+
+    // ── Corrección acústica de sala (v6) ─────────────────────────────────────
+    // Ganancias (dB) por banda de octava (RoomProbe::kBandHz) medidas con el micrófono del teléfono. Todas en 0 =
+    // apagado (bit-exacto). La aplica RoomCorrectionEq en omega_effect.
+    float    room_corr_db[OMEGA_CTRL_EQ_BANDS];
 
     // ── Integridad ────────────────────────────────────────────────────────────
     uint32_t crc32;            // CRC32 de bytes [magic .. effect_frames] inclusive

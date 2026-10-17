@@ -131,6 +131,8 @@ struct OmegaDspState {
     bool  temporal_field_enabled = false;
     float temporal_field_amount = 0.6f;
     bool  temporal_field_auto = true;     // ley adaptativa por defecto (el slider es el techo)
+    // v2.5.49: corrección acústica de sala medida -> snapshot.room_corr_db. Al FINAL del struct. 0 = apagado.
+    float room_corr_db[10] = {};
 };
 
 class CommandServer {

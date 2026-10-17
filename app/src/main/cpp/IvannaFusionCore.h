@@ -9,6 +9,7 @@
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/AuxFieldCoherence.hpp"
 #include "spatial/TemporalSpatialDynamics.hpp"
+#include "spatial/RoomCorrectionEq.hpp"
 #include "spatial/RoomGeometryConfig.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
 
@@ -50,6 +51,7 @@ public:
         m_sampleRateF = sampleRate;
         m_aux.prepare(sampleRate);
         m_temporal.prepare(sampleRate);
+        m_room.prepare(sampleRate);
         m_upmixer.prepare(sampleRate);
         m_hoaDecoder.prepare(sampleRate, 8);
     }
@@ -71,7 +73,8 @@ public:
     // el hilo de audio — mismo criterio ya establecido para setObject()).
     /// Modo AUX/altavoces: escribe los mismos atomics que lee process() cada bloque.
     void setAuxField(bool enabled, float xoverHz, float coherence) noexcept;
-    void setTemporalField(bool enabled, float amount, bool autoMode = false) noexcept;   // dinámica espacial temporal ("4D")
+    void setTemporalField(bool enabled, float amount, bool autoMode = false) noexcept;
+    void setRoomCorrection(const float* gainsDb10) noexcept;   // corrección acústica de sala (10 bandas de octava, dB)   // dinámica espacial temporal ("4D")
     void setWfsEnabled(bool enable) noexcept;
     bool isWfsEnabled() const noexcept;
     void setWfsSpread(float spread) noexcept;
@@ -312,6 +315,7 @@ private:
     // switch duro en el callback. Cero allocs en el hot path: los buffers
     // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
     ivanna::spatial::WfsRenderer m_wfs;
+    ivanna::dsp::RoomCorrectionEq m_room;             // corrección de sala medida (RoomProbe) — bit-exacto con todo en 0
     ivanna::dsp::TemporalSpatialDynamics m_temporal;  // 4D: el lateral se recoge en cada golpe y se abre en lo sostenido
     ivanna::dsp::AuxFieldCoherence m_aux;   // modo AUX/altavoces: graves coherentes (ver AuxFieldCoherence.hpp)
     ivanna::supreme::SupremeTransitionEnvelope m_upmixEnv_{};
