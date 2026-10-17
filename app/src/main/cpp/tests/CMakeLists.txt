@@ -1104,3 +1104,20 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_4d_control_surface PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_4d_control_surface)
+
+# ── Arco narrativo (MacroArcConductor, escala de segundos) ──
+# Aislado con características MEDIDAS en el extractor real y, a nivel cadena, con el extractor
+# y FourDExcitationChain reales: apagado = bit-exacto, detección del hueco/impacto del drop.
+add_executable(test_macro_arc_conductor
+  test_macro_arc_conductor.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../music_intelligence/MusicFeatureExtractor.cpp
+)
+target_link_libraries(test_macro_arc_conductor PRIVATE GTest::gtest_main)
+target_include_directories(test_macro_arc_conductor PRIVATE .. ../include ../spatial
+  ../neuromorphic ../supreme ../music_intelligence ../dsp host_stubs)
+target_compile_options(test_macro_arc_conductor PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_macro_arc_conductor PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_macro_arc_conductor PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_macro_arc_conductor)

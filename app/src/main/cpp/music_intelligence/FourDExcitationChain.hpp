@@ -1,7 +1,9 @@
 // FourDExcitationChain.hpp — Cadena 4D unificada de excitación (integración)
 // (c) 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 //
-// Une las piezas para que el sistema entero reaccione ANTES del golpe, no después:
+// Une las piezas para que el sistema entero reaccione ANTES del golpe, no después.
+// Además del golpe a 5–10 ms, MacroArcConductor sigue la forma de la canción a escala de
+// segundos (subida → hueco → impacto del drop) y modula la escena y el golpe háptico:
 //
 //   MusicFeatureExtractor ──► ExcitationConductor ──► SceneTargetBus.publish()   (campo abierto antes)
 //                                    │
@@ -21,6 +23,7 @@
 
 #include "MusicFeatureExtractor.hpp"
 #include "ExcitationConductor.hpp"
+#include "MacroArcConductor.hpp"
 #include "MultibandHapticMapper.hpp"
 #include "../spatial/CrosstalkCanceller.hpp"
 #include "../spatial/HeadTrackerFusion.hpp"
@@ -55,6 +58,7 @@ public:
         maxBlock_ = (maxBlock > 0) ? maxBlock : 256;
         extractor_.prepare(sr_, maxBlock_);
         conductor_.prepare(sr_, maxBlock_);
+        arc_.prepare(sr_, maxBlock_);
         haptics_.prepare(sr_, maxBlock_);
         dosimeter_.prepare(sr_);
         xtc_.prepare(sr_, maxBlock_);
@@ -68,6 +72,7 @@ public:
     void reset() noexcept {
         extractor_.reset();
         conductor_.reset();
+        arc_.reset();
         haptics_.reset();
         dosimeter_.reset();
         xtc_.reset();
@@ -79,6 +84,7 @@ public:
     void setEnabled(bool on) noexcept {
         enabled_.store(on, std::memory_order_relaxed);
         conductor_.setEnabled(on);
+        arc_.setEnabled(on && arcOn_.load(std::memory_order_relaxed));
         haptics_.setEnabled(on && hapticsOn_.load(std::memory_order_relaxed));
         dosimeter_.setEnabled(on);
         xbEnabled();
@@ -100,6 +106,14 @@ public:
     void setCrosstalkEnabled(bool on) noexcept { xbEnabled_.store(on, std::memory_order_relaxed); xbEnabled(); }
     void setSpeakerGeometry(const spatial::CrosstalkCanceller::Geometry& g) noexcept { xtc_.setGeometry(g); }
 
+    // Arco narrativo (escala de segundos): subida, hueco de tensión e impacto del drop.
+    // Apagado por defecto y con profundidad 0: no altera un solo bit hasta que se activa.
+    void setArcEnabled(bool on) noexcept {
+        arcOn_.store(on, std::memory_order_relaxed);
+        arc_.setEnabled(on && enabled_.load(std::memory_order_relaxed));
+    }
+    void setArcDepth(float d) noexcept { arc_.setDepth(d); }
+
     void setLeadMs(float ms) noexcept { conductor_.setLeadMs(ms); }
     void setDepth(float d) noexcept { conductor_.setDepth(d); }
 
@@ -114,6 +128,7 @@ public:
 
         conductor_.setHarmonicCeiling(bus_.maxExcWetCeiling());
         conductor_.advance(f, blockMs_);
+        arc_.advance(f, blockMs_);
 
         // Si la salida final ya se mide (meterOutput), el dosímetro NO se alimenta aquí:
         // la dosis debe reflejar lo que llega al oído, no la señal seca de entrada.
@@ -126,7 +141,12 @@ public:
             dosimeter_.feed(L, R, n);
         }
         haptics_.setDoseLoad(dosimeter_.hapticDoseLoad());
-        haptics_.update(f, conductor_.output(), blockMs_);
+        // El impacto del drop refuerza el golpe esperado de la háptica; con el arco apagado
+        // el refuerzo es 0 y la excitación pasa idéntica. La atenuación por dosis (arriba)
+        // y el techo de amplitud del mapeador siguen mandando.
+        ExcitationOutput exc = conductor_.output();
+        exc.predictedPunch = std::clamp(exc.predictedPunch + arc_.hapticPunchBoost(), 0.0f, 1.0f);
+        haptics_.update(f, exc, blockMs_);
 
         // El giro de la cabeza desplaza el par virtual: el campo rota con el oyente.
         float az = 0.0f, lat = 0.0f;
@@ -155,6 +175,7 @@ public:
     void publishScene(const SceneApply& base) noexcept {
         if (!enabled_.load(std::memory_order_relaxed)) return;
         SceneApply out = conductor_.modulate(base, bus_.maxExcWetCeiling());
+        out = arc_.modulate(out, bus_.maxExcWetCeiling());
         out.gate = base.gate;
         out.conf = base.conf;
         out.styleIndex = base.styleIndex;
@@ -195,6 +216,7 @@ public:
     // trivialmente copiables.
     MusicFeatures features() const noexcept { return extractor_.features(); }
     ExcitationOutput excitation() const noexcept { return conductor_.output(); }
+    MacroArcOutput arc() const noexcept { return arc_.output(); }
     HapticFrame hapticFrame() const noexcept { return haptics_.frame(); }
     const dosing::ExposureDosimeter& dosimeter() const noexcept { return dosimeter_; }
     spatial::CrosstalkCanceller& crosstalk() noexcept { return xtc_; }
@@ -214,6 +236,7 @@ private:
 
     MusicFeatureExtractor extractor_{};
     ExcitationConductor   conductor_{};
+    MacroArcConductor     arc_{};
     MultibandHapticMapper haptics_{};
     dosing::ExposureDosimeter dosimeter_{};
     spatial::CrosstalkCanceller xtc_{};
@@ -224,6 +247,7 @@ private:
 
     std::atomic<bool> enabled_{false};
     std::atomic<bool> hapticsOn_{false};
+    std::atomic<bool> arcOn_{false};
     std::atomic<bool> xbEnabled_{false};
     std::atomic<int>  outputMeterHold_{0};
 };
