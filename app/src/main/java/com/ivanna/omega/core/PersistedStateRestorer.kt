@@ -60,6 +60,15 @@ object PersistedStateRestorer {
             // NPE neuromórfico: estado al módulo (Ruta B). Sin esto el módulo arrancaba con su valor por defecto.
             runCatching {
                 com.ivanna.omega.neuromorphic.PiLstmBridge.restoreModuleNpe(paramStore.isNpeBypass())
+                // Los valores que la UI MUESTRA (guardados o por defecto) son los que debe usar el motor desde el arranque;
+                // antes solo se aplicaban al mover un slider, y el motor corría con otros valores internos.
+                val npe = com.ivanna.omega.ui.AdaptiveControlsPrefs.load(context)
+                val pi = com.ivanna.omega.neuromorphic.PiLstmBridge
+                pi.setHarmonicGain(npe.npeHarmonic)
+                pi.setBeta(npe.npeLateralInhib)
+                pi.setAlpha(npe.npeOhcCompression)
+                pi.setMasterGain(npe.npeMasterGain)
+                if (paramStore.isNpeBypass()) pi.setBypass(true)   // bypass guardado: aplicado desde el arranque, sin abrir la pestaña
             }
             // Corrección acústica de sala medida: si estaba activa, la restaura (ruta A + daemon/ruta B); si no, ceros.
             runCatching {
