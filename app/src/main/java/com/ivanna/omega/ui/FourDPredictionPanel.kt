@@ -56,6 +56,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
     var arcDepth by remember { mutableStateOf(0.5f) }
     var hapticScale by remember { mutableStateOf(0.6f) }
     var dosMode by remember { mutableStateOf(0) }
+    var dosCal by remember { mutableStateOf(94f) }   // dBFS -> SPL; 94 = defecto nativo del dosímetro
 
     val cyan = Color(0xFF00E5FF)
     val magenta = Color(0xFFFF3D9A)
@@ -266,6 +267,14 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     }
                 }
             }
+            Text("Calibración dosímetro: %.0f dB SPL a fondo de escala".format(dosCal), color = Color(0xFFB0BEC5), fontSize = 11.sp)
+            Slider(
+                value = dosCal, valueRange = 70f..145f,
+                onValueChange = {
+                    dosCal = it
+                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDosimeterCalibration(it)
+                }
+            )
         }
     }
 }
