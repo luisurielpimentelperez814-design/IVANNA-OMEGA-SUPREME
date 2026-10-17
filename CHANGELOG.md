@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.49 (340) — Corrección acústica de sala
+Medición con micrófono (27 tonos 1/3 oct, latencia real) y corrección tonal en Ruta A y B; ABI v6 (reinstalar módulo).
+
 # CHANGELOG — v2.5.48 (339) — Cadena 4D en el audio REAL
 La v2.5.47 dejó la cadena 4D alcanzable (JNI + panel); esta la conecta al audio que de verdad suena y corrige dos defectos que solo aparecían al conectarla.
 1. **Cableada a la ruta de audio (`nativeProcess` y `nativeProcessBlock`):** se alimenta con la señal SECA antes del DSP (la predicción necesita los transitorios sin procesar) y publica la escena anticipada una vez por bloque. Apagada por defecto: retorno inmediato, cero bits alterados.
