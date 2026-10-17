@@ -48,12 +48,20 @@ void feedPlanar(const float* L, const float* R, int frames) noexcept;
 void feedInterleaved(const float* interleaved, int frames, int channels) noexcept;
 
 // ── Etapa de salida (cancelación de diafonía in-place por altavoces) ─────────
+// Va ANTES del SafetyLimiter: la cancelación puede subir picos y el limitador es el techo final.
 void applyOutputPlanar(float* L, float* R, int frames) noexcept;
 void applyOutputInterleaved(float* interleaved, int frames, int channels) noexcept;
+
+// ── Medición de la señal FINAL (post-limitador) para el dosímetro ────────────
+// Solo lee. Mientras se llame cada bloque, el dosímetro mide la salida real y deja de usar la
+// entrada seca; si se deja de llamar, vuelve solo a medir la entrada.
+void meterOutputPlanar(const float* L, const float* R, int frames) noexcept;
 
 // ── Lazo de escena ───────────────────────────────────────────────────────────
 // Toma la escena vigente del bus (producida por el StyleBlender/IME) y publica la versión
 // ADELANTADA por el conductor. Idempotente si la cadena está apagada.
+// Distingue la escena AJENA (base) de la PROPIA ya modulada: se modula siempre sobre la última
+// base ajena, nunca sobre su propia salida, para que la apertura no se acumule bloque a bloque.
 void publishAnticipatedScene() noexcept;
 
 // ── Estado para telemetría / UI ──────────────────────────────────────────────

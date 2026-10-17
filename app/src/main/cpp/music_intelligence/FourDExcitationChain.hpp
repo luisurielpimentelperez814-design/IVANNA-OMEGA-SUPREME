@@ -61,6 +61,7 @@ public:
         tracker_.prepare(sr_);
         blockMs_ = (float)maxBlock_ / sr_ * 1000.0f;
         enabled_.store(false, std::memory_order_relaxed);
+        outputMeterHold_.store(0, std::memory_order_relaxed);
         published_ = 0;
     }
 
@@ -114,7 +115,16 @@ public:
         conductor_.setHarmonicCeiling(bus_.maxExcWetCeiling());
         conductor_.advance(f, blockMs_);
 
-        dosimeter_.feed(L, R, n);
+        // Si la salida final ya se mide (meterOutput), el dosímetro NO se alimenta aquí:
+        // la dosis debe reflejar lo que llega al oído, no la señal seca de entrada.
+        // El sostén cuenta bloques; si la medición de salida se detiene (cambio de ruta),
+        // se vuelve solo a medir la entrada tras kMeterHoldBlocks bloques.
+        const int hold = outputMeterHold_.load(std::memory_order_relaxed);
+        if (hold > 0) {
+            outputMeterHold_.store(hold - 1, std::memory_order_relaxed);
+        } else {
+            dosimeter_.feed(L, R, n);
+        }
         haptics_.setDoseLoad(dosimeter_.hapticDoseLoad());
         haptics_.update(f, conductor_.output(), blockMs_);
 
@@ -123,6 +133,15 @@ public:
         tracker_.offsetForSpatial(az, lat);
         xtc_.setHeadOffset(az, lat);
         lastYaw_ = az;
+    }
+
+    // meterOutput(): mide la señal FINAL (post-limitador) para el dosímetro. Es la medida
+    // correcta de exposición: la cadena DSP puede subir el nivel respecto a la entrada.
+    void meterOutput(const float* L, const float* R, int n) noexcept {
+        if (!enabled_.load(std::memory_order_relaxed)) return;
+        outputMeterHold_.store(kMeterHoldBlocks, std::memory_order_relaxed);
+        dosimeter_.feed(L, R, n);
+        haptics_.setDoseLoad(dosimeter_.hapticDoseLoad());
     }
 
     // Procesa el audio por el cancelador cuando la salida es por altavoces (AUX/DAC).
@@ -201,9 +220,12 @@ private:
     spatial::HeadTrackerFusion tracker_{};
     SceneTargetBus& bus_ = SceneTargetBus::instance();
 
+    static constexpr int kMeterHoldBlocks = 64;
+
     std::atomic<bool> enabled_{false};
     std::atomic<bool> hapticsOn_{false};
     std::atomic<bool> xbEnabled_{false};
+    std::atomic<int>  outputMeterHold_{0};
 };
 
 }} // namespace ivanna::ime

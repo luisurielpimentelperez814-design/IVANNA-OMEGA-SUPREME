@@ -7,6 +7,7 @@
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 namespace ivanna { namespace fourd {
 
@@ -24,6 +25,42 @@ std::atomic<bool>  g_hapticsOn{false};
 std::atomic<bool>  g_xtcOn{false};
 std::atomic<float> g_sr{48000.0f};
 std::atomic<int>   g_maxBlock{480};
+
+// Exclusión mutua NO bloqueante para el camino de audio: si otro hilo está dentro (p. ej. dos
+// rutas JNI vivas a la vez), ese bloque se omite en lugar de esperar ni de correr en paralelo
+// sobre el mismo estado. Los hilos NO de audio (init/shutdown) sí esperan (spin + yield).
+// analysis: extractor, conductor, dosímetro, háptica, escena. output: cancelador de diafonía.
+std::atomic_flag g_analysisBusy = ATOMIC_FLAG_INIT;
+std::atomic_flag g_outputBusy   = ATOMIC_FLAG_INIT;
+
+struct TryGuard {
+    std::atomic_flag& f;
+    bool ok;
+    explicit TryGuard(std::atomic_flag& x) noexcept
+        : f(x), ok(!x.test_and_set(std::memory_order_acquire)) {}
+    ~TryGuard() { if (ok) f.clear(std::memory_order_release); }
+    TryGuard(const TryGuard&) = delete;
+    TryGuard& operator=(const TryGuard&) = delete;
+};
+
+struct SpinBoth {
+    SpinBoth() noexcept {
+        while (g_analysisBusy.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+        while (g_outputBusy.test_and_set(std::memory_order_acquire))   std::this_thread::yield();
+    }
+    ~SpinBoth() {
+        g_outputBusy.clear(std::memory_order_release);
+        g_analysisBusy.clear(std::memory_order_release);
+    }
+    SpinBoth(const SpinBoth&) = delete;
+    SpinBoth& operator=(const SpinBoth&) = delete;
+};
+
+// Base de escena AJENA (la del StyleBlender) y número de la última escena PROPIA publicada.
+// Solo se tocan bajo g_analysisBusy.
+ivanna::ime::SceneApply g_baseScene{};
+uint32_t g_ownSeq = 0;
+bool     g_haveBase = false;
 
 inline bool active() noexcept {
     return g_ready.load(std::memory_order_acquire) && g_chain != nullptr;
@@ -46,6 +83,7 @@ void ensureInit(float sampleRate, int maxBlock) noexcept {
     const float sr = (sampleRate > 8000.0f && std::isfinite(sampleRate)) ? sampleRate : 48000.0f;
     const int   mb = (maxBlock > 0) ? maxBlock : 480;
     std::lock_guard<std::mutex> g(g_initMutex);
+    SpinBoth spin;   // el audio no puede estar dentro de la cadena mientras se re-prepara
     if (g_ready.load(std::memory_order_acquire) && g_chain) {
         // Re-preparar solo si cambian las condiciones (cambio de ruta / sample rate).
         if (g_sr.load(std::memory_order_relaxed) == sr &&
@@ -57,6 +95,8 @@ void ensureInit(float sampleRate, int maxBlock) noexcept {
     g_chain->prepare(sr, mb);
     g_sr.store(sr, std::memory_order_relaxed);
     g_maxBlock.store(mb, std::memory_order_relaxed);
+    g_haveBase = false;
+    g_ownSeq = 0;
     g_ready.store(true, std::memory_order_release);
     reapplyControls();
 }
@@ -65,8 +105,11 @@ bool isInitialized() noexcept { return active(); }
 
 void shutdown() noexcept {
     std::lock_guard<std::mutex> g(g_initMutex);
+    SpinBoth spin;   // espera a que el audio salga antes de liberar la cadena
     g_ready.store(false, std::memory_order_release);
     g_chain.reset();
+    g_haveBase = false;
+    g_ownSeq = 0;
 }
 
 // ── Interruptor maestro y sub-controles ──────────────────────────────────────
@@ -97,6 +140,8 @@ void setSpeakerGeometry(const ivanna::spatial::CrosstalkCanceller::Geometry& g) 
 // ── Alimentación ─────────────────────────────────────────────────────────────
 void feedPlanar(const float* L, const float* R, int frames) noexcept {
     if (!L || frames <= 0) return;
+    TryGuard tg(g_analysisBusy);
+    if (!tg.ok) return;
     if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     const float* rr = R ? R : L;
@@ -110,6 +155,8 @@ void feedPlanar(const float* L, const float* R, int frames) noexcept {
 
 void feedInterleaved(const float* interleaved, int frames, int channels) noexcept {
     if (!interleaved || frames <= 0 || channels <= 0) return;
+    TryGuard tg(g_analysisBusy);
+    if (!tg.ok) return;
     if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     float l[kChunk], r[kChunk];
@@ -130,6 +177,8 @@ void feedInterleaved(const float* interleaved, int frames, int channels) noexcep
 // ── Etapa de salida ──────────────────────────────────────────────────────────
 void applyOutputPlanar(float* L, float* R, int frames) noexcept {
     if (!L || !R || frames <= 0) return;
+    TryGuard tg(g_outputBusy);
+    if (!tg.ok) return;
     if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     int done = 0;
@@ -140,8 +189,25 @@ void applyOutputPlanar(float* L, float* R, int frames) noexcept {
     }
 }
 
+void meterOutputPlanar(const float* L, const float* R, int frames) noexcept {
+    if (!L || frames <= 0) return;
+    TryGuard tg(g_analysisBusy);
+    if (!tg.ok) return;
+    if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
+    auto* c = chain();
+    const float* rr = R ? R : L;
+    int done = 0;
+    while (done < frames) {
+        const int n = std::min(kChunk, frames - done);
+        c->meterOutput(L + done, rr + done, n);
+        done += n;
+    }
+}
+
 void applyOutputInterleaved(float* interleaved, int frames, int channels) noexcept {
     if (!interleaved || frames <= 0 || channels <= 0) return;
+    TryGuard tg(g_outputBusy);
+    if (!tg.ok) return;
     if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     float l[kChunk], r[kChunk];
@@ -164,10 +230,21 @@ void applyOutputInterleaved(float* interleaved, int frames, int channels) noexce
 
 // ── Lazo de escena ───────────────────────────────────────────────────────────
 void publishAnticipatedScene() noexcept {
+    TryGuard tg(g_analysisBusy);
+    if (!tg.ok) return;
     if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
     auto& bus = ivanna::ime::SceneTargetBus::instance();
-    const ivanna::ime::SceneApply base = bus.peekLatest();
-    chain()->publishScene(base);
+    // DEFECTO CORREGIDO: antes la base era siempre peekLatest(), y tras la primera publicación
+    // eso es la escena YA modulada por esta cadena -> se volvía a modular cada bloque y la
+    // apertura se acumulaba hasta saturar. Ahora solo una escena con número distinto del de
+    // nuestra última publicación se toma como base nueva; si no, se reutiliza la última base ajena.
+    const ivanna::ime::SceneApply cur = bus.peekLatest();
+    if (!g_haveBase || cur.seq != g_ownSeq) {
+        g_baseScene = cur;
+        g_haveBase = true;
+    }
+    chain()->publishScene(g_baseScene);
+    g_ownSeq = bus.peekLatest().seq;
 }
 
 // ── Estado ───────────────────────────────────────────────────────────────────

@@ -60,6 +60,7 @@ public:
         confSmooth_ = 0.0f; punchSmooth_ = 0.0f;
         out_ = ExcitationOutput{};
         slewSub_ = 0.0f; slewSpread_ = 0.0f; slewAir_ = 0.0f; slewElev_ = 0.0f;
+        slewSeeded_ = false;
     }
 
     // ── Controles atómicos (UI / JNI / decisión adaptativa) ───────────────────
@@ -222,7 +223,18 @@ public:
         const float g = out_.gate * depth;
         if (g <= 1.0e-4f || out_.anticipation <= 1.0e-4f) {
             out.t = base.t; // passthrough bit-exacto
+            // El suavizado sigue a la base mientras no actúa: así, al entrar en acción, parte
+            // de la escena vigente y no de un estado viejo (antes arrancaba desde 0 y la
+            // salida se hundía hacia 0 antes de subir: salto audible del sub / del ancho).
+            slewSub_ = base.t.subPunch;      slewSpread_ = base.t.wfsSpread;
+            slewAir_ = base.t.airHolography; slewElev_   = base.t.stageElevation;
+            slewSeeded_ = true;
             return out;
+        }
+        if (!slewSeeded_) {   // primera activación sin paso previo por passthrough
+            slewSub_ = base.t.subPunch;      slewSpread_ = base.t.wfsSpread;
+            slewAir_ = base.t.airHolography; slewElev_   = base.t.stageElevation;
+            slewSeeded_ = true;
         }
 
         // Slew limit por bloque (~25 ms de constante de asentamiento) para que la
@@ -311,6 +323,7 @@ private:
     int   ioiWrite_ = 0;
 
     mutable float slewSub_ = 0.0f, slewSpread_ = 0.5f, slewAir_ = 0.0f, slewElev_ = 0.0f;
+    mutable bool  slewSeeded_ = false;
 
     ExcitationOutput out_{};
 
