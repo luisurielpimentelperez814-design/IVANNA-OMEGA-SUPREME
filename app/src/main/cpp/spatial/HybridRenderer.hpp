@@ -109,13 +109,18 @@ public:
         return m_hrtfInterpolator;
     }
 
+    // true si el último cálculo de filtros NO usó HRIR medidos (respaldo
+    // delta+crosstalk). Es la señal observable de que la espacialización
+    // binaural NO es la medida; telemetría/JNI/tests pueden leerla.
+    bool usingFallbackHrtf() const noexcept {
+        return m_usingFallbackHrtf.load(std::memory_order_relaxed);
+    }
+
     void renderBinaural(const float* inStereo, float* outStereo, size_t frameCount) noexcept {
         if (!inStereo || !outStereo || frameCount == 0) return;
         const size_t n = std::min(frameCount, MAX_FRAMES);
 
-        if (m_filtersDirty.exchange(false, std::memory_order_acq_rel)) {
-            refreshHrtfPair();
-        }
+        refreshFiltersIfNeeded();
 
         const float binWet = m_binauralWet.load(std::memory_order_relaxed);
         const float binDry = 1.0f - 0.55f * binWet;
@@ -166,9 +171,7 @@ public:
             return;
         }
 
-        if (m_filtersDirty.exchange(false, std::memory_order_acq_rel)) {
-            refreshHrtfPair();
-        }
+        refreshFiltersIfNeeded();
 
         const float targetEnable = wantOn ? 1.0f : 0.0f;
         const float binWet = m_binauralWet.load(std::memory_order_relaxed);
@@ -226,6 +229,19 @@ public:
     }
 
 private:
+    // Recalcula los filtros si cambió algún parámetro o si el último cálculo
+    // cayó al respaldo y la tabla HRTF medida ya está disponible (el dataset
+    // puede terminar de cargarse DESPUÉS de habilitar el renderizador; sin
+    // esto se quedaría en respaldo hasta que alguien moviera el ángulo).
+    void refreshFiltersIfNeeded() noexcept {
+        if (m_usingFallbackHrtf.load(std::memory_order_relaxed) && hrtfDatabaseReady()) {
+            m_filtersDirty.store(true, std::memory_order_release);
+        }
+        if (m_filtersDirty.exchange(false, std::memory_order_acq_rel)) {
+            refreshHrtfPair();
+        }
+    }
+
     void refreshHrtfPair() noexcept {
         float azSpread = m_virtualAzimuthDeg.load(std::memory_order_relaxed);
         float elDeg    = m_virtualElevationDeg.load(std::memory_order_relaxed);
@@ -244,8 +260,13 @@ private:
         const float leftSpeakerAz  = std::fmod(360.0f - std::max(15.0f, std::fabs(azSpread)) + azSpread, 360.0f);
         const float rightSpeakerAz = std::fmod(std::max(15.0f, std::fabs(azSpread)) + azSpread + 360.0f, 360.0f);
 
-        m_hrtfInterpolator.getInterpolatedHRTF(leftSpeakerAz,  elDeg, m_hrtfLL, m_hrtfLR);
-        m_hrtfInterpolator.getInterpolatedHRTF(rightSpeakerAz, elDeg, m_hrtfRL, m_hrtfRR);
+        // Estado EXPLÍCITO del banco HRTF: si la tabla medida no está cargada
+        // el interpolador devuelve false (y salidas a cero). Antes void: con
+        // la tabla vacía el silencio solo se disimulaba por umbral de energía.
+        const bool measuredL =
+            m_hrtfInterpolator.getInterpolatedHRTF(leftSpeakerAz,  elDeg, m_hrtfLL, m_hrtfLR);
+        const bool measuredR =
+            m_hrtfInterpolator.getInterpolatedHRTF(rightSpeakerAz, elDeg, m_hrtfRL, m_hrtfRR);
 
         // Normalización de energía L2 sobre los 128 taps causales activos
         float energyL = 0.0f, energyR = 0.0f;
@@ -253,7 +274,10 @@ private:
             energyL += m_hrtfLL[t] * m_hrtfLL[t] + m_hrtfRL[t] * m_hrtfRL[t];
             energyR += m_hrtfLR[t] * m_hrtfLR[t] + m_hrtfRR[t] * m_hrtfRR[t];
         }
-        if (energyL > 1.0e-6f && energyR > 1.0e-6f) {
+        const bool useMeasured = measuredL && measuredR &&
+                                 energyL > 1.0e-6f && energyR > 1.0e-6f;
+        m_usingFallbackHrtf.store(!useMeasured, std::memory_order_relaxed);
+        if (useMeasured) {
             const float normL = 0.85f / std::sqrt(energyL);
             const float normR = 0.85f / std::sqrt(energyR);
             for (size_t t = 0; t < kActiveTaps; ++t) {
@@ -275,6 +299,7 @@ private:
     }
 
     HRTFInterpolator m_hrtfInterpolator{};
+    std::atomic<bool> m_usingFallbackHrtf{true};
     RoomSimulator m_roomSimulator{};
     std::array<NativeAudioObject, kMaxObjects> m_activeObjects{};
     std::atomic<size_t> m_activeObjectCount{0};

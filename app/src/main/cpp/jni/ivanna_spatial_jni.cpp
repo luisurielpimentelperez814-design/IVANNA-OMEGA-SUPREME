@@ -23,7 +23,11 @@
 #include "../neuromorphic/ivanna_neural_upmixer.hpp"
 #include "../spatial/IvannaAudioPipeline.hpp"
 #include "../spatial/HybridRenderer.hpp"
+#include "../spatial/HRTFDatabase.h"
 #include "../spatial/SpatialRenderer.hpp"
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 #include "../spatial/PerfAuditor.hpp"
 #include "../include/audio_thread_priority.h"
 
@@ -896,6 +900,23 @@ Java_com_ivanna_omega_core_NativeBridge_setHybridMagistralParams(
     jfloat roomSize, jfloat roomAbsorption,
     jfloat roomDampening, jfloat roomWetMix) {
     const bool en = (enabled == JNI_TRUE);
+    if (en && !Ivanna::hrtfDatabaseReady()) {
+        // Camino NO-RT (hilo JNI). Sin tabla HRTF medida el renderizador
+        // híbrido usa panning de respaldo: dejarlo registrado, no silencioso.
+        const char* loaded = Ivanna::hrtfDatabaseLoadDefault();
+#ifdef __ANDROID__
+        if (loaded) {
+            __android_log_print(ANDROID_LOG_INFO, "IvannaSpatial",
+                                "HRTF table loaded from measured dataset %s", loaded);
+        } else {
+            __android_log_print(ANDROID_LOG_WARN, "IvannaSpatial",
+                                "HRTF table NOT loaded: hybrid renderer runs on pan fallback "
+                                "(usingFallbackHrtf=1)");
+        }
+#else
+        (void)loaded;
+#endif
+    }
     g_hybridMagistralRenderer.setEnabled(en);
     g_hybridMagistralRenderer.setBinauralWet(binauralWet);
     g_hybridMagistralRenderer.setVirtualAngles(virtualAzimuthDeg, virtualElevationDeg);

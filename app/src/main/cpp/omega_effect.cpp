@@ -9,6 +9,7 @@
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
 #include "spatial/HearingAdaptationEngine.hpp"
 #include "spatial/IvannaAudioPipeline.hpp"
+#include "spatial/HRTFDatabase.h"
 #include "music_intelligence/ImeBridge.hpp"
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
@@ -1756,6 +1757,18 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 }
                 if (!hrtfLoaded) {
                     LOGI("Using SOFA+SAF Golden Manifold HRTF (255-subject PCA basis active)");
+                }
+                // Tabla HRTF de la rejilla (HRTFInterpolator -> HybridRenderer del
+                // pipeline). Se llena SOLO desde un dataset medido; si no carga,
+                // el renderizador híbrido usa panning de respaldo y lo reporta
+                // (usingFallbackHrtf). Camino NO-RT (init del efecto).
+                if (!Ivanna::hrtfDatabaseReady()) {
+                    const char* tbl = Ivanna::hrtfDatabaseLoadDefault();
+                    if (tbl) {
+                        LOGI("HRTF grid table loaded from measured dataset %s", tbl);
+                    } else {
+                        LOGW("HRTF grid table NOT loaded: hybrid spatial renderer will use pan fallback");
+                    }
                 }
             }
             break;

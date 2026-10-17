@@ -75,16 +75,28 @@ public:
         const float horiz = std::sqrt(rx * rx + ry * ry);
         const float elDeg = std::clamp(std::atan2(rz, std::max(1.0e-4f, horiz)) * kRadToDeg, -45.0f, 45.0f);
 
+        // Si el último cálculo cayó al respaldo y la tabla medida ya está
+        // lista (dataset cargado después), recalcular aunque no cambie el ángulo.
+        if (m_usingFallback && hrtfDatabaseReady()) m_filtersDirty = true;
         if (m_filtersDirty ||
             std::fabs(azDeg - m_lastAzDeg) > 0.25f ||
             std::fabs(elDeg - m_lastElDeg) > 0.25f) {
-            m_interpolator.getInterpolatedHRTF(azDeg, elDeg, m_hrtfLeft, m_hrtfRight);
-            // Garantizar piso de energía si el par HRTF es nulo
+            // El interpolador informa EXPLÍCITAMENTE si hay HRIR medidos
+            // (tabla cargada). Antes devolvía void y con la tabla vacía el
+            // silencio solo se disimulaba con un umbral de energía.
+            const bool measured =
+                m_interpolator.getInterpolatedHRTF(azDeg, elDeg, m_hrtfLeft, m_hrtfRight);
             float energy = 0.0f;
             for (size_t k = 0; k < HRTF_TAPS; ++k) {
                 energy += m_hrtfLeft[k] * m_hrtfLeft[k] + m_hrtfRight[k] * m_hrtfRight[k];
             }
-            if (energy < 1.0e-8f) {
+            // Fallback seguro y OBSERVABLE (usingFallbackHrtf()): sin HRIR
+            // medidos (o par degenerado) se usa una ley de panning de
+            // potencia constante — nunca un filtro nulo.
+            m_usingFallback = !measured || energy < 1.0e-8f;
+            if (m_usingFallback) {
+                std::memset(m_hrtfLeft, 0, sizeof(m_hrtfLeft));
+                std::memset(m_hrtfRight, 0, sizeof(m_hrtfRight));
                 const float pan = std::clamp(rx, -1.0f, 1.0f);
                 m_hrtfLeft[0]  = std::sqrt(0.5f * (1.0f - pan));
                 m_hrtfRight[0] = std::sqrt(0.5f * (1.0f + pan));
@@ -114,8 +126,13 @@ public:
         }
     }
 
+    // true si el último cálculo de filtros NO usó HRIR medidos (panning de
+    // respaldo). Escrito por el hilo de audio; lectura informativa.
+    bool usingFallbackHrtf() const noexcept { return m_usingFallback; }
+
 private:
     HRTFInterpolator m_interpolator{};
+    bool m_usingFallback{true};
     float m_hrtfLeft[HRTF_TAPS];
     float m_hrtfRight[HRTF_TAPS];
     float m_history[HRTF_TAPS];
