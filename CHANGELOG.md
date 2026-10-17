@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.53 (344) — Fix compilación Kotlin
+Corrige el import de launch que rompía el build del APK desde 2.5.49.
+
 # CHANGELOG — v2.5.52 (343) — Aporte del NPE medible
 Botón MEDIR APORTE DEL NPE (prueba de null por bandas); compuertas estáticas 7/7.
 
