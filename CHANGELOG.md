@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.54 (345) — NPE ligero y térmico
+El NPE del módulo se desvanece bajo carga térmica/CPU y gasta ~16x menos en el AGC.
+
 # CHANGELOG — v2.5.53 (344) — Fix compilación Kotlin
 Corrige el import de launch que rompía el build del APK desde 2.5.49.
 
