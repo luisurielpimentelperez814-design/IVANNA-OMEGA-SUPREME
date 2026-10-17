@@ -407,6 +407,7 @@ ivanna_add_test(test_limiter_hires_timing)
 # defaults de setParams() (-4 dBFS) perderían 2.8 dB y ninguna ruta los usa.
 ivanna_add_test(test_limiter_route_params)
 ivanna_add_test(test_differential_reinjector)
+ivanna_add_test(test_neuromorphic_ab_harness)
 
 # ── Rescatados del olvido (flanco Tests host): huérfanos sin target ──────────
 # test_audio_regression.cpp (677 líneas): cada TEST_F documenta un bug real de
