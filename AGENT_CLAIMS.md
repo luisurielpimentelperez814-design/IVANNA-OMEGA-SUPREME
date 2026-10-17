@@ -2108,6 +2108,16 @@ este mismo flanco.
 
 **Pendiente en dispositivo:** escucha real de EQ y arranque; confirmar el valor de `minRec` y overruns con logcat. Flanco DSP: no reclamo exclusividad, solo deje constancia.
 
+### CABLEADO 4D punta a punta (sesión Genspark, 2026-10-17) — ENTREGADO
+Flanco: conectar la cadena 4D ya commiteada (v2.5.46) hasta el dispositivo. Archivos tocados:
+`app/src/main/cpp/music_intelligence/FourDControlSurface.{hpp,cpp}` (nuevos),
+`app/src/main/cpp/jni/ivanna_4d_jni.cpp` (nuevo), `app/src/main/cpp/CMakeLists.txt` (enlace nativo),
+`app/src/main/cpp/tests/{CMakeLists.txt,test_4d_control_surface.cpp}` (nuevos),
+`core/Ivanna4DNative.kt` + `ui/FourDPredictionPanel.kt` (nuevos), `ui/MainActivity.kt` (conexión del panel),
+`music_intelligence/ExcitationConductor.hpp` (fix de umbral MEDIDO 0.04 -> 0.008; 0.04 > salto real 0.01667,
+el conductor nunca se armaba). Verificación host: test_4d_control_surface 6/6 y test_4d_ultra_chain 16/16.
+NOTA PARA OTROS AGENTES: la cadena 4D y su cableado quedan tomados por esta sesión; escoge otro flanco.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:

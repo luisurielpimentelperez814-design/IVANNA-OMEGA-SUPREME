@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.47 (338) — Cadena 4D CABLEDA punta a punta
+Los seis módulos 4D existían y se probaban, pero el producto NO los alcanzaba: no se compilaban en la lib nativa, no había JNI ni control desde el dispositivo. Ahora sí.
+1. **Superficie de control global (nueva):** `music_intelligence/FourDControlSurface` posee UNA instancia por proceso de `FourDExcitationChain` (el `SceneTargetBus` es singleton por proceso), se alimenta desde los mismos puntos que el motor IME y expone controles atómicos y estado. TODO APAGADO POR DEFECTO (identidad estricta).
+2. **Enlazada al target nativo:** `FourDControlSurface.cpp` y `jni/ivanna_4d_jni.cpp` entran en `libivanna_omega.so`. Antes de esto los símbolos no existían en el APK: la función era inalcanzable desde el dispositivo.
+3. **JNI + Kotlin (nuevos):** 15 entradas `nativeFourD*` en `Ivanna4DNative.kt` (carga perezosa por el punto único `NativeLibraryLoader`), con nombres verificados uno a uno contra el `.cpp`.
+4. **Panel "Predicción 4D" (nuevo):** `FourDPredictionPanel.kt` con el deslizador de anticipación (5–10 ms), profundidad, háptica multibanda con escala, cancelación de diafonía y selector de criterio del dosímetro (WHO/NIOSH/OSHA), más telemetría en vivo (armado, confianza, periodo, amplitud háptica, dosis, LAeq, guiñada, ITD, escenas publicadas). Conectado a la pantalla principal.
+5. **Defecto real encontrado y corregido (medido):** el detector de onsets del conductor exigía ΔtransientRate > 0.04, pero el extractor real produce saltos de **0.01667** por golpe (normaliza `onsets*inv*8`). El umbral quedaba POR ENCIMA de la señal: con música real el conductor nunca se armaba (medido: confianza 0.000, anticipación 0.000 con pulso perfecto a 120 BPM). Bajado a 0.008 (holgura >2x); medido: se arma, estima 500.0 ms y la anticipación llega a 0.83. El refractario de 40 ms sigue impidiendo el doble disparo.
+6. **6 pruebas nuevas** en la puerta host (`test_4d_control_surface`): identidad bit-exacta apagada, apertura anticipada a 120 BPM, techo háptico ≤255, dosis finita, publicación real en el SceneTargetBus e inicialización idempotente.
+7. Las 16 pruebas previas de `test_4d_ultra_chain` siguen en verde tras el cambio de umbral (sin regresión).
+
 # CHANGELOG — v2.5.46 (337) — Cadena 4D de excitación anticipada
 El campo espacial, la háptica y los armónicos ahora se abren 5–10 ms ANTES del golpe, no después.
 1. **Conductor de excitación (nuevo):** `ExcitationConductor` estima el instante del próximo golpe desde el historial de IOI del `MusicFeatureExtractor` (media recortada + regularidad) y adelanta la apertura del campo en un `leadMs` de 5–10 ms, publicando en `SceneTargetBus`. Con confianza baja la salida es la entrada exacta (bit-exacto).
