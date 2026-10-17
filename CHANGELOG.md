@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.51 (342) — NPE en el módulo
+El motor NPE neuromórfico ahora corre en Ruta B (omega_effect); ABI v7: reinstalar el módulo.
+
 # CHANGELOG — v2.5.50 (341) — EQ real en Ruta B
 Los 10 sliders de EQ moldean el espectro en el módulo (antes solo la media como trim).
 
