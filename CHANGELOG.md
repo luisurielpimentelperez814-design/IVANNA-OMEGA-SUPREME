@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.60 (351) — Diafonía en el módulo
+La cancelación de diafonía (altavoces/AUX) ahora también corre en Ruta B.
+
 # CHANGELOG — v2.5.59 (350) — Arco narrativo mueve el espacio
 La tensión previa al drop abre la imagen y el impacto la recoge (Ruta A).
 
