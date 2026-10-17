@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.52 (343) — Aporte del NPE medible
+Botón MEDIR APORTE DEL NPE (prueba de null por bandas); compuertas estáticas 7/7.
+
 # CHANGELOG — v2.5.51 (342) — NPE en el módulo
 El motor NPE neuromórfico ahora corre en Ruta B (omega_effect); ABI v7: reinstalar el módulo.
 
