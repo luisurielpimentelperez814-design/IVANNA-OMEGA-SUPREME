@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.59 (350) — Arco narrativo mueve el espacio
+La tensión previa al drop abre la imagen y el impacto la recoge (Ruta A).
+
 # CHANGELOG — v2.5.58 (349) — NPE coherente con la UI
 Al arrancar, el motor NPE usa los valores que muestra la UI y el bypass guardado.
 
