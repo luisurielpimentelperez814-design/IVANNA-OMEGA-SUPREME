@@ -92,6 +92,14 @@ fun IvannaControlPanel(
     initialWfsEnabled: Boolean = true,
     initialWfsSpread: Float = 1.18f,
     initialAuxFieldEnabled: Boolean = false,
+    roomGains: FloatArray? = null,
+    roomEnabled: Boolean = false,
+    roomBusy: Boolean = false,
+    roomProgress: Float = 0f,
+    roomStatus: String = "",
+    onRoomMeasure: () -> Unit = {},
+    onRoomToggle: (Boolean) -> Unit = {},
+    onRoomClear: () -> Unit = {},
     initialTemporalFieldEnabled: Boolean = false,
     initialTemporalFieldAmount: Float = 0.6f,
     initialTemporalFieldAdaptive: Boolean = true,
@@ -881,6 +889,48 @@ fun IvannaControlPanel(
                 auxCoherence = it
                 onAuxFieldChange(auxEnabled, auxXover, it)
             }
+        }
+
+        GlassCard(
+            title = "CORRECCIÓN ACÚSTICA · SALA / BOCINAS",
+            accent = AuroraCyan,
+            subtitle = when {
+                roomBusy -> "Midiendo… no hables ni te muevas. Tonos de prueba por tus bocinas (~35 s)"
+                roomGains == null -> "Mide tu sala con el micrófono del teléfono y corrige el balance tonal de 50 Hz a 6 kHz. Sin medición = audio intacto"
+                roomEnabled -> "Activa: corrección medida aplicada en todas las salidas (AUX, USB-C, Bluetooth)"
+                else -> "Medición guardada, corrección apagada"
+            },
+            rightSlot = {
+                Switch(roomEnabled, enabled = roomGains != null && !roomBusy, onCheckedChange = { onRoomToggle(it) })
+            }
+        ) {
+            if (roomBusy) {
+                LinearProgressIndicator(progress = { roomProgress }, modifier = Modifier.fillMaxWidth())
+            }
+            if (roomGains != null && !roomBusy) {
+                val labels = arrayOf("31.5", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
+                val parts = (0 until 10).filter { kotlin.math.abs(roomGains[it]) >= 0.05f }
+                    .joinToString(" · ") { "${labels[it]} Hz ${if (roomGains[it] > 0) "+" else ""}${"%.1f".format(java.util.Locale.US, roomGains[it])} dB" }
+                Text(
+                    if (parts.isEmpty()) "Tu sala ya suena pareja: no hace falta corrección" else parts,
+                    style = MaterialTheme.typography.labelSmall, color = TextSecondary
+                )
+            }
+            if (roomStatus.isNotEmpty()) {
+                Text(roomStatus, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = !roomBusy, onClick = onRoomMeasure) {
+                    Text(if (roomGains == null) "MEDIR SALA" else "MEDIR DE NUEVO")
+                }
+                if (roomGains != null) {
+                    OutlinedButton(enabled = !roomBusy, onClick = onRoomClear) { Text("BORRAR MEDICIÓN") }
+                }
+            }
+            Text(
+                "Límites: el micrófono del teléfono no está calibrado; corrige el balance amplio (boom, caída de graves, presencia), no modos estrechos ni la fase, y mide el punto donde está el teléfono.",
+                style = MaterialTheme.typography.labelSmall, color = TextSecondary
+            )
         }
 
         GlassCard(

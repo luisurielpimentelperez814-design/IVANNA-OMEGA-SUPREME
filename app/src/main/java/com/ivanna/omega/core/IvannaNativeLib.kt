@@ -379,6 +379,15 @@ object IvannaNativeLib {
     /** Modo AUX/altavoces: campo de presion coherente (graves en fase). crossover 60..200 Hz, coherencia 0..1. */
     external fun nativeSetAuxField(enabled: Boolean, crossoverHz: Float, coherence: Float)
 
+    /** Corrección acústica de sala: 10 ganancias (dB, una por banda de octava 31.5 Hz…16 kHz); todo 0 = apagado. Ruta A + daemon. */
+    external fun nativeSetRoomCorrection(gainsDb: FloatArray)
+
+    /** Amplitud (lineal) de la componente a `freqHz` en samples[0..count) — detección síncrona nativa (RoomProbe). */
+    external fun nativeRoomLockIn(samples: FloatArray, count: Int, sampleRate: Int, freqHz: Float): Float
+
+    /** Diseña la corrección a partir de 27 niveles (dB) y 27 SNR (dB). Devuelve 10 ganancias, o vacío si no hay referencia fiable. */
+    external fun nativeRoomDesign(levelsDb: FloatArray, snrDb: FloatArray, sampleRate: Int): FloatArray
+
     /** 4D: dinámica espacial temporal — el lateral se recoge en cada golpe y se abre en lo sostenido. amount 0..1 (techo); adaptive = escala con la densidad de golpes. */
     external fun nativeSetTemporalField(enabled: Boolean, amount: Float, adaptive: Boolean)
     external fun nativeSetWfsSpread(spread: Float)

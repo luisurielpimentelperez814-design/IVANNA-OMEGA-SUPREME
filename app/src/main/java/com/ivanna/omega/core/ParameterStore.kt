@@ -131,6 +131,8 @@ class ParameterStore(context: Context) {
         private const val KEY_TEMPORAL_ENABLED = "temporal_field_enabled"
         private const val KEY_TEMPORAL_AMOUNT  = "temporal_field_amount"
         private const val KEY_TEMPORAL_AUTO    = "temporal_field_auto"
+        private const val KEY_ROOM_GAINS       = "room_corr_gains"
+        private const val KEY_ROOM_ENABLED     = "room_corr_enabled"
         private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
     }
 
@@ -393,6 +395,24 @@ class ParameterStore(context: Context) {
         prefs.edit().putBoolean(KEY_AUX_ENABLED, enabled)
             .putFloat(KEY_AUX_XOVER, xoverHz.coerceIn(60f, 200f))
             .putFloat(KEY_AUX_COH, coherence.coerceIn(0f, 1f)).apply()
+
+    // ── Corrección acústica de sala (medida con el micrófono) ── sin medición no hay nada que aplicar
+    /** Las 10 ganancias medidas (dB), o null si nunca se midió. */
+    fun getRoomCorrectionGains(): FloatArray? {
+        val raw = safeGetString(KEY_ROOM_GAINS, null) ?: return null
+        val parts = raw.split(',')
+        if (parts.size != 10) return null
+        val g = FloatArray(10)
+        for (i in 0 until 10) g[i] = parts[i].toFloatOrNull()?.coerceIn(-12f, 12f) ?: return null
+        return g
+    }
+    fun isRoomCorrectionEnabled(): Boolean = safeGetBoolean(KEY_ROOM_ENABLED, false) && getRoomCorrectionGains() != null
+    fun setRoomCorrection(gains: FloatArray?, enabled: Boolean) {
+        val e = prefs.edit()
+        if (gains != null && gains.size == 10) e.putString(KEY_ROOM_GAINS, gains.joinToString(",") { "%.2f".format(java.util.Locale.US, it) })
+        else e.remove(KEY_ROOM_GAINS)
+        e.putBoolean(KEY_ROOM_ENABLED, enabled && gains != null).apply()
+    }
 
     // ── Dinámica espacial temporal (4D) ── apagada por defecto: no toca el audio hasta activarla
     fun isTemporalFieldEnabled(): Boolean = safeGetBoolean(KEY_TEMPORAL_ENABLED, false)

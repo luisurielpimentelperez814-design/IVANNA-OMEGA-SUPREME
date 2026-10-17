@@ -57,6 +57,11 @@ object PersistedStateRestorer {
             runCatching { IvannaNativeLib.nativeSetWfsSpread(paramStore.getWfsSpread()) }
             // Modo AUX/altavoces: restaura estado, crossover y coherencia (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetAuxField(paramStore.isAuxFieldEnabled(), paramStore.getAuxXoverHz(), paramStore.getAuxCoherence()) }
+            // Corrección acústica de sala medida: si estaba activa, la restaura (ruta A + daemon/ruta B); si no, ceros.
+            runCatching {
+                val roomG = paramStore.getRoomCorrectionGains()
+                IvannaNativeLib.nativeSetRoomCorrection(if (paramStore.isRoomCorrectionEnabled() && roomG != null) roomG else FloatArray(10))
+            }
             // 4D temporal: restaura estado y profundidad (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetTemporalField(paramStore.isTemporalFieldEnabled(), paramStore.getTemporalFieldAmount(), paramStore.isTemporalFieldAdaptive()) }
             // Háptica de graves (4D): vive en Kotlin (ruta A), no depende de la librería nativa.

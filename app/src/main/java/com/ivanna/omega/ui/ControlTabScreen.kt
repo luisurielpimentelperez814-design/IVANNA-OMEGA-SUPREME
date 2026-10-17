@@ -56,6 +56,43 @@ fun ControlTabScreen(
     // nativo — el estado del toggle sobrevive cierre de app y reboot.
     var npeBypassState by remember { mutableStateOf(paramStore.isNpeBypass()) }
 
+    // ── Corrección acústica de sala (medición con el micrófono) ─────────────
+    var roomGains by remember { mutableStateOf(paramStore.getRoomCorrectionGains()) }
+    var roomEnabled by remember { mutableStateOf(paramStore.isRoomCorrectionEnabled()) }
+    var roomBusy by remember { mutableStateOf(false) }
+    var roomProgress by remember { mutableStateOf(0f) }
+    var roomStatus by remember { mutableStateOf("") }
+    val roomScope = rememberCoroutineScope()
+    val applyRoom: (FloatArray?, Boolean) -> Unit = { g, en ->
+        if (IvannaNativeLib.isLoaded)
+            runCatching { IvannaNativeLib.nativeSetRoomCorrection(if (en && g != null) g else FloatArray(10)) }
+    }
+    val startRoomMeasure: () -> Unit = {
+        if (!roomBusy) roomScope.launch {
+            val prevGains = roomGains; val prevEnabled = roomEnabled
+            roomBusy = true; roomProgress = 0f
+            roomStatus = "Prepara: volumen cómodo, teléfono donde te sientas, sala en silencio."
+            applyRoom(null, false)                                   // se mide la sala SIN la corrección anterior
+            kotlinx.coroutines.delay(800)
+            when (val out = com.ivanna.omega.audio.RoomMeasurement.run(context) { roomProgress = it }) {
+                is com.ivanna.omega.audio.RoomMeasurement.Outcome.Success -> {
+                    paramStore.setRoomCorrection(out.gainsDb, true)
+                    roomGains = out.gainsDb; roomEnabled = true
+                    applyRoom(out.gainsDb, true)
+                    roomStatus = "Medición lista · retardo de la salida medido: ${out.latencyMs} ms"
+                }
+                is com.ivanna.omega.audio.RoomMeasurement.Outcome.Failure -> {
+                    applyRoom(prevGains, prevEnabled)                // vuelve a como estaba
+                    roomStatus = out.reason
+                }
+            }
+            roomBusy = false
+        }
+    }
+    val micLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) startRoomMeasure() else roomStatus = "Se necesita el permiso de micrófono para medir la sala" }
+
     LaunchedEffect(Unit) {
         if (npeBypassState && PiLstmBridge.isReady) {
             PiLstmBridge.setBypass(true)
@@ -118,6 +155,26 @@ fun ControlTabScreen(
         initialWfsEnabled = paramStore.isWfsEnabled(),
         initialWfsSpread = paramStore.getWfsSpread(),
         initialAuxFieldEnabled = paramStore.isAuxFieldEnabled(),
+        roomGains = roomGains,
+        roomEnabled = roomEnabled,
+        roomBusy = roomBusy,
+        roomProgress = roomProgress,
+        roomStatus = roomStatus,
+        onRoomMeasure = {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) startRoomMeasure()
+            else micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        },
+        onRoomToggle = { en ->
+            roomEnabled = en && roomGains != null
+            paramStore.setRoomCorrection(roomGains, roomEnabled)
+            applyRoom(roomGains, roomEnabled)
+        },
+        onRoomClear = {
+            roomGains = null; roomEnabled = false; roomStatus = ""
+            paramStore.setRoomCorrection(null, false)
+            applyRoom(null, false)
+        },
         initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
         initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
         initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
