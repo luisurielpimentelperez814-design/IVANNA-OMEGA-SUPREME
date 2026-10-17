@@ -1875,6 +1875,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // v2.5.41: PUNCH justo antes del limitador (el limitador ve el resultado; el motor no sube el ataque si el pico
     // ya está en el techo, así que no hay «bombeo»). Latencia +1.5 ms solo mientras esté activo.
     g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));
+    g_punch.setImpactBias(ivanna::fourd::arcImpact());   // el drop del arco narrativo 4D realza el golpe (guardas intactas)
     g_punch.process(g_ats.pdOutL, g_ats.pdOutR, n);
     // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
     // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
@@ -2227,6 +2228,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
     // NHO/Spatial saldrían sin protección hacia el DAC.
     g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));   // v2.5.41
+    g_punch.setImpactBias(ivanna::fourd::arcImpact());
     g_punch.process(oL, oR, n);
     // Cancelación de diafonía de la Cadena 4D antes del limitador (ver nativeProcess).
     ivanna::fourd::applyOutputPlanar(oL, oR, n);

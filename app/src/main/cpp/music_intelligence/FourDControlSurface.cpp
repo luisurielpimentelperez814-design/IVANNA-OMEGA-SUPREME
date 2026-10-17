@@ -286,6 +286,12 @@ ivanna::ime::FourDStatus status() noexcept {
     return chain()->status();
 }
 
+float arcImpact() noexcept {
+    if (!active()) return 0.0f;
+    const float v = chain()->arc().impact;
+    return std::isfinite(v) ? (v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v)) : 0.0f;
+}
+
 uint32_t publishedScenes() noexcept {
     if (!active()) return 0u;
     return chain()->status().publishedScenes;

@@ -367,3 +367,12 @@ TEST(FourDControlSurface, ContinuousControlsSetBeforeInitAreApplied) {
     EXPECT_NEAR(fourd::status().leadMs, 9.0f, 0.2f);
     fourd::setLeadMs(7.5f);
 }
+
+// v2.5.56: el Punch lee el impacto del drop por un accesor ligero (apto para el hilo de audio).
+TEST(FourDControlSurface, ArcImpactIsZeroWhenTheChainOrTheArcIsOff) {
+    ivanna::fourd::ensureInit(48000.f, ivanna::fourd::kAnalysisChunk);
+    ivanna::fourd::setArcEnabled(false);
+    const float v = ivanna::fourd::arcImpact();
+    EXPECT_TRUE(std::isfinite(v));
+    EXPECT_FLOAT_EQ(v, 0.0f);
+}

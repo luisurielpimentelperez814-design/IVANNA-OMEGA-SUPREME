@@ -178,3 +178,55 @@ TEST(Punch, SwitchingOnAndOffNeverClicksAndReturnsToExactBypass) {
     for (size_t i = tail; i < s.l.size(); ++i) ASSERT_EQ(s.l[i], ref.l[i]);
     EXPECT_EQ(p.latencySamples(), 0);
 }
+
+// ── Sesgo de IMPACTO (drop del arco narrativo 4D) ──────────────────────────────────────────────────────────────
+static Sig burst1k(float amp) {                       // ráfaga de 1 kHz sobre un tono suave: banda MEDIA (guarda de graves no interviene)
+    const int N = static_cast<int>(1.6f * kSr), at = static_cast<int>(1.0f * kSr);
+    Sig in = zeros(N); addTone(in, 1000.f, 0.02f);
+    for (int i = at; i < N; ++i) {
+        const float t = (i - at) / kSr, env = std::min(1.f, t / 0.0002f) * std::exp(-t / 0.05f);
+        const float v = amp * env * static_cast<float>(std::sin(2.0 * M_PI * 1000.0 * t));
+        in.l[i] += v; in.r[i] += v;
+    }
+    return in;
+}
+static double burstGainDb(float bias, float amp, float amount) {
+    const Sig in = burst1k(amp); Sig out = in;
+    PunchEngine p; p.prepare(kSr); p.setAmount(amount); p.setImpactBias(bias); run(p, out, 64);
+    const int at = static_cast<int>(1.0f * kSr), D = p.latencySamples(), w = static_cast<int>(0.004f * kSr);
+    return db(peak(out.l, at + D, at + D + w + 24) / peak(in.l, at, at + w));
+}
+
+TEST(Punch, ImpactBiasRaisesTheAttackBoostWhenThereIsHeadroom) {
+    const double plain = burstGainDb(0.0f, 0.2f, 1.f), drop = burstGainDb(1.0f, 0.2f, 1.f);
+    EXPECT_GT(drop - plain, 0.6) << "el drop debe realzar el golpe de verdad (x1.45 de realce ~ +1 dB en medios)";
+    EXPECT_LT(drop - plain, 2.0) << "pero con tope: +45 % de realce, no un salto de nivel";
+}
+
+TEST(Punch, ImpactBiasNeverPassesTheGuards) {
+    // Master ya al techo: con o sin sesgo el pico de salida no puede superar al de entrada (guarda de headroom).
+    Sig in = zeros(static_cast<int>(2.0f * kSr));
+    for (int k = 0; k < 4; ++k) addKick(in, static_cast<int>((0.3f + 0.4f * k) * kSr), 0.95f);
+    Sig out = in; PunchEngine p; p.prepare(kSr); p.setAmount(1.f); p.setImpactBias(1.f); run(p, out, 480);
+    EXPECT_LE(peak(out.l, 0, static_cast<int>(out.l.size())), peak(in.l, 0, static_cast<int>(in.l.size())) * 1.001f);
+    // Y la guarda de graves (~-6 dBFS) tampoco cede.
+    Sig k = zeros(static_cast<int>(1.5f * kSr)); addKick(k, 12000, 0.48f);
+    PunchEngine q; q.prepare(kSr); q.setAmount(1.f); q.setImpactBias(1.f); run(q, k, 480);
+    EXPECT_LE(peak(k.l, 0, static_cast<int>(k.l.size())), 0.5f * 1.12f);
+}
+
+TEST(Punch, ZeroImpactBiasIsIdenticalToNeverSettingIt) {
+    const Sig base = burst1k(0.2f);
+    Sig a = base, b = base;
+    PunchEngine p1; p1.prepare(kSr); p1.setAmount(0.8f); run(p1, a, 480);
+    PunchEngine p2; p2.prepare(kSr); p2.setAmount(0.8f); p2.setImpactBias(0.0f); run(p2, b, 480);
+    for (size_t i = 0; i < a.l.size(); ++i) ASSERT_EQ(a.l[i], b.l[i]);
+}
+
+TEST(Punch, NonFiniteImpactBiasIsIgnoredAndOutOfRangeIsClamped) {
+    PunchEngine p; p.prepare(kSr);
+    p.setImpactBias(0.5f); p.setImpactBias(std::numeric_limits<float>::quiet_NaN());
+    EXPECT_FLOAT_EQ(p.impactBias(), 0.5f);
+    p.setImpactBias(9.f);  EXPECT_FLOAT_EQ(p.impactBias(), 1.f);
+    p.setImpactBias(-2.f); EXPECT_FLOAT_EQ(p.impactBias(), 0.f);
+}
