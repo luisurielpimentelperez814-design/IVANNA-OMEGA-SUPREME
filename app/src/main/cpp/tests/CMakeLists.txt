@@ -1083,3 +1083,24 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_4d_ultra_chain PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_4d_ultra_chain)
+
+# ── Superficie de control GLOBAL de la Cadena 4D (cableado punta a punta, v2.5.47) ──
+# Ejercita el MISMO camino que usa el dispositivo (ensureInit / setEnabled / feedPlanar /
+# applyOutputPlanar / publishAnticipatedScene / status) sobre la cadena y el extractor
+# REALES: identidad estricta apagada, apertura anticipada a 120 BPM, techo háptico,
+# acumulación de dosis y publicación en el SceneTargetBus. Es la barrera del cableado
+# JNI/UI antes de tocar el dispositivo. Compila la .cpp real de la superficie.
+add_executable(test_4d_control_surface
+  test_4d_control_surface.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../music_intelligence/FourDControlSurface.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../music_intelligence/MusicFeatureExtractor.cpp
+)
+target_link_libraries(test_4d_control_surface PRIVATE GTest::gtest_main)
+target_include_directories(test_4d_control_surface PRIVATE .. ../include ../spatial
+  ../neuromorphic ../supreme ../music_intelligence ../dsp host_stubs)
+target_compile_options(test_4d_control_surface PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_4d_control_surface PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_4d_control_surface PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_4d_control_surface)
