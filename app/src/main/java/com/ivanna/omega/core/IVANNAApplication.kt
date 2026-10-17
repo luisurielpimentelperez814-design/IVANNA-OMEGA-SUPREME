@@ -268,6 +268,18 @@ class IVANNAApplication : Application() {
             }.onFailure { Log.w(TAG, "USB DAC cold-scan: ${it.message}") }
         }
 
+        // ── Capacidades reales del teléfono (sin pedir permisos) ───────────
+        // Solo consulta catálogos del sistema: no activa micrófono, cámara ni sensores.
+        // Queda en HardwareProbe.last para los paneles y en logcat (tag IvannaHW) como
+        // evidencia medida en el dispositivo real.
+        appScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                val caps = com.ivanna.omega.hardware.HardwareProbe.probe(this@IVANNAApplication)
+                com.ivanna.omega.hardware.HardwareProbe.last = caps
+                caps.describe().forEach { Log.i("IvannaHW", it) }
+            }.onFailure { Log.w(TAG, "HardwareProbe: ${it.message}") }
+        }
+
         // ── Arrancar cerebro perceptual ───────────────────────────────────
         // Forzar inicialización lazy + arrancar polling de telemetría 10Hz
         appScope.launch(kotlinx.coroutines.Dispatchers.Default) {
