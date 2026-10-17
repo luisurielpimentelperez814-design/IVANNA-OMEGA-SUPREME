@@ -1,3 +1,8 @@
+# CHANGELOG — v2.5.63 (354) — La captura de sistema y el asistente piden el micrófono bien
+1. **`fix(permissions)` (`MainActivity.kt`)** — la captura de audio del sistema exige `RECORD_AUDIO` además de MediaProjection, pero se lanzaba desde 3 botones sin pedirlo: el `AudioRecord` quedaba sin inicializar y fallaba en silencio. Ahora los tres pasan por un único `startCapture()` que pide el micrófono solo al activar la captura y, si quedó denegado para siempre, explica y abre Ajustes.
+2. **`fix(permissions)` (`IvannaAssistantScreen.kt`)** — el asistente relee el permiso al volver de Ajustes (concedido o revocado en uso) y manda a Ajustes cuando el sistema ya no muestra el diálogo.
+3. **Alcance honesto:** compila el CI; sin prueba física en el Moto G85 (procedimiento en `docs/HARDWARE_MOTO_G85_ESTADO.md`).
+
 # CHANGELOG — v2.5.62 (353) — Detección de capacidades del Moto G85 y política de permisos
 1. **`feat(hardware)` (`hardware/HardwareProbe.kt`)** — sondea lo que el teléfono tiene de verdad (sensores, cámaras listadas, vibración, rutas y formatos de audio, GLES/Vulkan, USB host) **sin pedir permisos ni activar nada**; corre al arrancar fuera del hilo principal y deja evidencia en logcat (`IvannaHW`). Lo no detectado se reporta como «no detectado», no se supone.
 2. **`feat(hardware)` (`PermissionPolicy` + `PermissionGate`)** — distingue «nunca pedido» de «denegado para siempre/revocado». La medición de sala (CONTROL) pide el micrófono solo al pulsar MEDIR y, si el sistema ya no muestra el diálogo, explica y abre Ajustes; el resto de la app sigue operativo. 7 pruebas JVM compiladas y ejecutadas con Kotlin real.
