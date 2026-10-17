@@ -1,4 +1,4 @@
-# Integración de hardware y permisos — Moto G85 5G (estado a v2.5.63)
+# Integración de hardware y permisos — Moto G85 5G (estado a v2.5.64)
 
 Base: auditoría de `main` en v2.5.61 (352). Alcance de esta versión: **capa de detección de capacidades + política de permisos**, cableadas a un primer consumidor real. No es la integración completa del prompt maestro; esta tabla dice exactamente qué está hecho y qué no.
 
@@ -32,6 +32,7 @@ Base: auditoría de `main` en v2.5.61 (352). Alcance de esta versión: **capa de
 | Gestión de revocación/denegación permanente en medición de sala | IMPLEMENTADA, PENDIENTE DE PRUEBA FÍSICA |
 | Mismo gestor en captura de sistema (MediaProjection) y asistente de voz (v2.5.63) | IMPLEMENTADA, PENDIENTE DE PRUEBA FÍSICA |
 | Audio Focus, `AudioDeviceCallback`, USB Audio | Ya existentes en el repo; no re-auditados a fondo en esta versión |
+| Fotoholografía·Nanotomix (v2.5.64): bandas Bark reales → ancho estéreo acotado (±0.25 máx., slew 0.2/s) vía `nativeSetSpatialWidthDirect` → `StereoWidener`; escena 3D paramétrica; intensidad y bypass A/B | IMPLEMENTADA, PENDIENTE DE PRUEBA FÍSICA (lógica pura probada: 11 tests JVM; efecto audible solo con captura Ruta A activa) |
 | Seguimiento por cámara / visión | NO SOPORTADA: la app no usa cámara; no se añade sin un algoritmo que la justifique |
 | Profundidad, LiDAR, seguimiento ocular | NO SOPORTADA POR EL HARDWARE |
 | Holograma óptico volumétrico en pantalla | NO SOPORTADA: una pantalla convencional no lo genera; DEH6 es simulación de host |
@@ -51,4 +52,13 @@ Base: auditoría de `main` en v2.5.61 (352). Alcance de esta versión: **capa de
 - Mostrar `HardwareProbe.last` en un panel de diagnóstico y atar a él qué controles se ofrecen.
 - Decidir `POST_NOTIFICATIONS`.
 - Añadir `testDebugUnitTest` al CI.
-- Fotoholografiananotomix como capa de visualización paramétrica sobre `SpatialAudioPanel`/`IvannaSpatialEngine`, solo cuando se defina qué telemetría real consume.
+- Fotoholografía·Nanotomix en Ruta B (módulo): hoy la telemetría Bark solo existe con captura Ruta A; evaluar `rt_band_meter` como fuente.
+- Medir en el Moto G85 el efecto del ancho adaptativo con A/B igualado en sonoridad (bypass incluido en la tarjeta).
+
+## Prueba física de Fotoholografía·Nanotomix
+1. SPATIAL AUDIO → tarjeta FOTOHOLOGRAFÍA. Sin captura activa debe decir «Sin señal» y no tocar el ancho.
+2. Activar la captura (Ruta A) y reproducir música: la escena reacciona al espectro.
+3. Activar «Modular el ancho»: «Ancho tuyo → aplicado» debe moverse, nunca más de ±25 % × intensidad, sin saltos.
+4. Alternar «Bypass A/B» a mitad de una pista: el ancho vuelve exactamente al tuyo; comparar de oído a igual volumen.
+5. Mover el slider de ancho de CONTROL/SONIDO con el efecto activo: la base nueva se respeta.
+6. Registrar CPU/temperatura con el efecto 10 min encendido (`scripts/benchmark_device.sh`).
