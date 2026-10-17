@@ -53,7 +53,7 @@
 | **IV. Inteligencia & Atlas v2.4.44** | [**§7. Atlas de Escena Musical de 12 Estilos (`IVW1` 8 774 Parámetros)**](#-7-atlas-de-escena-musical-12-estilos-pesos-ivw1-y-motores-físicos-de-sala) · [**§8. Fusión en Lazo Cerrado (`OmniHolographicSingularityEngine`)**](#-8-fusión-maestra-en-lazo-cerrado-omniholographicsingularityengine--declarativeunifiedpipeline) |
 | **V. Ejes Supremos & Biomecánica** | [**§9. Los 5 Ejes Supremos + Inversión Coclear PINN (0 lookahead)**](#-9-los-5-ejes-de-supremacía-cuántico-neuromórfica--inversión-coclear-pinn) · [**§10. Motor de Reconstrucción de Realidad (Fases 0–15)**](#-10-hipermotor-de-reconstrucción-de-realidad-acústica-fases-015) |
 | **VI. Acústica Medida & Hardware** | [**§11. Datasets Reales: 255 SOFA · 7D SAF · 200 BRIR**](#-11-entrenamiento-conjunto-sofa-255-aes69--saf-manifold-7-d--rir-200-salas) · [**§12. Cadena DSP de 9 Etapas & DAC USB-C Directo**](#-12-cadena-dsp-de-9-etapas-ruta-isócrona-usb-c-dac-y-bluetooth-master-path) |
-| **VII. Kernel, UI & Auditoría** | [**§13. Daemon Root, SHM v5 & UI Aurora Obsidiana**](#-13-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) · [**§14. Comparativa Industrial frente a Dolby, Dirac y V4A**](#-14-comparativa-técnica-frente-a-los-estándares-industriales) · [**§15. Matriz de Verificación CI (`347/347 CTest`) & Despliegue**](#-15-matriz-de-verificación-determinista-6-puertas--200200-ctest-e-instalación) |
+| **VII. Kernel, UI & Auditoría** | [**§13. Daemon Root, SHM v5 & UI Aurora Obsidiana**](#-13-daemon-root-ipc-lock-free-shm-v5-y-ui-aurora-obsidiana) · [**§14. Comparativa Industrial frente a Dolby, Dirac y V4A**](#-14-comparativa-técnica-frente-a-los-estándares-industriales) · [**§15. Matriz de Verificación CI (`359/359 CTest`) & Despliegue**](#-15-matriz-de-verificación-determinista-6-puertas--200200-ctest-e-instalación) |
 
 ---
 
@@ -113,7 +113,7 @@ Todas las cifras declaradas a continuación están respaldadas por suites de ver
 | **Atlas de Inteligencia Musical** | **12 estilos maestros · 8 774 pesos `IVW1`** | `app/src/main/cpp/scene/IvannaMusicIntelligenceEngine.hpp` |
 | **Dimensiones del Código Nativo** | **356 archivos C/C++20 (118 857 LOC)** | Directorio auditado `app/src/main/cpp/` |
 | **Capa de Control e Instrumentación** | **220 archivos Kotlin (52 650 LOC)** | Directorio auditado `app/src/main/java/` |
-| **Verificación Host CTest** | **347/347 pruebas en verde (100%)** | `telemetry/ctest_summary.json` (ejecución Release, ASan y UBSan) |
+| **Verificación Host CTest** | **359/359 pruebas en verde (100%)** | `telemetry/ctest_summary.json` (ejecución Release, ASan y UBSan) |
 | **Puertas Estáticas de Calidad** | **7 de 7 puertas aprobadas (`[PASS]`)** | `scripts/check_*.py` (RT-Safety, JNI, Headers, Kotlin, Flags, Docs, Datasets) |
 
 ---
@@ -521,11 +521,11 @@ La interfaz de usuario está construida desde cero en **Jetpack Compose** con el
 | **Atlas Musical con Detección Automática** | **12 estilos · Red `IVW1` 8 774 pesos** | Modos genéricos (Música/Cine) | Manual por perfiles | Manual por audífonos |
 | **Base de Datos Espacial Anatómica** | **255 SOFA + 7D SAF + 200 BRIR reales** | Sintética 5.1/7.1 virtual | Convolución mono/estéreo | Curvas de frecuencia |
 | **Transición de Pistas y Volumen** | **Zero-Pop Atómico (cero clics/crujidos)** | Discontinuidades audibles | Clics frecuentes | Clics en cambio de app |
-| **Suite de Verificación Automatizada** | **6 Puertas Estáticas + 347/347 CTest** | Caja negra sin auditoría | Sin tests automatizados | Pruebas propietarias |
+| **Suite de Verificación Automatizada** | **6 Puertas Estáticas + 359/359 CTest** | Caja negra sin auditoría | Sin tests automatizados | Pruebas propietarias |
 
 ---
 
-## ✦ 15. Matriz de Verificación Determinista (`6 Puertas + 347/347 CTest`) e Instalación
+## ✦ 15. Matriz de Verificación Determinista (`6 Puertas + 359/359 CTest`) e Instalación
 
 <div align="center">
   <img src="docs/release_media/ivanna_verification_matrix.svg" alt="Matriz de Verificación Determinista de 6 Puertas" width="100%" />
@@ -584,7 +584,7 @@ python3 scripts/check_kotlin_wrapper_wiring.py
 python3 scripts/check_rt_safety.py
 python3 scripts/check_docs_claims.py
 
-# 3. Compilar y ejecutar la suite completa de 347/347 pruebas CTest en host (Release)
+# 3. Compilar y ejecutar la suite completa de 359/359 pruebas CTest en host (Release)
 cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
 cmake --build build-tests -j$(nproc)
 ctest --test-dir build-tests --output-on-failure
