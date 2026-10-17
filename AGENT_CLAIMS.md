@@ -2602,3 +2602,16 @@ local con solo ver el daemon vivo. Plan: JNI expone avance de `effect_frames` ->
 - **Hallazgo 1 (limitador thr+1/8): DESCARTADO por medición como defecto de producción.** Ambas rutas llaman `setParams(0.891251f, 0.98855f)` (umbral -1 dBFS): transparente bajo -1 dBFS, 0 dBFS -> -0.66 dBFS, +3 dBFS -> -0.55 dBFS. La pérdida de 2.8 dB solo existe con los defaults de `setParams()` (-4 dBFS), que ninguna ruta usa. No se tocó el limitador; `test_limiter_route_params` fija el comportamiento real (5 tests: transparencia, no aplastar masters calientes, dinámica, techo inviolable con +5 dBFS/impulsos/ruido/percusión, release).
 - **Hallazgo 2 (reinyección por delta): REDISEÑADO** (v2.5.0, orden directa del propietario). `DifferentialReinjector`: alineación fraccional + guardián de coherencia espectral por banda; peine rms 1.0-1.35 dB → 0.13-0.36 dB (host, sintético). **Verificado por medición en host, no en dispositivo**; Kotlin/JNI sin compilar localmente (valida CI). Sin slider de UI para topes/intensidad base todavía.
 - Lección operativa: `telemetry/ctest_summary.json` se regenera en CI con el total real y `check_docs_claims` exige que README/LÉAME coincidan; cada test nuevo obliga a sincronizar los conteos (hoy 200/200).
+
+### 🔒 TOMADO — Corrección acústica de sala/bocinas por medición (RoomProbe) — 2026-10-17 (sesión Claude/chat)
+
+**Flanco (distinto de la cadena 4D de Genspark):** medir la sala + bocinas con el micrófono del teléfono (27 tonos de
+1/3 de octava, detección síncrona, latencia de salida real) y aplicar una corrección tonal en ambas rutas (A y B).
+Archivos: `spatial/RoomProbe.hpp`, `spatial/RoomCorrectionEq.hpp`, `audio/RoomMeasurement.kt`, `omega_control_bus.h`
+(**ABI v6**: `room_corr_db[10]`; el módulo Magisk debe reinstalarse), `IvannaFusionCore`, `command_server`, JNI,
+`ControlTabScreen`/`IvannaControlPanel` (tarjeta "CORRECCIÓN ACÚSTICA"). También `TemporalSpatialDynamics.hpp`
+(campo espacial temporal) y `BassHaptics` (háptica con sincronía por ruta).
+**No tocar sin avisar:** el orden de la cadena en `IvannaFusionCore` (… temporal → sala → compresor).
+**Verificado (host):** desviación RMS 63 Hz–4 kHz con tonos reales simulados 1.95 → 0.43 dB. **Sin verificar en dispositivo**
+(micrófono sin calibrar: corrige balance amplio 50 Hz–6 kHz, no modos estrechos ni fase).
+**Hallazgo abierto:** en Ruta B `setEqGains` solo aplica la MEDIA de las 10 ganancias (los sliders de EQ no moldean el espectro).
