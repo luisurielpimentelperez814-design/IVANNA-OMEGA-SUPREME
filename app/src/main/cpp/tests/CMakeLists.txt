@@ -100,6 +100,7 @@ ivanna_add_test(test_transient_detector)
 # Capa de inmersión (immersion/): módulos nuevos header-only, sin estado
 # compartido, probados aquí antes de cablearse al audio thread.
 ivanna_add_test(test_arousal_conductor)
+ivanna_add_test(test_crosstalk_canceller)
 
 # FIX (gap encontrado en auditoría de Fase 3): test_adaptive_engine.cpp
 # existía desde el merge de feature/safetylimiter pero no estaba
