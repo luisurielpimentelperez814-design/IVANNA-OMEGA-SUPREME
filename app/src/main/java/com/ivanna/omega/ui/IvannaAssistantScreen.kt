@@ -89,6 +89,18 @@ fun IvannaAssistantScreen(
         // Si el usuario acaba de conceder el permiso, IVANNA lo celebra
         if (granted) vm.onTextInput("hola")
     }
+    // Permiso concedido o revocado en Ajustes mientras la app estaba en segundo plano:
+    // se relee al volver para no mostrar un estado viejo (micrófono "disponible" sin permiso).
+    val permLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(permLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasAudioPermission = com.ivanna.omega.hardware.PermissionGate.isGranted(context, Manifest.permission.RECORD_AUDIO)
+            }
+        }
+        permLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { permLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Nota: el permiso RECORD_AUDIO en tiempo de ejecución (obligatorio desde
     // Android 6 además de declararlo en el manifiesto) ya se gestiona dentro
@@ -188,7 +200,14 @@ fun IvannaAssistantScreen(
                 micAvailable     = panel.micAvailable,
                 hasAudioPermission = hasAudioPermission,
                 onRequestPermission = {
-                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    // Denegado para siempre: el sistema ya no muestra diálogo → Ajustes.
+                    if (com.ivanna.omega.hardware.PermissionGate.stateFor(context, Manifest.permission.RECORD_AUDIO)
+                        == com.ivanna.omega.hardware.PermissionState.OPEN_SETTINGS) {
+                        com.ivanna.omega.hardware.PermissionGate.openAppSettings(context)
+                    } else {
+                        com.ivanna.omega.hardware.PermissionGate.markRequested(context, Manifest.permission.RECORD_AUDIO)
+                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
                 },
                 onStartListen    = { vm.startListening() },
                 onStopListen     = { vm.stopListening() },
