@@ -660,6 +660,13 @@ add_executable(test_hrtf_database
   ../spatial/HRTFInterpolator.cpp
   ../spatial/HRTFDatabase.cpp
 )
+# Las fuentes de producción del HRTF se compilan aquí con -fno-exceptions, igual que el build
+# Android (CMakeLists.txt principal). Un try/catch en ellas rompía el APK mientras el host, con
+# excepciones habilitadas, seguía en verde: ahora rompe también aquí.
+set_source_files_properties(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../spatial/HRTFInterpolator.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../spatial/HRTFDatabase.cpp
+  PROPERTIES COMPILE_OPTIONS "-fno-exceptions")
 target_link_libraries(test_hrtf_database PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_hrtf_database PRIVATE .. ../include ../spatial host_stubs)
 target_compile_definitions(test_hrtf_database PRIVATE
