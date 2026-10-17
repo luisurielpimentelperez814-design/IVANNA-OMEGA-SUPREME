@@ -45,6 +45,7 @@
 #include "../spatial/RoomProbe.hpp"
 #include "../neuromorphic/NpeStereoCore.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
+#include "../include/BlockPeakGuard.h"
 #include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
 #include "../include/punch_engine.hpp"                // impacto predictivo por bandas (v2.5.41)
 #include "../spatial/RirConvolver.hpp"
@@ -2090,36 +2091,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_ats.blkCaSmooth += 0.05f * (blkCompAmount - g_ats.blkCaSmooth);
     g_ats.blkErSmooth += 0.05f * (blkExcReduction - g_ats.blkErSmooth);
     g_gain.processInput(lBuf, rBuf, n);
-    {
-        float pk = 0.f;
-        for (int i = 0; i < n; ++i) {
-            const float al = lBuf[i] < 0.f ? -lBuf[i] : lBuf[i];
-            const float ar = rBuf[i] < 0.f ? -rBuf[i] : rBuf[i];
-            if (al > pk) pk = al;
-            if (ar > pk) pk = ar;
-        }
-        // FIX (tronido "metralleta"): mismo fix que el sitio equivalente en
-        // nativeProcess (ver ese comentario extenso) — ataque instantáneo
-        // (nunca comprometer la protección del EQ), release en rampa
-        // muestra a muestra (elimina el escalón audible al soltar, sin
-        // riesgo porque ahí siempre se va hacia menos reducción). Campo
-        // separado (blkPeakGuardScale) porque este path puede correr en un
-        // hilo distinto, mismo patrón que blkTgSmooth vs targetGainSmooth.
-        const float targetSc = (pk > 0.89f && pk > 1e-9f) ? (0.89f / pk) : 1.0f;
-        const float startSc = g_ats.blkPeakGuardScale;
-        if (targetSc < startSc) {
-            for (int i = 0; i < n; ++i) { lBuf[i] *= targetSc; rBuf[i] *= targetSc; }
-            g_ats.blkPeakGuardScale = targetSc;
-        } else if (targetSc > startSc) {
-            for (int i = 0; i < n; ++i) {
-                const float t = (n > 1) ? (float)i / (float)(n - 1) : 1.0f;
-                const float sc = startSc + (targetSc - startSc) * t;
-                lBuf[i] *= sc;
-                rBuf[i] *= sc;
-            }
-            g_ats.blkPeakGuardScale = targetSc;
-        }
-    }
+    // Guard de pico previo al EQ (campo separado blkPeakGuardScale: este path puede correr en un
+    // hilo distinto, mismo patrón que blkTgSmooth vs targetGainSmooth). Lógica en BlockPeakGuard.h.
+    ivanna::blockPeakGuard(lBuf, rBuf, n, g_ats.blkPeakGuardScale);
     g_eq.process(lBuf, rBuf, n);
     g_gain.setRuntimeGain(g_ats.blkTgSmooth);
     g_comp.setRuntimeAmount(g_ats.blkCaSmooth);
