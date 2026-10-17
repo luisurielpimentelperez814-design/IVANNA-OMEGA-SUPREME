@@ -137,6 +137,8 @@ extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
 extern std::atomic<bool>  g_temporal_field_enabled;
+extern std::atomic<float> g_temporal_arc_tension;
+extern std::atomic<float> g_temporal_arc_impact;
 extern std::atomic<float> g_temporal_field_amount;
 extern std::atomic<bool>  g_temporal_field_auto;
 extern std::atomic<float> g_room_corr_db[10];
@@ -1875,6 +1877,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // v2.5.41: PUNCH justo antes del limitador (el limitador ve el resultado; el motor no sube el ataque si el pico
     // ya está en el techo, así que no hay «bombeo»). Latencia +1.5 ms solo mientras esté activo.
     g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));
+    g_punch.setImpactBias(ivanna::fourd::arcImpact());   // el drop del arco narrativo 4D realza el golpe (guardas intactas)
+    g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);   // y modula el espacio: se abre antes, se recoge en el impacto
+    g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
     g_punch.process(g_ats.pdOutL, g_ats.pdOutR, n);
     // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
     // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
@@ -2227,6 +2232,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
     // NHO/Spatial saldrían sin protección hacia el DAC.
     g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));   // v2.5.41
+    g_punch.setImpactBias(ivanna::fourd::arcImpact());
+    g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);
+    g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
     g_punch.process(oL, oR, n);
     // Cancelación de diafonía de la Cadena 4D antes del limitador (ver nativeProcess).
     ivanna::fourd::applyOutputPlanar(oL, oR, n);
@@ -2953,6 +2961,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetIntelligentUpmixingEnabled(
     g_upmixing_enabled.store(en, std::memory_order_relaxed);
     // Cerrar el canal cross-process: empujar al daemon -> SHM -> audioserver.
     omegaSendUpmixingToDaemon(en, g_upmixing_immersivity.load(std::memory_order_relaxed));
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.upmixing_enabled = en ? 1u : 0u;
+        bus.publish(snap);
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -2961,6 +2976,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUpmixingImmersivity(
     if (std::isfinite(immersivity)) {
         g_upmixing_immersivity.store(immersivity, std::memory_order_relaxed);
         omegaSendUpmixingToDaemon(g_upmixing_enabled.load(std::memory_order_relaxed), immersivity);
+        auto& bus = ivanna::effectControlBus();
+        ivanna::OmegaDspSnapshot snap;
+        uint64_t seen = 0;
+        if (bus.readLatest(snap, seen)) {
+            snap.upmixing_immersivity = immersivity;
+            bus.publish(snap);
+        }
     }
 }
 
@@ -3020,6 +3042,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAuxField(
     g_aux_field_coherence.store(co, std::memory_order_relaxed);
     g_aux_field_enabled.store(en, std::memory_order_relaxed);     // ruta A (en proceso)
     omegaSendAuxFieldToDaemon(en, xo, co);                        // ruta B (audioserver, via daemon)
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.flags = (snap.flags & ~(OMEGA_FLAG_AUX_FIELD_ON | OMEGA_FLAG_AUX_XOVER_MASK | OMEGA_FLAG_AUX_COH_MASK))
+                   | omega_aux_field_encode(en, xo, co);
+        bus.publish(snap);
+    }
 }
 
 // ── Corrección acústica de sala: puente app→daemon (SET_ROOM_CORRECTION) + medición ──
@@ -3056,6 +3086,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetRoomCorrection(
     }
     for (int i = 0; i < 10; ++i) g_room_corr_db[i].store(g[i], std::memory_order_relaxed);   // ruta A (en proceso)
     omegaSendRoomCorrectionToDaemon(g);                                                       // ruta B (audioserver, via daemon)
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        for (int i = 0; i < 10; ++i) snap.room_corr_db[i] = g[i];
+        bus.publish(snap);
+    }
 }
 
 // ── Motor NPE neuromórfico en el módulo (Ruta B): app→daemon (SET_NPE) ──
@@ -3076,6 +3113,34 @@ static void omegaSendNpeToDaemon(bool enabled, float lateral, float ohc, float m
         int n = std::snprintf(json, sizeof(json),
             "{\"action\":\"SET_NPE\",\"enabled\":%d,\"lateralInhib\":%.3f,\"ohc\":%.3f,\"masterDb\":%.2f}",
             enabled ? 1 : 0, (double)lateral, (double)ohc, (double)masterDb);
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+/// Diafonía: la cadena 4D de la app (ivanna_4d_jni.cpp) la enciende en la Ruta A; esto la sincroniza con el módulo.
+extern "C" void ivanna_send_crosstalk_to_daemon(bool on) noexcept {
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        if (on) snap.temporal_field |= OMEGA_TEMPORAL_FIELD_XTC_BIT;
+        else    snap.temporal_field &= ~OMEGA_TEMPORAL_FIELD_XTC_BIT;
+        bus.publish(snap);
+    }
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000};
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[96];
+        int n = std::snprintf(json, sizeof(json), "{\"action\":\"SET_CROSSTALK\",\"enabled\":%d}", on ? 1 : 0);
         if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
     }
     ::close(fd);
@@ -3188,6 +3253,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetTemporalField(
     g_temporal_field_auto.store(au, std::memory_order_relaxed);
     g_temporal_field_enabled.store(en, std::memory_order_relaxed);   // ruta A (en proceso)
     omegaSendTemporalFieldToDaemon(en, am, au);                          // ruta B (audioserver, via daemon)
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.temporal_field = (snap.temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT)
+                            | omega_temporal_field_encode(en, am, au);
+        bus.publish(snap);
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -3196,6 +3269,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsEnabled(
     const bool en = (enabled == JNI_TRUE);
     g_wfs_enabled.store(en, std::memory_order_relaxed);
     omegaSendWfsToDaemon(en, g_wfs_spread.load(std::memory_order_relaxed));
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.wfs_enabled = en ? 1u : 0u;
+        bus.publish(snap);
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -3205,6 +3285,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
         const float sp = std::clamp(spread, 0.0f, 2.0f);
         g_wfs_spread.store(sp, std::memory_order_relaxed);
         omegaSendWfsToDaemon(g_wfs_enabled.load(std::memory_order_relaxed), sp);
+        auto& bus = ivanna::effectControlBus();
+        ivanna::OmegaDspSnapshot snap;
+        uint64_t seen = 0;
+        if (bus.readLatest(snap, seen)) {
+            snap.wfs_spread = sp;
+            bus.publish(snap);
+        }
     }
 }
 
@@ -3218,6 +3305,18 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
     env->GetFloatArrayRegion(jx, 0, 7, x);
     env->GetFloatArrayRegion(jy, 0, 7, y);
     env->GetFloatArrayRegion(jz, 0, 7, z);
+
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        for (int i = 0; i < 7; ++i) {
+            snap.wfs_speaker_x[i] = x[i];
+            snap.wfs_speaker_y[i] = y[i];
+            snap.wfs_speaker_z[i] = z[i];
+        }
+        bus.publish(snap);
+    }
 
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return;

@@ -268,6 +268,23 @@ class IVANNAApplication : Application() {
             }.onFailure { Log.w(TAG, "USB DAC cold-scan: ${it.message}") }
         }
 
+        // ── Capacidades reales del teléfono (sin pedir permisos) ───────────
+        // Solo consulta catálogos del sistema: no activa micrófono, cámara ni sensores.
+        // Queda en HardwareProbe.last para los paneles y en logcat (tag IvannaHW) como
+        // evidencia medida en el dispositivo real.
+        appScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                val caps = com.ivanna.omega.hardware.HardwareProbe.probe(this@IVANNAApplication)
+                com.ivanna.omega.hardware.HardwareProbe.last = caps
+                caps.describe().forEach { Log.i("IvannaHW", it) }
+            }.onFailure { Log.w(TAG, "HardwareProbe: ${it.message}") }
+        }
+
+        // ── Fotoholografía·Nanotomix: lazo de control del ancho estéreo ────
+        // Restaura el estado guardado (apagado por defecto) y corre en hilo de fondo a 20 Hz.
+        runCatching { com.ivanna.omega.fotoholo.FotoHoloEngine.start(this@IVANNAApplication, appScope) }
+            .onFailure { Log.w(TAG, "FotoHoloEngine: ${it.message}") }
+
         // ── Arrancar cerebro perceptual ───────────────────────────────────
         // Forzar inicialización lazy + arrancar polling de telemetría 10Hz
         appScope.launch(kotlinx.coroutines.Dispatchers.Default) {

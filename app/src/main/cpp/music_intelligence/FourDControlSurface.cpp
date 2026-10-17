@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 #include <cmath>
 #include <memory>
 #include <mutex>
@@ -25,6 +26,13 @@ std::atomic<bool>  g_hapticsOn{false};
 std::atomic<bool>  g_xtcOn{false};
 std::atomic<bool>  g_arcOn{false};
 std::atomic<float> g_arcDepth{0.0f};
+// Controles continuos: NaN / -1 = "nunca fijado" (la cadena conserva su valor por defecto).
+// Se guardan aquí para que lo restaurado al arrancar (antes de que exista la cadena) no se pierda.
+std::atomic<float> g_leadMs{std::numeric_limits<float>::quiet_NaN()};
+std::atomic<float> g_depth{std::numeric_limits<float>::quiet_NaN()};
+std::atomic<float> g_hapticScale{std::numeric_limits<float>::quiet_NaN()};
+std::atomic<float> g_dosCal{std::numeric_limits<float>::quiet_NaN()};
+std::atomic<int>   g_dosMode{-1};
 std::atomic<float> g_sr{48000.0f};
 std::atomic<int>   g_maxBlock{480};
 
@@ -85,6 +93,11 @@ void reapplyControls() noexcept {
     c->setHapticsEnabled(g_hapticsOn.load(std::memory_order_relaxed));
     c->setCrosstalkEnabled(g_xtcOn.load(std::memory_order_relaxed));
     c->setArcDepth(g_arcDepth.load(std::memory_order_relaxed));
+    { const float v = g_leadMs.load(std::memory_order_relaxed);      if (std::isfinite(v)) c->setLeadMs(v); }
+    { const float v = g_depth.load(std::memory_order_relaxed);       if (std::isfinite(v)) c->setDepth(v); }
+    { const float v = g_hapticScale.load(std::memory_order_relaxed); if (std::isfinite(v)) c->setHapticScale(v); }
+    { const float v = g_dosCal.load(std::memory_order_relaxed);      if (std::isfinite(v)) c->setDosimeterCalibration(v); }
+    { const int m = g_dosMode.load(std::memory_order_relaxed);       if (m >= 0) c->setDosimeterMode(m); }
     c->setArcEnabled(g_arcOn.load(std::memory_order_relaxed));
 }
 
@@ -135,10 +148,10 @@ void setHapticsEnabled(bool on) noexcept {
     g_hapticsOn.store(on, std::memory_order_relaxed);
     if (active()) chain()->setHapticsEnabled(on);
 }
-void setHapticScale(float s) noexcept              { if (active()) chain()->setHapticScale(s); }
+void setHapticScale(float s) noexcept              { if (!std::isfinite(s)) return; g_hapticScale.store(s, std::memory_order_relaxed); if (active()) chain()->setHapticScale(s); }
 void setOutputLatencyMs(float ms) noexcept         { if (active()) chain()->setOutputLatencyMs(ms); }
-void setLeadMs(float ms) noexcept                  { if (active()) chain()->setLeadMs(ms); }
-void setDepth(float d) noexcept                    { if (active()) chain()->setDepth(d); }
+void setLeadMs(float ms) noexcept                  { if (!std::isfinite(ms)) return; g_leadMs.store(ms, std::memory_order_relaxed); if (active()) chain()->setLeadMs(ms); }
+void setDepth(float d) noexcept                    { if (!std::isfinite(d)) return; g_depth.store(d, std::memory_order_relaxed); if (active()) chain()->setDepth(d); }
 void setArcEnabled(bool on) noexcept {
     g_arcOn.store(on, std::memory_order_relaxed);
     if (active()) chain()->setArcEnabled(on);
@@ -147,8 +160,8 @@ void setArcDepth(float d) noexcept {
     g_arcDepth.store(std::isfinite(d) ? std::min(1.0f, std::max(0.0f, d)) : 0.0f, std::memory_order_relaxed);
     if (active()) chain()->setArcDepth(g_arcDepth.load(std::memory_order_relaxed));
 }
-void setDosimeterMode(int mode) noexcept           { if (active()) chain()->setDosimeterMode(mode); }
-void setDosimeterCalibration(float dbfs) noexcept  { if (active()) chain()->setDosimeterCalibration(dbfs); }
+void setDosimeterMode(int mode) noexcept           { if (mode < 0 || mode > 2) return; g_dosMode.store(mode, std::memory_order_relaxed); if (active()) chain()->setDosimeterMode(mode); }
+void setDosimeterCalibration(float dbfs) noexcept  { if (!std::isfinite(dbfs)) return; g_dosCal.store(dbfs, std::memory_order_relaxed); if (active()) chain()->setDosimeterCalibration(dbfs); }
 void setCrosstalkEnabled(bool on) noexcept {
     g_xtcOn.store(on, std::memory_order_relaxed);
     if (active()) chain()->setCrosstalkEnabled(on);
@@ -271,6 +284,18 @@ void publishAnticipatedScene() noexcept {
 ivanna::ime::FourDStatus status() noexcept {
     if (!active()) return ivanna::ime::FourDStatus{};
     return chain()->status();
+}
+
+float arcImpact() noexcept {
+    if (!active()) return 0.0f;
+    const float v = chain()->arc().impact;
+    return std::isfinite(v) ? (v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v)) : 0.0f;
+}
+
+float arcTension() noexcept {
+    if (!active()) return 0.0f;
+    const float v = chain()->arc().tension;
+    return std::isfinite(v) ? (v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v)) : 0.0f;
 }
 
 uint32_t publishedScenes() noexcept {

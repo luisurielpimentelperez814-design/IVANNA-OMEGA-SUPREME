@@ -78,6 +78,7 @@ fun ControlTabScreen(
             when (val out = com.ivanna.omega.audio.RoomMeasurement.run(context) { roomProgress = it }) {
                 is com.ivanna.omega.audio.RoomMeasurement.Outcome.Success -> {
                     paramStore.setRoomCorrection(out.gainsDb, true)
+                    runCatching { com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, out.latencyMs) }   // háptica con latencia real
                     roomGains = out.gainsDb; roomEnabled = true
                     applyRoom(out.gainsDb, true)
                     roomStatus = "Medición lista · retardo de la salida medido: ${out.latencyMs} ms"
@@ -92,7 +93,12 @@ fun ControlTabScreen(
     }
     val micLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) startRoomMeasure() else roomStatus = "Se necesita el permiso de micrófono para medir la sala" }
+    ) { granted ->
+        if (granted) startRoomMeasure()
+        else roomStatus = com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(
+            com.ivanna.omega.hardware.PermissionGate.stateFor(context, android.Manifest.permission.RECORD_AUDIO)
+        )
+    }
 
     LaunchedEffect(Unit) {
         if (npeBypassState && PiLstmBridge.isReady) {
@@ -162,9 +168,21 @@ fun ControlTabScreen(
         roomProgress = roomProgress,
         roomStatus = roomStatus,
         onRoomMeasure = {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
-                == android.content.pm.PackageManager.PERMISSION_GRANTED) startRoomMeasure()
-            else micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            // El micrófono solo se pide aquí, cuando el usuario pulsa MEDIR. Si ya quedó denegado para
+            // siempre (o se revocó en Ajustes) el sistema no vuelve a mostrar el diálogo: se explica y se
+            // abre Ajustes en vez de repetir una petición muda.
+            val micState = com.ivanna.omega.hardware.PermissionGate.stateFor(context, android.Manifest.permission.RECORD_AUDIO)
+            when (micState) {
+                com.ivanna.omega.hardware.PermissionState.GRANTED -> startRoomMeasure()
+                com.ivanna.omega.hardware.PermissionState.OPEN_SETTINGS -> {
+                    roomStatus = com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(micState)
+                    com.ivanna.omega.hardware.PermissionGate.openAppSettings(context)
+                }
+                else -> {
+                    com.ivanna.omega.hardware.PermissionGate.markRequested(context, android.Manifest.permission.RECORD_AUDIO)
+                    micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
+            }
         },
         onRoomToggle = { en ->
             roomEnabled = en && roomGains != null

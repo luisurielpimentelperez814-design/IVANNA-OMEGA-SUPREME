@@ -125,6 +125,16 @@ class ParameterStore(context: Context) {
         private const val KEY_AUX_XOVER   = "aux_field_xover_hz"
         private const val KEY_AUX_COH     = "aux_field_coherence"
         private const val KEY_PUNCH       = "punch_amount"
+        private const val KEY_4D_ENABLED  = "fourd_enabled"
+        private const val KEY_4D_HAPTICS  = "fourd_haptics"
+        private const val KEY_4D_HSCALE   = "fourd_haptic_scale"
+        private const val KEY_4D_XTC      = "fourd_crosstalk"
+        private const val KEY_4D_LEAD     = "fourd_lead_ms"
+        private const val KEY_4D_DEPTH    = "fourd_depth"
+        private const val KEY_4D_ARC      = "fourd_arc"
+        private const val KEY_4D_ARCDEPTH = "fourd_arc_depth"
+        private const val KEY_4D_DOSMODE  = "fourd_dos_mode"
+        private const val KEY_4D_DOSCAL   = "fourd_dos_cal"
         private const val KEY_HAPTIC_ENABLED  = "bass_haptic_enabled"
         private const val KEY_HAPTIC_STRENGTH = "bass_haptic_strength"
         private const val KEY_HAPTIC_RUMBLE   = "bass_haptic_rumble"
@@ -392,6 +402,28 @@ class ParameterStore(context: Context) {
     // ── Impacto predictivo (PunchEngine) ── 0 = apagado por defecto: bypass exacto, el audio no cambia hasta activarlo
     fun getPunchAmount(): Float = safeGetFloat(KEY_PUNCH, 0f)
     fun setPunchAmount(amount: Float) = prefs.edit().putFloat(KEY_PUNCH, amount.coerceIn(0f, 1f)).apply()
+
+    // ── Cadena 4D (anticipación, arco, háptica, diafonía, dosímetro) ── todo apagado por defecto
+    fun is4dEnabled(): Boolean = safeGetBoolean(KEY_4D_ENABLED, false)
+    fun set4dEnabled(v: Boolean) = prefs.edit().putBoolean(KEY_4D_ENABLED, v).apply()
+    fun is4dHapticsOn(): Boolean = safeGetBoolean(KEY_4D_HAPTICS, false)
+    fun set4dHapticsOn(v: Boolean) = prefs.edit().putBoolean(KEY_4D_HAPTICS, v).apply()
+    fun get4dHapticScale(): Float = safeGetFloat(KEY_4D_HSCALE, 0.6f)
+    fun set4dHapticScale(v: Float) = prefs.edit().putFloat(KEY_4D_HSCALE, v.coerceIn(0f, 0.85f)).apply()
+    fun is4dCrosstalkOn(): Boolean = safeGetBoolean(KEY_4D_XTC, false)
+    fun set4dCrosstalkOn(v: Boolean) = prefs.edit().putBoolean(KEY_4D_XTC, v).apply()
+    fun get4dLeadMs(): Float = safeGetFloat(KEY_4D_LEAD, 7.5f)
+    fun set4dLeadMs(v: Float) = prefs.edit().putFloat(KEY_4D_LEAD, v.coerceIn(5f, 10f)).apply()
+    fun get4dDepth(): Float = safeGetFloat(KEY_4D_DEPTH, 0.7f)
+    fun set4dDepth(v: Float) = prefs.edit().putFloat(KEY_4D_DEPTH, v.coerceIn(0f, 1f)).apply()
+    fun is4dArcOn(): Boolean = safeGetBoolean(KEY_4D_ARC, false)
+    fun set4dArcOn(v: Boolean) = prefs.edit().putBoolean(KEY_4D_ARC, v).apply()
+    fun get4dArcDepth(): Float = safeGetFloat(KEY_4D_ARCDEPTH, 0.5f)
+    fun set4dArcDepth(v: Float) = prefs.edit().putFloat(KEY_4D_ARCDEPTH, v.coerceIn(0f, 1f)).apply()
+    fun get4dDosimeterMode(): Int = safeGetInt(KEY_4D_DOSMODE, 0).coerceIn(0, 2)
+    fun set4dDosimeterMode(v: Int) = prefs.edit().putInt(KEY_4D_DOSMODE, v.coerceIn(0, 2)).apply()
+    fun get4dDosimeterCal(): Float = safeGetFloat(KEY_4D_DOSCAL, 94f)
+    fun set4dDosimeterCal(v: Float) = prefs.edit().putFloat(KEY_4D_DOSCAL, v.coerceIn(70f, 145f)).apply()
 
     fun isAuxFieldEnabled(): Boolean = safeGetBoolean(KEY_AUX_ENABLED, false)
     fun getAuxXoverHz(): Float = safeGetFloat(KEY_AUX_XOVER, 120f)

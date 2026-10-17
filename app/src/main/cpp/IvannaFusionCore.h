@@ -11,6 +11,7 @@
 #include "spatial/TemporalSpatialDynamics.hpp"
 #include "spatial/RoomCorrectionEq.hpp"
 #include "neuromorphic/NpeStereoCore.hpp"
+#include "spatial/CrosstalkCanceller.hpp"
 #include "spatial/RoomGeometryConfig.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
 
@@ -55,6 +56,7 @@ public:
         m_room.prepare(sampleRate);
         m_userEq.prepare(sampleRate);
         m_npe.prepare(sampleRate);
+        m_xtc.prepare(sampleRate, 2048);
         m_upmixer.prepare(sampleRate);
         m_hoaDecoder.prepare(sampleRate, 8);
     }
@@ -275,6 +277,8 @@ public:
     void setNpe(bool on, float harmonic, float lateral, float ohc, float masterDb) noexcept {
         m_npeOn_ = on; m_npeHarm_ = harmonic; m_npeLat_ = lateral; m_npeOhc_ = ohc; m_npeMasterDb_ = masterDb;
     }
+    /// Cancelación de diafonía para altavoces (Ruta B; la Ruta A la corre la cadena 4D de la app).
+    void setCrosstalk(bool on) noexcept { m_xtc.setEngage(on); }
     /// Recorte por térmico/CPU (mismo criterio que Volterra): el NPE se desvanece (20 ms) y vuelve solo.
     void setNpeShed(bool shed) noexcept { m_npeShed_ = shed; }
     int npeSpikes() const noexcept { return m_npe.lastSpikes(); }
@@ -322,6 +326,7 @@ private:
     // switch duro en el callback. Cero allocs en el hot path: los buffers
     // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
     ivanna::spatial::WfsRenderer m_wfs;
+    ivanna::spatial::CrosstalkCanceller m_xtc;        // diafonía para altavoces (apagado = identidad)
     ivanna::neuromorphic::NpeStereoCore m_npe;        // NPE neuromórfico en Ruta B (apagado = bit-exacto)
     bool  m_npeOn_ = false, m_npeShed_ = false;
     float m_npeHarm_ = 0.2f, m_npeLat_ = 0.2f, m_npeOhc_ = 0.3f, m_npeMasterDb_ = 0.0f;

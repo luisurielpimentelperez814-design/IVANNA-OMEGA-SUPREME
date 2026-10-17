@@ -46,6 +46,7 @@ public:
     static constexpr float kLowCeiling   = 0.5f;          // -6 dBFS: tope de pico de la banda de graves tras el realce
     static constexpr float kHeadroom     = 0.9f;          // -0.9 dBFS: ningún realce supera este pico retardado
     static constexpr float kSustainTrim  = 0.15f;         // sostén -1.4 dB a amount = 1
+    static constexpr float kImpactBoost  = 0.45f;         // el sesgo de impacto escala el realce de ataque hasta x1.45
     static constexpr float kBoost[kBands] = {0.90f, 0.50f, 0.35f};   // ataque: +5.6 / +3.5 / +2.6 dB a amount = 1
 
     PunchEngine() noexcept { prepare(48000.0f); }
@@ -98,6 +99,14 @@ public:
         for (auto& t : tel_) t.store(0.0f, std::memory_order_relaxed);
     }
 
+    // Sesgo de IMPACTO 0..1 (lo fija el arco narrativo 4D en el regreso del pulso tras un hueco, el «drop»): sube hasta
+    // un 45 % el realce de ataque MIENTRAS dura. No toca el sostén ni las guardas: excursión y headroom siguen
+    // mandando, así que nunca produce más pico del permitido. 0 = comportamiento idéntico al de siempre.
+    void setImpactBias(float b) noexcept {
+        if (std::isfinite(b)) impactBias_.store(std::clamp(b, 0.0f, 1.0f), std::memory_order_relaxed);
+    }
+    float impactBias() const noexcept { return impactBias_.load(std::memory_order_relaxed); }
+
     // Cambia la frecuencia de muestreo (reinicia filtros y anillos solo si de verdad cambió).
     void setSampleRate(float sampleRate) noexcept {
         if (std::isfinite(sampleRate) && sampleRate >= 8000.0f && sampleRate <= 768000.0f && sampleRate != sr_) prepare(sampleRate);
@@ -123,6 +132,7 @@ public:
     void process(float* L, float* R, int n) noexcept {
         if (!L || !R || n <= 0) return;
         const float target = amountTarget_.load(std::memory_order_relaxed);
+        const float impactScale = 1.0f + kImpactBoost * impactBias_.load(std::memory_order_relaxed);
         if (target <= 0.0f && mix_ <= 0.0f && amountSmooth_ <= 0.0f) {          // apagado y asentado: bit-exacto
             publishIdle();
             return;
@@ -175,7 +185,7 @@ public:
                 }
                 // 5) ganancia deseada: sostén recortado -> ataque realzado (suavizada: ataque 0.2 ms, release 50 ms)
                 const float sustain = 1.0f - kSustainTrim * amt;
-                const float attack  = 1.0f + kBoost[b] * amt;
+                const float attack  = 1.0f + kBoost[b] * amt * impactScale;
                 const float gTarget = sustain + (attack - sustain) * trans;
                 gain_[b] += ((gTarget > gain_[b]) ? gAttack_ : gRelease_) * (gTarget - gain_[b]);
                 // 6) GUARDAS como tope SUAVIZADO independiente (baja en 0.1 ms, sube en 50 ms): el tope sale del pico
@@ -265,6 +275,7 @@ private:
     float peakDelayed_ = 0.0f, lowPeak_ = 0.0f;
     float mix_ = 0.0f, amountSmooth_ = 0.0f;
     std::atomic<float> amountTarget_{0.0f};
+    std::atomic<float> impactBias_{0.0f};
     std::array<std::atomic<float>, kTelemetrySize> tel_{};
 };
 

@@ -129,3 +129,30 @@ TEST(TemporalField, AdaptiveStillKeepsCenterUntouched) {
     for (size_t i = 0; i < L.size(); ++i) worst = std::max(worst, double(std::fabs((L[i] + R[i]) - (L0[i] + R0[i]))));
     EXPECT_LT(worst, 1e-5);
 }
+
+// Acoplamiento con el arco narrativo 4D: la tensión abre más la imagen, el impacto recoge más el lateral; 0 = idéntico.
+TEST(TemporalField, ArcZeroIsIdenticalAndArcOnlyDeepensTheEffectWithinCaps) {
+    std::vector<float> L, R; makeWide(L, R, 96000, false);
+    auto a = L, aR = R, b = L, bR = R, c = L, cR = R;
+    TemporalSpatialDynamics t0; t0.prepare(kSr); t0.setParams(true, 1.f);
+    TemporalSpatialDynamics t1; t1.prepare(kSr); t1.setParams(true, 1.f); t1.setArc(0.f, 0.f);
+    TemporalSpatialDynamics t2; t2.prepare(kSr); t2.setParams(true, 1.f); t2.setArc(1.f, 0.f);
+    run(t0, a, aR); run(t1, b, bR); run(t2, c, cR);
+    EXPECT_EQ(a, b);                                         // arco en 0: bit a bit igual al comportamiento previo
+    EXPECT_GT(t2.sideGain(), t0.sideGain() + 0.1f);          // tensión: más apertura en lo sostenido
+    EXPECT_LE(t2.sideGain(), 1.601f);                        // tope duro +60 %
+    // Impacto: en un golpe el lateral cae más que sin arco.
+    std::vector<float> hl(1152, 0.f), hr;
+    for (size_t i = 0; i < hl.size(); ++i) hl[i] = 0.9f * std::sin(2 * kPi * 70.f * i / kSr) * std::exp(-float(i) / kSr * 40.f);
+    hr = hl;
+    TemporalSpatialDynamics p, q;
+    p.prepare(kSr); p.setParams(true, 1.f); q.prepare(kSr); q.setParams(true, 1.f); q.setArc(0.f, 1.f);
+    auto pl = L, pr = R, ql = L, qr = R; run(p, pl, pr); run(q, ql, qr);
+    float mp = 10.f, mq = 10.f, off = 0;
+    auto h1 = hl, h1r = hr, h2 = hl, h2r = hr;
+    for (size_t i = 0; i < hl.size(); i += 64) { p.process(&h1[i], &h1r[i], 64); mp = std::min(mp, p.sideGain()); q.process(&h2[i], &h2r[i], 64); mq = std::min(mq, q.sideGain()); }
+    (void)off;
+    EXPECT_LT(mq, mp - 0.05f);                               // el impacto recoge más
+    EXPECT_GE(mq, 0.149f);                                   // y nunca por debajo del tope (-85 %)
+    for (size_t i = 0; i < h2.size(); ++i) EXPECT_NEAR(h2[i] + h2r[i], hl[i] + hr[i], 1e-4f);   // el centro no se toca
+}

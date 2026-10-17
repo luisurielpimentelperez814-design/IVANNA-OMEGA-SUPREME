@@ -134,6 +134,7 @@ struct OmegaDspState {
     // v2.5.49: corrección acústica de sala medida -> snapshot.room_corr_db. Al FINAL del struct. 0 = apagado.
     float room_corr_db[10] = {};
     // v2.5.51: motor NPE en Ruta B (NpeStereoCore en omega_effect).
+    bool  xtc_enabled = false;            // cancelación de diafonía (altavoces) en el módulo; apagada por defecto
     bool  npe_enabled = true;
     float npe_lateral_inhib = 0.2f, npe_ohc_compression = 0.3f, npe_master_gain_db = 0.0f;
 

@@ -64,6 +64,15 @@ public:
         if (std::isfinite(amount)) amount_ = std::clamp(amount, 0.0f, 1.0f);
     }
 
+    /// ARCO NARRATIVO 4D (opcional): la cadena 4D mide la forma de la canción a escala de segundos. `tension` (0..1, el
+    /// hueco previo al drop) abre la imagen más allá del bloom normal: la sala "se infla" antes del golpe;
+    /// `impact` (0..1, envolvente del drop) recoge el lateral más fuerte en los golpes: el impacto entra compacto.
+    /// Ambos en 0 = comportamiento idéntico al de siempre. Topes duros: bloom <= +60 %, recogida <= -85 %.
+    void setArc(float tension, float impact) noexcept {
+        tension_ = std::isfinite(tension) ? std::clamp(tension, 0.0f, 1.0f) : 0.0f;
+        impact_  = std::isfinite(impact)  ? std::clamp(impact,  0.0f, 1.0f) : 0.0f;
+    }
+
     /// Modo adaptativo: la profundidad efectiva sigue la densidad de golpes (ver ley arriba).
     void setAuto(bool on) noexcept { auto_ = on; }
     /// Profundidad efectiva ahora (= amount si auto está apagado) — telemetría / tests.
@@ -102,8 +111,8 @@ public:
                 autoGain_ = 0.4f + 0.6f * (1.0f - std::exp(-rate_ / 3.0f));
             }
             const float amt = effectiveAmount();
-            const float gTight = 1.0f - kTightPerAmount * amt;
-            const float gBloom = 1.0f + kBloomPerAmount * amt;
+            const float gTight = 1.0f - std::min(0.85f, kTightPerAmount * amt * (1.0f + 0.5f * impact_));
+            const float gBloom = 1.0f + std::min(0.60f, kBloomPerAmount * amt * (1.0f + 0.6f * tension_));
             for (std::size_t i = 0; i < c; ++i) {
                 const float target = (hold_ > 0) ? gTight : gBloom;
                 if (hold_ > 0) --hold_;
@@ -135,6 +144,7 @@ private:
     float amount_ = 0.6f;
     bool  auto_ = false;
     float rate_ = 0.0f, autoGain_ = 0.4f;
+    float tension_ = 0.0f, impact_ = 0.0f;
     bool  prevHit_ = false;
     float g_ = 1.0f, fade_ = 0.0f, lp1_ = 0.0f, lp2_ = 0.0f;
     int   hold_ = 0;

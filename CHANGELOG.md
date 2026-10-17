@@ -1,3 +1,47 @@
+# CHANGELOG — v2.5.64 (355) — Fotoholografía·Nanotomix en la app: escena 3D + ancho estéreo adaptativo
+1. **`feat(fotoholo)` (`fotoholo/`, `ui/FotoHoloCard.kt`)** — la capa ahora existe en el APK y actúa sobre el audio: lee las 64 bandas Bark REALES de la captura (Ruta A), extrae rasgos (graves/agudos/centroide/flujo) y modula el ancho estéreo por el mismo camino que el slider de ancho (`nativeSetSpatialWidthDirect` → `StereoWidener`). Agudos abren, graves cierran; **acotado a ±0.25 × intensidad** del ancho que fijó el usuario, techo 1.2 (o el que el usuario eligió) y variación máxima 0.2/s, así que no hay saltos ni saturación.
+2. **Control y seguridad:** apagado por defecto; interruptor, intensidad y **bypass A/B** que devuelve exactamente el ancho del usuario; sin señal no toca nada; entradas NaN/Inf neutralizadas; corre en hilo de fondo a 20 Hz (nunca en el hilo de audio ni de UI); no añade una ruta de audio ni procesamiento duplicado.
+3. **Escena:** proyección 3D paramétrica de las mismas bandas en la tarjeta del panel SPATIAL AUDIO. Está rotulada como visualización: no es un holograma óptico.
+4. **Pruebas:** 11 tests JVM de la lógica pura (rasgos, objetivo, límites, slew, geometría) compilados y ejecutados con Kotlin real: 11/11. El código con APIs de Android lo compila el CI.
+5. **Alcance honesto:** el efecto necesita la captura Ruta A (la telemetría Bark no existe en Ruta B); sin prueba física en el Moto G85 (procedimiento en `docs/HARDWARE_MOTO_G85_ESTADO.md`).
+
+# CHANGELOG — v2.5.63 (354) — La captura de sistema y el asistente piden el micrófono bien
+1. **`fix(permissions)` (`MainActivity.kt`)** — la captura de audio del sistema exige `RECORD_AUDIO` además de MediaProjection, pero se lanzaba desde 3 botones sin pedirlo: el `AudioRecord` quedaba sin inicializar y fallaba en silencio. Ahora los tres pasan por un único `startCapture()` que pide el micrófono solo al activar la captura y, si quedó denegado para siempre, explica y abre Ajustes.
+2. **`fix(permissions)` (`IvannaAssistantScreen.kt`)** — el asistente relee el permiso al volver de Ajustes (concedido o revocado en uso) y manda a Ajustes cuando el sistema ya no muestra el diálogo.
+3. **Alcance honesto:** compila el CI; sin prueba física en el Moto G85 (procedimiento en `docs/HARDWARE_MOTO_G85_ESTADO.md`).
+
+# CHANGELOG — v2.5.62 (353) — Detección de capacidades del Moto G85 y política de permisos
+1. **`feat(hardware)` (`hardware/HardwareProbe.kt`)** — sondea lo que el teléfono tiene de verdad (sensores, cámaras listadas, vibración, rutas y formatos de audio, GLES/Vulkan, USB host) **sin pedir permisos ni activar nada**; corre al arrancar fuera del hilo principal y deja evidencia en logcat (`IvannaHW`). Lo no detectado se reporta como «no detectado», no se supone.
+2. **`feat(hardware)` (`PermissionPolicy` + `PermissionGate`)** — distingue «nunca pedido» de «denegado para siempre/revocado». La medición de sala (CONTROL) pide el micrófono solo al pulsar MEDIR y, si el sistema ya no muestra el diálogo, explica y abre Ajustes; el resto de la app sigue operativo. 7 pruebas JVM compiladas y ejecutadas con Kotlin real.
+3. **`fix(manifest)`** — quita `FOREGROUND_SERVICE_MEDIA_PLAYBACK`: el único servicio usa solo `mediaProjection`.
+4. **`docs`** — `docs/HARDWARE_MOTO_G85_ESTADO.md`: hallazgos, clasificación por función y procedimiento de prueba física.
+5. **Alcance honesto:** sin acceso al Moto G85 ni SDK de Android en el entorno de trabajo; el código con APIs de Android lo compila el CI y **nada se midió en el teléfono**. Pendientes: `POST_NOTIFICATIONS`, migrar captura de sistema/asistente al nuevo gestor, `testDebugUnitTest` en CI. «Fotoholografiananotomix» sigue siendo investigación (`research/deh6_optics`, fuera del APK).
+
+# CHANGELOG — v2.5.61 (352) — Sincronización de controles espaciales A/B, SaFOptimizer saneado y módulo de investigación DEH6
+1. **`fix(sync)` (`jni/ivanna_omega_jni.cpp`)** — unifica la sincronización de los controles espaciales entre la Ruta A (en proceso) y la Ruta B (daemon): lo que el usuario mueve en la UI llega a ambas rutas por el mismo camino.
+2. **`fix(spatial)` (`SaFOptimizer.kt`)** — sanea el optimizador SAF, valida los 5 errores direccionales y reporta el sujeto HRTF realmente usado (no el solicitado).
+3. **`feat(research)` (`research/deh6_optics/`)** — módulo de investigación DEH6 (óptica/fotoholografía) con su validación de host en CI (`tests-host.yml`) y documentos de auditoría matemática. **Es investigación: no entra al APK ni al módulo Magisk** y no cambia el audio del producto.
+4. **Por qué esta versión:** los tres cambios anteriores se publicaron sin subir la versión; el release `v2.5.60` ya existía y GitHub lo marca inmutable, así que el CI solo dejaba el borrador `staging-*` y **no se generaba el release correspondiente**. Regla: todo commit que deba salir como release lleva su `chore(release)` con versión nueva (o va en el mismo commit).
+
+# CHANGELOG — v2.5.60 (351) — Diafonía en el módulo
+La cancelación de diafonía (altavoces/AUX) ahora también corre en Ruta B.
+
+# CHANGELOG — v2.5.59 (350) — Arco narrativo mueve el espacio
+La tensión previa al drop abre la imagen y el impacto la recoge (Ruta A).
+
+# CHANGELOG — v2.5.58 (349) — NPE coherente con la UI
+Al arrancar, el motor NPE usa los valores que muestra la UI y el bypass guardado.
+
+# CHANGELOG — v2.5.57 (348) — Háptica con latencia medida
+La háptica de graves se sincroniza con la latencia real de la salida medida en la corrección de sala.
+
+# CHANGELOG — v2.5.56 (347) — El drop del arco narrativo 4D realza el golpe (Punch + MacroArcConductor)
+1. **Qué junta:** el `MacroArcConductor` (arco narrativo 4D: subida → hueco → impacto) ya detecta el regreso del pulso tras un hueco ≥ 250 ms y publica una envolvente de impacto de ~350 ms. Ahora `FourDControlSurface::arcImpact()` (accesor ligero, apto para el hilo de audio) se lo entrega al `PunchEngine` en cada bloque de la Ruta A: `setImpactBias(0..1)` sube **hasta un 45 %** el realce de ataque SOLO mientras dura el drop.
+2. **Con red de seguridad:** el sesgo no toca el recorte de sostén ni las guardas; la de excursión de graves (~−6 dBFS) y la de headroom (−0.9 dBFS) siguen mandando, así que el drop nunca produce más pico del permitido (prueba: un máster ya al techo sigue sin subir ni un ápice con sesgo 1). Con el arco apagado (por defecto) `arcImpact() = 0` y el comportamiento es idéntico al de v2.5.55 (prueba de igualdad bit a bit con sesgo 0).
+3. **Alcance honesto:** solo Ruta A; la cadena 4D corre en el proceso de la app y la Ruta B (audioserver) no la tiene, así que allí el Punch conserva su comportamiento sin sesgo. El ajuste fino del drop con música real y con el Sony se hace de oído en el dispositivo.
+4. **También:** `fix(ci)` de `FourDPredictionPanel` (`LocalContext.current` dentro de `remember` no compilaba).
+5. **Pruebas:** 353 de 353 CTest (5 nuevas: sesgo sube el realce con margen y con tope, nunca rebasa las guardas, sesgo 0 idéntico, entradas no finitas, accesor `arcImpact` en 0 con el arco apagado). ASan+UBSan limpio. Medido en host con señales sintéticas, **sin escucha en dispositivo**.
+
 # CHANGELOG — Sin publicar — Tabla HRTF de la rejilla: de ceros a mediciones reales
 1. **Causa raíz:** `g_hrtfDatabase` (`spatial/HRTFDatabase.cpp`) era `= {}` y nada la llenaba. `HRTFInterpolator::getInterpolatedHRTF` devolvía siempre filtros nulos y `BinauralRenderer` / `HybridRenderer` lo disimulaban con un fallback por umbral de energía, sin que nada lo hiciera observable. El renderizador híbrido (activable por `setHybridMagistralParams`) nunca usó HRIR medidos.
 2. **Corrección:** la tabla se construye SOLO desde `.ihr1` medidos (lector canónico `ihr1_format.hpp`): vecino exacto o IDW sobre distancia angular esférica, 128 taps (HRIR de 512 truncados con ventana de salida de 16 taps). No se inventa ningún coeficiente. Falla con código explícito (`HrtfDbResult`) si hay NaN/Inf, frecuencia distinta de 48 kHz, cabecera/tamaño inválidos, filtro todo-ceros o cobertura insuficiente (>30° sin medición); la tabla queda vacía, nunca a medias. Publicación única con release/acquire (sin lock en el hilo de audio).

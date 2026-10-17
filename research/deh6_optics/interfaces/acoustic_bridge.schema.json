@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DEH6 offline acoustic/optical measurement bridge",
+  "description": "Offline-only experiment record. Not a live audio control API.",
+  "type": "object",
+  "required": ["schema_version", "experiment_id", "acoustic_baseline", "optical_metrics", "acceptance"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "experiment_id": {"type": "string", "minLength": 1},
+    "acoustic_baseline": {"type": "object", "required": ["route", "sample_rate_hz", "latency_ms", "true_peak_dbfs"], "properties": {
+      "route": {"type":"string"}, "sample_rate_hz": {"type":"integer", "minimum":8000},
+      "latency_ms": {"type":"number", "minimum":0}, "true_peak_dbfs": {"type":"number", "maximum":12}
+    }},
+    "optical_metrics": {"type":"object", "required":["normalized_rmse", "amplitude_correlation"], "properties": {
+      "normalized_rmse":{"type":"number","minimum":0}, "amplitude_correlation":{"type":"number","minimum":-1,"maximum":1},
+      "target_region_energy_fraction":{"type":"number","minimum":0,"maximum":1}
+    }},
+    "acceptance": {"type":"object", "required":["offline_only", "audio_ab_improvement_demonstrated"], "properties": {
+      "offline_only":{"const":true}, "audio_ab_improvement_demonstrated":{"type":"boolean"},
+      "notes":{"type":"string"}
+    }}
+  }
+}

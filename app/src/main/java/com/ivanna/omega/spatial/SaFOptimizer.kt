@@ -16,8 +16,8 @@ import kotlinx.coroutines.launch
  *
  * iteration     : número de iteración actual (0 = sin calibrar)
  * selectedSubject: ID del sujeto HRTF seleccionado tras la última iteración
- * paramNorm     : norma del vector de parámetros ‖p_t‖ (convergencia)
- * errorEnergy   : energía de error cuadrático E_t en la iteración actual
+ * paramNorm     : métrica publicada por SAFCore.getState()[1]; no equivale por sí sola a convergencia
+ * errorEnergy   : media de los cinco errores direccionales aportados por la calibración
  */
 data class SaFOptimizerState(
     val iteration: Int = 0,
@@ -47,22 +47,6 @@ object SaFOptimizer {
     // instance, o el proceso aún no tiene Application viva, crash). Se
     // conserva el applicationContext recibido en init() y se reutiliza.
     private var appContext: Context? = null
-
-    // Tabla mínima de sujetos conocidos (subset CIPIC + MIT).
-    // El matching real usará distancia euclidiana sobre head-width / head-depth;
-    // por ahora la selección es round-robin sobre esta lista durante la calib.
-    // FIX (descableado): IDs corregidos contra el índice IHR1 real
-    // (magisk_module/.../hrtf/hrtf_index.json, 11 sujetos deployados).
-    // Los anteriores (kemar_subject_165, subject_003/008/009/010/011) no
-    // existen en ningún build — selectedSubject solo se consume en el log
-    // de este archivo (no llega a JNI ni afecta audio), pero corregirlo
-    // evita confusión al leer logs de calibración.
-    private val KNOWN_SUBJECTS = listOf(
-        // IDs reales del hrtf_index.json deployado (magisk_module/.../hrtf).
-        "kemar", "kemar_large", "tu_berlin_kemar",
-        "cipic_003", "cipic_008", "cipic_009",
-        "cipic_010", "cipic_011", "cipic_012", "cipic_165", "pulse"
-    )
 
     private const val PREFS_NAME = "saf_optimizer_prefs"
 
@@ -105,6 +89,11 @@ object SaFOptimizer {
      *                          en cada dirección (0=correcto, 1=máximo error).
      */
     fun runCalibrationStep(directionEnergies: FloatArray) {
+        // El contrato documentado es exactamente cinco errores normalizados [0,1].
+        if (directionEnergies.size != 5 || directionEnergies.any { !it.isFinite() || it < 0f || it > 1f }) {
+            Log.w(TAG, "Calibración rechazada: se requieren cinco errores finitos en [0,1]")
+            return
+        }
         scope.launch {
             val current = _state.value
 
@@ -125,9 +114,9 @@ object SaFOptimizer {
             val newErrorEnergy = directionEnergies.average().toFloat()
             val newParamNorm   = safState[1].toFloat()
 
-            // Seleccionar sujeto: round-robin en calibración inicial.
-            val subjectIdx = newIteration % KNOWN_SUBJECTS.size
-            val subject    = KNOWN_SUBJECTS[subjectIdx]
+            // Reportar el sujeto realmente seleccionado por el motor espacial; no simular personalización.
+            val subject = runCatching { IvannaSpatialManager.currentHrtfSubject() }
+                .getOrDefault("")
 
             _state.value = SaFOptimizerState(
                 iteration       = newIteration,
@@ -173,13 +162,16 @@ object SaFOptimizer {
             // H_t: mismatch normalizado — errorEnergy ya está en [0,1] por diseño
             SaFRoomBridge.setHrtfState(
                 mismatchEnergy  = st.errorEnergy,
-                convergenceRate = if (st.iteration > 0) st.paramNorm else 1.0f
+                // paramNorm procede de SAFCore.getState()[1], no es residual medido.
+                // No alimentar ese valor como tasa de convergencia perceptual.
+                convergenceRate = 1.0f
             )
             // R_t: sala actual
             SaFRoomBridge.setRoomState(rt60 = rt60, drr = 6.0f)
-            // Target en el espacio latente SAF-Room: dirección de menor error
-            // Proxy: vector cero (KEMAR medio) cuando sin datos de calibración
-            SaFRoomBridge.setTarget(FloatArray(7) { 0.0f })
+            // No sobrescribir el target con cero: no existe una conversión validada
+            // de los cinco errores direccionales a un target SOFA latente 7-D.
+            // SaFRoomBridge conserva el target/modelo ya configurado y esta calibración
+            // debe considerarse proxy hasta que exista feedback medido por dirección.
             // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
             val alpha = SaFRoomBridge.step()
             Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} α*=$alpha rt60=$rt60")
