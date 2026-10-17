@@ -12,7 +12,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.core.Ivanna4DNative
+import com.ivanna.omega.core.ParameterStore
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.util.Locale
@@ -48,15 +50,16 @@ private data class FourDState(
 @Composable
 fun FourDPredictionPanel(modifier: Modifier = Modifier) {
     var st by remember { mutableStateOf(FourDState()) }
-    var haptics by remember { mutableStateOf(false) }
-    var crosstalk by remember { mutableStateOf(false) }
-    var leadMs by remember { mutableStateOf(7.5f) }
-    var depth by remember { mutableStateOf(0.7f) }
-    var arc by remember { mutableStateOf(false) }
-    var arcDepth by remember { mutableStateOf(0.5f) }
-    var hapticScale by remember { mutableStateOf(0.6f) }
-    var dosMode by remember { mutableStateOf(0) }
-    var dosCal by remember { mutableStateOf(94f) }   // dBFS -> SPL; 94 = defecto nativo del dosímetro
+    val store = remember { ParameterStore(LocalContext.current.applicationContext) }
+    var haptics by remember { mutableStateOf(store.is4dHapticsOn()) }
+    var crosstalk by remember { mutableStateOf(store.is4dCrosstalkOn()) }
+    var leadMs by remember { mutableStateOf(store.get4dLeadMs()) }
+    var depth by remember { mutableStateOf(store.get4dDepth()) }
+    var arc by remember { mutableStateOf(store.is4dArcOn()) }
+    var arcDepth by remember { mutableStateOf(store.get4dArcDepth()) }
+    var hapticScale by remember { mutableStateOf(store.get4dHapticScale()) }
+    var dosMode by remember { mutableStateOf(store.get4dDosimeterMode()) }
+    var dosCal by remember { mutableStateOf(store.get4dDosimeterCal()) }   // dBFS -> SPL; 94 = defecto nativo del dosímetro
 
     val cyan = Color(0xFF00E5FF)
     val magenta = Color(0xFFFF3D9A)
@@ -121,6 +124,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 Switch(
                     checked = st.enabled,
                     onCheckedChange = { on ->
+                        store.set4dEnabled(on)
                         if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetEnabled(on)
                     }
                 )
@@ -176,6 +180,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 value = leadMs, valueRange = 5f..10f,
                 onValueChange = {
                     leadMs = it
+                    store.set4dLeadMs(it)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetLeadMs(it)
                 }
             )
@@ -186,6 +191,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 value = depth, valueRange = 0f..1f,
                 onValueChange = {
                     depth = it
+                    store.set4dDepth(it)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDepth(it)
                 }
             )
@@ -194,6 +200,8 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = arc, onCheckedChange = {
                     arc = it
+                    store.set4dArcOn(it)
+                    store.set4dArcDepth(arcDepth)
                     if (Ivanna4DNative.isAvailable) {
                         // La profundidad nativa arranca en 0: se envía junto con el interruptor.
                         Ivanna4DNative.nativeFourDSetArcDepth(arcDepth)
@@ -219,6 +227,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 value = arcDepth, valueRange = 0f..1f,
                 onValueChange = {
                     arcDepth = it
+                    store.set4dArcDepth(it)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetArcDepth(it)
                 }
             )
@@ -226,6 +235,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = haptics, onCheckedChange = {
                     haptics = it
+                    store.set4dHapticsOn(it)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetHaptics(it)
                 })
                 Spacer(Modifier.width(8.dp))
@@ -236,6 +246,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 value = hapticScale, valueRange = 0f..0.85f,
                 onValueChange = {
                     hapticScale = it
+                    store.set4dHapticScale(it)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetHapticScale(it)
                 }
             )
@@ -243,6 +254,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = crosstalk, onCheckedChange = {
                     crosstalk = it
+                    store.set4dCrosstalkOn(it)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetCrosstalk(it)
                 })
                 Spacer(Modifier.width(8.dp))
@@ -256,6 +268,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 listOf("WHO", "NIOSH", "OSHA").forEachIndexed { idx, label ->
                     TextButton(onClick = {
                         dosMode = idx
+                        store.set4dDosimeterMode(idx)
                         if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDosimeterMode(idx)
                     }) {
                         Text(
@@ -272,6 +285,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 value = dosCal, valueRange = 70f..145f,
                 onValueChange = {
                     dosCal = it
+                    store.set4dDosimeterCal(it)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDosimeterCalibration(it)
                 }
             )

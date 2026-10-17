@@ -147,6 +147,24 @@ object PersistedStateRestorer {
             com.ivanna.omega.spatial.WfsCalibrationManager.restore(ctx)
         }.onFailure { Log.w(TAG, "Fallo al restaurar WfsCalibrationManager: ${it.message}") }
 
+        // 6. Cadena 4D (arco, háptica, diafonía, dosímetro). La superficie nativa retiene los valores y
+        //    los reaplica cuando se crea la cadena, así que restaurar aquí es válido antes de reproducir.
+        runCatching {
+            if (Ivanna4DNative.isAvailable) {
+                val ps = ParameterStore(ctx)
+                Ivanna4DNative.nativeFourDSetLeadMs(ps.get4dLeadMs())
+                Ivanna4DNative.nativeFourDSetDepth(ps.get4dDepth())
+                Ivanna4DNative.nativeFourDSetHapticScale(ps.get4dHapticScale())
+                Ivanna4DNative.nativeFourDSetDosimeterMode(ps.get4dDosimeterMode())
+                Ivanna4DNative.nativeFourDSetDosimeterCalibration(ps.get4dDosimeterCal())
+                Ivanna4DNative.nativeFourDSetArcDepth(ps.get4dArcDepth())
+                Ivanna4DNative.nativeFourDSetArc(ps.is4dArcOn())
+                Ivanna4DNative.nativeFourDSetHaptics(ps.is4dHapticsOn())
+                Ivanna4DNative.nativeFourDSetCrosstalk(ps.is4dCrosstalkOn())
+                Ivanna4DNative.nativeFourDSetEnabled(ps.is4dEnabled())
+            }
+        }.onFailure { Log.w(TAG, "Fallo al restaurar la cadena 4D: ${it.message}") }
+
         Log.i(TAG, "✅ Todos los controles descableados restaurados (Persistencia total conectada)")
     }
 }
