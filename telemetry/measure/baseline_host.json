@@ -1,0 +1,28 @@
+{
+  "schema": "ivanna.measure.v1",
+  "scope": "core-chain-host: GainStage>BlockPeakGuard>EQ>Compressor>Exciter>Widener>GainStage>SafetyLimiter",
+  "not_measured": "stages espaciales/PD/Volterra/cochlear, audio de dispositivo, CPU/temperatura del Moto G85",
+  "sample_rate_hz": 48000.0000,
+  "block_frames": 480.0000,
+  "params": "ivanna::DSPParams por defecto (mix=0.5 neutro), SafetyLimiter por defecto",
+  "latency_samples": 0.0000,
+  "latency_ms": 0.0000,
+  "level_sweep": [
+    {"f_hz": 100, "in_dbfs": -40.0, "thdn_db": -89.40, "gain_db": -0.00, "true_peak_dbtp": -40.00},
+    {"f_hz": 100, "in_dbfs": -30.0, "thdn_db": -89.40, "gain_db": -0.00, "true_peak_dbtp": -30.00},
+    {"f_hz": 100, "in_dbfs": -20.0, "thdn_db": -99.80, "gain_db": -0.00, "true_peak_dbtp": -20.00},
+    {"f_hz": 100, "in_dbfs": -12.0, "thdn_db": -106.41, "gain_db": 0.00, "true_peak_dbtp": -12.00},
+    {"f_hz": 100, "in_dbfs": -6.0, "thdn_db": -106.40, "gain_db": 0.00, "true_peak_dbtp": -6.00},
+    {"f_hz": 100, "in_dbfs": -3.0, "thdn_db": -106.40, "gain_db": -0.37, "true_peak_dbtp": -3.37},
+    {"f_hz": 100, "in_dbfs": -1.0, "thdn_db": -62.21, "gain_db": -1.92, "true_peak_dbtp": -2.91},
+    {"f_hz": 1000, "in_dbfs": -40.0, "thdn_db": -98.45, "gain_db": -0.00, "true_peak_dbtp": -40.00},
+    {"f_hz": 1000, "in_dbfs": -30.0, "thdn_db": -98.44, "gain_db": -0.00, "true_peak_dbtp": -30.00},
+    {"f_hz": 1000, "in_dbfs": -20.0, "thdn_db": -98.36, "gain_db": -0.00, "true_peak_dbtp": -20.00},
+    {"f_hz": 1000, "in_dbfs": -12.0, "thdn_db": -97.84, "gain_db": -0.00, "true_peak_dbtp": -12.00},
+    {"f_hz": 1000, "in_dbfs": -6.0, "thdn_db": -96.08, "gain_db": -0.00, "true_peak_dbtp": -6.00},
+    {"f_hz": 1000, "in_dbfs": -3.0, "thdn_db": -76.67, "gain_db": -1.92, "true_peak_dbtp": -4.92},
+    {"f_hz": 1000, "in_dbfs": -1.0, "thdn_db": -76.69, "gain_db": -3.26, "true_peak_dbtp": -4.26}
+  ],
+  "imd_smpte_db": -130.6985,
+  "host_throughput_x_realtime": 136.6682
+}
