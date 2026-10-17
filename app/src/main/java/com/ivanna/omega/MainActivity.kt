@@ -277,7 +277,7 @@ fun OmegaApp() {
                     modifier = androidx.compose.ui.Modifier
                         .fillMaxSize()
                         .verticalScroll(androidx.compose.foundation.rememberScrollState())
-                ) { com.ivanna.omega.ui.MusicIntelligencePanel() }
+                ) { com.ivanna.omega.ui.MusicIntelligencePanel(); com.ivanna.omega.ui.FourDPredictionPanel() }
             }
             composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
             composable("dashboard") {
