@@ -3089,6 +3089,26 @@ static void omegaSendNpeToDaemon(bool enabled, float lateral, float ohc, float m
     ::close(fd);
 }
 
+/// Diafonía: la cadena 4D de la app (ivanna_4d_jni.cpp) la enciende en la Ruta A; esto la sincroniza con el módulo.
+extern "C" void ivanna_send_crosstalk_to_daemon(bool on) noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000};
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[96];
+        int n = std::snprintf(json, sizeof(json), "{\"action\":\"SET_CROSSTALK\",\"enabled\":%d}", on ? 1 : 0);
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
 /** Publica el estado del NPE al módulo (omega_effect en audioserver). La Ruta A usa IvannaNpeEngine en la app. */
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNpeModule(

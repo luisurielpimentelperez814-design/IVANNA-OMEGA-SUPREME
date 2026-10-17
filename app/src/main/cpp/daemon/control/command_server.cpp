@@ -142,7 +142,8 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     // v2.5.36: modo AUX/altavoces.
     snap.flags |= ivanna::omega_aux_field_encode(s.aux_field_enabled, s.aux_field_xover_hz, s.aux_field_coherence);
     // v2.5.44: dinamica espacial temporal.
-    snap.temporal_field = ivanna::omega_temporal_field_encode(s.temporal_field_enabled, s.temporal_field_amount, s.temporal_field_auto);
+    snap.temporal_field = ivanna::omega_temporal_field_encode(s.temporal_field_enabled, s.temporal_field_amount, s.temporal_field_auto)
+                        | (s.xtc_enabled ? ivanna::OMEGA_TEMPORAL_FIELD_XTC_BIT : 0u);
     // v2.5.49: corrección acústica de sala.
     for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) snap.room_corr_db[i] = s.room_corr_db[i];
     snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db);
@@ -334,6 +335,14 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.temporal_field_auto?"true":"false",
             hasActiveConsumer()?"\"omega_effect\"":"null");
 
+    } else if (strcmp(action,"SET_CROSSTALK")==0) {
+        // Cancelación de diafonía para altavoces (AUX/DAC): solo tiene sentido con señal binaural por altavoces.
+        m_state.xtc_enabled = _jsonFloat(json,"enabled", m_state.xtc_enabled ? 1.f : 0.f) > 0.5f;
+        uint64_t gen = publishCurrentState(m_state);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"SET_CROSSTALK\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"enabled\":%s,\"consumer\":%s}",
+            gen>0?"true":"false", gen>0?"applied":"accepted_pending_consumer", (unsigned long long)gen,
+            m_state.xtc_enabled?"true":"false", hasActiveConsumer()?"\"omega_effect\"":"null");
     } else if (strcmp(action,"SET_NPE")==0) {
         // Motor NPE neuromórfico (Ruta B). enabled, lateralInhib [0,1], ohc [0,1], masterDb [-24,12]. Sin clave = conserva.
         m_state.npe_enabled         = _jsonFloat(json,"enabled", m_state.npe_enabled ? 1.f : 0.f) > 0.5f;

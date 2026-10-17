@@ -167,6 +167,9 @@ constexpr uint32_t OMEGA_FLAG_AUX_COH_MASK           = (0x7u << 29u);
 // v2.5.44 — Dinámica espacial temporal ("4D", TemporalSpatialDynamics.hpp). Campo propio (no cabe en flags):
 //   bit 0 = activo ; bits 1..3 = profundidad, nivel 0..7 -> nivel/7 (0..1)
 //   bit 4 = modo adaptativo (profundidad según densidad de golpes; 0 en escritores antiguos = fija)
+// bit 5 de la MISMA palabra = cancelación de diafonía para altavoces (CrosstalkCanceller en omega_effect). El snapshot está
+// al tope de tamaño; los bits 5.. de temporal_field estaban libres y los lectores antiguos los ignoran (máscaras 1/0xE/16).
+constexpr uint32_t OMEGA_TEMPORAL_FIELD_XTC_BIT = 32u;
 inline uint32_t omega_temporal_field_encode(bool on, float amount, bool autoMode) noexcept {
     const float a = (amount == amount) ? amount : 0.6f;
     int lv = static_cast<int>(a * 7.f + 0.5f); lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);

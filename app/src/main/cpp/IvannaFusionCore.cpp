@@ -113,6 +113,7 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_room.prepare(48000.0f);
     m_userEq.prepare(48000.0f);
     m_npe.prepare(48000.0f);
+    m_xtc.prepare(48000.0f, 2048);
     m_wfsInit = true;
     m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
@@ -390,6 +391,9 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         m_room.setTarget(roomTarget);
         m_room.process(buffer->left, buffer->right, BLOCK_SIZE);
     }
+
+    // Cancelación de diafonía (solo altavoces; el usuario la enciende). Antes del compresor/limitador: puede subir picos.
+    m_xtc.processBlock(buffer->left, buffer->right, BLOCK_SIZE);
 
     // ── Compresor Dinámico + Perfil de Ruta + Trim EQ/Intensidad (Slew por muestra) ──
     {

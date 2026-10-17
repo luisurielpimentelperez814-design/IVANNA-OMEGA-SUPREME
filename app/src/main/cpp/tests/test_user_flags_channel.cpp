@@ -463,3 +463,24 @@ TEST(PunchChannel, SetPunchReachesTheSnapshotAndSurvivesOtherCommands) {
     ASSERT_TRUE(h.reader.readLatest(s, h.seen));
     EXPECT_FLOAT_EQ(omega_punch_decode(s.ext_flags16), 0.0f);
 }
+
+TEST(CrosstalkChannel, DaemonPublishesCrosstalkBitWithoutDisturbingTheTemporalField) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+    cs.handleJsonCommand("{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalEnabled\":1,\"temporalAmount\":0.5}", reply, sizeof reply);
+    const OmegaDspSnapshot a = snap();
+    EXPECT_EQ(a.temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);   // apagada por defecto: el audio no se toca
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_CROSSTALK\",\"enabled\":1}", reply, sizeof reply), 0);
+    const OmegaDspSnapshot b = snap();
+    EXPECT_NE(b.temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);
+    bool on = false; float amt = 0.f;
+    omega_temporal_field_decode(b.temporal_field, on, amt);            // el campo temporal sigue leyéndose igual
+    EXPECT_TRUE(on);
+    EXPECT_NEAR(amt, 4.f / 7.f, 1e-4f);                    // 0.5 se publica con resolución 1/7
+    cs.handleJsonCommand("{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalAmount\":0.9}", reply, sizeof reply);
+    EXPECT_NE(snap().temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);   // sobrevive a otros comandos
+    cs.handleJsonCommand("{\"action\":\"SET_CROSSTALK\",\"enabled\":0}", reply, sizeof reply);
+    EXPECT_EQ(snap().temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);
+}
