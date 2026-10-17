@@ -1,0 +1,39 @@
+{
+  "prototype": "IVANNA-DEH6-optics-0.1",
+  "config_sha256": "9f657d4c87c4563b2f77a84658c9c724f775f8b568405e9050f7f150bab92646",
+  "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "numpy": "2.3.5",
+  "config": {
+    "grid_size": 128,
+    "wavelength_m": 5.32e-07,
+    "pixel_pitch_m": 8e-06,
+    "propagation_distance_m": 0.02,
+    "iterations": 100,
+    "seed": 7,
+    "targets": [
+      {
+        "type": "disk",
+        "x": -0.16,
+        "y": 0.0,
+        "radius": 0.07,
+        "amplitude": 1.0
+      },
+      {
+        "type": "disk",
+        "x": 0.16,
+        "y": 0.0,
+        "radius": 0.07,
+        "amplitude": 1.0
+      },
+      {
+        "type": "rectangle",
+        "x": 0.0,
+        "y": 0.18,
+        "width": 0.12,
+        "height": 0.035,
+        "amplitude": 0.65
+      }
+    ]
+  }
+}
