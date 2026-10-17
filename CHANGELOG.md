@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.58 (349) — NPE coherente con la UI
+Al arrancar, el motor NPE usa los valores que muestra la UI y el bypass guardado.
+
 # CHANGELOG — v2.5.57 (348) — Háptica con latencia medida
 La háptica de graves se sincroniza con la latencia real de la salida medida en la corrección de sala.
 
