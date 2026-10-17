@@ -65,10 +65,6 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
     val bgSub = Color(0xFF131B2E)
 
     LaunchedEffect(Unit) {
-        if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDEnsure(48000f, 480)
-    }
-
-    LaunchedEffect(Unit) {
         while (true) {
             if (Ivanna4DNative.isAvailable) {
                 val json = runCatching { Ivanna4DNative.nativeFourDStatusJson() }.getOrNull()

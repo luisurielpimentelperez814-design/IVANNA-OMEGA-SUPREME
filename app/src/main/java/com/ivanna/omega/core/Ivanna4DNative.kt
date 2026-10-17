@@ -21,9 +21,8 @@ object Ivanna4DNative {
     /** true si libivanna_omega.so se cargó (los `external fun` son invocables). */
     val isAvailable: Boolean get() = available
 
-    // ── Ciclo de vida ────────────────────────────────────────────────────────
-    @JvmStatic external fun nativeFourDEnsure(sampleRate: Float, maxBlock: Int)
-    @JvmStatic external fun nativeFourDShutdown()
+    // Ciclo de vida: la cadena se prepara en el arranque nativo del DSP (nativeInit /
+    // nativeInitDSP) con el sample rate real; ya no hay "ensure" desde la UI.
 
     // ── Interruptor maestro ──────────────────────────────────────────────────
     @JvmStatic external fun nativeFourDSetEnabled(on: Boolean)

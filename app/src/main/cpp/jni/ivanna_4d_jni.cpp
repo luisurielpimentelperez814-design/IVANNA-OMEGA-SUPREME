@@ -46,11 +46,6 @@ std::string statusJson() {
 } // namespace
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDEnsure(JNIEnv*, jobject, jfloat sampleRate, jint maxBlock) {
-    ivanna::fourd::ensureInit(static_cast<float>(sampleRate), static_cast<int>(maxBlock));
-}
-
-extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDShutdown(JNIEnv*, jobject) {
     ivanna::fourd::shutdown();
 }
