@@ -858,6 +858,18 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME UnifiedMasterV3SafetyBench COMMAND test_unified_master_v3_safety_bench)
 
+# SofaHRTFLoader: valida la firma HDF5 y RECONSTRUYE el HRIR desde la base SOFA-PCA (no lee
+# mediciones). Estas pruebas fijan ese contrato y los errores de archivo inexistente/truncado/
+# sin firma.
+add_executable(test_sofa_hrtf_loader test_sofa_hrtf_loader.cpp)
+target_link_libraries(test_sofa_hrtf_loader PRIVATE ivanna_unified_pipeline_under_test GTest::gtest_main Threads::Threads m dl)
+target_compile_options(test_sofa_hrtf_loader PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_sofa_hrtf_loader PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_sofa_hrtf_loader PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_sofa_hrtf_loader)
+
 # ── FASE 2: 12 nativos conectados con external fun y consumidores Kotlin ──────
 add_executable(test_phase2_jni_natives
   test_phase2_jni_natives.cpp
