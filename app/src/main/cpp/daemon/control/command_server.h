@@ -136,6 +136,10 @@ struct OmegaDspState {
     // v2.5.51: motor NPE en Ruta B (NpeStereoCore en omega_effect).
     bool  npe_enabled = true;
     float npe_lateral_inhib = 0.2f, npe_ohc_compression = 0.3f, npe_master_gain_db = 0.0f;
+
+    // v2.5.41 — PUNCH (impacto predictivo, PunchEngine): cantidad 0..1 publicada en snapshot.ext_flags bits 0..3.
+    // Al final del struct (kDefaultState inicializa por posición). 0 = apagado: snapshot idéntico al anterior.
+    float punch_amount = 0.f;
 };
 
 class CommandServer {

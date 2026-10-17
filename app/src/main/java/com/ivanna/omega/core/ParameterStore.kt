@@ -124,6 +124,7 @@ class ParameterStore(context: Context) {
         private const val KEY_AUX_ENABLED = "aux_field_enabled"
         private const val KEY_AUX_XOVER   = "aux_field_xover_hz"
         private const val KEY_AUX_COH     = "aux_field_coherence"
+        private const val KEY_PUNCH       = "punch_amount"
         private const val KEY_HAPTIC_ENABLED  = "bass_haptic_enabled"
         private const val KEY_HAPTIC_STRENGTH = "bass_haptic_strength"
         private const val KEY_HAPTIC_RUMBLE   = "bass_haptic_rumble"
@@ -388,6 +389,10 @@ class ParameterStore(context: Context) {
         prefs.edit().putFloat(KEY_WFS_SPREAD, value.coerceIn(0f, 2f)).apply()
 
     // ── Modo AUX/altavoces (campo de presion coherente) ── apagado por defecto: no toca el audio hasta activarlo
+    // ── Impacto predictivo (PunchEngine) ── 0 = apagado por defecto: bypass exacto, el audio no cambia hasta activarlo
+    fun getPunchAmount(): Float = safeGetFloat(KEY_PUNCH, 0f)
+    fun setPunchAmount(amount: Float) = prefs.edit().putFloat(KEY_PUNCH, amount.coerceIn(0f, 1f)).apply()
+
     fun isAuxFieldEnabled(): Boolean = safeGetBoolean(KEY_AUX_ENABLED, false)
     fun getAuxXoverHz(): Float = safeGetFloat(KEY_AUX_XOVER, 120f)
     fun getAuxCoherence(): Float = safeGetFloat(KEY_AUX_COH, 1f)

@@ -66,6 +66,8 @@ object PersistedStateRestorer {
                 val roomG = paramStore.getRoomCorrectionGains()
                 IvannaNativeLib.nativeSetRoomCorrection(if (paramStore.isRoomCorrectionEnabled() && roomG != null) roomG else FloatArray(10))
             }
+            // Impacto predictivo (PunchEngine): restaura la cantidad (ruta A + daemon/ruta B).
+            runCatching { IvannaNativeLib.nativeSetPunch(paramStore.getPunchAmount()) }
             // 4D temporal: restaura estado y profundidad (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetTemporalField(paramStore.isTemporalFieldEnabled(), paramStore.getTemporalFieldAmount(), paramStore.isTemporalFieldAdaptive()) }
             // Háptica de graves (4D): vive en Kotlin (ruta A), no depende de la librería nativa.

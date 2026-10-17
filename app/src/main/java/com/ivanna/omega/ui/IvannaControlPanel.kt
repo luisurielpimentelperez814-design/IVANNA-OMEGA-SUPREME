@@ -110,6 +110,7 @@ fun IvannaControlPanel(
     bassHapticSupported: Boolean = true,
     initialAuxXoverHz: Float = 120f,
     initialAuxCoherence: Float = 1f,
+    initialPunchAmount: Float = 0f,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -137,6 +138,7 @@ fun IvannaControlPanel(
     onWfsEnabledChange: (Boolean) -> Unit = {},
     onWfsSpreadChange: (Float) -> Unit = {},
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
+    onPunchChange: (Float) -> Unit = {},
     onTemporalFieldChange: (Boolean, Float, Boolean) -> Unit = { _, _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
@@ -205,6 +207,8 @@ fun IvannaControlPanel(
     val unityPrefs = remember { context.getSharedPreferences("ivanna_unity", android.content.Context.MODE_PRIVATE) }
     var unityEnabled by remember { mutableStateOf(unityPrefs.getBoolean("enabled", true)) }
     var unityTelemetry by remember { mutableStateOf(FloatArray(0)) }
+    var punchAmount by remember { mutableFloatStateOf(initialPunchAmount) }
+    var punchTelemetry by remember { mutableStateOf(FloatArray(0)) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         if (IvannaNativeLib.isLoaded) {
@@ -215,6 +219,7 @@ fun IvannaControlPanel(
         while (isActive) {
             if (IvannaNativeLib.isLoaded) {
                 unityTelemetry = runCatching { IvannaNativeLib.nativeGetUnityTelemetry() }.getOrDefault(FloatArray(0))
+                punchTelemetry = runCatching { IvannaNativeLib.nativeGetPunchTelemetry() }.getOrDefault(FloatArray(0))
             }
             delay(500)
         }
@@ -1006,6 +1011,9 @@ fun IvannaControlPanel(
                 enabled = bassHapticSupported,
                 onClick = {
                     // Un toque: campo coherente por AUX/DAC + dinámica espacial temporal + háptica con retumbo suave
+                    // + impacto predictivo al 50 % (el ataque de cada golpe llega 1.5 ms antes; el pico no sube)
+                    punchAmount = 0.5f
+                    onPunchChange(0.5f)
                     auxEnabled = true
                     onAuxFieldChange(true, auxXover, auxCoherence)
                     temporalEnabled = true
@@ -1016,6 +1024,34 @@ fun IvannaControlPanel(
                     onBassHapticChange(true, 0.7f, 0.3f, hapticTrim)
                 }
             ) { Text("PERFIL 4D PARA AUX / DAC") }
+        }
+
+        GlassCard(
+            title = "IMPACTO PREDICTIVO · 4D",
+            accent = AuroraCyan,
+            subtitle = if (punchAmount > 0f)
+                "Activo: el ataque de cada golpe se realza 1.5 ms ANTES de sonar, en 3 bandas · el pico no sube y la guarda de graves protege altavoces y etapa"
+            else
+                "El tiempo como impacto: realza el ataque de bombo, caja y bajo sin subir el nivel medio ni inventar headroom. Apagado = audio intacto y sin latencia"
+        ) {
+            AuroraSlider("IMPACTO", punchAmount, 0f..1f,
+                displayValue = { "${Math.round(it * 15f) * 100 / 15} %" }) {
+                punchAmount = it
+                onPunchChange(it)
+            }
+            val pt = punchTelemetry
+            Text(
+                when {
+                    punchAmount <= 0f -> "Apagado"
+                    pt.size < 6 -> "Sin telemetría (motor nativo no activo)"
+                    else ->
+                        "bajo ${"%+.1f".format(pt[0])} · medio ${"%+.1f".format(pt[1])} · alto ${"%+.1f".format(pt[2])} dB   " +
+                        "ataque ${"%.0f".format(pt[3] * 100f)} %   latencia ${"%.1f".format(pt[5])} ms" +
+                        (if (pt[4] > 0.5f) "   · guarda activa" else "")
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted
+            )
         }
 
         GlassCard(

@@ -24,6 +24,7 @@
 #include "supreme/SupremeAcousticStabilityGuard.hpp"
 #include "include/omega_wave_stages.hpp"
 #include "include/acoustic_unity_engine.hpp"
+#include "include/punch_engine.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
@@ -285,6 +286,7 @@ struct omega_effect_context_t {
     // llamadas para no perder los valores ya recibidos.
     bool                     localWriterOpen;
     ivanna::OmegaDspSnapshot pendingSnap;
+    ivanna::PunchEngine punch;    // v2.5.41: impacto predictivo (amount desde snapshot.ext_flags)
     float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE (antes descartado)
     float adaptImmScale = 1.0f;   // v2.5.15: upmix_immersivity del ADE (antes descartado)
     float lastVoiceProb = 0.0f;   // v2.5.15: probabilidad VOICE medida (clasificador) para el motor adaptativo
@@ -1370,6 +1372,11 @@ static int32_t omega_process(effect_handle_t self,
 
         // FIX (distorsion digital): ultimo eslabon real de la cadena — el mismo
         // SafetyLimiter que corre al final de la Ruta A.
+        // v2.5.41 — PUNCH (impacto predictivo por bandas) JUSTO antes del limitador: el limitador ve el resultado
+        // y nunca «bombea» (el motor no sube el ataque si el pico ya está en el techo; ver punch_engine.hpp).
+        ctx->punch.setSampleRate((ctx->config.outputCfg.samplingRate != 0) ? (float)ctx->config.outputCfg.samplingRate : 48000.0f);
+        ctx->punch.setAmount(ivanna::omega_punch_decode(ctx->pendingSnap.ext_flags16));
+        ctx->punch.process(L, R, chunk);
         if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
 
         // v2.5.15: lazo cerrado — original vs salida final (tras el limitador). El resultado de este

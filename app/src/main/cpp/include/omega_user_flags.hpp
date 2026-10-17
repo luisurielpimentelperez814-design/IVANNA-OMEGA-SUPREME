@@ -80,9 +80,10 @@ inline uint32_t omega_user_flags_merge(uint32_t daemonFlags, uint32_t mask, uint
     return (daemonFlags & ~mask) | (value & mask);
 }
 
-// Cliente: {"action":"SET_USER_FLAGS","<key>":<valor>}. Mejor esfuerzo; no usar desde el hilo de audio.
-inline void omegaSendUserFlag(const char* key, int value) noexcept {
-    if (!key) return;
+// Cliente genérico: envía UN comando JSON al socket del daemon. Mejor esfuerzo (timeout 200 ms por socket);
+// SOLO hilo de UI, nunca el hilo de audio. Es el mismo transporte de SET_UPMIXING / SET_WFS / SET_AUX_FIELD.
+inline void omegaSendJson(const char* json, size_t len) noexcept {
+    if (!json || len == 0) return;
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return;
     struct timeval tv{0, 200000};
@@ -93,16 +94,28 @@ inline void omegaSendUserFlag(const char* key, int value) noexcept {
     const char* name = "omega_command_socket";            // socket abstracto: sun_path[0] = '\0'
     addr.sun_path[0] = '\0';
     std::memcpy(addr.sun_path + 1, name, std::strlen(name));
-    const socklen_t len = static_cast<socklen_t>(offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name));
-    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
-        char json[160];
-        const int n = std::snprintf(json, sizeof(json), "{\"action\":\"SET_USER_FLAGS\",\"%s\":%d}", key, value);
-        if (n > 0 && n < static_cast<int>(sizeof(json))) {
-            const ssize_t w = ::write(fd, json, static_cast<size_t>(n));   // mejor esfuerzo
-            (void)w;
-        }
+    const socklen_t alen = static_cast<socklen_t>(offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name));
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), alen) == 0) {
+        const ssize_t w = ::write(fd, json, len);                          // mejor esfuerzo
+        (void)w;
     }
     ::close(fd);
+}
+
+// Cliente: {"action":"SET_USER_FLAGS","<key>":<valor>}.
+inline void omegaSendUserFlag(const char* key, int value) noexcept {
+    if (!key) return;
+    char json[160];
+    const int n = std::snprintf(json, sizeof(json), "{\"action\":\"SET_USER_FLAGS\",\"%s\":%d}", key, value);
+    if (n > 0 && n < static_cast<int>(sizeof(json))) omegaSendJson(json, static_cast<size_t>(n));
+}
+
+// Cliente: {"action":"SET_PUNCH","punchAmount":<0..1>} (impacto predictivo, Ruta B vía daemon).
+inline void omegaSendPunch(float amount) noexcept {
+    char json[96];
+    const float a = (amount == amount) ? (amount < 0.f ? 0.f : (amount > 1.f ? 1.f : amount)) : 0.f;
+    const int n = std::snprintf(json, sizeof(json), "{\"action\":\"SET_PUNCH\",\"punchAmount\":%.4f}", static_cast<double>(a));
+    if (n > 0 && n < static_cast<int>(sizeof(json))) omegaSendJson(json, static_cast<size_t>(n));
 }
 
 } // namespace ivanna

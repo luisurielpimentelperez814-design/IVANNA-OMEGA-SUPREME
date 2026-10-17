@@ -418,3 +418,48 @@ TEST(NpeChannel, DaemonPublishesNpeStateToTheModule) {
     EXPECT_NEAR(md, -24.0f, 1e-4f);
     EXPECT_NEAR(e.npe_lateral_inhib, 0.55f, 1e-4f);                // sin clave: conserva
 }
+
+// ── v2.5.49: PUNCH (impacto predictivo) por la palabra extendida de 16 bits del snapshot ───────────────────────
+TEST(PunchChannel, EncodeDecodeRoundTripsAllFifteenLevelsAndTouchesNothingElse) {
+    for (int lv = 0; lv <= 15; ++lv) {
+        const float a = lv / 15.0f;
+        const uint32_t enc = omega_punch_encode(a);
+        EXPECT_EQ(enc & ~OMEGA_EXT_PUNCH_MASK, 0u) << "el nivel " << lv << " no debe tocar otros bits";
+        EXPECT_NEAR(omega_punch_decode(static_cast<uint16_t>(enc)), a, 1e-6f);
+    }
+    EXPECT_EQ(omega_punch_encode(-3.0f), 0u);                                  // fuera de rango: se acota
+    EXPECT_EQ(omega_punch_decode(static_cast<uint16_t>(omega_punch_encode(9.0f))), 1.0f);
+    EXPECT_EQ(omega_punch_encode(std::nanf("")), 0u);                          // no finito = apagado (seguro)
+    EXPECT_FLOAT_EQ(omega_punch_decode(0u), 0.0f);                             // snapshot de versiones previas: apagado
+    // Los bits altos de la palabra de 16 bits son de otros controles futuros: decode los ignora.
+    EXPECT_FLOAT_EQ(omega_punch_decode(0xFFF0u), 0.0f);
+}
+
+TEST(PunchChannel, SetPunchReachesTheSnapshotAndSurvivesOtherCommands) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1.0}", reply, sizeof reply);
+    OmegaDspSnapshot s{};
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_FLOAT_EQ(omega_punch_decode(s.ext_flags16), 0.0f);                  // por defecto: apagado, audio intacto
+
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":0.6}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_NEAR(omega_punch_decode(s.ext_flags16), 9.0f / 15.0f, 1e-6f);       // 0.6 -> nivel 9/15
+    EXPECT_TRUE(s.isCrcValid());
+
+    // Un comando de OTRA área republica el snapshot: el Punch debe seguir ahí.
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":0.9}", reply, sizeof reply);
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_NEAR(omega_punch_decode(s.ext_flags16), 9.0f / 15.0f, 1e-6f);
+
+    // Los valores fuera de rango se acotan y apagar vuelve a 0 (bypass exacto en el efecto).
+    cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":7.5}", reply, sizeof reply);
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_FLOAT_EQ(omega_punch_decode(s.ext_flags16), 1.0f);
+    cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":0}", reply, sizeof reply);
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_FLOAT_EQ(omega_punch_decode(s.ext_flags16), 0.0f);
+}

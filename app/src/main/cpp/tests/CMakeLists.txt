@@ -1043,6 +1043,7 @@ gtest_discover_tests(test_tinyml_kernel)
 ivanna_add_test(test_acoustic_unity_engine)
 ivanna_add_test(test_unity_closed_loop)
 ivanna_add_test(test_true_peak_limiter)
+ivanna_add_test(test_punch_engine)
 
 
 

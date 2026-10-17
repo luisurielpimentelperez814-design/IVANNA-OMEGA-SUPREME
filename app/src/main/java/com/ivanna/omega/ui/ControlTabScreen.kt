@@ -186,6 +186,7 @@ fun ControlTabScreen(
         bassHapticSupported = com.ivanna.omega.audio.BassHaptics.isSupported(context),
         initialAuxXoverHz = paramStore.getAuxXoverHz(),
         initialAuxCoherence = paramStore.getAuxCoherence(),
+        initialPunchAmount = paramStore.getPunchAmount(),
         initialPhaseOracleIntensity = audioState.phaseOracleIntensity,
         metrics              = metrics,
         adaptiveTelemetry    = adaptiveTelemetry,
@@ -322,6 +323,11 @@ fun ControlTabScreen(
             paramStore.setWfsEnabled(enabled)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetWfsEnabled(enabled) }
+        },
+        onPunchChange = { a ->
+            paramStore.setPunchAmount(a)
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetPunch(a.coerceIn(0f, 1f)) }
         },
         onAuxFieldChange = { en, xo, co ->
             paramStore.setAuxField(en, xo, co)

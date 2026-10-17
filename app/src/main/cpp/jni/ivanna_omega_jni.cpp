@@ -46,6 +46,7 @@
 #include "../neuromorphic/NpeStereoCore.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
+#include "../include/punch_engine.hpp"                // impacto predictivo por bandas (v2.5.41)
 #include "../spatial/RirConvolver.hpp"
 #include "../spatial/RirDataset.hpp"
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
@@ -353,6 +354,9 @@ static std::atomic<float> g_lastAdaptiveMsWidenerScale{1.0f};
 static std::atomic<float> g_lastAdaptiveEqTiltDb{0.0f};
 // Interruptor del usuario para el Acoustic Unity Engine (default ON = comportamiento de v2.5.14).
 static std::atomic<bool>  g_unity_enabled{true};
+// v2.5.41: impacto predictivo (PunchEngine). 0 = apagado = bypass exacto y latencia 0. Es la misma instancia para nativeProcess y
+// nativeProcessBlock (nunca corren a la vez: g_dspProcessMutex).
+static ivanna::PunchEngine g_punch;
 static std::atomic<float> g_lastRawRms{0.0f};
 // Adaptive Control Center: modula el mismo motor adaptativo productivo (Calibración Magistral STUDIO 82% por defecto).
 static std::atomic<int>   g_adaptiveUiMode{2};      // 0=OFF,1=NATURAL,2=STUDIO,3=EXTREME
@@ -1868,6 +1872,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // ── SafetyLimiter + DC-block: ÚLTIMAS etapas reales de la Ruta A ────────
     // Corren DESPUÉS de M/S adaptativo, RIR, Volterra, Coclear y los 5 Ejes
     // Supremos para impedir cualquier pico > 0 dBFS o DC residual hacia AudioTrack.
+    // v2.5.41: PUNCH justo antes del limitador (el limitador ve el resultado; el motor no sube el ataque si el pico
+    // ya está en el techo, así que no hay «bombeo»). Latencia +1.5 ms solo mientras esté activo.
+    g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));
+    g_punch.process(g_ats.pdOutL, g_ats.pdOutR, n);
     // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
     // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
     ivanna::fourd::applyOutputPlanar(g_ats.pdOutL, g_ats.pdOutR, n);
@@ -2218,6 +2226,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // SafetyLimiter DESPUÉS de PDEngine — único punto de limiting, sobre la
     // señal con nivel final. Sin él aquí, bloques que superen 0 dBFS tras
     // NHO/Spatial saldrían sin protección hacia el DAC.
+    g_punch.setSampleRate(static_cast<float>(g_params.sampleRate));   // v2.5.41
+    g_punch.process(oL, oR, n);
     // Cancelación de diafonía de la Cadena 4D antes del limitador (ver nativeProcess).
     ivanna::fourd::applyOutputPlanar(oL, oR, n);
     g_safety_limiter.process(oL, oR, n);
@@ -2458,6 +2468,29 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetUnityEnabled(
     // app -> daemon -> snapshot (bit _OFF: 1 = apagado). La app solo es LECTORA del bus: publish() no llega.
     ivanna::omegaSendUserFlag("unityOff", on ? 0 : 1);
     LOGI("[IvannaNativeLib] Acoustic Unity Engine set to %d", on);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JNI API: Punch / impacto predictivo (v2.5.41)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// amount 0..1 (0 = apagado, bypass exacto). Ruta A: en proceso. Ruta B: app -> daemon (SET_PUNCH) -> snapshot.ext_flags.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPunch(JNIEnv*, jobject, jfloat amount) {
+    const float a = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f;
+    g_punch.setAmount(a);                 // Ruta A (atómico: seguro desde el hilo de UI)
+    ivanna::omegaSendPunch(a);            // Ruta B (audioserver, vía daemon)
+}
+
+// [0..2] ganancia dB por banda (bajo/medio/alto), [3] actividad de ataque 0..1, [4] guarda activa 0/1, [5] latencia ms.
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetPunchTelemetry(JNIEnv* env, jobject) {
+    jfloat v[ivanna::PunchEngine::kTelemetrySize] = {};
+    g_punch.telemetry(v);
+    jfloatArray out = env->NewFloatArray(ivanna::PunchEngine::kTelemetrySize);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, ivanna::PunchEngine::kTelemetrySize, v);
+    return out;
 }
 
 JNIEXPORT jboolean JNICALL

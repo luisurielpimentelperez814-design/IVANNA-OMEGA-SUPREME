@@ -140,6 +140,21 @@ constexpr uint32_t OMEGA_FLAG_ATLAS_STYLE_MASK       = (0xFu << 20u);
 // v2.5.15: 1 = interruptor del usuario APAGA la coordinación del Acoustic Unity Engine (contexto
 // neutro). Semántica "_OFF": un snapshot por defecto (bit en 0) conserva el comportamiento previo.
 constexpr uint32_t OMEGA_FLAG_UNITY_OFF              = (1u << 24);
+
+// v2.5.49 — palabra de flags EXTENDIDA de 16 bits (snapshot.ext_flags16, antes _pad0). `flags` está agotado
+// (bits 0..31 asignados) y _pad1 ya es temporal_field, así que los controles nuevos viajan aquí. Un snapshot de
+// una versión anterior trae 0 = todo apagado/por defecto.
+//   bits 0..3 = PUNCH (impacto predictivo, PunchEngine): nivel 0..15 -> cantidad 0..1; 0 = apagado (bypass exacto)
+constexpr uint32_t OMEGA_EXT_PUNCH_SHIFT = 0u;
+constexpr uint32_t OMEGA_EXT_PUNCH_MASK  = (0xFu << 0u);
+inline uint32_t omega_punch_encode(float amount) noexcept {
+    const float a = (amount == amount) ? amount : 0.f;
+    int lv = static_cast<int>(a * 15.f + 0.5f); lv = lv < 0 ? 0 : (lv > 15 ? 15 : lv);
+    return static_cast<uint32_t>(lv) << OMEGA_EXT_PUNCH_SHIFT;
+}
+inline float omega_punch_decode(uint32_t ext) noexcept {
+    return static_cast<float>((ext & OMEGA_EXT_PUNCH_MASK) >> OMEGA_EXT_PUNCH_SHIFT) / 15.f;
+}
 // v2.5.36 — Modo AUX/altavoces (campo de presion coherente, AuxFieldCoherence.hpp). Cero cambio de ABI:
 //   bit 25      = modo activo
 //   bits 26..28 = crossover, paso 0..7  -> 60 + 20*paso Hz (60..200)
@@ -207,7 +222,7 @@ struct OmegaDspSnapshot {
     // ── Identidad ────────────────────────────────────────────────────────────
     uint32_t magic;            // OMEGA_CTRL_MAGIC — valida que es nuestro struct
     uint16_t version;          // OMEGA_CTRL_VERSION — valida compatibilidad ABI
-    uint16_t _pad0;            // alineación
+    uint16_t ext_flags16;      // v2.5.49: palabra extendida de 16 bits (antes _pad0: mismo offset/tamaño, sin cambio de ABI; 0 = por defecto)
 
     // ── Control de generación ─────────────────────────────────────────────────
     uint64_t generation;       // Monotónicamente creciente; 0 = nunca publicado

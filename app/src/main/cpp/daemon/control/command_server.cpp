@@ -148,6 +148,8 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db);
     snap.npe_lateral_inhib = s.npe_lateral_inhib;
     snap.npe_ohc_compression = s.npe_ohc_compression;
+    // v2.5.49: PUNCH en la palabra extendida de 16 bits (los 32 bits de `flags` están agotados).
+    snap.ext_flags16 = static_cast<uint16_t>((snap.ext_flags16 & ~ivanna::OMEGA_EXT_PUNCH_MASK) | ivanna::omega_punch_encode(s.punch_amount));
     // v2.5.16: bits de usuario (antes el daemon los borraba al armar `flags` desde cero).
     snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
     if (!ivanna::controlBus().publish(snap)) return 0;
@@ -292,6 +294,16 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         if (_jsonFloatArray(json,"wfsSpeakerZ", lz, 7)) for (int i=0;i<7;i++) m_state.wfs_speaker_z[i]=lz[i];
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_PUNCH")==0) {
+        // v2.5.41: impacto predictivo por bandas. Clave ausente conserva el valor. La resolución publicada es 1/15.
+        m_state.punch_amount = _clamp(_jsonFloat(json,"punchAmount", m_state.punch_amount), 0.f, 1.f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"SET_PUNCH\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"punch\":%.3f,\"consumer\":%s}",
+            gen>0?"true":"false", gen>0?"applied":"accepted_pending_consumer", (unsigned long long)gen,
+            (double)std::floor(m_state.punch_amount*15.f+0.5f)/15.0,
+            hasActiveConsumer()?"\"omega_effect\"":"null");
 
     } else if (strcmp(action,"SET_AUX_FIELD")==0) {
         // Modo AUX/altavoces. Claves ausentes conservan el valor actual. El crossover se acota a 60..200 Hz
