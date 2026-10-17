@@ -23,6 +23,10 @@
 
 namespace ivanna { namespace fourd {
 
+// Tamaño de bloque de análisis con el que se prepara la cadena (y chunk fijo de feed/apply).
+// El tiempo por bloque del conductor se deriva de él, así que init y feed deben coincidir.
+constexpr int kAnalysisChunk = 480;
+
 // ── Ciclo de vida (hilo propietario; idempotente) ────────────────────────────
 void ensureInit(float sampleRate, int maxBlock) noexcept;
 bool isInitialized() noexcept;

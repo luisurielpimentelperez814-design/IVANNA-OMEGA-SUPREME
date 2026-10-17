@@ -15,7 +15,7 @@ namespace {
 
 // Chunk fijo: el mismo tamaño que usa el motor IME (ImeBridge kChunk=512) y holgadamente
 // por debajo del maxBlock de arranque (480). Búferes en pila -> cero malloc en audio.
-constexpr int kChunk = 480;
+constexpr int kChunk = kAnalysisChunk;
 
 std::mutex   g_initMutex;
 std::unique_ptr<ivanna::ime::FourDExcitationChain> g_chain;

@@ -880,6 +880,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
             (float)sr);
         g_unifiedPipeline.prepare(static_cast<float>(sr), 512);
     }
+    // Cadena 4D: se prepara AQUÍ con el sample rate REAL del DSP (idempotente). Antes solo la
+    // inicializaba el panel de la UI con 48000/480 fijos: sin abrir el panel, feed/apply eran
+    // no-ops y con un dispositivo a 44.1 kHz el conductor temporizaba con un bloque erróneo.
+    ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
     g_initialized.store(true, std::memory_order_release);
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
@@ -2005,6 +2009,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
             ivanna::master::kMasterSafGoldenQNorm[0],
             (float)sr);
     }
+    // Cadena 4D: se prepara AQUÍ con el sample rate REAL del DSP (idempotente). Antes solo la
+    // inicializaba el panel de la UI con 48000/480 fijos: sin abrir el panel, feed/apply eran
+    // no-ops y con un dispositivo a 44.1 kHz el conductor temporizaba con un bloque erróneo.
+    ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
     g_initialized.store(true, std::memory_order_release);
     LOGI("IvannaNativeLib DSP @ %d Hz (EvolutionaryKernel online)", sr);
     return JNI_TRUE;
