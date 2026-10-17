@@ -335,6 +335,9 @@ add_library(omega_effect SHARED
     hexagon/ivanna_fastrpc_client.cpp
     hexagon/ivanna_dsp.cpp
     neuromorphic/volterra_h2_symmetric.cpp
+    # v2.5.51: NpeStereoCore (BiquadEnvelopeBank) llama phase_oracle_tick; libomega_effect.so es otro proceso
+    # (audioserver), así que necesita su propia copia. No hay ODR: ivanna_omega la enlaza por separado.
+    phase_oracle.cpp
     saf_phi_infinity.cpp
         neuromorphic/AntiDolbyAI.cpp
     anti_dolby.cpp

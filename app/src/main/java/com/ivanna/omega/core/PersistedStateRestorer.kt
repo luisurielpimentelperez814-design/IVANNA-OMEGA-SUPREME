@@ -57,6 +57,10 @@ object PersistedStateRestorer {
             runCatching { IvannaNativeLib.nativeSetWfsSpread(paramStore.getWfsSpread()) }
             // Modo AUX/altavoces: restaura estado, crossover y coherencia (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetAuxField(paramStore.isAuxFieldEnabled(), paramStore.getAuxXoverHz(), paramStore.getAuxCoherence()) }
+            // NPE neuromórfico: estado al módulo (Ruta B). Sin esto el módulo arrancaba con su valor por defecto.
+            runCatching {
+                com.ivanna.omega.neuromorphic.PiLstmBridge.restoreModuleNpe(paramStore.isNpeBypass())
+            }
             // Corrección acústica de sala medida: si estaba activa, la restaura (ruta A + daemon/ruta B); si no, ceros.
             runCatching {
                 val roomG = paramStore.getRoomCorrectionGains()

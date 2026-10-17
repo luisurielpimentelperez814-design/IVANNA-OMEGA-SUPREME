@@ -10,6 +10,7 @@
 #include "spatial/AuxFieldCoherence.hpp"
 #include "spatial/TemporalSpatialDynamics.hpp"
 #include "spatial/RoomCorrectionEq.hpp"
+#include "neuromorphic/NpeStereoCore.hpp"
 #include "spatial/RoomGeometryConfig.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
 
@@ -53,6 +54,7 @@ public:
         m_temporal.prepare(sampleRate);
         m_room.prepare(sampleRate);
         m_userEq.prepare(sampleRate);
+        m_npe.prepare(sampleRate);
         m_upmixer.prepare(sampleRate);
         m_hoaDecoder.prepare(sampleRate, 8);
     }
@@ -269,6 +271,11 @@ public:
             : 0.0f;
         m_eqTrimTarget_ = std::pow(10.0f, std::clamp(meanEqDb + phonDelta, -12.0f, 12.0f) / 20.0f);
     }
+    /// NPE neuromórfico (solo Ruta B: omega_effect lo llama desde el snapshot v7; Ruta A usa IvannaNpeEngine en la app).
+    void setNpe(bool on, float harmonic, float lateral, float ohc, float masterDb) noexcept {
+        m_npeOn_ = on; m_npeHarm_ = harmonic; m_npeLat_ = lateral; m_npeOhc_ = ohc; m_npeMasterDb_ = masterDb;
+    }
+    int npeSpikes() const noexcept { return m_npe.lastSpikes(); }
     void setIntensity(float intensity) noexcept {
         if (std::isfinite(intensity)) {
             m_intensityTarget_ = std::clamp(intensity, 0.0f, 1.0f);
@@ -313,6 +320,9 @@ private:
     // switch duro en el callback. Cero allocs en el hot path: los buffers
     // se reservan en prepare()/init() y solo crecen si BLOCK_SIZE cambia.
     ivanna::spatial::WfsRenderer m_wfs;
+    ivanna::neuromorphic::NpeStereoCore m_npe;        // NPE neuromórfico en Ruta B (apagado = bit-exacto)
+    bool  m_npeOn_ = false;
+    float m_npeHarm_ = 0.2f, m_npeLat_ = 0.2f, m_npeOhc_ = 0.3f, m_npeMasterDb_ = 0.0f;
     ivanna::dsp::RoomCorrectionEq m_userEq;           // EQ de 10 bandas del usuario (antes solo se aplicaba su media como trim)
     float m_userEqDb_[10] = {};
     ivanna::dsp::RoomCorrectionEq m_room;             // corrección de sala medida (RoomProbe) — bit-exacto con todo en 0

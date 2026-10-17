@@ -427,6 +427,12 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     }
     // Corrección acústica de sala medida (snapshot v6: room_corr_db[10]).
     fc->setRoomCorrection(s.room_corr_db);
+    // Motor NPE neuromórfico (snapshot v7). La ganancia armónica es la misma que ya usan los demás motores.
+    {
+        bool npeOn = false; float npeMasterDb = 0.f;
+        ivanna::omega_npe_ctl_decode(s.npe_ctl, npeOn, npeMasterDb);
+        fc->setNpe(npeOn, s.harmonic_gain, s.npe_lateral_inhib, s.npe_ohc_compression, npeMasterDb);
+    }
 }
 
 static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,

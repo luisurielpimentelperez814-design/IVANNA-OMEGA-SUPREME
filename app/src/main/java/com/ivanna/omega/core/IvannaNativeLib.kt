@@ -382,6 +382,9 @@ object IvannaNativeLib {
     /** Corrección acústica de sala: 10 ganancias (dB, una por banda de octava 31.5 Hz…16 kHz); todo 0 = apagado. Ruta A + daemon. */
     external fun nativeSetRoomCorrection(gainsDb: FloatArray)
 
+    /** Motor NPE neuromórfico en el MÓDULO (Ruta B, omega_effect): encendido, inhibición lateral, compresión OHC, master (dB). */
+    external fun nativeSetNpeModule(enabled: Boolean, lateralInhib: Float, ohcCompression: Float, masterDb: Float)
+
     /** Amplitud (lineal) de la componente a `freqHz` en samples[0..count) — detección síncrona nativa (RoomProbe). */
     external fun nativeRoomLockIn(samples: FloatArray, count: Int, sampleRate: Int, freqHz: Float): Float
 

@@ -47,8 +47,25 @@ object PiLstmBridge {
         }
     }
 
+    // Estado del NPE en el módulo (Ruta B). Antes el módulo no tenía NPE: ahora omega_effect aplica NpeStereoCore con
+    // estos valores (mismo mapeo que la Ruta A: alpha = compresión OHC, beta = inhibición lateral).
+    @Volatile private var moduleBypass = false
+    @Volatile private var moduleMasterDb = 0f
+
+    /** Arranque: fija solo el estado de bypass del módulo y lo publica (sin tocar los demás parámetros del motor). */
+    fun restoreModuleNpe(bypass: Boolean) { moduleBypass = bypass; pushModuleNpe() }
+
+    /** Publica el estado actual del NPE al módulo vía daemon. Seguro llamarlo sin módulo instalado (no hace nada). */
+    fun pushModuleNpe() {
+        if (!IvannaNativeLib.isLoaded) return
+        runCatching {
+            IvannaNativeLib.nativeSetNpeModule(!moduleBypass, lastBeta.coerceIn(0f, 1f), lastAlpha.coerceIn(0f, 1f), moduleMasterDb)
+        }
+    }
+
     fun setAlpha(v: Float) {
         lastAlpha = v
+        pushModuleNpe()
         if (ready) {
             nativeSetAlpha(v)
             runCatching { IvannaNativeLib.nativeSetAlpha(v) }
@@ -58,6 +75,7 @@ object PiLstmBridge {
     }
     fun setBeta(v: Float) {
         lastBeta = v
+        pushModuleNpe()
         if (ready) {
             nativeSetBeta(v)
             runCatching { IvannaNativeLib.nativeSetBeta(v) }
@@ -128,6 +146,8 @@ object PiLstmBridge {
         if (!ready) return
         val safeDb = if (db.isFinite()) db.coerceIn(-18f, 18f) else 0f
         val gainLin = Math.pow(10.0, safeDb / 20.0).toFloat()
+        moduleMasterDb = safeDb
+        pushModuleNpe()
         val inst = com.ivanna.omega.audio.IvannaBridgePlayer.activeInstance
         if (inst != null) {
             runCatching { inst.updateNpeKotlinParams(outputScaling = gainLin) }
@@ -195,6 +215,8 @@ object PiLstmBridge {
 
     fun setBypass(bypass: Boolean) {
         // Bypass NPE: deshabilita motor adaptativo y fuerza ganancia neutra
+        moduleBypass = bypass
+        pushModuleNpe()
         if (ready) {
             IvannaNativeLib.nativeSetAdaptEnabled(!bypass)
             runCatching { IvannaNpeEngine.setBypass(bypass) }

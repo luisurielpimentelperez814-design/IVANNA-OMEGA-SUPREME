@@ -357,7 +357,7 @@ TEST(TemporalFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
 }
 
 TEST(RoomCorrectionChannel, DaemonPublishesMeasuredCorrectionAndItSurvivesOtherCommands) {
-    EXPECT_EQ(OMEGA_CTRL_VERSION, 6u);                           // snapshot v6: + room_corr_db[10]
+    EXPECT_EQ(OMEGA_CTRL_VERSION, 7u);                           // snapshot v7: + npe_* (v6: room_corr_db[10])
     EXPECT_LE(sizeof(OmegaDspSnapshot), 512u);
     Harness h;
     CommandServer cs;
@@ -386,4 +386,35 @@ TEST(RoomCorrectionChannel, DaemonPublishesMeasuredCorrectionAndItSurvivesOtherC
     for (float v : snap().room_corr_db) EXPECT_EQ(v, 0.f);       // ceros = apagado
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"room_corr\":false"), std::string::npos) << reply;
+}
+
+TEST(NpeChannel, DaemonPublishesNpeStateToTheModule) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
+    cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    const OmegaDspSnapshot d = snap();
+    bool on = false; float md = 9.f; omega_npe_ctl_decode(d.npe_ctl, on, md);
+    EXPECT_TRUE(on);                                               // el producto arranca con el NPE encendido
+    EXPECT_NEAR(d.npe_lateral_inhib, 0.2f, 1e-4f);
+    EXPECT_NEAR(d.npe_ohc_compression, 0.3f, 1e-4f);
+
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_NPE\",\"enabled\":0,\"lateralInhib\":0.55,\"ohc\":9,\"masterDb\":-40}", reply, sizeof reply), 0);
+    const OmegaDspSnapshot s = snap();
+    omega_npe_ctl_decode(s.npe_ctl, on, md);
+    EXPECT_FALSE(on);
+    EXPECT_NEAR(s.npe_lateral_inhib, 0.55f, 1e-4f);
+    EXPECT_NEAR(s.npe_ohc_compression, 1.0f, 1e-4f);               // acotado a [0,1]
+    EXPECT_NEAR(md, -24.0f, 1e-4f);                                // acotado a [-24,12]
+    cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1}", reply, sizeof reply);
+    omega_npe_ctl_decode(snap().npe_ctl, on, md);
+    EXPECT_FALSE(on);                                              // sobrevive a comandos de otras áreas
+    cs.handleJsonCommand("{\"action\":\"SET_NPE\",\"enabled\":1}", reply, sizeof reply);
+    const OmegaDspSnapshot e = snap();
+    omega_npe_ctl_decode(e.npe_ctl, on, md);
+    EXPECT_TRUE(on);
+    EXPECT_NEAR(md, -24.0f, 1e-4f);
+    EXPECT_NEAR(e.npe_lateral_inhib, 0.55f, 1e-4f);                // sin clave: conserva
 }

@@ -108,7 +108,7 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // ABI v5 (2026-09-26): añadidos los 5 Ejes de Supremacía Cuántico-Neuromórfica
 // (8 flags OMEGA_FLAG_SUPREME_* + 11 escalares supreme_*) manteniendo
 // sizeof(OmegaDspSnapshot) <= 512 bytes y copia trivial cross-process.
-constexpr uint16_t OMEGA_CTRL_VERSION = 6u;   // v6 (2.5.49): + room_corr_db[10] (corrección acústica de sala medida)
+constexpr uint16_t OMEGA_CTRL_VERSION = 7u;   // v7 (2.5.51): + npe_* (motor NPE neuromórfico en Ruta B). v6: room_corr_db[10]
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
@@ -165,6 +165,16 @@ inline void omega_temporal_field_decode(uint32_t field, bool& on, float& amount,
 }
 inline void omega_temporal_field_decode(uint32_t field, bool& on, float& amount) noexcept {
     bool a; omega_temporal_field_decode(field, on, amount, a);
+}
+// NPE (Ruta B): palabra de control = bit 0 encendido ; bits 8..15 = master gain en dB enteros con signo (int8, -24..+12).
+inline uint32_t omega_npe_ctl_encode(bool on, float masterDb) noexcept {
+    const float m = (masterDb == masterDb) ? masterDb : 0.f;
+    int d = static_cast<int>(m < 0.f ? m - 0.5f : m + 0.5f); d = d < -24 ? -24 : (d > 12 ? 12 : d);
+    return (on ? 1u : 0u) | (static_cast<uint32_t>(static_cast<uint8_t>(static_cast<int8_t>(d))) << 8u);
+}
+inline void omega_npe_ctl_decode(uint32_t ctl, bool& on, float& masterDb) noexcept {
+    on = (ctl & 1u) != 0u;
+    masterDb = static_cast<float>(static_cast<int8_t>((ctl >> 8u) & 0xFFu));
 }
 inline uint32_t omega_aux_field_encode(bool on, float xoverHz, float coherence) noexcept {
     const float xo = (xoverHz == xoverHz) ? xoverHz : 120.f;
@@ -325,6 +335,14 @@ struct OmegaDspSnapshot {
     // apagado (bit-exacto). La aplica RoomCorrectionEq en omega_effect.
     float    room_corr_db[OMEGA_CTRL_EQ_BANDS];
 
+    // ── Motor NPE neuromórfico en Ruta B (v7) ────────────────────────────────
+    // Antes el NPE (NHO + LIF + banco coclear + inhibición lateral + OHC + AGC) solo existía en la app (Ruta A): con el
+    // módulo instalado sus controles no tenían efecto. NpeStereoCore lo aplica en omega_effect. La ganancia armónica
+    // reutiliza `harmonic_gain`. Apagado = bit-exacto. (Master gain dentro de la palabra para dejar margen < 512 B.)
+    uint32_t npe_ctl;               // omega_npe_ctl_encode(): bit0 encendido, bits 8..15 master dB (int8)
+    float    npe_lateral_inhib;     // [0,1]
+    float    npe_ohc_compression;   // [0,1]
+
     // ── Integridad ────────────────────────────────────────────────────────────
     uint32_t crc32;            // CRC32 de bytes [magic .. effect_frames] inclusive
 
@@ -365,6 +383,7 @@ struct OmegaDspSnapshot {
         s.bass_boost_db     = 2.5f;
         s.dialog_boost_db   = 1.5f;
         s.widener_mult      = 1.38f;
+        s.npe_ctl = omega_npe_ctl_encode(true, 0.0f); s.npe_lateral_inhib = 0.2f; s.npe_ohc_compression = 0.3f;
         s.room_rt60_s = 0.34f;  // Golden Master Studio Control Room (rir_0051.wav, RT60=0.340s, DRR=10.31dB)
         s.room_idx    = 51;
         s.room_wet    = 0.22f;

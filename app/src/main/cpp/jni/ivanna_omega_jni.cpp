@@ -3023,6 +3023,39 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetRoomCorrection(
     omegaSendRoomCorrectionToDaemon(g);                                                       // ruta B (audioserver, via daemon)
 }
 
+// ── Motor NPE neuromórfico en el módulo (Ruta B): app→daemon (SET_NPE) ──
+static void omegaSendNpeToDaemon(bool enabled, float lateral, float ohc, float masterDb) noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return;
+    struct timeval tv{0, 200000};
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_un addr; std::memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    const char* name = "omega_command_socket";
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, std::strlen(name));
+    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
+        char json[200];
+        int n = std::snprintf(json, sizeof(json),
+            "{\"action\":\"SET_NPE\",\"enabled\":%d,\"lateralInhib\":%.3f,\"ohc\":%.3f,\"masterDb\":%.2f}",
+            enabled ? 1 : 0, (double)lateral, (double)ohc, (double)masterDb);
+        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+    }
+    ::close(fd);
+}
+
+/** Publica el estado del NPE al módulo (omega_effect en audioserver). La Ruta A usa IvannaNpeEngine en la app. */
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNpeModule(
+    JNIEnv*, jobject, jboolean enabled, jfloat lateralInhib, jfloat ohcCompression, jfloat masterDb) {
+    omegaSendNpeToDaemon(enabled == JNI_TRUE,
+                         std::isfinite(lateralInhib) ? std::clamp(lateralInhib, 0.0f, 1.0f) : 0.2f,
+                         std::isfinite(ohcCompression) ? std::clamp(ohcCompression, 0.0f, 1.0f) : 0.3f,
+                         std::isfinite(masterDb) ? std::clamp(masterDb, -24.0f, 12.0f) : 0.0f);
+}
+
 /** Amplitud (lineal, pico) de la componente a `freqHz` en samples[0..count): detección síncrona (RoomProbe). */
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeRoomLockIn(

@@ -145,6 +145,9 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.temporal_field = ivanna::omega_temporal_field_encode(s.temporal_field_enabled, s.temporal_field_amount, s.temporal_field_auto);
     // v2.5.49: corrección acústica de sala.
     for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) snap.room_corr_db[i] = s.room_corr_db[i];
+    snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db);
+    snap.npe_lateral_inhib = s.npe_lateral_inhib;
+    snap.npe_ohc_compression = s.npe_ohc_compression;
     // v2.5.16: bits de usuario (antes el daemon los borraba al armar `flags` desde cero).
     snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
     if (!ivanna::controlBus().publish(snap)) return 0;
@@ -319,6 +322,17 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.temporal_field_auto?"true":"false",
             hasActiveConsumer()?"\"omega_effect\"":"null");
 
+    } else if (strcmp(action,"SET_NPE")==0) {
+        // Motor NPE neuromórfico (Ruta B). enabled, lateralInhib [0,1], ohc [0,1], masterDb [-24,12]. Sin clave = conserva.
+        m_state.npe_enabled         = _jsonFloat(json,"enabled", m_state.npe_enabled ? 1.f : 0.f) > 0.5f;
+        m_state.npe_lateral_inhib   = _clamp(_jsonFloat(json,"lateralInhib", m_state.npe_lateral_inhib), 0.f, 1.f);
+        m_state.npe_ohc_compression = _clamp(_jsonFloat(json,"ohc", m_state.npe_ohc_compression), 0.f, 1.f);
+        m_state.npe_master_gain_db  = _clamp(_jsonFloat(json,"masterDb", m_state.npe_master_gain_db), -24.f, 12.f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"SET_NPE\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"enabled\":%s,\"consumer\":%s}",
+            gen>0?"true":"false", gen>0?"applied":"accepted_pending_consumer", (unsigned long long)gen,
+            m_state.npe_enabled?"true":"false", hasActiveConsumer()?"\"omega_effect\"":"null");
     } else if (strcmp(action,"SET_ROOM_CORRECTION")==0) {
         // Corrección acústica de sala medida con el micrófono (RoomProbe). roomCorrDb = 10 ganancias en dB, una por
         // banda de octava; se acotan a -12..+12. Todas en 0 = apagado. Sin la clave, conserva lo anterior.
