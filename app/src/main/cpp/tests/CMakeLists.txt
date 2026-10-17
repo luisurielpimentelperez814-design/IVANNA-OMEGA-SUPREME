@@ -102,6 +102,7 @@ ivanna_add_test(test_transient_detector)
 ivanna_add_test(test_arousal_conductor)
 ivanna_add_test(test_crosstalk_canceller)
 ivanna_add_test(test_haptic_band_mapper)
+ivanna_add_test(test_exposure_dosimeter)
 
 # FIX (gap encontrado en auditoría de Fase 3): test_adaptive_engine.cpp
 # existía desde el merge de feature/safetylimiter pero no estaba
