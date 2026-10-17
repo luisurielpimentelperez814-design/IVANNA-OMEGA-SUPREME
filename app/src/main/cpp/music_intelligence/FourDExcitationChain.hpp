@@ -49,6 +49,11 @@ struct FourDStatus {
     float headYawDeg = 0.0f;
     float itdMicroseconds = 0.0f;
     uint32_t publishedScenes = 0;
+    // Arco narrativo (escala de segundos). Al final de la estructura para no mover campos previos.
+    uint8_t arcPhase = 0;          // 0 calma · 1 subida · 2 cima · 3 relajación
+    float   arcArousal = 0.0f;     // 0..1 relativa al máximo propio del tema
+    float   arcTension = 0.0f;     // 0..1 hueco previo al drop
+    float   arcImpact = 0.0f;      // 0..1 envolvente del impacto
 };
 
 class alignas(64) FourDExcitationChain {
@@ -205,6 +210,11 @@ public:
         s.headYawDeg = lastYaw_;
         s.itdMicroseconds = xtc_.itdMicroseconds();
         s.publishedScenes = published_;
+        const MacroArcOutput a = arc_.output();
+        s.arcPhase = static_cast<uint8_t>(a.phase);
+        s.arcArousal = a.arousal;
+        s.arcTension = a.tension;
+        s.arcImpact = a.impact;
         return s;
     }
 

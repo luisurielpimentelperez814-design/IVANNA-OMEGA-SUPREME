@@ -310,3 +310,41 @@ TEST(FourDControlSurface, NonFiniteInputDoesNotPoisonState) {
     EXPECT_TRUE(std::isfinite(st.hapticTotal));
     EXPECT_TRUE(st.armed) << "los bloques válidos deberían seguir armando el conductor";
 }
+
+// ── Arco narrativo a través de la superficie global (mismo camino que JNI/UI) ─────────────────
+// Apagado: ni un solo estado del arco se mueve. Encendido (profundidad 1): la excitación sube
+// con material rítmico real. Y los controles sobreviven a un shutdown()/ensureInit(): la
+// superficie los reaplica (la cadena nueva arranca con el arco apagado y profundidad 0).
+TEST(FourDControlSurface, ArcControlsReachTheChainAndSurviveReinit) {
+    fourd::ensureInit(48000.f, kBlock);
+    fourd::setEnabled(true);
+    fourd::setArcDepth(1.0f);
+    fourd::setArcEnabled(false);
+
+    std::vector<float> l(kBlock), r(kBlock);
+    unsigned rng = 77u;
+    long n = 0;
+    auto feedSeconds = [&](int blocks) {
+        for (int b = 0; b < blocks; ++b) {
+            fillKickHatsBlock(l, r, n, rng);
+            n += kBlock;
+            fourd::feedPlanar(l.data(), r.data(), kBlock);
+        }
+    };
+
+    feedSeconds(400);   // 4 s con el arco apagado
+    EXPECT_EQ(fourd::status().arcArousal, 0.0f);
+    EXPECT_EQ(fourd::status().arcPhase, 0);
+
+    fourd::setArcEnabled(true);
+    feedSeconds(600);   // 6 s encendido
+    EXPECT_GT(fourd::status().arcArousal, 0.1f);
+
+    fourd::shutdown();                 // la cadena se libera y se rehace
+    fourd::ensureInit(48000.f, kBlock);
+    feedSeconds(600);
+    EXPECT_GT(fourd::status().arcArousal, 0.1f) << "los controles del arco no se reaplicaron tras reiniciar";
+
+    fourd::setArcEnabled(false);       // no dejar estado a otros tests
+    fourd::setArcDepth(0.0f);
+}

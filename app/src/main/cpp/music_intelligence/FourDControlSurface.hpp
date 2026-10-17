@@ -38,6 +38,8 @@ void setHapticScale(float s) noexcept;
 void setOutputLatencyMs(float ms) noexcept;
 void setLeadMs(float ms) noexcept;          // clampado a [5,10] ms por el conductor
 void setDepth(float d) noexcept;            // profundidad de modulación [0,1]
+void setArcEnabled(bool on) noexcept;       // arco narrativo: subida · hueco · impacto (apagado por defecto)
+void setArcDepth(float d) noexcept;         // profundidad del arco [0,1] (0 = identidad exacta)
 void setDosimeterMode(int mode) noexcept;   // 0 WHO · 1 NIOSH · 2 OSHA
 void setDosimeterCalibration(float dbfsToSpl) noexcept;
 void setCrosstalkEnabled(bool on) noexcept; // solo por AUX/altavoces

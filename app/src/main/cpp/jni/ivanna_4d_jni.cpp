@@ -24,12 +24,12 @@ inline bool truthy(jboolean b) { return b == JNI_TRUE; }
 
 std::string statusJson() {
     const ivanna::ime::FourDStatus s = ivanna::fourd::status();
-    char buf[640];
+    char buf[768];
     const int w = std::snprintf(buf, sizeof(buf),
         "{\"enabled\":%s,\"armed\":%s,\"anticipation\":%.4f,\"confidence\":%.4f,"
         "\"periodMs\":%.2f,\"leadMs\":%.2f,\"hapticTotal\":%.4f,\"hapticAmp\":%u,"
         "\"dose\":%.5f,\"laeq\":%.2f,\"attenDb\":%.2f,\"yaw\":%.2f,\"itdUs\":%.2f,"
-        "\"scenes\":%u}",
+        "\"scenes\":%u,\"arcPhase\":%u,\"arcArousal\":%.4f,\"arcTension\":%.4f,\"arcImpact\":%.4f}",
         s.enabled ? "true" : "false",
         s.armed ? "true" : "false",
         s.anticipation, s.confidence,
@@ -37,7 +37,8 @@ std::string statusJson() {
         static_cast<unsigned>(s.hapticAmplitude),
         s.exposureDose, s.exposureLaeq, s.recommendedAttenuationDb,
         s.headYawDeg, s.itdMicroseconds,
-        static_cast<unsigned>(s.publishedScenes));
+        static_cast<unsigned>(s.publishedScenes),
+        static_cast<unsigned>(s.arcPhase), s.arcArousal, s.arcTension, s.arcImpact);
     if (w <= 0) return std::string("{}");
     return std::string(buf, static_cast<size_t>(
         (w < static_cast<int>(sizeof(buf))) ? w : static_cast<int>(sizeof(buf)) - 1));
@@ -87,6 +88,16 @@ Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDSetLeadMs(JNIEnv*, jobject,
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDSetDepth(JNIEnv*, jobject, jfloat d) {
     ivanna::fourd::setDepth(static_cast<float>(d));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDSetArc(JNIEnv*, jobject, jboolean on) {
+    ivanna::fourd::setArcEnabled(truthy(on));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDSetArcDepth(JNIEnv*, jobject, jfloat d) {
+    ivanna::fourd::setArcDepth(static_cast<float>(d));
 }
 
 extern "C" JNIEXPORT void JNICALL

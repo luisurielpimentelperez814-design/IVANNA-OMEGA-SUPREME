@@ -23,6 +23,8 @@ std::atomic<bool>  g_ready{false};
 std::atomic<bool>  g_enabled{false};
 std::atomic<bool>  g_hapticsOn{false};
 std::atomic<bool>  g_xtcOn{false};
+std::atomic<bool>  g_arcOn{false};
+std::atomic<float> g_arcDepth{0.0f};
 std::atomic<float> g_sr{48000.0f};
 std::atomic<int>   g_maxBlock{480};
 
@@ -82,6 +84,8 @@ void reapplyControls() noexcept {
     c->setEnabled(g_enabled.load(std::memory_order_relaxed));
     c->setHapticsEnabled(g_hapticsOn.load(std::memory_order_relaxed));
     c->setCrosstalkEnabled(g_xtcOn.load(std::memory_order_relaxed));
+    c->setArcDepth(g_arcDepth.load(std::memory_order_relaxed));
+    c->setArcEnabled(g_arcOn.load(std::memory_order_relaxed));
 }
 
 } // namespace
@@ -135,6 +139,14 @@ void setHapticScale(float s) noexcept              { if (active()) chain()->setH
 void setOutputLatencyMs(float ms) noexcept         { if (active()) chain()->setOutputLatencyMs(ms); }
 void setLeadMs(float ms) noexcept                  { if (active()) chain()->setLeadMs(ms); }
 void setDepth(float d) noexcept                    { if (active()) chain()->setDepth(d); }
+void setArcEnabled(bool on) noexcept {
+    g_arcOn.store(on, std::memory_order_relaxed);
+    if (active()) chain()->setArcEnabled(on);
+}
+void setArcDepth(float d) noexcept {
+    g_arcDepth.store(std::isfinite(d) ? std::min(1.0f, std::max(0.0f, d)) : 0.0f, std::memory_order_relaxed);
+    if (active()) chain()->setArcDepth(g_arcDepth.load(std::memory_order_relaxed));
+}
 void setDosimeterMode(int mode) noexcept           { if (active()) chain()->setDosimeterMode(mode); }
 void setDosimeterCalibration(float dbfs) noexcept  { if (active()) chain()->setDosimeterCalibration(dbfs); }
 void setCrosstalkEnabled(bool on) noexcept {

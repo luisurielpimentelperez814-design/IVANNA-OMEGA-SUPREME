@@ -32,6 +32,10 @@ private data class FourDState(
     val yaw: Float = 0f,
     val itdUs: Float = 0f,
     val scenes: Int = 0,
+    val arcPhase: Int = 0,
+    val arcArousal: Float = 0f,
+    val arcTension: Float = 0f,
+    val arcImpact: Float = 0f,
 )
 
 /**
@@ -48,6 +52,8 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
     var crosstalk by remember { mutableStateOf(false) }
     var leadMs by remember { mutableStateOf(7.5f) }
     var depth by remember { mutableStateOf(0.7f) }
+    var arc by remember { mutableStateOf(false) }
+    var arcDepth by remember { mutableStateOf(0.5f) }
     var hapticScale by remember { mutableStateOf(0.6f) }
     var dosMode by remember { mutableStateOf(0) }
 
@@ -83,6 +89,10 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                         yaw = o.optDouble("yaw", 0.0).toFloat(),
                         itdUs = o.optDouble("itdUs", 0.0).toFloat(),
                         scenes = o.optInt("scenes", 0),
+                        arcPhase = o.optInt("arcPhase", 0),
+                        arcArousal = o.optDouble("arcArousal", 0.0).toFloat(),
+                        arcTension = o.optDouble("arcTension", 0.0).toFloat(),
+                        arcImpact = o.optDouble("arcImpact", 0.0).toFloat(),
                     )
                 }
             }
@@ -180,6 +190,39 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 onValueChange = {
                     depth = it
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDepth(it)
+                }
+            )
+
+            // Arco narrativo (escala de segundos): subida, hueco de tensión e impacto del drop.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = arc, onCheckedChange = {
+                    arc = it
+                    if (Ivanna4DNative.isAvailable) {
+                        // La profundidad nativa arranca en 0: se envía junto con el interruptor.
+                        Ivanna4DNative.nativeFourDSetArcDepth(arcDepth)
+                        Ivanna4DNative.nativeFourDSetArc(it)
+                    }
+                })
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Arco narrativo (subida · hueco · impacto)", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                    Text(
+                        String.format(
+                            Locale.US,
+                            "%s · excitación %.0f%% · tensión %.0f%% · impacto %.0f%%",
+                            when (st.arcPhase) { 1 -> "SUBIDA"; 2 -> "CIMA"; 3 -> "RELAJACIÓN"; else -> "CALMA" },
+                            st.arcArousal * 100f, st.arcTension * 100f, st.arcImpact * 100f
+                        ),
+                        color = cyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+            Text("Profundidad del arco", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+            Slider(
+                value = arcDepth, valueRange = 0f..1f,
+                onValueChange = {
+                    arcDepth = it
+                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetArcDepth(it)
                 }
             )
 

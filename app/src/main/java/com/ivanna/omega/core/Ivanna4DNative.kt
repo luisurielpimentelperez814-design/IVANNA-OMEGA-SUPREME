@@ -35,6 +35,8 @@ object Ivanna4DNative {
     @JvmStatic external fun nativeFourDSetOutputLatencyMs(ms: Float)
     @JvmStatic external fun nativeFourDSetLeadMs(ms: Float)
     @JvmStatic external fun nativeFourDSetDepth(d: Float)
+    @JvmStatic external fun nativeFourDSetArc(on: Boolean)
+    @JvmStatic external fun nativeFourDSetArcDepth(d: Float)
     @JvmStatic external fun nativeFourDSetDosimeterMode(mode: Int)
     @JvmStatic external fun nativeFourDSetDosimeterCalibration(dbfsToSpl: Float)
     @JvmStatic external fun nativeFourDSetCrosstalk(on: Boolean)
