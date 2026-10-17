@@ -1,3 +1,9 @@
+# CHANGELOG — v2.5.61 (352) — Sincronización de controles espaciales A/B, SaFOptimizer saneado y módulo de investigación DEH6
+1. **`fix(sync)` (`jni/ivanna_omega_jni.cpp`)** — unifica la sincronización de los controles espaciales entre la Ruta A (en proceso) y la Ruta B (daemon): lo que el usuario mueve en la UI llega a ambas rutas por el mismo camino.
+2. **`fix(spatial)` (`SaFOptimizer.kt`)** — sanea el optimizador SAF, valida los 5 errores direccionales y reporta el sujeto HRTF realmente usado (no el solicitado).
+3. **`feat(research)` (`research/deh6_optics/`)** — módulo de investigación DEH6 (óptica/fotoholografía) con su validación de host en CI (`tests-host.yml`) y documentos de auditoría matemática. **Es investigación: no entra al APK ni al módulo Magisk** y no cambia el audio del producto.
+4. **Por qué esta versión:** los tres cambios anteriores se publicaron sin subir la versión; el release `v2.5.60` ya existía y GitHub lo marca inmutable, así que el CI solo dejaba el borrador `staging-*` y **no se generaba el release correspondiente**. Regla: todo commit que deba salir como release lleva su `chore(release)` con versión nueva (o va en el mismo commit).
+
 # CHANGELOG — v2.5.60 (351) — Diafonía en el módulo
 La cancelación de diafonía (altavoces/AUX) ahora también corre en Ruta B.
 
