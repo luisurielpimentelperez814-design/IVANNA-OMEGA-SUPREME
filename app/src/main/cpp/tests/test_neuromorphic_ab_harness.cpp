@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "NeuromorphicAbHarness.hpp"
+#include "dsp/NeuromorphicAbHarness.hpp"
 
 namespace {
 constexpr float kSr = 48000.0f;
