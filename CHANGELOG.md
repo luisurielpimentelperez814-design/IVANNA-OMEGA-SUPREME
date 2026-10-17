@@ -1,3 +1,6 @@
+# CHANGELOG — v2.5.57 (348) — Háptica con latencia medida
+La háptica de graves se sincroniza con la latencia real de la salida medida en la corrección de sala.
+
 # CHANGELOG — v2.5.56 (347) — El drop del arco narrativo 4D realza el golpe (Punch + MacroArcConductor)
 1. **Qué junta:** el `MacroArcConductor` (arco narrativo 4D: subida → hueco → impacto) ya detecta el regreso del pulso tras un hueco ≥ 250 ms y publica una envolvente de impacto de ~350 ms. Ahora `FourDControlSurface::arcImpact()` (accesor ligero, apto para el hilo de audio) se lo entrega al `PunchEngine` en cada bloque de la Ruta A: `setImpactBias(0..1)` sube **hasta un 45 %** el realce de ataque SOLO mientras dura el drop.
 2. **Con red de seguridad:** el sesgo no toca el recorte de sostén ni las guardas; la de excursión de graves (~−6 dBFS) y la de headroom (−0.9 dBFS) siguen mandando, así que el drop nunca produce más pico del permitido (prueba: un máster ya al techo sigue sin subir ni un ápice con sesgo 1). Con el arco apagado (por defecto) `arcImpact() = 0` y el comportamiento es idéntico al de v2.5.55 (prueba de igualdad bit a bit con sesgo 0).
