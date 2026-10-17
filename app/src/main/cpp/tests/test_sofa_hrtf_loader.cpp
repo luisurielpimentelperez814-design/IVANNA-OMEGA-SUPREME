@@ -13,11 +13,13 @@
 
 #include <unistd.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "SofaHRTFLoader.hpp"
@@ -116,4 +118,64 @@ TEST_F(SofaLoaderTest, ContentDoesNotMatterButPathSelectsTheSubject) {
     ASSERT_TRUE(c.load(write("z", "cipic_003.sofa", 2048, true, 0x00)));
     ASSERT_TRUE(d.load(write("w", "kemar.sofa", 2048, true, 0x00)));
     EXPECT_NE(c.hrtf().left, d.hrtf().left);
+}
+
+// ── Selección de sujeto: coincidencia MÁS LARGA, no la primera ──────────────────────────────
+// La tabla de anclas lista "kemar" antes que "kemar_large" y "tu_berlin_kemar", y la ruta se
+// busca por subcadena: con "primera coincidencia" esos dos sujetos recibían el ancla de KEMAR
+// estándar y la elección del usuario no tenía efecto.
+TEST_F(SofaLoaderTest, LongestSubjectIdWinsOverShorterSubstring) {
+    SofaHRTFLoader kemar, large, berlin;
+    ASSERT_TRUE(kemar.load(write("a", "kemar.sofa", 2048, true, 0x00)));
+    ASSERT_TRUE(large.load(write("b", "kemar_large.sofa", 2048, true, 0x00)));
+    ASSERT_TRUE(berlin.load(write("c", "tu_berlin_kemar.sofa", 2048, true, 0x00)));
+    EXPECT_NE(kemar.hrtf().left, large.hrtf().left)
+        << "kemar_large no debe resolverse al ancla de kemar";
+    EXPECT_NE(kemar.hrtf().left, berlin.hrtf().left)
+        << "tu_berlin_kemar no debe resolverse al ancla de kemar";
+    EXPECT_NE(large.hrtf().left, berlin.hrtf().left);
+}
+
+// ── loadCached: un acierto de caché no puede devolver éxito con el HRIR vacío ───────────────
+// La caché (ruta + ok) es GLOBAL, pero hrtf() es de cada instancia. Antes, una segunda instancia
+// que pedía la misma ruta recibía true sin haber cargado nada y leía un HRIR vacío.
+TEST_F(SofaLoaderTest, LoadCachedHitOnAnotherInstanceStillPopulatesItsOwnHrir) {
+    const std::string p = write("d", "cipic_008.sofa", 2048, true, 0x00);
+    SofaHRTFLoader first, second;
+    ASSERT_TRUE(first.loadCached(p));
+    ASSERT_FALSE(first.hrtf().left.empty());
+    ASSERT_TRUE(second.loadCached(p));
+    EXPECT_FALSE(second.hrtf().left.empty())
+        << "loadCached devolvió true pero esta instancia no tiene HRIR";
+    EXPECT_EQ(second.hrtf().left.size(), second.hrtf().right.size());
+    EXPECT_EQ(first.hrtf().left, second.hrtf().left);
+    EXPECT_TRUE(second.isReconstructedFromMasterBasis());
+}
+
+TEST_F(SofaLoaderTest, LoadCachedSameInstanceSecondCallIsStillValid) {
+    const std::string p = write("e", "kemar.sofa", 2048, true, 0x00);
+    SofaHRTFLoader l;
+    ASSERT_TRUE(l.loadCached(p));
+    const auto left = l.hrtf().left;
+    ASSERT_TRUE(l.loadCached(p));
+    EXPECT_EQ(l.hrtf().left, left);
+}
+
+// Concurrencia: las estáticas de la caché se compartían sin exclusión mutua (carrera de datos
+// sobre un std::string). Con ASan/TSan o sin ellos, esto no debe corromper ni caerse.
+TEST_F(SofaLoaderTest, LoadCachedFromManyThreadsIsSafe) {
+    const std::string p1 = write("f", "kemar.sofa", 2048, true, 0x00);
+    const std::string p2 = write("g", "cipic_165.sofa", 2048, true, 0x00);
+    std::vector<std::thread> ts;
+    std::atomic<int> bad{0};
+    for (int t = 0; t < 4; ++t) {
+        ts.emplace_back([&, t] {
+            SofaHRTFLoader l;
+            for (int i = 0; i < 200; ++i) {
+                if (!l.loadCached((i + t) % 2 ? p1 : p2) || l.hrtf().left.empty()) ++bad;
+            }
+        });
+    }
+    for (auto& th : ts) th.join();
+    EXPECT_EQ(bad.load(), 0);
 }
