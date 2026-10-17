@@ -1,3 +1,15 @@
+# CHANGELOG — v2.5.46 (337) — Cadena 4D de excitación anticipada
+El campo espacial, la háptica y los armónicos ahora se abren 5–10 ms ANTES del golpe, no después.
+1. **Conductor de excitación (nuevo):** `ExcitationConductor` estima el instante del próximo golpe desde el historial de IOI del `MusicFeatureExtractor` (media recortada + regularidad) y adelanta la apertura del campo en un `leadMs` de 5–10 ms, publicando en `SceneTargetBus`. Con confianza baja la salida es la entrada exacta (bit-exacto).
+2. **Háptica multibanda (nueva):** `MultibandHapticMapper` reparte la vibración en cuatro bandas perceptivas independientes (sub 20–80 Hz, cuerpo 80–400 Hz, transitorio de ataque, textura de aire/densidad) con refracción por banda y amplitud 0–255 lista para la API háptica.
+3. **Cancelación de diafonía (nueva):** `CrosstalkCanceller` recupera el campo holográfico por AUX/altavoces con la inversa regularizada del par (shuffler recursivo), ITD fraccional, paso-alto de reinyección a 120 Hz para no tocar el sub y rotación con la cabeza.
+4. **Fusión 6DoF del rastreo (nueva):** `HeadTrackerFusion` cierra el pendiente del rastreador: filtro complementario (giroscopio rápido, acelerómetro para inclinación, magnetómetro para acimut), sesgo estimado solo en reposo y predicción por latencia de sensor para que el campo gire CON la cabeza.
+5. **Dosímetro de exposición (nuevo):** `ExposureDosimeter` acumula dosis sobre ponderación A exacta (bilineal de la función racional, 3 biquads por canal) según WHO/H.870, NIOSH y OSHA, con límite de pico de 135 dB y carga que atenúa la háptica.
+6. **Banco A/B (nuevo):** `NeuromorphicAbHarness` mide el aporte audible del motor neuromórfico con PRUEBA DE NULL: alinea por correlación cruzada, mide el residuo por bandas del Atlas y lo compara con el umbral de audibilidad.
+7. **Medición honesta:** ponderación A medida contra la tabla IEC 61672-1 (error 0.00 dB a 20 Hz, 0.05 dB a 100 Hz, 0.00 dB a 1 kHz); dosis medida contra la fórmula H.870 (120 s a 80 dB(A) = 8,33 % exacto); tasa de intercambio de 3 dB verificada (60 s a 83 dB(A) = 8,33 %).
+8. **16 pruebas nuevas** en CTest (4 suites) — total 284/284.
+9. Todo apagado por defecto: sin encender la cadena no se altera un solo bit.
+
 # CHANGELOG — v2.5.45 (336) — 4D adaptativo
 La dinámica espacial 4D se adapta a la música: la profundidad escala con la densidad de golpes medida (techo = slider). Ruta A y B.
 
