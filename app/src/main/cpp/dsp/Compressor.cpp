@@ -115,11 +115,17 @@ void Compressor::process(float* __restrict__ left,
     // Anti-zipper del runtimeAmount: el motor adaptativo fija el objetivo
     // por bloque (setRuntimeAmount); aquí se converge con un one-pole de
     // ~20 ms para que threshold/ratio no salten de golpe en sostenidos.
-    // runtimeCoef_ se recalcula si sr_ cambió (queda 0 tras setParams).
-    if (runtimeCoef_ <= 0.0f)
-        runtimeCoef_ = std::exp(-1.0f / (sr_ * 0.020f));
+    //
+    // FIX (medido con el arnés de Fase 1, MeasureChain.SettlingVersusDistortion): este one-pole
+    // se actualiza UNA vez por bloque, pero su coeficiente estaba calculado para actualizarse
+    // POR MUESTRA (exp(-1/(sr*0.020))). La constante de tiempo real era 20 ms x frames
+    // (~9.6 s con bloques de 480; ~10 s con 512) y dependía del tamaño de bloque del
+    // dispositivo: la reducción derivaba de -0.79 a -1.61 dB durante 12 s tras empezar a sonar
+    // (threshold/ratio arrancan en -12 dB/4:1 y tardaban ~10 s en llegar a sus objetivos).
+    // El coeficiente ahora es por bloque: exp(-frames/(sr*0.020)) = 20 ms reales siempre.
+    // runtimeCoef_ queda como estado heredado (ya no se lee).
     {
-        const float rc = runtimeCoef_;
+        const float rc = std::exp(-(float)frames / (sr_ * 0.020f));
         runtimeAmount_ = rc * runtimeAmount_ + (1.0f - rc) * runtimeTarget_;
         // FIX (discontinuidad audible real): threshold_/ratio_ son ahora
         // el objetivo fijado por setThreshold()/setRatio() — converge
