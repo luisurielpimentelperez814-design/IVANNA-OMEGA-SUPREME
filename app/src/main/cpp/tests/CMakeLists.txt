@@ -409,6 +409,7 @@ ivanna_add_test(test_limiter_route_params)
 ivanna_add_test(test_differential_reinjector)
 ivanna_add_test(test_neuromorphic_ab_harness)
 ivanna_add_test(test_block_peak_guard)
+ivanna_add_test(test_measure_baseline)
 
 # ── Rescatados del olvido (flanco Tests host): huérfanos sin target ──────────
 # test_audio_regression.cpp (677 líneas): cada TEST_F documenta un bug real de
