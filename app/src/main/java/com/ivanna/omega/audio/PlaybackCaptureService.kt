@@ -1023,6 +1023,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // (~150/s a 320 frames) metia jitter en el hilo de audio. Cada 16 bloques
         // (~9 Hz, ~107 ms) sobra para medir cola y publicar telemetría refinada.
         private var telemetryTick = 0
+        private var lastFourDLatencyMs = -1f
         private val reinjectTel = FloatArray(16)
         private fun publishHaasTelemetry() {
             if ((++telemetryTick and 15) != 0) return
@@ -1047,6 +1048,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     resyncCount = masterTiming.resyncCount
                 )
             } catch (_: Throwable) {}
+            // Cadena 4D: la háptica anticipada resta la latencia REAL de salida (medida por
+            // AdaptiveLatencyController), no una constante. Solo se re-envía si cambió >= 0.5 ms.
+            val outLat = adaptiveLatency.measuredLatencyMs
+            if (outLat.isFinite() && outLat > 0f &&
+                kotlin.math.abs(outLat - lastFourDLatencyMs) >= 0.5f) {
+                lastFourDLatencyMs = outLat
+                runCatching { com.ivanna.omega.core.Ivanna4DNative.nativeFourDSetOutputLatencyMs(outLat) }
+            }
         }
         private var peakQueueMs = 0f
 
