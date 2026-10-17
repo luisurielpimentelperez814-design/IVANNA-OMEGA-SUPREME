@@ -1,4 +1,4 @@
-# Integración de hardware y permisos — Moto G85 5G (estado a v2.5.62)
+# Integración de hardware y permisos — Moto G85 5G (estado a v2.5.63)
 
 Base: auditoría de `main` en v2.5.61 (352). Alcance de esta versión: **capa de detección de capacidades + política de permisos**, cableadas a un primer consumidor real. No es la integración completa del prompt maestro; esta tabla dice exactamente qué está hecho y qué no.
 
@@ -12,6 +12,7 @@ Base: auditoría de `main` en v2.5.61 (352). Alcance de esta versión: **capa de
 | 2 | El micrófono ya se pide solo al usar una función (medición de sala, asistente); no hay petición al arrancar ni cámara en el manifest | Se conserva |
 | 3 | Tras una denegación permanente el sistema no vuelve a mostrar el diálogo: la medición de sala solo decía «se necesita el permiso» | **Corregido**: `PermissionPolicy` + `PermissionGate` mandan a Ajustes con explicación |
 | 4 | No existía una capa única de capacidades | **Añadida** `HardwareProbe` (arranque, sin permisos, tag `IvannaHW`) |
+| 4b | La captura de sistema exigía `RECORD_AUDIO` pero se lanzaba desde 3 botones sin pedirlo antes (AudioRecord sin inicializar, fallo mudo); el asistente no releía el permiso tras volver de Ajustes | **Corregido en 2.5.63** |
 | 5 | `POST_NOTIFICATIONS` no declarado; con servicio en primer plano en Android 13+ la notificación no se muestra sin él | **Pendiente** (requiere flujo de petición propio) |
 | 6 | Permisos de sistema/protegidos (`READ_LOGS`, `PACKAGE_USAGE_STATS`, `CAPTURE_AUDIO_OUTPUT`, `BIND_AUDIO_EFFECT_SERVICE`, `MEDIA_CONTENT_CONTROL`) se declaran por el módulo Magisk | **No se tocan sin evidencia**; revisar uno a uno con el módulo instalado |
 | 7 | El CI compila `assembleRelease` pero no ejecuta `testDebugUnitTest` | **Pendiente** (ya figuraba en el checklist DEH6) |
@@ -29,7 +30,7 @@ Base: auditoría de `main` en v2.5.61 (352). Alcance de esta versión: **capa de
 | Versión de OpenGL ES, Vulkan, tasa de refresco | PARCIAL (extensiones GL requieren contexto GL; no consultadas) |
 | Política de permisos (`PermissionPolicy`) | IMPLEMENTADA Y PROBADA (7 tests JVM) |
 | Gestión de revocación/denegación permanente en medición de sala | IMPLEMENTADA, PENDIENTE DE PRUEBA FÍSICA |
-| Mismo gestor en captura de sistema (MediaProjection) y asistente de voz | PARCIAL (siguen con su flujo propio) |
+| Mismo gestor en captura de sistema (MediaProjection) y asistente de voz (v2.5.63) | IMPLEMENTADA, PENDIENTE DE PRUEBA FÍSICA |
 | Audio Focus, `AudioDeviceCallback`, USB Audio | Ya existentes en el repo; no re-auditados a fondo en esta versión |
 | Seguimiento por cámara / visión | NO SOPORTADA: la app no usa cámara; no se añade sin un algoritmo que la justifique |
 | Profundidad, LiDAR, seguimiento ocular | NO SOPORTADA POR EL HARDWARE |
@@ -48,6 +49,6 @@ Base: auditoría de `main` en v2.5.61 (352). Alcance de esta versión: **capa de
 ## Siguiente
 
 - Mostrar `HardwareProbe.last` en un panel de diagnóstico y atar a él qué controles se ofrecen.
-- Migrar captura de sistema y asistente a `PermissionGate`; decidir `POST_NOTIFICATIONS`.
+- Decidir `POST_NOTIFICATIONS`.
 - Añadir `testDebugUnitTest` al CI.
 - Fotoholografiananotomix como capa de visualización paramétrica sobre `SpatialAudioPanel`/`IvannaSpatialEngine`, solo cuando se defina qué telemetría real consume.
