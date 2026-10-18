@@ -175,7 +175,7 @@ object FotoHoloEngine {
                             lastAttempted = true
                             lastError = writeWidth(current)
                             lastReturned = lastError == null
-                            if (lastReturned) { lastCommanded = current; lastDspWidth = readDspWidth() }
+                            if (lastReturned) lastCommanded = current
                         }
                         modulating = true
                         displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
@@ -186,7 +186,6 @@ object FotoHoloEngine {
                         lastReturned = lastError == null
                         if (lastReturned) {
                             lastCommanded = base
-                            lastDspWidth = readDspWidth()
                             current = Float.NaN
                             modulating = false
                             displayedCommand = base
@@ -195,6 +194,14 @@ object FotoHoloEngine {
                         }
                     } else {
                         displayedCommand = base
+                    }
+
+                    // Refrescar read-back en cada tick de control tras una escritura
+                    // aceptada. El recorte térmico puede cambiar sin que cambie el
+                    // comando; conservar el último valor haría que la UI mostrara una
+                    // confirmación vieja como si describiera el estado actual.
+                    if (lastReturned) {
+                        lastDspWidth = runCatching { readDspWidth() }.getOrDefault(Float.NaN)
                     }
 
                     _telemetry.value = FotoHoloTelemetry(
