@@ -328,7 +328,7 @@ object IvannaAgentCore {
         // dice "seguras desde cualquier hilo") — sin visibilidad garantizada,
         // un hilo externo podia leer un lastPolicyName obsoleto de la caché
         // de CPU y reenviar/saltar políticas de forma inconsistente.
-        @Volatile private var lastPolicyName: String? = null
+        @Volatile private var lastPolicySignature: String? = null
         @Volatile private var clipReliefStreak: Int = 0
         @Volatile private var recoveryHoldCycles: Int = 0
         @Volatile private var currentEffectiveGain: Float = 1.0f
@@ -351,9 +351,17 @@ object IvannaAgentCore {
                 currentEffectiveGain = policy.targetGain
             }
 
-            if (policy.name == lastPolicyName && !isClipPolicy &&
+            // Comparar todos los knobs, no solo el nombre: una preferencia
+            // puede cambiar compresión/exciter/ancho manteniendo "music-adaptive".
+            // Con el nombre solo, esos cambios quedaban silenciados por la
+            // histeresis y el agente parecía adaptarse sin actualizar el DSP.
+            val policySignature = listOf(
+                policy.name, policy.targetGain, policy.compAmount,
+                policy.excReduction, policy.spatialWidth
+            ).joinToString("|")
+            if (policySignature == lastPolicySignature && !isClipPolicy &&
                 kotlin.math.abs(currentEffectiveGain - policy.targetGain) < 1e-3f) {
-                return true  // ya aplicada y ganancia estabilizada
+                return true  // todos los knobs ya aplicados y ganancia estabilizada
             }
             val effectiveGain = currentEffectiveGain
             var ok = false
@@ -381,12 +389,12 @@ object IvannaAgentCore {
                 ok = true
             }
 
-            if (ok) lastPolicyName = policy.name
+            if (ok) lastPolicySignature = policySignature
             return ok
         }
 
         fun resetHysteresis() {
-            lastPolicyName = null
+            lastPolicySignature = null
             clipReliefStreak = 0
         }
     }
