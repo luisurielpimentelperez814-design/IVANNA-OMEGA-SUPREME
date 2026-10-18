@@ -106,6 +106,21 @@ if "IvannaAssetProvider" not in app: err("[app] IVANNAApplication no llama a Iva
 prov = (ROOT / "app/src/main/java/com/ivanna/omega/core/IvannaAssetProvider.kt").read_text(encoding="utf-8")
 if "MARKER_PREFIX" not in prov or ".part" not in prov: err("[app] IvannaAssetProvider sin marcador de versión / escritura atómica")
 
+# 7) integridad ESTRUCTURAL de TODOS los .sofa del repo (no solo los de assets/ivanna_omega) --------------
+# Firma + EOF del superbloque == tamaño + checksum lookup3. Detecta justo lo que una firma restaurada a mano deja
+# pasar: contenido pasado por una conversión de texto (bytes >= 0x80 -> U+FFFD) o truncado.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hdf5_integrity
+n_sofa = 0
+for sp in sorted(ROOT.rglob("*.sofa")):
+    if ".git" in sp.parts:
+        continue
+    n_sofa += 1
+    why = hdf5_integrity.check_file(sp)
+    if why != "ok":
+        err(f"[sofa-integridad] {sp.relative_to(ROOT).as_posix()}: {why}")
+notes.append(f"{n_sofa} .sofa con estructura HDF5 verificada (firma, EOF, checksum)")
+
 print("=== [0.6] CHECK DATASETS DEPLOY REPORT ===")
 for n in notes: print("  -", n)
 if errors:
