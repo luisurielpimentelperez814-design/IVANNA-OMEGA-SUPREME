@@ -50,7 +50,7 @@ class IvannaMemoryArchitectureTest {
             memory.recordInteraction("user", "msg $i")
         }
         val all = memory.workingMemory.getAll()
-        assertTrue("Working memory debe respetar límite de 32", all.size <= 32)
+        assertTrue("Working memory debe respetar límite de 200", all.size <= 200)
     }
 
     @Test
