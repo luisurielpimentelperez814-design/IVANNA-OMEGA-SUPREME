@@ -158,7 +158,8 @@ internal fun LiveTelemetryHud(
         Spacer(Modifier.height(4.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatBlock("GÉNERO", genre, NeonMagenta, Modifier.weight(1.3f))
-            StatBlock("CONF.", "%.0f%%".format(confidence * 100f), AuroraCyan, Modifier.weight(1f))
+            // Sin género no hay confianza que mostrar: antes salía "GÉNERO —" junto a "CONF. 83 %".
+            StatBlock("CONF.", if (genre.isBlank() || genre == "\u2014" || genre == "—") "\u2014" else "%.0f%%".format(confidence * 100f), AuroraCyan, Modifier.weight(1f))
             StatBlock("GEN·FIT", "$evoGeneration · %.2f".format(evoFitness), AmberSignal, Modifier.weight(1.2f))
         }
     }

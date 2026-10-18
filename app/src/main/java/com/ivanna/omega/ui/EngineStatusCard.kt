@@ -67,7 +67,8 @@ fun EngineStatusCard(
         DividerGlow()
         Text("AI ANALYSIS", style = MaterialTheme.typography.labelMedium, color = NeonMagenta, fontWeight = FontWeight.Bold)
         Text(
-            "${metrics.yamnetCategory}  ·  %.0f%% confidence".format(metrics.yamnetConfidence * 100f),
+            if (metrics.yamnetCategory.isBlank() || metrics.yamnetCategory == "—") "Sin clasificación todavía"
+            else "${metrics.yamnetCategory}  ·  %.0f%% confidence".format(metrics.yamnetConfidence * 100f),
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary
         )

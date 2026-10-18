@@ -41,11 +41,7 @@ object ThermalGovernor {
     private const val TAG = "ThermalGovernor"
     private const val POLL_MS = 2_000L
 
-    // Umbrales de headroom (0.0 = sin carga térmica … 1.0 = throttling severo).
-    // Mismos puntos de corte que usan los frameworks de juego OEM.
-    private const val HEADROOM_LIGHT    = 0.3f   // empieza a degradar exciter
-    private const val HEADROOM_MODERATE = 0.6f   // reduce espacial + compresor
-    private const val HEADROOM_SEVERE   = 0.8f   // protección agresiva
+    // Umbrales de headroom y recortes por nivel: ver ThermalTier (misma tabla que la UI).
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: kotlinx.coroutines.Job? = null
@@ -57,6 +53,10 @@ object ThermalGovernor {
     /** true si el HAL térmico respondió al menos una vez (API 29+ presente). */
     @Volatile var thermalApiAvailable: Boolean = false
         private set
+
+    /** Nivel actual, o null mientras el HAL térmico no haya respondido (la UI muestra «SIN DATO»). */
+    val currentTier: ThermalTier?
+        get() = if (thermalApiAvailable) ThermalTier.of(currentThermalLoad) else null
 
     /** Idempotente. Llamar desde IVANNAApplication tras AudioEngine init. */
     fun start(context: Context) {
@@ -106,32 +106,11 @@ object ThermalGovernor {
     private fun applyThermalPolicy(headroom: Float) {
         if (!IvannaNativeLib.isLoaded) return
 
-        // Factor de reducción [0..1] por subsistema según severidad.
-        val exciterRed: Float
-        val spatialCut: Float
-        val compCut: Float
-        when {
-            headroom >= HEADROOM_SEVERE -> {
-                exciterRed = 1.0f    // exciter prácticamente mudo
-                spatialCut = 0.5f    // mitad del ancho espacial
-                compCut    = 0.3f    // compresor al mínimo efectivo
-            }
-            headroom >= HEADROOM_MODERATE -> {
-                exciterRed = 0.7f
-                spatialCut = 0.25f
-                compCut    = 0.15f
-            }
-            headroom >= HEADROOM_LIGHT -> {
-                exciterRed = 0.4f
-                spatialCut = 0.0f
-                compCut    = 0.0f
-            }
-            else -> {
-                exciterRed = 0.0f
-                spatialCut = 0.0f
-                compCut    = 0.0f
-            }
-        }
+        // Misma tabla que muestra la pantalla Sistema (ThermalTier): una sola fuente de verdad.
+        val tier = ThermalTier.of(headroom) ?: return
+        val exciterRed = tier.exciterReduction
+        val spatialCut = tier.spatialCut
+        val compCut = tier.compressorCut
 
         // Solo escribir cuando hay cambio real (evita logspam y churn de la
         // rampa anti-zipper del exciter si el valor no se movió).
