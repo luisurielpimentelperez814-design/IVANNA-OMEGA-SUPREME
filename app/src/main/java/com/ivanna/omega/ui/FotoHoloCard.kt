@@ -117,6 +117,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             else -> "Modulando · esperando confirmación del motor (read-back)."
         }
         Text(status, color = if (tel.nativeWriteError != null) Color(0xFFFF6B6B) else AuroraCyan, fontSize = 11.sp)
+        Text("Ruta B (efecto global): ${tel.routeB}", color = Color(0xFF9AA4B2), fontSize = 11.sp)
         Text(
             "Ancho tuyo %.2f → comando %.2f (Δ %+.3f) · motor %s · graves %d %% · agudos %d %%".format(
                 tel.baseWidth, tel.appliedWidth, tel.offset,

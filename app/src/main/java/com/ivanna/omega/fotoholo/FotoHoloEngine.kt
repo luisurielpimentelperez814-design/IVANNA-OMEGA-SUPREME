@@ -32,6 +32,8 @@ data class FotoHoloTelemetry(
     val nativeWriteAttempted: Boolean = false,
     val nativeCallReturned: Boolean = false,
     val dspWidth: Float = Float.NaN,
+    /** Resultado real del envío del ancho a la Ruta B (demonio); ver [FotoHoloRouteB]. */
+    val routeB: String = "sin enviar",
 ) {
     /** true si el motor reporta un ancho finito y coherente con el último comando (puede ser menor por recorte térmico). */
     val readbackConfirmed: Boolean get() = dspWidth.isFinite() && nativeCallReturned && dspWidth <= appliedWidth + 0.01f
@@ -143,7 +145,7 @@ object FotoHoloEngine {
                         _telemetry.value = _telemetry.value.copy(
                             enabled = enabled, bypass = bypass, baseWidth = base,
                             nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
-                            nativeCallReturned = lastReturned, dspWidth = lastDspWidth
+                            nativeCallReturned = lastReturned, dspWidth = lastDspWidth, routeB = FotoHoloRouteB.status
                         )
                         delay(IDLE_MS)
                         continue
@@ -170,7 +172,7 @@ object FotoHoloEngine {
                             lastAttempted = true
                             lastError = writeWidth(current)
                             lastReturned = lastError == null
-                            if (lastReturned) { lastCommanded = current; lastDspWidth = readDspWidth() }
+                            if (lastReturned) { lastCommanded = current; lastDspWidth = readDspWidth(); FotoHoloRouteB.push(current) }
                         }
                         modulating = true
                         displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
@@ -182,6 +184,7 @@ object FotoHoloEngine {
                         if (lastReturned) {
                             lastCommanded = base
                             lastDspWidth = readDspWidth()
+                            FotoHoloRouteB.push(base)
                             current = Float.NaN
                             modulating = false
                             displayedCommand = base
@@ -197,7 +200,7 @@ object FotoHoloEngine {
                         baseWidth = base, appliedWidth = displayedCommand,
                         bands = buf.copyOf(), features = features,
                         nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
-                        nativeCallReturned = lastReturned, dspWidth = lastDspWidth,
+                        nativeCallReturned = lastReturned, dspWidth = lastDspWidth, routeB = FotoHoloRouteB.status,
                     )
                     delay(TICK_MS)
                 } catch (cancel: CancellationException) {
