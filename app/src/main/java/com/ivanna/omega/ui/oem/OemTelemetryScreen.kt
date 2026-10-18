@@ -88,6 +88,8 @@ fun OemTelemetryScreen(
                 })
                 TelRow("Daemon ivanna_omega", if (state.daemonAlive) "Corriendo · SHM activa" else "Caído", if (state.daemonAlive) PhosphorGreen else CoralWarn)
                 TelRow("Lib nativa", if (state.nativeLoaded) "libivanna_omega_native.so ✓" else "NO CARGADA", if (state.nativeLoaded) PhosphorGreen else CoralWarn)
+                TelRow("NPE en el módulo (Ruta B)", state.npeModuleLink,
+                    when (state.npeModuleLink) { "confirmado" -> PhosphorGreen; "sin daemon" -> CoralWarn; else -> TextMuted })
                 TelRow("Motor adaptativo", if (state.adaptiveRunning) "Activo · AdaptiveDecisionEngine" else "Inactivo", if (state.adaptiveRunning) PhosphorGreen else TextMuted)
                 TelRow("API térmica", if (state.thermalApiOk) "PowerManager API 29+ OK" else "No disponible (API < 29)", if (state.thermalApiOk) PhosphorGreen else AmberSignal)
             }

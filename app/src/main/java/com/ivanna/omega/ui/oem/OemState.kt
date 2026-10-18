@@ -10,6 +10,8 @@ data class OemState(
     val dspActive        : Boolean = false,
     val dspCpuLoad       : Float = 0f,
     val daemonAlive      : Boolean = false,
+    /** Enlace NPE app→daemon (Ruta B): "—" sin datos, "confirmado" o "sin daemon". */
+    val npeModuleLink    : String = "—",
     val adaptiveRunning  : Boolean = false,
     val activeRoute      : Float = 0f,
     val rms              : Float = 0f,

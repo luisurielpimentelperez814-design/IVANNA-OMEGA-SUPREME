@@ -214,6 +214,11 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             dspCpuLoad     = dsp.metrics.cpuLoadRatio,
             nativeLoaded   = loaded,
             daemonAlive    = daemonAlive,
+            npeModuleLink  = when (com.ivanna.omega.neuromorphic.PiLstmBridge.moduleLink) {
+                com.ivanna.omega.neuromorphic.PiLstmBridge.ModuleLink.CONFIRMED -> "confirmado"
+                com.ivanna.omega.neuromorphic.PiLstmBridge.ModuleLink.NO_DAEMON -> "sin daemon"
+                else -> "—"
+            },
             thermalLoad    = thermalLoad,
             thermalApiOk   = thermalApiOk,
             tempC          = tempC,
