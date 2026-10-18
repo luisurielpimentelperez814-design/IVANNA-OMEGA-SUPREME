@@ -9,7 +9,7 @@
 *Arquitectura y Autoría Principal: **Luis Uriel Pimentel Pérez — GORE TNS***
 
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.68&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=CTEST%20402%2F402%20GREEN&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
+[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=CTEST%20406%2F406%20GREEN&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
 [![Version](https://img.shields.io/badge/Release-v2.5.68%20%28359%29-00F0FF?style=for-the-badge)](version.properties)
 [![DSP](https://img.shields.io/badge/DSP-456%20Archivos%20C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge)](app/src/main/cpp/)
 [![Atlas](https://img.shields.io/badge/Atlas%20de%20Escena-12%20Estilos%20%C2%B7%208774%20Pesos%20IVW1-FF2E93?style=for-the-badge)](docs/ATLAS_ESCENA.md)
@@ -19,7 +19,7 @@
 
 > 📖 Este archivo es el resumen ejecutivo en español de entrada rápida al proyecto. La documentación arquitectónica exhaustiva con diagramas matemáticos e infografías vectoriales se encuentra en **[README.md](README.md)**.
 
-> 🔎 **Estado verificado (2026-10-18):** tests host **402/402 (100 %)**. Honestidad de la ruta HRTF: el IR que suena se **reconstruye** desde la base maestra SOFA-PCA; el `.sofa` se valida por firma HDF5 pero **no se parsea en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`). Decodificación SOFA real: **pendiente**.
+> 🔎 **Estado verificado (2026-10-18):** tests host **406/406 (100 %)**. Honestidad de la ruta HRTF: el IR que suena se **reconstruye** desde la base maestra SOFA-PCA; el `.sofa` se valida por firma HDF5 pero **no se parsea en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`). Decodificación SOFA real: **pendiente**.
 
 
 ---

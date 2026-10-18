@@ -23,7 +23,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 [![Release](https://img.shields.io/badge/Release-v2.5.68%20%28Build%20359%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
 [![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.68&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![CTest](https://img.shields.io/badge/CTest-402%2F402%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
+[![CTest](https://img.shields.io/badge/CTest-406%2F406%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
 [![Static Gates](https://img.shields.io/badge/Static%20Gates-6%2F6%20VERIFIED-00F0FF?style=for-the-badge&logo=checkmarx&logoColor=fff)](scripts/)
 [![C++ Standard](https://img.shields.io/badge/Standard-C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge&logo=c%2B%2B&logoColor=000)](app/src/main/cpp/CMakeLists.txt)
 [![RT-Audio Safety](https://img.shields.io/badge/RT--Safety-0%20Malloc%20%C2%B7%200%20Locks%20%C2%B7%20Lock--Free-22C55E?style=for-the-badge&logo=speedtest&logoColor=fff)](scripts/check_rt_safety.py)
@@ -43,7 +43,7 @@
 
 > 🧑‍💻 **¿Evalúas el trabajo en 5 minutos?** Lee la [Ficha de ingeniería](docs/ENGINEERING.md): cifras medidas, decisiones de diseño, cómo verificarlo y límites honestos.
 
-> 🔎 **Estado verificado (2026-10-18):** la puerta de tests host corre **402/402 (100 %)** en el commit `c93103e6` con esta rama. La HRTF que suena en tiempo de ejecución se **reconstruye desde la base maestra SOFA-PCA**; el archivo `.sofa` se valida por firma HDF5 pero sus mediciones **no se parsean en runtime** (ver `SofaHRTFLoader.hpp`, estado `VALID_NOT_PARSED`). La decodificación real de SOFA en el dispositivo sigue **pendiente**. La mejora audible y la latencia solo se pueden afirmar en hardware real.
+> 🔎 **Estado verificado (2026-10-18):** la puerta de tests host corre **406/406 (100 %)** en el commit `c93103e6` con esta rama. La HRTF que suena en tiempo de ejecución se **reconstruye desde la base maestra SOFA-PCA**; el archivo `.sofa` se valida por firma HDF5 pero sus mediciones **no se parsean en runtime** (ver `SofaHRTFLoader.hpp`, estado `VALID_NOT_PARSED`). La decodificación real de SOFA en el dispositivo sigue **pendiente**. La mejora audible y la latencia solo se pueden afirmar en hardware real.
 
 
 ### 🧭 Matriz de Navegación Rápida
