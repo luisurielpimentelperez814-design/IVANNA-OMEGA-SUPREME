@@ -42,8 +42,24 @@ class AdaptiveResponseEngine {
             return ResponseProfile.ENGINEERING_MODE
         }
 
-        // Señales de DEEP_REASONING
-        val deepSignals = listOf("explica detalladamente", "por qué", "porque", "razón", "análisis", "compara", "diferencia entre", "ventajas y desventajas", "pros y contras", "diagnóstico", "investiga", "evalúa")
+        // Señales de razonamiento profundo para conocimiento general y música.
+        // Sin esta cobertura, preguntas educativas o de análisis formuladas de
+        // manera natural caían en NORMAL y podían recibir una respuesta demasiado
+        // superficial. Este perfil habilita la ruta Pro cuando está sana.
+        val deepSignals = listOf(
+            "explica detalladamente", "explícame", "explicame", "por qué", "porque",
+            "razón", "análisis", "analiza", "compara", "diferencia entre",
+            "ventajas y desventajas", "pros y contras", "diagnóstico", "investiga",
+            "evalúa", "evalua", "cuéntame sobre", "cuentame sobre", "historia de",
+            "qué significa", "que significa", "cómo funciona", "como funciona",
+            "desarrolla", "profundiza", "paso a paso", "contexto histórico",
+            "contexto historico", "evidencia", "argumenta", "filosofía", "filosofia",
+            "ciencia", "teoría", "teoria", "musicología", "musicologia",
+            "armonía", "armonia", "producción musical", "produccion musical",
+            "mezcla musical", "mastering", "acústica", "acustica", "composición",
+            "composicion", "crítica musical", "critica musical", "discografía",
+            "discografia", "evolución musical", "evolucion musical"
+        )
         if (deepSignals.any { q.contains(it) } || query.length > 150) {
             Log.d(TAG, "Selected DEEP_REASONING for: ${query.take(40)}")
             return ResponseProfile.DEEP_REASONING
