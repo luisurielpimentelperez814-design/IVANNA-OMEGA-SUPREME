@@ -121,7 +121,7 @@ object FotoHoloEngine {
             started = true
         }
         load(context)
-        scope.launch(Dispatchers.Default) {
+        val job = scope.launch(Dispatchers.Default) {
             try {
             val buf = FloatArray(FotoHoloMath.BANDS)
             var prev: FloatArray? = null
@@ -228,6 +228,10 @@ object FotoHoloEngine {
                 // Permitir que una futura llamada a start() vuelva a levantar el lazo.
                 synchronized(this@FotoHoloEngine) { started = false }
             }
+        }
+        // Also handles cancellation before the coroutine body starts executing.
+        job.invokeOnCompletion {
+            synchronized(FotoHoloEngine) { started = false }
         }
     }
 }
