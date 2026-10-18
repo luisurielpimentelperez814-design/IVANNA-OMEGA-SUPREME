@@ -278,6 +278,33 @@ jobs:
            gradle assembleRelease --no-daemon --stacktrace --refresh-dependencies \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" 2>&1 | tee gradle_build.log)
 
+      # Las pruebas JVM de app/src/test (lectores SOFA/HDF5, colchon de salida, gobernador de carga, FotoHolo,
+      # permisos, clasificador...) NO corrian en ningun job: solo compilaba el codigo de produccion. Este paso las
+      # ejecuta tras el build (el compilado queda en cache de Gradle) y es INFORMATIVO: un fallo antiguo no bloquea
+      # el release, pero queda como anotacion roja con el nombre de la prueba.
+      - name: JVM unit tests (informativo, no bloquea el release)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          rc=0
+          gradle testReleaseUnitTest --no-daemon --continue \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" 2>&1 | tee gradle_unit_tests.log || rc=${PIPESTATUS[0]}
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          t = f = e = s = 0
+          bad = []
+          for p in glob.glob("app/build/test-results/**/*.xml", recursive=True):
+              r = ET.parse(p).getroot()
+              t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0)); s += int(r.get("skipped", 0))
+              for tc in r.iter("testcase"):
+                  if tc.find("failure") is not None or tc.find("error") is not None:
+                      bad.append(f"{tc.get('classname')}.{tc.get('name')}")
+          print(f"JVM unit tests: {t} ejecutadas, {f} fallos, {e} errores, {s} omitidas")
+          for b in bad[:40]:
+              print(f"::error title=JVM unit test fallida::{b}")
+          PY
+          exit $rc
+
       # Diagnostico: el log de un job fallido solo es legible con sesion en la
       # web; la API de check-runs SI expone las anotaciones. Se publican como
       # ::error:: las lineas de error de compilacion Kotlin/Gradle para poder
