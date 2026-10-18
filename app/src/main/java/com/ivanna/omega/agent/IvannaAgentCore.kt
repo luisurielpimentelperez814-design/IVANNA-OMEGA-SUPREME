@@ -234,6 +234,17 @@ object IvannaAgentCore {
             val reason: String
         )
 
+        private fun preferredWidth(defaultWidth: Float): Float {
+            val preference = runCatching {
+                com.ivanna.omega.assistant.IvannaConversationalCore.context.value.temporalPreferences.spatialPreference
+            }.getOrNull()
+            return when (preference) {
+                com.ivanna.omega.assistant.IvannaConversationalCore.SpatialPreference.WIDE -> (defaultWidth + 0.15f).coerceAtMost(1.5f)
+                com.ivanna.omega.assistant.IvannaConversationalCore.SpatialPreference.DRY -> 1.0f
+                else -> defaultWidth
+            }
+        }
+
         fun decide(p: PerceptionSnapshot, h: HealthSnapshot): Policy = when {
             // La salud manda sobre la escena: clipping sostenido fuerza
             // política de protección sin importar qué suena.
@@ -252,15 +263,43 @@ object IvannaAgentCore {
             p.scene == AcousticScene.DYNAMIC -> Policy(
                 "cinematic",
                 targetGain = 1.0f, compAmount = 0.15f, excReduction = 0.1f,
-                spatialWidth = 1.35f,
-                reason = "material dinámico (crest=${"%.1f".format(p.crestDb)} dB) — dejar transientes libres y ensanchar escena"
+                spatialWidth = preferredWidth(defaultWidth = 1.35f),
+                reason = "material dinámico (crest=${"%.1f".format(p.crestDb)} dB) — preservar transientes; ancho adaptado a preferencia espacial"
             )
-            p.scene == AcousticScene.MUSIC -> Policy(
-                "music-balanced",
-                targetGain = 1.0f, compAmount = 0.25f, excReduction = 0.15f,
-                spatialWidth = 1.15f,
-                reason = "reproducción musical activa — balance neutro con leve apertura espacial"
-            )
+            p.scene == AcousticScene.MUSIC -> {
+                // Ajuste autónomo acotado por preferencias que el usuario sí
+                // expresó; solo usa controles que este agente realmente puede
+                // accionar. No inventa una corrección de graves: ese knob no
+                // forma parte del canal seguro de este agente.
+                val prefs = runCatching {
+                    com.ivanna.omega.assistant.IvannaConversationalCore.context.value.temporalPreferences
+                }.getOrNull()
+                val gain = when (prefs?.loudnessPreference) {
+                    com.ivanna.omega.assistant.IvannaConversationalCore.LoudnessPreference.SOFT -> 0.90f
+                    else -> 1.0f
+                }
+                val comp = when (prefs?.loudnessPreference) {
+                    com.ivanna.omega.assistant.IvannaConversationalCore.LoudnessPreference.SOFT -> 0.32f
+                    com.ivanna.omega.assistant.IvannaConversationalCore.LoudnessPreference.LOUD -> 0.18f
+                    else -> 0.25f
+                }
+                val exc = when {
+                    prefs?.warmthPreference == com.ivanna.omega.assistant.IvannaConversationalCore.WarmthPreference.WARM ||
+                        prefs?.detailPreference == com.ivanna.omega.assistant.IvannaConversationalCore.DetailPreference.SMOOTH -> 0.28f
+                    prefs?.warmthPreference == com.ivanna.omega.assistant.IvannaConversationalCore.WarmthPreference.BRIGHT ||
+                        prefs?.detailPreference == com.ivanna.omega.assistant.IvannaConversationalCore.DetailPreference.DETAILED -> 0.08f
+                    else -> 0.15f
+                }
+                val width = preferredWidth(defaultWidth = 1.15f)
+                Policy(
+                    name = "music-adaptive",
+                    targetGain = gain,
+                    compAmount = comp,
+                    excReduction = exc,
+                    spatialWidth = width,
+                    reason = "música activa — perfil adaptativo según preferencias expresadas (ganancia=${gain}, compresión=${comp}, exciter=${exc}, ancho=${width}); protección de clipping prevalece"
+                )
+            }
             p.scene == AcousticScene.SILENCE -> Policy(
                 "neutral",
                 targetGain = 1.0f, compAmount = 0.0f, excReduction = 0.0f,
