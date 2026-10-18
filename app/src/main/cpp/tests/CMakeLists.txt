@@ -1236,3 +1236,17 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_npe_core PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_npe_core)
+
+# ── Contrato de read-back del ancho espacial (Fotoholografía, v2.5.68) ──
+# El read-back (nativeGetSpatialWidthDirect) vive en ivanna_omega_jni.cpp, que no se compila
+# en host. Esta puerta verifica la función pura que el JNI usa (supreme/SpatialWidthReadback).
+add_executable(test_spatial_width_readback test_spatial_width_readback.cpp)
+target_link_libraries(test_spatial_width_readback PRIVATE GTest::gtest_main)
+target_include_directories(test_spatial_width_readback PRIVATE .. ../include ../spatial
+  ../neuromorphic ../supreme ../music_intelligence ../dsp host_stubs)
+target_compile_options(test_spatial_width_readback PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_spatial_width_readback PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_spatial_width_readback PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_spatial_width_readback)
