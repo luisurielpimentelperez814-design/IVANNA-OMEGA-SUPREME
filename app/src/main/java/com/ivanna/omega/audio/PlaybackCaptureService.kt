@@ -736,6 +736,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
                     val nativeMasterActive = DSPBridge.isLoaded
 
+                    // NPE en modo ANÁLISIS: con el master nativo activo el NPE no procesa el audio (ver el
+                    // árbitro de abajo), pero su clasificador de género/firma solo avanzaba al procesar:
+                    // la UI mostraba "—" / "0 % confidence" para siempre. Se alimenta con la ENTRADA (antes
+                    // del DSP) sin modificarla; el coste cuenta en el presupuesto del hilo de audio.
+                    if (nativeMasterActive && IvannaNpeEngine.isReady) {
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
+                            runCatching { IvannaNpeEngine.analyzeInterleavedStereo(buffer, frames) }
+                        }
+                    }
+
                     // ETAPA 1: DSP BRIDGE (EQ / Compresor / Exciter / Coclear / 5 Ejes + SafetyLimiter)
                     // Nunca omitir bloques alternos de filtros IIR con estado al cambiar de ventana
                     budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE) {

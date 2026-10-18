@@ -47,6 +47,7 @@
 #include "../neuromorphic/biquad_envelope_bank.hpp"
 #include "../neuromorphic/ivanna_synthesizer.hpp"
 #include "../neuromorphic/autonomous_brain.hpp"
+#include "../neuromorphic/npe_analysis_tap.hpp"
 #include "../hexagon/ivanna_fastrpc_client.hpp"
 #include "../hexagon/ivanna_dsp_rt.hpp"
 
@@ -417,6 +418,12 @@ public:
         return last_metrics_;
     }
 
+    // Análisis SOLO-LECTURA (género + firma del Synthesizer) sobre la entrada: no escribe audio ni
+    // toca el estado de procesado. Lo usa la app cuando el NPE no procesa (DSPBridge nativo activo).
+    void analyzeStereo(const float* inL, const float* inR, int n) noexcept {
+        ivanna::acoustic::npeAnalyzeStereo(brain_, synth_, inL, inR, n, static_cast<float>(sample_rate_));
+    }
+
     const char* getDetectedGenre() const noexcept { return brain_.getLastGenre(); }
     void getSynthSignature(float out[5]) const noexcept { synth_.getSignature(out); }
     void getSynthClassify(float out[7]) const noexcept { synth_.classify(out); }
@@ -616,6 +623,18 @@ Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeProcessStereo(
         !directBufHolds(env, outL, numFrames) || !directBufHolds(env, outR, numFrames)) return;
     ivanna::audio::enableAudioThreadFastMathOnce();
     eng->processStereo(pInL, pInR, pOutL, pOutR, numFrames);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_neuromorphic_IvannaNpeNative_nativeAnalyzeStereo(
+    JNIEnv* env, jclass, jlong handle, jobject inL, jobject inR, jint numFrames) {
+    Engine* eng = handle_to_engine(handle);
+    if (!eng) return;
+    auto* pInL = static_cast<float*>(env->GetDirectBufferAddress(inL));
+    auto* pInR = static_cast<float*>(env->GetDirectBufferAddress(inR));
+    if (!pInL || !pInR) return;
+    if (!directBufHolds(env, inL, numFrames) || !directBufHolds(env, inR, numFrames)) return;
+    eng->analyzeStereo(pInL, pInR, numFrames);
 }
 
 // ── Parameters ───────────────────────────────────────────────────────────────
