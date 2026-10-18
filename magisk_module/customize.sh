@@ -9,6 +9,15 @@ ui_print " "
 
 SKIPUNZIP=0
 
+# El propio instalador y los helpers de permisos recursivos heredan esta prioridad
+# reducida. Así también se suaviza el trabajo de metadatos, no solo los cp.
+if command -v renice >/dev/null 2>&1; then
+    renice -n 5 -p $ >/dev/null 2>&1 || true
+fi
+if command -v ionice >/dev/null 2>&1; then
+    ionice -c 3 -p $ >/dev/null 2>&1 || true
+fi
+
 # La instalación despliega cientos de MB de datasets. Reducir prioridad de CPU
 # y, cuando el kernel lo permita, de I/O para que el instalador no compita tanto
 # con la interfaz del teléfono. No se envía el trabajo al fondo: Magisk debe
