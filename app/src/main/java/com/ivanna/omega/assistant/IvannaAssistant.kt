@@ -178,8 +178,7 @@ class IvannaAssistant(
                 is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success -> agentResponse.text
                 // No reutilizar una respuesta vieja como si contestara a la
                 // pregunta actual: la caché offline no está asociada a la query.
-                is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline ->
-                    "Ahora mismo estoy sin conexión, así que no puedo consultar mi modelo de conocimiento amplio. Puedo seguir con las funciones locales de audio y retomar la conversación completa cuando vuelva la conexión."
+                is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline -> null
                 is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Error -> null
             }
             val agentCommand: String? = (agentResponse as? com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success)
@@ -382,8 +381,17 @@ class IvannaAssistant(
                     reply
                 }
                 IvannaLanguageCore.AcousticIntent.GENERAL_CHAT -> {
-                    val reply = IvannaSmallTalk.generalChatResponse()
-                    IvannaConversationalCore.recordTurn(text, "GENERAL_CHAT", null, reply)
+                    val reply = if (agentResponse is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline) {
+                        "Ahora mismo estoy sin conexión, así que no puedo consultar mi modelo de conocimiento amplio. Puedo seguir con las funciones locales de audio y retomar la conversación completa cuando vuelva la conexión."
+                    } else {
+                        IvannaSmallTalk.generalChatResponse()
+                    }
+                    IvannaConversationalCore.recordTurn(
+                        text,
+                        if (agentResponse is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline) "OFFLINE_FALLBACK" else "GENERAL_CHAT",
+                        null,
+                        reply
+                    )
                     reply
                 }
                 else -> null
