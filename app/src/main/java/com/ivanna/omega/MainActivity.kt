@@ -1429,14 +1429,26 @@ fun DashboardScreen(
             onAdaptiveModeChange = { uiMode ->
                 val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
                 com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetAdaptiveControls(
+                        backendMode.ordinal,
+                        com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveIntensity * 100f
+                    )
+                }
                 if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
                     com.ivanna.omega.audio.AudioStateManager.audioState.value
                 )
             },
             adaptiveIntensity = audioState.adaptiveIntensity * 100f,
             onAdaptiveIntensityChange = { percent ->
-                val v = percent / 100f
+                val v = percent.coerceIn(0f, 100f) / 100f
                 com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetAdaptiveControls(
+                        com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveMode.ordinal,
+                        percent.coerceIn(0f, 100f)
+                    )
+                }
                 if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
                     com.ivanna.omega.audio.AudioStateManager.audioState.value
                 )
