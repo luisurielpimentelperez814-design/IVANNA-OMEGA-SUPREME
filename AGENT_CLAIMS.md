@@ -2636,3 +2636,12 @@ Alcance honesto: solo Ruta A (cadena de la app); Ruta B no tiene el arco. Apagad
 Calibrado con el extractor real (la señal fiable del pulso es `subBandRatio`); no hay medición con música real ni escucha en dispositivo.
 Kotlin no compilado en la sesión (sin SDK Android): cubierto por las compuertas estáticas y por el CI.
 NOTA PARA OTROS AGENTES: no dupliques el arco; el siguiente paso útil es llevarlo a Ruta B (palabra de flags del daemon) y medirlo en el equipo.
+
+### INTEGRIDAD DE ASSETS BINARIOS (sesión Claude, 2026-10-18) — ENTREGADO
+Hallazgo: 216 `.sofa` de `assets/sofa/`, `anti_dolby_crnn.tflite` y `assets/saf/pca_basis_V.bin` tenían cada byte >= 0x80 sustituido por
+U+FFFD (conversión de texto UTF-8). Recuperado: 216 `.sofa` (208 del historial git, 8 de la copia sana de `assets/ivanna_omega/sofa`; los 694
+`.sofa` pasan firma + EOF del superbloque + checksum lookup3 con `scripts/hdf5_integrity.py`). Retirado: `pca_basis_V.bin` (huérfano, sin consumidores,
+medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.py`; el runtime usa `ivanna_omega/pca_basis.bin`, íntegro).
+**ABIERTO:** `anti_dolby_crnn.tflite` es irrecuperable desde el repo (su única versión en el historial ya está corrupta); la app no falla (cae al modo
+heurístico) pero el CRNN nunca carga. Hay que reemplazarlo por el .tflite original o reentrenar el notebook. La puerta 0.6 lo lista como CONOCIDO y falla
+ante cualquier otro binario corrupto nuevo.

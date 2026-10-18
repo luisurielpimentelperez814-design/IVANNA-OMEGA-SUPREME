@@ -121,6 +121,39 @@ for sp in sorted(ROOT.rglob("*.sofa")):
         err(f"[sofa-integridad] {sp.relative_to(ROOT).as_posix()}: {why}")
 notes.append(f"{n_sofa} .sofa con estructura HDF5 verificada (firma, EOF, checksum)")
 
+# 8) corrupción por conversión de texto en el RESTO de binarios (tflite/bin/ihr1/wav/npy) ---------------------
+# Mismo fallo que los .sofa: cada byte >= 0x80 -> U+FFFD (EF BF BD). En datos binarios sanos esa secuencia aparece
+# ~1 vez por 16 MB; corrupta, una de cada ~5 bytes. Densidad > 1e-3 => corrupto. Además, las bases PCAV deben medir
+# exactamente 12 + K*2*irLen*4 bytes (la corrupta de assets/saf medía 52 128 en lugar de 28 684).
+import struct, subprocess
+KNOWN_CORRUPT = {
+    # Irrecuperable desde el repo: la única versión del historial ya está corrupta (commit bde62755, el mismo del
+    # force-push que rompió las RIR). La app NO falla: el Interpreter no carga y AntiDolbyCrnnClassifier cae al modo
+    # heurístico. Hay que reemplazarlo por el .tflite original (README_MODEL.txt) o reentrenar el notebook.
+    "app/src/main/assets/anti_dolby_crnn.tflite": "irrecuperable (única versión en el historial); reemplazar por el original",
+}
+BIN_EXT = {".tflite", ".bin", ".ihr1", ".wav", ".npy", ".bpf"}
+tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.splitlines()
+n_bin = 0
+for rel in tracked:
+    q = ROOT / rel
+    if q.suffix.lower() not in BIN_EXT or not q.is_file():
+        continue
+    n_bin += 1
+    blob = q.read_bytes()
+    if blob and blob.count(b"\xef\xbf\xbd") / len(blob) > 1e-3:
+        if rel in KNOWN_CORRUPT:
+            notes.append(f"[CONOCIDO] {rel}: corrupto, {KNOWN_CORRUPT[rel]}")
+        else:
+            err(f"[binario-corrupto] {rel}: densidad de U+FFFD {blob.count(bytes([0xef,0xbf,0xbd]))/len(blob):.3f} (conversión de texto UTF-8)")
+    elif rel in KNOWN_CORRUPT:
+        notes.append(f"[CONOCIDO] {rel} ya parece sano: retírelo de KNOWN_CORRUPT")
+    if blob[:4] == b"PCAV" and len(blob) >= 12:
+        k, ir = struct.unpack_from("<ii", blob, 4)
+        if len(blob) != 12 + k * 2 * ir * 4:
+            err(f"[pca] {rel}: tamaño {len(blob)} != esperado {12 + k * 2 * ir * 4} (K={k}, irLen={ir})")
+notes.append(f"{n_bin} binarios (tflite/bin/ihr1/wav/npy) sin corrupción por conversión de texto (salvo los CONOCIDOS)")
+
 print("=== [0.6] CHECK DATASETS DEPLOY REPORT ===")
 for n in notes: print("  -", n)
 if errors:
