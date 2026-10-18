@@ -35,6 +35,8 @@ object FotoHoloMath {
 
     /** Desviación máxima respecto al ancho que fijó el usuario (a intensidad 1). */
     const val MAX_OFFSET = 0.25f
+    /** Atenuación máxima de la corrección durante transitorios, para preservar ataques. */
+    const val TRANSIENT_DAMPING = 0.35f
     /** Techo del ancho aplicado, salvo que el usuario ya haya fijado uno mayor. */
     const val WIDTH_CEIL = 1.2f
     /** Variación máxima del ancho por cuadro de control (20 Hz → 0.2 por segundo): sin saltos audibles. */
@@ -78,8 +80,13 @@ object FotoHoloMath {
         if (!f.valid) return b
         val k = if (intensity.isFinite()) intensity.coerceIn(0f, 1f) else 0f
         val tilt = (f.highShare - f.lowShare).coerceIn(-1f, 1f)
+        // El flux ya se extraía, pero no influía en el control. Atenuar el
+        // desplazamiento durante ataques fuertes evita que la anchura siga
+        // exagerando transitorios; el cambio permanece suave y acotado.
+        val flux = if (f.flux.isFinite()) f.flux.coerceIn(0f, 1f) else 0f
+        val transientStability = 1f - TRANSIENT_DAMPING * flux
         val ceil = max(WIDTH_CEIL, b)
-        return (b + MAX_OFFSET * k * tilt).coerceIn(0f, ceil)
+        return (b + MAX_OFFSET * k * tilt * transientStability).coerceIn(0f, ceil)
     }
 
     /** Acerca [current] a [target] sin superar [maxStep]; entradas no finitas no mueven nada. */
