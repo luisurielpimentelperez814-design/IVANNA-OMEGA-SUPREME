@@ -11,6 +11,7 @@
 #include "spatial/IvannaAudioPipeline.hpp"
 #include "spatial/HRTFDatabase.h"
 #include "music_intelligence/ImeBridge.hpp"
+#include "music_intelligence/FourDControlSurface.hpp"
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
@@ -1105,6 +1106,19 @@ static int32_t omega_process(effect_handle_t self,
             const uint32_t srPipe = (ctx->config.outputCfg.samplingRate != 0)
                                   ? ctx->config.outputCfg.samplingRate : 48000u;
             ivanna::ime::imeFeedPlanar(dryBufL, dryBufR, chunk, (float)srPipe);
+            // Cadena 4D (Ruta B): controles desde snapshot.ext_flags16 (atómicos, baratos); con 4D apagado
+            // la superficie no altera un solo bit. Va tras el IME: toma su escena y publica la adelantada.
+            {
+                const ivanna::Omega4DExt e4 = ivanna::omega_4d_decode(ctx->pendingSnap.ext_flags16);
+                ivanna::fourd::setDepth(e4.depth);
+                ivanna::fourd::setLeadMs(e4.leadMs);
+                ivanna::fourd::setArcDepth(e4.arcDepth);
+                ivanna::fourd::setArcEnabled(e4.arc);
+                ivanna::fourd::setCrosstalkEnabled(e4.xtc);
+                ivanna::fourd::setEnabled(e4.on);
+                ivanna::fourd::feedPlanar(dryBufL, dryBufR, chunk);
+                ivanna::fourd::publishAnticipatedScene();
+            }
             const bool allowPipeSpatial = !fc->getUpmixer().isUpmixingEnabled() && !fc->isWfsEnabled();
             ctx->audioPipeline->processLiveSpatialAxes(
                 L, R, (size_t)chunk, (float)srPipe, allowPipeSpatial, 0.16f,
@@ -1379,7 +1393,9 @@ static int32_t omega_process(effect_handle_t self,
         ctx->punch.setSampleRate((ctx->config.outputCfg.samplingRate != 0) ? (float)ctx->config.outputCfg.samplingRate : 48000.0f);
         ctx->punch.setAmount(ivanna::omega_punch_decode(ctx->pendingSnap.ext_flags16));
         ctx->punch.process(L, R, chunk);
+        ivanna::fourd::applyOutputPlanar(L, R, chunk);      // diafonía 4D (solo si se pidió; antes del techo)
         if (ctx->safetyLimiter) ctx->safetyLimiter->process(L, R, chunk);
+        ivanna::fourd::meterOutputPlanar(L, R, chunk);      // el dosímetro mide la salida real
 
         // v2.5.15: lazo cerrado — original vs salida final (tras el limitador). El resultado de este
         // bloque fija los presupuestos que el Unity Engine publica en el siguiente.
@@ -1680,6 +1696,8 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // el convolver AQUÍ, en el hilo de control — nunca en el
                 // callback omega_process. Ver omega_rir_dataset_init().
                 omega_rir_dataset_init();
+                // Cadena 4D: se crea AQUÍ (hilo de control; asigna memoria), nunca en el callback de audio.
+                ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
                 if (!ctx->rirConvolver) {
                     ctx->rirConvolver = new Ivanna::RirConvolver();
                     ctx->rirConvolver->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);

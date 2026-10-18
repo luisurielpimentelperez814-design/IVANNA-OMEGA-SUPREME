@@ -483,4 +483,18 @@ TEST(CrosstalkChannel, DaemonPublishesCrosstalkBitWithoutDisturbingTheTemporalFi
     EXPECT_NE(snap().temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);   // sobrevive a otros comandos
     cs.handleJsonCommand("{\"action\":\"SET_CROSSTALK\",\"enabled\":0}", reply, sizeof reply);
     EXPECT_EQ(snap().temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);
+
+// Cadena 4D en Ruta B: SET_4D -> snapshot.ext_flags16 bits 4..15, sin pisar el PUNCH (bits 0..3).
+TEST(Omega4DExt, EncodeDecodeRoundTripAndDefaultsOff) {
+    using namespace ivanna;
+    EXPECT_EQ(omega_4d_encode(Omega4DExt{}) & OMEGA_EXT_4D_ON, 0u);          // por defecto: apagado
+    Omega4DExt e; e.on = true; e.arc = true; e.xtc = true; e.arcDepth = 1.0f; e.depth = 3.0f / 7.0f; e.leadMs = 10.0f;
+    const uint32_t w = omega_4d_encode(e);
+    EXPECT_EQ(w & ~OMEGA_EXT_4D_MASK, 0u);                                   // no toca los bits del PUNCH
+    const Omega4DExt d = omega_4d_decode(w);
+    EXPECT_TRUE(d.on); EXPECT_TRUE(d.arc); EXPECT_TRUE(d.xtc);
+    EXPECT_NEAR(d.arcDepth, 1.0f, 1e-6f); EXPECT_NEAR(d.depth, 3.0f / 7.0f, 1e-6f); EXPECT_NEAR(d.leadMs, 10.0f, 1e-4f);
+    Omega4DExt lo; lo.leadMs = -3.0f; lo.depth = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_NEAR(omega_4d_decode(omega_4d_encode(lo)).leadMs, 5.0f, 1e-4f);   // acotado
+    EXPECT_EQ(omega_4d_decode(omega_4d_encode(lo)).depth, 0.0f);             // NaN -> 0
 }

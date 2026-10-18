@@ -155,6 +155,40 @@ inline uint32_t omega_punch_encode(float amount) noexcept {
 inline float omega_punch_decode(uint32_t ext) noexcept {
     return static_cast<float>((ext & OMEGA_EXT_PUNCH_MASK) >> OMEGA_EXT_PUNCH_SHIFT) / 15.f;
 }
+// Cadena 4D en Ruta B (bits 4..15 de la misma palabra; 0 = todo apagado = identidad exacta):
+//   bit 4 = 4D activo · bit 5 = arco narrativo · bits 6..8 = profundidad del arco (nivel/7)
+//   bits 9..11 = profundidad de modulación (nivel/7) · bit 12 = diafonía (solo altavoces)
+//   bits 13..15 = antelación, nivel 0..7 -> 5 + nivel*5/7 ms (5..10)
+// La háptica y el dosímetro viven en la app (el demonio no tiene motor de vibración ni UI).
+constexpr uint32_t OMEGA_EXT_4D_ON       = (1u << 4u);
+constexpr uint32_t OMEGA_EXT_4D_ARC_ON   = (1u << 5u);
+constexpr uint32_t OMEGA_EXT_4D_XTC_ON   = (1u << 12u);
+constexpr uint32_t OMEGA_EXT_4D_MASK     = (0xFFFu << 4u);
+struct Omega4DExt { bool on=false, arc=false, xtc=false; float arcDepth=0.f, depth=0.f, leadMs=7.5f; };
+inline uint32_t omega_lv7_encode(float v) noexcept {
+    const float a = (v == v) ? v : 0.f; int lv = static_cast<int>(a * 7.f + 0.5f);
+    return static_cast<uint32_t>(lv < 0 ? 0 : (lv > 7 ? 7 : lv));
+}
+inline uint32_t omega_4d_encode(const Omega4DExt& e) noexcept {
+    uint32_t w = 0u;
+    if (e.on)  w |= OMEGA_EXT_4D_ON;
+    if (e.arc) w |= OMEGA_EXT_4D_ARC_ON;
+    if (e.xtc) w |= OMEGA_EXT_4D_XTC_ON;
+    w |= omega_lv7_encode(e.arcDepth) << 6u;
+    w |= omega_lv7_encode(e.depth) << 9u;
+    const float l = (e.leadMs == e.leadMs) ? e.leadMs : 7.5f;
+    int ll = static_cast<int>((l - 5.f) * (7.f / 5.f) + 0.5f); ll = ll < 0 ? 0 : (ll > 7 ? 7 : ll);
+    w |= static_cast<uint32_t>(ll) << 13u;
+    return w;
+}
+inline Omega4DExt omega_4d_decode(uint32_t ext) noexcept {
+    Omega4DExt e;
+    e.on = (ext & OMEGA_EXT_4D_ON) != 0u; e.arc = (ext & OMEGA_EXT_4D_ARC_ON) != 0u; e.xtc = (ext & OMEGA_EXT_4D_XTC_ON) != 0u;
+    e.arcDepth = static_cast<float>((ext >> 6u) & 7u) / 7.f;
+    e.depth    = static_cast<float>((ext >> 9u) & 7u) / 7.f;
+    e.leadMs   = 5.f + static_cast<float>((ext >> 13u) & 7u) * (5.f / 7.f);
+    return e;
+}
 // v2.5.36 — Modo AUX/altavoces (campo de presion coherente, AuxFieldCoherence.hpp). Cero cambio de ABI:
 //   bit 25      = modo activo
 //   bits 26..28 = crossover, paso 0..7  -> 60 + 20*paso Hz (60..200)
