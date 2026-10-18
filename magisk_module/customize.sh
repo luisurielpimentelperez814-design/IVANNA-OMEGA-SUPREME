@@ -56,7 +56,7 @@ if [ -d "$RIR_SRC" ] && [ -f "$RIR_SRC/metadata.csv" ]; then
     mkdir -p "$RIR_DEST"
     run_low_priority cp -f "$RIR_SRC"/*.wav "$RIR_DEST/" 2>/dev/null
     run_low_priority cp -f "$RIR_SRC/metadata.csv" "$RIR_DEST/metadata.csv"
-    run_low_priority set_perm_recursive "$RIR_DEST" root root 0755 0644
+    set_perm_recursive "$RIR_DEST" root root 0755 0644
     RIR_COUNT=$(ls "$RIR_DEST"/*.wav 2>/dev/null | wc -l)
     ui_print "  ✓ RIR dataset → $RIR_DEST (${RIR_COUNT} salas)"
 else
@@ -82,7 +82,7 @@ if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
         fi
     done
     if [ "$HRTF_OK" = "1" ]; then
-        run_low_priority set_perm_recursive "$HRTF_DST" root root 0755 0644
+        set_perm_recursive "$HRTF_DST" root root 0755 0644
         ui_print "  ✓ HRTF: $(ls *.ihr1 | wc -l) sujetos IHR1 verificados → $HRTF_DST"
     else
         rm -rf "$HRTF_DST"
@@ -108,7 +108,7 @@ SOFA_DEST="$SAF_DIR/sofa"
 if [ -d "$SOFA_SRC" ] && find "$SOFA_SRC" -name '*.sofa' | grep -q .; then
     mkdir -p "$SOFA_DEST"
     run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_DEST/" 2>/dev/null
-    run_low_priority set_perm_recursive "$SOFA_DEST" root root 0755 0644
+    set_perm_recursive "$SOFA_DEST" root root 0755 0644
     SOFA_COUNT=$(find "$SOFA_DEST" -name '*.sofa' 2>/dev/null | wc -l)
     ARI_COUNT=$(find "$SOFA_DEST/ari" -name '*.sofa' 2>/dev/null | wc -l)
     ui_print "  ✓ SOFA → $SOFA_DEST ($SOFA_COUNT archivos AES69, $ARI_COUNT HpIR ARI)"
@@ -141,8 +141,8 @@ else
 fi
 
 ui_print "- Setting permissions on DSP libraries..."
-run_low_priority set_perm_recursive "$MODPATH/system" root root 0755 0644
-run_low_priority set_perm_recursive "$MODPATH/core" root root 0755 0755
+set_perm_recursive "$MODPATH/system" root root 0755 0644
+set_perm_recursive "$MODPATH/core" root root 0755 0755
 
 # ── SELinux policy — aplicar en tiempo de instalación (live) ─────────────────
 # Permite que la app (untrusted_app) se conecte al socket abstracto del daemon.
