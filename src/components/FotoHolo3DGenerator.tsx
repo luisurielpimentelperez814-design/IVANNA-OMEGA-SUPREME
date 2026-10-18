@@ -1,60 +1,86 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, RotateCcw, Sparkles } from 'lucide-react';
 
-type Preset = 'nanotomix' | 'concert' | 'studio' | 'orbital';
-const presets: Record<Preset, { label: string; spread: number; depth: number; lift: number }> = {
-  nanotomix: { label: 'FotoHolo Nanotomix', spread: 1.25, depth: 1.1, lift: 0.55 },
-  concert: { label: 'Concierto inmersivo', spread: 1.65, depth: 1.45, lift: 0.8 },
-  studio: { label: 'Estudio de precisión', spread: 0.82, depth: 0.72, lift: 0.28 },
-  orbital: { label: 'Campo orbital', spread: 1.4, depth: 1.8, lift: 1.05 },
+type ScenePreset = 'nanotomix' | 'concert' | 'studio' | 'orbital';
+type V3 = [number, number, number];
+type Mesh = { positions: number[]; normals: number[]; indices: number[]; color: V3; wire?: boolean };
+const PRESETS: Record<ScenePreset, { label: string; spread: number; depth: number; height: number }> = {
+  nanotomix: { label: 'FotoHolo Nanotomix', spread: 1, depth: 1, height: 1 },
+  concert: { label: 'Concierto inmersivo', spread: 1.25, depth: 1.2, height: 1.15 },
+  studio: { label: 'Estudio de precisión', spread: .72, depth: .7, height: .72 },
+  orbital: { label: 'Campo espacial', spread: 1.15, depth: 1.35, height: 1.3 },
 };
-const points = Array.from({ length: 460 }, (_, i) => {
-  const a = i * 2.399963, y = 1 - 2 * (i + 0.5) / 460, r = Math.sqrt(1 - y * y);
-  return { x: Math.cos(a) * r, y, z: Math.sin(a) * r, hue: 178 + (i * 37 % 105), size: 0.7 + (i * 13 % 18) / 10 };
-});
-
-export function FotoHolo3DGenerator() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const frameRef = useRef<number | null>(null);
-  const [preset, setPreset] = useState<Preset>('nanotomix');
-  const [width, setWidth] = useState(72);
-  const [depth, setDepth] = useState(58);
-  const [elevation, setElevation] = useState(36);
-  const [rotation, setRotation] = useState(18);
-  const [motion, setMotion] = useState(true);
-  const [guides, setGuides] = useState(true);
-
-  const draw = useCallback((time: number) => {
-    const canvas = canvasRef.current, ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    const rect = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = Math.max(1, Math.floor(rect.width * dpr)), h = Math.max(1, Math.floor(rect.height * dpr));
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, rect.width, rect.height);
-    const bg = ctx.createRadialGradient(rect.width / 2, rect.height / 2, 2, rect.width / 2, rect.height / 2, Math.max(rect.width, rect.height) * .7);
-    bg.addColorStop(0, '#11263c'); bg.addColorStop(1, '#060a12'); ctx.fillStyle = bg; ctx.fillRect(0, 0, rect.width, rect.height);
-    const p = presets[preset], angle = (rotation + (motion ? time * .008 : 0)) * Math.PI / 180;
-    const tilt = elevation / 100 * Math.PI * .8, scale = Math.min(rect.width, rect.height) * .32;
-    const projected = points.map(q => {
-      const x = q.x * p.spread * width / 72, y = q.y * p.lift * (elevation / 36 || .2), z = q.z * p.depth * depth / 58;
-      const rx = x * Math.cos(angle) - z * Math.sin(angle), rz = x * Math.sin(angle) + z * Math.cos(angle);
-      const ry = y * Math.cos(tilt) - rz * Math.sin(tilt), zz = y * Math.sin(tilt) + rz * Math.cos(tilt), persp = 3.2 / (3.2 + zz);
-      return { x: rect.width / 2 + rx * scale * persp, y: rect.height / 2 + ry * scale * persp, z: zz, persp, hue: q.hue, size: q.size };
-    }).sort((a, b) => a.z - b.z);
-    if (guides) { ctx.save(); ctx.translate(rect.width / 2, rect.height / 2); ctx.strokeStyle = 'rgba(87,190,255,.16)';
-      [0.45, 0.72, 1].forEach(f => { ctx.beginPath(); ctx.ellipse(0, 0, scale * f * width / 72, scale * f * .42, -angle * .35, 0, Math.PI * 2); ctx.stroke(); });
-      ctx.beginPath(); ctx.moveTo(-rect.width * .43, 0); ctx.lineTo(rect.width * .43, 0); ctx.moveTo(0, -rect.height * .43); ctx.lineTo(0, rect.height * .43); ctx.stroke(); ctx.restore(); }
-    projected.forEach(q => { ctx.beginPath(); ctx.fillStyle = 'hsla(' + q.hue + ',94%,68%,' + Math.max(.16, Math.min(.94, .75 - q.z * .12)) + ')'; ctx.shadowColor = 'hsla(' + q.hue + ',100%,64%,.7)'; ctx.shadowBlur = q.size * 3; ctx.arc(q.x, q.y, q.size * q.persp, 0, Math.PI * 2); ctx.fill(); });
-    ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(224,244,255,.86)'; ctx.font = '11px ui-monospace,monospace'; ctx.fillText('FOTOHOLO · 3D FIELD', 16, 22); ctx.fillStyle = 'rgba(125,211,252,.66)'; ctx.fillText('460 PARTICLES / PROCEDURAL PREVIEW', 16, rect.height - 16);
-    if (motion) frameRef.current = requestAnimationFrame(draw);
-  }, [preset, width, depth, elevation, rotation, motion, guides]);
-  useEffect(() => { frameRef.current = requestAnimationFrame(draw); return () => { if (frameRef.current !== null) cancelAnimationFrame(frameRef.current); }; }, [draw]);
-  const exportPng = () => { const canvas = canvasRef.current; if (!canvas) return; const a = document.createElement('a'); a.download = 'ivanna-fotoholo-3d-' + preset + '.png'; a.href = canvas.toDataURL('image/png'); a.click(); };
-  const reset = () => { setPreset('nanotomix'); setWidth(72); setDepth(58); setElevation(36); setRotation(18); setMotion(true); setGuides(true); };
-  const slider = (label: string, value: number, setter: (n: number) => void, max: number, low: string, high: string) => <label key={label} className="block text-xs text-slate-300">{label}<span className="float-right font-mono text-cyan-300">{value}{label === 'Ángulo base' ? '°' : '%'}</span><input type="range" min="0" max={max} value={value} onChange={e => setter(Number(e.target.value))} className="mt-2 w-full accent-cyan-300"/><span className="flex justify-between text-[10px] text-slate-500"><span>{low}</span><span>{high}</span></span></label>;
-  return <section className="space-y-5 rounded-2xl border border-cyan-400/20 bg-[#0c111b] p-4 shadow-[0_0_42px_rgba(34,211,238,.06)] sm:p-6">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-xs font-mono tracking-[.2em] text-cyan-300"><Sparkles size={15}/> GENERADOR VISUAL 3D</div><h2 className="mt-2 text-xl font-semibold text-slate-100 sm:text-2xl">FotoHolo Nanotomix · Campo espacial</h2><p className="mt-1 max-w-2xl text-sm text-slate-400">Crea una vista 3D interactiva del campo espacial y exporta la imagen PNG.</p></div><div className="flex gap-2"><button onClick={reset} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200"><RotateCcw size={14}/> Restablecer</button><button onClick={exportPng} className="inline-flex items-center gap-2 rounded-lg bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950"><Download size={14}/> Exportar PNG</button></div></div>
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(250px,.8fr)]"><div className="overflow-hidden rounded-xl border border-slate-700/70"><canvas ref={canvasRef} aria-label="Visualización 3D interactiva del campo FotoHolo" className="block h-[320px] w-full sm:h-[400px]"/><div className="flex justify-between border-t border-slate-800 bg-slate-950/70 px-3 py-2 text-[10px] font-mono text-slate-400"><span>VISTA PROCEDURAL · 460 PUNTOS</span><span className="text-cyan-300">{motion ? 'ROTACIÓN ACTIVA' : 'PAUSADA'}</span></div></div>
-    <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4"><label className="block text-xs text-slate-300">Escena / preset<select value={preset} onChange={e => setPreset(e.target.value as Preset)} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-sm text-slate-100">{Object.entries(presets).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>{slider('Anchura espacial', width, setWidth, 100, 'Estrecha', 'Amplia')}{slider('Profundidad', depth, setDepth, 100, 'Cercana', 'Profunda')}{slider('Elevación', elevation, setElevation, 100, 'Horizontal', 'Elevada')}{slider('Ángulo base', rotation, setRotation, 360, '0°', '360°')}<div className="flex flex-wrap gap-4 border-t border-slate-800 pt-3"><label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={motion} onChange={e => setMotion(e.target.checked)} className="accent-cyan-300"/> Animación</label><label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={guides} onChange={e => setGuides(e.target.checked)} className="accent-cyan-300"/> Guías 3D</label></div><p className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-[11px] leading-relaxed text-amber-100/80">Escena procedural visual. No representa medición acústica ni telemetría DSP real; esa conexión debe validarse por separado.</p></div></div>
-  </section>;
+const VERT = `
+attribute vec3 aPosition; attribute vec3 aNormal;
+uniform mat4 uViewProjection; uniform mat4 uView;
+varying vec3 vNormal; varying vec3 vPosition;
+void main(){ vec4 p=vec4(aPosition,1.0); gl_Position=uViewProjection*p; vNormal=normalize(mat3(uView)*aNormal); vPosition=aPosition; }
+`;
+const FRAG = `
+precision mediump float; uniform vec3 uColor; uniform float uAlpha; uniform vec3 uLight;
+varying vec3 vNormal; varying vec3 vPosition;
+void main(){ float diffuse=max(dot(normalize(vNormal),normalize(uLight)),0.0); float rim=pow(1.0-abs(normalize(vNormal).z),2.0)*0.22; vec3 c=uColor*(0.25+diffuse*0.78)+uColor*rim; gl_FragColor=vec4(c,uAlpha); }
+`;
+function mat4(): number[] { return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; }
+function multiply(a:number[],b:number[]) { const o=new Array(16).fill(0); for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k]; return o; }
+function ortho(l:number,r:number,b:number,t:number,n:number,f:number) { return [2/(r-l),0,0,0, 0,2/(t-b),0,0, 0,0,-2/(f-n),0, -(r+l)/(r-l),-(t+b)/(t-b),-(f+n)/(f-n),1]; }
+function translate(x:number,y:number,z:number) { const m=mat4();m[12]=x;m[13]=y;m[14]=z;return m; }
+function scale(x:number,y:number,z:number) { return [x,0,0,0, 0,y,0,0, 0,0,z,0, 0,0,0,1]; }
+function rotateY(a:number) { const c=Math.cos(a),s=Math.sin(a);return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]; }
+function rotateX(a:number) { const c=Math.cos(a),s=Math.sin(a);return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]; }
+function transformPoint(m:number[],p:V3):V3 { return [m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12],m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13],m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14]]; }
+function transformNormal(m:number[],p:V3):V3 { const n:[number,number,number]=[m[0]*p[0]+m[4]*p[1]+m[8]*p[2],m[1]*p[0]+m[5]*p[1]+m[9]*p[2],m[2]*p[0]+m[6]*p[1]+m[10]*p[2]];const l=Math.hypot(...n)||1;return [n[0]/l,n[1]/l,n[2]/l]; }
+function box(w:number,h:number,d:number,color:V3,m:number[]):Mesh {
+  const faces:[V3,V3,V3,V3,V3][]=[
+    [[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1]], [[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1],[0,0,-1]],
+    [[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1],[1,0,0]], [[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1],[-1,0,0]],
+    [[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1],[0,1,0]], [[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1],[0,-1,0]]
+  ];
+  const positions:number[]=[],normals:number[]=[],indices:number[]=[];
+  faces.forEach((face,fi)=>{const base=positions.length/3;face.slice(0,4).forEach(v=>{const p=transformPoint(m,[v[0]*w/2,v[1]*h/2,v[2]*d/2]);positions.push(...p);normals.push(...transformNormal(m,face[4]));});indices.push(base,base+1,base+2,base,base+2,base+3);});
+  return {positions,normals,indices,color};
+}
+function sphere(rx:number,ry:number,rz:number,color:V3,m:number[],wire=false):Mesh {
+  const positions:number[]=[],normals:number[]=[],indices:number[]=[];const rings=wire?14:18,segments=wire?28:32;
+  for(let y=0;y<=rings;y++){const v=y/rings,phi=v*Math.PI;for(let x=0;x<=segments;x++){const u=x/segments,theta=u*Math.PI*2;const n:[number,number,number]=[Math.sin(phi)*Math.cos(theta),Math.cos(phi),Math.sin(phi)*Math.sin(theta)];positions.push(...transformPoint(m,[n[0]*rx,n[1]*ry,n[2]*rz]));normals.push(...transformNormal(m,n));}}
+  for(let y=0;y<rings;y++)for(let x=0;x<segments;x++){const a=y*(segments+1)+x,b=a+segments+1;if(wire){indices.push(a,a+1,a,b); }else indices.push(a,b,a+1,b,b+1,a+1);}
+  return {positions,normals,indices,color,wire};
+}
+function buildScene(preset:ScenePreset,width:number,depth:number,height:number):Mesh[]{
+  const p=PRESETS[preset],sx=p.spread*width/70,sz=p.depth*depth/65,sy=p.height*height/55,meshes:Mesh[]=[];
+  const addBox=(x:number,y:number,z:number,w:number,h:number,d:number,c:V3)=>meshes.push(box(w,h,d,c,translate(x,y,z)));
+  const addSphere=(x:number,y:number,z:number,rx:number,ry:number,rz:number,c:V3,wire=false)=>meshes.push(sphere(rx,ry,rz,c,translate(x,y,z),wire));
+  // Malla arquitectónica tridimensional: escenario, suelo, torres de sonido y luminarias.
+  addBox(0,-2,0,12*sx,.34,6*sz,[.08,.19,.29]); addBox(0,-2.22,-.1,15*sx,.12,8*sz,[.025,.07,.12]);
+  addBox(0,-.5,-2.35,7*sx,2.8,.25,[.06,.14,.22]);
+  for(const side of [-1,1]){addBox(side*4.8*sx,-.2,-.5,1.1,.3,1.1,[.12,.27,.36]);addBox(side*4.8*sx,1.4,-.5,.22,3.2,.22,[.13,.3,.39]);addBox(side*4.8*sx,3.05,-.5,.65,.48,.55,[.18,.48,.62]);addBox(side*4.8*sx,2.45,-.5,.52,.52,.46,[.12,.34,.5]);addSphere(side*4.8*sx,2.45,.04,.16,.16,.08,[.3,.8,.95]);}
+  // Fuente central, artistas como volúmenes 3D y haces de iluminación.
+  addBox(0,-.55,-1.65,1.15,.16,.75,[.15,.36,.48]);
+  addSphere(0,.62,-1.4,.28,.3,.25,[.25,.75,.88]);addBox(0,-.12,-1.4,.48,.82,.32,[.12,.38,.52]);
+  for(const side of [-1,1]){addBox(side*.42,-.25,-1.4,.14,.7,.15,[.12,.32,.45]);addBox(side*.17,-.95,-1.4,.16,.62,.18,[.12,.32,.45]);}
+  // Oyente en primer plano, con cabeza y torso sólidos.
+  addSphere(0,-.08,2.25,.32,.4,.3,[.28,.53,.67]);addSphere(0,.52,2.25,.22,.24,.22,[.58,.76,.84]);addSphere(-.22,.54,2.25,.055,.09,.055,[.25,.85,.98]);addSphere(.22,.54,2.25,.055,.09,.055,[.25,.85,.98]);
+  // Superficies de frente de onda 3D (mallas cerradas, no nube de puntos).
+  [1.05,1.65,2.25].forEach((rad,i)=>addSphere(0,.15,-1.35,rad*sx,rad*.72*sy,rad*sz,[.05,.65+i*.1,.92],true));
+  // Arcos volumétricos de reflexión del recinto.
+  addSphere(0,0,0,5.7*sx,3.1*sy,4.8*sz,[.2,.55,.8],true);
+  return meshes;
+}
+function compile(gl:WebGLRenderingContext,type:number,source:string){const s=gl.createShader(type);if(!s)throw new Error('No se pudo crear shader');gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s)||'Shader error');return s;}
+export function FotoHolo3DGenerator(){
+  const canvasRef=useRef<HTMLCanvasElement>(null),glRef=useRef<WebGLRenderingContext|null>(null),programRef=useRef<WebGLProgram|null>(null),meshesRef=useRef<Mesh[]>([]),rafRef=useRef<number|null>(null),dragRef=useRef<{x:number;y:number;rx:number;ry:number}|null>(null);
+  const [preset,setPreset]=useState<ScenePreset>('nanotomix'),[width,setWidth]=useState(70),[depth,setDepth]=useState(65),[height,setHeight]=useState(55),[rotation,setRotation]=useState(0),[elevation,setElevation]=useState(18),[autoRotate,setAutoRotate]=useState(true),[showWaves,setShowWaves]=useState(true),[error,setError]=useState('');
+  useEffect(()=>{const canvas=canvasRef.current;if(!canvas)return;const gl=canvas.getContext('webgl',{antialias:true,alpha:false,preserveDrawingBuffer:true});if(!gl){setError('Este navegador no ofrece WebGL para renderizado 3D.');return;}try{const pr=gl.createProgram();if(!pr)throw new Error('No se pudo crear el programa 3D');gl.attachShader(pr,compile(gl,gl.VERTEX_SHADER,VERT));gl.attachShader(pr,compile(gl,gl.FRAGMENT_SHADER,FRAG));gl.linkProgram(pr);if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(pr)||'No se pudo enlazar el motor 3D');glRef.current=gl;programRef.current=pr;gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.clearColor(.018,.03,.06,1);}catch(e){setError(e instanceof Error?e.message:'Error inicializando WebGL');}},[]);
+  useEffect(()=>{meshesRef.current=buildScene(preset,width,depth,height).filter(m=>showWaves||!m.wire);},[preset,width,depth,height,showWaves]);
+  useEffect(()=>{const gl=glRef.current,pr=programRef.current,canvas=canvasRef.current;if(!gl||!pr||!canvas||error)return;let running=true;const loc=(n:string)=>gl.getUniformLocation(pr,n);const pos=gl.getAttribLocation(pr,'aPosition'),norm=gl.getAttribLocation(pr,'aNormal');gl.useProgram(pr);gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);
+    const render=(time:number)=>{if(!running)return;const dpr=Math.min(window.devicePixelRatio||1,1.75),rect=canvas.getBoundingClientRect(),w=Math.max(1,Math.floor(rect.width*dpr)),h=Math.max(1,Math.floor(rect.height*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      const view=multiply(rotateX((elevation*Math.PI)/180),rotateY(((rotation+(autoRotate?time*.012:0))*Math.PI)/180));const proj=ortho(-8.8*w/h,8.8*w/h,-8.8,8.8,-30,30);const vp=multiply(proj,view);gl.uniformMatrix4fv(loc('uViewProjection'),false,new Float32Array(vp));gl.uniformMatrix4fv(loc('uView'),false,new Float32Array(view));gl.uniform3f(loc('uLight'),-.4,.8,1);
+      meshesRef.current.forEach(mesh=>{const vb=gl.createBuffer(),nb=gl.createBuffer(),ib=gl.createBuffer();if(!vb||!nb||!ib)return;gl.bindBuffer(gl.ARRAY_BUFFER,vb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.positions),gl.STATIC_DRAW);gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ARRAY_BUFFER,nb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.normals),gl.STATIC_DRAW);gl.enableVertexAttribArray(norm);gl.vertexAttribPointer(norm,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(mesh.indices),gl.STATIC_DRAW);gl.uniform3f(loc('uColor'),...mesh.color);gl.uniform1f(loc('uAlpha'),mesh.wire?.42:1);if(mesh.wire){gl.disable(gl.CULL_FACE);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.drawElements(gl.LINES,mesh.indices.length,gl.UNSIGNED_SHORT,0);gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);}else gl.drawElements(gl.TRIANGLES,mesh.indices.length,gl.UNSIGNED_SHORT,0);gl.deleteBuffer(vb);gl.deleteBuffer(nb);gl.deleteBuffer(ib);});
+      if(autoRotate)rafRef.current=requestAnimationFrame(render);
+    };rafRef.current=requestAnimationFrame(render);return()=>{running=false;if(rafRef.current!==null)cancelAnimationFrame(rafRef.current);};
+  },[preset,width,depth,height,rotation,elevation,autoRotate,showWaves,error]);
+  const reset=()=>{setPreset('nanotomix');setWidth(70);setDepth(65);setHeight(55);setRotation(0);setElevation(18);setAutoRotate(true);setShowWaves(true);};
+  const exportPng=()=>{const c=canvasRef.current;if(!c)return;const a=document.createElement('a');a.download='ivanna-fotoholo-nanotomix-3d.png';a.href=c.toDataURL('image/png');a.click();};
+  const slider=(label:string,value:number,setter:(n:number)=>void,min:number,max:number)=> <label key={label} className="block text-xs text-slate-300">{label}<span className="float-right font-mono text-cyan-300">{value}{label==='Rotación'?'°':''}</span><input type="range" min={min} max={max} value={value} onChange={e=>setter(Number(e.target.value))} className="mt-2 w-full accent-cyan-300"/></label>;
+  return <section className="space-y-5 rounded-2xl border border-cyan-400/20 bg-[#0c111b] p-4 shadow-[0_0_42px_rgba(34,211,238,.08)] sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-xs font-mono tracking-[.2em] text-cyan-300"><Sparkles size={15}/> MOTOR WEBGL · MALLAS 3D</div><h2 className="mt-2 text-xl font-semibold text-slate-100 sm:text-2xl">FotoHolo Nanotomix · Escena espacial</h2><p className="mt-1 max-w-2xl text-sm text-slate-400">Escenario tridimensional con geometría sólida, oyente, fuentes acústicas y superficies volumétricas de onda. Arrastra sobre la escena para cambiar el ángulo; exporta una captura PNG.</p></div><div className="flex gap-2"><button onClick={reset} className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200"><RotateCcw size={14}/> Reiniciar</button><button onClick={exportPng} className="inline-flex items-center gap-2 rounded-lg bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950"><Download size={14}/> Exportar PNG</button></div></div><div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(250px,.8fr)]"><div className="overflow-hidden rounded-xl border border-slate-700/70 bg-[#060a12]"><canvas ref={canvasRef} aria-label="Escena 3D WebGL de FotoHolo Nanotomix" onPointerDown={e=>{dragRef.current={x:e.clientX,y:e.clientY,rx:rotation,ry:elevation};e.currentTarget.setPointerCapture(e.pointerId);}} onPointerMove={e=>{if(dragRef.current){setRotation(dragRef.current.rx+(e.clientX-dragRef.current.x)*.65);setElevation(Math.max(-60,Math.min(70,dragRef.current.ry+(e.clientY-dragRef.current.y)*.5));setAutoRotate(false);}}} onPointerUp={()=>{dragRef.current=null;}} className="block h-[340px] w-full touch-none sm:h-[470px]"/>{error&&<p className="p-4 text-sm text-rose-300">{error}</p>}<div className="flex justify-between border-t border-slate-800 bg-slate-950/70 px-3 py-2 text-[10px] font-mono text-slate-400"><span>WEBGL · GEOMETRÍA 3D REAL</span><span className="text-cyan-300">{autoRotate?'ORBITA ACTIVA':'CONTROL MANUAL'}</span></div></div><div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4"><label className="block text-xs text-slate-300">Escena<select value={preset} onChange={e=>setPreset(e.target.value as ScenePreset)} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-sm text-slate-100">{Object.entries(PRESETS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>{slider('Anchura espacial',width,setWidth,20,110)}{slider('Profundidad',depth,setDepth,20,110)}{slider('Elevación',height,setHeight,20,100)}{slider('Rotación',Math.round(rotation),setRotation,-180,180)}{slider('Inclinación',elevation,setElevation,-50,65)}<div className="flex flex-wrap gap-4 border-t border-slate-800 pt-3"><label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={autoRotate} onChange={e=>setAutoRotate(e.target.checked)} className="accent-cyan-300"/> Órbita automática</label><label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={showWaves} onChange={e=>setShowWaves(e.target.checked)} className="accent-cyan-300"/> Frentes de onda</label></div><p className="rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-[11px] leading-relaxed text-amber-100/80">La escena usa mallas 3D WebGL reales. Los frentes de onda son una representación visual; no son mediciones acústicas ni sustituyen el procesamiento DSP/HRTF del dispositivo.</p></div></div></section>;
 }
