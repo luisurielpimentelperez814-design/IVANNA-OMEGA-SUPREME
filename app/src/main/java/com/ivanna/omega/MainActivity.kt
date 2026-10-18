@@ -1355,7 +1355,7 @@ fun DashboardScreen(
                 }
                 runCatching {
                     com.ivanna.omega.magisk.MagiskBridge.sendCommand(
-                        "{\\"action\\":\\"SET_PERCEPTUAL_STATE\\",\\"upmixingEnabled\\":${if (enabled) 1.0f else 0.0f}}"
+                        "{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (enabled) 1.0f else 0.0f}}"
                     )
                 }
             },
@@ -1367,7 +1367,7 @@ fun DashboardScreen(
                 }
                 runCatching {
                     com.ivanna.omega.magisk.MagiskBridge.sendCommand(
-                        "{\\"action\\":\\"SET_PERCEPTUAL_STATE\\",\\"upmixingImmersivity\\":$bounded}"
+                        "{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingImmersivity\":$bounded}"
                     )
                 }
             },
