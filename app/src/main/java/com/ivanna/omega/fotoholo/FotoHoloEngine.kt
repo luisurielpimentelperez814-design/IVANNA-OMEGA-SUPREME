@@ -219,7 +219,12 @@ object FotoHoloEngine {
                 }
             }
             } finally {
-                // El scope propietario puede cancelarse (p. ej. al recrear la pantalla/servicio).
+                // No dejar el ancho adaptativo pegado si el scope propietario se cancela.
+                // Restaurar desde un hilo de control, nunca desde el callback de audio.
+                val rawBase = IvannaSpatialEngine.shared.widthFactor
+                val safeBase = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
+                val restoreError = writeWidth(safeBase)
+                if (restoreError != null) Log.w(TAG, "No se pudo restaurar el ancho al cancelar: $restoreError")
                 // Permitir que una futura llamada a start() vuelva a levantar el lazo.
                 synchronized(this@FotoHoloEngine) { started = false }
             }
