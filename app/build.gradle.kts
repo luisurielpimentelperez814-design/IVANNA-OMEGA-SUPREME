@@ -204,6 +204,9 @@ dependencies {
     implementation("io.coil-kt:coil-video:2.5.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Required by IvannaMemoryArchitectureTest (Robolectric + ApplicationProvider).
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
 
 tasks.register("validateUnifiedVersion") {
