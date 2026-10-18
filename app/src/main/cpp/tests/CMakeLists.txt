@@ -681,6 +681,45 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_hrtf_database COMMAND test_hrtf_database)
 
+# Interpolación de HRIR alineada en el tiempo (HrirTimeAlign.hpp): mide peine de ITD y ITD interpolada.
+add_executable(test_hrtf_time_align
+  test_hrtf_time_align.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
+)
+set_source_files_properties(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../spatial/HRTFInterpolator.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../spatial/HRTFDatabase.cpp
+  PROPERTIES COMPILE_OPTIONS "-fno-exceptions")
+target_link_libraries(test_hrtf_time_align PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_hrtf_time_align PRIVATE .. ../include ../spatial host_stubs)
+target_compile_definitions(test_hrtf_time_align PRIVATE IVANNA_HRTF_ASSET_DIR="${IVANNA_HRTF_ASSET_DIR}")
+target_compile_options(test_hrtf_time_align PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_hrtf_time_align PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_hrtf_time_align PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_hrtf_time_align COMMAND test_hrtf_time_align)
+
+# BinauralRenderer: el cambio de filtro HRTF (head-tracking / fuente móvil) se funde, no parte la onda.
+add_executable(test_binaural_crossfade
+  test_binaural_crossfade.cpp
+  ../spatial/HRTFInterpolator.cpp
+  ../spatial/HRTFDatabase.cpp
+)
+set_source_files_properties(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../spatial/HRTFInterpolator.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../spatial/HRTFDatabase.cpp
+  PROPERTIES COMPILE_OPTIONS "-fno-exceptions")
+target_link_libraries(test_binaural_crossfade PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_binaural_crossfade PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_binaural_crossfade PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_binaural_crossfade PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_binaural_crossfade PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_binaural_crossfade COMMAND test_binaural_crossfade)
+
 # ── Eje Supremo Neuroacústico: Inversión Biomecánica Coclear Activa ───────────
 # CochlearActiveInverseModel.hpp es header-only (cero .cpp propios):
 # no requiere fuentes en ivanna_dsp_under_test ni librería auxiliar.

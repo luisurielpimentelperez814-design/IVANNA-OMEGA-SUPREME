@@ -151,6 +151,12 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.npe_ohc_compression = s.npe_ohc_compression;
     // v2.5.49: PUNCH en la palabra extendida de 16 bits (los 32 bits de `flags` están agotados).
     snap.ext_flags16 = static_cast<uint16_t>((snap.ext_flags16 & ~ivanna::OMEGA_EXT_PUNCH_MASK) | ivanna::omega_punch_encode(s.punch_amount));
+    // Cadena 4D (bits 4..15 de la misma palabra; el PUNCH ocupa 0..3).
+    {
+        ivanna::Omega4DExt e; e.on = s.fourd_on; e.arc = s.fourd_arc; e.xtc = s.fourd_xtc;
+        e.arcDepth = s.fourd_arc_depth; e.depth = s.fourd_depth; e.leadMs = s.fourd_lead_ms;
+        snap.ext_flags16 = static_cast<uint16_t>((snap.ext_flags16 & ~ivanna::OMEGA_EXT_4D_MASK) | ivanna::omega_4d_encode(e));
+    }
     // v2.5.16: bits de usuario (antes el daemon los borraba al armar `flags` desde cero).
     snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
     if (!ivanna::controlBus().publish(snap)) return 0;
@@ -304,6 +310,21 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             "{\"ok\":true,\"command\":\"SET_PUNCH\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"punch\":%.3f,\"consumer\":%s}",
             gen>0?"true":"false", gen>0?"applied":"accepted_pending_consumer", (unsigned long long)gen,
             (double)std::floor(m_state.punch_amount*15.f+0.5f)/15.0,
+            hasActiveConsumer()?"\"omega_effect\"":"null");
+
+    } else if (strcmp(action,"SET_4D")==0) {
+        // Cadena 4D (antelación + arco + diafonía) en Ruta B. Claves ausentes conservan el valor. Resoluciones: 1/7 (profundidades), 5/7 ms (lead).
+        m_state.fourd_on        = _jsonFloat(json,"fourdOn", m_state.fourd_on ? 1.f : 0.f) > 0.5f;
+        m_state.fourd_arc       = _jsonFloat(json,"arcOn", m_state.fourd_arc ? 1.f : 0.f) > 0.5f;
+        m_state.fourd_xtc       = _jsonFloat(json,"xtcOn", m_state.fourd_xtc ? 1.f : 0.f) > 0.5f;
+        m_state.fourd_arc_depth = _clamp(_jsonFloat(json,"arcDepth", m_state.fourd_arc_depth), 0.f, 1.f);
+        m_state.fourd_depth     = _clamp(_jsonFloat(json,"depth", m_state.fourd_depth), 0.f, 1.f);
+        m_state.fourd_lead_ms   = _clamp(_jsonFloat(json,"leadMs", m_state.fourd_lead_ms), 5.f, 10.f);
+        uint64_t gen = publishCurrentState(m_state);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"command\":\"SET_4D\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"on\":%s,\"arc\":%s,\"xtc\":%s,\"consumer\":%s}",
+            gen>0?"true":"false", gen>0?"applied":"accepted_pending_consumer", (unsigned long long)gen,
+            m_state.fourd_on?"true":"false", m_state.fourd_arc?"true":"false", m_state.fourd_xtc?"true":"false",
             hasActiveConsumer()?"\"omega_effect\"":"null");
 
     } else if (strcmp(action,"SET_AUX_FIELD")==0) {

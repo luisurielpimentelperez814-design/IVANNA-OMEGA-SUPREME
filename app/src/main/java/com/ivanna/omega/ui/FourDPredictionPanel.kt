@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import com.ivanna.omega.core.FourDRouteB
 import com.ivanna.omega.core.Ivanna4DNative
 import com.ivanna.omega.core.ParameterStore
 import kotlinx.coroutines.delay
@@ -127,6 +128,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     checked = st.enabled,
                     onCheckedChange = { on ->
                         store.set4dEnabled(on)
+                        FourDRouteB.push(store)
                         if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetEnabled(on)
                     }
                 )
@@ -183,6 +185,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 onValueChange = {
                     leadMs = it
                     store.set4dLeadMs(it)
+                    FourDRouteB.push(store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetLeadMs(it)
                 }
             )
@@ -194,6 +197,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 onValueChange = {
                     depth = it
                     store.set4dDepth(it)
+                    FourDRouteB.push(store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDepth(it)
                 }
             )
@@ -204,6 +208,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     arc = it
                     store.set4dArcOn(it)
                     store.set4dArcDepth(arcDepth)
+                    FourDRouteB.push(store)
                     if (Ivanna4DNative.isAvailable) {
                         // La profundidad nativa arranca en 0: se envía junto con el interruptor.
                         Ivanna4DNative.nativeFourDSetArcDepth(arcDepth)
@@ -230,6 +235,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 onValueChange = {
                     arcDepth = it
                     store.set4dArcDepth(it)
+                    FourDRouteB.push(store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetArcDepth(it)
                 }
             )
@@ -257,6 +263,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 Switch(checked = crosstalk, onCheckedChange = {
                     crosstalk = it
                     store.set4dCrosstalkOn(it)
+                    FourDRouteB.push(store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetCrosstalk(it)
                 })
                 Spacer(Modifier.width(8.dp))

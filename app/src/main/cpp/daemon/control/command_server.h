@@ -141,6 +141,10 @@ struct OmegaDspState {
     // v2.5.41 — PUNCH (impacto predictivo, PunchEngine): cantidad 0..1 publicada en snapshot.ext_flags bits 0..3.
     // Al final del struct (kDefaultState inicializa por posición). 0 = apagado: snapshot idéntico al anterior.
     float punch_amount = 0.f;
+
+    // Cadena 4D en Ruta B (snapshot.ext_flags16 bits 4..15). Apagada por defecto: snapshot idéntico al anterior.
+    bool  fourd_on = false, fourd_arc = false, fourd_xtc = false;
+    float fourd_arc_depth = 0.f, fourd_depth = 0.7f, fourd_lead_ms = 7.5f;
 };
 
 class CommandServer {
