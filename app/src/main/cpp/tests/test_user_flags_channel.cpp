@@ -483,6 +483,7 @@ TEST(CrosstalkChannel, DaemonPublishesCrosstalkBitWithoutDisturbingTheTemporalFi
     EXPECT_NE(snap().temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);   // sobrevive a otros comandos
     cs.handleJsonCommand("{\"action\":\"SET_CROSSTALK\",\"enabled\":0}", reply, sizeof reply);
     EXPECT_EQ(snap().temporal_field & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);
+}
 
 // Cadena 4D en Ruta B: SET_4D -> snapshot.ext_flags16 bits 4..15, sin pisar el PUNCH (bits 0..3).
 TEST(Omega4DExt, EncodeDecodeRoundTripAndDefaultsOff) {
@@ -497,4 +498,30 @@ TEST(Omega4DExt, EncodeDecodeRoundTripAndDefaultsOff) {
     Omega4DExt lo; lo.leadMs = -3.0f; lo.depth = std::numeric_limits<float>::quiet_NaN();
     EXPECT_NEAR(omega_4d_decode(omega_4d_encode(lo)).leadMs, 5.0f, 1e-4f);   // acotado
     EXPECT_EQ(omega_4d_decode(omega_4d_encode(lo)).depth, 0.0f);             // NaN -> 0
+}
+
+TEST(FourDChannel, Set4DReachesTheSnapshotWithoutTouchingPunch) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":0.6}", reply, sizeof reply);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_4D\",\"fourdOn\":1,\"arcOn\":1,\"arcDepth\":0.5,\"depth\":1,\"leadMs\":9}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    OmegaDspSnapshot s{};
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    const Omega4DExt e = omega_4d_decode(s.ext_flags16);
+    EXPECT_TRUE(e.on); EXPECT_TRUE(e.arc); EXPECT_FALSE(e.xtc);
+    EXPECT_NEAR(e.arcDepth, 4.0f / 7.0f, 1e-6f);                  // 0.5 -> nivel 4/7
+    EXPECT_NEAR(e.depth, 1.0f, 1e-6f);
+    EXPECT_NEAR(e.leadMs, 9.0f, 0.4f);                            // resolución 5/7 ms
+    EXPECT_NEAR(omega_punch_decode(s.ext_flags16), 9.0f / 15.0f, 1e-6f);   // el PUNCH sigue intacto
+    EXPECT_TRUE(s.isCrcValid());
+    // Clave ausente conserva el valor; otro comando no lo borra; apagar vuelve a identidad.
+    cs.handleJsonCommand("{\"action\":\"SET_4D\",\"arcOn\":0}", reply, sizeof reply);
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_TRUE(omega_4d_decode(s.ext_flags16).on);
+    EXPECT_FALSE(omega_4d_decode(s.ext_flags16).arc);
+    cs.handleJsonCommand("{\"action\":\"SET_4D\",\"fourdOn\":0}", reply, sizeof reply);
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_FALSE(omega_4d_decode(s.ext_flags16).on);
 }
