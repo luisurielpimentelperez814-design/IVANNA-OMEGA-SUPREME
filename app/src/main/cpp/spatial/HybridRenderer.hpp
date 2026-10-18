@@ -144,12 +144,7 @@ public:
             const float* __restrict histR = &m_delayHistoryR[m_histPos];
             float convL = 0.0f;
             float convR = 0.0f;
-            for (size_t t = 0; t < kActiveTaps; ++t) {
-                const float sL = histL[t];
-                const float sR = histR[t];
-                convL += sL * m_hrtfLL[t] + sR * m_hrtfRL[t];
-                convR += sL * m_hrtfLR[t] + sR * m_hrtfRR[t];
-            }
+            convolveStereo(histL, histR, convL, convR);
 
             tmpL[i] = binDry * xL + binWet * convL;
             tmpR[i] = binDry * xR + binWet * convR;
@@ -204,12 +199,7 @@ public:
                 const float* __restrict histR = &m_delayHistoryR[m_histPos];
                 float convL = 0.0f;
                 float convR = 0.0f;
-                for (size_t t = 0; t < kActiveTaps; ++t) {
-                    const float sL = histL[t];
-                    const float sR = histR[t];
-                    convL += sL * m_hrtfLL[t] + sR * m_hrtfRL[t];
-                    convR += sL * m_hrtfLR[t] + sR * m_hrtfRR[t];
-                }
+                convolveStereo(histL, histR, convL, convR);
 
                 tmpL[i] = binDry * xL + binWet * convL;
                 tmpR[i] = binDry * xR + binWet * convR;
@@ -242,7 +232,54 @@ private:
         }
     }
 
+    // Duración del fundido entre bancos de filtros (~5.3 ms @48k). Cambiar 512 coeficientes de golpe (objeto que se
+    // mueve, cambio de apertura) parte la forma de onda; se mezcla SALIDA a SALIDA (LTI: equivale a mezclar coeficientes).
+    static constexpr size_t kFadeFrames = 256;
+
+    void beginFade() noexcept {
+        if (m_fading) {
+            const float al = static_cast<float>(m_fadePos) / static_cast<float>(kFadeFrames);
+            for (size_t k = 0; k < HRTF_TAPS; ++k) {
+                m_pLL[k] += al * (m_hrtfLL[k] - m_pLL[k]);  m_pLR[k] += al * (m_hrtfLR[k] - m_pLR[k]);
+                m_pRL[k] += al * (m_hrtfRL[k] - m_pRL[k]);  m_pRR[k] += al * (m_hrtfRR[k] - m_pRR[k]);
+            }
+        } else {
+            std::memcpy(m_pLL, m_hrtfLL, sizeof(m_pLL));  std::memcpy(m_pLR, m_hrtfLR, sizeof(m_pLR));
+            std::memcpy(m_pRL, m_hrtfRL, sizeof(m_pRL));  std::memcpy(m_pRR, m_hrtfRR, sizeof(m_pRR));
+        }
+        m_fadePos = 0;
+        m_fading = true;
+    }
+
+    // Una muestra de la convolución estéreo->binaural; durante el fundido mezcla filtro anterior y nuevo.
+    void convolveStereo(const float* __restrict histL, const float* __restrict histR,
+                        float& convL, float& convR) noexcept {
+        if (!m_fading) {
+            for (size_t t = 0; t < kActiveTaps; ++t) {
+                const float sL = histL[t];
+                const float sR = histR[t];
+                convL += sL * m_hrtfLL[t] + sR * m_hrtfRL[t];
+                convR += sL * m_hrtfLR[t] + sR * m_hrtfRR[t];
+            }
+            return;
+        }
+        float oL = 0.0f, oR = 0.0f;
+        for (size_t t = 0; t < kActiveTaps; ++t) {
+            const float sL = histL[t];
+            const float sR = histR[t];
+            convL += sL * m_hrtfLL[t] + sR * m_hrtfRL[t];
+            convR += sL * m_hrtfLR[t] + sR * m_hrtfRR[t];
+            oL    += sL * m_pLL[t]    + sR * m_pRL[t];
+            oR    += sL * m_pLR[t]    + sR * m_pRR[t];
+        }
+        const float al = static_cast<float>(m_fadePos + 1) / static_cast<float>(kFadeFrames);
+        convL = oL + al * (convL - oL);
+        convR = oR + al * (convR - oR);
+        if (++m_fadePos >= kFadeFrames) m_fading = false;
+    }
+
     void refreshHrtfPair() noexcept {
+        if (m_haveFilters) beginFade();   // el banco vigente es el origen del fundido
         float azSpread = m_virtualAzimuthDeg.load(std::memory_order_relaxed);
         float elDeg    = m_virtualElevationDeg.load(std::memory_order_relaxed);
 
@@ -296,6 +333,7 @@ private:
             m_hrtfLR[2] = 0.18f;
             m_hrtfRL[2] = 0.18f;
         }
+        m_haveFilters = true;
     }
 
     HRTFInterpolator m_hrtfInterpolator{};
@@ -320,6 +358,13 @@ private:
     alignas(64) float m_hrtfLR[HRTF_TAPS]{};
     alignas(64) float m_hrtfRL[HRTF_TAPS]{};
     alignas(64) float m_hrtfRR[HRTF_TAPS]{};
+    alignas(64) float m_pLL[HRTF_TAPS]{};
+    alignas(64) float m_pLR[HRTF_TAPS]{};
+    alignas(64) float m_pRL[HRTF_TAPS]{};
+    alignas(64) float m_pRR[HRTF_TAPS]{};
+    size_t m_fadePos{0};
+    bool   m_fading{false};
+    bool   m_haveFilters{false};
 };
 
 } // namespace Ivanna
