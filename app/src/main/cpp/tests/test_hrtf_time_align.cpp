@@ -9,6 +9,8 @@
 // ============================================================================
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include <cmath>
 #include <vector>
 
@@ -200,5 +202,47 @@ TEST(HrirTimeAlign, InterpolatorOutputsAreFiniteAndDefinedEverywhere) {
             ASSERT_TRUE(interp.getInterpolatedHRTF(az, el, L.data(), R.data()));
             for (size_t i = 0; i < HRTF_TAPS; ++i) { ASSERT_TRUE(std::isfinite(L[i])); ASSERT_TRUE(std::isfinite(R[i])); }
         }
+    hrtfDatabaseUnloadForTesting();
+}
+
+// ── Datos REALES medidos (KEMAR y un sujeto CIPIC del APK) ───────────────────────────────────────
+// Profundidad de peine en el punto medio de dos nodos vecinos: cuánto cae el espectro 2–12 kHz por debajo del
+// menor de los dos nodos. Un buen interpolador no debe abrir muescas que ninguno de los nodos tiene.
+namespace {
+double notchDepthDb(const float* x, const float* a, const float* b) {
+    double worst = 0;
+    for (double f = 2000; f <= 12000; f += 100)
+        worst = std::max(worst, std::min(magDb(a, HRTF_TAPS, f), magDb(b, HRTF_TAPS, f)) - magDb(x, HRTF_TAPS, f));
+    return worst;
+}
+void meanNotch(double& aligned, double& classic) {
+    HRTFInterpolator interp;
+    std::vector<float> L(HRTF_TAPS), R(HRTF_TAPS), cL(HRTF_TAPS);
+    double sa = 0, sc = 0; int n = 0;
+    for (size_t e = 0; e < HRTF_ELEVATIONS; ++e)
+        for (size_t a = 0; a < HRTF_AZIMUTHS; ++a) {
+            const size_t a1 = (a + 1) % HRTF_AZIMUTHS;
+            interp.getInterpolatedHRTF(15.0f * float(a) + 7.5f, -45.0f + 15.0f * float(e), L.data(), R.data());
+            for (size_t i = 0; i < HRTF_TAPS; ++i) cL[i] = 0.5f * (g_hrtfDatabase[e][a].left[i] + g_hrtfDatabase[e][a1].left[i]);
+            sa += notchDepthDb(L.data(),  g_hrtfDatabase[e][a].left, g_hrtfDatabase[e][a1].left);
+            sc += notchDepthDb(cL.data(), g_hrtfDatabase[e][a].left, g_hrtfDatabase[e][a1].left);
+            ++n;
+        }
+    aligned = sa / n; classic = sc / n;
+}
+}  // namespace
+
+TEST(HrirTimeAlignReal, MeasuredDatasetsLoseTheCombBetweenNodes) {
+    for (const char* name : {"kemar.ihr1", "cipic_003.ihr1"}) {
+        hrtfDatabaseUnloadForTesting();
+        const std::string path = std::string(IVANNA_HRTF_ASSET_DIR) + "/" + name;
+        ASSERT_EQ(hrtfDatabaseLoadFile(path.c_str()), HrtfDbResult::Ok) << path;
+        double aligned = 0, classic = 0;
+        meanNotch(aligned, classic);
+        // Medido: clásico ~14–16 dB de muesca media, alineado ~3 dB. Umbrales con margen, no al borde.
+        EXPECT_LT(aligned, 6.0) << name;
+        EXPECT_GT(classic, 9.0) << name << " (si baja, el dataset ya no demuestra el efecto)";
+        EXPECT_LT(aligned, 0.5 * classic) << name;
+    }
     hrtfDatabaseUnloadForTesting();
 }

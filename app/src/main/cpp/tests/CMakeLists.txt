@@ -693,6 +693,7 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS "-fno-exceptions")
 target_link_libraries(test_hrtf_time_align PRIVATE GTest::gtest_main Threads::Threads)
 target_include_directories(test_hrtf_time_align PRIVATE .. ../include ../spatial host_stubs)
+target_compile_definitions(test_hrtf_time_align PRIVATE IVANNA_HRTF_ASSET_DIR="${IVANNA_HRTF_ASSET_DIR}")
 target_compile_options(test_hrtf_time_align PRIVATE -Wall -Wextra)
 if(IVANNA_SAN_FLAGS)
   target_compile_options(test_hrtf_time_align PRIVATE ${IVANNA_SAN_FLAGS})
