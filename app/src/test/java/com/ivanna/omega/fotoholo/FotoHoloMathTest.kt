@@ -88,4 +88,15 @@ class FotoHoloMathTest {
             assertTrue(p[2] in 0.5f..1.0f)
         }
     }
+
+    @Test fun `slew ignora un paso negativo o no finito en vez de invertir el sentido`() {
+        assertEquals(0.5f, FotoHoloMath.slew(0.5f, 0.9f, -0.1f), 0f)
+        assertEquals(0.5f, FotoHoloMath.slew(0.5f, 0.9f, Float.NaN), 0f)
+    }
+
+    @Test fun `changed trata valores no finitos como cambio para forzar la escritura`() {
+        assertTrue(FotoHoloMath.changed(Float.NaN, 1f))
+        assertTrue(FotoHoloMath.changed(1f, Float.POSITIVE_INFINITY))
+        assertFalse(FotoHoloMath.changed(0.5f, 0.5005f))
+    }
 }

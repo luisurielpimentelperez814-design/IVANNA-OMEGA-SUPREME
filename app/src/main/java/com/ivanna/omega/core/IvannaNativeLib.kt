@@ -151,6 +151,8 @@ object IvannaNativeLib {
     external fun nativeSetCompressorParams(thresholdDb: Float, ratio: Float, attackMs: Float, releaseMs: Float)
     external fun nativeSetSpatialAngleRad(rad: Float)
     external fun nativeSetSpatialWidthDirect(width: Float)
+    /** Ancho efectivo entregado al StereoWidener (base × escala térmica). Read-back, no medición de audio. */
+    external fun nativeGetSpatialWidthDirect(): Float
     external fun nativeSetAntiDolbyIntensity(intensity: Float)
 
     // ═══ FASE 2: aplicación del ControlFrame desde el hilo de control ═══

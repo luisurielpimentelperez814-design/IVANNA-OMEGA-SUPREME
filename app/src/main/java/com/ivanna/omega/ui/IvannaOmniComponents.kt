@@ -158,7 +158,8 @@ internal fun LiveTelemetryHud(
         Spacer(Modifier.height(4.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatBlock("GÉNERO", genre, NeonMagenta, Modifier.weight(1.3f))
-            StatBlock("CONF.", "%.0f%%".format(confidence * 100f), AuroraCyan, Modifier.weight(1f))
+            // Sin género no hay confianza que mostrar: antes salía "GÉNERO —" junto a "CONF. 83 %".
+            StatBlock("CONF.", if (genre.isBlank() || genre == "\u2014" || genre == "—") "\u2014" else "%.0f%%".format(confidence * 100f), AuroraCyan, Modifier.weight(1f))
             StatBlock("GEN·FIT", "$evoGeneration · %.2f".format(evoFitness), AmberSignal, Modifier.weight(1.2f))
         }
     }
@@ -405,11 +406,21 @@ internal fun AuroraSlider(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            // La etiqueta toma el espacio sobrante y se parte en varias líneas; el valor conserva su
+            // ancho natural en UNA línea. Antes ambos competían: con etiquetas largas el valor se
+            // partía carácter a carácter ("7 5 . 0 m m") y se solapaba con la etiqueta.
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
+            )
             Text(
                 displayValue?.invoke(value) ?: "%.2f%s".format(value, if (unit.isNotEmpty()) " $unit" else ""),
                 style = MaterialTheme.typography.labelLarge,
-                color = AuroraCyan
+                color = AuroraCyan,
+                maxLines = 1,
+                softWrap = false
             )
         }
         Box(

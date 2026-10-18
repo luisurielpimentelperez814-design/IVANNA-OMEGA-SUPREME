@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 #include <functional>
 
@@ -193,6 +194,64 @@ TEST(IvannaLab, EmptyState) {
     EXPECT_EQ(r.snrDB, -1.f);
     EXPECT_EQ(r.peakDBFS, -1.f);
     EXPECT_EQ(r.truepeakDBTP, -1.f);
+}
+
+// ── Capturas de dispositivo: THD 22 % / IMD 83 % medidos sobre MÚSICA y analizador a 96 kHz ──
+// THD e IMD solo existen con un tono / doble tono de prueba. Con programa musical (aquí, ruido
+// coloreado determinista) deben devolver -1 ("no medido"), no un porcentaje sin significado.
+TEST(IvannaLab, ThdAndImdAreNotMeasuredOnProgramMaterial) {
+    const int frames = static_cast<int>(1.2f * kFs);
+    uint32_t seed = 12345u;
+    float lp = 0.f;
+    std::vector<float> mono(static_cast<size_t>(frames));
+    for (auto& x : mono) {
+        seed = seed * 1664525u + 1013904223u;
+        const float n = ((seed >> 8) & 0xFFFF) / 32768.f - 1.f;
+        lp += 0.2f * (n - lp);                     // ruido rosado-ish: energía repartida
+        x = 0.5f * lp;
+    }
+    const auto buf = genStereo(frames, [&](int i) { return mono[i]; }, [&](int i) { return mono[i]; });
+    IvannaLab lab(static_cast<uint32_t>(kFs), 4096);
+    const auto r = lab.measureOnce(buf.data(), frames);
+    EXPECT_EQ(r.thdPercent, -1.f) << "THD sobre programa no es una medición";
+    EXPECT_EQ(r.imdPercent, -1.f) << "IMD sobre programa no es una medición";
+    EXPECT_GT(r.peakDBFS, -60.f);                  // las métricas válidas siguen funcionando
+}
+
+// El analizador global nacía a 96 kHz y el motor corre a 48 kHz: con 250/8000 Hz fijos, el IMD
+// de un doble tono real a 48 kHz no se encontraba. setSampleRate lo corrige.
+TEST(IvannaLab, SetSampleRateMakesTheAnalyzerFollowTheRealStream) {
+    constexpr double fs = 48000.0;
+    const int frames = static_cast<int>(1.2 * fs);
+    auto tone = [&](int i) -> float {
+        const double wL = 2.0 * M_PI * 250.0 * i / fs;
+        const double wH = 2.0 * M_PI * 8000.0 * i / fs;
+        return static_cast<float>(0.4 * std::sin(wL) + 0.1 * std::sin(wH) +
+                                  0.005 * std::sin(wH - wL) + 0.005 * std::sin(wH + wL) +
+                                  0.003 * std::sin(wH - 2 * wL) + 0.003 * std::sin(wH + 2 * wL));
+    };
+    const auto buf = genStereo(frames, tone, tone);
+
+    IvannaLab wrong(96000, 4096);                  // tasa equivocada: 250/8000 Hz caen en otros bins
+    const auto rw = wrong.measureOnce(buf.data(), frames);
+    EXPECT_TRUE(rw.imdPercent < 0.f || std::fabs(rw.imdPercent - 2.0f) > 0.5f)
+        << "con la tasa equivocada el IMD no puede salir bien por casualidad";
+
+    IvannaLab lab(96000, 4096);
+    lab.setSampleRate(48000);
+    const auto r = lab.measureOnce(buf.data(), frames);
+    EXPECT_NEAR(r.imdPercent, 2.0f, 0.35f);
+}
+
+TEST(IvannaLab, ReportDoesNotInventALatencyNumber) {
+    IvannaLab lab(static_cast<uint32_t>(kFs), 4096);
+    const int frames = static_cast<int>(0.8f * kFs);
+    const auto buf = genStereo(frames, [](int i) { return 0.1f * std::sin(2.0 * M_PI * 1000.0 * i / kFs); },
+                               [](int i) { return 0.1f * std::sin(2.0 * M_PI * 1000.0 * i / kFs); });
+    lab.feed(buf.data(), frames);
+    const std::string rep = lab.generateReport();
+    EXPECT_EQ(rep.find("pipeline proxy"), std::string::npos) << rep;
+    EXPECT_NE(rep.find("Latency:   n/d"), std::string::npos) << rep;
 }
 
 }  // namespace

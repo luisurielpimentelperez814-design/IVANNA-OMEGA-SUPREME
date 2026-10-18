@@ -189,6 +189,11 @@ struct IvannaLab::Impl {
     explicit Impl(uint32_t sr, int fft)
         : sampleRate(sr), fftSize(std::max(2048, fft))
     {
+        configure(sr);
+    }
+
+    // Diseña todo lo que depende de la frecuencia de muestreo. Requiere mtx tomado (o ctor).
+    void configure(uint32_t sr) {
         // K-weighting BS.1770-4 diseñado PARA ESTA sample rate (fix de raíz:
         // los coeficientes fijos de 48 kHz se reutilizaban a 96 kHz, doblando
         // la esquina del shelf y sesgando la medición LUFS).
@@ -205,6 +210,23 @@ struct IvannaLab::Impl {
 
     void reset() noexcept {
         std::lock_guard<std::mutex> lock(mtx);
+        resetLocked();
+    }
+
+    // Cambia la frecuencia de muestreo del analizador (reinicia la medición). Antes la instancia
+    // global nacía a 96 kHz aunque el motor corre a 48 kHz: las frecuencias de THD (fundamental y
+    // armónicos), IMD (250 Hz / 8 kHz), el K-weighting y el true peak quedaban desplazados 2×.
+    bool setRate(uint32_t sr) {
+        if (sr < 8000 || sr > 384000) return false;
+        std::lock_guard<std::mutex> lock(mtx);
+        if (sr == sampleRate) return false;
+        sampleRate = sr;
+        configure(sr);
+        resetLocked();
+        return true;
+    }
+
+    void resetLocked() noexcept {
         peakAbs = 0.f;
         sumSqL = sumSqR = 0.0;
         framesAcc = 0;
@@ -324,6 +346,10 @@ struct IvannaLab::Impl {
         const float f1 = bestBin * static_cast<float>(sampleRate) / N;
         const float h1 = dftMagnitudeAt(historyL, start, N, f1, (float)sampleRate);
         if (h1 < 1e-6f) return -1.f;
+        // THD solo está definida para un tono de prueba. Con programa musical este mismo cálculo
+        // devolvía un 22 % que no mide ninguna distorsión: es la relación entre bins de música.
+        // Se exige que la fundamental lleve al menos la mitad de la potencia de la ventana.
+        if (0.5 * (double)h1 * h1 < 0.5 * rms * rms) return -1.f;
         const float h2 = (2.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(historyL, start, N, 2.f * f1, (float)sampleRate) : 0.f;
         const float h3 = (3.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(historyL, start, N, 3.f * f1, (float)sampleRate) : 0.f;
         const float h4 = (4.f * f1 < sampleRate * 0.5f) ? dftMagnitudeAt(historyL, start, N, 4.f * f1, (float)sampleRate) : 0.f;
@@ -339,6 +365,9 @@ struct IvannaLab::Impl {
         if (total / N < 1e-6) return -1.f;
         const float low = dftMagnitudeAt(historyL, start, N, 250.f, (float)sampleRate);
         const float high = dftMagnitudeAt(historyL, start, N, 8000.f, (float)sampleRate);
+        // IMD SMPTE solo vale con el doble tono 250 Hz + 8 kHz: los dos portadores deben llevar al
+        // menos la mitad de la potencia. Con música daba un 83 % sin significado.
+        if (0.5 * ((double)low * low + (double)high * high) < 0.5 * (total / N)) return -1.f;
         // FIX: threshold 0.001f demasiado alto para audio real (no tonos puros).
         // Con programa musical/voz los componentes en 250Hz y 8000Hz pueden
         // ser órdenes de magnitud menores. Bajamos a 0.00005f para capturar
@@ -463,6 +492,8 @@ IvannaLab::~IvannaLab() { delete pImpl; }
 
 void IvannaLab::reset() { pImpl->reset(); }
 
+void IvannaLab::setSampleRate(uint32_t sampleRate) { pImpl->setRate(sampleRate); }
+
 void IvannaLab::feed(const float* interleavedStereo, int frames) {
     if (!interleavedStereo || frames <= 0) return;
     pImpl->feed(interleavedStereo, frames);
@@ -487,21 +518,15 @@ std::string IvannaLab::generateReport() const {
     os << "LRA:       " << r.luRange        << " LU\n";
     os << "True Peak: " << r.truepeakDBTP   << " dBTP\n";
     os << std::setprecision(2);
-    os << "THD:       " << r.thdPercent  << " %\n";
-    os << "IMD:       " << r.imdPercent  << " %\n";
+    if (r.thdPercent < 0.f) os << "THD:       n/d (requiere tono de prueba)\n";
+    else                    os << "THD:       " << r.thdPercent  << " %\n";
+    if (r.imdPercent < 0.f) os << "IMD:       n/d (requiere doble tono SMPTE)\n";
+    else                    os << "IMD:       " << r.imdPercent  << " %\n";
 
-    // FIX: Latencia real via clock_gettime CLOCK_MONOTONIC round-trip estimate.
-    // No tenemos acceso al audio callback desde aquí, pero podemos medir el
-    // coste de una llamada completa al pipeline de medición como proxy del overhead.
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-    volatile float sink = 0.f;
-    for (int i = 0; i < 256; ++i) sink += std::sin(i * 0.01f);  // carga sintética 256 samples
-    (void)sink;
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    const long latency_us = ((t1.tv_sec - t0.tv_sec) * 1000000L +
-                             (t1.tv_nsec - t0.tv_nsec) / 1000L);
-    os << "Latency:   " << latency_us << " μs (pipeline proxy)\n";
+    // La latencia NO se reporta aquí: el reporte medía el coste de 256 llamadas a sin() ("2 μs,
+    // pipeline proxy"), un número que no tiene relación con la latencia de audio y que la UI mostraba
+    // junto a métricas reales. La latencia del motor la publica la telemetría de la ruta de audio.
+    os << "Latency:   n/d (no medida por IvannaLab)\n";
 
     // FIX: CPU% real via /proc/self/stat (tiempo de CPU del proceso en jiffies).
     float cpu_pct = -1.f;

@@ -16,8 +16,9 @@ import kotlinx.coroutines.launch
  *
  * iteration     : número de iteración actual (0 = sin calibrar)
  * selectedSubject: ID del sujeto HRTF seleccionado tras la última iteración
- * paramNorm     : métrica publicada por SAFCore.getState()[1]; no equivale por sí sola a convergencia
- * errorEnergy   : media de los cinco errores direccionales aportados por la calibración
+ * paramNorm     : métrica interna publicada por SAFCore.getState()[1]. NO equivale por sí sola
+ *                 a convergencia perceptual (no hay objetivo, coste ni criterio de parada definidos)
+ * errorEnergy   : media de los cinco errores direccionales aportados por la calibración, en [0,1]
  */
 data class SaFOptimizerState(
     val iteration: Int = 0,
@@ -47,6 +48,13 @@ object SaFOptimizer {
     // instance, o el proceso aún no tiene Application viva, crash). Se
     // conserva el applicationContext recibido en init() y se reutiliza.
     private var appContext: Context? = null
+
+    // RT60 del entorno que se envía al puente SAF-Room. Arranca en 0.3 s, que es un PRESET, no
+    // una medición: solo deja de serlo cuando la UI/medición llama a syncToRoomBridge(rt60).
+    // Antes runCalibrationStep() lo forzaba a 0.3f en cada paso y pisaba el valor de la sala.
+    @Volatile private var roomRt60Seconds: Float = DEFAULT_RT60_PRESET_S
+
+    private const val DEFAULT_RT60_PRESET_S = 0.3f
 
     private const val PREFS_NAME = "saf_optimizer_prefs"
 
@@ -89,9 +97,13 @@ object SaFOptimizer {
      *                          en cada dirección (0=correcto, 1=máximo error).
      */
     fun runCalibrationStep(directionEnergies: FloatArray) {
-        // El contrato documentado es exactamente cinco errores normalizados [0,1].
-        if (directionEnergies.size != 5 || directionEnergies.any { !it.isFinite() || it < 0f || it > 1f }) {
-            Log.w(TAG, "Calibración rechazada: se requieren cinco errores finitos en [0,1]")
+        // Contrato: exactamente cinco errores finitos en [0,1]. Se rechaza ANTES de lanzar la
+        // coroutine (un NaN/Inf o un array vacío contaminaba errorEnergy, que se persiste y se
+        // envía al optimizador nativo) y se trabaja sobre una copia defensiva.
+        val errors = SaFCalibrationValidator.sanitize(directionEnergies)
+        if (errors == null) {
+            Log.w(TAG, "Calibración rechazada: se requieren ${SaFCalibrationValidator.DIRECTIONS} " +
+                       "errores finitos en [0,1] (recibidos=${directionEnergies.size})")
             return
         }
         scope.launch {
@@ -111,12 +123,16 @@ object SaFOptimizer {
             val safState = SAFCore.getState()  // [deltaEnergy, metricNorm, memory, gain]
 
             val newIteration   = current.iteration + 1
-            val newErrorEnergy = directionEnergies.average().toFloat()
-            val newParamNorm   = safState[1].toFloat()
+            val newErrorEnergy = SaFCalibrationValidator.meanError(errors)
+            // safState[1] es la norma de la métrica de SAFCore; si el nativo devuelve un array
+            // corto o un valor no finito se conserva el anterior en vez de propagar NaN.
+            val newParamNorm   = safState.getOrNull(1)?.toFloat()
+                ?.takeIf { it.isFinite() && it >= 0f } ?: current.paramNorm
 
-            // Reportar el sujeto realmente seleccionado por el motor espacial; no simular personalización.
+            // Sujeto REAL del motor espacial: antes rotaba por una lista (round-robin), lo que
+            // simulaba una personalización que no existe y quizá apuntaba a sujetos no cargados.
             val subject = runCatching { IvannaSpatialManager.currentHrtfSubject() }
-                .getOrDefault("")
+                .getOrDefault(current.selectedSubject)
 
             _state.value = SaFOptimizerState(
                 iteration       = newIteration,
@@ -128,8 +144,13 @@ object SaFOptimizer {
             Log.d(TAG, "Step $newIteration: subject=$subject " +
                        "paramNorm=%.3f errorEnergy=%.3f".format(newParamNorm, newErrorEnergy))
 
-            // FIX: sincronizar estado actualizado con SaFRoomBridge → M_t refleja H_t real
-            syncToRoomBridge(rt60 = 0.3f)  // RT60 por defecto; RoomSimulator lo sobreescribirá
+            // Persistir: init() restaura iteration/subject/paramNorm/errorEnergy de las prefs, pero
+            // nadie llamaba a saveState(), así que lo restaurado era siempre el estado de fábrica.
+            appContext?.let { saveState(it) }
+
+            // FIX: sincronizar estado actualizado con SaFRoomBridge → M_t refleja H_t real.
+            // Usa el RT60 recordado (el de la sala si la UI/medición lo ha enviado; si no, el preset).
+            syncToRoomBridge()
         }
     }
 
@@ -152,29 +173,35 @@ object SaFOptimizer {
      * @param rt60  Tiempo de reverberación del entorno de escucha [0, 5] s
      *              (puede venir de RoomSimulator.estimateRT60())
      */
-    fun syncToRoomBridge(rt60: Float = 0.3f) {
+    fun syncToRoomBridge(rt60: Float = roomRt60Seconds) {
         val st = _state.value
+        // Recordar el RT60 recibido (si es válido): las llamadas internas sin argumento usan el
+        // de la sala en lugar de volver al preset de 0.3 s.
+        if (rt60.isFinite()) roomRt60Seconds = rt60.coerceIn(0f, 5f)
+        val rt60Applied = roomRt60Seconds
         // FIX (desconexión): SaFRoomBridge es un singleton con estado nativo
         // — si la librería SAF no cargó o el bridge aún no está listo, cada
         // llamada lanzaba y el paso de calibración moría a mitad. Un fallo
         // aquí no debe abortar la calibración: se registra y se continúa.
         try {
             // H_t: mismatch normalizado — errorEnergy ya está en [0,1] por diseño
+            // convergenceRate está definido como EMA de ‖Δ_t‖/‖Δ_0‖ (0 = convergido, 1 = inicio).
+            // paramNorm (SAFCore.getState()[1]) NO es esa magnitud, y 0.0 afirmaría "convergido":
+            // sin una métrica de progreso medida se envía 1.0 (sin evidencia de convergencia).
             SaFRoomBridge.setHrtfState(
                 mismatchEnergy  = st.errorEnergy,
-                // paramNorm procede de SAFCore.getState()[1], no es residual medido.
-                // No alimentar ese valor como tasa de convergencia perceptual.
                 convergenceRate = 1.0f
             )
-            // R_t: sala actual
-            SaFRoomBridge.setRoomState(rt60 = rt60, drr = 6.0f)
-            // No sobrescribir el target con cero: no existe una conversión validada
-            // de los cinco errores direccionales a un target SOFA latente 7-D.
-            // SaFRoomBridge conserva el target/modelo ya configurado y esta calibración
-            // debe considerarse proxy hasta que exista feedback medido por dirección.
+            // R_t: sala actual (rt60 recordado; preset 0.3 s hasta que llegue uno de la sala).
+            // drr sigue siendo un valor fijo (6 dB): no hay una medición conectada.
+            SaFRoomBridge.setRoomState(rt60 = rt60Applied, drr = 6.0f)
+            // NO se escribe target aquí. Antes se pisaba con un vector de CEROS en cada paso: el
+            // target por defecto del optimizador nativo es el Golden Master (kMasterSafGoldenQ), no
+            // cero, y SAFCore.update() fija el suyo. No existe una conversión validada de los cinco
+            // errores direccionales a un target latente 7-D, así que no se inventa uno.
             // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
             val alpha = SaFRoomBridge.step()
-            Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} α*=$alpha rt60=$rt60")
+            Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} α*=$alpha rt60=$rt60Applied")
         } catch (t: Throwable) {
             Log.w(TAG, "syncToRoomBridge omitido (bridge no listo): ${t.message}")
         }

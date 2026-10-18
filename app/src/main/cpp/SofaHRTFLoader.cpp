@@ -3,6 +3,7 @@
 #include <fstream>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <android/log.h>
 
 #define LOG_TAG "IvannaSofaHRTF"
@@ -13,13 +14,23 @@
 // cambio de proveación (subject/angle).
 static std::string g_sofa_lastPath;
 static bool   g_sofa_lastOk = false;
+// Las dos estáticas de arriba se comparten entre instancias e hilos (carga desde la UI y desde
+// el servicio): sin exclusión mutua eran una carrera de datos sobre un std::string. NO-RT.
+static std::mutex g_sofa_cacheMutex;
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 namespace Ivanna {
 
 bool SofaHRTFLoader::loadCached(const std::string& path) {
-    if (g_sofa_lastOk && path == g_sofa_lastPath) return true; // caché caliente
+    std::lock_guard<std::mutex> lock(g_sofa_cacheMutex);
+    // La caché (ruta + ok) es GLOBAL pero m_hrtf es de ESTA instancia: un acierto solo vale si
+    // esta instancia ya tiene el HRIR de esa ruta. Antes devolvía true con m_hrtf vacío.
+    if (g_sofa_lastOk && path == g_sofa_lastPath &&
+        lastStatus_ == Status::VALID_NOT_PARSED &&
+        !m_hrtf.left.empty() && m_hrtf.left.size() == m_hrtf.right.size()) {
+        return true; // caché caliente
+    }
     const bool ok = load(path);
     g_sofa_lastOk = ok;
     if (ok) g_sofa_lastPath = path; else g_sofa_lastPath.clear();
@@ -92,11 +103,17 @@ bool SofaHRTFLoader::load(const std::string& path) {
     m_hrtf.left.assign(kLen, 0.0f);
     m_hrtf.right.assign(kLen, 0.0f);
 
+    // Subcadena de la ruta con la coincidencia MÁS LARGA: "kemar" precede a "kemar_large" y a
+    // "tu_berlin_kemar" en la tabla, y con la primera coincidencia esos sujetos recibían el ancla
+    // de KEMAR estándar.
     const float* qSubj = ivanna::master::kMasterSafGoldenQ;
+    size_t bestLen = 0;
     for (size_t s = 0; s < ivanna::master::kNumTrainedSubjects; ++s) {
-        if (path.find(ivanna::master::kTrainedSubjectAnchors[s].id) != std::string::npos) {
+        const char* id = ivanna::master::kTrainedSubjectAnchors[s].id;
+        const size_t idLen = std::strlen(id);
+        if (idLen > bestLen && path.find(id) != std::string::npos) {
             qSubj = ivanna::master::kTrainedSubjectAnchors[s].q;
-            break;
+            bestLen = idLen;
         }
     }
     for (int n = 0; n < kLen; ++n) {

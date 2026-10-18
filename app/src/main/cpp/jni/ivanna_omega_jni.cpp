@@ -126,7 +126,7 @@ static OmegaPerceptualGuard g_perceptualGuard;
 
 // IvannaLab — instancia única, alimentada bajo demanda desde nativeLabFeed().
 // No vive en el hot-path de audio de ninguna ruta.
-static ivanna::IvannaLab g_lab(96000, 4096);
+static ivanna::IvannaLab g_lab(48000, 4096);  // se ajusta a la tasa real en el auto-feed
 
 // FASE 2 (NAEL): flag global — definición en audio_control_plane.cpp.
 extern std::atomic<bool> g_nael_enabled;
@@ -938,6 +938,10 @@ static std::atomic<float> g_compBaseRatio      {2.4f};
 static std::atomic<float> g_thermalCompScale   {1.0f};   // 1 = sin recorte térmico
 static std::atomic<float> g_spatialBaseWidth   {1.32f};
 static std::atomic<float> g_thermalSpatialScale{1.0f};   // 1 = sin recorte térmico
+// Último ancho ENTREGADO al StereoWidener (base × escala térmica, ya acotado). Se publica en el
+// mismo punto que lo escribe en g_pd, para que nativeGetSpatialWidthDirect devuelva el estado
+// efectivo del procesador y no una copia de lo que pidió la UI.
+static std::atomic<float> g_spatialAppliedWidth{1.32f};
 
 // Requiere g_dspProcessMutex tomado por el llamador (hilo de audio).
 static void recomputeCompressorLocked() {
@@ -955,7 +959,9 @@ static void recomputeCompressorLocked() {
 static void recomputeSpatialWidthLocked() {
     const float scale = std::clamp(g_thermalSpatialScale.load(std::memory_order_relaxed), 0.0f, 1.0f);
     const float base  = g_spatialBaseWidth.load(std::memory_order_relaxed);
-    g_pd.set_spatial_width(std::clamp(base * scale, 0.0f, 2.0f));
+    const float applied = std::clamp(base * scale, 0.0f, 2.0f);
+    g_pd.set_spatial_width(applied);
+    g_spatialAppliedWidth.store(applied, std::memory_order_release);
 }
 
 static inline float normalizeMasterToDb(float master) noexcept {
@@ -1911,6 +1917,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
                 labInter[2 * i]     = l;
                 labInter[2 * i + 1] = r;
             }
+            g_lab.setSampleRate(g_params.sampleRate);
             g_lab.feed(labInter, n);
             g_lab_auto_frame_count.fetch_add(1, std::memory_order_relaxed);
         }
@@ -2785,6 +2792,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWidthDirect(
     // Base de la IA/usuario — el escritor térmico la escala, nunca la sustituye.
     g_spatialBaseWidth.store(std::clamp(width, 0.0f, 2.0f), std::memory_order_relaxed);
     recomputeSpatialWidthLocked();
+}
+// Read-back del ancho efectivo entregado al widener (base × escala térmica). Es el valor que
+// recomputeSpatialWidthLocked() escribió en g_pd; NO es una medición de la señal de audio.
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpatialWidthDirect(JNIEnv*, jobject) {
+    return g_spatialAppliedWidth.load(std::memory_order_acquire);
 }
 // ── nativeSetSpatialWet — nivel wet del efecto NHO/espacial [0..1] ───────────
 // Faltaba: IvannaNativeLib.kt declara este external fun sin símbolo JNI.

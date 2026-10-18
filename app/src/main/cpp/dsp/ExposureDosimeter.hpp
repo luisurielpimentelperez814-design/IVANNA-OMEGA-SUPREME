@@ -85,7 +85,13 @@ public:
         overload_.store(false, std::memory_order_relaxed);
     }
 
-    void setMode(int mode) noexcept { mode_.store(std::clamp(mode, 0, 2), std::memory_order_relaxed); }
+    // Cambiar de criterio reinicia la dosis: un porcentaje acumulado bajo WHO (80 dB / 24 min)
+    // no significa nada frente al límite de OSHA (90 dB / 8 h). Antes la dosis se arrastraba y la
+    // UI mostraba 400 % con 87.6 dB(A) bajo OSHA, que permite ~11 h a ese nivel.
+    void setMode(int mode) noexcept {
+        const int m = std::clamp(mode, 0, 2);
+        if (mode_.exchange(m, std::memory_order_relaxed) != m) dose_.store(0.0f, std::memory_order_relaxed);
+    }
     int  mode() const noexcept { return mode_.load(std::memory_order_relaxed); }
 
     // Calibración: nivel SPL equivalente a fondo de escala (pico 1.0). 94 dB = 1 Pa a fondo
@@ -95,7 +101,11 @@ public:
         // drivers de alta sensibilidad superan 130-140 dB SPL a fondo de escala. Un tope
         // de 130 impedia representar esos transductores y el detector de pico nunca
         // llegaba a marcar sobrecarga (defecto detectado en la verificacion).
-        if (std::isfinite(dbfsToSpl)) calDb_.store(std::clamp(dbfsToSpl, 70.0f, 145.0f), std::memory_order_relaxed);
+        if (!std::isfinite(dbfsToSpl)) return;
+        const float c = std::clamp(dbfsToSpl, 70.0f, 145.0f);
+        // La dosis acumulada se calculó con la calibración anterior; con otra, ese porcentaje es falso.
+        if (std::fabs(calDb_.exchange(c, std::memory_order_relaxed) - c) > 0.05f)
+            dose_.store(0.0f, std::memory_order_relaxed);
     }
     float calibration() const noexcept { return calDb_.load(std::memory_order_relaxed); }
 
@@ -138,6 +148,9 @@ public:
             const double dt = (double)nAcc_ / sr_;
             sumL_ = sumR_ = 0.0; nAcc_ = 0;
 
+            // LAeq siempre refleja la última ventana: antes, tras un silencio, la UI seguía mostrando
+            // el último nivel fuerte porque solo se actualizaba por encima de 40 dB(A).
+            if (la <= 40.0) laeq_.store((float)std::max(la, 0.0), std::memory_order_relaxed);
             if (la > 40.0) { // por debajo de 40 dB(A) la dosis es despreciable
                 const ExposureMode m = currentMode();
                 const double allowed = (double)m.refSeconds

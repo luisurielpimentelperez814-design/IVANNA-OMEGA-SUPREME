@@ -242,8 +242,8 @@ private fun TelemetryTab() {
     // v2.3.0: telemetría térmica + DSP tier via prop de sistema
     var thermalTempC  by remember { mutableStateOf("--") }
     var thermalTier   by remember { mutableStateOf("--") }
-    var dspQuality    by remember { mutableStateOf("100%") }
-    var rirActive     by remember { mutableStateOf(true) }
+    var dspQuality    by remember { mutableStateOf("--") }
+    var thermalHeadroom by remember { mutableStateOf("SIN DATO") }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -251,23 +251,16 @@ private fun TelemetryTab() {
             if (IvannaNativeLib.isLoaded)
                 telemetry = runCatching { IvannaNativeLib.nativeGetAdaptiveTelemetry() }.getOrNull()
 
-            // Leer estado térmico desde props de sistema (escritas por ThermalGovernor vía JNI)
-            // El ThermalGovernor escribe persist.ivanna.thermal_tier y persist.ivanna.thermal_temp
-            val tierProp = runCatching {
-                Runtime.getRuntime().exec("getprop persist.ivanna.thermal_tier")
-                    .inputStream.bufferedReader().readLine()?.trim() ?: ""
-            }.getOrElse { "" }
-
-            // Sin prop (ThermalGovernor no la escribió): NO se asume "FULL".
-            val tierInt = tierProp.toIntOrNull() ?: -1
-            thermalTier = when (tierInt) {
-                -1 -> "SIN DATO"
-                0 -> "FULL ✅"
-                1 -> "REDUCED ⚡"
-                2 -> "LIMITED 🌡️"
-                3 -> "PROTECTED 🔥"
-                4 -> "BYPASS ❌"
-                else -> "UNKNOWN"
+            // Fuente real: ThermalGovernor (PowerManager.getThermalHeadroom, API 31+). Antes se leía la
+            // propiedad persist.ivanna.thermal_tier, que nadie escribe → siempre «SIN DATO».
+            val tier = com.ivanna.omega.audio.ThermalGovernor.currentTier
+            val load = com.ivanna.omega.audio.ThermalGovernor.currentThermalLoad
+            thermalTier = when (tier) {
+                null -> "SIN DATO"
+                com.ivanna.omega.audio.ThermalTier.FULL -> "FULL ✅"
+                com.ivanna.omega.audio.ThermalTier.REDUCED -> "REDUCED ⚡"
+                com.ivanna.omega.audio.ThermalTier.LIMITED -> "LIMITED 🌡️"
+                com.ivanna.omega.audio.ThermalTier.PROTECTED -> "PROTECTED 🔥"
             }
             // Temperatura REAL medida (sensor de batería, único accesible sin root).
             thermalTempC = runCatching {
@@ -276,15 +269,8 @@ private fun TelemetryTab() {
                 val t = st?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
                 if (t == null || t == Int.MIN_VALUE) "--" else "%.1f °C (batería)".format(t / 10f)
             }.getOrDefault("--")
-            dspQuality = when (tierInt) {
-                0 -> "100%"
-                1 -> "85%"
-                2 -> "65%"
-                3 -> "40%"
-                4 -> "0% (bypass)"
-                else -> "--"
-            }
-            rirActive = tierInt in 0..1
+            dspQuality = tier?.describeCuts() ?: "--"
+            thermalHeadroom = if (tier == null) "SIN DATO" else "%.2f".format(load)
 
             kotlinx.coroutines.delay(2000) // cada 2s — mismo intervalo que ThermalGovernor
         }
@@ -312,20 +298,16 @@ private fun TelemetryTab() {
                 Text(thermalTier, color = tierColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Calidad DSP", color = TextSecondary, fontSize = 10.sp)
+                Text("Recorte aplicado", color = TextSecondary, fontSize = 10.sp)
                 Text(dspQuality, color = tierColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("RIR Convolución", color = TextSecondary, fontSize = 10.sp)
-                Text(
-                    if (thermalTier == "SIN DATO") "SIN DATO" else if (rirActive) "ACTIVA" else "SUSPENDIDA (calor)",
-                    color = if (rirActive) PhosphorGreen else NeonMagenta,
-                    fontSize = 10.sp, fontWeight = FontWeight.Bold
-                )
+                Text("Headroom térmico (0–1)", color = TextSecondary, fontSize = 10.sp)
+                Text(thermalHeadroom, color = tierColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                "FULL: DSP completo | REDUCED: sin Volterra | LIMITED: sin RIR | BYPASS: pass-through",
+                "Headroom ≥0.3 REDUCED · ≥0.6 LIMITED · ≥0.8 PROTECTED (recorta exciter, ancho y compresor; no hay bypass térmico)",
                 color = TextMuted, fontSize = 8.sp
             )
         }

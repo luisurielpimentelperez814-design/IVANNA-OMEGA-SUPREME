@@ -1,9 +1,11 @@
 package com.ivanna.omega.fotoholo
 
 import android.content.Context
+import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -11,40 +13,44 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-/** Lo que el panel muestra: valores MEDIDOS/APLICADOS, no deseados. */
+/**
+ * Estado de control observable.
+ * - [appliedWidth]: último ancho cuyo setter JNI retornó sin excepción (comando, no medición).
+ * - [dspWidth]: read-back nativo (nativeGetSpatialWidthDirect) = ancho que el motor entregó al
+ *   StereoWidener tras la escala térmica. NaN si aún no se pudo leer. Tampoco es audio medido.
+ */
 data class FotoHoloTelemetry(
     val enabled: Boolean = false,
     val bypass: Boolean = false,
     val hasSignal: Boolean = false,
     val baseWidth: Float = 1f,
+    /** Último ancho cuya llamada JNI retornó sin excepción; NO es read-back del DSP. */
     val appliedWidth: Float = 1f,
     val bands: FloatArray = FloatArray(FotoHoloMath.BANDS),
     val features: FotoHoloFeatures = FotoHoloFeatures.NONE,
+    val nativeWriteError: String? = null,
+    val nativeWriteAttempted: Boolean = false,
+    val nativeCallReturned: Boolean = false,
+    val dspWidth: Float = Float.NaN,
 ) {
+    /** true si el motor reporta un ancho finito y coherente con el último comando (puede ser menor por recorte térmico). */
+    val readbackConfirmed: Boolean get() = dspWidth.isFinite() && nativeCallReturned && dspWidth <= appliedWidth + 0.01f
     val offset: Float get() = appliedWidth - baseWidth
 }
 
 /**
- * Fotoholografía·Nanotomix — capa de orquestación sobre el motor espacial existente.
- *
- *   64 bandas Bark reales (captura Ruta A) → rasgos → ancho estéreo objetivo acotado → slew →
- *   IvannaNativeLib.nativeSetSpatialWidthDirect (el MISMO camino que los sliders de ancho: StereoWidener).
- *
- * Reglas:
- *  - Corre en un hilo de fondo (Dispatchers.Default, 20 Hz); nunca toca el hilo de audio ni el de UI.
- *  - Autoridad sobre el ancho solo mientras está activo y sin bypass; al desactivar (o bypass A/B)
- *    restituye EXACTAMENTE el ancho que fijó el usuario ([IvannaSpatialEngine.shared].widthFactor).
- *  - Sin señal (sin captura Ruta A) no modula: el ancho queda en el del usuario y se informa "sin señal".
- *  - No introduce una ruta de audio nueva ni suma procesamiento: modula un parámetro existente.
+ * Orquesta el control de ancho existente. No crea una ruta de audio ni afirma holografía óptica.
+ * El JNI actual expone nativeSetSpatialWidthDirect(Float): Unit, por lo que no hay confirmación
+ * de aplicación real del DSP. La telemetría separa fallo de llamada de valor solicitado.
  */
 object FotoHoloEngine {
+    private const val TAG = "FotoHoloEngine"
     private const val PREFS = "ivanna_fotoholo"
     private const val TICK_MS = 50L
     private const val IDLE_MS = 250L
 
     @Volatile var enabled: Boolean = false; private set
     @Volatile var intensity: Float = 0.6f; private set
-    /** A/B de sesión (no se persiste): true = se oye el ancho del usuario sin modulación. */
     @Volatile var bypass: Boolean = false; private set
     @Volatile private var viewers = 0
     @Volatile private var started = false
@@ -53,84 +59,159 @@ object FotoHoloEngine {
     val telemetry: StateFlow<FotoHoloTelemetry> = _telemetry
 
     fun load(context: Context) {
-        runCatching {
+        try {
             val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             enabled = p.getBoolean("enabled", false)
-            intensity = p.getFloat("intensity", 0.6f).coerceIn(0f, 1f)
+            intensity = p.getFloat("intensity", 0.6f).let { if (it.isFinite()) it.coerceIn(0f, 1f) else 0.6f }
+        } catch (t: Throwable) {
+            Log.w(TAG, "No se pudieron cargar preferencias; se usan valores seguros", t)
         }
     }
 
     fun setEnabled(context: Context, on: Boolean) { enabled = on; save(context) }
     fun setIntensity(context: Context, v: Float) { intensity = if (v.isFinite()) v.coerceIn(0f, 1f) else 0.6f; save(context) }
     fun setBypass(on: Boolean) { bypass = on }
-
-    /** El panel avisa que está visible para que se muestre el espectro aunque el efecto esté apagado. */
     fun viewerAttached() { viewers++ }
     fun viewerDetached() { viewers = (viewers - 1).coerceAtLeast(0) }
 
     private fun save(context: Context) {
-        runCatching {
+        try {
             context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putBoolean("enabled", enabled).putFloat("intensity", intensity).apply()
+        } catch (t: Throwable) {
+            Log.w(TAG, "No se pudieron guardar preferencias", t)
         }
     }
 
-    private fun writeWidth(w: Float) {
-        if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetSpatialWidthDirect(w) }
+    /** Lee el ancho efectivo del motor; NaN si la biblioteca/símbolo no está disponible. */
+    private fun readDspWidth(): Float {
+        if (!IvannaNativeLib.isLoaded) return Float.NaN
+        return try {
+            IvannaNativeLib.nativeGetSpatialWidthDirect()
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Símbolo JNI de lectura de ancho no disponible", e)
+            Float.NaN
+        }
     }
 
-    /** Arranca el lazo de control una sola vez (lo llama la Application). */
+    /** null = llamada JNI retornó; texto = fallo conocido. La confirmación del DSP viene de [readDspWidth]. */
+    private fun writeWidth(width: Float): String? {
+        if (!width.isFinite()) return "Ancho rechazado: valor no finito"
+        if (!IvannaNativeLib.isLoaded) return "Biblioteca nativa no cargada; no se envió el ancho"
+        return try {
+            IvannaNativeLib.nativeSetSpatialWidthDirect(width.coerceIn(0f, 1.5f))
+            null
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Símbolo JNI de ancho espacial no disponible", e)
+            "Símbolo JNI de ancho espacial no disponible"
+        } catch (e: Exception) {
+            Log.e(TAG, "Falló la llamada JNI de ancho espacial", e)
+            "Falló la llamada JNI: ${e.javaClass.simpleName}"
+        } catch (e: LinkageError) {
+            Log.e(TAG, "Error de enlace nativo al escribir ancho", e)
+            "Error de enlace nativo: ${e.javaClass.simpleName}"
+        }
+    }
+
+    /** Arranca una sola vez. La cancelación del scope se respeta y no se traga como error normal. */
     fun start(context: Context, scope: CoroutineScope) {
         if (started) return
-        started = true
+        synchronized(this) {
+            if (started) return
+            started = true
+        }
         load(context)
         scope.launch(Dispatchers.Default) {
             val buf = FloatArray(FotoHoloMath.BANDS)
             var prev: FloatArray? = null
             var current = Float.NaN
-            var lastWritten = Float.NaN
+            var lastCommanded = Float.NaN
             var modulating = false
+            var lastError: String? = null
+            var lastAttempted = false
+            var lastReturned = false
+            var lastDspWidth = Float.NaN
+
             while (true) {
-                runCatching {
-                    val modulate = enabled && !bypass
-                    val sample = modulate || viewers > 0
-                    val base = IvannaSpatialEngine.shared.widthFactor
+                try {
+                    val shouldModulate = enabled && !bypass
+                    val shouldSample = shouldModulate || viewers > 0
+                    val rawBase = IvannaSpatialEngine.shared.widthFactor
+                    val base = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
 
-                    if (!sample && !modulating) { delay(IDLE_MS); return@runCatching }
-
-                    val ready = sample && IvannaVisualizerBark64Bridge.isReady
-                    val feats: FotoHoloFeatures
-                    if (ready) {
-                        IvannaVisualizerBark64Bridge.sampleInto(buf)
-                        feats = FotoHoloMath.features(buf, prev)
-                        prev = (prev ?: FloatArray(FotoHoloMath.BANDS)).also { buf.copyInto(it) }
-                    } else {
-                        feats = FotoHoloFeatures.NONE
-                        buf.fill(0f)
+                    if (!shouldSample && !modulating) {
+                        _telemetry.value = _telemetry.value.copy(
+                            enabled = enabled, bypass = bypass, baseWidth = base,
+                            nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
+                            nativeCallReturned = lastReturned, dspWidth = lastDspWidth
+                        )
+                        delay(IDLE_MS)
+                        continue
                     }
 
-                    var applied = base
-                    if (modulate) {
-                        val target = FotoHoloMath.targetWidth(base, intensity, feats)
-                        current = FotoHoloMath.slew(if (current.isNaN()) base else current, target)
-                        if (lastWritten.isNaN() || FotoHoloMath.changed(current, lastWritten)) {
-                            writeWidth(current); lastWritten = current
+                    val ready = shouldSample && IvannaVisualizerBark64Bridge.isReady
+                    val features = if (ready) {
+                        IvannaVisualizerBark64Bridge.sampleInto(buf)
+                        FotoHoloMath.features(buf, prev).also {
+                            if (prev == null) prev = FloatArray(FotoHoloMath.BANDS)
+                            buf.copyInto(prev!!)
+                        }
+                    } else {
+                        buf.fill(0f)
+                        FotoHoloFeatures.NONE
+                    }
+
+                    var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
+                    if (shouldModulate) {
+                        val target = FotoHoloMath.targetWidth(base, intensity, features)
+                        current = FotoHoloMath.slew(if (current.isFinite()) current else base, target)
+                        val needsWrite = !lastCommanded.isFinite() || FotoHoloMath.changed(current, lastCommanded) || lastError != null
+                        if (needsWrite) {
+                            lastAttempted = true
+                            lastError = writeWidth(current)
+                            lastReturned = lastError == null
+                            if (lastReturned) { lastCommanded = current; lastDspWidth = readDspWidth() }
                         }
                         modulating = true
-                        applied = current
+                        displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
                     } else if (modulating) {
-                        // Apagado o bypass: se devuelve exactamente el ancho del usuario.
-                        writeWidth(base); lastWritten = Float.NaN; current = Float.NaN
-                        modulating = false
+                        // Restore is retried until the setter call returns without a known error.
+                        lastAttempted = true
+                        lastError = writeWidth(base)
+                        lastReturned = lastError == null
+                        if (lastReturned) {
+                            lastCommanded = base
+                            lastDspWidth = readDspWidth()
+                            current = Float.NaN
+                            modulating = false
+                            displayedCommand = base
+                        } else {
+                            displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
+                        }
+                    } else {
+                        displayedCommand = base
                     }
 
                     _telemetry.value = FotoHoloTelemetry(
-                        enabled = enabled, bypass = bypass, hasSignal = feats.valid,
-                        baseWidth = base, appliedWidth = applied,
-                        bands = buf.copyOf(), features = feats,
+                        enabled = enabled, bypass = bypass, hasSignal = features.valid,
+                        baseWidth = base, appliedWidth = displayedCommand,
+                        bands = buf.copyOf(), features = features,
+                        nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
+                        nativeCallReturned = lastReturned, dspWidth = lastDspWidth,
                     )
                     delay(TICK_MS)
-                }.onFailure { runCatching { kotlinx.coroutines.delay(IDLE_MS) } }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (t: Throwable) {
+                    lastError = "Error del lazo: ${t.javaClass.simpleName}"
+                    lastReturned = false
+                    Log.e(TAG, "Fallo recuperable en lazo de Fotoholo", t)
+                    _telemetry.value = _telemetry.value.copy(
+                        enabled = enabled, bypass = bypass,
+                        nativeWriteError = lastError, nativeCallReturned = false
+                    )
+                    delay(IDLE_MS)
+                }
             }
         }
     }

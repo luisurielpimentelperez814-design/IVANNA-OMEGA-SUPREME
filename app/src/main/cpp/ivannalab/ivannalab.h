@@ -54,6 +54,10 @@ public:
     // Llamar antes de iniciar una nueva sesión de medición.
     void reset();
 
+    // Ajusta la frecuencia de muestreo real de la señal alimentada (no hace nada si no cambia;
+    // si cambia, reinicia la medición). Debe coincidir con la del audio que llega a feed().
+    void setSampleRate(uint32_t sampleRate);
+
     // Alimenta muestras intercaladas [L0,R0, L1,R1, ...] al acumulador.
     // Puede llamarse repetidamente con bloques parciales; los acumuladores
     // internos van creciendo hasta que se llame a measure().

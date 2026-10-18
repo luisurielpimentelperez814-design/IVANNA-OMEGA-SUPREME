@@ -109,15 +109,18 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
         }
 
         val status = when {
+            tel.nativeWriteError != null -> "ERROR DE CONTROL: ${tel.nativeWriteError}"
             !tel.hasSignal -> "Sin señal: activa la captura de audio (Ruta A). Mientras tanto el ancho no se toca."
             !enabled -> "Espectro en vivo · modulación apagada."
             bypass -> "Bypass: suena el ancho que fijaste."
-            else -> "Modulando · agudos abren, graves cierran."
+            tel.readbackConfirmed -> "Modulando · agudos abren, graves cierran · el motor confirma el ancho."
+            else -> "Modulando · esperando confirmación del motor (read-back)."
         }
-        Text(status, color = AuroraCyan, fontSize = 11.sp)
+        Text(status, color = if (tel.nativeWriteError != null) Color(0xFFFF6B6B) else AuroraCyan, fontSize = 11.sp)
         Text(
-            "Ancho tuyo %.2f → aplicado %.2f (Δ %+.3f) · graves %d %% · agudos %d %%".format(
+            "Ancho tuyo %.2f → comando %.2f (Δ %+.3f) · motor %s · graves %d %% · agudos %d %%".format(
                 tel.baseWidth, tel.appliedWidth, tel.offset,
+                if (tel.dspWidth.isFinite()) "%.2f".format(tel.dspWidth) else "—",
                 (tel.features.lowShare * 100).toInt(), (tel.features.highShare * 100).toInt()
             ),
             color = Color(0xFF9AA4B2), fontSize = 11.sp
