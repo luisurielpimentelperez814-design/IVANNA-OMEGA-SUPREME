@@ -9,6 +9,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -178,10 +180,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
-        DSPBridge.init(sr)
-        if (IvannaNativeLib.isLoaded) {
-            runCatching { IvannaNativeLib.nativeInitDSP(sr) }
-            IvannaNativeLib.nativeStartEvoThread()
+        // La inicialización JNI/DSP puede tardar al cargar el motor o despertar
+        // hilos nativos. No bloquear el hilo de UI: hacerlo en IO para evitar
+        // jank/ANR en el primer frame. El sample rate sigue siendo el del HAL.
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { DSPBridge.init(sr) }
+            if (IvannaNativeLib.isLoaded) {
+                runCatching { IvannaNativeLib.nativeInitDSP(sr) }
+                runCatching { IvannaNativeLib.nativeStartEvoThread() }
+            }
         }
         // FIX (root / sin root): elige el backend real de procesado. En
         // dispositivos sin root arranca el camino AudioEffect +
@@ -828,7 +835,7 @@ fun SplashScreen(onAccept: () -> Unit) {
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
             )
             Spacer(Modifier.height(12.dp))
-            Text("GORE TNS · LUPP-OR9 · DSP ENGINE v2.2.0", color = CyanGlow,
+            Text("GORE TNS · LUPP-OR9 · IVANNA OMEGA SUPREME v2.5.72", color = CyanGlow,
                 fontSize = 10.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.height(6.dp))
             Text("PI-LSTM Milenio · Neuro-Cochlear · Volterra H2 · Ω-Atlas",
