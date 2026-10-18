@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.68 (359) — Sincronización documental honesta + read-back del ancho espacial VERIFICADO en host
+
+1. **Read-back del ancho espacial extraído y probado (nuevo):** la fórmula que alimenta `nativeGetSpatialWidthDirect` (`clamp(base × escalaTérmica, 0, 2)`) vivía SOLO dentro de `ivanna_omega_jni.cpp`, que no se compila en host (necesita jni.h/AudioFlinger). Por eso el contrato del que depende `FotoHoloEngine.readbackConfirmed` no tenía NINGUNA prueba. Se extrae a `supreme/SpatialWidthReadback.hpp` (función pura, sin dependencias), el JNI usa exactamente esa función y 8 pruebas de host lo verifican: identidad sin recorte, el recorte térmico SOLO reduce, acotado a [0, 2], monotonía y entradas no finitas seguras.
+2. **Documentación sincronizada a valores MEDIDOS:** `README.md` pasa de `v2.5.16`/Build 307 a `v2.5.68`/Build 359 y su insignia de CTest de 394 a 402; `LÉAME.md` pasa de `v2.4.44`/284 y «211/211» a `v2.5.68`/359 y 402/402. Ninguna insignia queda por encima del conteo real.
+3. **Honestidad de la ruta HRTF/SOFA (explícita en README y LÉAME):** el IR que suena en tiempo de ejecución se **reconstruye desde la base maestra SOFA-PCA**; el archivo `.sofa` se valida por firma HDF5 (8 bytes) pero sus mediciones **no se parsean en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`, `isReconstructedFromMasterBasis() == true`). La decodificación SOFA real en el dispositivo queda **pendiente** y así se declara; no se presenta como medición del archivo.
+4. **Conteo real:** `402/402` CTest en host (Release), medido en esta rama sobre `c93103e6` (394 previos + 8 nuevos del read-back). Telemetría `telemetry/ctest_summary.json` regenerada con el valor medido.
+5. **Por qué 2.5.68:** todo cambio que deba salir como release lleva su `chore(release)` en el mismo commit (regla de 2.5.67), porque un release ya publicado es inmutable y el CI solo dejaría un borrador.
+
+**No verificado aquí:** compilación Kotlin/APK (sin Android SDK; lo cubre el CI) y, sobre todo, **la mejora audible, el A/B y la latencia en un teléfono real**. Los tests de host prueban memoria, lógica y regresión; NO prueban que suene mejor.
+
 # CHANGELOG — v2.5.67 (358) — 4D también en la Ruta B, HRTF alineada en el tiempo con fundido sin clic y Fotoholografía con read-back nativo
 
 1. **Getter JNI real del ancho espacial** (`nativeGetSpatialWidthDirect`, `ivanna_omega_jni.cpp`): devuelve el ancho que `recomputeSpatialWidthLocked()` entregó al `StereoWidener` (base × escala térmica), publicado con release/acquire. Antes el setter era `void` y la UI mostraba el valor pedido como «aplicado». Es el estado del motor, NO una medición de la señal de audio.

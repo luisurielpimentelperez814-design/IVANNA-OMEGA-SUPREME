@@ -1,8 +1,10 @@
 {
-  "passed": 394,
+  "passed": 402,
   "failed": 0,
-  "total": 394,
+  "total": 402,
   "pass_rate_percent": 100.0,
-  "duration_sec": 21.97,
-  "badge_label": "394/394"
+  "duration_sec": 21.69,
+  "badge_label": "402/402",
+  "commit": "c93103e6",
+  "note": "medido en host (Release) via scripts/run_ctest.sh"
 }

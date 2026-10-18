@@ -167,6 +167,7 @@ static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
 // g_cochlearIntensity: nivel wet [0..1] leído en hot-path (relaxed)
 #include "../neuromorphic/CochlearActiveInverseModel.hpp"
 #include "../include/omega_wave_stages.hpp"
+#include "../supreme/SpatialWidthReadback.hpp"
 std::atomic<bool>  g_cochlearEnabled{false};
 std::atomic<float> g_cochlearIntensity{0.35f};
 ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
@@ -959,7 +960,9 @@ static void recomputeCompressorLocked() {
 static void recomputeSpatialWidthLocked() {
     const float scale = std::clamp(g_thermalSpatialScale.load(std::memory_order_relaxed), 0.0f, 1.0f);
     const float base  = g_spatialBaseWidth.load(std::memory_order_relaxed);
-    const float applied = std::clamp(base * scale, 0.0f, 2.0f);
+    // Misma matematica que antes, extraida a supreme/SpatialWidthReadback.hpp para poder
+    // verificar en host el contrato del read-back (ver test_spatial_width_readback).
+    const float applied = ivanna::supreme::SpatialWidthReadback::applied(base, scale);
     g_pd.set_spatial_width(applied);
     g_spatialAppliedWidth.store(applied, std::memory_order_release);
 }
