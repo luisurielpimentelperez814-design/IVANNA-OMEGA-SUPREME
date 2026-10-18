@@ -19,7 +19,7 @@
 
 > 📖 Este archivo es el resumen ejecutivo en español de entrada rápida al proyecto. La documentación arquitectónica exhaustiva con diagramas matemáticos e infografías vectoriales se encuentra en **[README.md](README.md)**.
 
-> 🔎 **Estado verificado (2026-10-18):** tests host **406/406 (100 %)**. Honestidad de la ruta HRTF: el IR que suena se **reconstruye** desde la base maestra SOFA-PCA; el `.sofa` se valida por firma HDF5 pero **no se parsea en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`). Decodificación SOFA real: **pendiente**.
+> 🔎 **Estado verificado (2026-10-18):** tests host **406/406 (100 %)**. Honestidad de la ruta HRTF: el IR que suena se **reconstruye** desde la base maestra SOFA-PCA; el `.sofa` se valida por firma HDF5 pero **no se parsea en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`). Lector HDF5/SOFA en Kotlin (`spatial/sofa/`) verificado en host contra h5py en 212/212 HRIR, **aún sin conectar a la reproducción** (sigue sonando la reconstrucción PCA).
 
 
 ---

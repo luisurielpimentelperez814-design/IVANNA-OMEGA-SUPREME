@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.72 (363) — Lector SOFA/HDF5 real (verificado contra h5py), aún sin conectar a la reproducción
+
+1. **`spatial/sofa/Hdf5File.kt` + `SofaReader.kt` (nuevos, solo JDK, sin dependencias):** lee el `.sofa` de verdad — superbloque v0–v3, cabeceras de objeto v1/v2 con continuaciones, grupos por tabla de símbolos y por enlaces (incluido el almacenamiento DENSO: B-tree v2 de cualquier profundidad + heap fractal con raíz directa o indirecta), datasets compactos/contiguos/troceados (layout v3, B-tree v1) con filtros shuffle/deflate/fletcher32 y atributos de cadena. Lo no soportado lanza `Hdf5FormatException` con el motivo; nunca devuelve datos inventados.
+2. **Verificado contra una implementación independiente, no contra sí mismo:** los valores de referencia salen de h5py/libhdf5. De los 216 `.sofa` de `app/src/main/assets/sofa`, **212 HRIR salen idénticas a h5py** (forma, frecuencia de muestreo, suma de toda la IR y de las posiciones) y **4 SOS sin `Data.IR` se rechazan** con mensaje claro. 8 tests JVM: archivo v0, v2, auriculares con `SourcePosition` 1×3 y atributos densos, el mayor del proyecto (10 MB, 360×2×2048), barrido de los 216, no-HDF5 y truncado.
+3. **Lo que NO cambia:** la reproducción. El IR que suena sigue reconstruyéndose desde la base maestra SOFA-PCA. Conectar este lector a la ruta de audio (selección de la medición más cercana, remuestreo, normalización de nivel, A/B contra la reconstrucción PCA) es el siguiente paso y no se hace sin medir en el dispositivo. README/LÉAME lo dicen así.
+4. **Bug propio descubierto por el barrido:** mi primera validación exigía `SourcePosition` M×3 y rechazaba 200 archivos de auriculares (1×3 según SOFA); ahora se acepta 1×3 y se normaliza a M×3.
+
+**No verificado aquí:** compilación en Android (CI) y uso en el teléfono. Es código nuevo no usado por la app, por lo que no cambia el sonido todavía.
+
 # CHANGELOG — v2.5.71 (362) — La vuelta completa del bucle de audio se mide y, bajo presión, solo se decima lo visual
 
 1. **Hueco encontrado:** `AudioThreadBudgetGuard` cronometra captura→DSP→salida (el «DSP 79 %» de la telemetría), pero tras escribir al AudioTrack el bucle aún alimenta visualizadores, analizadores y medidores ANTES de la siguiente lectura. Ese tramo no se medía. Además `AudioThreadBudgetGuard.canExecute()` no se llama desde ningún sitio: la «degradación controlada» que describe su documentación no estaba conectada.
