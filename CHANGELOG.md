@@ -5,6 +5,9 @@
 3. **`FotoHoloCard`**: muestra el error de control en rojo, «comando» y «motor» por separado, y «confirmado» solo con read-back coherente.
 4. **`FotoHoloMath`**: `slew` ya no invierte el sentido con un paso negativo/no finito y `changed` fuerza la escritura con valores no finitos (+2 tests JVM).
 5. Fusión de `main` (2.5.66): se conserva `SaFOptimizer` con validador, persistencia y RT60 recordado (superconjunto del de main). CTest: 385/385.
+6. **Dosímetro (`ExposureDosimeter`)**: cambiar de criterio (WHO/NIOSH/OSHA) o de calibración reinicia la dosis; antes un 400 % acumulado bajo WHO se mostraba bajo OSHA con 87.6 dB(A). LAeq ya no se queda en el último nivel fuerte tras un silencio.
+7. **IvannaLab**: el analizador global nacía a 96 kHz aunque el motor corre a 48 kHz (IMD 250/8000 Hz, K-weighting y true peak desplazados 2×) → `setSampleRate` + auto-feed con la tasa real. THD/IMD devuelven «no medido» salvo con tono/doble tono de prueba (con música daban 22 %/83 % sin significado). El reporte ya no inventa «Latency: 2 μs (pipeline proxy)» (era el coste de 256 `sin()`).
+8. **`AuroraSlider`**: etiqueta con `weight(1f)` y valor en una línea (el radio cefálico se partía carácter a carácter y se solapaba con la etiqueta).
 
 **No verificado aquí:** compilación Kotlin/APK (sin Android SDK; lo cubre el CI), efecto audible y latencia (solo en dispositivo), Ruta B (daemon) no usa este lazo.
 

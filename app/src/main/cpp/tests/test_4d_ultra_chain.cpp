@@ -358,6 +358,47 @@ TEST(ExposureDosimeter, ExchangeRateTriplesDoseUnderH870) {
     EXPECT_NEAR(d.dose(), 60.0f / 720.0f, 0.02f);
 }
 
+// Capturas de dispositivo: "Dosis 400 %" con LAeq 87.6 dB(A) bajo OSHA. La dosis acumulada bajo
+// WHO (80 dB / 24 min) se arrastraba al cambiar de criterio y topaba en el 400 %.
+TEST(ExposureDosimeter, ChangingCriterionOrCalibrationDiscardsTheStaleDose) {
+    ExposureDosimeter d;
+    d.prepare(kSr);
+    d.setEnabled(true);
+    d.setCalibration(94.0f);
+    d.setMode(0); // WHO
+    const float amp = std::sqrt(2.0f) * std::pow(10.0f, (88.0f - 94.0f) / 20.0f);
+    std::vector<float> s = sine(1000.0f, 4800, amp);
+    for (int i = 0; i < 1200; ++i) d.feed(s.data(), s.data(), 4800); // 2 min a 88 dB(A)
+    ASSERT_GT(d.dose(), 0.5f) << "bajo WHO 88 dB(A) acumula rápido";
+
+    d.setMode(0);                         // mismo criterio: no se toca
+    EXPECT_GT(d.dose(), 0.5f);
+    d.setMode(2);                         // OSHA: otra escala, la dosis WHO no vale
+    EXPECT_FLOAT_EQ(d.dose(), 0.0f);
+
+    for (int i = 0; i < 1200; ++i) d.feed(s.data(), s.data(), 4800);
+    EXPECT_LT(d.dose(), 0.01f) << "2 min a 88 dB(A) bajo OSHA son una fracción mínima del 100 %";
+
+    d.setCalibration(94.0f);              // misma calibración: no se toca
+    EXPECT_GT(d.dose(), 0.0f);
+    d.setCalibration(120.0f);             // otra calibración: la dosis anterior es falsa
+    EXPECT_FLOAT_EQ(d.dose(), 0.0f);
+}
+
+TEST(ExposureDosimeter, LaeqFollowsTheSignalIntoSilenceInsteadOfSticking) {
+    ExposureDosimeter d;
+    d.prepare(kSr);
+    d.setEnabled(true);
+    d.setCalibration(94.0f);
+    const float amp = std::sqrt(2.0f) * std::pow(10.0f, (85.0f - 94.0f) / 20.0f);
+    std::vector<float> loud = sine(1000.0f, 4800, amp);
+    for (int i = 0; i < 30; ++i) d.feed(loud.data(), loud.data(), 4800);
+    ASSERT_NEAR(d.laeqDb(), 85.0f, 1.0f);
+    std::vector<float> z(4800, 0.0f);
+    for (int i = 0; i < 30; ++i) d.feed(z.data(), z.data(), 4800);
+    EXPECT_LT(d.laeqDb(), 40.0f) << "tras el silencio LAeq no puede quedarse en el último nivel fuerte";
+}
+
 TEST(ExposureDosimeter, PeakDetectorFlagsOverloadAndFeedsHaptics) {
     ExposureDosimeter d;
     d.prepare(kSr);

@@ -126,7 +126,7 @@ static OmegaPerceptualGuard g_perceptualGuard;
 
 // IvannaLab — instancia única, alimentada bajo demanda desde nativeLabFeed().
 // No vive en el hot-path de audio de ninguna ruta.
-static ivanna::IvannaLab g_lab(96000, 4096);
+static ivanna::IvannaLab g_lab(48000, 4096);  // se ajusta a la tasa real en el auto-feed
 
 // FASE 2 (NAEL): flag global — definición en audio_control_plane.cpp.
 extern std::atomic<bool> g_nael_enabled;
@@ -1917,6 +1917,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
                 labInter[2 * i]     = l;
                 labInter[2 * i + 1] = r;
             }
+            g_lab.setSampleRate(g_params.sampleRate);
             g_lab.feed(labInter, n);
             g_lab_auto_frame_count.fetch_add(1, std::memory_order_relaxed);
         }
