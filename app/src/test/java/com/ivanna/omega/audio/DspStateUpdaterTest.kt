@@ -8,9 +8,16 @@ package com.ivanna.omega.audio
 
 import org.junit.Test
 import org.junit.Assert.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import android.os.Looper
+import org.robolectric.Shadows.shadowOf
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class DspStateUpdaterTest {
     
     @Test
@@ -22,8 +29,8 @@ class DspStateUpdaterTest {
         updater.requestUpdate(state1)
         updater.requestUpdate(state2)  // Este debería cancelar el anterior
         
-        // Esperar a que se procese
-        Thread.sleep(100)
+        // Avanzar el main looper: el Handler está ligado a él.
+        shadowOf(Looper.getMainLooper()).idleFor(100, TimeUnit.MILLISECONDS)
         
         // Solo state2 debería haberse aplicado
         val lastState = updater.getLastAppliedState()
