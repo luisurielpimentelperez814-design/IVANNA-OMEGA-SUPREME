@@ -145,10 +145,21 @@ fun OemSpatialScreen(
                 TelRow("memory_order", "release/acquire sincronizado", PhosphorGreen)
                 if (!state.hrtfReady) {
                     Spacer(Modifier.height(6.dp))
+                    // La calibración Φ_SAF NO inicializa el renderer (lo hace IvannaSpatialManager.init al
+                    // arrancar); decirlo mandaba al usuario a un panel que no arregla nada. Se muestra el
+                    // motivo real del fallo y se ofrece reintentar.
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
                     Surface(shape = RoundedCornerShape(6.dp), color = AmberSignal.copy(0.12f)) {
-                        Text("Abrir CALIBRACIÓN Φ_SAF para inicializar el renderer HRTF.",
-                            color = AmberSignal, fontSize = 9.sp,
-                            modifier = Modifier.padding(10.dp))
+                        Column(Modifier.padding(10.dp)) {
+                            Text(
+                                "Renderer HRTF no inicializado: " +
+                                    (com.ivanna.omega.spatial.IvannaSpatialManager.initError ?: "inicialización en curso o sin intentar"),
+                                color = AmberSignal, fontSize = 9.sp
+                            )
+                            TextButton(onClick = { com.ivanna.omega.spatial.IvannaSpatialManager.init(ctx.applicationContext) }) {
+                                Text("REINTENTAR", color = AmberSignal, fontSize = 9.sp)
+                            }
+                        }
                     }
                 }
             }

@@ -210,8 +210,8 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
                         append("Head tracking: ${if (headTracking) "activo (ROTATION_VECTOR)" else "inactivo"}\n")
                         append("Spatial width nativo: ${"%.2f".format(spatialWidth)}")
                     } else {
-                        append("IvannaSpatialManager.init() no fue llamado o falló.\n")
-                        append("Abrir CALIBRACIÓN Φ_SAF para inicializar el renderer.")
+                        append("IvannaSpatialManager no está listo: ")
+                        append(IvannaSpatialManager.initError ?: "inicialización en curso o sin intentar")
                     }
                 }
             )

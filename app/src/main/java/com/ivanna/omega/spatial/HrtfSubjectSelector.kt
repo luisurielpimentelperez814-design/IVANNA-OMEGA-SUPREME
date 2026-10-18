@@ -21,7 +21,7 @@ import kotlin.math.sqrt
 object HrtfSubjectSelector {
 
     private const val TAG = "IVANNA.HrtfSubject"
-    private const val DEFAULT_SUBJECT = "kemar"
+    internal const val DEFAULT_SUBJECT = "kemar"
 
     // 12 sujetos deployados en el módulo — verificado 2026-08-26
     val AVAILABLE_SUBJECTS = listOf(
