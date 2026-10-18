@@ -122,6 +122,7 @@ object FotoHoloEngine {
         }
         load(context)
         scope.launch(Dispatchers.Default) {
+            try {
             val buf = FloatArray(FotoHoloMath.BANDS)
             var prev: FloatArray? = null
             var current = Float.NaN
@@ -134,8 +135,8 @@ object FotoHoloEngine {
 
             while (true) {
                 try {
-                    val shouldModulate = enabled && !bypass
-                    val shouldSample = shouldModulate || viewers > 0
+                    val wantsModulation = enabled && !bypass
+                    val shouldSample = wantsModulation || viewers > 0
                     val rawBase = IvannaSpatialEngine.shared.widthFactor
                     val base = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
 
@@ -161,6 +162,10 @@ object FotoHoloEngine {
                         FotoHoloFeatures.NONE
                     }
 
+                    // No enviar cambios al DSP si no hay una trama Bark válida de la captura.
+                    // Si la señal desaparece durante la modulación, el branch de restauración
+                    // de abajo devuelve el ancho base y lo reintenta hasta que JNI responda.
+                    val shouldModulate = wantsModulation && features.valid
                     var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
                     if (shouldModulate) {
                         val target = FotoHoloMath.targetWidth(base, intensity, features)
@@ -212,6 +217,11 @@ object FotoHoloEngine {
                     )
                     delay(IDLE_MS)
                 }
+            }
+            } finally {
+                // El scope propietario puede cancelarse (p. ej. al recrear la pantalla/servicio).
+                // Permitir que una futura llamada a start() vuelva a levantar el lazo.
+                synchronized(this@FotoHoloEngine) { started = false }
             }
         }
     }
