@@ -43,7 +43,7 @@
 
 > 🧑‍💻 **¿Evalúas el trabajo en 5 minutos?** Lee la [Ficha de ingeniería](docs/ENGINEERING.md): cifras medidas, decisiones de diseño, cómo verificarlo y límites honestos.
 
-> 🔎 **Estado verificado (2026-10-18):** la puerta de tests host corre **402/402 (100 %)** en el commit `c93103e6` con esta rama. La HRTF que suena en tiempo de ejecución se **reconstruye desde la base maestra SOFA-PCA**; el archivo `.sofa` se valida por firma HDF5 pero sus mediciones **no se parsean en runtime** (ver `SofaHRTFLoader.hpp`, estado `VALID_NOT_PARSED`). La decodificación real de SOFA en el dispositivo sigue **pendiente**. La mejora audible y la latencia solo se pueden afirmar en hardware real.
+> 🔎 **Estado verificado (2026-10-18):** la puerta de tests host corre **406/406 (100 %)** en el commit `c93103e6` con esta rama. La HRTF que suena en tiempo de ejecución se **reconstruye desde la base maestra SOFA-PCA**; el archivo `.sofa` se valida por firma HDF5 pero sus mediciones **no se parsean en runtime** (ver `SofaHRTFLoader.hpp`, estado `VALID_NOT_PARSED`). La decodificación real de SOFA en el dispositivo sigue **pendiente**. La mejora audible y la latencia solo se pueden afirmar en hardware real.
 
 
 ### 🧭 Matriz de Navegación Rápida
