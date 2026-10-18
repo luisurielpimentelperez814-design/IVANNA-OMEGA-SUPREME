@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.69
-versionCode=360
+version=v2.5.70
+versionCode=361
 author=Luis Uriel Pimentel Pérez (Gore TNS)
 description=v2.5.69 (modelo Anti-Dolby CRNN TFLite restaurado e integro; sincronizacion de release y compuertas de integridad al 100%)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.70 (361) — Colchón de salida de la Ruta A: ataca los underruns/micro-cortes de raíz
+
+1. **Causa encontrada leyendo el bucle de captura (no medida en el teléfono):** el `AudioTrack` arrancaba VACÍO y se alimentaba 1 bloque por bloque capturado, así que la cola real era ~1 bloque (6,7 ms a 320 frames). Cualquier retraso del hilo > 6,7 ms (GC, planificador, decodificador de vídeo) la vaciaba → underrun del HAL → micro-corte. `targetHeadroomFrames` (20 ms) se calculaba pero nada llevaba la cola hasta él, y `MasterTimingController.applyMicroExtension` no se invoca desde ningún sitio.
+2. **`OutputCushionPolicy` (nuevo, lógica pura, 10 tests JVM):** colchón = headroom objetivo acotado a «pista − 2 bloques» (nunca bloquea `WRITE_BLOCKING`); re-llenado SOLO tras un underrun nuevo, con la cola < ½ colchón y con cooldown de 750 ms (una racha de underruns no puede inflar la latencia). Escribe únicamente lo que falta.
+3. **`PlaybackCaptureService`:** la pista se pre-llena con silencio antes de `play()`. Con la reinyección diferencial (`LEGACY_HAAS_MIX=false`) por la pista solo va `procesado − seco`, así que el silencio es la señal neutra: no mete clics ni cambia el timbre; el reinyector ya alinea con la latencia MEDIDA, por lo que no hay peine.
+4. **Mientras hay vídeo la pista ya no se queda sin escribir:** antes quedaba a volumen 0 pero sin datos, y el HAL contaba un underrun por ciclo de mezcla; ahora se alimenta con ceros (mismo silencio, cola lista al reanudar).
+5. **Contador de frames escritos reiniciado** al crear la pista: arrastraba el de la sesión anterior y medía una latencia falsa enorme (disparaba un resync de 1,5 s).
+
+**No verificado aquí:** compilación Kotlin Android/APK (la cubre el CI) y, sobre todo, **que los underruns bajen en un Moto G85**. Cómo comprobarlo: abrir Telemetría, dejar sonar 5 min un tema real y comparar «Underruns Reales HAL» con la versión anterior; `adb logcat -s CaptureEngine` muestra `Colchon de salida` al arrancar y `Colchon repuesto` si aún ocurren. El coste es más latencia de la rama procesada (≈13–20 ms) a cambio de estabilidad.
+
 # CHANGELOG — v2.5.69 (360) — Modelo Anti-Dolby CRNN TFLite íntegro y sincronización de release
 
 1. **Modelo Anti-Dolby CRNN TFLite restaurado e íntegro (`app/src/main/assets/anti_dolby_crnn.tflite`):** la versión histórica del modelo estaba corrupta con 45 552 secuencias U+FFFD (conversión de texto errónea) impidiendo la carga del intérprete en Android. Se regeneró y entrenó un modelo CRNN ligero nativo respetando el contrato estricto del pipeline (`[1, 32, 40, 1]` log-mel spectrogram -> `[1, 4]` softmax: Voz, Música, Bajos, Silencio) con 0 bytes de corrupción y ops TFLite estándar sin dependencias Flex.

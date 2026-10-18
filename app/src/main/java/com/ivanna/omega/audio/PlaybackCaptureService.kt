@@ -30,6 +30,7 @@ import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
 import com.ivanna.omega.audio.engine.AdaptiveLatencyController
 import com.ivanna.omega.audio.engine.MasterTimingController
+import com.ivanna.omega.audio.engine.OutputCushionPolicy
 import com.ivanna.omega.audio.engine.ProfessionalAntiPopEngine
 import com.ivanna.omega.audio.engine.AudioThreadBudgetGuard
 import com.ivanna.omega.audio.engine.PredictiveLoadGovernor
@@ -674,6 +675,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 return false
             }
             adaptiveLatency.configure(SAMPLE_RATE, targetTrackBuf)
+            // COLCHON DE SALIDA: pista nueva => contador a 0 (antes arrastraba el de la sesion anterior y
+            // medía una latencia falsa enorme). Se pre-llena con silencio (señal neutra en la via diferencial)
+            // hasta el headroom objetivo, para que un retraso del hilo > 1 bloque no vacie la cola (underrun).
+            framesWrittenToTrack = 0L
+            lastSeenUnderruns = 0
+            cushionFramesTarget = OutputCushionPolicy.cushionFrames(
+                adaptiveLatency.targetHeadroomFrames, audioTrack?.bufferSizeInFrames ?: 0, BLOCK_FRAMES)
+            val primed = writeSilence(cushionFramesTarget)
+            Log.i(TAG, "Colchon de salida: objetivo=%d frames (%.1f ms), escrito=%d, pista=%d frames".format(
+                cushionFramesTarget, cushionFramesTarget * 1000f / SAMPLE_RATE, primed, audioTrack?.bufferSizeInFrames ?: 0))
             audioRecord?.startRecording()
             audioTrack?.play()
             // MISION HAAS (2026-09-18): punto de medicion "antes" — latencia
@@ -945,9 +956,15 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                             }
                         }
                         writeAllToTrack(outBuf, samplesToWrite)
-                    } else if (!trackMuted) {
-                        trackMuted = true
-                        audioTrack?.setVolume(0.0f)
+                    } else {
+                        if (!trackMuted) {
+                            trackMuted = true
+                            audioTrack?.setVolume(0.0f)
+                        }
+                        // Antes la pista se quedaba SIN escribir mientras había vídeo: el HAL contaba un underrun
+                        // por ciclo de mezcla (cientos/s) y al volver no había colchon. Con volumen 0 se la mantiene
+                        // alimentada con ceros: mismo silencio, cero underruns, cola lista al reanudar.
+                        writeAllToTrack(silenceBuf, samplesToWrite.coerceIn(0, BLOCK_SAMPLES))
                     }
 
                     // Tick de latencia adaptativa (throttled cada 8 bloques para evitar Binder IPC por bloque)
@@ -958,6 +975,22 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                             dspLoadRatio = budgetGuard.dspLoadPercent / 100f,
                             predictiveExtraMarginFrames = predictiveGovernor.suggestedHeadroomMarginFrames
                         )
+                        // Si el HAL se quedó sin datos, repone el colchón (una vez por cooldown, solo lo que falta).
+                        val ur = adaptiveLatency.underrunCount
+                        val newUr = ur - lastSeenUnderruns
+                        lastSeenUnderruns = ur
+                        if (newUr > 0 && cushionFramesTarget > 0) {
+                            val nowR = android.os.SystemClock.elapsedRealtime()
+                            val queuedR = (adaptiveLatency.measuredLatencyMs * SAMPLE_RATE / 1000f).toLong()
+                            val n = OutputCushionPolicy.reprimeFrames(newUr, queuedR, cushionFramesTarget, nowR - lastRepriming)
+                            if (n > 0) {
+                                lastRepriming = nowR
+                                cushionReprimes++
+                                val w = writeSilence(n)
+                                Log.i(TAG, "Colchon repuesto tras %d underrun(s): +%d frames (cola=%d, total reposiciones=%d)"
+                                    .format(newUr, w, queuedR, cushionReprimes))
+                            }
+                        }
                     }
 
                     runCatching { SpatialAudioEngineV2.feedCapturedBlock(buffer, effectiveFrames) }
@@ -1007,6 +1040,25 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 // Siempre corre: loop normal (active=false→no-op) o loop muerto (active=true→reinicio)
                 if (active) onError("Loop de proceso terminado inesperadamente")
             }
+        }
+
+        // Silencio inmutable (nunca se escribe en él): colchon, relleno durante el mute y reposición tras underrun.
+        // 4800 frames = 100 ms (> MAX_HEADROOM_MS).
+        private val silenceBuf = FloatArray(4800 * CHANNEL_COUNT)
+        private var cushionFramesTarget = 0
+        private var lastSeenUnderruns = 0
+        private var lastRepriming = 0L
+        private var cushionReprimes = 0
+
+        /** Escribe hasta [frames] de silencio SIN bloquear y los cuenta en la cola. Devuelve los frames aceptados. */
+        private fun writeSilence(frames: Int): Int {
+            val t = audioTrack ?: return 0
+            val n = minOf(frames, silenceBuf.size / CHANNEL_COUNT)
+            if (n <= 0) return 0
+            val w = t.write(silenceBuf, 0, n * CHANNEL_COUNT, AudioTrack.WRITE_NON_BLOCKING)
+            if (w <= 0) return 0
+            framesWrittenToTrack += w / CHANNEL_COUNT
+            return w / CHANNEL_COUNT
         }
 
         private fun writeAllToTrack(data: FloatArray, totalSamples: Int) {
