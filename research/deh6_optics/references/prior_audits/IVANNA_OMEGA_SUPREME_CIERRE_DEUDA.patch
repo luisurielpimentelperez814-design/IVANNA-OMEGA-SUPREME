@@ -1,0 +1,756 @@
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,21 @@
++# IVANNA OMEGA SUPREME — paquete de saneamiento e integración
++
++Este paquete separa **cambios seguros ya preparados** de **integraciones que no deben fingirse como terminadas**.
++
++- `app/src/main/java/com/ivanna/omega/experimental/`: panel Compose y adaptador a comandos reales existentes del daemon.
++- `cpp/`: guard SAF, coordinador Supersónico y procesador Nanosónico aislado.
++- `tests/`: pruebas host de C++.
++- `scripts/patch_saf_optimizer.py`: parche con validación de anclas, no aplica si el archivo fuente difiere.
++- `scripts/install_disposable_ui.sh`: copia dos archivos nuevos y aplica el saneamiento SAF; no sobrescribe archivos existentes.
++- `docs/INTEGRATION_AND_VERIFICATION.md`: mapa de integración, límites, comandos de prueba y rollback.
++
++## Prueba host
++
++```sh
++c++ -std=c++17 -Wall -Wextra -Werror tests/test_experimental_spatial_audio.cpp -o /tmp/test_experimental_spatial_audio
++/tmp/test_experimental_spatial_audio
++```
++
++## Importante
++
++No es honesto afirmar 100% de integración: el procesador Nanosónico nuevo todavía no está insertado en Route A/Route B y no se ejecutó build Android/NDK ni prueba auditiva de dispositivo en este entorno. El panel productivo sí manda comandos existentes `SET_WFS`, `SET_TEMPORAL_FIELD`, `SET_ROOM_RT60`, `SET_PUNCH` y muestra respuesta del daemon. Revisa las limitaciones antes de activar WFS.
+diff --git a/tests/test_experimental_spatial_audio.cpp b/tests/test_experimental_spatial_audio.cpp
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_experimental_spatial_audio.cpp
+@@ -0,0 +1,52 @@
++#include <cassert>
++#include <cmath>
++#include <cstdint>
++#include <cstring>
++#include <iostream>
++#include "../cpp/SaFCalibrationGuard.hpp"
++#include "../cpp/SupersonicSceneCoordinator.hpp"
++#include "../cpp/NanosonicTransientProcessor.hpp"
++
++int main() {
++    using namespace ivanna::experimental;
++    SaFCalibrationObservation obs{};
++    obs.directionalError = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f};
++    obs.rt60Seconds = 0.45f; obs.drrDb = 5.0f; obs.hasMeasuredFeedback = true;
++    auto a = SaFCalibrationGuard::assess(obs);
++    assert(a.valid && a.hasMeasuredFeedback);
++    assert(std::fabs(a.meanError - 0.3f) < 1e-5f);
++    obs.directionalError[2] = NAN;
++    assert(!SaFCalibrationGuard::assess(obs).valid);
++    obs.directionalError[2] = 0.2f; obs.rt60Seconds = 6.0f;
++    assert(!SaFCalibrationGuard::assess(obs).valid);
++
++    SupersonicControls c{}; c.enabled = true; c.backend = SpatialBackend::PhysicalWfs;
++    c.sceneWidth = 9.0f; c.earlyReflectionMix = NAN;
++    auto plan = SupersonicSceneCoordinator::makePlan(c, false, true);
++    assert(plan.backend == SpatialBackend::BinauralHrtf);
++    assert(plan.sceneWidth == 1.0f && plan.earlyReflectionMix == 0.15f);
++    assert(plan.suppressSecondarySpatializer);
++    plan = SupersonicSceneCoordinator::makePlan(c, false, false);
++    assert(plan.backend == SpatialBackend::DirectStereo);
++    c.enabled = false;
++    plan = SupersonicSceneCoordinator::makePlan(c, true, true);
++    assert(plan.backend == SpatialBackend::DirectStereo && plan.sceneWidth == 0.0f);
++
++    NanosonicTransientProcessor proc;
++    proc.prepare(48000.0f);
++    // Bit-exact bypass includes NaN payload preservation because the processor must not touch buffers.
++    float l[256]{}, r[256]{}; l[20] = r[20] = 0.8f;
++    l[4] = NAN;
++    float originalL[256], originalR[256];
++    std::memcpy(originalL, l, sizeof(l)); std::memcpy(originalR, r, sizeof(r));
++    proc.process(l, r, 256);
++    assert(std::memcmp(originalL, l, sizeof(l)) == 0);
++    assert(std::memcmp(originalR, r, sizeof(r)) == 0);
++    proc.setParams(true, 0.2f, 0.5f);
++    proc.process(l, r, 256);
++    for (int i = 0; i < 256; ++i) assert(std::isfinite(l[i]) && std::isfinite(r[i]));
++    proc.setParams(false, 0.2f, 0.5f);
++    proc.process(l, r, 256); // fade out, remains finite
++    for (int i = 0; i < 256; ++i) assert(std::isfinite(l[i]) && std::isfinite(r[i]));
++    std::cout << "experimental spatial audio tests passed\n";
++}
+diff --git a/docs/INTEGRATION_AND_VERIFICATION.md b/docs/INTEGRATION_AND_VERIFICATION.md
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/docs/INTEGRATION_AND_VERIFICATION.md
+@@ -0,0 +1,60 @@
++# IVANNA OMEGA SUPREME — cierre de deuda, parche y verificación
++
++## Qué sí queda cableado en este paquete
++
++- `DaemonSpatialLabController` usa `OmegaEngineBridge.requestCommand()` en `Dispatchers.IO`, no `sendCommand()` desde el hilo UI (el último puede retornar solo el estado de conexión al encolar). El estado de UI se actualiza con la respuesta del daemon y muestra ACK/status/consumer/generation.
++- WFS usa el comando existente `SET_WFS` (`wfsEnabled`, `wfsSpread`). **WFS solo debe activarse con arreglo físico/geometría calibrados**; no equivale a espacialización binaural en auriculares.
++- Campo temporal usa `SET_TEMPORAL_FIELD` (`temporalEnabled`, `temporalAmount`, `temporalAuto`).
++- Sala usa `SET_ROOM_RT60` (`rt60`, `wet`, `idx`).
++- Ataque/impacto usa `SET_PUNCH` existente. La UI lo etiqueta como tal: no afirma que el nuevo procesador Nanosónico esté ya insertado en audio.
++- El parche SAF rechaza cinco energías inválidas, deja de seleccionar sujetos HRTF por round-robin, deja de escribir un target latente artificialmente cero y no confunde `paramNorm` con tasa de convergencia.
++- El procesador Nanosónico autónomo mejora el bypass: cuando está desactivado y sin cola de fade, no escribe al búfer (bit-exact bypass).
++
++## Integración de la pantalla
++
++La app tiene múltiples rutas y no se ha adivinado un destino de navegación. El paquete incluye `ExperimentalSpatialLabScreen()` que crea/cierra el controlador y llama `refreshConnection()` al entrar. Añade esa pantalla como destino en el grafo de navegación ya existente; no inventes una segunda navegación paralela. Si el proyecto usa ViewModel para pantallas, migra el ciclo de vida del controlador al ViewModel antes de producción.
++
++## Limitaciones que siguen siendo reales
++
++1. El nuevo `NanosonicTransientProcessor.hpp` aún no es consumido por `IvannaFusionCore` ni por la Ruta A JNI. No se le atribuye efecto audible desde la UI. El control Punch sí es un control real del motor existente, pero no sustituye el nuevo DSP.
++2. El selector de backend Supersónico en el prototipo de investigación no detecta por sí solo hardware. La pantalla productiva expone el WFS existente, no miente sobre HRTF medido ni sobre WFS físico disponible.
++3. Los comandos del daemon pueden responder `accepted_pending_consumer`; esto no equivale a confirmación de que el bloque DSP ya cambió. La UI enseña el estado de respuesta para distinguirlo.
++4. El target SAF personalizado no puede calcularse solo con cinco números de error sin un modelo validado de mapeo a siete coordenadas. El parche elimina el target cero artificial, pero la personalización real requiere feedback medido y una fuente de target definida.
++5. No se han podido compilar APK/NDK ni ejecutar el daemon en hardware desde este entorno. No declarar producción ni “1000%” hasta correr las verificaciones abajo.
++
++## Pruebas ejecutables incluidas
++
++```sh
++c++ -std=c++17 -Wall -Wextra -Werror tests/test_experimental_spatial_audio.cpp -o /tmp/test_experimental_spatial_audio
++/tmp/test_experimental_spatial_audio
++```
++
++En el checkout real, además ejecutar:
++
++```sh
++./gradlew :app:assembleDebug
++./gradlew :app:testDebugUnitTest
++# Ejecutar los scripts si existen en este checkout:
++python3 scripts/check_jni_wiring.py
++python3 scripts/check_header_wiring.py
++python3 scripts/check_rt_safety.py
++python3 scripts/check_build_flags.py
++ctest --test-dir <directorio-build-host> --output-on-failure
++```
++
++Las rutas/targets pueden variar en el checkout; no omitir los que no existan sin registrar la razón. Probar en dos rutas (app/JNI y efecto de sistema) y comprobar: ACK del daemon, consumer activo, bypass, no clipping/true peak, latencia, transiciones sin clic, y A/B ciego con nivel igualado.
++
++## Matriz de estado
++
++| Área | Estado del paquete | Evidencia necesaria para producción |
++|---|---|---|
++| WFS / temporal / sala / Punch UI → daemon | Adaptador implementado sobre comandos existentes | ACK `applied`, consumer activo y cambio observado en DSP |
++| SAF calibración | Parche de saneamiento preparado | Build Android, tests SAF y datos reales de calibración |
++| HRTF personalizado | No declarado cerrado | ID del dataset validado y aplicado al renderer real |
++| Nanosonic DSP | Header standalone probado; no insertado en ruta productiva | Integración en Route A/B, control plane, telemetría, RT-safety y pruebas de audio |
++| Supersonic coordinator | Lógica de planificación aislada | Integración con una sola autoridad espacial por ruta y hardware real |
++| Percepción/beneficio | No declarado | Prueba A/B ciega, nivel igualado y métricas predefinidas |
++
++## Rollback
++
++Los archivos son aditivos. Para retirar la UI, eliminar `app/src/main/java/com/ivanna/omega/experimental/DaemonSpatialLabController.kt` y `DaemonSpatialLabPanel.kt`; para revertir el saneamiento SAF, restaurar el archivo desde Git. Los headers nuevos no están conectados a producción por defecto.
+diff --git a/docs/TEST_RESULTS.txt b/docs/TEST_RESULTS.txt
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/docs/TEST_RESULTS.txt
+@@ -0,0 +1,3 @@
++Command: c++ -std=c++17 -Wall -Wextra -Werror tests/test_experimental_spatial_audio.cpp -o /tmp/test_experimental_spatial_audio
++Result: PASS
++Output: experimental spatial audio tests passed
+diff --git a/cpp/SaFCalibrationGuard.hpp b/cpp/SaFCalibrationGuard.hpp
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/cpp/SaFCalibrationGuard.hpp
+@@ -0,0 +1,50 @@
++#pragma once
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstddef>
++
++namespace ivanna::experimental {
++
++// Experimental guard: validates observations before they reach the production optimizer.
++// It does not claim that a low parameter norm means perceptual convergence.
++struct SaFCalibrationObservation {
++    std::array<float, 5> directionalError{}; // front/rear/left/right/up, normalized [0,1]
++    float rt60Seconds = 0.3f;
++    float drrDb = 6.0f;
++    bool hasMeasuredFeedback = false;
++};
++
++struct SaFCalibrationAssessment {
++    bool valid = false;
++    bool hasMeasuredFeedback = false;
++    float meanError = 1.0f;
++    float maxDirectionalError = 1.0f;
++    float rt60Seconds = 0.3f;
++    float drrDb = 6.0f;
++};
++
++class SaFCalibrationGuard final {
++public:
++    static SaFCalibrationAssessment assess(const SaFCalibrationObservation& in) noexcept {
++        SaFCalibrationAssessment out{};
++        if (!std::isfinite(in.rt60Seconds) || !std::isfinite(in.drrDb) ||
++            in.rt60Seconds < 0.0f || in.rt60Seconds > 5.0f ||
++            in.drrDb < -30.0f || in.drrDb > 30.0f) return out;
++        float sum = 0.0f, maximum = 0.0f;
++        for (float e : in.directionalError) {
++            if (!std::isfinite(e) || e < 0.0f || e > 1.0f) return out;
++            sum += e;
++            maximum = std::max(maximum, e);
++        }
++        out.valid = true;
++        out.hasMeasuredFeedback = in.hasMeasuredFeedback;
++        out.meanError = sum / static_cast<float>(in.directionalError.size());
++        out.maxDirectionalError = maximum;
++        out.rt60Seconds = in.rt60Seconds;
++        out.drrDb = in.drrDb;
++        return out;
++    }
++};
++
++} // namespace ivanna::experimental
+diff --git a/cpp/NanosonicTransientProcessor.hpp b/cpp/NanosonicTransientProcessor.hpp
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/cpp/NanosonicTransientProcessor.hpp
+@@ -0,0 +1,53 @@
++#pragma once
++#include <algorithm>
++#include <cmath>
++
++namespace ivanna::experimental {
++
++// Small, bounded transient shaper for A/B research. Audio-thread safe: no allocation,
++// mutex, I/O or dynamic dispatch. It is not an ultrasonic processor; it works in-band.
++class NanosonicTransientProcessor final {
++public:
++    void prepare(float sampleRate) noexcept {
++        sr_ = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
++        attack_ = 1.0f - std::exp(-1.0f / (0.002f * sr_));
++        release_ = 1.0f - std::exp(-1.0f / (0.060f * sr_));
++        reset();
++    }
++    void reset() noexcept { envL_ = envR_ = prevL_ = prevR_ = 0.0f; fade_ = 0.0f; }
++    void setParams(bool enabled, float amount, float wet) noexcept {
++        enabled_ = enabled;
++        amount_ = std::isfinite(amount) ? std::clamp(amount, 0.0f, 0.35f) : 0.0f;
++        wet_ = std::isfinite(wet) ? std::clamp(wet, 0.0f, 1.0f) : 0.0f;
++    }
++    bool isActive() const noexcept { return enabled_ || fade_ > 0.0f; }
++    void process(float* left, float* right, int n) noexcept {
++        if (!left || !right || n <= 0) return;
++        // Contract: fully disabled means bit-exact bypass (no sanitization or writes).
++        if (!enabled_ && fade_ <= 0.0f) return;
++        const float fadeStep = 1.0f / (0.020f * sr_);
++        for (int i = 0; i < n; ++i) {
++            fade_ = enabled_ ? std::min(1.0f, fade_ + fadeStep) : std::max(0.0f, fade_ - fadeStep);
++            const float xL = std::isfinite(left[i]) ? left[i] : 0.0f;
++            const float xR = std::isfinite(right[i]) ? right[i] : 0.0f;
++            const float dL = xL - prevL_, dR = xR - prevR_;
++            prevL_ = xL; prevR_ = xR;
++            const float aL = std::fabs(dL), aR = std::fabs(dR);
++            envL_ += (aL > envL_ ? attack_ : release_) * (aL - envL_);
++            envR_ += (aR > envR_ ? attack_ : release_) * (aR - envR_);
++            // Boost only the transient residual; clamp to avoid runaway peaks.
++            const float tL = std::clamp(dL * amount_ * std::min(1.0f, envL_ * 8.0f), -0.25f, 0.25f);
++            const float tR = std::clamp(dR * amount_ * std::min(1.0f, envR_ * 8.0f), -0.25f, 0.25f);
++            const float yL = xL + wet_ * tL, yR = xR + wet_ * tR;
++            left[i] = xL + fade_ * (yL - xL);
++            right[i] = xR + fade_ * (yR - xR);
++        }
++    }
++private:
++    float sr_ = 48000.0f, attack_ = 0.0f, release_ = 0.0f;
++    float envL_ = 0.0f, envR_ = 0.0f, prevL_ = 0.0f, prevR_ = 0.0f;
++    float amount_ = 0.0f, wet_ = 0.0f, fade_ = 0.0f;
++    bool enabled_ = false;
++};
++
++} // namespace ivanna::experimental
+diff --git a/cpp/SupersonicSceneCoordinator.hpp b/cpp/SupersonicSceneCoordinator.hpp
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/cpp/SupersonicSceneCoordinator.hpp
+@@ -0,0 +1,64 @@
++#pragma once
++#include <algorithm>
++#include <cmath>
++
++namespace ivanna::experimental {
++
++enum class SpatialBackend { BinauralHrtf, PhysicalWfs, Ambisonics, DirectStereo };
++
++struct SupersonicControls {
++    bool enabled = false;
++    SpatialBackend backend = SpatialBackend::BinauralHrtf;
++    float sceneWidth = 0.35f;       // [0,1]
++    float externalization = 0.35f;  // [0,1]
++    float earlyReflectionMix = 0.15f; // [0,0.5]
++    float lateFieldMix = 0.10f;     // [0,0.5]
++    float transitionMs = 80.0f;     // [20,500]
++};
++
++struct SupersonicRenderPlan {
++    bool enabled = false;
++    SpatialBackend backend = SpatialBackend::DirectStereo;
++    float sceneWidth = 0.0f;
++    float externalization = 0.0f;
++    float earlyReflectionMix = 0.0f;
++    float lateFieldMix = 0.0f;
++    float transitionMs = 80.0f;
++    bool suppressSecondarySpatializer = true;
++};
++
++inline float finiteClamp(float v, float lo, float hi, float fallback) noexcept {
++    return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
++}
++
++// Control-plane only. The caller applies the plan at a block boundary and performs
++// the fade in the audio engine; never allocate or lock from the audio callback.
++class SupersonicSceneCoordinator final {
++public:
++    static SupersonicRenderPlan makePlan(const SupersonicControls& c,
++                                         bool physicalWfsAvailable,
++                                         bool measuredHrtfAvailable) noexcept {
++        SupersonicRenderPlan p{};
++        p.enabled = c.enabled;
++        p.backend = c.backend;
++        p.sceneWidth = finiteClamp(c.sceneWidth, 0.0f, 1.0f, 0.35f);
++        p.externalization = finiteClamp(c.externalization, 0.0f, 1.0f, 0.35f);
++        p.earlyReflectionMix = finiteClamp(c.earlyReflectionMix, 0.0f, 0.5f, 0.15f);
++        p.lateFieldMix = finiteClamp(c.lateFieldMix, 0.0f, 0.5f, 0.10f);
++        p.transitionMs = finiteClamp(c.transitionMs, 20.0f, 500.0f, 80.0f);
++        // Never silently label headphone binauralization as physical WFS.
++        if (p.backend == SpatialBackend::PhysicalWfs && !physicalWfsAvailable)
++            p.backend = measuredHrtfAvailable ? SpatialBackend::BinauralHrtf : SpatialBackend::DirectStereo;
++        if (p.backend == SpatialBackend::BinauralHrtf && !measuredHrtfAvailable)
++            p.backend = SpatialBackend::DirectStereo;
++        if (!p.enabled) {
++            p.backend = SpatialBackend::DirectStereo;
++            p.sceneWidth = p.externalization = p.earlyReflectionMix = p.lateFieldMix = 0.0f;
++        }
++        // One owner of spatialization per route; RIR may add reflections, not a second panner.
++        p.suppressSecondarySpatializer = true;
++        return p;
++    }
++};
++
++} // namespace ivanna::experimental
+diff --git a/scripts/patch_saf_optimizer.py b/scripts/patch_saf_optimizer.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/scripts/patch_saf_optimizer.py
+@@ -0,0 +1,68 @@
++#!/usr/bin/env python3
++"""Apply conservative SAF correctness fixes; aborts if source anchors differ."""
++from pathlib import Path
++import sys
++p = Path(sys.argv[1] if len(sys.argv) > 1 else "app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt")
++s = p.read_text(encoding="utf-8")
++changes = [
++(""" * paramNorm     : norma del vector de parámetros ‖p_t‖ (convergencia)
++ * errorEnergy   : energía de error cuadrático E_t en la iteración actual
++""", """ * paramNorm     : métrica publicada por SAFCore.getState()[1]; no equivale por sí sola a convergencia
++ * errorEnergy   : media de los cinco errores direccionales aportados por la calibración
++"""),
++("""    // Tabla mínima de sujetos conocidos (subset CIPIC + MIT).
++    // El matching real usará distancia euclidiana sobre head-width / head-depth;
++    // por ahora la selección es round-robin sobre esta lista durante la calib.
++    // FIX (descableado): IDs corregidos contra el índice IHR1 real
++    // (magisk_module/.../hrtf/hrtf_index.json, 11 sujetos deployados).
++    // Los anteriores (kemar_subject_165, subject_003/008/009/010/011) no
++    // existen en ningún build — selectedSubject solo se consume en el log
++    // de este archivo (no llega a JNI ni afecta audio), pero corregirlo
++    // evita confusión al leer logs de calibración.
++    private val KNOWN_SUBJECTS = listOf(
++        // IDs reales del hrtf_index.json deployado (magisk_module/.../hrtf).
++        "kemar", "kemar_large", "tu_berlin_kemar",
++        "cipic_003", "cipic_008", "cipic_009",
++        "cipic_010", "cipic_011", "cipic_012", "cipic_165", "pulse"
++    )
++
++""", ""),
++("""            // Seleccionar sujeto: round-robin en calibración inicial.
++            val subjectIdx = newIteration % KNOWN_SUBJECTS.size
++            val subject    = KNOWN_SUBJECTS[subjectIdx]
++""", """            // Reportar el sujeto realmente seleccionado por el motor espacial; no simular personalización.
++            val subject = runCatching { IvannaSpatialManager.currentHrtfSubject() }
++                .getOrDefault("")
++"""),
++("""            // Target en el espacio latente SAF-Room: dirección de menor error
++            // Proxy: vector cero (KEMAR medio) cuando sin datos de calibración
++            SaFRoomBridge.setTarget(FloatArray(7) { 0.0f })
++            // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
++""", """            // No sobrescribir el target con cero: no existe una conversión validada
++            // de los cinco errores direccionales a un target SOFA latente 7-D.
++            // SaFRoomBridge conserva el target/modelo ya configurado y esta calibración
++            // debe considerarse proxy hasta que exista feedback medido por dirección.
++            // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
++"""),
++("""                convergenceRate = if (st.iteration > 0) st.paramNorm else 1.0f
++""", """                // paramNorm procede de SAFCore.getState()[1], no es residual medido.
++                // No alimentar ese valor como tasa de convergencia perceptual.
++                convergenceRate = 1.0f
++"""),
++("""    fun runCalibrationStep(directionEnergies: FloatArray) {
++        scope.launch {
++""", """    fun runCalibrationStep(directionEnergies: FloatArray) {
++        // El contrato documentado es exactamente cinco errores normalizados [0,1].
++        if (directionEnergies.size != 5 || directionEnergies.any { !it.isFinite() || it < 0f || it > 1f }) {
++            Log.w(TAG, "Calibración rechazada: se requieren cinco errores finitos en [0,1]")
++            return
++        }
++        scope.launch {
++""")]
++for old,new in changes:
++    if old not in s:
++        print("ERROR: source anchor not found; no changes applied:", old.splitlines()[0], file=sys.stderr)
++        sys.exit(2)
++    s=s.replace(old,new,1)
++p.write_text(s,encoding="utf-8")
++print("Applied 6 conservative SAF fixes to",p)
+diff --git a/scripts/install_disposable_ui.sh b/scripts/install_disposable_ui.sh
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/scripts/install_disposable_ui.sh
+@@ -0,0 +1,12 @@
++#!/usr/bin/env bash
++set -euo pipefail
++REPO="${1:-.}"
++SRC="$(cd "$(dirname "$0")/.." && pwd)"
++TARGET="$REPO/app/src/main/java/com/ivanna/omega/experimental"
++mkdir -p "$TARGET"
++for f in DaemonSpatialLabController.kt DaemonSpatialLabPanel.kt; do
++  if [[ -e "$TARGET/$f" ]]; then echo "Refusing to overwrite $TARGET/$f" >&2; exit 3; fi
++  cp "$SRC/app/src/main/java/com/ivanna/omega/experimental/$f" "$TARGET/$f"
++done
++python3 "$SRC/scripts/patch_saf_optimizer.py" "$REPO/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt"
++echo "Files copied and SAF patch applied. Add DaemonSpatialLabPanel(controller) to a reachable Compose route; see docs/INTEGRATION_AND_VERIFICATION.md."
+diff --git a/app/src/main/java/com/ivanna/omega/experimental/ExperimentalSpatialLabScreen.kt b/app/src/main/java/com/ivanna/omega/experimental/ExperimentalSpatialLabScreen.kt
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/experimental/ExperimentalSpatialLabScreen.kt
+@@ -0,0 +1,17 @@
++package com.ivanna.omega.experimental
++
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.LaunchedEffect
++import androidx.compose.runtime.remember
++
++/** Standalone screen target to add to the app's existing navigation graph. */
++@Composable
++fun ExperimentalSpatialLabScreen() {
++    val controller = remember { DaemonSpatialLabController() }
++    DisposableEffect(controller) {
++        onDispose { controller.close() }
++    }
++    LaunchedEffect(controller) { controller.refreshConnection() }
++    DaemonSpatialLabPanel(controller = controller)
++}
+diff --git a/app/src/main/java/com/ivanna/omega/experimental/DaemonSpatialLabController.kt b/app/src/main/java/com/ivanna/omega/experimental/DaemonSpatialLabController.kt
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/experimental/DaemonSpatialLabController.kt
+@@ -0,0 +1,151 @@
++package com.ivanna.omega.experimental
++
++import com.ivanna.omega.magisk.OmegaEngineBridge
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.cancel
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.launch
++import org.json.JSONObject
++
++/**
++ * UI adapter for control-plane commands already implemented by the daemon.
++ * Every status update is based on a daemon reply; a queued UI value is not called "applied".
++ * This adapter controls existing WFS/temporal-field/room/punch commands. It does NOT
++ * pretend the new standalone NanosonicTransientProcessor is connected to Route A/B.
++ */
++class DaemonSpatialLabController : AutoCloseable {
++    data class State(
++        val wfsEnabled: Boolean = false,
++        val wfsSpread: Float = 0.5f,
++        val temporalEnabled: Boolean = false,
++        val temporalAmount: Float = 0f,
++        val roomRt60Seconds: Float = 0.3f,
++        val roomWet: Float = 0f,
++        val punchAmount: Float = 0f,
++        val daemonConnected: Boolean = false,
++        val lastCommand: String = "—",
++        val lastAck: Boolean? = null,
++        val generation: Long = 0L,
++        val consumer: String = "unknown",
++        val status: String = "Sin comprobar: esperando el primer comando"
++    )
++
++    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++    private val _state = MutableStateFlow(State())
++    val state: StateFlow<State> = _state.asStateFlow()
++    private val jobs = mutableMapOf<String, Job>()
++
++    fun refreshConnection() = submit("GET_ROOM_STATUS", JSONObject().put("action", "GET_ROOM_STATUS"), update = { s, r ->
++        s.copy(daemonConnected = r.optBoolean("ok", false), status = replyStatus(r, "HELLO"))
++    })
++
++    fun setWfsEnabled(enabled: Boolean) {
++        _state.value = _state.value.copy(wfsEnabled = enabled)
++        sendLatest("SET_WFS", JSONObject().put("action", "SET_WFS")
++            .put("wfsEnabled", if (enabled) 1 else 0).put("wfsSpread", _state.value.wfsSpread)) { s, r ->
++            s.copy(wfsEnabled = r.optBoolean("ok", false) && enabled,
++                daemonConnected = true, status = replyStatus(r, "SET_WFS"))
++        }
++    }
++
++    fun setWfsSpread(value: Float) {
++        val v = finiteClamp(value, 0f, 2f, 0.5f)
++        _state.value = _state.value.copy(wfsSpread = v)
++        sendLatest("SET_WFS", JSONObject().put("action", "SET_WFS")
++            .put("wfsEnabled", if (_state.value.wfsEnabled) 1 else 0).put("wfsSpread", v)) { s, r ->
++            s.copy(daemonConnected = true, status = replyStatus(r, "SET_WFS"))
++        }
++    }
++
++    fun setTemporalEnabled(enabled: Boolean) {
++        _state.value = _state.value.copy(temporalEnabled = enabled)
++        sendLatest("SET_TEMPORAL_FIELD", temporalPayload(enabled, _state.value.temporalAmount)) { s, r ->
++            s.copy(temporalEnabled = r.optBoolean("ok", false) && enabled,
++                daemonConnected = true, status = replyStatus(r, "SET_TEMPORAL_FIELD"))
++        }
++    }
++
++    fun setTemporalAmount(value: Float) {
++        val v = finiteClamp(value, 0f, 1f, 0f)
++        _state.value = _state.value.copy(temporalAmount = v)
++        sendLatest("SET_TEMPORAL_FIELD", temporalPayload(_state.value.temporalEnabled, v)) { s, r ->
++            s.copy(daemonConnected = true, status = replyStatus(r, "SET_TEMPORAL_FIELD"))
++        }
++    }
++
++    fun setRoom(rt60Seconds: Float = _state.value.roomRt60Seconds, wet: Float = _state.value.roomWet) {
++        val rt = finiteClamp(rt60Seconds, 0.18f, 1.8f, 0.3f)
++        val w = finiteClamp(wet, 0f, 1f, 0f)
++        _state.value = _state.value.copy(roomRt60Seconds = rt, roomWet = w)
++        sendLatest("SET_ROOM_RT60", JSONObject().put("action", "SET_ROOM_RT60")
++            .put("rt60", rt).put("wet", w).put("idx", -1)) { s, r ->
++            s.copy(daemonConnected = true, status = replyStatus(r, "SET_ROOM_RT60"))
++        }
++    }
++
++    /** Uses the existing SET_PUNCH effect as an honest attack/impact proxy, not the new custom processor. */
++    fun setPunchAmount(value: Float) {
++        val v = finiteClamp(value, 0f, 1f, 0f)
++        _state.value = _state.value.copy(punchAmount = v)
++        sendLatest("SET_PUNCH", JSONObject().put("action", "SET_PUNCH").put("punchAmount", v)) { s, r ->
++            s.copy(daemonConnected = true, status = replyStatus(r, "SET_PUNCH"))
++        }
++    }
++
++    fun resetSafeDefaults() {
++        _state.value = _state.value.copy(wfsEnabled = false, temporalEnabled = false,
++            temporalAmount = 0f, roomWet = 0f, punchAmount = 0f)
++        setWfsEnabled(false)
++        setTemporalEnabled(false)
++        setTemporalAmount(0f)
++        setRoom(wet = 0f)
++        setPunchAmount(0f)
++    }
++
++    private fun temporalPayload(enabled: Boolean, amount: Float) = JSONObject()
++        .put("action", "SET_TEMPORAL_FIELD")
++        .put("temporalEnabled", if (enabled) 1 else 0)
++        .put("temporalAmount", finiteClamp(amount, 0f, 1f, 0f))
++        .put("temporalAuto", 0)
++
++    private fun sendLatest(action: String, payload: JSONObject, update: (State, JSONObject) -> State) {
++        jobs[action]?.cancel()
++        jobs[action] = scope.launch {
++            val reply = runCatching { OmegaEngineBridge.requestCommand(payload) }.getOrNull()
++            if (reply == null) {
++                _state.value = _state.value.copy(daemonConnected = false, lastCommand = action,
++                    lastAck = false, status = "$action: sin respuesta del daemon; no se confirma aplicación")
++                return@launch
++            }
++            val ok = reply.optBoolean("ok", false)
++            val applied = reply.optBoolean("applied", ok)
++            val generation = reply.optLong("generation", reply.optLong("gen", _state.value.generation))
++            val consumer = reply.optString("consumer", "unknown")
++            _state.value = update(_state.value, reply).copy(lastCommand = action,
++                lastAck = ok && applied, generation = generation, consumer = consumer,
++                daemonConnected = true, status = replyStatus(reply, action))
++        }
++    }
++
++    private fun submit(action: String, payload: JSONObject, update: (State, JSONObject) -> State) =
++        sendLatest(action, payload, update)
++
++    override fun close() { jobs.values.forEach { it.cancel() }; scope.cancel() }
++
++    private fun replyStatus(reply: JSONObject, action: String): String {
++        val ok = reply.optBoolean("ok", false)
++        val applied = reply.optBoolean("applied", ok)
++        val status = reply.optString("status", if (applied) "applied" else "rejected/unknown")
++        val consumer = reply.optString("consumer", "unknown")
++        val generation = reply.optLong("generation", -1L)
++        return "$action · ${if (ok && applied) "ACK" else "sin ACK de aplicación"} · $status · consumer=$consumer · gen=$generation"
++    }
++
++    private fun finiteClamp(v: Float, min: Float, max: Float, fallback: Float) =
++        if (v.isFinite()) v.coerceIn(min, max) else fallback
++}
+diff --git a/app/src/main/java/com/ivanna/omega/experimental/DaemonSpatialLabPanel.kt b/app/src/main/java/com/ivanna/omega/experimental/DaemonSpatialLabPanel.kt
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/app/src/main/java/com/ivanna/omega/experimental/DaemonSpatialLabPanel.kt
+@@ -0,0 +1,77 @@
++package com.ivanna.omega.experimental
++
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.padding
++import androidx.compose.material3.Button
++import androidx.compose.material3.Card
++import androidx.compose.material3.HorizontalDivider
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Slider
++import androidx.compose.material3.Switch
++import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.collectAsState
++import androidx.compose.runtime.getValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++
++/** Panel for already-existing daemon commands. WFS requires a calibrated speaker array. */
++@Composable
++fun DaemonSpatialLabPanel(controller: DaemonSpatialLabController, modifier: Modifier = Modifier) {
++    val s by controller.state.collectAsState()
++    Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++        Text("IVANNA · Laboratorio espacial", style = MaterialTheme.typography.titleLarge)
++        Text("Controles existentes del daemon · los ACK reflejan la respuesta de control, no una prueba perceptual", style = MaterialTheme.typography.bodySmall)
++        Card(Modifier.fillMaxWidth()) {
++            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                    Text("WFS · arreglo físico calibrado")
++                    Switch(checked = s.wfsEnabled, onCheckedChange = controller::setWfsEnabled)
++                }
++                Text("Spread WFS: ${"%.2f".format(s.wfsSpread)}")
++                Slider(value = s.wfsSpread, onValueChange = controller::setWfsSpread, valueRange = 0f..2f)
++                Text("Activa WFS solo con la geometría y el arreglo de altavoces correctos.", style = MaterialTheme.typography.bodySmall)
++            }
++        }
++        HorizontalDivider()
++        Card(Modifier.fillMaxWidth()) {
++            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                    Text("Campo temporal")
++                    Switch(checked = s.temporalEnabled, onCheckedChange = controller::setTemporalEnabled)
++                }
++                Text("Cantidad: ${"%.2f".format(s.temporalAmount)}")
++                Slider(value = s.temporalAmount, onValueChange = controller::setTemporalAmount, valueRange = 0f..1f, enabled = s.temporalEnabled)
++            }
++        }
++        HorizontalDivider()
++        Card(Modifier.fillMaxWidth()) {
++            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Text("Sala RIR existente")
++                Text("RT60: ${"%.2f".format(s.roomRt60Seconds)} s")
++                Slider(value = s.roomRt60Seconds, onValueChange = { controller.setRoom(rt60Seconds = it) }, valueRange = 0.18f..1.8f)
++                Text("Wet: ${"%.2f".format(s.roomWet)}")
++                Slider(value = s.roomWet, onValueChange = { controller.setRoom(wet = it) }, valueRange = 0f..1f)
++            }
++        }
++        HorizontalDivider()
++        Card(Modifier.fillMaxWidth()) {
++            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                Text("Ataque / impacto · SET_PUNCH existente")
++                Text("Cantidad: ${"%.2f".format(s.punchAmount)}")
++                Slider(value = s.punchAmount, onValueChange = controller::setPunchAmount, valueRange = 0f..1f)
++                Text("Esto controla el motor Punch existente; no equivale a tener el nuevo NanosonicTransientProcessor integrado.", style = MaterialTheme.typography.bodySmall)
++            }
++        }
++        Text("Daemon: ${if (s.daemonConnected) "conectado" else "sin confirmar"} · último comando: ${s.lastCommand} · ACK: ${s.lastAck} · consumer: ${s.consumer} · generación: ${s.generation}", style = MaterialTheme.typography.bodySmall)
++        Text(s.status, style = MaterialTheme.typography.bodySmall)
++        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++            Button(onClick = controller::refreshConnection) { Text("Comprobar daemon") }
++            TextButton(onClick = controller::resetSafeDefaults) { Text("Valores seguros") }
++        }
++    }
++}
+
+diff --git a/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt b/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt
+--- a/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt
++++ b/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt
+@@ -19,2 +19,2 @@
+- * paramNorm     : norma del vector de parámetros ‖p_t‖ (convergencia)
+- * errorEnergy   : energía de error cuadrático E_t en la iteración actual
++ * paramNorm     : métrica publicada por SAFCore.getState()[1]; no equivale por sí sola a convergencia
++ * errorEnergy   : media de los cinco errores direccionales aportados por la calibración
+diff --git a/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt b/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt
+--- a/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt
++++ b/app/src/main/java/com/ivanna/omega/spatial/SaFOptimizer.kt
+@@ -51,16 +51,0 @@
+-    // Tabla mínima de sujetos conocidos (subset CIPIC + MIT).
+-    // El matching real usará distancia euclidiana sobre head-width / head-depth;
+-    // por ahora la selección es round-robin sobre esta lista durante la calib.
+-    // FIX (descableado): IDs corregidos contra el índice IHR1 real
+-    // (magisk_module/.../hrtf/hrtf_index.json, 11 sujetos deployados).
+-    // Los anteriores (kemar_subject_165, subject_003/008/009/010/011) no
+-    // existen en ningún build — selectedSubject solo se consume en el log
+-    // de este archivo (no llega a JNI ni afecta audio), pero corregirlo
+-    // evita confusión al leer logs de calibración.
+-    private val KNOWN_SUBJECTS = listOf(
+-        // IDs reales del hrtf_index.json deployado (magisk_module/.../hrtf).
+-        "kemar", "kemar_large", "tu_berlin_kemar",
+-        "cipic_003", "cipic_008", "cipic_009",
+-        "cipic_010", "cipic_011", "cipic_012", "cipic_165", "pulse"
+-    )
+-
+@@ -107,2 +91,7 @@
+     fun runCalibrationStep(directionEnergies: FloatArray) {
++        // El contrato documentado es exactamente cinco errores normalizados [0,1].
++        if (directionEnergies.size != 5 || directionEnergies.any { !it.isFinite() || it < 0f || it > 1f }) {
++            Log.w(TAG, "Calibración rechazada: se requieren cinco errores finitos en [0,1]")
++            return
++        }
+         scope.launch {
+@@ -128,3 +117,2 @@
+-            // Seleccionar sujeto: round-robin en calibración inicial.
+-            val subjectIdx = newIteration % KNOWN_SUBJECTS.size
+-            val subject    = KNOWN_SUBJECTS[subjectIdx]
++            // Reportar el sujeto realmente seleccionado por el motor espacial; no simular personalización.
++            val subject = runCatching { IvannaSpatialManager.currentHrtfSubject() }.getOrDefault("")
+@@ -176,1 +164,3 @@
+-                convergenceRate = if (st.iteration > 0) st.paramNorm else 1.0f
++                // paramNorm procede de SAFCore.getState()[1], no es residual medido.
++                // No alimentar ese valor como tasa de convergencia perceptual.
++                convergenceRate = 1.0f
+@@ -180,3 +170,4 @@
+-            // Target en el espacio latente SAF-Room: dirección de menor error
+-            // Proxy: vector cero (KEMAR medio) cuando sin datos de calibración
+-            SaFRoomBridge.setTarget(FloatArray(7) { 0.0f })
++            // No sobrescribir el target con cero: no existe una conversión validada
++            // de los cinco errores direccionales a un target SOFA latente 7-D.
++            // SaFRoomBridge conserva el target/modelo ya configurado y esta calibración es proxy.
+             // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual

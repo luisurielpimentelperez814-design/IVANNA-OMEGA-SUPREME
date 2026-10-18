@@ -1,0 +1,22 @@
+Host prototype validation run (2026-10-17)
+Command: python -m unittest discover -s tests -v
+Result: 5 tests passed; 0 failures.
+- angular-spectrum zero-distance identity
+- energy conservation for smooth propagating-band-limited field
+- invalid physical parameter rejection
+- deterministic/finite Gerchberg–Saxton reconstruction and metrics
+- empty target rejection
+
+Example CLI run: python -m deh6_optics.cli --config examples/target.json --out results/demo
+- grid: 128 x 128
+- wavelength: 5.32e-7 m
+- pixel pitch: 8.0e-6 m
+- propagation distance: 0.02 m
+- iterations: 100
+- normalized amplitude RMSE: 0.0563494503
+- amplitude correlation: 0.9805460895
+- target-region energy fraction: 0.9132336205
+- initial constraint error: 1.2909054253
+- final recorded constraint error: 0.3073226112
+
+Interpretation: these are simulation outputs for the supplied target and configuration, not measured optical efficiency or physical validation. Tests do not certify Android, JNI, NDK, audio callback, HRTF quality, or hardware behavior.

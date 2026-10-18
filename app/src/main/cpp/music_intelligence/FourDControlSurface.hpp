@@ -73,5 +73,9 @@ void publishAnticipatedScene() noexcept;
 // ── Estado para telemetría / UI ──────────────────────────────────────────────
 ivanna::ime::FourDStatus status() noexcept;
 uint32_t publishedScenes() noexcept;
+// Envolvente 0..1 del impacto del drop (arco narrativo). 0 si la cadena no está activa o el arco está apagado.
+float arcImpact() noexcept;
+// Tensión 0..1 del hueco previo al drop (arco narrativo). 0 si la cadena no está activa o el arco está apagado.
+float arcTension() noexcept;
 
 }} // namespace ivanna::fourd

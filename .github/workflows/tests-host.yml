@@ -20,6 +20,7 @@ on:
       - 'LÉAME.md'
       - 'telemetry/**'
       - 'magisk_module/module.prop'
+      - 'research/deh6_optics/**'
       - '.github/workflows/tests-host.yml'
   pull_request:
     paths:
@@ -31,6 +32,7 @@ on:
       - 'LÉAME.md'
       - 'telemetry/**'
       - 'magisk_module/module.prop'
+      - 'research/deh6_optics/**'
       - '.github/workflows/tests-host.yml'
   # TSan no cabe en la puerta por-push: 2 cancelaciones medidas (corridas
   # 34166260673 y 34167465625 — jobs cancelados exactamente a los 20m15s y
@@ -200,3 +202,25 @@ jobs:
       - name: Resumen
         if: always()
         run: echo "Puerta de datasets HRTF — cualquier FAIL impide que un binario ilegible por HRTFBinLoader llegue al APK (no se ignora)."
+
+  # ── DEH6 Optics: paquete de investigación y prototipo numérico ─────────────
+  deh6-optics:
+    name: DEH6 Optics (Tests numéricos y CLI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: pip install --quiet numpy
+      - name: Ejecutar tests y CLI de validación
+        run: |
+          cd research/deh6_optics
+          python3 -m unittest discover -s tests -v
+          python3 -m deh6_optics.cli --config examples/target.json --out build/deh6-demo
+      - name: Resumen
+        if: always()
+        run: echo "Puerta DEH6 Optics ejecutada con éxito."

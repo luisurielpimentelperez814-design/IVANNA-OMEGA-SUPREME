@@ -1,0 +1,13 @@
+{
+  "grid_size": 128,
+  "wavelength_m": 5.32e-7,
+  "pixel_pitch_m": 8.0e-6,
+  "propagation_distance_m": 0.02,
+  "iterations": 100,
+  "seed": 7,
+  "targets": [
+    {"type":"disk", "x":-0.16, "y":0.0, "radius":0.07, "amplitude":1.0},
+    {"type":"disk", "x":0.16, "y":0.0, "radius":0.07, "amplitude":1.0},
+    {"type":"rectangle", "x":0.0, "y":0.18, "width":0.12, "height":0.035, "amplitude":0.65}
+  ]
+}

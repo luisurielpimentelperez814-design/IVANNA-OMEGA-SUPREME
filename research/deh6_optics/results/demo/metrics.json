@@ -1,0 +1,13 @@
+{
+  "normalized_rmse": 0.0563494503042059,
+  "amplitude_correlation": 0.980546089454182,
+  "target_region_energy_fraction": 0.9132336205484894,
+  "target_energy_fraction_reference": 1.0,
+  "iterations": 100,
+  "initial_error": 1.2909054252575185,
+  "last_constraint_error": 0.30732261120596477,
+  "wavelength_m": 5.32e-07,
+  "pixel_pitch_m": 8e-06,
+  "propagation_distance_m": 0.02,
+  "grid_size": 128
+}

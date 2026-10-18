@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <string>
 
+extern "C" void ivanna_send_crosstalk_to_daemon(bool on) noexcept;   // definido en ivanna_omega_jni.cpp
 #include "../music_intelligence/FourDControlSurface.hpp"
 
 namespace {
@@ -98,6 +99,7 @@ Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDSetDosimeterCalibration(JNI
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_Ivanna4DNative_nativeFourDSetCrosstalk(JNIEnv*, jobject, jboolean on) {
     ivanna::fourd::setCrosstalkEnabled(truthy(on));
+    ivanna_send_crosstalk_to_daemon(truthy(on));   // y al módulo (Ruta B)
 }
 
 extern "C" JNIEXPORT jstring JNICALL

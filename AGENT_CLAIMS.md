@@ -2615,3 +2615,13 @@ Archivos: `spatial/RoomProbe.hpp`, `spatial/RoomCorrectionEq.hpp`, `audio/RoomMe
 **Verificado (host):** desviación RMS 63 Hz–4 kHz con tonos reales simulados 1.95 → 0.43 dB. **Sin verificar en dispositivo**
 (micrófono sin calibrar: corrige balance amplio 50 Hz–6 kHz, no modos estrechos ni fase).
 **Hallazgo abierto:** en Ruta B `setEqGains` solo aplica la MEDIA de las 10 ganancias (los sliders de EQ no moldean el espectro).
+
+### ARCO NARRATIVO 4D + PERSISTENCIA 4D (sesión Claude, 2026-10-17) — ENTREGADO (host), sin verificar en dispositivo
+Flanco: escala de segundos sobre la cadena 4D (subida → hueco de tensión → impacto del drop) y que los controles 4D sobrevivan al reinicio.
+Archivos: `music_intelligence/MacroArcConductor.hpp` (nuevo), `FourDExcitationChain.hpp`, `FourDControlSurface.{hpp,cpp}`,
+`jni/ivanna_4d_jni.cpp`, `core/Ivanna4DNative.kt`, `core/ParameterStore.kt`, `core/PersistedStateRestorer.kt`, `ui/FourDPredictionPanel.kt`,
+`tests/test_macro_arc_conductor.cpp` (17), `tests/test_4d_control_surface.cpp` (+2).
+Alcance honesto: solo Ruta A (cadena de la app); Ruta B no tiene el arco. Apagado por defecto, identidad exacta al apagar.
+Calibrado con el extractor real (la señal fiable del pulso es `subBandRatio`); no hay medición con música real ni escucha en dispositivo.
+Kotlin no compilado en la sesión (sin SDK Android): cubierto por las compuertas estáticas y por el CI.
+NOTA PARA OTROS AGENTES: no dupliques el arco; el siguiente paso útil es llevarlo a Ruta B (palabra de flags del daemon) y medirlo en el equipo.
