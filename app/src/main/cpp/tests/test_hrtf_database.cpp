@@ -188,6 +188,10 @@ TEST_F(HrtfDbTest, AzimuthConventionFlagIsHonoredInBothDirections) {
 
 TEST_F(HrtfDbTest, BilinearMidpointEqualsAverageOfNeighbourNodes) {
     Meas m = makeMeas(true);
+    // Sin el tap 7 (que depende de la elevación): así todos los nodos tienen el MISMO onset y la
+    // interpolación alineada coincide con el promedio muestra a muestra. Con ITD distinta entre
+    // nodos ya NO deben coincidir: ver AlignedInterpolation...
+    for (size_t p = 0; p < m.az.size(); ++p) { m.L[p * m.irLen + 7] = 0.0f; m.R[p * m.irLen + 7] = 0.0f; }
     ASSERT_EQ(hrtfDatabaseBuild(m.view(), true), HrtfDbResult::Ok);
     float l[HRTF_TAPS], r[HRTF_TAPS];
     HRTFInterpolator interp;
@@ -197,6 +201,88 @@ TEST_F(HrtfDbTest, BilinearMidpointEqualsAverageOfNeighbourNodes) {
         const float eR = 0.5f * (g_hrtfDatabase[3][0].right[t] + g_hrtfDatabase[3][1].right[t]);
         EXPECT_NEAR(l[t], eL, 1e-6f);
         EXPECT_NEAR(r[t], eR, 1e-6f);
+    }
+}
+
+// ── Interpolación alineada en el tiempo ─────────────────────────────────────────────────────
+// Mediciones sintéticas: cada HRIR es UN impulso unitario cuyo retardo crece con el azimut
+// (2 muestras por cada 10°: del orden de la ITD real). Promediar muestra a muestra daba DOS
+// impulsos de media amplitud (peine en frecuencia: caída de agudos y ITD borrada). Alineando por
+// onset debe quedar UN impulso en el retardo medio.
+Meas makeDelayMeas() {
+    Meas m;
+    for (int e = -60; e <= 60; e += 10) {
+        for (int a = 0; a < 360; a += 10) {
+            m.az.push_back(static_cast<float>(a));
+            m.el.push_back(static_cast<float>(e));
+            std::vector<float> h(m.irLen, 0.0f);
+            h[10 + static_cast<size_t>(a / 10) * 2] = 1.0f;   // retardo = 10 + 2·(az/10) <= 80 < 128
+            m.L.insert(m.L.end(), h.begin(), h.end());
+            m.R.insert(m.R.end(), h.begin(), h.end());
+        }
+    }
+    return m;
+}
+
+size_t argMaxAbs(const float* x, size_t n) {
+    size_t best = 0;
+    for (size_t i = 1; i < n; ++i) if (std::fabs(x[i]) > std::fabs(x[best])) best = i;
+    return best;
+}
+
+// Fracción de la energía total concentrada en ±1 muestra del pico: 1 = un impulso compacto;
+// dos impulsos de media amplitud separados 2 muestras dan ~0.5.
+double compactness(const float* x, size_t n) {
+    const size_t pk = argMaxAbs(x, n);
+    double win = 0.0, tot = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        const double e = double(x[i]) * x[i];
+        tot += e;
+        if (i + 1 >= pk && i <= pk + 1) win += e;
+    }
+    return tot > 0.0 ? win / tot : 0.0;
+}
+
+TEST_F(HrtfDbTest, AlignedInterpolationKeepsOneImpulseAtTheInterpolatedDelayNotTwoHalfImpulses) {
+    Meas m = makeDelayMeas();
+    ASSERT_EQ(hrtfDatabaseBuild(m.view(), /*azimuthLeftPositive=*/false), HrtfDbResult::Ok);
+
+    // Nodo de la tabla az=15° (entre mediciones de 10° y 20°, retardos 12 y 14): ~13.
+    const auto& node = g_hrtfDatabase[3][1];
+    EXPECT_NEAR(static_cast<double>(argMaxAbs(node.left, HRTF_TAPS)), 13.0, 1.5);
+    EXPECT_GT(compactness(node.left, HRTF_TAPS), 0.8) << "sin alinear: ~0.5 (dos impulsos)";
+    EXPECT_GT(energy(node.left, HRTF_TAPS), 0.7f) << "la energía no debe caer a ~0.5";
+
+    // En ejecución, az=20° = 2/3 del nodo 15° (retardo ~13) + 1/3 del nodo 30° (~16): ~14.
+    float l[HRTF_TAPS], r[HRTF_TAPS];
+    HRTFInterpolator interp;
+    ASSERT_TRUE(interp.getInterpolatedHRTF(20.0f, 0.0f, l, r));
+    for (const float* h : {static_cast<const float*>(l), static_cast<const float*>(r)}) {
+        EXPECT_NEAR(static_cast<double>(argMaxAbs(h, HRTF_TAPS)), 14.0, 1.5);
+        EXPECT_GT(compactness(h, HRTF_TAPS), 0.8);
+        EXPECT_GT(energy(h, HRTF_TAPS), 0.7f);
+        EXPECT_TRUE(allFinite(h, HRTF_TAPS));
+    }
+}
+
+TEST_F(HrtfDbTest, AlignedInterpolationMovesSmoothlyWithTheDirectionAndKeepsTheItdMonotonic) {
+    Meas m = makeDelayMeas();
+    ASSERT_EQ(hrtfDatabaseBuild(m.view(), /*azimuthLeftPositive=*/false), HrtfDbResult::Ok);
+    HRTFInterpolator interp;
+    float l[HRTF_TAPS], r[HRTF_TAPS];
+    double prev = -1.0;
+    for (float az = 30.0f; az <= 60.0f; az += 1.0f) {
+        ASSERT_TRUE(interp.getInterpolatedHRTF(az, 0.0f, l, r));
+        // Centroide de energía = retardo efectivo: debe crecer sin saltos con el azimut.
+        double num = 0.0, den = 0.0;
+        for (size_t t = 0; t < HRTF_TAPS; ++t) { num += t * double(l[t]) * l[t]; den += double(l[t]) * l[t]; }
+        ASSERT_GT(den, 0.5);
+        const double c = num / den;
+        if (prev >= 0.0) {
+            EXPECT_GE(c, prev - 1e-3) << "az=" << az;
+            EXPECT_LT(c - prev, 1.0) << "salto de retardo > 1 muestra entre grados contiguos, az=" << az;
+        }
+        prev = c;
     }
 }
 

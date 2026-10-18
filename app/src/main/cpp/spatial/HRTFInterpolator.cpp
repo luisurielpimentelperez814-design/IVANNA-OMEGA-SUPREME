@@ -16,6 +16,7 @@
 #include "HybridRenderer.hpp"
 #include "SpatialRenderer.hpp"
 #include "spatial/HRTFDatabase.h"
+#include "hrir_align.hpp"
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -75,13 +76,33 @@ bool HRTFInterpolator::getInterpolatedHRTF(float azimuthDeg, float elevationDeg,
     const float w01 = (1.0f - az_f) * el_f;
     const float w11 = az_f * el_f;
 
-    // Interpolar
+    // Interpolar ALINEADO en el tiempo: cada nodo se lee desplazado para que su onset coincida con
+    // el onset medio ponderado, así la mezcla bilineal no produce el peine de dos impulsos ni borra
+    // la ITD entre nodos de 15°. Solo se llama al cambiar la dirección (no por muestra).
+    const HRTFImpulsePair* nodes[4] = {&p00, &p10, &p01, &p11};
+    const float weights[4] = {w00, w10, w01, w11};
+    double onL[4] = {}, onR[4] = {};
+    double meanL = 0.0, meanR = 0.0, wSum = 0.0;
+    for (int k = 0; k < 4; ++k) {
+        if (weights[k] <= 0.0f) continue;
+        onL[k] = hrir::onsetSamples(nodes[k]->left,  HRTF_TAPS);
+        onR[k] = hrir::onsetSamples(nodes[k]->right, HRTF_TAPS);
+        meanL += static_cast<double>(weights[k]) * onL[k];
+        meanR += static_cast<double>(weights[k]) * onR[k];
+        wSum  += static_cast<double>(weights[k]);
+    }
+    if (wSum > 0.0) { meanL /= wSum; meanR /= wSum; }
     for (size_t i = 0; i < HRTF_TAPS; ++i) {
-        outLeft[i] = w00 * p00.left[i] + w10 * p10.left[i] +
-                     w01 * p01.left[i] + w11 * p11.left[i];
-
-        outRight[i] = w00 * p00.right[i] + w10 * p10.right[i] +
-                      w01 * p01.right[i] + w11 * p11.right[i];
+        double accL = 0.0, accR = 0.0;
+        for (int k = 0; k < 4; ++k) {
+            if (weights[k] <= 0.0f) continue;
+            accL += static_cast<double>(weights[k]) *
+                    hrir::sampleAt(nodes[k]->left,  HRTF_TAPS, static_cast<double>(i) + hrir::alignShift(onL[k], meanL));
+            accR += static_cast<double>(weights[k]) *
+                    hrir::sampleAt(nodes[k]->right, HRTF_TAPS, static_cast<double>(i) + hrir::alignShift(onR[k], meanR));
+        }
+        outLeft[i]  = static_cast<float>(accL);
+        outRight[i] = static_cast<float>(accR);
     }
     return true;
 }

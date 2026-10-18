@@ -13,6 +13,7 @@
 // NaN/Inf, esta a otra frecuencia o produciria filtros nulos, la carga FALLA
 // con un codigo explicito y la tabla permanece vacia.
 // ============================================================================
+#include "hrir_align.hpp"
 #include "HRTFDatabase.h"
 #include "../include/hrtf_lut.h"   // conservado: lo referencia check_header_wiring.py
 #include "ihr1_format.hpp"
@@ -187,14 +188,31 @@ HrtfDbResult hrtfDatabaseBuild(const HrtfDbMeasured& m,
             }
 
             HRTFImpulsePair& node = g_hrtfDatabase[ei][ai];
+            // Onset de cada vecino y oído, y onset medio ponderado: se interpola ALINEADO en el
+            // tiempo (ver hrir_align.hpp). Promediar muestra a muestra hacía un peine de dos
+            // impulsos y borraba la ITD entre vecinos. Con un solo vecino exacto no hay nada
+            // que alinear (desplazamiento 0).
+            double onL[kNeighbours] = {}, onR[kNeighbours] = {};
+            double meanL = 0.0, meanR = 0.0;
+            for (size_t k = 0; k < found; ++k) {
+                if (w[k] == 0.0) continue;
+                onL[k] = hrir::onsetSamples(m.left  + idx[k] * m.irLen, m.irLen);
+                onR[k] = hrir::onsetSamples(m.right + idx[k] * m.irLen, m.irLen);
+                meanL += w[k] * onL[k];
+                meanR += w[k] * onR[k];
+            }
+            meanL /= wSum;
+            meanR /= wSum;
             float eL = 0.0f, eR = 0.0f;
             for (size_t tap = 0; tap < HRTF_TAPS; ++tap) {
                 double accL = 0.0, accR = 0.0;
                 if (tap < m.irLen) {
                     for (size_t k = 0; k < found; ++k) {
                         if (w[k] == 0.0) continue;
-                        accL += w[k] * m.left [idx[k] * m.irLen + tap];
-                        accR += w[k] * m.right[idx[k] * m.irLen + tap];
+                        const double posL = static_cast<double>(tap) + hrir::alignShift(onL[k], meanL);
+                        const double posR = static_cast<double>(tap) + hrir::alignShift(onR[k], meanR);
+                        accL += w[k] * hrir::sampleAt(m.left  + idx[k] * m.irLen, m.irLen, posL);
+                        accR += w[k] * hrir::sampleAt(m.right + idx[k] * m.irLen, m.irLen, posR);
                     }
                     accL /= wSum;
                     accR /= wSum;
