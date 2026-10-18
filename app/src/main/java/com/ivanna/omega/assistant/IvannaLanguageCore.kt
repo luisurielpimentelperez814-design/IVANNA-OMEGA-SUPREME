@@ -324,7 +324,12 @@ object IvannaLanguageCore {
             return last to 0.72f  // baja confianza — inferido por contexto
         }
 
-        return AcousticIntent.UNKNOWN to 0.0f
+        // El clasificador local está especializado en audio y no puede
+        // conocer de antemano todos los temas generales. En vez de marcar una
+        // pregunta válida como UNKNOWN y caer en una respuesta estática pobre,
+        // enrutar el texto no reconocido al agente conversacional amplio. Este
+        // fallback nunca crea un comando DSP por sí mismo.
+        return AcousticIntent.GENERAL_CHAT to 0.45f
     }
 
     private fun wasContextUsed(intent: AcousticIntent): Boolean {

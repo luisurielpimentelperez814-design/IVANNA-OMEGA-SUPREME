@@ -327,6 +327,14 @@ arreglado con ataque instantáneo/release en rampa, no una rampa
 simétrica ingenua — la protección real no se puede debilitar por
 suavidad).
 
+**Continuación dirigida por el propietario (2026-10-18, PR #66; validación CI pendiente):**
+- Se amplió el prompt de `IvannaGeminiAgent`: música/audio como prioridad, pero conversación amplia en otras materias; honestidad explícita sobre actualidad, ejecución DSP y límites de conexión.
+- El prompt ahora inyecta hasta 12 turnos recientes con límites por mensaje. Las respuestas abiertas del LLM se guardan en `IvannaConversationalCore`, para que el historial realmente alimente la siguiente consulta.
+- Las entradas que el clasificador local no reconoce pasan a `GENERAL_CHAT` (sin generar por sí mismas comandos DSP); se ampliaron las señales para seleccionar razonamiento profundo en preguntas de conocimiento y análisis musical.
+- La política autónoma musical consume preferencias de volumen, calidez/detalle y espacialidad. Se corrigió la histeresis para comparar todos los knobs; si cambia una preferencia aunque se conserve el nombre de política, los nuevos parámetros vuelven a enviarse.
+- Pruebas nuevas: políticas musicales neutras/preferencias/clipping/silencio; clasificación de conversación amplia; selección de razonamiento profundo y saludo FAST. No declararlas verdes hasta que CI compile y ejecute la suite.
+- La política actual no controla graves mediante este canal: no se debe afirmar que esa preferencia ya está aplicada por el agente autónomo hasta conectar y verificar un control de graves real.
+
 **Criterio de "terminado, world-class" (no cerrar antes de esto):**
 1. Cada etapa de la cadena compila para el target real, de forma
    consistente, no solo "a veces".

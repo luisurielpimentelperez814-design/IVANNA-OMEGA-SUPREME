@@ -59,6 +59,46 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
     // app sin root) → "IR: no desplegadas" aunque las 200 IR vienen dentro del APK.
     var rooms by remember { mutableStateOf<List<Pair<String, Float>>>(emptyList()) }
     var roomsChecked by remember { mutableStateOf(false) }
+    val latestRooms = rememberUpdatedState(rooms)
+    // Los cambios de sliders pueden generar muchos eventos por segundo. El canal
+    // conflado manda solo el último snapshot y ejecuta el IPC en IO, no en Compose.
+    val daemonConfigUpdates = remember {
+        kotlinx.coroutines.channels.Channel<SpatialControlStore.SpatialConfig>(
+            kotlinx.coroutines.channels.Channel.CONFLATED
+        )
+    }
+    LaunchedEffect(daemonConfigUpdates) {
+        for (config in daemonConfigUpdates) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val roomList = latestRooms.value
+                val subjectIndex = SpatialControlStore.SUBJECTS.indexOf(config.hrtfSubject)
+                if (IvannaNativeLib.isLoaded && subjectIndex >= 0) {
+                    runCatching { SaFBridge.setSubjectIndexHint(subjectIndex) }
+                }
+                if (config.rirEnabled && roomList.isNotEmpty()) {
+                    val roomIndex = config.rirRoom.coerceIn(0, roomList.lastIndex)
+                    runCatching {
+                        OmegaEngineBridge.setRoom(roomList[roomIndex].second, config.rirWet, roomIndex)
+                    }
+                } else if (!config.rirEnabled) {
+                    runCatching { OmegaEngineBridge.disableRoom() }
+                }
+                if (MagiskBridge.isDaemonRunning) {
+                    runCatching {
+                        MagiskBridge.sendCommand("SET_REVERB:${if (config.rirEnabled) config.rirWet else 0f}")
+                    }
+                }
+                runCatching {
+                    OmegaEngineBridge.sendCommand(JSONObject().apply {
+                        put("action", "SET_SAF_STATE")
+                        put("enabled", config.safEnabled)
+                        put("intensity", config.safIntensity.toDouble())
+                        put("timestamp", System.currentTimeMillis())
+                    })
+                }
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             OmegaEngineBridge.ensureRirDataset(context)
@@ -124,16 +164,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         IvannaSpatialEngine.setDistance(c.reflectionDistance)
         // HRTF enable → motor in-process
         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetHRTFEnabled(c.hrtfEnabled) }
-        // Sujeto → ancla SAF + daemon
-        val idx = SpatialControlStore.SUBJECTS.indexOf(c.hrtfSubject)
-        if (IvannaNativeLib.isLoaded && idx >= 0) runCatching { SaFBridge.setSubjectIndexHint(idx) }
-        // Sala RIR elegida → motor nativo + daemon (antes el índice solo se guardaba).
-        if (c.rirEnabled && rooms.isNotEmpty()) {
-            val ri = c.rirRoom.coerceIn(0, rooms.size - 1)
-            runCatching { OmegaEngineBridge.setRoom(rooms[ri].second, c.rirWet, ri) }
-        } else if (!c.rirEnabled) {
-            runCatching { OmegaEngineBridge.disableRoom() }
-        }
+        // El sujeto y RIR se envían por el canal conflado en Dispatchers.IO.
         // RIR wet → DSPBridge (wet espacial real) + daemon (reverb)
         if (DSPBridge.isLoaded) runCatching {
             // FIX: mix=0.8→0.5 (neutro). mix>0.5 → +3.6dB pre-EQ → biquad inestable → tronido
@@ -141,24 +172,13 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 alpha = 0.94f, beta = 0.85f, gamma = 0.72f, freq = 1000f, resonance = 0.7f,
                 low = 0f, mid = 0f, high = 0f, presence = 0f, master = 0.85f)
         }
-        if (MagiskBridge.isDaemonRunning) runCatching {
-            MagiskBridge.sendCommand("SET_REVERB:${if (c.rirEnabled) c.rirWet else 0f}")
-        }
-        // SAF → daemon (SET_SAF_STATE procesado por command_server)
-        runCatching {
-            OmegaEngineBridge.sendCommand(JSONObject().apply {
-                put("action", "SET_SAF_STATE")
-                put("enabled", c.safEnabled)
-                put("intensity", c.safIntensity.toDouble())
-                put("timestamp", System.currentTimeMillis())
-            })
-        }
         // Upmixer 4-Stems + posiciones 3D → IvannaSpatialManager
         IvannaSpatialManager.setUpmixerEnabled(c.upmixerEnabled)
         IvannaSpatialManager.setStemPosition(0, c.stem0X, c.stem0Y, c.stem0Z, c.stem0Width)
         IvannaSpatialManager.setStemPosition(1, c.stem1X, c.stem1Y, c.stem1Z, c.stem1Width)
         IvannaSpatialManager.setStemPosition(2, c.stem2X, c.stem2Y, c.stem2Z, c.stem2Width)
         IvannaSpatialManager.setStemPosition(3, c.stem3X, c.stem3Y, c.stem3Z, c.stem3Width)
+        daemonConfigUpdates.trySend(c)
     }
 
     // Estado real de carga de datasets (filesystem, no simulado)

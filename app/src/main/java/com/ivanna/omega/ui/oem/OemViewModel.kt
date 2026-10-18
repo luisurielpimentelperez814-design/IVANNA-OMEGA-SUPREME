@@ -31,9 +31,13 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
 
 
     init {
-        viewModelScope.launch {
+        // poll() consulta JNI, temperatura y telemetría del daemon/socket. En
+        // Main el timeout de cualquiera de esas consultas bloqueaba frames cada
+        // 500 ms y volvía torpe el display. Mantener toda la lectura fuera de UI;
+        // StateFlow publica el snapshot de forma segura para Compose.
+        viewModelScope.launch(Dispatchers.IO) {
             while (true) {
-                poll()
+                runCatching { poll() }
                 delay(500)
             }
         }

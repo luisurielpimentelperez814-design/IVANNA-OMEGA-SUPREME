@@ -201,7 +201,7 @@ object IvannaCognitiveCore {
         val kbIntent = when (last.action) {
             "voice-focus"    -> IvannaLanguageCore.AcousticIntent.VOICE_CLARITY
             "cinematic"      -> IvannaLanguageCore.AcousticIntent.MOVIE_IMMERSION
-            "music-balanced" -> IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS
+            "music-balanced", "music-adaptive" -> IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS
             "protect",
             "clip-relief"    -> IvannaLanguageCore.AcousticIntent.GENTLE_MODE
             "latency-relief" -> IvannaLanguageCore.AcousticIntent.OPTIMIZE

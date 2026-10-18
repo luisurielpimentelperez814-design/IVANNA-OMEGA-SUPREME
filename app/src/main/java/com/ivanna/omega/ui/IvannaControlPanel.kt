@@ -175,6 +175,18 @@ fun IvannaControlPanel(
     // (Unresolved reference: savedState) — ahora va después.
     val context = LocalContext.current
     val savedState = remember { AdaptiveControlsPrefs.load(context) }
+    // Socket al daemon fuera del hilo UI; en un slider rápido solo interesa
+    // el último valor, no una cola de cientos de comandos intermedios.
+    val daemonCommands = remember {
+        kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    }
+    LaunchedEffect(daemonCommands) {
+        for (command in daemonCommands) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand(command) }
+            }
+        }
+    }
 
     var phaseOracleIntensity by remember { mutableFloatStateOf(savedState.phaseOracleIntensity) }
     var antiDolbyThreshold by remember { mutableFloatStateOf(savedState.antiDolbyThreshold) }
@@ -607,9 +619,7 @@ fun IvannaControlPanel(
                 if (IvannaNativeLib.isLoaded) {
                     runCatching { IvannaNativeLib.nativeSetSpscRingFactor(it) }
                 }
-                runCatching {
-                    com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_SPSC_RING_FACTOR\",\"factor\":$it}")
-                }
+                daemonCommands.trySend("""{"action":"SET_SPSC_RING_FACTOR","factor":$it}""")
             }
             // FIX: tinymlInferenceGain no tenía llamada nativa. Ahora escala
             // la intensidad antiDolby activa: umbral × gananciaInferencia.

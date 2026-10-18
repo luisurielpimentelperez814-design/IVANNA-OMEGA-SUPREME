@@ -1,6 +1,9 @@
 package com.ivanna.omega.ui
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +67,16 @@ fun ControlTabScreen(
     var roomProgress by remember { mutableStateOf(0f) }
     var roomStatus by remember { mutableStateOf("") }
     val roomScope = rememberCoroutineScope()
+    // Canal conflado: los cambios rápidos del slider conservan solo el último
+    // estado y el socket del daemon nunca bloquea el hilo de interfaz.
+    val perceptualCommands = remember { Channel<String>(Channel.CONFLATED) }
+    LaunchedEffect(perceptualCommands) {
+        for (command in perceptualCommands) {
+            withContext(Dispatchers.IO) {
+                runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand(command) }
+            }
+        }
+    }
     val applyRoom: (FloatArray?, Boolean) -> Unit = { g, en ->
         if (IvannaNativeLib.isLoaded)
             runCatching { IvannaNativeLib.nativeSetRoomCorrection(if (en && g != null) g else FloatArray(10)) }
@@ -326,13 +339,13 @@ fun ControlTabScreen(
             paramStore.setHoaUpmixingEnabled(enabled)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled) }
-            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (enabled) 1.0f else 0.0f}}") }
+            perceptualCommands.trySend("""{"action":"SET_PERCEPTUAL_STATE","upmixingEnabled":${if (enabled) 1.0f else 0.0f}}""")
         },
         onHoaImmersivityChange = { v ->
             paramStore.setHoaImmersivity(v)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(v.coerceIn(0f, 2f)) }
-            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingImmersivity\":${v.coerceIn(0f, 2f)}}") }
+            perceptualCommands.trySend("""{"action":"SET_PERCEPTUAL_STATE","upmixingImmersivity":${v.coerceIn(0f, 2f)}}""")
         },
 
         // ── Wave Field Synthesis — mismo patrón que Upmixing (persist + JNI + daemon),
