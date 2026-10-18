@@ -851,10 +851,10 @@ fun SplashScreen(onAccept: () -> Unit) {
                     fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.height(10.dp))
                 Text("© 2025–2026 Luis Uriel Pimentel Pérez · GORE TNS. " +
-                    "Software propietario y confidencial. " +
-                    "Uso no autorizado prohibido. " +
-                    "Este software modifica el pipeline de audio del sistema. " +
-                    "El usuario asume plena responsabilidad.",
+                    "El código propio se distribuye bajo Apache License 2.0 (consulta LICENSE y NOTICE); " +
+                    "los componentes y datasets de terceros conservan sus propias licencias. " +
+                    "La aplicación puede modificar el pipeline de audio del sistema y requiere permisos específicos. " +
+                    "Revisa los permisos y usa el producto bajo tu responsabilidad.",
                     color = TextMid, fontSize = 12.sp, lineHeight = 18.sp,
                     textAlign = TextAlign.Justify)
             }
