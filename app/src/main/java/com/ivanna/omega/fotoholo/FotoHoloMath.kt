@@ -86,11 +86,12 @@ object FotoHoloMath {
     fun slew(current: Float, target: Float, maxStep: Float = MAX_STEP): Float {
         if (!current.isFinite()) return if (target.isFinite()) target else 1.0f
         if (!target.isFinite()) return current
-        return current + (target - current).coerceIn(-maxStep, maxStep)
+        val step = if (maxStep.isFinite()) maxStep.coerceAtLeast(0f) else 0f
+        return current + (target - current).coerceIn(-step, step)
     }
 
     /** Diferencia absoluta usada para decidir si vale la pena escribir al motor. */
-    fun changed(a: Float, b: Float, eps: Float = 0.002f) = abs(a - b) >= eps
+    fun changed(a: Float, b: Float, eps: Float = 0.002f) = !a.isFinite() || !b.isFinite() || abs(a - b) >= eps
 
     /**
      * Punto 3D proyectado de la banda [index] con valor [value]: anillo de 64 nodos, radio según energía,
