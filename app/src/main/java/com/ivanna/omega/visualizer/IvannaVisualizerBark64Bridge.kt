@@ -41,12 +41,22 @@ object IvannaVisualizerBark64Bridge {
     }
 
     fun sampleInto(dst: FloatArray) {
-        val h = handle.get()
-        if (h == 0L) {
-            java.util.Arrays.fill(dst, 0, BAND_COUNT, 0f)
+        // A complete 64-band frame is required by FotoHoloMath. Clear first so a
+        // missing handle or failed JNI call can never make stale bands look live.
+        if (dst.size < BAND_COUNT) {
+            dst.fill(0f)
             return
         }
-        runCatching { IvannaVisualizerBark64Native.nativeSampleInto(h, dst) }
+        java.util.Arrays.fill(dst, 0, BAND_COUNT, 0f)
+        val h = handle.get()
+        if (h == 0L) return
+
+        try {
+            IvannaVisualizerBark64Native.nativeSampleInto(h, dst)
+        } catch (_: Throwable) {
+            // JNI may have written only part of the frame before failing.
+            java.util.Arrays.fill(dst, 0, BAND_COUNT, 0f)
+        }
     }
 
     fun reset() {
