@@ -1,10 +1,10 @@
-# Refinación propuesta — PR #67 — Fotoholografía·Nanotomix consciente de transitorios
+# CHANGELOG — v2.5.73 (364) — Fotoholografía·Nanotomix consciente de transitorios
 
 1. **Ataques musicales:** la señal `flux` de las 64 bandas Bark ya no queda solo como telemetría. Atenúa hasta un 35 % la corrección de anchura durante transitorios fuertes, preservando la dirección de la adaptación y el límite de ±`MAX_OFFSET`. La intención es reducir movimientos espaciales innecesarios en ataques de percusión y consonantes; la preferencia final debe comprobarse con A/B igualado en sonoridad.
 2. **Telemetría del motor actualizada:** tras una escritura aceptada, el ancho efectivo del DSP se vuelve a leer en cada tick de control, porque el recorte térmico puede cambiar aunque el comando solicitado permanezca igual. Si el read-back falla, la UI recibe `NaN` en lugar de tratar un valor antiguo como confirmación actual.
 3. **Regresión:** pruebas para la atenuación de transitorios, conservación del sentido de la corrección y `flux` no finito.
 
-**Estado:** PR #67 abierto en borrador; CI pendiente. No está en `main` ni en el APK publicado. Sin prueba física, esto es una mejora de control verificada por pruebas de lógica, no una afirmación de superioridad audible.
+**Estado:** versión propuesta para PR #67. El build y los tests deben pasar antes de fusionar; el release v2.5.73 se publicará desde `main` tras la fusión. El release publicado v2.5.72 apunta a un commit anterior y no incluye los cambios posteriores de PR #66 ni esta refinación. Sin prueba física, esto es una mejora de control verificada por pruebas de lógica, no una afirmación de superioridad audible.
 
 ---
 
