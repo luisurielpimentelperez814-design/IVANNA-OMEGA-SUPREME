@@ -30,6 +30,7 @@ import com.ivanna.omega.visualizer.IvannaVisualizerBridgeV2
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
 import com.ivanna.omega.audio.engine.AdaptiveLatencyController
 import com.ivanna.omega.audio.engine.MasterTimingController
+import com.ivanna.omega.audio.engine.LoopLoadGovernor
 import com.ivanna.omega.audio.engine.OutputCushionPolicy
 import com.ivanna.omega.audio.engine.ProfessionalAntiPopEngine
 import com.ivanna.omega.audio.engine.AudioThreadBudgetGuard
@@ -680,6 +681,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // hasta el headroom objetivo, para que un retraso del hilo > 1 bloque no vacie la cola (underrun).
             framesWrittenToTrack = 0L
             lastSeenUnderruns = 0
+            loopLoad.reset(); lastLoopStride = 1
             cushionFramesTarget = OutputCushionPolicy.cushionFrames(
                 adaptiveLatency.targetHeadroomFrames, audioTrack?.bufferSizeInFrames ?: 0, BLOCK_FRAMES)
             val primed = writeSilence(cushionFramesTarget)
@@ -730,6 +732,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     val read = rec.read(buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING)
                     if (read < 0) { Log.w(TAG, "AudioRecord error $read — saliendo"); break }
                     if (read == 0) continue
+                    val iterStartNs = System.nanoTime()
                     val frames = read / CHANNEL_COUNT
                     System.arraycopy(buffer, 0, dryRef, 0, read)
 
@@ -998,9 +1001,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     val monoFrames = minOf(effectiveFrames, mono.size)
                     for (i in 0 until monoFrames) mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f
                     runCatching { feedVoiceController(mono, monoFrames) }
-                    runCatching { IvannaVisualizerBridge.processBlock(mono, monoFrames) }
-                    runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, monoFrames) }
-                    runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, monoFrames) }
+                    // Solo los análisis PURAMENTE VISUALES se deciman, y solo si la vuelta completa del bucle se acerca
+                    // al periodo del bloque (ver LoopLoadGovernor). Con carga normal corren en cada bloque, como antes.
+                    if (loopLoad.runAnalysis(blockCounter)) {
+                        runCatching { IvannaVisualizerBridge.processBlock(mono, monoFrames) }
+                        runCatching { IvannaVisualizerBridgeV2.processBlockFromNPE(mono, monoFrames) }
+                        runCatching { IvannaVisualizerBark64Bridge.processBlock(mono, monoFrames) }
+                    }
                     
                     // FIX 3: Publish real capture levels for Route A
                     runCatching {
@@ -1033,6 +1040,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // (exacto formato de nativeLabFeed), capturado por
                     // MediaProjection — fuente de datos real, no sintética.
                     runCatching { IvannaLabMonitor.feed(buffer, effectiveFrames) }
+
+                    // Carga REAL de la vuelta completa (lectura -> ... -> medidores), no solo del DSP.
+                    loopLoad.update(System.nanoTime() - iterStartNs, BLOCK_FRAMES * 1_000_000_000L / SAMPLE_RATE)
+                    if (loopLoad.stride != lastLoopStride) {
+                        lastLoopStride = loopLoad.stride
+                        Log.i(TAG, "Carga de la vuelta del bucle %.0f %% -> analisis visuales cada %d bloque(s)"
+                            .format(loopLoad.load * 100f, lastLoopStride))
+                    }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Excepción fatal en loop de audio: ${t.message}", t)
@@ -1049,6 +1064,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var lastSeenUnderruns = 0
         private var lastRepriming = 0L
         private var cushionReprimes = 0
+        private val loopLoad = LoopLoadGovernor()
+        private var lastLoopStride = 1
 
         /** Escribe hasta [frames] de silencio SIN bloquear y los cuenta en la cola. Devuelve los frames aceptados. */
         private fun writeSilence(frames: Int): Int {

@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.71 (362) — La vuelta completa del bucle de audio se mide y, bajo presión, solo se decima lo visual
+
+1. **Hueco encontrado:** `AudioThreadBudgetGuard` cronometra captura→DSP→salida (el «DSP 79 %» de la telemetría), pero tras escribir al AudioTrack el bucle aún alimenta visualizadores, analizadores y medidores ANTES de la siguiente lectura. Ese tramo no se medía. Además `AudioThreadBudgetGuard.canExecute()` no se llama desde ningún sitio: la «degradación controlada» que describe su documentación no estaba conectada.
+2. **`LoopLoadGovernor` (nuevo, lógica pura, 8 tests JVM):** mide la vuelta COMPLETA frente al periodo del bloque (6,67 ms) con EMA y pide ejecutar los análisis visuales cada 1, 2 o 4 bloques (umbrales 55 % / 75 %, con histéresis de 8 puntos; un pico aislado, p. ej. un GC, se acota y no cambia el paso — el test lo detectó antes de integrarlo).
+3. **`PlaybackCaptureService`:** `IvannaVisualizerBridge`, `…V2` y `…Bark64` se deciman SOLO bajo presión. El DSP, el limitador, la escritura al AudioTrack, el clasificador de voz y el medidor de laboratorio NO se tocan. Con carga normal el comportamiento es idéntico al anterior. Cada cambio de paso queda en logcat (`CaptureEngine`: «Carga de la vuelta del bucle…»).
+
+**No verificado aquí:** compilación Android (CI) ni cuánto baja la carga o los underruns en un Moto G85. Para comprobarlo: `adb logcat -s CaptureEngine` durante 5 min de música; si nunca aparece el aviso, la carga estaba por debajo de 55 % y este cambio no hace nada (es lo esperado con carga sana).
+
 # CHANGELOG — v2.5.70 (361) — Colchón de salida de la Ruta A: ataca los underruns/micro-cortes de raíz
 
 1. **Causa encontrada leyendo el bucle de captura (no medida en el teléfono):** el `AudioTrack` arrancaba VACÍO y se alimentaba 1 bloque por bloque capturado, así que la cola real era ~1 bloque (6,7 ms a 320 frames). Cualquier retraso del hilo > 6,7 ms (GC, planificador, decodificador de vídeo) la vaciaba → underrun del HAL → micro-corte. `targetHeadroomFrames` (20 ms) se calculaba pero nada llevaba la cola hasta él, y `MasterTimingController.applyMicroExtension` no se invoca desde ningún sitio.
