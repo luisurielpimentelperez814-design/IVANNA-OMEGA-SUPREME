@@ -1029,6 +1029,17 @@ fun DashboardScreen(
     var roomProgress by remember { mutableFloatStateOf(0f) }
     var roomStatus by remember { mutableStateOf("") }
     val roomScope = rememberCoroutineScope()
+    // No bloquear los gestos con IPC al daemon; conservar el último estado HOA.
+    val perceptualCommands = remember {
+        kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    }
+    LaunchedEffect(perceptualCommands) {
+        for (command in perceptualCommands) {
+            withContext(Dispatchers.IO) {
+                runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand(command) }
+            }
+        }
+    }
     val applyRoomCorrection: (FloatArray?, Boolean) -> Unit = { gains, enabled ->
         if (IvannaNativeLib.isLoaded) runCatching {
             IvannaNativeLib.nativeSetRoomCorrection(
@@ -1353,11 +1364,9 @@ fun DashboardScreen(
                 if (IvannaNativeLib.isLoaded) runCatching {
                     IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled)
                 }
-                runCatching {
-                    com.ivanna.omega.magisk.MagiskBridge.sendCommand(
-                        "{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (enabled) 1.0f else 0.0f}}"
-                    )
-                }
+                perceptualCommands.trySend(
+                    """{"action":"SET_PERCEPTUAL_STATE","upmixingEnabled":${if (enabled) 1.0f else 0.0f}}"""
+                )
             },
             onHoaImmersivityChange = { value ->
                 val bounded = value.coerceIn(0f, 2f)
@@ -1365,11 +1374,9 @@ fun DashboardScreen(
                 if (IvannaNativeLib.isLoaded) runCatching {
                     IvannaNativeLib.nativeSetUpmixingImmersivity(bounded)
                 }
-                runCatching {
-                    com.ivanna.omega.magisk.MagiskBridge.sendCommand(
-                        "{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingImmersivity\":$bounded}"
-                    )
-                }
+                perceptualCommands.trySend(
+                    """{"action":"SET_PERCEPTUAL_STATE","upmixingImmersivity":$bounded}"""
+                )
             },
             onWfsEnabledChange = { enabled ->
                 paramStore.setWfsEnabled(enabled)
