@@ -2,7 +2,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/release_media/ivanna_omega_hero.svg">
-  <img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.68 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
+  <img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.69 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
 </picture>
 
 <a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new?labels=device-report&title=Reporte+de+dispositivo">
@@ -11,7 +11,7 @@
 
 > **¿Tienes un teléfono Android?** Ayúdame a probarlo y [cuéntame cómo suena](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new?labels=device-report&title=Reporte+de+dispositivo). Si te gusta el proyecto, una ⭐ ayuda a que más gente lo encuentre.
 
-# ⬡ IVANNA OMEGA SUPREME `v2.5.68` ⬡
+# ⬡ IVANNA OMEGA SUPREME `v2.5.69` ⬡
 ### **Sistema Operativo de Supremacía Neuroacústica, Sincronía A/V Cero-Desfase y Reconstrucción Holográfica de Realidad Acústica en Lazo Cerrado para Android**
 #### *Arquitectura Nativa en C++20 · SIMD ARM64 NEON · Inversión Biomecánica Coclear PINN · Blindaje $C^2$ Cero-Artefactos · Atlas de Escena Musical de 12 Estilos*
 
@@ -21,8 +21,8 @@
 ---
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v2.5.68%20%28Build%20359%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
-[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.68&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
+[![Release](https://img.shields.io/badge/Release-v2.5.69%20%28Build%20360%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
+[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.69&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
 [![CTest](https://img.shields.io/badge/CTest-406%2F406%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
 [![Static Gates](https://img.shields.io/badge/Static%20Gates-6%2F6%20VERIFIED-00F0FF?style=for-the-badge&logo=checkmarx&logoColor=fff)](scripts/)
 [![C++ Standard](https://img.shields.io/badge/Standard-C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge&logo=c%2B%2B&logoColor=000)](app/src/main/cpp/CMakeLists.txt)

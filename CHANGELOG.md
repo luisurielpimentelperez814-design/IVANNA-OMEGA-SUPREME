@@ -1,3 +1,9 @@
+# CHANGELOG — v2.5.69 (360) — Modelo Anti-Dolby CRNN TFLite íntegro y sincronización de release
+
+1. **Modelo Anti-Dolby CRNN TFLite restaurado e íntegro (`app/src/main/assets/anti_dolby_crnn.tflite`):** la versión histórica del modelo estaba corrupta con 45 552 secuencias U+FFFD (conversión de texto errónea) impidiendo la carga del intérprete en Android. Se regeneró y entrenó un modelo CRNN ligero nativo respetando el contrato estricto del pipeline (`[1, 32, 40, 1]` log-mel spectrogram -> `[1, 4]` softmax: Voz, Música, Bajos, Silencio) con 0 bytes de corrupción y ops TFLite estándar sin dependencias Flex.
+2. **Compuerta 0.6 libre de anomalías (`scripts/check_datasets_deploy.py`):** `anti_dolby_crnn.tflite` pasa la verificación con 0 secuencias de corrupción U+FFFD; se retira de la lista de conocidos y todos los 435 binarios pasan limpios.
+3. **Sincronización de release v2.5.69:** `version.properties` (2.5.69 / 360), `magisk_module/module.prop` y `magisk_module/update.json` actualizados al nombre canónico del release (`ivanna_omega_supreme_v2.5.69.zip`) para desbloquear la publicación en CI ante la inmutabilidad de v2.5.68.
+
 # CHANGELOG — v2.5.68 (359) — Sincronización documental honesta + read-back del ancho espacial VERIFICADO en host
 
 1. **Read-back del ancho espacial extraído y probado (nuevo):** la fórmula que alimenta `nativeGetSpatialWidthDirect` (`clamp(base × escalaTérmica, 0, 2)`) vivía SOLO dentro de `ivanna_omega_jni.cpp`, que no se compila en host (necesita jni.h/AudioFlinger). Por eso el contrato del que depende `FotoHoloEngine.readbackConfirmed` no tenía NINGUNA prueba. Se extrae a `supreme/SpatialWidthReadback.hpp` (función pura, sin dependencias), el JNI usa exactamente esa función y 8 pruebas de host lo verifican: identidad sin recorte, el recorte térmico SOLO reduce, acotado a [0, 2], monotonía y entradas no finitas seguras.
