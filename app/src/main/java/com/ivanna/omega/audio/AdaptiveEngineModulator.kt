@@ -59,7 +59,7 @@ class AdaptiveEngineModulator {
             AdaptiveMode.OFF -> 0f
             AdaptiveMode.NATURAL -> clamped.pow(0.8f)  // Curva suave (exponente < 1)
             AdaptiveMode.STUDIO -> clamped.pow(1.0f)   // Lineal
-            AdaptiveMode.EXTREME -> clamped.pow(1.5f)  // Curva agresiva (exponente > 1)
+            AdaptiveMode.EXTREME -> clamped.pow(0.5f)  // Curva más intensa que NATURAL para 0..1
         }
     }
     
@@ -103,9 +103,13 @@ class AdaptiveEngineModulator {
      * Soft clip con tanh — mapea valor a rango usando función sigmoide suave
      */
     private fun softClipValue(value: Float, min: Float, max: Float): Float {
+        // Preserve hard safety boundaries exactly; tanh alone maps endpoints
+        // inward (e.g. 0 -> 0.119 for [0, 1]), which breaks OFF mode.
+        if (value <= min) return min
+        if (value >= max) return max
         val normalized = (value - (min + max) / 2) / ((max - min) / 2)
-        val clipped = tanh(normalized.toDouble()).toFloat()  // tanh comprime a (-1, 1)
-        return (clipped + 1) / 2 * (max - min) + min
+        val clipped = tanh(normalized.toDouble()).toFloat()
+        return ((clipped + 1) / 2 * (max - min) + min).coerceIn(min, max)
     }
     
     /**
