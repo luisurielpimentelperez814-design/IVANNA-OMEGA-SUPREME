@@ -758,6 +758,13 @@ jobs:
           cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
           ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
 
+      - name: Generar flyer promocional dinámico de la versión
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          pip install Pillow matplotlib
+          python3 tools/promo/generate_release_flyer.py "${{ steps.ver.outputs.version }}"
+
       - name: Crear o actualizar el Release (sin enmascarar fallos)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -767,11 +774,17 @@ jobs:
           TAG="${{ steps.ver.outputs.version }}"
           ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          FLYER_TAG="docs/release_media/ivanna_promo_flyer_${TAG}.png"
+          FLYER_CANONICAL="docs/release_media/ivanna_promo_flyer.png"
           NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
           STAGE_TAG="staging-${GITHUB_SHA}"
 
+          EXTRA_ASSETS=()
+          [ -f "$FLYER_TAG" ] && EXTRA_ASSETS+=("$FLYER_TAG")
+          [ -f "$FLYER_CANONICAL" ] && EXTRA_ASSETS+=("$FLYER_CANONICAL")
+
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" \
+            gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" "${EXTRA_ASSETS[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "IVANNA OMEGA SUPREME $TAG" \
@@ -814,4 +827,13 @@ jobs:
             --jq '.[] | select(.isDraft and (.tagName|startswith("staging-")) and ((.createdAt|fromdateiso8601) < (now-21600))) | .tagName' \
             | while read -r t; do gh release delete "$t" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true; done
           echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
+
+      - name: Difundir lanzamiento en redes sociales y webhooks
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SOCIAL_BROADCAST_WEBHOOK_URL: ${{ secrets.SOCIAL_BROADCAST_WEBHOOK_URL }}
+        run: |
+          python3 tools/promo/broadcast_release.py
 
