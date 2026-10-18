@@ -372,6 +372,10 @@ add_library(omega_effect SHARED
     # del target ivanna_omega); se añade aqui para que la cadena system-wide
     # tenga exactamente la misma proteccion anti-clip que la app.
     dsp/SafetyLimiter.cpp
+
+    # Cadena 4D también en Ruta B: superficie global por proceso (audioserver). Con 4D apagado
+    # (por defecto) no altera un solo bit.
+    music_intelligence/FourDControlSurface.cpp
 )
 
 target_compile_options(omega_effect PRIVATE ${BASE_FLAGS})

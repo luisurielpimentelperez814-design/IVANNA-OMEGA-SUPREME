@@ -16,6 +16,7 @@
 #include "HRTFDatabase.h"
 #include "../include/hrtf_lut.h"   // conservado: lo referencia check_header_wiring.py
 #include "ihr1_format.hpp"
+#include "HrirTimeAlign.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -28,6 +29,7 @@
 namespace Ivanna {
 
 HRTFImpulsePair g_hrtfDatabase[HRTF_ELEVATIONS][HRTF_AZIMUTHS] = {};
+float g_hrtfOnsetSamples[HRTF_ELEVATIONS][HRTF_AZIMUTHS][2] = {};
 
 namespace {
 
@@ -61,6 +63,7 @@ inline Dir toDir(double azDeg, double elDeg) noexcept {
 
 inline void clearTable() noexcept {
     std::memset(g_hrtfDatabase, 0, sizeof(g_hrtfDatabase));
+    std::memset(g_hrtfOnsetSamples, 0, sizeof(g_hrtfOnsetSamples));
 }
 
 } // namespace
@@ -187,33 +190,43 @@ HrtfDbResult hrtfDatabaseBuild(const HrtfDbMeasured& m,
             }
 
             HRTFImpulsePair& node = g_hrtfDatabase[ei][ai];
+
+            // INTERPOLACIÓN ALINEADA EN EL TIEMPO (HrirTimeAlign.hpp): promediar muestra a muestra mezcla impulsos con
+            // distinta ITD (peine de dos impulsos: se pierden agudos y localización). Se mide el onset de cada vecina,
+            // se lleva al onset medio ponderado con retardo fraccional y SOLO entonces se suman.
+            const float* srcL[kNeighbours]; const float* srcR[kNeighbours];
+            size_t srcLen[kNeighbours];
+            float onL[kNeighbours], onR[kNeighbours], wf[kNeighbours];
+            for (size_t k = 0; k < found; ++k) {
+                srcL[k] = m.left  + idx[k] * m.irLen;
+                srcR[k] = m.right + idx[k] * m.irLen;
+                srcLen[k] = m.irLen;
+                onL[k] = hrirAlign::onsetSamples(srcL[k], m.irLen);
+                onR[k] = hrirAlign::onsetSamples(srcR[k], m.irLen);
+                wf[k] = static_cast<float>(w[k] / wSum);
+            }
+            for (size_t tap = 0; tap < HRTF_TAPS; ++tap) { node.left[tap] = 0.0f; node.right[tap] = 0.0f; }
+            hrirAlign::blendAligned(srcL, srcLen, onL, wf, found, node.left,  HRTF_TAPS);
+            hrirAlign::blendAligned(srcR, srcLen, onR, wf, found, node.right, HRTF_TAPS);
+
             float eL = 0.0f, eR = 0.0f;
             for (size_t tap = 0; tap < HRTF_TAPS; ++tap) {
-                double accL = 0.0, accR = 0.0;
-                if (tap < m.irLen) {
-                    for (size_t k = 0; k < found; ++k) {
-                        if (w[k] == 0.0) continue;
-                        accL += w[k] * m.left [idx[k] * m.irLen + tap];
-                        accR += w[k] * m.right[idx[k] * m.irLen + tap];
-                    }
-                    accL /= wSum;
-                    accR /= wSum;
-                    // Truncar un HRIR largo (p.ej. 512) a 128 taps: ventana de
-                    // salida corta para no introducir un salto en el corte.
-                    if (m.irLen > HRTF_TAPS && tap >= HRTF_TAPS - kFadeTaps) {
-                        const double k = static_cast<double>(tap - (HRTF_TAPS - kFadeTaps));
-                        const double fade =
-                            0.5 * (1.0 + std::cos(kPi * (k + 1.0) /
-                                                  static_cast<double>(kFadeTaps + 1)));
-                        accL *= fade;
-                        accR *= fade;
-                    }
+                // Truncar un HRIR largo (p.ej. 512) a 128 taps: ventana de
+                // salida corta para no introducir un salto en el corte.
+                if (m.irLen > HRTF_TAPS && tap >= HRTF_TAPS - kFadeTaps) {
+                    const double k = static_cast<double>(tap - (HRTF_TAPS - kFadeTaps));
+                    const float fade = static_cast<float>(
+                        0.5 * (1.0 + std::cos(kPi * (k + 1.0) / static_cast<double>(kFadeTaps + 1))));
+                    node.left[tap]  *= fade;
+                    node.right[tap] *= fade;
                 }
-                node.left[tap]  = static_cast<float>(accL);
-                node.right[tap] = static_cast<float>(accR);
+                if (!std::isfinite(node.left[tap]))  node.left[tap]  = 0.0f;
+                if (!std::isfinite(node.right[tap])) node.right[tap] = 0.0f;
                 eL += node.left[tap]  * node.left[tap];
                 eR += node.right[tap] * node.right[tap];
             }
+            g_hrtfOnsetSamples[ei][ai][0] = hrirAlign::onsetSamples(node.left,  HRTF_TAPS);
+            g_hrtfOnsetSamples[ei][ai][1] = hrirAlign::onsetSamples(node.right, HRTF_TAPS);
             if (!(eL > kMinEnergy) || !(eR > kMinEnergy)) {
                 result = HrtfDbResult::SilentFilter;
                 break;

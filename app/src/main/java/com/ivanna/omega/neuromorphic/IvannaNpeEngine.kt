@@ -29,6 +29,10 @@ object IvannaNpeEngine {
     private var bufInR: FloatBuffer? = null
     private var bufOutL: FloatBuffer? = null
     private var bufOutR: FloatBuffer? = null
+    // Buffers PROPIOS del análisis: el hilo de captura analiza mientras el reproductor puede estar
+    // procesando por processInterleavedStereo; compartir buffers directos sería una carrera.
+    private var bufAnL: FloatBuffer? = null
+    private var bufAnR: FloatBuffer? = null
 
     fun init(sampleRate: Int, maxBlockFrames: Int) {
         if (handle != 0L) return
@@ -55,6 +59,8 @@ object IvannaNpeEngine {
         bufInR = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
         bufOutL = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
         bufOutR = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
+        bufAnL = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
+        bufAnR = IvannaNpeNative.allocFloatBuffer(maxBlockFrames)
         val buildTag = runCatching { IvannaNpeNative.nativeGetBuildTag() }.getOrDefault("npe")
         val copyright = runCatching { IvannaNpeNative.nativeGetCopyright() }.getOrDefault("")
         Log.i(TAG, "init sr=$sampleRate maxBlockFrames=$maxBlockFrames handle=$handle tag=$buildTag $copyright")
@@ -90,6 +96,24 @@ object IvannaNpeEngine {
             buffer[i * 2] = outL.get(i)
             buffer[i * 2 + 1] = outR.get(i)
         }
+    }
+
+    /**
+     * Análisis SOLO-LECTURA de un buffer intercalado estéreo: actualiza género y firma del NPE sin
+     * modificar [buffer]. Es lo que corre el servicio de captura cuando DSPBridge nativo está activo
+     * (el NPE no procesa en ese caso para no duplicar procesamiento, pero la telemetría debe vivir).
+     */
+    fun analyzeInterleavedStereo(buffer: FloatArray, numFrames: Int) {
+        if (handle == 0L || numFrames <= 0 || numFrames > maxFrames || buffer.size < numFrames * 2) return
+        val aL = bufAnL ?: return
+        val aR = bufAnR ?: return
+        aL.clear(); aR.clear()
+        for (i in 0 until numFrames) {
+            aL.put(buffer[i * 2])
+            aR.put(buffer[i * 2 + 1])
+        }
+        aL.flip(); aR.flip()
+        IvannaNpeNative.nativeAnalyzeStereo(handle, aL, aR, numFrames)
     }
 
     /**
@@ -225,6 +249,6 @@ object IvannaNpeEngine {
             IvannaNpeNative.nativeDestroy(handle)
             handle = 0L
         }
-        bufInL = null; bufInR = null; bufOutL = null; bufOutR = null
+        bufInL = null; bufInR = null; bufOutL = null; bufOutR = null; bufAnL = null; bufAnR = null
     }
 }

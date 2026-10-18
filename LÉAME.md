@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.4.44 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
+<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.68 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
 
-# ⬡ IVANNA OMEGA SUPREME `v2.4.44` ⬡
+# ⬡ IVANNA OMEGA SUPREME `v2.5.68` ⬡
 
 ### Sistema Operativo de Supremacía Neuroacústica para Android — C++20 / NEON ARM64, Sincronía A/V Cero-Desfase en Cine & Streaming, `OmniHolographicSingularityEngine` en Lazo Cerrado, Guardia de Estabilidad $C^2$ Cero-Artefactos, Atlas de Escena Musical (`12 Estilos · IVW1 8 774 Parámetros`), 5 Ejes Cuántico-Neuromórficos + Inversión Coclear PINN (0 muestras de lookahead), Entrenamiento Conjunto 255-SOFA + 7D-SAF + 200-RIR desde $t = 0\text{ ms}$ (Root & Sin Root) y Asistente Cognitivo con Gemini 2.5 Flash
 
 *Arquitectura y Autoría Principal: **Luis Uriel Pimentel Pérez — GORE TNS***
 
-[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.4.44&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=CTEST%20211%2F211%20GREEN&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
-[![Version](https://img.shields.io/badge/Release-v2.4.44%20%28284%29-00F0FF?style=for-the-badge)](version.properties)
+[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.68&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
+[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=CTEST%20402%2F402%20GREEN&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
+[![Version](https://img.shields.io/badge/Release-v2.5.68%20%28359%29-00F0FF?style=for-the-badge)](version.properties)
 [![DSP](https://img.shields.io/badge/DSP-456%20Archivos%20C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge)](app/src/main/cpp/)
 [![Atlas](https://img.shields.io/badge/Atlas%20de%20Escena-12%20Estilos%20%C2%B7%208774%20Pesos%20IVW1-FF2E93?style=for-the-badge)](docs/ATLAS_ESCENA.md)
 [![SOFA-SAF-RIR](https://img.shields.io/badge/SOFA%20255%20%C2%B7%20SAF%207D%20%C2%B7%20RIR%20200-Trained%20Master-00E5FF?style=for-the-badge)](app/src/main/cpp/spatial/SofaSafRirMasterKnowledge.hpp)
@@ -19,9 +19,12 @@
 
 > 📖 Este archivo es el resumen ejecutivo en español de entrada rápida al proyecto. La documentación arquitectónica exhaustiva con diagramas matemáticos e infografías vectoriales se encuentra en **[README.md](README.md)**.
 
+> 🔎 **Estado verificado (2026-10-18):** tests host **402/402 (100 %)**. Honestidad de la ruta HRTF: el IR que suena se **reconstruye** desde la base maestra SOFA-PCA; el `.sofa` se valida por firma HDF5 pero **no se parsea en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`). Decodificación SOFA real: **pendiente**.
+
+
 ---
 
-## ✦ Resumen Ejecutivo (`v2.4.44`)
+## ✦ Resumen Ejecutivo (`v2.5.68`)
 
 1. **Sincronía A/V y Cero-Eco en Cine & Streaming (Amazon Prime Video, Netflix, Disney+)**:
    - Desactiva de raíz el efecto Haas y filtrado en peine (+35 ms) mediante el **Árbitro Dinámico de Transmisión**. En apps de video se excluye la captura loopback y se mutea la re-inyección por `AudioTrack` a nivel HAL, procesando el audio en sitio con **cero latencia agregada (< 0.1 ms)**. Bloquea en fase el vástago central vocal (`lateralObjPtrs[0] = nullptr;`) para no desfasar el diálogo con retardo ITD, alinea rígidamente el pico directo RIR a la muestra 0 ($t = 0\text{ ms}$) y apaga reverberación artificial en diálogos hablados.
@@ -37,17 +40,3 @@
    - **`IsometricEnergyGovernor` + `BiquadDcBlocker`**: auditoría de energía pre/post cadena con histéresis de $+1.2\text{ dB}$ y filtro sub-sónico DC de doble precisión a $5\text{ Hz}$.
 5. **5 Ejes de Supremacía Cuántico-Neuromórfica + Inversión Coclear PINN (sample-by-sample, 0 muestras de lookahead)**:
    - `WarpedLatticeTransducerInverter` (Bark $\lambda=0.72$ + Lorentz $Bl(x)$ + De-Clipper Hermite), `PhaseCoherentTransharmonicSynthesizer` (CVNN `modReLU` + 8 osciladores DDSP NEON + Cinta 2" Jiles-Atherton), `SnnNmfHoaUpmixer` (SNN LIF INT8 + NMF 4 flujos $\to$ HOA 4.º Orden), `PinnaManifoldInterpolator` (SIREN 6-D + FIR fase mínima) y `SupremeMsoFarrowArbitrator` (SHM CAS + Farrow 5.º Orden), coronados por `CochlearActiveInverseEngine` (8 bandas Greenwood con integrador Heun RK2).
-6. **Verificación Determinista (6 Puertas Estáticas + `390/390` CTest + Doble Ruta $t = 0\text{ ms}$)**:
-   - **7/7 puertas estáticas en `[PASS]`**: `239` SOFA + `12` HRTF + `200` RIR + SAF consistentes entre APK y módulo (`[0.6]`), `36/36` entradas RT sin alloc/locks (`[A3]`), `333 de 333` símbolos JNI (`[0.1]`), `151 de 151` headers sin huérfanos (`[0.2]`), `241 de 241` wrappers Kotlin invocados (`[A2]`), `6/6` builds sin `-ffast-math` (`[0.4]`) y `390/390` tests nativos C++20 en verde bajo `ASan + UBSan` (`[A5]`).
-
----
-
-<div align="center">
-
-**© 2026 Luis Uriel Pimentel Pérez — GORE TNS. Todos los derechos reservados.**
-
-*Construido muestra a muestra. Auditado commit a commit. Verificado línea por línea.*
-
-**⬡ IVANNA OMEGA SUPREME `v2.4.44` ⬡**
-
-</div>

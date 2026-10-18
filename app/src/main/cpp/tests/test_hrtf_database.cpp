@@ -482,9 +482,13 @@ TEST_F(HrtfDbTest, BinauralRendererFlagsFallbackThenSwitchesToMeasuredWhenTableL
 
     // Misma posicion (el angulo no cambia): la carga tardia debe forzar el recalculo.
     BinauralRenderer r2 = r;   // conserva _lastAz y filtros de respaldo
+    // El cambio respaldo -> HRIR medidos se FUNDE (256 muestras, sin clic): se consume el fundido con un bloque
+    // de silencio y la respuesta al impulso se mide ya en régimen, que es lo que este test fija.
+    std::vector<float> silence(256, 0.0f);
+    r2.processBinaural(silence.data(), oL.data(), oR.data(), 256, left);
+    EXPECT_FALSE(r2.usingFallbackHrtf()) << "tras cargar la tabla debe usar HRIR medidos";
     std::vector<float> in2(256, 0.0f); in2[0] = 1.0f;
     r2.processBinaural(in2.data(), oL.data(), oR.data(), 256, left);
-    EXPECT_FALSE(r2.usingFallbackHrtf()) << "tras cargar la tabla debe usar HRIR medidos";
     EXPECT_TRUE(allFinite(oL.data(), 256) && allFinite(oR.data(), 256));
 
     // La respuesta al impulso ES la HRIR interpolada (distGain = 1 a 1 m).

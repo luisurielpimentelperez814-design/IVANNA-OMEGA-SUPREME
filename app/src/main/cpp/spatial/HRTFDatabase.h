@@ -36,6 +36,11 @@ struct HRTFImpulsePair {
 // ----------------------------------------------------------------------------
 extern HRTFImpulsePair g_hrtfDatabase[HRTF_ELEVATIONS][HRTF_AZIMUTHS];
 
+// Onset sub-muestra [oido: 0=izq,1=der] de cada nodo (spatial/HrirTimeAlign.hpp), medido sobre el filtro FINAL de
+// 128 taps. Permite al interpolador alinear en el tiempo los 4 vecinos antes de sumarlos (sin peine de ITD).
+// -1 = no medible (el interpolador cae a la suma clasica). Se escribe junto con la tabla (mismo ciclo Ready).
+extern float g_hrtfOnsetSamples[HRTF_ELEVATIONS][HRTF_AZIMUTHS][2];
+
 enum class HrtfDbResult : int {
     Ok = 0,
     AlreadyLoaded,       // la tabla ya esta Ready (carga unica)

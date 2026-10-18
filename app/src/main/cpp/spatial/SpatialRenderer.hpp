@@ -84,6 +84,11 @@ public:
             // El interpolador informa EXPLÍCITAMENTE si hay HRIR medidos
             // (tabla cargada). Antes devolvía void y con la tabla vacía el
             // silencio solo se disimulaba con un umbral de energía.
+            // CROSSFADE de filtros: con head-tracking o una fuente en movimiento, cambiar los 256 coeficientes de golpe
+            // parte la forma de onda (clic/«zipper» en cada actualización). El filtro vigente pasa a ser el origen
+            // del fundido y se mezcla linealmente SALIDA a SALIDA durante kFadeFrames (LTI: equivale a mezclar
+            // coeficientes). Si ya había un fundido a medias, el origen es el filtro efectivo de ese instante.
+            if (m_lastAzDeg > -900.0f) beginFade();
             const bool measured =
                 m_interpolator.getInterpolatedHRTF(azDeg, elDeg, m_hrtfLeft, m_hrtfRight);
             float energy = 0.0f;
@@ -108,6 +113,24 @@ public:
 
         // 3. Convolución FIR circular de 128 taps libre de asignaciones dinámicas
         for (size_t i = 0; i < numFrames; ++i) {
+            if (m_fading) {
+                // Fundido entre el filtro anterior y el nuevo (ver beginFade()).
+                m_history[m_histIdx] = inMono[i] * distGain;
+                float oL = 0.0f, oR = 0.0f, nL = 0.0f, nR = 0.0f;
+                size_t h = m_histIdx;
+                for (size_t tap = 0; tap < HRTF_TAPS; ++tap) {
+                    const float sv = m_history[h];
+                    oL += sv * m_prevLeft[tap];  oR += sv * m_prevRight[tap];
+                    nL += sv * m_hrtfLeft[tap];  nR += sv * m_hrtfRight[tap];
+                    h = (h == 0) ? (HRTF_TAPS - 1) : (h - 1);
+                }
+                const float al = static_cast<float>(m_fadePos + 1) / static_cast<float>(kFadeFrames);
+                m_histIdx = (m_histIdx + 1) & (HRTF_TAPS - 1);
+                outLeft[i]  = oL + al * (nL - oL);
+                outRight[i] = oR + al * (nR - oR);
+                if (++m_fadePos >= kFadeFrames) m_fading = false;
+                continue;
+            }
             m_history[m_histIdx] = inMono[i] * distGain;
 
             float accL = 0.0f;
@@ -131,6 +154,30 @@ public:
     bool usingFallbackHrtf() const noexcept { return m_usingFallback; }
 
 private:
+    // Duración del fundido entre filtros (~5.3 ms @48k): bastante para no oírse como clic, bastante poco para
+    // seguir un giro de cabeza rápido sin arrastre perceptible.
+    static constexpr size_t kFadeFrames = 256;
+
+    void beginFade() noexcept {
+        if (m_fading) {
+            const float al = static_cast<float>(m_fadePos) / static_cast<float>(kFadeFrames);
+            for (size_t k = 0; k < HRTF_TAPS; ++k) {
+                m_prevLeft[k]  += al * (m_hrtfLeft[k]  - m_prevLeft[k]);
+                m_prevRight[k] += al * (m_hrtfRight[k] - m_prevRight[k]);
+            }
+        } else {
+            std::memcpy(m_prevLeft,  m_hrtfLeft,  sizeof(m_prevLeft));
+            std::memcpy(m_prevRight, m_hrtfRight, sizeof(m_prevRight));
+        }
+        m_fadePos = 0;
+        m_fading = true;
+    }
+
+    float m_prevLeft[HRTF_TAPS]{};
+    float m_prevRight[HRTF_TAPS]{};
+    size_t m_fadePos{0};
+    bool m_fading{false};
+
     HRTFInterpolator m_interpolator{};
     bool m_usingFallback{true};
     float m_hrtfLeft[HRTF_TAPS];

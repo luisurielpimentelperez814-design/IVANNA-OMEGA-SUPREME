@@ -190,29 +190,21 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         val spatialWidth   = if (pipeOk) pipe[6] else 1f
         val adaptiveActive = if (pipeOk) pipe[7] else 0f
 
-        // Clasificador: probabilidades reales del TinyML vía characteristics.
-        // [0]=percussiveness [1]=tonality [2]=centroidHz [3]=spread — derivamos
-        // las 4 barras con el mismo mapeo que usa nativeGetAdaptiveTelemetry,
-        // sin inventar una red nueva: voz ≈ centroide medio + tono, música ≈
-        // tonalidad alta, bajos ≈ centroide bajo, silencio ≈ rms ≈ 0.
+        // Clasificador: rasgos nativos de nativeGetAudioCharacteristics() con el contrato REAL
+        // ([2]=percusividad [3]=tonalidad [6]=centroide Hz). Ver OemClassifierMath (probado en JVM).
         val chars = if (loaded) runCatching {
             IvannaNativeLib.guardedNative(FloatArray(0)) { IvannaNativeLib.nativeGetAudioCharacteristics() }
         }.getOrDefault(FloatArray(0)) else FloatArray(0)
-        val percussive = if (chars.size >= 1) chars[0].coerceIn(0f, 1f) else 0f
-        val tonal      = if (chars.size >= 2) chars[1].coerceIn(0f, 1f) else 0f
-        val centroidHz = if (chars.size >= 3) chars[2].coerceIn(0f, 22050f) else 0f
+        val cls        = OemClassifierMath.read(chars, rms)
+        val percussive = cls.percussiveness
+        val tonal      = cls.tonality
+        val centroidHz = cls.centroidHz
+        val pSilence   = cls.probSilence
+        val pBass      = cls.probBass
+        val pMusic     = cls.probMusic
+        val pVoice     = cls.probVoice
+        val domClass   = cls.dominantClass
         val hasSignal  = rms > 1e-4f
-        // Probabilidades normalizadas (suman ~1 cuando hay señal; 0 si silencio)
-        val pSilence = if (hasSignal) 0f else 1f
-        val pBass    = if (hasSignal) ((1f - (centroidHz / 4000f).coerceIn(0f, 1f)) * percussive).coerceIn(0f, 1f) else 0f
-        val pMusic   = if (hasSignal) (tonal * (1f - pBass * 0.5f)).coerceIn(0f, 1f) else 0f
-        val pVoice   = if (hasSignal) ((1f - tonal) * (1f - percussive) * (1f - pBass)).coerceIn(0f, 1f) else 0f
-        val domClass = when {
-            !hasSignal -> 3
-            pVoice >= pMusic && pVoice >= pBass -> 0
-            pMusic >= pBass -> 1
-            else -> 2
-        }
 
         _state.value = OemState(
             engineState    = engineState,
@@ -222,6 +214,11 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
             dspCpuLoad     = dsp.metrics.cpuLoadRatio,
             nativeLoaded   = loaded,
             daemonAlive    = daemonAlive,
+            npeModuleLink  = when (com.ivanna.omega.neuromorphic.PiLstmBridge.moduleLink) {
+                com.ivanna.omega.neuromorphic.PiLstmBridge.ModuleLink.CONFIRMED -> "confirmado"
+                com.ivanna.omega.neuromorphic.PiLstmBridge.ModuleLink.NO_DAEMON -> "sin daemon"
+                else -> "—"
+            },
             thermalLoad    = thermalLoad,
             thermalApiOk   = thermalApiOk,
             tempC          = tempC,

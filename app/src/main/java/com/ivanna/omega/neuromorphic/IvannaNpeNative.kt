@@ -50,6 +50,11 @@ object IvannaNpeNative {
         numFrames: Int
     )
 
+    /** Análisis solo-lectura (género + firma): no escribe audio. Ver npe_analysis_tap.hpp. */
+    @JvmStatic external fun nativeAnalyzeStereo(
+        handle: Long, inL: FloatBuffer, inR: FloatBuffer, numFrames: Int
+    )
+
     @JvmStatic external fun nativeSetParameters(
         handle: Long,
         alpha: Float, beta: Float, gamma: Float, delta: Float,

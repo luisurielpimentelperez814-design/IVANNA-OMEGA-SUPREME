@@ -16,6 +16,7 @@
 #include "HybridRenderer.hpp"
 #include "SpatialRenderer.hpp"
 #include "spatial/HRTFDatabase.h"
+#include "spatial/HrirTimeAlign.hpp"
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -75,14 +76,21 @@ bool HRTFInterpolator::getInterpolatedHRTF(float azimuthDeg, float elevationDeg,
     const float w01 = (1.0f - az_f) * el_f;
     const float w11 = az_f * el_f;
 
-    // Interpolar
-    for (size_t i = 0; i < HRTF_TAPS; ++i) {
-        outLeft[i] = w00 * p00.left[i] + w10 * p10.left[i] +
-                     w01 * p01.left[i] + w11 * p11.left[i];
-
-        outRight[i] = w00 * p00.right[i] + w10 * p10.right[i] +
-                      w01 * p01.right[i] + w11 * p11.right[i];
-    }
+    // Interpolar ALINEANDO en el tiempo (HrirTimeAlign.hpp): cada nodo se lleva al onset medio ponderado antes de
+    // sumar, así no aparece el peine de ITD entre vecinos. Si un onset no es medible o la separación es excesiva,
+    // se degrada a la suma clásica (exactamente el comportamiento anterior).
+    const float* srcL[4] = { p00.left,  p10.left,  p01.left,  p11.left  };
+    const float* srcR[4] = { p00.right, p10.right, p01.right, p11.right };
+    const size_t lens[4] = { HRTF_TAPS, HRTF_TAPS, HRTF_TAPS, HRTF_TAPS };
+    const float  w[4]    = { w00, w10, w01, w11 };
+    const float onL[4] = { g_hrtfOnsetSamples[el0][az0][0], g_hrtfOnsetSamples[el0][az1][0],
+                           g_hrtfOnsetSamples[el1][az0][0], g_hrtfOnsetSamples[el1][az1][0] };
+    const float onR[4] = { g_hrtfOnsetSamples[el0][az0][1], g_hrtfOnsetSamples[el0][az1][1],
+                           g_hrtfOnsetSamples[el1][az0][1], g_hrtfOnsetSamples[el1][az1][1] };
+    std::memset(outLeft,  0, HRTF_TAPS * sizeof(float));
+    std::memset(outRight, 0, HRTF_TAPS * sizeof(float));
+    hrirAlign::blendAligned(srcL, lens, onL, w, 4, outLeft,  HRTF_TAPS);
+    hrirAlign::blendAligned(srcR, lens, onR, w, 4, outRight, HRTF_TAPS);
     return true;
 }
 

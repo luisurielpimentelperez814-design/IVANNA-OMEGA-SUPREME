@@ -2118,6 +2118,17 @@ Flanco: conectar la cadena 4D ya commiteada (v2.5.46) hasta el dispositivo. Arch
 el conductor nunca se armaba). Verificación host: test_4d_control_surface 6/6 y test_4d_ultra_chain 16/16.
 NOTA PARA OTROS AGENTES: la cadena 4D y su cableado quedan tomados por esta sesión; escoge otro flanco.
 
+### SEGUIMIENTO AUDITORÍA (sesión Genspark, 2026-10-18) — PR de seguimiento
+Sincronizado a `c93103e6` (2.5.67/358, merge PR #63 `c959888c`). Rama `fix/audit-followup-docs-sofa-fotoholo`.
+Corregido y VERIFICADO: (a) contrato del read-back del ancho espacial extraído a
+`supreme/SpatialWidthReadback.hpp` + 8 pruebas host (antes vivía solo en `ivanna_omega_jni.cpp`,
+que no se compila en host: el contrato del que depende `FotoHoloEngine.readbackConfirmed` no
+tenía prueba); (b) README/LÉAME/CHANGELOG/telemetría sincronizados a valores MEDIDOS
+(402/402 real, v2.5.68/359), sin insignias infladas.
+PENDIENTE declarado (no simulado): decodificación SOFA real en runtime — el IR se reconstruye
+desde la base maestra SOFA-PCA y el `.sofa` solo se valida por firma HDF5 (`VALID_NOT_PARSED`).
+A/B audible, latencia y validación en dispositivo: NO hechos.
+
 ## Cómo actualizar este archivo
 Al terminar o abandonar tu frente: muévelo de "tomados" a "abiertos"
 con una nota concreta de qué falta (no solo "terminé"). Al tomar uno:

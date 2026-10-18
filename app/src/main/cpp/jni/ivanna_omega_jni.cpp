@@ -167,6 +167,7 @@ static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
 // g_cochlearIntensity: nivel wet [0..1] leído en hot-path (relaxed)
 #include "../neuromorphic/CochlearActiveInverseModel.hpp"
 #include "../include/omega_wave_stages.hpp"
+#include "../supreme/SpatialWidthReadback.hpp"
 std::atomic<bool>  g_cochlearEnabled{false};
 std::atomic<float> g_cochlearIntensity{0.35f};
 ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
@@ -959,7 +960,9 @@ static void recomputeCompressorLocked() {
 static void recomputeSpatialWidthLocked() {
     const float scale = std::clamp(g_thermalSpatialScale.load(std::memory_order_relaxed), 0.0f, 1.0f);
     const float base  = g_spatialBaseWidth.load(std::memory_order_relaxed);
-    const float applied = std::clamp(base * scale, 0.0f, 2.0f);
+    // Misma matematica que antes, extraida a supreme/SpatialWidthReadback.hpp para poder
+    // verificar en host el contrato del read-back (ver test_spatial_width_readback).
+    const float applied = ivanna::supreme::SpatialWidthReadback::applied(base, scale);
     g_pd.set_spatial_width(applied);
     g_spatialAppliedWidth.store(applied, std::memory_order_release);
 }
@@ -3083,9 +3086,11 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetRoomCorrection(
 }
 
 // ── Motor NPE neuromórfico en el módulo (Ruta B): app→daemon (SET_NPE) ──
-static void omegaSendNpeToDaemon(bool enabled, float lateral, float ohc, float masterDb) noexcept {
+// Devuelve true SOLO si conectó con el daemon y escribió el comando completo (antes se ignoraba el resultado
+// y la app no podía saber que el módulo se había quedado con sus valores por defecto).
+static bool omegaSendNpeToDaemon(bool enabled, float lateral, float ohc, float masterDb) noexcept {
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) return;
+    if (fd < 0) return false;
     struct timeval tv{0, 200000};
     ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -3095,14 +3100,16 @@ static void omegaSendNpeToDaemon(bool enabled, float lateral, float ohc, float m
     addr.sun_path[0] = '\0';
     std::memcpy(addr.sun_path + 1, name, std::strlen(name));
     socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + std::strlen(name);
+    bool ok = false;
     if (::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), len) == 0) {
         char json[200];
         int n = std::snprintf(json, sizeof(json),
             "{\"action\":\"SET_NPE\",\"enabled\":%d,\"lateralInhib\":%.3f,\"ohc\":%.3f,\"masterDb\":%.2f}",
             enabled ? 1 : 0, (double)lateral, (double)ohc, (double)masterDb);
-        if (n > 0) (void)::write(fd, json, static_cast<size_t>(n));
+        if (n > 0) ok = (::write(fd, json, static_cast<size_t>(n)) == static_cast<ssize_t>(n));
     }
     ::close(fd);
+    return ok;
 }
 
 /// Diafonía: la cadena 4D de la app (ivanna_4d_jni.cpp) la enciende en la Ruta A; esto la sincroniza con el módulo.
@@ -3134,13 +3141,14 @@ extern "C" void ivanna_send_crosstalk_to_daemon(bool on) noexcept {
 }
 
 /** Publica el estado del NPE al módulo (omega_effect en audioserver). La Ruta A usa IvannaNpeEngine en la app. */
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNpeModule(
     JNIEnv*, jobject, jboolean enabled, jfloat lateralInhib, jfloat ohcCompression, jfloat masterDb) {
-    omegaSendNpeToDaemon(enabled == JNI_TRUE,
+    return omegaSendNpeToDaemon(enabled == JNI_TRUE,
                          std::isfinite(lateralInhib) ? std::clamp(lateralInhib, 0.0f, 1.0f) : 0.2f,
                          std::isfinite(ohcCompression) ? std::clamp(ohcCompression, 0.0f, 1.0f) : 0.3f,
-                         std::isfinite(masterDb) ? std::clamp(masterDb, -24.0f, 12.0f) : 0.0f);
+                         std::isfinite(masterDb) ? std::clamp(masterDb, -24.0f, 12.0f) : 0.0f)
+               ? JNI_TRUE : JNI_FALSE;
 }
 
 /**

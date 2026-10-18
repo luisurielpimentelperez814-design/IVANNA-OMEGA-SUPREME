@@ -65,12 +65,43 @@ object PiLstmBridge {
     /** Arranque: fija solo el estado de bypass del módulo y lo publica (sin tocar los demás parámetros del motor). */
     fun restoreModuleNpe(bypass: Boolean) { moduleBypass = bypass; pushModuleNpe() }
 
-    /** Publica el estado actual del NPE al módulo vía daemon. Seguro llamarlo sin módulo instalado (no hace nada). */
+    /** Estado del enlace app → daemon del NPE en Ruta B. CONFIRMED = el daemon aceptó el último comando. */
+    enum class ModuleLink { UNKNOWN, CONFIRMED, NO_DAEMON }
+    @Volatile var moduleLink: ModuleLink = ModuleLink.UNKNOWN
+        private set
+    private val moduleRetrying = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun sendModuleNpe(): Boolean = runCatching {
+        IvannaNativeLib.nativeSetNpeModule(!moduleBypass, lastBeta.coerceIn(0f, 1f), lastAlpha.coerceIn(0f, 1f), moduleMasterDb)
+    }.getOrDefault(false)
+
+    /**
+     * Publica el estado actual del NPE al módulo vía daemon. Seguro llamarlo sin módulo instalado.
+     * Antes el resultado se ignoraba: si el daemon aún no estaba listo al arrancar, el módulo se quedaba con sus
+     * valores por defecto y la app lo daba por enviado. Ahora se confirma y, si falla, se reintenta en segundo plano.
+     */
     fun pushModuleNpe() {
         if (!IvannaNativeLib.isLoaded) return
-        runCatching {
-            IvannaNativeLib.nativeSetNpeModule(!moduleBypass, lastBeta.coerceIn(0f, 1f), lastAlpha.coerceIn(0f, 1f), moduleMasterDb)
-        }
+        if (sendModuleNpe()) { moduleLink = ModuleLink.CONFIRMED; return }
+        moduleLink = ModuleLink.NO_DAEMON
+        if (!moduleRetrying.compareAndSet(false, true)) return
+        Thread({
+            try {
+                var waitMs = 1_000L
+                var attempts = 0
+                var done = false
+                while (!done && attempts < 8) {
+                    Thread.sleep(waitMs)
+                    attempts++
+                    // Siempre manda el estado MÁS RECIENTE (puede haber cambiado mientras se esperaba).
+                    if (sendModuleNpe()) { moduleLink = ModuleLink.CONFIRMED; done = true }
+                    waitMs = (waitMs * 2).coerceAtMost(15_000L)
+                }
+            } catch (_: InterruptedException) {
+            } finally {
+                moduleRetrying.set(false)
+            }
+        }, "IvannaNpeModuleRetry").apply { isDaemon = true; start() }
     }
 
     fun setAlpha(v: Float) {
