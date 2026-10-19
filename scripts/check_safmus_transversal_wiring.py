@@ -82,6 +82,11 @@ require("app/src/main/cpp/spatial/RirConvolver.cpp", "if (tailOverBudget) irLen 
 require("app/src/main/cpp/tests/test_supreme_five_axes.cpp", "SAFMUSRirLatencyGate", "OmitsDelayedTailWhenSampleRateExceedsBudget")
 require("app/src/main/cpp/tests/test_room_probe.cpp", "ActiveCorrectionSanitizesAndKeepsStereoPeakBelowCeiling")
 
+
+require("app/src/main/cpp/spatial/ivanna_object_renderer.cpp", "rirConvolver_->setSampleRate(targetSr)")
+require("app/src/main/cpp/omega_effect.cpp", "ctx->rirConvolver->setSampleRate(static_cast<int>(srSession))")
+require("app/src/main/cpp/jni/ivanna_omega_jni.cpp", "conv->setSampleRate(sessionSr)")
+
 if errors:
     print("SAFMUS transversal wiring audit FAILED:")
     for error in errors:

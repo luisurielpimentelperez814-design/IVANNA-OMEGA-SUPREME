@@ -318,6 +318,7 @@ bool ObjectRenderer::selectRoomByRT60(float targetRt60S) noexcept {
     }
 
     if (!rirConvolver_) rirConvolver_ = std::make_unique<Ivanna::RirConvolver>();
+    rirConvolver_->setSampleRate(targetSr);
     rirConvolver_->applySofaCoupling(saf_q_.data());
     rirConvolver_->load(irL.data(), irR.data(), irLen);
     rirConvolver_->setWetDry(reverbLevel_);

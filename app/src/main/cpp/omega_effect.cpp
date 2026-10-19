@@ -657,6 +657,9 @@ static void omega_rir_worker_loop() {
                           ivanna::safmus::isFiniteLatent(ctx->pendingSnap.saf_q))
             ? ctx->pendingSnap.saf_q
             : ivanna::master::kMasterSafGoldenQ;
+        const uint32_t srSession = (ctx->config.outputCfg.samplingRate != 0)
+                                 ? ctx->config.outputCfg.samplingRate : 48000u;
+        ctx->rirConvolver->setSampleRate(static_cast<int>(srSession));
         ctx->rirConvolver->applySofaCoupling(q);
         ctx->rirConvolver->load(irL.data(), irR.data(), irLen);
         LOGI("RirConvolver: sala idx=%d sr=%dHz (%d muestras) + SOFA-SAF acoplada (worker, fuera de RT)",

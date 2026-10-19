@@ -250,6 +250,7 @@ static void rirWorkerLoop() {
             if (irLen > Ivanna::RirConvolver::MAX_IR_TOTAL) irLen = Ivanna::RirConvolver::MAX_IR_TOTAL;
             if (g_localRoomRt60.load(std::memory_order_acquire) >= 0.01f &&
                 g_localRoomWet.load(std::memory_order_acquire) > 0.001f) {
+                conv->setSampleRate(sessionSr);
                 conv->applySofaCoupling(g_localSafQ);
                 conv->load(irL.data(), irR.data(), irLen);
             } else {
