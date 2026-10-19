@@ -6,6 +6,7 @@ import com.ivanna.omega.audio.AudioRouteManager
 import com.ivanna.omega.audio.BassHaptics
 import com.ivanna.omega.audio.OutputRoute as AudioOutputRoute
 import com.ivanna.omega.core.NativeBridge
+import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.spatial.IvannaSpatialManager
 import java.util.UUID
 
@@ -52,6 +53,7 @@ object PerceptualSceneRuntime {
                 reverbRequestedLevel = reverb.requestedLevel,
                 reverbEffectiveLevel = reverb.effectiveLevel,
                 reverbConfirmed = reverb.engineConfirmed,
+                localRirTailStatus = OmegaEngineBridge.localRirTailStatus(),
                 measuredRirActive = reverb.measuredRirActive,
                 measuredRt60Seconds = reverb.measuredRt60Seconds,
                 heuristicUpmixerEnabled = IvannaSpatialManager.isHeuristicStemSeparationConfirmed(),
@@ -227,6 +229,7 @@ object PerceptualSceneRuntime {
             status(
                 PerceptualAxis.REVERBERANT_FIELD,
                 when {
+                    e.localRirTailStatus == 1 -> AxisState.DEGRADED
                     e.reverbConfirmed && e.reverbEffectiveLevel != null &&
                         e.measuredRirActive && e.measuredRt60Seconds != null -> AxisState.APPLIED
                     e.reverbConfirmed && e.reverbEffectiveLevel != null || hybridRoomWetActive -> AxisState.DEGRADED
@@ -234,6 +237,8 @@ object PerceptualSceneRuntime {
                 },
                 "wet 0..1", e.reverbRequestedLevel, e.reverbEffectiveLevel,
                 when {
+                    e.localRirTailStatus == 1 ->
+                        "La ruta RIR local omitió la cola retrasada porque el bloque de 512 muestras supera el presupuesto algorítmico de 20 ms; el estado del daemon se informa por separado"
                     e.reverbConfirmed && e.reverbEffectiveLevel != null &&
                         e.measuredRirActive && e.measuredRt60Seconds != null -> null
                     e.reverbConfirmed && e.reverbEffectiveLevel != null && hybridRoomWetActive ->
@@ -244,8 +249,9 @@ object PerceptualSceneRuntime {
                         "El modelo de sala sintético está activo por telemetría; falta confirmación nativa del nivel/RIR medida"
                     else -> "No se confirmó nivel de reverberación ni una sala húmeda activa"
                 },
-                engineConfirmed = e.reverbConfirmed && e.reverbEffectiveLevel != null &&
-                    e.measuredRirActive && e.measuredRt60Seconds != null
+                engineConfirmed = e.localRirTailStatus != 1 && e.reverbConfirmed &&
+                    e.reverbEffectiveLevel != null && e.measuredRirActive &&
+                    e.measuredRt60Seconds != null
             ),
             status(
                 PerceptualAxis.SOURCE_SEPARATION,
@@ -311,6 +317,8 @@ internal data class PerceptualRuntimeEvidence(
     val reverbRequestedLevel: Float,
     val reverbEffectiveLevel: Float?,
     val reverbConfirmed: Boolean,
+    /** -1 unknown/not initialized, 0 no local tail degradation, 1 delayed tail omitted. */
+    val localRirTailStatus: Int = -1,
     val measuredRirActive: Boolean,
     val measuredRt60Seconds: Float?,
     val heuristicUpmixerEnabled: Boolean,
