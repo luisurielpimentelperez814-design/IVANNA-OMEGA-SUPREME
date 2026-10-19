@@ -164,6 +164,27 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetReverb(
     if (renderer) renderer->setReverbLevel(level);
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetReverbLevel(
+    JNIEnv*, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    return renderer ? renderer->reverbLevel() : -1.f;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererIsRirActive(
+    JNIEnv*, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    return (renderer && renderer->rirActive()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetRoomRT60(
+    JNIEnv*, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    return renderer ? renderer->currentRoomRT60() : -1.f;
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererRenderBlock(
     JNIEnv* env, jclass, jlong handle, jobject objectsBuffer, jint numObjects,
@@ -263,6 +284,13 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetEnabled(
     JNIEnv*, jclass, jlong handle, jboolean enabled) {
     auto* upmixer = toUpmixer(handle);
     if (upmixer) upmixer->setEnabled(enabled);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerIsEnabled(
+    JNIEnv*, jclass, jlong handle) {
+    auto* upmixer = toUpmixer(handle);
+    return (upmixer && upmixer->isEnabled()) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
