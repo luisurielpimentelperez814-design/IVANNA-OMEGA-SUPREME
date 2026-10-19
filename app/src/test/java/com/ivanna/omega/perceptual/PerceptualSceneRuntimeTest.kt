@@ -131,6 +131,28 @@ class PerceptualSceneRuntimeTest {
     }
 
     @Test
+    fun azimuthReadbackAcrossPiBoundaryMatchesSameDirection() {
+        val requestedAzimuth = 3.13f
+        val equivalentReadbackDegrees = Math.toDegrees(-3.13).toFloat()
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(
+                requestedAzimuthRad = requestedAzimuth,
+                poseConfirmed = false,
+                effectiveAzimuthRad = null,
+                hybridTelemetryAvailable = true,
+                hybridEnabled = true,
+                hybridWet = 0.8f,
+                hybridAzimuthDeg = equivalentReadbackDegrees,
+                hybridElevationDeg = Math.toDegrees(0.1).toFloat(),
+                hybridUsingFallbackHrtf = false
+            )
+        )
+        val azimuth = snapshot.axes.single { it.axis == PerceptualAxis.AZIMUTH }
+        assertEquals(AxisState.APPLIED, azimuth.state)
+        assertTrue(azimuth.engineConfirmed)
+    }
+
+    @Test
     fun reverbLevelAloneDoesNotConfirmMeasuredReverberantField() {
         val snapshot = PerceptualSceneRuntime.assemble(
             evidence().copy(
