@@ -48,17 +48,14 @@ class WifiScanSession(
             handler.removeCallbacks(scanTimeoutRunnable)
             val fresh = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
             if (!fresh) {
-                emit("Android no entregó resultados nuevos; se intentará la ruta root opt-in.", emptyList(), false)
-                tryRootFallback()
+                emit("Android no entregó resultados nuevos; el sondeo queda sin medición fresca y se reintentará dentro de 30 segundos.", emptyList(), false)
                 scheduleNext()
                 return
             }
             val results = try {
                 wifi?.scanResults.orEmpty()
             } catch (_: SecurityException) {
-                emit("Android revocó el acceso al escaneo; se probará la ruta root opt-in.", emptyList(), false)
-                tryRootFallback()
-                scheduleNext()
+                stopWithMessage("Android denegó el acceso al resultado Wi-Fi; sesión detenida sin eludir la protección mediante root.")
                 return
             }
             emit("Escaneo Android completado. RSSI y redes visibles no equivalen a CSI.", results.map { it.toObservation() }.sortedByDescending { it.rssiDbm }, true)
