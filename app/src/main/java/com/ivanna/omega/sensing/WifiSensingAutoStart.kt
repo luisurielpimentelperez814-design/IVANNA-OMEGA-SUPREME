@@ -5,12 +5,14 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -23,6 +25,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -47,6 +51,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
     var active by remember { mutableStateOf(false) }
     var optedIn by remember { mutableStateOf(prefs.getBoolean("wifi_sensing_opt_in", false)) }
     var observations by remember { mutableStateOf(0) }
+    var networkRows by remember { mutableStateOf<List<WifiObservation>>(emptyList()) }
     var signalSummary by remember { mutableStateOf("Sin datos de señal") }
     var userStopped by remember { mutableStateOf(false) }
     var askedPermission by remember { mutableStateOf(false) }
@@ -55,6 +60,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
             status = update.message
             active = update.sessionRunning
             observations = update.observations.size
+            networkRows = update.observations.sortedByDescending { it.rssiDbm }.take(12)
             val scene = update.sceneFeatures
             signalSummary = when (scene.level) {
                 UniversalWifiSensingAdapter.DataLevel.NO_WIFI -> "Sin señal Wi-Fi nueva"
@@ -156,6 +162,63 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                 )
                 Text(status, style = MaterialTheme.typography.bodySmall)
                 Text(signalSummary, style = MaterialTheme.typography.bodySmall)
+                // Visualización real del sondeo: cada barra representa una red observada y su RSSI.
+                // No presenta RSSI como CSI ni dibuja una reconstrucción espacial ficticia.
+                Canvas(
+                    modifier = Modifier.fillMaxWidth().height(76.dp)
+                ) {
+                    val left = 8f
+                    val top = 8f
+                    val bottom = size.height - 8f
+                    val chartWidth = (size.width - 16f).coerceAtLeast(1f)
+                    for (step in 0..4) {
+                        val y = top + (bottom - top) * step / 4f
+                        drawLine(
+                            color = Color(0x337F8C9A),
+                            start = androidx.compose.ui.geometry.Offset(left, y),
+                            end = androidx.compose.ui.geometry.Offset(size.width - 8f, y),
+                            strokeWidth = 1f
+                        )
+                    }
+                    val rows = networkRows
+                    if (rows.isNotEmpty()) {
+                        val slot = chartWidth / rows.size
+                        rows.forEachIndexed { index, network ->
+                            val normalized = ((network.rssiDbm + 100f) / 70f).coerceIn(0f, 1f)
+                            val barHeight = (bottom - top) * normalized
+                            val x = left + index * slot + slot * 0.16f
+                            val width = (slot * 0.68f).coerceAtLeast(2f)
+                            val barColor = when {
+                                network.rssiDbm >= -55 -> Color(0xFF37C987)
+                                network.rssiDbm >= -70 -> Color(0xFFFFC857)
+                                else -> Color(0xFFFF7A7A)
+                            }
+                            drawRect(
+                                color = barColor,
+                                topLeft = androidx.compose.ui.geometry.Offset(x, bottom - barHeight),
+                                size = androidx.compose.ui.geometry.Size(width, barHeight)
+                            )
+                        }
+                    } else {
+                        drawCircle(
+                            color = Color(0x667F8C9A),
+                            radius = 4f,
+                            center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f),
+                            style = Stroke(width = 2f)
+                        )
+                    }
+                }
+                if (networkRows.isNotEmpty()) {
+                    Text(
+                        networkRows.take(5).joinToString("   ·   ") {
+                            "${it.ssid.ifBlank { "<red oculta>" }} ${it.rssiDbm} dBm"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 2
+                    )
+                } else {
+                    Text("El gráfico aparecerá cuando el sondeo entregue redes reales.", style = MaterialTheme.typography.labelSmall)
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
