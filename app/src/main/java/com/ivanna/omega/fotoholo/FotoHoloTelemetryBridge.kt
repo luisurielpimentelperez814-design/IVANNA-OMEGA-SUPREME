@@ -24,6 +24,7 @@ import com.ivanna.omega.saf.SaFEngine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Read-only JS bridge for the FotoHolo WebGL dashboard when it is hosted by a trusted WebView.
@@ -49,6 +50,8 @@ class FotoHoloTelemetryBridge(context: Context) {
 
     private val appContext = context.applicationContext
     private val sequence = AtomicLong(0L)
+    private val aiInFlight = AtomicBoolean(false)
+    @Volatile private var lastAiRequestMs = 0L
     private val aiScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var webViewRef: WeakReference<WebView>? = null
     private val aiOrchestrator by lazy {
@@ -73,7 +76,14 @@ class FotoHoloTelemetryBridge(context: Context) {
             deliverAiResult(JSONObject().put("requestId", requestId.take(64)).put("error", "invalid-request"))
             return
         }
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastAiRequestMs < 8_000L || !aiInFlight.compareAndSet(false, true)) {
+            deliverAiResult(JSONObject().put("requestId", requestId).put("error", "ai-rate-limited"))
+            return
+        }
+        lastAiRequestMs = now
         aiScope.launch {
+            try {
             val result = runCatching {
                 val sceneIn = JSONObject(sceneJson)
                 val telemetryIn = JSONObject(telemetryJson)
@@ -120,6 +130,9 @@ class FotoHoloTelemetryBridge(context: Context) {
                 JSONObject().put("requestId", requestId).put("error", it.message?.take(120) ?: "ai-unavailable")
             }
             deliverAiResult(result)
+            } finally {
+                aiInFlight.set(false)
+            }
         }
     }
 
