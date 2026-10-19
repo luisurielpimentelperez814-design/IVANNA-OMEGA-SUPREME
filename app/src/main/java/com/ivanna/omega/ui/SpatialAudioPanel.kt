@@ -10,6 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.rememberNestedScrollInteropConnection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -219,7 +221,7 @@ fun SpatialAudioPanel(
         }
         AndroidView(
             factory = { holoWebView },
-            modifier = Modifier.fillMaxWidth().height(560.dp)
+            modifier = Modifier.fillMaxWidth().height(560.dp).nestedScroll(rememberNestedScrollInteropConnection())
         )
 
         // ── HRTF ──────────────────────────────────────────────────────────
