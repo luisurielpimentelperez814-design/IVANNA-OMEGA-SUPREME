@@ -560,11 +560,13 @@ object IvannaSpatialManager {
                 // moving the 3D source positions could spatialize the wrong samples.
                 objectsInBuf.clear()
                 for (stem in 0 until 4) {
-                    val objectOffset = stem * 2 * n
                     for (frame in 0 until n) {
-                        val stemOffset = frame * 8 + stem * 2
-                        objectsInBuf.put(objectOffset + frame, stemsOutBuf.get(stemOffset))
-                        objectsInBuf.put(objectOffset + n + frame, stemsOutBuf.get(stemOffset + 1))
+                        val leftSource = SpatialStemBufferLayout.interleavedStemIndex(frame, stem, 0)
+                        val rightSource = SpatialStemBufferLayout.interleavedStemIndex(frame, stem, 1)
+                        val leftTarget = SpatialStemBufferLayout.planarObjectIndex(stem, frame, 0, n)
+                        val rightTarget = SpatialStemBufferLayout.planarObjectIndex(stem, frame, 1, n)
+                        objectsInBuf.put(leftTarget, stemsOutBuf.get(leftSource))
+                        objectsInBuf.put(rightTarget, stemsOutBuf.get(rightSource))
                     }
                 }
                 objectsInBuf.position(0)
