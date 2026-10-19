@@ -57,7 +57,7 @@ class FotoHoloTelemetryBridge(context: Context) {
     private val aiOrchestrator by lazy {
         if (!SecureConfigurationManager.state.value.isInitialized) SecureConfigurationManager.initialize(appContext)
         GeminiOrchestrator(
-            apiKeyProvider = { SecureConfigurationManager.getApiKey().takeIf { it.isNotBlank() } ?: BuildConfig.GEMINI_API_KEY },
+            apiKeyProvider = { SecureConfigurationManager.getApiKey() },
             scope = aiScope
         )
     }
