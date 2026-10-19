@@ -9,8 +9,6 @@ y para que un usuario técnico pueda auditar el comportamiento.
 | Permiso | Propósito en IVANNA | Riesgo | Notas |
 |---|---|---|---|
 | `RECORD_AUDIO` | Captura de audio para el asistente conversacional (voz) y análisis | Alto | Solo activo al usar la voz; pedir en runtime |
-| `CAPTURE_AUDIO_OUTPUT` | Capturar la salida de audio del sistema para la Ruta A (MediaProjection) | Alto | Solo con consentimiento explícito del usuario |
-| `READ_LOGS` | Diagnóstico del daemon/socket en paneles de estado | Alto | Restringir a builds de debug; no necesario en release público |
 | `PACKAGE_USAGE_STATS` | Monitorear qué app reproduce audio (panel de estado de sesiones) | Alto | Requiere pantalla de activación especial; documentar |
 | `MEDIA_CONTENT_CONTROL` | Saber qué sesión de audio está activa | Medio | Útil para el control maestro |
 | `MODIFY_AUDIO_SETTINGS` | Ajustar volumen/efectos del sistema | Medio | Inofensivo |
@@ -32,10 +30,15 @@ y para que un usuario técnico pueda auditar el comportamiento.
    son 100% en dispositivo (C++ nativo); IVANNA no sube audio, ni perfiles
    de uso, ni telemetría de la app.
 
+## Estado actualizado de permisos (auditoría 2026-10-18)
+
+La captura de salida en Ruta A se autoriza mediante MediaProjection y consentimiento del sistema; la app no necesita declarar el permiso privilegiado `CAPTURE_AUDIO_OUTPUT`. Se retiraron del manifest `CAPTURE_AUDIO_OUTPUT`, `READ_LOGS` y `BIND_AUDIO_EFFECT_SERVICE`: no había llamadas de aplicación que justificaran esas declaraciones y no existía un servicio de efecto Android declarado que las usara. La comunicación con el daemon valida `SO_PEERCRED` en ambos sockets UNIX antes de ejecutar comandos o entregar el descriptor de memoria compartida; se permite la app instalada, root y shell administrativo. El listener TCP opcional se deshabilitó por no tener autenticación. Esta defensa queda pendiente de CI y validación en dispositivo.
+
+Las claves de Gemini se guardan mediante `SecureConfigurationManager`; la copia heredada en preferencias sin cifrar se elimina durante la migración. Una clave incluida en un APK no se considera secreta.
+
 ## Recomendaciones antes de publicar en una tienda
 1. Solicitar permisos sensibles en runtime con explicación (no solo en
    manifest).
-2. Restringir `READ_LOGS` a builds de debug.
 3. Redactar la "Declaración de datos" de Play: sin recolección de audio,
    uso de Gemini opcional (datos de texto), diagnóstico local.
 4. Documentar el acceso a `PACKAGE_USAGE_STATS` con pantalla de activación.

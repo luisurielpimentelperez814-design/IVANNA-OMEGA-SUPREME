@@ -172,13 +172,10 @@ object HrtfSubjectSelector {
             return DEFAULT_SUBJECT
         }
 
-        // Sin medidas → default
+        // Sin medidas → default, pero el valor devuelto debe reflejar read-back nativo.
         if (headWidthMm == null || headDepthMm == null) {
             Log.i(TAG, "activate(): sin medidas antropométricas → $DEFAULT_SUBJECT")
-            runCatching {
-                IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, DEFAULT_SUBJECT)
-            }
-            return DEFAULT_SUBJECT
+            return applyAndReadBack(handle, DEFAULT_SUBJECT)
         }
 
         // Con medidas: estimar fosa como proporción de ancho de cabeza
@@ -192,13 +189,26 @@ object HrtfSubjectSelector {
 
         val selected = findBestMatch(context, m)
 
-        runCatching {
-            IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, selected)
-        }.onFailure {
-            Log.w(TAG, "nativeObjectRendererSetHrtfSubject falló: ${it.message}")
-        }
+        val active = applyAndReadBack(handle, selected)
+        Log.i(TAG, "activate(w=${headWidthMm}mm, d=${headDepthMm}mm, sex=$sex) → solicitado=$selected activo=$active")
+        return active
+    }
 
-        Log.i(TAG, "activate(w=${headWidthMm}mm, d=${headDepthMm}mm, sex=$sex) → $selected")
-        return selected
+    private fun applyAndReadBack(handle: Long, requested: String): String = runCatching {
+        IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(handle, requested)
+        val loaded = IvannaSpatialNative.nativeObjectRendererIsHrtfLoaded(handle)
+        val actual = IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(handle)
+        if (!loaded) {
+            Log.w(TAG, "HRTF no cargado tras solicitar $requested; no se reporta activación")
+            "none"
+        } else if (actual != requested) {
+            Log.w(TAG, "HRTF solicitado=$requested pero el motor confirma $actual")
+            actual
+        } else {
+            actual
+        }
+    }.getOrElse {
+        Log.w(TAG, "No se pudo confirmar HRTF $requested: ${it.message}")
+        "none"
     }
 }

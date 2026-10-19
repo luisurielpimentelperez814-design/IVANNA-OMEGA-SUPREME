@@ -1,15 +1,15 @@
 // ivanna_neural_upmixer.hpp
 // ============================================================================
-// IVANNA — AI Neural Upmixer: Stereo → 4 Stems → 3D Objects
+// IVANNA — Heuristic Spectral Upmixer: Stereo → 4 Stems → 3D Objects
 // ============================================================================
 // © 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 //
-// [MAJESTY-AI-1.0] Convierte cualquier audio estéreo en 4 stems separados
+// [LEGACY-NAME] Separa heurísticamente el espectro estéreo en 4 stems
 // y los posiciona en el espacio 3D como objetos independientes.
 //
-// Implementación actual: separación espectral heurística optimizada.
-// No requiere TensorFlow Lite — funciona puramente en C++ con SIMD.
-// En futuras versiones se puede integrar TFLite cuando esté en el build.
+// IMPORTANTE: no es una red neuronal. La implementación actual es separación
+// espectral heurística en C++/SIMD; no carga un modelo ni ejecuta inferencia.
+// El nombre de clase se conserva por compatibilidad de la API nativa.
 // ============================================================================
 #pragma once
 #include "../spatial/ivanna_object_renderer.hpp"

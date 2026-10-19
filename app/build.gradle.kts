@@ -23,11 +23,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        val geminiKey = (findProperty("GEMINI_API_KEY") as String?)
-            ?: System.getenv("GEMINI_API_KEY")
-            ?: ""
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
-
+        // No incrustar API keys en BuildConfig: cualquier secreto empaquetado en un APK
+        // puede extraerse. La clave de Gemini se obtiene en runtime de SecureConfigurationManager.
         ndk {
             abiFilters += listOf("arm64-v8a")
         }

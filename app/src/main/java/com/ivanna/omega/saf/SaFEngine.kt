@@ -50,6 +50,7 @@ data class SaFState(
 // ── Engine ────────────────────────────────────────────────────────────────────
 class SaFEngine(private val context: Context) {
     companion object {
+        private const val TAG = "SaFEngine"
         @Volatile private var latestStateSnapshot: SaFState? = null
 
         /** Last state emitted by an actual SaFEngine instance; null until one initializes. */
@@ -168,7 +169,6 @@ class SaFEngine(private val context: Context) {
         }
     }
 
-    private companion object { const val TAG = "SaFEngine" }
 
     // ── Feed one feedback sample ──────────────────────────────────────────
     fun feedFeedback(direction: SaFDirection, correct: Boolean) {

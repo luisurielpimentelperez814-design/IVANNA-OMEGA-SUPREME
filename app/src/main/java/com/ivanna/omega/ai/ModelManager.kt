@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class ModelManager(private val context: Context) {
     private val modelsDir = File(context.filesDir, "ai_models").apply { mkdirs() }
@@ -16,20 +19,35 @@ class ModelManager(private val context: Context) {
     init { initializeModel() }
 
     private fun initializeModel() {
-        // FIX: createSyntheticModel() escribía el texto "TFL3 - IVANNA Speech Enhancer..."
-        // en un archivo .tflite — un archivo de texto plano que fingía ser un modelo.
-        // AIInferenceEngine ya no aplica inferencia sin modelo real (ver fix allí),
-        // así que no necesitamos crear un placeholder. El directorio existe por si
-        // un modelo fine-tuned real llega vía saveFineTunedModel().
-        val existing = modelsDir.listFiles { f -> f.extension == "tflite" }
+        // Solo indexa archivos que al menos tienen el identificador FlatBuffer TFL3.
+        // La firma no prueba compatibilidad de entrada/salida ni conexión al DSP.
+        val existing = modelsDir.listFiles { f ->
+            f.extension == "tflite" && runCatching { isTfliteModelBytes(f.readBytes()) }.getOrDefault(false)
+        }
         val newest = existing?.maxByOrNull { it.lastModified() }
         _currentModelPath.value = newest?.absolutePath
-        // _currentModelVersion permanece en 1 (default) hasta que haya modelo real
+        // La ruta genérica de inferencia permanece desactivada hasta que haya
+        // un ejecutor real compatible con la forma de tensor del modelo.
     }
 
     fun saveFineTunedModel(data: ByteArray, version: Int): String {
+        require(version > 0) { "La versión del modelo debe ser positiva." }
+        require(isTfliteModelBytes(data)) {
+            "Modelo rechazado: no contiene el identificador FlatBuffer TFL3 en bytes 4..7."
+        }
         val file = File(modelsDir, "model_v${version}.tflite")
-        file.writeBytes(data)
+        val temp = File(modelsDir, ".model_v${version}.tflite.tmp")
+        try {
+            temp.writeBytes(data)
+            try {
+                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } catch (t: Throwable) {
+            temp.delete()
+            throw t
+        }
         _currentModelPath.value = file.absolutePath
         _currentModelVersion.value = version
         return file.absolutePath
@@ -44,7 +62,15 @@ class ModelManager(private val context: Context) {
     }
 }
 
+internal fun isTfliteModelBytes(data: ByteArray): Boolean =
+    data.size >= 8 &&
+        data[4] == 'T'.code.toByte() &&
+        data[5] == 'F'.code.toByte() &&
+        data[6] == 'L'.code.toByte() &&
+        data[7] == '3'.code.toByte()
+
 fun ModelManager.hasUsableFineTuningModel(): Boolean = false
 fun ModelManager.describeCurrentModel(): String =
-    currentModelPath.value?.let { "fine-tuned v${currentModelVersion.value} ($it)" }
-        ?: "none (sin modelo TFLite — RealtimeLearningController en modo bias-EMA)"
+    currentModelPath.value?.let {
+        "stored v${currentModelVersion.value}; runtime inference not connected (route A bias-EMA)"
+    } ?: "none (sin modelo TFLite — RealtimeLearningController en modo bias-EMA)"

@@ -1,3 +1,5 @@
+> **Archivo histórico (2026-09-20).** La tabla siguiente describe un barrido estático de aquella fecha; no garantiza el estado del código actual ni sustituye una comprobación de runtime. Para el estado actual y las limitaciones verificadas, consulta [la auditoría integral](../AUDITORIA_INTEGRAL_2026-10-18.md).
+
 # Auditoria UI — barrido completo (2026-09-20)
 
 Pantallas escaneadas: **43**. Callbacks vacios encontrados: **0**. Archivos cableados: **0**.

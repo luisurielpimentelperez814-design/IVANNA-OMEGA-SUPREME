@@ -142,7 +142,10 @@ def find_public_wrappers(
             mods = m_fun.group(1) or ""
             fn_name = m_fun.group(2)
             mod_set = set(mods.split())
-            if is_composable or (mod_set & {"private", "protected", "external", "override"}):
+            # WebView JavaScript entry points are externally invoked via @JavascriptInterface;
+            # requiring a Kotlin caller is a false positive for these public bridge methods.
+            is_js_interface = idx > 1 and bool(re.match(r'^\s*@JavascriptInterface\b', lines[idx - 2]))
+            if is_composable or is_js_interface or (mod_set & {"private", "protected", "external", "override"}):
                 idx += 1
                 continue
 

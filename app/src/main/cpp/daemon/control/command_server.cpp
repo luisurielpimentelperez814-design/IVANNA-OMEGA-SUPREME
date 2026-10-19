@@ -1,6 +1,7 @@
 // daemon/control/command_server.cpp - BUILD OK 832 líneas, REAL telemetry, sin hardcode
 #include <algorithm>
 #include "command_server.h"
+#include "peer_auth.hpp"
 #include <cstddef>
 #include "../core/shm_manager.h"
 #include "../../include/omega_shared.h"
@@ -812,6 +813,13 @@ void CommandServer::acceptLoop() {
             struct sockaddr_un cli; socklen_t clen=sizeof(cli);
             int cfd = accept(m_server_fd,(struct sockaddr*)&cli,&clen);
             if (cfd<0) continue;
+            if (!ivanna::security::isAuthorizedControlPeer(cfd)) {
+                if (ivanna::security::shouldLogRejectedPeer()) {
+                    CS_LOG("Rejected unauthorized peer on control socket (rate-limited log)");
+                }
+                close(cfd);
+                continue;
+            }
             bumpClientsServed();
             ivanna::shmManager().bumpHealthCounter(4);
             struct timeval rcv_tv{0, 150000};

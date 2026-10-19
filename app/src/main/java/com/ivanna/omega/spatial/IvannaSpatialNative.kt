@@ -8,7 +8,7 @@ import com.ivanna.omega.core.NativeLibraryLoader
  * [MAJESTY-KOTLIN-1.0] Esta clase expone al mundo Java/Kotlin el poder de:
  *   - Head Tracking 6DoF (orientación de cabeza en tiempo real)
  *   - Object-Based Renderer (32 objetos 3D simultáneos)
- *   - Neural Upmixer (separación AI de stems + spatialización)
+ *   - Upmixer espectral heurístico (4 stems; sin inferencia neuronal) + spatialización)
  *
  * Todo el procesamiento ocurre en C++ con zero-allocation y lock-free.
  *

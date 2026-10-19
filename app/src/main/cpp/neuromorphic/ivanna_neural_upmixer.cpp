@@ -1,6 +1,6 @@
 // ivanna_neural_upmixer.cpp
 // ============================================================================
-// IVANNA — AI Neural Upmixer Implementation (Heurístico SIMD)
+// IVANNA — Heuristic Spectral Upmixer Implementation (SIMD)
 // ============================================================================
 
 #include "ivanna_neural_upmixer.hpp"

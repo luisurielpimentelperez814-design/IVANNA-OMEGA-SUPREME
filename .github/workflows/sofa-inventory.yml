@@ -1,0 +1,49 @@
+name: SOFA metadata inventory
+
+on:
+  push:
+    paths:
+      - '**/*.sofa'
+      - 'scripts/inventory_sofa_metadata.py'
+      - '.github/workflows/sofa-inventory.yml'
+  pull_request:
+    paths:
+      - '**/*.sofa'
+      - 'scripts/inventory_sofa_metadata.py'
+      - '.github/workflows/sofa-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sofa-inventory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install metadata reader
+        run: python -m pip install --disable-pip-version-check h5py
+      - name: Compile inventory tool
+        run: python -m py_compile scripts/inventory_sofa_metadata.py
+      - name: Inventory all SOFA files
+        run: |
+          set -euo pipefail
+          python scripts/inventory_sofa_metadata.py --root . --output-dir build/sofa-inventory --expected-count 694
+      - name: Upload auditable inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: sofa-metadata-inventory-${{ github.sha }}
+          path: |
+            build/sofa-inventory/sofa_metadata_inventory.json
+            build/sofa-inventory/sofa_metadata_inventory.csv
+            build/sofa-inventory/sofa_metadata_summary.json
+          if-no-files-found: error
+          retention-days: 90

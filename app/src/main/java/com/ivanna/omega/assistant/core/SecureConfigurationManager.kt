@@ -47,7 +47,7 @@ object SecureConfigurationManager {
             securePrefs = createEncryptedPrefs(appContext!!)
             validateConfiguration()
         }.onSuccess {
-            _state.value = State(isInitialized = true, isHealthy = true)
+            _state.value = _state.value.copy(isInitialized = true, isHealthy = true, lastError = null)
             Log.i(TAG, "Initialized with EncryptedSharedPreferences")
         }.onFailure { error ->
             Log.e(TAG, "Primary init failed: ${error.message}")
@@ -114,7 +114,7 @@ object SecureConfigurationManager {
             securePrefs = createEncryptedPrefs(context())
             validateConfiguration()
         }.onSuccess {
-            _state.value = State(isInitialized = true, isHealthy = true)
+            _state.value = _state.value.copy(isInitialized = true, isHealthy = true, lastError = null)
             Log.i(TAG, "Recovered by clearing corrupted prefs")
             return
         }

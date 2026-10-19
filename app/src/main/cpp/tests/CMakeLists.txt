@@ -1273,3 +1273,7 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_autonomous_acoustic_transaction PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_autonomous_acoustic_transaction)
+
+
+# Control-plane peer authentication: reject untrusted app UIDs before command/SHM handling.
+ivanna_add_test(test_daemon_peer_auth)
