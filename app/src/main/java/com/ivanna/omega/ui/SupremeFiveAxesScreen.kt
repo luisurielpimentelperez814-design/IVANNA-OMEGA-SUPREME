@@ -41,7 +41,7 @@ data class SupremeAxesLiveTelemetry(
     val snnActiveSpikes: Int = -1,
     val pinnaNotchFreqHz: Float = Float.NaN,
     val pinnaItdMicroSec: Float = Float.NaN,
-    val shmOwnerPid: Int = 0,
+    val shmOwnerPid: Int = -1,
     val latticeKappas: List<Float> = emptyList(),
     val snnOrthogonalMasks: List<Float> = emptyList(),
     val pinnaLatents: List<Float> = emptyList(),
@@ -520,8 +520,8 @@ fun ShmFarrowArbitratorAxisCard(
         ) {
             StatBlock(
                 label = "OWNER PID",
-                value = if (telemetry.shmOwnerPid == 0) "LIBRE (0)" else "PID ${telemetry.shmOwnerPid}",
-                accent = if (telemetry.shmOwnerPid != 0) PhosphorGreen else TextMuted,
+                value = when (telemetry.shmOwnerPid) { -1 -> "N/D"; 0 -> "LIBRE (0)"; else -> "PID ${telemetry.shmOwnerPid}" },
+                accent = if (telemetry.shmOwnerPid > 0) PhosphorGreen else TextMuted,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
