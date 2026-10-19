@@ -227,9 +227,9 @@ object NativeBridge {
         if (isLoaded) runCatching { setEbpfBypassActive(active) }
     }
     fun safeAcquireShmArbitration(pid: Int): Boolean =
-        if (isLoaded) runCatching { acquireShmArbitration(pid) }.getOrDefault(true) else true
+        if (isLoaded) runCatching { acquireShmArbitration(pid) }.getOrDefault(false) else false
     fun safeReleaseShmArbitration(pid: Int): Boolean =
-        if (isLoaded) runCatching { releaseShmArbitration(pid) }.getOrDefault(true) else true
+        if (isLoaded) runCatching { releaseShmArbitration(pid) }.getOrDefault(false) else false
     fun safeGetShmOwnerPid(): Int =
         if (isLoaded) runCatching { getShmOwnerPid() }.getOrDefault(0) else 0
     fun safeIsShmCrossProcessMapped(): Boolean =
