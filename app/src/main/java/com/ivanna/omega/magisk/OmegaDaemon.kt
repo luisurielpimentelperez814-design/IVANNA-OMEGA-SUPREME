@@ -33,7 +33,7 @@ import android.util.Log
  *   Redirigimos todos los wrappers PF al puente socket real. Start/Stop pasan a
  *   no-op seguros: el daemon lo lanza `service.sh` de Magisk en boot; la app
  *   no lo arranca. `getTemperature/getLatency` se derivan del payload de
- *   `MagiskBridge.getTelemetry()` cuando el daemon está vivo, con fallback 0f.
+ *   `MagiskBridge.getTelemetry()` solo cuando el daemon responde con valores válidos. Si faltan datos o quedan obsoletos, devuelve `Float.NaN` (no disponible), nunca una medición ficticia.
  *
  *   La API pública (fun/firma) NO cambia — cualquier caller (UI de PF Engine,
  *   IVANNAApplication) sigue compilando y funcionando; internamente TODO viaja
@@ -78,24 +78,42 @@ object OmegaDaemon {
 
     // ── Telemetría ────────────────────────────────────────────────────────────
     // Se derivan del payload de texto que devuelve GET_TELEMETRY del daemon.
-    // Cache local para que la UI pueda leer a 10-30 Hz sin martillar el socket:
-    // cada llamada refresca a lo sumo cada 250 ms.
+    // Cache breve para que la UI lea a 10-30 Hz sin martillar el socket.
+    // La validez se controla por campo: un fallo de consulta no refresca la edad
+    // de la última muestra buena. Tras 1 s, la muestra deja de ser utilizable.
+    private const val TELEMETRY_REFRESH_MS = 250L
+    private const val TELEMETRY_MAX_AGE_MS = 1_000L
     @Volatile private var lastTelemetryAtMs: Long = 0L
-    @Volatile private var lastTempC: Float = 0f
-    @Volatile private var lastLatencyMs: Float = 0f
+    @Volatile private var lastTempC: Float = Float.NaN
+    @Volatile private var lastLatencyMs: Float = Float.NaN
 
-    fun getTemperature(): Float { refreshTelemetryIfStale(); return lastTempC }
-    fun getLatency(): Float     { refreshTelemetryIfStale(); return lastLatencyMs }
+    fun getTemperature(): Float {
+        refreshTelemetryIfStale()
+        return if (isTelemetryFresh()) lastTempC else Float.NaN
+    }
+
+    fun getLatency(): Float {
+        refreshTelemetryIfStale()
+        return if (isTelemetryFresh()) lastLatencyMs else Float.NaN
+    }
+
+    private fun isTelemetryFresh(): Boolean {
+        val stamp = lastTelemetryAtMs
+        return stamp > 0L && System.currentTimeMillis() - stamp <= TELEMETRY_MAX_AGE_MS
+    }
 
     private fun refreshTelemetryIfStale() {
         val now = System.currentTimeMillis()
-        if (now - lastTelemetryAtMs < 250L) return
+        if (now - lastTelemetryAtMs < TELEMETRY_REFRESH_MS) return
         val raw = runCatching { MagiskBridge.getTelemetry() }.getOrNull().orEmpty()
-        if (raw.isNotBlank()) {
-            lastTempC     = parseField(raw, "temp")    ?: lastTempC
-            lastLatencyMs = parseField(raw, "latency") ?: lastLatencyMs
-        }
-        lastTelemetryAtMs = now
+        if (raw.isBlank()) return
+
+        val temp = parseField(raw, "temp")?.takeIf { it in 0f..150f }
+        val latency = parseField(raw, "latency")?.takeIf { it in 0f..10_000f }
+        if (temp != null) lastTempC = temp
+        if (latency != null) lastLatencyMs = latency
+        // Solo marcamos muestra nueva si al menos un campo llegó y pasó límites.
+        if (temp != null || latency != null) lastTelemetryAtMs = now
     }
 
     private fun parseField(raw: String, key: String): Float? {
@@ -103,7 +121,7 @@ object OmegaDaemon {
         // los formatos que ha usado el daemon; regex tolerante.
         val re = Regex("""(?:"?${Regex.escape(key)}"?\s*[:=]\s*)(-?\d+(?:\.\d+)?)""",
                        RegexOption.IGNORE_CASE)
-        return re.find(raw)?.groupValues?.get(1)?.toFloatOrNull()
+        return re.find(raw)?.groupValues?.get(1)?.toFloatOrNull()?.takeIf { it.isFinite() }
     }
 
     // ── PF Engine — bulk setter ──────────────────────────────────────────────
