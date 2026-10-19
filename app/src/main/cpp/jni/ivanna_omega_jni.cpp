@@ -3860,6 +3860,15 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
 // dataset desde ese directorio cuando la ruta root no existe. Todo corre en
 // hilo de UI; el hot path de audio sigue leyendo g_rirDataset con acquire.
 extern "C" JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeGetLocalRirTailStatus(JNIEnv*, jclass) {
+    // -1 = convolver local no inicializado; 0 = sin degradación detectada;
+    // 1 = la cola retrasada se omitió por superar el presupuesto algorítmico.
+    Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire);
+    if (!conv) return static_cast<jint>(-1);
+    return conv->tailLatencyBudgetExceeded() ? static_cast<jint>(1) : static_cast<jint>(0);
+}
+
+extern "C" JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeGetRirRoomCount(JNIEnv*, jclass) {
     Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
     return (ds && ds->isLoaded()) ? (jint)ds->roomCount() : 0;
