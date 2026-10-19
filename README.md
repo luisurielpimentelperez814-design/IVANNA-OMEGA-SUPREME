@@ -160,7 +160,7 @@ Consulta [`docs/ENGINEERING.md`](docs/ENGINEERING.md) para el resumen técnico y
 - No conviertas RSSI, Wi-Fi RTT o datos incompletos en afirmaciones de CSI o reconstrucción espacial.
 - No afirmes identificación biométrica ni reconstrucción anatómica.
 - La restauración automática de una corrección de audio no sustituye límites de seguridad del sistema, pruebas de permisos ni validación de todos los modos de fallo.
-- Revisa las licencias de datasets, modelos y dependencias antes de redistribuirlos; consulta `LICENSE` y `NOTICE`.
+- Revisa las licencias de datasets, modelos y dependencias antes de redistribuirlos; consulta `NOTICE` y `THIRD_PARTY_NOTICES.md`.
 
 ## Contribuir y reportar problemas
 
