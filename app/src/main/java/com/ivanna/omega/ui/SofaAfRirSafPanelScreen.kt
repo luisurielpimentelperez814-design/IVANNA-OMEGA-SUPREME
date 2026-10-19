@@ -106,7 +106,7 @@ fun SofaAfRirSafPanelScreen(
 
     // ── Motor Híbrido Magistral (VBAP 3D + Ambisonics + HRTF 128-tap + Sala) ─
     val initHybrid = remember { com.ivanna.omega.core.NativeBridge.safeGetHybridMagistralTelemetry() }
-    var hybridEnabled by remember { mutableStateOf(initHybrid.getOrElse(0) { 1f } >= 0.5f) }
+    var hybridEnabled by remember { mutableStateOf(initHybrid.getOrElse(0) { 0f } >= 0.5f) }
     var hybridBinauralWet by remember { mutableStateOf(initHybrid.getOrElse(1) { 0.65f }) }
     var hybridAzimuthDeg by remember { mutableStateOf(initHybrid.getOrElse(2) { 30f }) }
     var hybridElevationDeg by remember { mutableStateOf(initHybrid.getOrElse(3) { 0f }) }
