@@ -56,3 +56,16 @@ La aplicación Android actual usa Compose y la escena web React se construye por
 3. Confirmar que `sampleAgeMs` permanece por debajo de 1000 ms con señal real y aumenta si se detiene la captura.
 4. Confirmar que la escena vuelve a la visualización no medida cuando el dato caduca.
 5. Añadir read-back nativo de carga/aplicación RIR y estado SAF antes de declarar ambos activos.
+
+
+## Refinación visual asistida por IA y render HD/4K
+
+La escena FotoHolo incluye ahora un flujo explícito de refinación visual bajo demanda:
+
+- **Android/WebView local:** `FotoHoloTelemetryBridge.requestVisualRefinement` envía a `GeminiOrchestrator` únicamente parámetros de escena y métricas acústicas agregadas recientes. La respuesta es asíncrona y vuelve al WebView como evento `ivanna-fotoholo-ai-result`.
+- **Dashboard servido por Node:** `POST /api/fotoholo/refine` usa el proxy Gemini del servidor, validación estricta, límites de valores y rate limit. Requiere `GEMINI_API_KEY`; si se configura `DASHBOARD_AUTH_TOKEN`, el cliente debe tener un mecanismo de autenticación de sesión antes de usar la ruta.
+- **Aplicación en caliente:** la propuesta se valida y limita antes de cambiar la escena. Anchura y ángulo solo se mandan al DSP nativo por los métodos ya existentes; la IA no recibe permiso para emitir comandos de audio. Si Gemini no está disponible, la interfaz solo usa un ajuste adaptativo local cuando hay telemetría reciente y lo etiqueta como no generativo.
+- **HD/4K:** selector Auto, 1920 px y objetivo 3840×2160. El render limita dimensiones al máximo de textura de la GPU y al presupuesto aproximado de 8.3 megapíxeles; si el hardware no soporta 4K, muestra la resolución efectiva en vez de afirmar que lo logró. Se reutilizan buffers GPU entre fotogramas para evitar recrearlos en cada render.
+- **En vivo:** los frentes de onda continúan reaccionando a energía y transitorios Bark recientes. Las métricas obsoletas no se presentan como actuales.
+
+La IA refina la **presentación visual**, no certifica una simulación física ni sustituye HRTF/RIR/SAF. La disponibilidad de Gemini depende de la configuración de claves del entorno. El objetivo 4K depende de la GPU/dispositivo; no es garantía de 4K en todos los teléfonos.
