@@ -1,15 +1,14 @@
 IVANNA OMEGA SUPREME
-Copyright 2026 Luis Uriel Pimentel Pérez (GORE TNS)
+Copyright 2026 Luis Uriel Pimentel Pérez (GORE TNS). Todos los derechos reservados sobre el código propio.
 
-Este producto incluye software desarrollado por Luis Uriel Pimentel Pérez
-y se distribuye bajo la Licencia Apache, Versión 2.0 (ver LICENSE).
+IVANNA OMEGA SUPREME es un producto propietario y comercial. No se concede licencia de uso, copia, modificación o redistribución del código propio mediante este aviso; las licencias comerciales deben acordarse por escrito con el titular.
 
-Componentes de terceros (bibliotecas, datasets HRTF/SOFA/RIR, modelos
-entrenados) conservan SUS PROPIAS licencias y avisos de origen. La licencia
-Apache-2.0 de este repositorio cubre el código propio; no relicencia material
-de terceros. El inventario y verificación de licencias de datasets y modelos
-está en seguimiento en el issue #59.
+AVISO SOBRE VERSIONES ANTERIORES: las versiones o copias que se hayan distribuido expresamente bajo Apache License 2.0 continúan sujetas a los términos de esa concesión para el material cubierto por ella. Este cambio no revoca retroactivamente derechos ya concedidos.
 
-This product includes software developed by Luis Uriel Pimentel Pérez and is
-licensed under the Apache License, Version 2.0 (see LICENSE). Third-party
-libraries, HRTF/SOFA/RIR datasets and trained models keep their own licenses.
+COMPONENTES DE TERCEROS: bibliotecas, herramientas, datasets HRTF/SOFA/RIR y modelos conservan sus propias licencias y avisos de origen. Este aviso no cambia esos términos. El inventario y verificación de licencias de datasets y modelos sigue en seguimiento en el issue #59.
+
+PROPRIETARY NOTICE: IVANNA OMEGA SUPREME is a proprietary commercial product. All rights reserved in original project code. No license to use, copy, modify or redistribute the project's own code is granted by this notice; commercial licensing must be agreed in writing with the rights holder.
+
+PRIOR VERSIONS: copies or versions expressly distributed under Apache License 2.0 remain governed by that grant for the material covered by it. This notice does not retroactively revoke rights already granted.
+
+THIRD-PARTY COMPONENTS retain their own licenses and notices; this notice does not alter their terms.
