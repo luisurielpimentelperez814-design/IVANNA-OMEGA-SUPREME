@@ -139,6 +139,14 @@ object IvannaSpatialManager {
         .allocateDirect(BLOCK_SIZE * 8 * java.lang.Float.BYTES)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
+    // ObjectRenderer expects object-major planar stereo:
+    // [object0-L frames, object0-R frames, object1-L frames, object1-R frames, ...].
+    // NeuralUpmixer emits frame-major interleaved stems, so renderBlock converts
+    // into this separate direct buffer before crossing JNI.
+    private val objectsInBuf: FloatBuffer = ByteBuffer
+        .allocateDirect(BLOCK_SIZE * 8 * java.lang.Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
     private val inLBuf: FloatBuffer = ByteBuffer
         .allocateDirect(BLOCK_SIZE * java.lang.Float.BYTES)
         .order(ByteOrder.nativeOrder())
@@ -545,10 +553,24 @@ object IvannaSpatialManager {
                 stereoInBuf.position(0)
                 stemsOutBuf.clear()
                 IvannaSpatialNative.nativeUpmixerProcess(u, stereoInBuf, stemsOutBuf, n)
-                stemsOutBuf.position(0)
+
+                // Convert [frame][stem][L,R] to [stem][L frames][R frames].
+                // Passing stemsOutBuf directly was a real layout mismatch: JNI
+                // interpreted frame-interleaved samples as planar objects, so
+                // moving the 3D source positions could spatialize the wrong samples.
+                objectsInBuf.clear()
+                for (stem in 0 until 4) {
+                    val objectOffset = stem * 2 * n
+                    for (frame in 0 until n) {
+                        val stemOffset = frame * 8 + stem * 2
+                        objectsInBuf.put(objectOffset + frame, stemsOutBuf.get(stemOffset))
+                        objectsInBuf.put(objectOffset + n + frame, stemsOutBuf.get(stemOffset + 1))
+                    }
+                }
+                objectsInBuf.position(0)
                 IvannaSpatialNative.nativeObjectRendererRenderBlock(
                     h,
-                    stemsOutBuf,
+                    objectsInBuf,
                     4,
                     outLBuf,
                     outRBuf,
