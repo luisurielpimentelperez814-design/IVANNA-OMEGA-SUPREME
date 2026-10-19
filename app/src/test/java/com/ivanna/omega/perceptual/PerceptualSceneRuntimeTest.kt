@@ -94,6 +94,56 @@ class PerceptualSceneRuntimeTest {
     }
 
     @Test
+    fun activeHybridRendererMustMatchRequestedAzimuth() {
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(
+                hybridTelemetryAvailable = true,
+                hybridEnabled = true,
+                hybridWet = 0.8f,
+                hybridAzimuthDeg = 90f,
+                hybridElevationDeg = Math.toDegrees(0.1).toFloat(),
+                hybridUsingFallbackHrtf = false
+            )
+        )
+        val azimuth = snapshot.axes.single { it.axis == PerceptualAxis.AZIMUTH }
+        assertEquals(AxisState.DEGRADED, azimuth.state)
+        assertFalse(azimuth.engineConfirmed)
+    }
+
+    @Test
+    fun matchingActiveHybridRendererCanConfirmAzimuthWithoutManagerPoseReadback() {
+        val requestedDegrees = Math.toDegrees(0.2).toFloat()
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(
+                poseConfirmed = false,
+                effectiveAzimuthRad = null,
+                hybridTelemetryAvailable = true,
+                hybridEnabled = true,
+                hybridWet = 0.8f,
+                hybridAzimuthDeg = requestedDegrees,
+                hybridElevationDeg = Math.toDegrees(0.1).toFloat(),
+                hybridUsingFallbackHrtf = false
+            )
+        )
+        val azimuth = snapshot.axes.single { it.axis == PerceptualAxis.AZIMUTH }
+        assertEquals(AxisState.APPLIED, azimuth.state)
+        assertTrue(azimuth.engineConfirmed)
+    }
+
+    @Test
+    fun reverbLevelAloneDoesNotConfirmMeasuredReverberantField() {
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(
+                measuredRirActive = false,
+                measuredRt60Seconds = null
+            )
+        )
+        val reverb = snapshot.axes.single { it.axis == PerceptualAxis.REVERBERANT_FIELD }
+        assertEquals(AxisState.DEGRADED, reverb.state)
+        assertFalse(reverb.engineConfirmed)
+    }
+
+    @Test
     fun unknownOutputRouteRemainsAnExplicitValidationFailure() {
         val snapshot = PerceptualSceneRuntime.assemble(evidence().copy(outputRoute = OutputRoute.UNKNOWN))
         assertTrue(snapshot.validate().any { it.contains("outputRoute is unknown") })
