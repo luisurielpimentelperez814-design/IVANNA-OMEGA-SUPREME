@@ -273,6 +273,53 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPosition(
     }
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPositions(
+    JNIEnv* env, jclass, jlong handle, jfloatArray positions) {
+    auto* upmixer = toUpmixer(handle);
+    if (!upmixer || !positions || env->GetArrayLength(positions) != 16) return JNI_FALSE;
+
+    jfloat* values = env->GetFloatArrayElements(positions, nullptr);
+    if (!values) return JNI_FALSE;
+    for (int i = 0; i < 4; ++i) {
+        const jfloat x = values[i * 4];
+        const jfloat y = values[i * 4 + 1];
+        const jfloat z = values[i * 4 + 2];
+        const jfloat width = values[i * 4 + 3];
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+            !std::isfinite(width) || x < -2.f || x > 2.f || y < -2.f || y > 2.f ||
+            z < -2.f || z > 2.f || width < 0.02f || width > 1.f) {
+            env->ReleaseFloatArrayElements(positions, values, JNI_ABORT);
+            return JNI_FALSE;
+        }
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        upmixer->setStemPosition(
+            static_cast<ivanna::ai::StemType>(i),
+            values[i * 4], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]);
+    }
+    env->ReleaseFloatArrayElements(positions, values, JNI_ABORT);
+
+    // Confirm all four active positions from the upmixer's published buffer.
+    for (int i = 0; i < 4; ++i) {
+        const auto actual = upmixer->getStemPosition(static_cast<ivanna::ai::StemType>(i));
+        const jfloat* expected = nullptr;
+        // Read expected values from the Java array only after the native write is done.
+        jfloat expectedValues[4]{};
+        env->GetFloatArrayRegion(positions, i * 4, 4, expectedValues);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return JNI_FALSE;
+        }
+        if (std::fabs(actual.x - expectedValues[0]) > 0.015f ||
+            std::fabs(actual.y - expectedValues[1]) > 0.015f ||
+            std::fabs(actual.z - expectedValues[2]) > 0.015f ||
+            std::fabs(actual.width - expectedValues[3]) > 0.015f) return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerGetStemPosition(
     JNIEnv* env, jclass, jlong handle, jint stemType) {
