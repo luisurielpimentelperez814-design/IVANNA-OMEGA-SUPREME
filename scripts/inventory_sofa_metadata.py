@@ -90,16 +90,16 @@ def inspect(path: Path, root: Path) -> dict:
                         str(k): plain(v) for k, v in obj.attrs.items()
                     }
                 if isinstance(obj, h5py.Dataset):
-                    if name in DATASETS or name.startswith("Data."):
-                        attrs = {str(k): plain(v) for k, v in obj.attrs.items()
-                                 if k in ("Units", "Type", "Dimensions", "Description")}
+                    # Indexar todos los datasets y sus atributos, incluidos metadatos específicos de cada corpus.
+                    if True:
+                        attrs = {str(k): plain(v) for k, v in obj.attrs.items()}
                         item = {
                             "shape": list(obj.shape),
                             "dtype": str(obj.dtype),
                             "attrs": attrs,
                         }
                         # Leer solo arrays pequeños de metadatos; nunca cargar Data.IR.
-                        if name != "Data.IR" and obj.size <= 20000:
+                        if name in DATASETS and name != "Data.IR" and obj.size <= 20000:
                             item["values"] = plain(obj[()])
                         if name == "Data.IR" and len(obj.shape) >= 2:
                             item["measurements"] = int(obj.shape[0])
