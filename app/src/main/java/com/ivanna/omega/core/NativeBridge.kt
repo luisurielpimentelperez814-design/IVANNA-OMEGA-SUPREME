@@ -112,14 +112,14 @@ object NativeBridge {
     fun safeGetWarpedLatticeDeclippedPeaks(): Int =
         if (isLoaded) runCatching { getWarpedLatticeDeclippedPeaks() }.getOrDefault(0) else 0
     fun safeGetWarpedLatticeSubSampleDelay(): Float =
-        if (isLoaded) runCatching { getWarpedLatticeSubSampleDelay() }.getOrDefault(0.24f) else 0.24f
+        if (isLoaded) runCatching { getWarpedLatticeSubSampleDelay() }.getOrDefault(Float.NaN) else Float.NaN
     fun safeRunWarpedLatticeLoopbackCalibration(f0Hz: Float = 92.0f, mu: Float = 0.005f) {
         if (isLoaded) runCatching { runWarpedLatticeLoopbackCalibration(f0Hz, mu) }
     }
     fun safeGetWarpedLatticeKappas(): FloatArray =
         if (isLoaded) runCatching { getWarpedLatticeKappas() }.getOrNull()
-            ?: floatArrayOf(-0.38f, 0.24f, -0.15f, 0.09f, -0.055f, 0.032f, -0.018f, 0.009f)
-        else floatArrayOf(-0.38f, 0.24f, -0.15f, 0.09f, -0.055f, 0.032f, -0.018f, 0.009f)
+            ?: floatArrayOf()
+        else floatArrayOf()
 
     // ── EJE 2: PhaseCoherentTransharmonicSynthesizer (Anti-DSEE CVNN+DDSP) ──
     @JvmStatic external fun setTransharmonicCvnnEnabled(enabled: Boolean)
@@ -142,7 +142,7 @@ object NativeBridge {
         if (isLoaded) runCatching { setTransharmonicAnalogTapeDrive(drive) }
     }
     fun safeGetTransharmonicPhaseStep(): Float =
-        if (isLoaded) runCatching { getTransharmonicPhaseStep() }.getOrDefault(0.012f) else 0.012f
+        if (isLoaded) runCatching { getTransharmonicPhaseStep() }.getOrDefault(Float.NaN) else Float.NaN
     fun safeGetTransharmonicTapeMagnetization(): Float =
         if (isLoaded) runCatching { getTransharmonicTapeMagnetization() }.getOrDefault(0.0f) else 0.0f
 
@@ -166,11 +166,11 @@ object NativeBridge {
     fun safePromoteSnnThreadToSchedFifo(priority: Int = 85): Boolean =
         if (isLoaded) runCatching { promoteSnnThreadToSchedFifo(priority) }.getOrDefault(false) else false
     fun safeGetSnnActiveSpikes(): Int =
-        if (isLoaded) runCatching { getSnnActiveSpikes() }.getOrDefault(2) else 2
+        if (isLoaded) runCatching { getSnnActiveSpikes() }.getOrDefault(-1) else -1
     fun safeGetSnnOrthogonalMasks(): FloatArray =
         if (isLoaded) runCatching { getSnnOrthogonalMasks() }.getOrNull()
-            ?: floatArrayOf(0.25f, 0.25f, 0.25f, 0.25f)
-        else floatArrayOf(0.25f, 0.25f, 0.25f, 0.25f)
+            ?: floatArrayOf()
+        else floatArrayOf()
 
     // ── EJE 4: PinnaManifoldInterpolator (Anti-Apple INR-SDF + FIR Fase Mín) ─
     @JvmStatic external fun setPinnaManifoldEnabled(enabled: Boolean)
@@ -193,20 +193,20 @@ object NativeBridge {
     }
     fun safeCalibratePinnaFromImagePatch(patch: FloatArray): FloatArray =
         if (isLoaded) runCatching { calibratePinnaFromImagePatch(patch) }.getOrNull()
-            ?: floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
-        else floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
+            ?: floatArrayOf()
+        else floatArrayOf()
     fun safeGetPinnaActiveLatents(): FloatArray =
         if (isLoaded) runCatching { getPinnaActiveLatents() }.getOrNull()
-            ?: floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
-        else floatArrayOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f)
+            ?: floatArrayOf()
+        else floatArrayOf()
     fun safeGetPinnaActiveNotchHz(): Float =
-        if (isLoaded) runCatching { getPinnaActiveNotchHz() }.getOrDefault(7800f) else 7800f
+        if (isLoaded) runCatching { getPinnaActiveNotchHz() }.getOrDefault(Float.NaN) else Float.NaN
     fun safeGetPinnaActiveItdUs(): Float =
-        if (isLoaded) runCatching { getPinnaActiveItdUs() }.getOrDefault(620f) else 620f
+        if (isLoaded) runCatching { getPinnaActiveItdUs() }.getOrDefault(Float.NaN) else Float.NaN
     fun safeGetPinnaActiveFirTaps(): FloatArray =
         if (isLoaded) runCatching { getPinnaActiveFirTaps() }.getOrNull()
-            ?: floatArrayOf(0.92f, -0.18f, 0.11f, -0.07f, 0.04f, -0.03f, 0.02f, -0.01f)
-        else floatArrayOf(0.92f, -0.18f, 0.11f, -0.07f, 0.04f, -0.03f, 0.02f, -0.01f)
+            ?: floatArrayOf()
+        else floatArrayOf()
 
     // ── EJE 5: SupremeMsoFarrowArbitrator (SHM CAS owner_pid + Farrow 5º) ───
     @JvmStatic external fun setFarrowMsoEnabled(enabled: Boolean)
@@ -253,7 +253,7 @@ object NativeBridge {
         if (isLoaded) runCatching { setRealityReconstructionEnabled(enabled) }
     }
     fun safeIsRealityReconstructionEnabled(): Boolean =
-        if (isLoaded) runCatching { isRealityReconstructionEnabled() }.getOrDefault(true) else true
+        if (isLoaded) runCatching { isRealityReconstructionEnabled() }.getOrDefault(false) else false
     fun safeSetRealityIntensity(intensity: Float) {
         if (isLoaded) runCatching { setRealityIntensity(intensity) }
     }
