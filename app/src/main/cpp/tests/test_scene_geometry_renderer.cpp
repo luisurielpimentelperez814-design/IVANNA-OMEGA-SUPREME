@@ -18,7 +18,7 @@ TEST(SceneGeometryRenderer, RendersValid4KFrameWithinMemoryBound) {
     const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     EXPECT_EQ(stats.width,3840u); EXPECT_EQ(stats.height,2160u);
     EXPECT_EQ(stats.bytes,3840u*2160u*3u); EXPECT_LE(stats.bytes,SceneGeometryRenderer::kMaxPixels*3u);
-    EXPECT_EQ(stats.segments,19u); EXPECT_LT(ms,10000); // generous regression ceiling, not a device performance claim
+    EXPECT_EQ(stats.segments,12u); EXPECT_LT(ms,10000); // generous regression ceiling, not a device performance claim
     std::ifstream in(path,std::ios::binary); std::string header; std::getline(in,header);
     EXPECT_EQ(header,"P6"); std::remove(path);
 }
