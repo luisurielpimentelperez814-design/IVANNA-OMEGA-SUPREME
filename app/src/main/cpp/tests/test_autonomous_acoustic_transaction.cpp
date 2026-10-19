@@ -7,7 +7,7 @@ static bool measure(void* p, AcousticSnapshot& s) {
     s.levelDb.fill(f.applied&&!f.failVerification?1.f:5.f);return true;
 }
 static bool propose(void*,const AcousticSnapshot&,std::array<float,10>& t){t.fill(-2.f);return true;}
-static bool apply(void* p,const std::array<float,10>& t){auto& f=*static_cast<Fake*>(p);f.applied=true;f.appliedValues=t;return true;}
+static bool apply(void* p,const std::array<float,10>& t){auto& f=*static_cast<Fake*>(p);f.appliedValues=t;f.applied=false;for(float v:t)if(std::fabs(v)>1e-6f)f.applied=true;return true;}
 static void audit(void* p,const DecisionRecord& r){static_cast<Fake*>(p)->last=r;}
 TEST(AutonomousAcousticTransaction, CommitsOnlyAfterMeasuredImprovement) {
     Fake f;DecisionRecord log;AutonomousAcousticTransaction tx;
@@ -19,7 +19,7 @@ TEST(AutonomousAcousticTransaction, RollsBackWhenVerificationDoesNotImprove) {
     Fake f;f.failVerification=true;DecisionRecord log;AutonomousAcousticTransaction tx;
     auto result=tx.execute(&f,{},measure,propose,apply,audit,18);
     EXPECT_FALSE(result.committed);EXPECT_TRUE(result.rolledBack);
-    EXPECT_EQ(result.record.decision,"ROLLED_BACK");EXPECT_EQ(result.record.reason,"insufficient_improvement");
+    EXPECT_EQ(result.record.decision,"ROLLED_BACK");EXPECT_EQ(result.record.reason,"insufficient_improvement");EXPECT_FALSE(f.applied);
 }
 TEST(AutonomousAcousticTransaction, RejectsLowConfidenceBaselineWithoutApplying) {
     struct Low:Fake{} f; // use a local callback to provide a low-confidence baseline
