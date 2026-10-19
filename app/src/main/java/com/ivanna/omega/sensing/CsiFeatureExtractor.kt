@@ -63,7 +63,7 @@ object CsiFeatureExtractor {
                 .let { it / (mean + 1e-9) }
                 .coerceIn(0.0, 10.0)
         } else null
-        previous = amplitudes.toFloatArray()
+        previous = amplitudes.map { it.toFloat() }.toFloatArray()
 
         val validAntenna = sample.antennaCount > 0
         val validRate = sample.sampleRateHz > 0
