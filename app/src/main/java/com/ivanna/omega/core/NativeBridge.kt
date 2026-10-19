@@ -231,7 +231,7 @@ object NativeBridge {
     fun safeReleaseShmArbitration(pid: Int): Boolean =
         if (isLoaded) runCatching { releaseShmArbitration(pid) }.getOrDefault(false) else false
     fun safeGetShmOwnerPid(): Int =
-        if (isLoaded) runCatching { getShmOwnerPid() }.getOrDefault(0) else 0
+        if (isLoaded) runCatching { getShmOwnerPid() }.getOrDefault(-1) else -1
     fun safeIsShmCrossProcessMapped(): Boolean =
         if (isLoaded) runCatching { isShmCrossProcessMapped() }.getOrDefault(false) else false
 
