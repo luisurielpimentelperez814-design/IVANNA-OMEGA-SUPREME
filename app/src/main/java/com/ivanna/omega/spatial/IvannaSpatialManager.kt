@@ -44,9 +44,12 @@ object IvannaSpatialManager {
 
     // Desired scene pose is retained before native initialization and applied to
     // the four active stems when the upmixer becomes available.
-    @Volatile private var sceneAzimuthRad: Float = 0f
-    @Volatile private var sceneElevationRad: Float = 0f
-    @Volatile private var sceneDistanceScale: Float = 1f
+    private data class RequestedScenePose(
+        val azimuthRad: Float = 0f,
+        val elevationRad: Float = 0f,
+        val distanceScale: Float = 1f
+    )
+    private val requestedScenePose = java.util.concurrent.atomic.AtomicReference(RequestedScenePose())
 
     private val baseStemPositions = SpatialScenePoseMath.defaultStems
 
@@ -127,8 +130,9 @@ object IvannaSpatialManager {
                 if (upmixer != 0L) {
                     runCatching {
                         IvannaSpatialNative.nativeUpmixerSetEnabled(upmixer, true)
+                        val initialPose = requestedScenePose.get()
                         val poseConfirmed = applyScenePoseToUpmixer(
-                            upmixer, sceneAzimuthRad, sceneElevationRad, sceneDistanceScale
+                            upmixer, initialPose.azimuthRad, initialPose.elevationRad, initialPose.distanceScale
                         )
                         if (!poseConfirmed) {
                             Log.w(TAG, "pose espacial inicial escrita sin read-back confirmado")
@@ -290,24 +294,30 @@ object IvannaSpatialManager {
      * Coordinates follow the renderer's x/y horizontal plane and z vertical axis.
      * This controls source placement; it does not claim measured HRTF elevation.
      */
-    fun setScenePose(azimuthRad: Float, elevationRad: Float, distanceScale: Float = sceneDistanceScale): Boolean {
+    fun setScenePose(
+        azimuthRad: Float,
+        elevationRad: Float,
+        distanceScale: Float = requestedScenePose.get().distanceScale
+    ): Boolean {
         if (!azimuthRad.isFinite() || !elevationRad.isFinite() || !distanceScale.isFinite()) return false
         if (azimuthRad !in -Math.PI.toFloat()..Math.PI.toFloat()) return false
         if (elevationRad !in -Math.PI.toFloat() / 4f..Math.PI.toFloat() / 4f) return false
         if (distanceScale !in 0.5f..2f) return false
 
-        sceneAzimuthRad = azimuthRad
-        sceneElevationRad = elevationRad
-        sceneDistanceScale = distanceScale
-
-        val h = rendererHandle
-        val u = upmixerHandle
-        if (!ready || h == 0L || u == 0L) return false
-        return runCatching {
-            if (!applyScenePoseToUpmixer(u, azimuthRad, elevationRad, distanceScale)) return@runCatching false
-            IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
-            true
-        }.getOrDefault(false)
+        // Store one coherent request even if native initialization has not finished.
+        requestedScenePose.set(RequestedScenePose(azimuthRad, elevationRad, distanceScale))
+        return synchronized(lock) {
+            val h = rendererHandle
+            val u = upmixerHandle
+            if (!ready || h == 0L || u == 0L) return@synchronized false
+            runCatching {
+                if (!applyScenePoseToUpmixer(u, azimuthRad, elevationRad, distanceScale)) {
+                    return@runCatching false
+                }
+                IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
+                true
+            }.getOrDefault(false)
+        }
     }
 
     private fun applyScenePoseToUpmixer(
