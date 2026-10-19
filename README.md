@@ -14,7 +14,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android%20%7C%20ARM64-3ddc84.svg)](app/)
 [![C++20](https://img.shields.io/badge/motor-C%2B%2B20-00599C.svg)](app/src/main/cpp/)
 
-[Documentación técnica](docs/ENGINEERING.md) · [Cambios recientes](CHANGELOG.md) · [Versiones y paquetes](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) · [Reportar un problema](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues)
+[LÉAME para público general](LEAME.md) · [Documentación técnica](docs/ENGINEERING.md) · [Cambios recientes](CHANGELOG.md) · [Versiones y paquetes](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) · [Reportar un problema](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues)
 
 </div>
 
