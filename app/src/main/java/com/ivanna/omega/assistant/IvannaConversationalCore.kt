@@ -254,7 +254,7 @@ object IvannaConversationalCore {
 
         if (updated != current) {
             _context.value = _context.value.copy(temporalPreferences = updated)
-            Log.d(TAG, "Preferencias temporales actualizadas: $updated")
+            runCatching { Log.d(TAG, "Preferencias temporales actualizadas: $updated") }
         }
     }
 
@@ -441,7 +441,7 @@ object IvannaConversationalCore {
     /** Limpia el estado de sesión al llamar a clearMemory(). */
     fun clear() {
         _context.value = SessionContext()
-        Log.d(TAG, "Contexto conversacional limpiado.")
+        runCatching { Log.d(TAG, "Contexto conversacional limpiado.") }
     }
 
     private fun hits(text: String, vararg needles: String): Boolean =
