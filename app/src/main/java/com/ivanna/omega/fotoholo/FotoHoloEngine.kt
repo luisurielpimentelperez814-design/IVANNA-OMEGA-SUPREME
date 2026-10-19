@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.audio.RouteArbiter
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.visualizer.IvannaVisualizerBark64Bridge
 import kotlinx.coroutines.CancellationException
@@ -35,6 +36,9 @@ data class FotoHoloTelemetry(
     val dspWidth: Float = Float.NaN,
     /** Resultado real del envío del ancho a la Ruta B (demonio); ver [FotoHoloRouteB]. */
     val routeB: String = "sin enviar",
+    /** Ruta elegida por SAFMUS: A (captura interna), B (efecto global) o NONE. */
+    val activeRoute: String = "NONE",
+    val safmusDecision: String = "Esperando evidencia de ruta",
     /** Monotonic time of the latest valid Bark sample; 0 means no valid sample yet. */
     val sampleTimestampMonotonicNs: Long = 0L,
 ) {
@@ -137,19 +141,34 @@ object FotoHoloEngine {
             var lastAttempted = false
             var lastReturned = false
             var lastDspWidth = Float.NaN
+            var systemWideRouteActive = false
+            var nextRouteProbeMs = 0L
+            var lastRouteBCommanded = Float.NaN
+            var lastRouteBPushMs = 0L
 
             while (true) {
                 try {
+                    val nowMs = SystemClock.elapsedRealtime()
+                    // AudioEffect.queryEffects hace Binder IPC: sondear en hilo de control,
+                    // con caché de 1 s; nunca desde el callback de audio ni cada tick de 50 ms.
+                    if (nowMs >= nextRouteProbeMs) {
+                        systemWideRouteActive = RouteArbiter.isSystemWideEffectActive()
+                        nextRouteProbeMs = nowMs + 1_000L
+                    }
                     val wantsModulation = enabled && !bypass
-                    val shouldSample = wantsModulation || viewers > 0
+                    // SAFMUS mantiene exclusividad: con Ruta B global activa, no muestrear ni
+                    // modular mediante la ruta interna A en paralelo.
+                    val shouldSample = (wantsModulation || viewers > 0) && !systemWideRouteActive
                     val rawBase = IvannaSpatialEngine.shared.widthFactor
                     val base = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
 
-                    if (!shouldSample && !modulating) {
+                    if (!shouldSample && !modulating && !systemWideRouteActive) {
                         _telemetry.value = _telemetry.value.copy(
                             enabled = enabled, bypass = bypass, baseWidth = base,
                             nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
-                            nativeCallReturned = lastReturned, dspWidth = lastDspWidth, routeB = FotoHoloRouteB.status
+                            nativeCallReturned = lastReturned, dspWidth = lastDspWidth,
+                            routeB = FotoHoloRouteB.status, activeRoute = "NONE",
+                            safmusDecision = "Sin señal/ruta procesable; estado seguro conservado"
                         )
                         delay(IDLE_MS)
                         continue
@@ -170,7 +189,13 @@ object FotoHoloEngine {
                     // No enviar cambios al DSP si no hay una trama Bark válida de la captura.
                     // Si la señal desaparece durante la modulación, el branch de restauración
                     // de abajo devuelve el ancho base y lo reintenta hasta que JNI responda.
-                    val shouldModulate = wantsModulation && features.valid
+                    val routeDecision = SafmusRouteSupervisor.decide(
+                        systemWideEffectActive = systemWideRouteActive,
+                        routeAHasValidSignal = features.valid,
+                        enabled = enabled,
+                        bypass = bypass
+                    )
+                    val shouldModulate = routeDecision.allowSpectralAdaptation && features.valid
                     var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
                     if (shouldModulate) {
                         val target = FotoHoloMath.targetWidth(base, intensity, features)
@@ -180,7 +205,7 @@ object FotoHoloEngine {
                             lastAttempted = true
                             lastError = writeWidth(current)
                             lastReturned = lastError == null
-                            if (lastReturned) { lastCommanded = current; FotoHoloRouteB.push(current) }
+                            if (lastReturned) { lastCommanded = current }
                         }
                         modulating = true
                         displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
@@ -191,7 +216,6 @@ object FotoHoloEngine {
                         lastReturned = lastError == null
                         if (lastReturned) {
                             lastCommanded = base
-                            FotoHoloRouteB.push(base)
                             current = Float.NaN
                             modulating = false
                             displayedCommand = base
@@ -200,6 +224,22 @@ object FotoHoloEngine {
                         }
                     } else {
                         displayedCommand = base
+                    }
+
+                    // Ruta B es la ruta global exclusiva. Solo se le manda el ancho base del
+                    // usuario; la modulación basada en Bark de Ruta A se abstiene en este modo.
+                    // Reintento limitado si no hay confirmación explícita de aplicación.
+                    if (routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_B) {
+                        val routeBRetryDue = nowMs - lastRouteBPushMs >= 1_500L &&
+                            !FotoHoloRouteB.status.contains("aplicado en Ruta B")
+                        if (!lastRouteBCommanded.isFinite() ||
+                            FotoHoloMath.changed(base, lastRouteBCommanded) || routeBRetryDue) {
+                            FotoHoloRouteB.push(base)
+                            lastRouteBCommanded = base
+                            lastRouteBPushMs = nowMs
+                        }
+                    } else {
+                        lastRouteBCommanded = Float.NaN
                     }
 
                     // Refrescar read-back en cada tick de control tras una escritura
@@ -216,6 +256,7 @@ object FotoHoloEngine {
                         bands = buf.copyOf(), features = features,
                         nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
                         nativeCallReturned = lastReturned, dspWidth = lastDspWidth, routeB = FotoHoloRouteB.status,
+                        activeRoute = routeDecision.route.name, safmusDecision = routeDecision.reason,
                         sampleTimestampMonotonicNs = if (ready && features.valid) SystemClock.elapsedRealtimeNanos() else _telemetry.value.sampleTimestampMonotonicNs,
                     )
                     delay(TICK_MS)
