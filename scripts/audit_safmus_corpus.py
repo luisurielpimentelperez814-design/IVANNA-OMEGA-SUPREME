@@ -18,14 +18,26 @@ from pathlib import Path
 HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
 
 
+def find_hdf5_signature(path: Path, size: int) -> int | None:
+    """Return the legal HDF5 signature offset, including optional user blocks."""
+    offset = 0
+    with path.open("rb") as stream:
+        while offset + len(HDF5_MAGIC) <= size:
+            stream.seek(offset)
+            if stream.read(len(HDF5_MAGIC)) == HDF5_MAGIC:
+                return offset
+            offset = 512 if offset == 0 else offset * 2
+    return None
+
+
 def inspect_sofa(path: Path) -> dict:
     try:
         size = path.stat().st_size
-        with path.open("rb") as stream:
-            signature = stream.read(8)
+        offset = find_hdf5_signature(path, size)
+        valid = offset is not None
         return {"path": str(path), "bytes": size,
-                "hdf5_signature": signature == HDF5_MAGIC,
-                "status": "container-signature-only"}
+                "hdf5_signature": valid, "hdf5_signature_offset": offset,
+                "status": "container-signature-only" if valid else "invalid-container-signature"}
     except OSError as exc:
         return {"path": str(path), "status": "error", "error": str(exc)}
 
@@ -55,10 +67,11 @@ def inspect_wav(path: Path) -> dict:
             rate, channels, width, frames = (
                 wav.getframerate(), wav.getnchannels(), wav.getsampwidth(), wav.getnframes()
             )
+        valid = rate > 0 and channels > 0 and width in (1, 2, 3, 4) and frames > 0
         return {"path": str(path), "sample_rate_hz": rate, "channels": channels,
                 "sample_width_bytes": width, "frames": frames,
                 "duration_s": frames / rate if rate else None,
-                "status": "valid-header" if rate > 0 and channels > 0 and frames > 0 else "invalid"}
+                "status": "valid-header" if valid else "invalid-header-values"}
     except (OSError, wave.Error, EOFError) as exc:
         return {"path": str(path), "status": "error", "error": str(exc)}
 
@@ -135,6 +148,7 @@ def main() -> int:
         args.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
     problems = any(x.get("status") in ("error", "invalid", "invalid-header",
+                                       "invalid-header-values", "invalid-container-signature",
                                        "invalid-dimensions-or-size")
                    for group in ("sofa", "ihr1", "rir_wav") for x in report[group])
     problems = problems or report["rir_metadata"].get("status") in ("error", "issues",
