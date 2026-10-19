@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.75
-versionCode=366
+version=v2.5.76
+versionCode=367
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.75 (FotoHolo: scroll vertical, reset neutro y controles)
+description=v2.5.76 (SAFMUS: supervisión exclusiva de rutas A/B)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
