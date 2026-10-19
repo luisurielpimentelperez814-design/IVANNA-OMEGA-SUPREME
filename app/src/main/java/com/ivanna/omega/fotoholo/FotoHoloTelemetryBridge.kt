@@ -38,6 +38,8 @@ class FotoHoloTelemetryBridge(context: Context) {
             put("timestampMonotonicNs", SystemClock.elapsedRealtimeNanos())
             put("source", "android-native-bridge")
             put("signalValid", tel.hasSignal && tel.features.valid)
+            put("sampleTimestampMonotonicNs", tel.sampleTimestampMonotonicNs)
+            put("sampleAgeMs", if (tel.sampleTimestampMonotonicNs > 0L) ((SystemClock.elapsedRealtimeNanos() - tel.sampleTimestampMonotonicNs).coerceAtLeast(0L) / 1_000_000.0) else JSONObject.NULL)
             put("bands", JSONArray().apply { tel.bands.forEach { put(if (it.isFinite()) it.toDouble() else 0.0) } })
             put("features", JSONObject().apply {
                 put("energy", finiteOrNull(tel.features.energy))
