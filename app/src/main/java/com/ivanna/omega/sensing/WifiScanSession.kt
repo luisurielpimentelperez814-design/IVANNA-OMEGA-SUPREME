@@ -87,6 +87,7 @@ class WifiScanSession(
             return false
         }
         if (running) return true
+        UniversalWifiSensingAdapter.resetSession()
         val hasFineLocation = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!hasFineLocation) {
             emit("Falta el permiso de ubicación precisa para escanear Wi-Fi. Concede el permiso explícitamente; no se usará root para eludir una denegación.", emptyList(), false)
@@ -126,6 +127,7 @@ class WifiScanSession(
     }
 
     fun stop() {
+        UniversalWifiSensingAdapter.resetSession()
         running = false
         consented = false
         handler.removeCallbacks(scanRunnable)
