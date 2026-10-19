@@ -34,16 +34,16 @@ import com.ivanna.omega.ui.theme.*
  */
 @Composable
 fun SoundScreen(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
+    val appContext = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("EQ", "DINÁMICA", "BINAURAL", "NHO", "FFT")
 
     // Estado persistente levantado (bugs C/D/E + EQ reset) — cargado una vez, guardado en cada cambio
-    var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
+    var prefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(appContext)) }
     fun updatePrefs(update: (AdaptiveControlsState) -> AdaptiveControlsState) {
         prefs = update(prefs)
-        AdaptiveControlsPrefs.save(context, prefs)
+        AdaptiveControlsPrefs.save(appContext, prefs)
     }
 
     // FIX: EQ/Compresor/Gain se perdían en cada reinicio porque AudioState
@@ -366,7 +366,7 @@ private fun BinauralTab(
                 initialPoseConfirmed = spatialPoseStatus.startsWith("POSE 3D EN MOTOR")
             }
             if (pollCount++ % 4 == 0) {
-                val snapshot = runCatching { PerceptualSceneRuntime.capture(context) }.getOrNull()
+                val snapshot = runCatching { PerceptualSceneRuntime.capture(appContext) }.getOrNull()
                 if (snapshot != null) {
                     val applied = snapshot.axes.count { it.state == AxisState.APPLIED }
                     val degraded = snapshot.axes.count { it.state == AxisState.DEGRADED }
