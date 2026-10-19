@@ -185,6 +185,14 @@ fun SpatialAudioPanel(
         val assetLoader = remember(webContext) {
             WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(webContext))
+                // Imágenes de lugar generadas en el dispositivo (caché privada de la app, no rutas externas).
+                .addPathHandler(
+                    "/${FotoHoloTelemetryBridge.PLACE_DIR}/",
+                    WebViewAssetLoader.InternalStoragePathHandler(
+                        webContext,
+                        java.io.File(webContext.cacheDir, FotoHoloTelemetryBridge.PLACE_DIR).apply { mkdirs() }
+                    )
+                )
                 .build()
         }
         val holoWebView = remember(webContext, assetLoader) {

@@ -39,6 +39,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class FotoHoloTelemetryBridge(context: Context) {
     companion object {
+        /** Carpeta de caché privada y ruta virtual (mismo nombre) desde la que el WebView sirve las imágenes. */
+        const val PLACE_DIR = "place-images"
+        private const val PLACE_MIN_INTERVAL_MS = 20_000L
+
         /** Call before loading the trusted, bundled dashboard page into this WebView. */
         fun installBeforeLoadingTrustedBundle(webView: android.webkit.WebView, context: Context): FotoHoloTelemetryBridge {
             val bridge = FotoHoloTelemetryBridge(context)
@@ -152,6 +156,74 @@ class FotoHoloTelemetryBridge(context: Context) {
             ) }
         }
     }
+    private val placeInFlight = AtomicBoolean(false)
+    @Volatile private var lastPlaceRequestMs = 0L
+
+    /**
+     * Genera de forma NATIVA una imagen ilustrativa de un lugar, ambientada con el contexto musical.
+     * Sustituye al `fetch('/api/fotoholo/render-place')` del panel web, que en el APK no puede
+     * responder (el WebView solo sirve assets empaquetados). Solo viaja texto, nunca audio.
+     * La imagen se guarda en la caché privada y se sirve por `/place-images/` (ver SpatialAudioPanel).
+     * El resultado llega por el evento 'ivanna-fotoholo-place-result'.
+     */
+    @JavascriptInterface
+    fun requestPlaceRender(requestId: String, placeJson: String) {
+        if (!requestId.matches(Regex("[A-Za-z0-9_-]{1,64}")) || placeJson.length > 4096) {
+            deliverPlaceResult(JSONObject().put("requestId", requestId.take(64)).put("error", "solicitud inválida"))
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if ((lastPlaceRequestMs > 0L && now - lastPlaceRequestMs < PLACE_MIN_INTERVAL_MS) || !placeInFlight.compareAndSet(false, true)) {
+            deliverPlaceResult(JSONObject().put("requestId", requestId).put("error", "Espera unos segundos entre imágenes (límite de uso de la API)."))
+            return
+        }
+        lastPlaceRequestMs = now
+        aiScope.launch {
+            try {
+                val result = runCatching {
+                    val input = JSONObject(placeJson)
+                    val place = FotoHoloPlaceImage.clean(input.optString("place"), FotoHoloPlaceImage.MAX_PLACE)
+                    check(place.length >= 2) { "Indica un lugar o entorno (2–240 caracteres)." }
+                    if (!SecureConfigurationManager.state.value.isInitialized) SecureConfigurationManager.initialize(appContext)
+                    val key = com.ivanna.omega.ai.gemini.GeminiRest.cleanKey(SecureConfigurationManager.getApiKey())
+                    check(key.isNotBlank()) { "No hay API key de Gemini guardada en el asistente." }
+                    val image = FotoHoloPlaceImage.render(
+                        appContext, key, place,
+                        input.optString("details"), input.optString("musicContext")
+                    )
+                    val dir = java.io.File(appContext.cacheDir, PLACE_DIR).apply { mkdirs() }
+                    val name = "place-$requestId.${FotoHoloPlaceImage.extensionFor(image.mimeType)}"
+                    java.io.File(dir, name).writeBytes(image.bytes)
+                    // Conserva solo las 3 más recientes: son ~MB cada una y viven en caché privada.
+                    dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
+                    JSONObject()
+                        .put("requestId", requestId)
+                        .put("url", "https://appassets.androidplatform.net/$PLACE_DIR/$name")
+                        .put("mimeType", image.mimeType)
+                        .put("model", image.model)
+                        .put("requestedSize", image.requestedSize)
+                        .put("accuracy", "illustrative-unverified")
+                        .put("note", "Concepto generado por IA, no una reconstrucción verificada del lugar.")
+                }.getOrElse {
+                    JSONObject().put("requestId", requestId).put("error", it.message?.take(240) ?: "no se pudo generar la imagen")
+                }
+                deliverPlaceResult(result)
+            } finally {
+                placeInFlight.set(false)
+            }
+        }
+    }
+
+    private fun deliverPlaceResult(payload: JSONObject) {
+        val encoded = JSONObject.quote(payload.toString())
+        Handler(Looper.getMainLooper()).post {
+            runCatching { webViewRef?.get()?.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('ivanna-fotoholo-place-result',{detail:JSON.parse($encoded)}));",
+                null
+            ) }
+        }
+    }
+
     @Volatile private var viewerCounted = false
 
     @JavascriptInterface

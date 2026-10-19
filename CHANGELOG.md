@@ -1,3 +1,15 @@
+# CHANGELOG — v2.5.81 (372) — La imagen IA de lugar ahora se genera DENTRO de la app y puede crearse sola con la música
+
+1. **Causa real de que no funcionara en el teléfono:** el panel FotoHolo pedía la imagen a `/api/fotoholo/render-place`, un endpoint de `server.ts` (servidor Node). El WebView del APK solo sirve assets empaquetados y bloquea el resto, así que esa petición recibía una respuesta vacía: en el teléfono la generación no podía responder nunca.
+2. **Generación nativa (`FotoHoloPlaceImage.kt`):** llama a Gemini con la clave del asistente (modelo de imagen 4K y, si no existe o está saturado, uno de respaldo), con el mismo prompt de dirección de arte y las mismas salvedades que el servidor. Solo viaja TEXTO (lugar, detalles y contexto musical agregado), nunca audio. La imagen es un concepto ilustrativo, no una reconstrucción verificada del lugar.
+3. **Cableado:** `FotoHoloTelemetryBridge.requestPlaceRender` (un solo envío a la vez y 20 s mínimos entre peticiones) guarda la imagen en la caché privada (se conservan las 3 últimas) y el WebView la sirve por `/place-images/` (`InternalStoragePathHandler`). El panel web usa la vía nativa si existe y mantiene el `fetch` para el modo servidor.
+4. **Creación automática (opt-in, desactivada por defecto):** casilla «Crear automáticamente al detectar una canción nueva». Con señal viva y un cambio de canción, género o entorno, genera la imagen sin pulsar nada (máx. una cada 2 min, usa la cuota de TU API). Si no escribes un lugar, usa el entorno elegido.
+5. **Wi-Fi:** sin cambios de código. El sondeo (con consentimiento; método Android estándar y, con Magisk, respaldo root) sigue cableado. Wi-Fi no da anatomía ni geometría de personas: `WifiSceneReconstruction` se niega a inventarlas y esa regla se mantiene. El consentimiento del usuario cubre su dispositivo y su sesión, no a terceros en la sala.
+6. **Pruebas:** `FotoHoloPlaceImageTest` (lógica pura: prompt, límites, extensión y cadena de modelos). Las compuertas de documentación y de cableado pasan en local.
+7. **No verificado aquí:** compilación de Kotlin y del bundle web (solo el CI del APK las compila), que el modelo de imagen esté disponible para tu cuenta/cuota, y cómo se ve y suena en tu teléfono. El tamaño 4K depende del modelo; el de respaldo usa su tamaño por defecto.
+
+---
+
 # CHANGELOG — v2.5.80 (371) — Daemon estable, HRTF que sobrevive al giro de pantalla, scroll del panel
 
 1. **Daemon «Caído / Corriendo» parpadeando cada segundo y comandos perdidos:** el daemon atiende UN comando por conexión y la cierra; la app reutilizaba un canal persistente, así que el 2.º comando escribía en un socket cerrado (isConnected=false y comando perdido) y el siguiente reconectaba (true). Ahora cada comando abre su conexión (loopback, con un reintento). El estado deja de alternar y ya no se pierde uno de cada dos comandos hacia la Ruta B.

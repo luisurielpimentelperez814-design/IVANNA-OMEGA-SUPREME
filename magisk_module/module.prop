@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.80
-versionCode=371
+version=v2.5.81
+versionCode=372
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.80 (daemon estable, HRTF tras girar pantalla, scroll del panel, Gemini y Wi-Fi)
+description=v2.5.81 (imagen IA de lugar generada en el teléfono y automática con la música)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

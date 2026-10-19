@@ -94,11 +94,11 @@ object GeminiRest {
      * POST generateContent. Los headers X-Android-Package/Cert hacen que una clave
      * restringida a «Aplicaciones Android» sea aceptada; en claves sin restricción no cambian nada.
      */
-    fun generate(context: Context, key: String, model: String, bodyJson: String): Response {
+    fun generate(context: Context, key: String, model: String, bodyJson: String, readTimeoutMs: Int = 25_000): Response {
         val conn = URL("$ENDPOINT$model:generateContent").openConnection() as HttpURLConnection
         return try {
             conn.requestMethod = "POST"; conn.doOutput = true
-            conn.connectTimeout = 10_000; conn.readTimeout = 25_000
+            conn.connectTimeout = 10_000; conn.readTimeout = readTimeoutMs
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setRequestProperty("x-goog-api-key", key)
             conn.setRequestProperty("X-Android-Package", context.packageName)
