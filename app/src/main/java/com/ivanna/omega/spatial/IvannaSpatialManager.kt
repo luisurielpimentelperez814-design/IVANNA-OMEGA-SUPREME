@@ -134,8 +134,15 @@ object IvannaSpatialManager {
         }
         return runCatching {
             IvannaSpatialNative.nativeObjectRendererSetHrtfSubject(h, resolved)
-            activeSubject = resolved
-            true
+            val loaded = IvannaSpatialNative.nativeObjectRendererIsHrtfLoaded(h)
+            val actual = IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(h)
+            if (!loaded || actual != resolved) {
+                Log.w(TAG, "HRTF no confirmado: solicitado=$resolved, activo=$actual, loaded=$loaded")
+                false
+            } else {
+                activeSubject = actual
+                true
+            }
         }.getOrDefault(false)
     }
 
