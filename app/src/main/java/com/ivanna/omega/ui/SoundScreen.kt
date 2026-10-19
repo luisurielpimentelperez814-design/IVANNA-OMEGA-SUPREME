@@ -314,6 +314,24 @@ private fun BinauralTab(
     // si la fuente cambia externamente (no val plana ni remember sin key)
     val hrtfEnabled by remember { derivedStateOf { audioState.binaural } }
     var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
+    var spatialPoseStatus by remember { mutableStateOf("POSE 3D: esperando motor HRTF") }
+
+    fun syncSpatialPose(s: AdaptiveControlsState) {
+        val azimuth = s.binauralAzimuth * Math.PI.toFloat() / 180f
+        val elevation = s.binauralElevation * Math.PI.toFloat() / 180f
+        val confirmed = runCatching {
+            com.ivanna.omega.spatial.IvannaSpatialManager.setScenePose(
+                azimuth, elevation, com.ivanna.omega.spatial.IvannaSpatialEngine.distanceMeters
+            )
+        }.getOrDefault(false)
+        spatialPoseStatus = if (confirmed) {
+            "POSE 3D CONFIRMADA · coordenadas de stems verificadas por lectura nativa"
+        } else if (com.ivanna.omega.spatial.IvannaSpatialManager.ready) {
+            "POSE 3D NO CONFIRMADA · el motor no devolvió las coordenadas solicitadas"
+        } else {
+            "POSE 3D PENDIENTE · el motor HRTF aún no está listo"
+        }
+    }
 
     fun syncHybridToNative(s: AdaptiveControlsState) {
         NativeBridge.safeSetHybridMagistralParams(
@@ -331,8 +349,13 @@ private fun BinauralTab(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         syncHybridToNative(prefs)
+        var initialPoseConfirmed = false
         while (true) {
             hybridTele = NativeBridge.safeGetHybridMagistralTelemetry()
+            if (!initialPoseConfirmed) {
+                syncSpatialPose(prefs)
+                initialPoseConfirmed = spatialPoseStatus.startsWith("POSE 3D CONFIRMADA")
+            }
             kotlinx.coroutines.delay(250L)
         }
     
@@ -371,6 +394,7 @@ private fun BinauralTab(
                 updatePrefs { next }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setAzimuth(rad)
+                syncSpatialPose(next)
                 if (IvannaNativeLib.isLoaded) {
                     runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
                     runCatching { IvannaNativeLib.nativeSetBinauralPositionRad(rad, (audioState.spatialWidth / 2f).coerceIn(0f, 1f)) }
@@ -385,8 +409,10 @@ private fun BinauralTab(
                 updatePrefs { next }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setElevation(rad)
+                syncSpatialPose(next)
                 syncHybridToNative(next)
             }
+            Text(spatialPoseStatus, color = TextSecondary, fontSize = 10.sp)
             IvannaSliderRow("ANCHO ESPACIAL", audioState.spatialWidth, 0f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(spatialWidth = v) }
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setWidth(v)
