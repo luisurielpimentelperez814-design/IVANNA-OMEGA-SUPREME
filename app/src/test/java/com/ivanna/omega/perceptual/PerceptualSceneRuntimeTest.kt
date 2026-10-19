@@ -84,6 +84,16 @@ class PerceptualSceneRuntimeTest {
     }
 
     @Test
+    fun azimuthDoesNotBecomeAppliedWhenReadBackDiffersFromRequest() {
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(effectiveAzimuthRad = 0.8f)
+        )
+        val azimuth = snapshot.axes.single { it.axis == PerceptualAxis.AZIMUTH }
+        assertEquals(AxisState.DEGRADED, azimuth.state)
+        assertFalse(azimuth.engineConfirmed)
+    }
+
+    @Test
     fun unknownOutputRouteRemainsAnExplicitValidationFailure() {
         val snapshot = PerceptualSceneRuntime.assemble(evidence().copy(outputRoute = OutputRoute.UNKNOWN))
         assertTrue(snapshot.validate().any { it.contains("outputRoute is unknown") })
