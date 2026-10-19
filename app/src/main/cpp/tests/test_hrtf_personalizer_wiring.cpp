@@ -118,6 +118,48 @@ TEST(ObjectSpatialRendererWiring, PannedObjectProducesInterauralDelayWithItdScal
     }
 }
 
+// Regresión 10D: un renderer híbrido solicitado no debe desactivar el personalizador
+// HRTF cuando allowSpatialRender=false impide que ese renderer procese el bloque.
+// En ese modo, la salida debe coincidir con la ruta normal sin híbrido.
+TEST(ObjectSpatialRendererWiring, DisabledSpatialRenderKeepsHrtfPersonalizerActive) {
+    constexpr size_t kBlock = 256;
+    IvannaAudioPipeline plain;
+    IvannaAudioPipeline hybridRequested;
+    plain.prepare(48000.0f, IvannaAudioPipeline::MAX_BLOCK_SIZE);
+    hybridRequested.prepare(48000.0f, IvannaAudioPipeline::MAX_BLOCK_SIZE);
+
+    UserPinnaProfile profile{};
+    profile.head_circumference_cm = 61.0f;
+    profile.ear_pinna_size_mm = 72.0f;
+    profile.canal_resonance_boost_db = 6.0f;
+    plain.personalizer().setProfile(profile);
+    hybridRequested.personalizer().setProfile(profile);
+    hybridRequested.hybridMagistralRenderer().setEnabled(true);
+
+    std::vector<float> plainL(kBlock), plainR(kBlock), hybridL(kBlock), hybridR(kBlock);
+    for (size_t i = 0; i < kBlock; ++i) {
+        const float t = static_cast<float>(i) / 48000.0f;
+        const float left = 0.25f * std::sin(2.0f * 3.14159265f * 3100.0f * t);
+        const float right = 0.22f * std::cos(2.0f * 3.14159265f * 5200.0f * t);
+        plainL[i] = hybridL[i] = left;
+        plainR[i] = hybridR[i] = right;
+    }
+
+    plain.processLiveSpatialAxes(plainL.data(), plainR.data(), kBlock, 48000.0f,
+                                 false, 0.18f, false, false);
+    hybridRequested.processLiveSpatialAxes(hybridL.data(), hybridR.data(), kBlock, 48000.0f,
+                                           false, 0.18f, false, false);
+
+    for (size_t i = 0; i < kBlock; ++i) {
+        ASSERT_TRUE(std::isfinite(plainL[i]));
+        ASSERT_TRUE(std::isfinite(plainR[i]));
+        ASSERT_TRUE(std::isfinite(hybridL[i]));
+        ASSERT_TRUE(std::isfinite(hybridR[i]));
+        EXPECT_NEAR(hybridL[i], plainL[i], 1.0e-6f);
+        EXPECT_NEAR(hybridR[i], plainR[i], 1.0e-6f);
+    }
+}
+
 TEST(ObjectSpatialRendererWiring, LivePipelineActiveInstanceWiringAndChunkedAxes) {
     IvannaAudioPipeline livePipe;
     livePipe.prepare(48000.0f, IvannaAudioPipeline::MAX_BLOCK_SIZE);
