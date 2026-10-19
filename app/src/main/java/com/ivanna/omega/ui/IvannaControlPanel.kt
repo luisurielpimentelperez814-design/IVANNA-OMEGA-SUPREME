@@ -942,6 +942,7 @@ fun IvannaControlPanel(
                     OutlinedButton(enabled = !roomBusy, onClick = onRoomClear) { Text("BORRAR MEDICIÓN") }
                 }
             }
+            com.ivanna.omega.spatial.RoomGeometryPreviewPanel()
             Text(
                 "Límites: el micrófono del teléfono no está calibrado; corrige el balance amplio (boom, caída de graves, presencia), no modos estrechos ni la fase, y mide el punto donde está el teléfono.",
                 style = MaterialTheme.typography.labelSmall, color = TextSecondary
