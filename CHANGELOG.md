@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.92 (383) — SAFMUS RIR tail status + 10D truth
+
+- **RIR local / JNI:** expone un estado explícito de cola RIR local: desconocido/no inicializado, sin degradación detectada o cola retrasada omitida por presupuesto algorítmico.
+- **10D perceptual:** el eje de campo reverberante pasa a DEGRADED y no se reporta como APPLIED cuando el convolver RIR local confirma que omitió la cola retrasada.
+- **Separación de rutas:** el estado local de la app no se presenta como telemetría del daemon AudioFlinger; falta todavía un canal independiente de lectura de vuelta para el convolver del daemon.
+- **Validación:** se agregan pruebas JVM del contrato 10D y una puerta de cableado SAFMUS para el recorrido JNI → Kotlin → snapshot.
+- **Limitación:** el presupuesto de 20 ms es latencia algorítmica de un bloque de 512 frames, no medición del tiempo de CPU del callback ni validación acústica en dispositivo.
+
+---
+
 # AVISO DE PROPIEDAD — 2026-10-19
 
 - Se retira el archivo raíz `LICENSE` que declaraba Apache-2.0 para el código propio del proyecto.
