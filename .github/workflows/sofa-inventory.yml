@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sofa-inventory-${ github.ref }
+  group: sofa-inventory-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
       - name: Upload auditable inventory
         uses: actions/upload-artifact@v4
         with:
-          name: sofa-metadata-inventory-${ github.sha }
+          name: sofa-metadata-inventory-${{ github.sha }}
           path: |
             build/sofa-inventory/sofa_metadata_inventory.json
             build/sofa-inventory/sofa_metadata_inventory.csv
