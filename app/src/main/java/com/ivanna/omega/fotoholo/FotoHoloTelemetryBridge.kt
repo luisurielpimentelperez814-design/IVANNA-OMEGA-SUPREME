@@ -23,6 +23,27 @@ import java.util.concurrent.atomic.AtomicLong
 class FotoHoloTelemetryBridge(context: Context) {
     private val appContext = context.applicationContext
     private val sequence = AtomicLong(0L)
+    @Volatile private var viewerCounted = false
+
+    @JavascriptInterface
+    fun attach() {
+        synchronized(this) {
+            if (!viewerCounted) {
+                FotoHoloEngine.viewerAttached()
+                viewerCounted = true
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun release() {
+        synchronized(this) {
+            if (viewerCounted) {
+                FotoHoloEngine.viewerDetached()
+                viewerCounted = false
+            }
+        }
+    }
 
     @JavascriptInterface
     fun getSnapshotJson(): String = runCatching {
