@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.90
-versionCode=381
+version=v2.5.91
+versionCode=382
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.90: pruebas JVM corregidas y diagnóstico 10D verificable
+description=v2.5.91: SAFMUS transversal, controles y protecciones HRTF/RIR
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

@@ -1,4 +1,11 @@
-# CHANGELOG — v2.5.90 (381) — Pruebas JVM corregidas y diagnóstico 10D verificable
+# CHANGELOG — v2.5.91 (382) — SAFMUS transversal: controles, HRTF/RIR y kernel evolutivo
+
+- **SAFMUS / controles:** la política numérica compartida se aplica antes de actualizar el estado de los cinco ejes; los valores no finitos y fuera de rango no se persisten ni se envían a los puentes de audio.
+- **HRTF/RIR:** se endurecen las fronteras de vectores latentes y la selección de datasets; el convolver RIR limita el uso de la cola retardada cuando el bloque excede el presupuesto algorítmico configurado y deja una señal nativa de degradación.
+- **Kernel evolutivo:** las propuestas no finitas o sin margen suficiente se rechazan; no se presenta una propuesta aceptada como prueba de mejora perceptual.
+- **CI:** se agrega una auditoría transversal SAFMUS al flujo de pruebas nativas; el build y las pruebas del SHA final deben pasar antes de considerar válida la publicación.
+- **Publicación:** se incrementa la versión porque el release v2.5.90 es inmutable. El nuevo release solo se considerará completo si el artefacto verificado corresponde exactamente al SHA publicado.
+- **Límite de validación:** estas defensas de integración no sustituyen mediciones acústicas en dispositivo ni demuestran por sí mismas una mejora perceptual.
 
 - **Runtime perceptual 10D:** el azimut compara direcciones con distancia angular circular; lecturas de la geometría anterior permanecen visibles como degradadas cuando la última solicitud no queda confirmada.
 - **Interfaz de diagnóstico:** cada uno de los diez ejes muestra su estado y motivo de degradación/no disponibilidad; el resumen también cuenta solicitudes y errores explícitos.
