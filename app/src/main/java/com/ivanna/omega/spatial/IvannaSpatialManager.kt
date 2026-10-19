@@ -1,6 +1,9 @@
 package com.ivanna.omega.spatial
 
 import android.content.Context
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -172,6 +175,112 @@ object IvannaSpatialManager {
     private val outR = FloatArray(BLOCK_SIZE)
 
     private val lock = Any()
+
+    private val movementLock = Any()
+    private val movementGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    @Volatile var sceneMovementActive: Boolean = false
+        private set
+    @Volatile private var lastMovementTickConfirmed: Boolean = false
+    @Volatile private var lastMovementTickAtEpochMs: Long = 0L
+    private var movementThread: HandlerThread? = null
+    private var movementHandler: Handler? = null
+    private var movementRunnable: Runnable? = null
+
+    data class MovementStatus(
+        val active: Boolean,
+        val latestTickConfirmed: Boolean,
+        val updatedAtEpochMs: Long
+    )
+
+    fun movementStatus(): MovementStatus = MovementStatus(
+        active = sceneMovementActive,
+        latestTickConfirmed = lastMovementTickConfirmed,
+        updatedAtEpochMs = lastMovementTickAtEpochMs
+    )
+
+    /**
+     * Moves the entire 4-stem scene along a bounded constant-velocity trajectory.
+     * Updates run on a dedicated control thread (never the audio callback) and each
+     * tick is applied through the same native coordinate read-back as static poses.
+     */
+    fun startSceneMovement(
+        azimuthVelocityRadPerSec: Float,
+        elevationVelocityRadPerSec: Float,
+        distanceScaleVelocityPerSec: Float = 0f
+    ): Boolean {
+        if (!azimuthVelocityRadPerSec.isFinite() ||
+            !elevationVelocityRadPerSec.isFinite() ||
+            !distanceScaleVelocityPerSec.isFinite()) return false
+        if (kotlin.math.abs(azimuthVelocityRadPerSec) > 1.5f ||
+            kotlin.math.abs(elevationVelocityRadPerSec) > 0.5f ||
+            kotlin.math.abs(distanceScaleVelocityPerSec) > 0.25f) return false
+        if (!ready || rendererHandle == 0L || upmixerHandle == 0L) return false
+        if (kotlin.math.abs(azimuthVelocityRadPerSec) < 1e-4f &&
+            kotlin.math.abs(elevationVelocityRadPerSec) < 1e-4f &&
+            kotlin.math.abs(distanceScaleVelocityPerSec) < 1e-4f) return false
+
+        stopSceneMovement()
+        val base = requestedScenePose.get()
+        val startedAtNs = SystemClock.elapsedRealtimeNanos()
+        val generation = movementGeneration.incrementAndGet()
+        val thread = HandlerThread("Ivanna10DSceneMotion").also { it.start() }
+        val handler = Handler(thread.looper)
+        val task = object : Runnable {
+            override fun run() {
+                if (!sceneMovementActive || generation != movementGeneration.get()) return
+                val seconds = (SystemClock.elapsedRealtimeNanos() - startedAtNs) / 1_000_000_000f
+                val azimuth = (base.azimuthRad + azimuthVelocityRadPerSec * seconds)
+                    .coerceIn(-Math.PI.toFloat(), Math.PI.toFloat())
+                val elevation = (base.elevationRad + elevationVelocityRadPerSec * seconds)
+                    .coerceIn(-Math.PI.toFloat() / 4f, Math.PI.toFloat() / 4f)
+                val distance = (base.distanceScale + distanceScaleVelocityPerSec * seconds)
+                    .coerceIn(0.5f, 2f)
+
+                val confirmed = setScenePose(azimuth, elevation, distance)
+                lastMovementTickConfirmed = confirmed
+                lastMovementTickAtEpochMs = System.currentTimeMillis()
+
+                val hitAzimuthLimit =
+                    (azimuthVelocityRadPerSec > 0f && azimuth >= Math.PI.toFloat()) ||
+                    (azimuthVelocityRadPerSec < 0f && azimuth <= -Math.PI.toFloat())
+                val hitElevationLimit =
+                    (elevationVelocityRadPerSec > 0f && elevation >= Math.PI.toFloat() / 4f) ||
+                    (elevationVelocityRadPerSec < 0f && elevation <= -Math.PI.toFloat() / 4f)
+                val hitDistanceLimit =
+                    (distanceScaleVelocityPerSec > 0f && distance >= 2f) ||
+                    (distanceScaleVelocityPerSec < 0f && distance <= 0.5f)
+
+                if (hitAzimuthLimit || hitElevationLimit || hitDistanceLimit) {
+                    stopSceneMovement()
+                } else if (sceneMovementActive && generation == movementGeneration.get()) {
+                    handler.postDelayed(this, 20L)
+                }
+            }
+        }
+        synchronized(movementLock) {
+            movementThread = thread
+            movementHandler = handler
+            movementRunnable = task
+            lastMovementTickConfirmed = false
+            lastMovementTickAtEpochMs = 0L
+            sceneMovementActive = true
+            handler.post(task)
+        }
+        return true
+    }
+
+    fun stopSceneMovement() {
+        synchronized(movementLock) {
+            movementGeneration.incrementAndGet()
+            sceneMovementActive = false
+            movementRunnable?.let { movementHandler?.removeCallbacks(it) }
+            movementRunnable = null
+            movementHandler = null
+            movementThread?.quitSafely()
+            movementThread = null
+            lastMovementTickConfirmed = false
+        }
+    }
 
     // ── Inicialización ────────────────────────────────────────────────────────
     /** Motivo del último fallo de inicialización (null si no hubo o si ya está listo). La UI lo muestra. */
