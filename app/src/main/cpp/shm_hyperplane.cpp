@@ -64,14 +64,19 @@ Java_com_ivanna_omega_magisk_ShmManager_nativeMlockBuffer(JNIEnv* env, jobject, 
 // mmap() tiene que hacerse aqui y devolverse como DirectByteBuffer.
 JNIEXPORT jobject JNICALL
 Java_com_ivanna_omega_magisk_ShmManager_nativeMapSharedFd(JNIEnv* env, jobject, jint fd, jint size) {
+    // Este JNI consume la propiedad de fd (Kotlin usa detachFd()).
+    // Cerrar también en los caminos de error para no filtrar descriptores.
     if (fd < 0 || size <= 0) {
         LOGE("mapSharedFd: parametros invalidos fd=%d size=%d", fd, size);
+        if (fd >= 0) close(fd);
         return nullptr;
     }
     void* addr = mmap(nullptr, static_cast<size_t>(size), PROT_READ | PROT_WRITE,
                       MAP_SHARED, fd, 0);
     if (addr == MAP_FAILED) {
-        LOGE("mapSharedFd: mmap fallo fd=%d errno=%d", fd, errno);
+        const int map_errno = errno;
+        LOGE("mapSharedFd: mmap fallo fd=%d errno=%d", fd, map_errno);
+        close(fd);
         return nullptr;
     }
     // El fd ya no hace falta: el mapeo mantiene viva la referencia al inode.
