@@ -52,3 +52,17 @@ internal object SpatialScenePoseMath {
         )
     }
 }
+
+
+/**
+ * Index mapping for the native bridge's two buffer contracts:
+ * upmixer output = frame-major, four interleaved stereo stems;
+ * object renderer input = object-major, planar stereo.
+ */
+internal object SpatialStemBufferLayout {
+    fun interleavedStemIndex(frame: Int, stem: Int, channel: Int): Int =
+        frame * 8 + stem * 2 + channel
+
+    fun planarObjectIndex(stem: Int, frame: Int, channel: Int, frameCount: Int): Int =
+        stem * 2 * frameCount + channel * frameCount + frame
+}
