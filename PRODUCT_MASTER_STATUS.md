@@ -19,7 +19,7 @@
 | Wi-Fi/CSI | Fallback de metadatos RSSI; no se encontró un proveedor CSI registrado/verificado |
 | IA genérica | El clasificador CRNN TFLite existe; `AIInferenceEngine` queda explícitamente inactivo/passthrough; el upmixer es heurístico y el fine-tuning no está conectado a inferencia real |
 | Audio en hardware | Latencia, underruns, clipping, THD y mejora A/B no verificados en un teléfono durante esta auditoría |
-| Protección de `main` | GitHub informó que la rama no está protegida; el CI no bloquea por sí solo pushes directos |
+| Daemon root | La rama de auditoría añade `SO_PEERCRED` en ambos sockets UNIX antes de comandos/SHM, deshabilita TCP sin autenticación y limita logs de rechazos; CI y prueba en dispositivo pendientes |\n| Protección de `main` | GitHub informó que la rama no está protegida; el CI no bloquea por sí solo pushes directos |
 
 ## Regla de estado
 

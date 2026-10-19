@@ -4,6 +4,7 @@
 // ============================================================================
 
 #include "ivanna_object_renderer.hpp"
+#include <algorithm>
 #include "SofaSafRirMasterKnowledge.hpp"
 #include "../include/audio_thread_priority.h"
 #include <android/log.h>
@@ -68,10 +69,17 @@ void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
         currentRt60S_   = ivanna::master::kMasterStudioRoomRt60S;
     }
 
-    // Registrar sujeto HRTF por defecto si hrtfConvolvers_ cargó kemar
-    if (currentSubject_ == "none") {
-        currentSubject_ = "kemar";
-        hrtfDatasetLoaded_.store(true, std::memory_order_release);
+    // El estado "medido" solo se anuncia si TODOS los convolvers confirmaron IHR1.
+    // El fallback PCA/sintético puede sonar, pero no debe reportarse como dataset medido.
+    const bool allMeasuredHrtfsLoaded = std::all_of(
+        hrtfConvolvers_.begin(), hrtfConvolvers_.end(),
+        [](const HRTFConvolver& convolver) { return convolver.hasMeasuredDatasetLoaded(); }
+    );
+    if (allMeasuredHrtfsLoaded && currentSubject_ == "none") currentSubject_ = "kemar";
+    hrtfDatasetLoaded_.store(allMeasuredHrtfsLoaded, std::memory_order_release);
+    if (!allMeasuredHrtfsLoaded) {
+        __android_log_print(ANDROID_LOG_WARN, IVR_TAG,
+            "HRTF medido no confirmado para todos los convolvers; usando fallback donde falte dataset");
     }
 
     ivanna::audio::enableAudioThreadFastMathOnce();

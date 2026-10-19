@@ -134,6 +134,8 @@ void HRTFConvolver::init(uint32_t sampleRate) {
         }
     }
 
+    measuredDatasetLoaded_ = hrtfLoaded;
+
     // Cargar también pca_basis.bin si está en disco (Root o No-Root);
     // si no está, SyntheticHRTF::init() ya precargó la base maestra SOFA-PCA desde ROM constexpr.
     const char* pcaCandidates[] = {

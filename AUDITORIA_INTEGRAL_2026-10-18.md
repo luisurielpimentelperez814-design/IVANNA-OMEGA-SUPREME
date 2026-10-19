@@ -61,12 +61,19 @@ En la rama de auditoría se fusionó `TAG` en el único companion, se convirtió
 - `NeuralUpmixer` es el nombre histórico de una separación espectral heurística en C++/SIMD; su implementación no carga una red neuronal ni TFLite. Se corrigieron los comentarios de API para no llamarlo inferencia neuronal.
 - `RealtimeLearningController` aplica sesgos EMA a parámetros y registra correcciones; eso no es entrenamiento de una red neuronal. El clasificador AntiDolby CRNN TFLite y el agente Gemini (cuando está configurado) son rutas separadas. No se deben mezclar estos estados.
 
-### 5. Calibración y autonomía
+### 5. Frontera de seguridad del daemon y memoria compartida
+
+- El daemon root publicaba sockets UNIX de control y, en el socket principal, transfería el descriptor de memoria compartida a cualquier cliente que conectara y quedara silencioso durante el primer timeout. La política SELinux del módulo permite conexión desde `untrusted_app` a varios dominios para compatibilidad OEM; por sí sola no autentica al proceso cliente.
+- En la rama de auditoría se añade verificación de `SO_PEERCRED` antes de aceptar comandos o transferir el descriptor: se permiten UID de la app instalada `com.ivanna.omega`, root y shell administrativo. La lista de UID de la app se descubre por usuario y se cachea con refresco acotado; los logs de rechazos se limitan para evitar llenar el log bajo spam.
+- Se deshabilita el listener TCP opcional, que solo enlazaba a loopback pero no tenía autenticación de pares, y se restringe a `0600` cualquier socket UNIX basado en archivo.
+- Se añadió una prueba CTest para la lista de UID autorizados. **La protección queda pendiente de compilación/CTest y de una prueba en dispositivo con el UID real de la app**; no se debe dar por cerrada antes de esos resultados.
+
+### 6. Calibración y autonomía
 
 - `RoomMeasurement` contiene una secuencia de medición, estimación de latencia y flujo de aplicar/verificar/revertir corrección; su lógica automática no demuestra que el micrófono del teléfono esté calibrado ni que el resultado mejore acústicamente todos los sistemas.
 - `AutonomousAcousticTransaction.hpp` estaba en el árbol de producción, pero la búsqueda solo encontró su inclusión desde la prueba nativa. Se movió a `app/src/main/cpp/tests/support/` y se ajustó el include: queda explícito como soporte de pruebas, no como motor nativo productivo. La autonomía que sí existe en app es la ruta Kotlin; no se presenta la clase C++ de test como integración runtime.
 
-### 6. Seguridad de configuración
+### 7. Seguridad de configuración
 
 - Se retiraron del manifest los permisos privilegiados `CAPTURE_AUDIO_OUTPUT`, `READ_LOGS` y `BIND_AUDIO_EFFECT_SERVICE`, que no tenían un uso de aplicación justificado en el código consultado. La captura de Ruta A usa MediaProjection con consentimiento.
 - `app/build.gradle.kts` empaquetaba `GEMINI_API_KEY` en un campo BuildConfig. Aunque no se encontró un consumidor de ese campo, cualquier clave empaquetada en APK es extraíble. Se eliminó ese campo sin uso de la rama.
@@ -74,7 +81,7 @@ En la rama de auditoría se fusionó `TAG` en el único companion, se convirtió
 - El backend web mantiene su propia variable de entorno `GEMINI_API_KEY`; no debe exponerse en cliente ni registrarse en logs.
 - **Gobernanza:** la API de GitHub indicó que `main` no tenía protección de rama activada. El conector disponible no permite configurar esa protección desde esta auditoría; sin reglas de protección, un CI fallido no bloquea por sí solo un push directo.
 
-### 7. Documentación y datos de prueba
+### 8. Documentación y datos de prueba
 
 - `PRODUCT_MASTER_STATUS.md` decía v2.3.16, C++23 y 150 tests, datos incompatibles con la versión actual v2.5.74, el estándar C++20 y el inventario de CTest actual. Se reemplaza por un estado anclado a evidencia y este informe.
 - `LÉAME.md` conservaba cifras/versiones antiguas y rompía la puerta documental; se convirtió en una página de compatibilidad que remite a `LEAME.md` y `README.md`.

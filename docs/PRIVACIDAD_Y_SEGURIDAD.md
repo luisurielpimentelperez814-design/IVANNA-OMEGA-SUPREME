@@ -32,7 +32,7 @@ y para que un usuario técnico pueda auditar el comportamiento.
 
 ## Estado actualizado de permisos (auditoría 2026-10-18)
 
-La captura de salida en Ruta A se autoriza mediante MediaProjection y consentimiento del sistema; la app no necesita declarar el permiso privilegiado `CAPTURE_AUDIO_OUTPUT`. Se retiraron del manifest `CAPTURE_AUDIO_OUTPUT`, `READ_LOGS` y `BIND_AUDIO_EFFECT_SERVICE`: no había llamadas de aplicación que justificaran esas declaraciones y no existía un servicio de efecto Android declarado que las usara. La comunicación con el daemon sigue su interfaz explícita de control.
+La captura de salida en Ruta A se autoriza mediante MediaProjection y consentimiento del sistema; la app no necesita declarar el permiso privilegiado `CAPTURE_AUDIO_OUTPUT`. Se retiraron del manifest `CAPTURE_AUDIO_OUTPUT`, `READ_LOGS` y `BIND_AUDIO_EFFECT_SERVICE`: no había llamadas de aplicación que justificaran esas declaraciones y no existía un servicio de efecto Android declarado que las usara. La comunicación con el daemon valida `SO_PEERCRED` en ambos sockets UNIX antes de ejecutar comandos o entregar el descriptor de memoria compartida; se permite la app instalada, root y shell administrativo. El listener TCP opcional se deshabilitó por no tener autenticación. Esta defensa queda pendiente de CI y validación en dispositivo.
 
 Las claves de Gemini se guardan mediante `SecureConfigurationManager`; la copia heredada en preferencias sin cifrar se elimina durante la migración. Una clave incluida en un APK no se considera secreta.
 

@@ -80,8 +80,13 @@ public:
     }
 
     bool loadHrtfDatasetFromFile(const char* path) {
-        return hrtf_.loadDatasetFromFile(path);
+        measuredDatasetLoaded_ = hrtf_.loadDatasetFromFile(path);
+        return measuredDatasetLoaded_;
     }
+
+    // True solo cuando un dataset IHR1 medido se cargó correctamente; la base PCA
+    // sintética de fallback no debe presentarse como un dataset medido.
+    bool hasMeasuredDatasetLoaded() const noexcept { return measuredDatasetLoaded_; }
 
     // Propaga el vector latente q_t del SAF al SyntheticHRTF subyacente
     // y fuerza un reload de los filtros de frecuencia en el próximo bloque.
@@ -127,6 +132,7 @@ private:
     std::unique_ptr<FFTRadix2> fft_;
     SyntheticHRTF hrtf_;
     Ivanna::SafSpatialModifier safModifier_;
+    bool measuredDatasetLoaded_ = false;
 
     // Búferes de trabajo (solo usados en el hilo de audio)
     std::vector<float> histL_, histR_;
