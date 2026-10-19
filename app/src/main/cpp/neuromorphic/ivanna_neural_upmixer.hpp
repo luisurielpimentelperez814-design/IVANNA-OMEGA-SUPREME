@@ -17,6 +17,7 @@
 #include <array>
 #include <atomic>
 #include <algorithm>
+#include <mutex>
 
 namespace ivanna::ai {
 
@@ -62,6 +63,8 @@ public:
     float crossfadeEnvelope() const noexcept { return xfadeGain_; }
 
     void setStemPosition(StemType stem, float x, float y, float z, float width) noexcept;
+    // Publish all four positions through one inactive buffer, then atomically swap.
+    bool setStemPositions(const std::array<StemPosition, 4>& positions) noexcept;
     StemPosition getStemPosition(StemType stem) const noexcept;
 
     void reset() noexcept;
@@ -76,6 +79,8 @@ private:
     std::array<std::array<StemPosition, 4>, 2> customPositionsBuf_ = {kStemPositions, kStemPositions};
     std::atomic<int> activePosBuf_{0};
     std::atomic<bool> useCustomPositions_{false};
+    // Control-thread writers only; the audio thread never acquires this mutex.
+    std::mutex positionWriteMutex_;
 
     // Filtros paso-bajo/paso-alto simples para separación espectral
     float bassStateL_ = 0.f, bassStateR_ = 0.f;
