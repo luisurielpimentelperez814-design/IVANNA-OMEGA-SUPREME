@@ -11,6 +11,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.ivanna.omega.core.LiveDiagnosticConnector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -268,6 +271,13 @@ fun SystemHubScreen(
     onOpenHiRes     : () -> Unit = {},
     onOpenMusicIntel : () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    var showDiagnosticDialog by remember { mutableStateOf(false) }
+    var diagnosticEndpoint by remember { mutableStateOf(LiveDiagnosticConnector.configuredEndpoint(context)) }
+    var diagnosticToken by remember { mutableStateOf("") }
+    var diagnosticEnabled by remember { mutableStateOf(LiveDiagnosticConnector.isEnabled(context)) }
+    var diagnosticMessage by remember { mutableStateOf("") }
+
     Column(
         modifier = Modifier.fillMaxSize().background(ObsidianVoid)
             .verticalScroll(rememberScrollState())
@@ -275,6 +285,62 @@ fun SystemHubScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         HubHeader("SISTEMA", "IVANNA · Control OEM · Magisk · Perfiles · Lab · Motores", AmberSignal)
+        HubCard("DIAGNÓSTICO VIVO REMOTO",
+            if (diagnosticEnabled) "Activado · telemetría resumida cada 15 s" else "Desactivado · no se transmite información",
+            AuroraCyan) { showDiagnosticDialog = true }
+
+        if (showDiagnosticDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiagnosticDialog = false },
+                title = { Text("Conector de diagnóstico vivo") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Solo envía métricas técnicas resumidas. No envía audio ni ejecuta reparaciones. Requiere un servidor HTTPS desplegado y token privado.")
+                        OutlinedTextField(
+                            value = diagnosticEndpoint,
+                            onValueChange = { diagnosticEndpoint = it },
+                            label = { Text("URL HTTPS completa") },
+                            placeholder = { Text("https://servidor/v1/diagnostics") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = diagnosticToken,
+                            onValueChange = { diagnosticToken = it },
+                            label = { Text("Token (vacío conserva el guardado)") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Permitir envío remoto", modifier = Modifier.weight(1f))
+                            Switch(checked = diagnosticEnabled, onCheckedChange = { diagnosticEnabled = it })
+                        }
+                        TextButton(onClick = {
+                            diagnosticMessage = "Solicitando análisis de la última telemetría…"
+                            LiveDiagnosticConnector.requestAnalysis(context) { diagnosticMessage = it }
+                        }, enabled = diagnosticEnabled) {
+                            Text("Analizar último diagnóstico con IA")
+                        }
+                        if (diagnosticMessage.isNotBlank()) Text(diagnosticMessage, color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (!diagnosticEnabled) {
+                            LiveDiagnosticConnector.disable(context)
+                            diagnosticMessage = "Envío remoto desactivado."
+                            showDiagnosticDialog = false
+                        } else {
+                            val saved = LiveDiagnosticConnector.configure(context, true, diagnosticEndpoint, diagnosticToken)
+                            diagnosticMessage = if (saved) "" else "No se guardó: requiere URL HTTPS terminada en /v1/diagnostics y token de al menos 32 caracteres."
+                            if (saved) showDiagnosticDialog = false
+                        }
+                    }) { Text("Guardar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDiagnosticDialog = false }) { Text("Cancelar") }
+                }
+            )
+        }
         // IVANNA primero — es la interfaz conversacional principal del producto
         HubCard(
             "✦ IVANNA ASSISTANT",

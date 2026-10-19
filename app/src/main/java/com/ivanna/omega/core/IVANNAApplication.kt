@@ -90,6 +90,9 @@ class IVANNAApplication : Application() {
 
     override fun onCreate() {
         instance = this
+        // Live diagnostics: initializes locally at boot; network upload stays disabled until explicit opt-in.
+        runCatching { LiveDiagnosticConnector.start(this) }
+            .onFailure { Log.w(TAG, "Live diagnostic connector unavailable (non-fatal): ${it.message}") }
 
         paramStore = ParameterStore(this)
         // Polish: consumir la SR nativa persistida (9f99d4e6 la guardaba sin
