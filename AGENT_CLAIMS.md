@@ -2660,3 +2660,12 @@ medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.p
 - UI de Sistema incorpora solicitud manual de análisis IA. La IA solo recomienda y distingue evidencia de hipótesis; no ejecuta reparaciones.
 - El puente no es una conexión a esta conversación ChatGPT ni comparte la memoria/cuenta de ChatGPT. Es integración separada con OpenAI API, requiere despliegue HTTPS y clave API válida (pueden aplicarse cargos).
 - Pruebas: workflow de puente pasó en SHA anterior; tests ampliados y CI Android tras la integración siguen pendientes de resultado. No se ha desplegado el servidor, ni probado dispositivo físico, ni verificado una llamada real a OpenAI. Mantener esta salvedad hasta obtener evidencia.
+
+### 🔒 TOMADO — FotoHolo: generación visual IA por lugar (2026-10-18)
+**Rama:** `feat/fotoholo-photoreal-place-render`. Pendiente de CI y despliegue.
+
+- Se añadió `POST /api/fotoholo/render-place`, protegido por el mismo control de acceso y rate limit que el endpoint de refinación, con longitud acotada de lugar/detalles y sin exponer `GEMINI_API_KEY) al navegador.
+- El servidor solicita al modelo de imagen configurado por `FOTOHOLO_IMAGE_MODEL` (por defecto `gemini-3-pro-image-preview`) una imagen panorámica fotorrealista 16:9 con tamaño objetivo 4K. La cuenta/modelo/proveedor debe admitir ese tamaño; la respuesta falla explícitamente si no llega una imagen.
+- La UI web FotoHolo permite introducir cualquier lugar/entorno, añadir indicaciones, generar la imagen y guardarla.
+- Límite explícito: sin una fotografía de referencia o datos verificados, un lugar real se representa como interpretación ilustrativa, no como reconstrucción documental exacta. El tamaño solicitado no demuestra que el proveedor haya devuelto 3840×2160; verificar dimensiones reales de cada respuesta antes de afirmar 4K nativo.
+- Sin CI, clave Gemini válida, cuota del proveedor ni prueba de despliegue, la generación no se considera verificada. No modifica DSP ni afirma cambios acústicos.
