@@ -88,7 +88,12 @@ Java_com_ivanna_omega_magisk_ShmManager_nativeMapSharedFd(JNIEnv* env, jobject, 
         // memoria virtual en cada intento fallido de handshake.
         munlock(addr, static_cast<size_t>(size));
         munmap(addr, static_cast<size_t>(size));
+        // El JNI real de Android expone ExceptionCheck/Clear como métodos de JNIEnv.
+        // El stub JNI de las pruebas host no los implementa; mantener esta limpieza
+        // solo en Android permite probar la misma fuente sin debilitar el camino de producción.
+#if defined(__ANDROID__)
         if (env->ExceptionCheck()) env->ExceptionClear();
+#endif
         LOGE("mapSharedFd: NewDirectByteBuffer fallo; mmap liberado");
         return nullptr;
     }
