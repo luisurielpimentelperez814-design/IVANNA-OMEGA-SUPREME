@@ -404,6 +404,9 @@ object IvannaNativeLib {
     /** Diseña la corrección a partir de 27 niveles (dB) y 27 SNR (dB). Devuelve 10 ganancias, o vacío si no hay referencia fiable. */
     external fun nativeRoomDesign(levelsDb: FloatArray, snrDb: FloatArray, sampleRate: Int): FloatArray
 
+    /** Renderiza la geometría de sala en PPM hasta 3840×2160 dentro del directorio privado de la app. */
+    external fun nativeRenderRoomGeometry(privateDirectory: String, width: Int = 3840, height: Int = 2160): Boolean
+
     /** 4D: dinámica espacial temporal — el lateral se recoge en cada golpe y se abre en lo sostenido. amount 0..1 (techo); adaptive = escala con la densidad de golpes. */
     external fun nativeSetTemporalField(enabled: Boolean, amount: Float, adaptive: Boolean)
     external fun nativeSetWfsSpread(spread: Float)
