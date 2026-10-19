@@ -2,21 +2,23 @@ package com.ivanna.omega.spatial
 
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Pure, bounded 3D pose transform shared by the runtime and unit tests. */
 internal data class SpatialStemPose(
     val x: Float,
     val y: Float,
     val z: Float,
-    val width: Float
+    val width: Float,
+    val gain: Float = 1f
 )
 
 internal object SpatialScenePoseMath {
     val defaultStems = listOf(
-        SpatialStemPose(0f, 0f, 1.2f, 0.15f),    // vocals
-        SpatialStemPose(0f, 0.3f, -0.8f, 0.45f), // drums
-        SpatialStemPose(0f, -0.8f, 0.2f, 0.25f), // bass
-        SpatialStemPose(0f, 0.1f, 0f, 0.85f)     // other
+        SpatialStemPose(0f, 0f, 1.2f, 0.15f, 0.95f),    // vocals
+        SpatialStemPose(0f, 0.3f, -0.8f, 0.45f, 0.85f), // drums
+        SpatialStemPose(0f, -0.8f, 0.2f, 0.25f, 1.0f),  // bass
+        SpatialStemPose(0f, 0.1f, 0f, 0.85f, 0.75f)     // other
     )
 
     fun transform(
@@ -43,7 +45,10 @@ internal object SpatialScenePoseMath {
             x = ((yawX * elevCos + yawZ * elevSin) * distanceScale).coerceIn(-2f, 2f),
             y = (yawY * distanceScale).coerceIn(-2f, 2f),
             z = ((-yawX * elevSin + yawZ * elevCos) * distanceScale).coerceIn(-2f, 2f),
-            width = base.width.coerceIn(0.02f, 1f)
+            width = base.width.coerceIn(0.02f, 1f),
+            // Relative distance cue: a bounded inverse-square-root gain law.
+            // It changes level without pretending the room has been measured.
+            gain = (base.gain / sqrt(distanceScale)).coerceIn(0f, 1.35f)
         )
     }
 }
