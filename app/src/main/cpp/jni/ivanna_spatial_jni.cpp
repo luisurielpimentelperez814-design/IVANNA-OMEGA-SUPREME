@@ -273,6 +273,20 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPosition(
     }
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerGetStemPosition(
+    JNIEnv* env, jclass, jlong handle, jint stemType) {
+    auto* upmixer = toUpmixer(handle);
+    if (!upmixer || stemType < 0 || stemType >= static_cast<jint>(ivanna::ai::StemType::kNumStems)) {
+        return nullptr;
+    }
+    const auto p = upmixer->getStemPosition(static_cast<ivanna::ai::StemType>(stemType));
+    const jfloat values[5] = {p.x, p.y, p.z, p.width, p.gain};
+    jfloatArray result = env->NewFloatArray(5);
+    if (result) env->SetFloatArrayRegion(result, 0, 5, values);
+    return result;
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerReset(JNIEnv*, jclass, jlong handle) {
     auto* upmixer = toUpmixer(handle);
