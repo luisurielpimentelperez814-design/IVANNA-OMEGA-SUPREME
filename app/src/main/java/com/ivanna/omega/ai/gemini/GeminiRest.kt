@@ -50,7 +50,9 @@ object GeminiRest {
         val message = err.optString("message").take(300)
         // Some Google gateways omit details[].reason but still identify the
         // Android application restriction in the actual error message.
-        if (reason.isBlank() && "android client application" in message.lowercase()) {
+        // The message is an authoritative signal even if a gateway returns a malformed,
+        // null-like, or unexpected details[].reason value. Do not let that metadata mask it.
+        if ("android client application" in message.lowercase()) {
             reason = "API_KEY_ANDROID_APP_BLOCKED"
         }
         return ApiError(http, err.optString("status"), reason, message)
