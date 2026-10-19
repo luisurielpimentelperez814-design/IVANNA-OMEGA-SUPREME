@@ -1,13 +1,17 @@
 package com.ivanna.omega.fotoholo
 
 import android.content.Context
+import com.google.firebase.Firebase
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.generationConfig as firebaseGenerationConfig
+import com.ivanna.omega.ai.gemini.GeminiRest
 import com.ivanna.omega.assistant.core.SecureConfigurationManager
+import com.ivanna.omega.core.CloudSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Sugerencia de entorno FotoHolo con Gemini usando la API key ya configurada en el
@@ -20,30 +24,38 @@ object FotoHoloGemini {
     suspend fun suggest(context: Context, low: Float, high: Float, scenes: List<String>): Result<Suggestion> =
         withContext(Dispatchers.IO) {
             runCatching {
-                SecureConfigurationManager.initialize(context)
-                val key = SecureConfigurationManager.getApiKey()
-                require(key.isNotBlank()) { "configura tu API key de Gemini en el asistente" }
                 val prompt = "Eres ingeniero de mezcla. Espectro: graves=${"%.2f".format(low)}, agudos=${"%.2f".format(high)}. " +
                     "Elige UN entorno de esta lista exacta: ${scenes.joinToString(" | ")}. " +
                     "Devuelve JSON {\"scene\": string, \"intensity\": number entre 0 y 1}."
-                val body = JSONObject()
-                    .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                    .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
-                val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
-                    .openConnection() as HttpURLConnection
-                try {
-                    conn.requestMethod = "POST"; conn.doOutput = true
-                    conn.connectTimeout = 10_000; conn.readTimeout = 20_000
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    conn.setRequestProperty("x-goog-api-key", key)
-                    conn.outputStream.use { it.write(body.toString().toByteArray()) }
-                    val code = conn.responseCode
-                    val txt = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText().orEmpty()
-                    check(code in 200..299) { "HTTP $code" }
-                    val out = JSONObject(txt).getJSONArray("candidates").getJSONObject(0)
-                        .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-                    parse(out, scenes)
-                } finally { conn.disconnect() }
+                val failures = mutableListOf<String>()
+
+                // 1) Misma vía que el asistente: Firebase AI Logic (sin clave viajando por la red).
+                if (CloudSyncManager.ensureFirebaseAppReady(context)) {
+                    val viaFirebase = runCatching {
+                        val model = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+                            modelName = GeminiRest.MODEL_CHAIN.first(),
+                            generationConfig = firebaseGenerationConfig { responseMimeType = "application/json" }
+                        )
+                        parse(model.generateContent(prompt).text.orEmpty(), scenes)
+                    }
+                    viaFirebase.getOrNull()?.let { return@runCatching it }
+                    failures += "Firebase AI: ${viaFirebase.exceptionOrNull()?.message?.take(140)}"
+                }
+
+                // 2) REST directo con la clave del asistente, con el motivo real si Google la rechaza.
+                SecureConfigurationManager.initialize(context)
+                val key = GeminiRest.cleanKey(SecureConfigurationManager.getApiKey())
+                if (key.isBlank()) {
+                    failures += "no hay API key guardada en el asistente"
+                } else {
+                    val body = JSONObject()
+                        .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                        .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
+                    val viaRest = runCatching { parse(GeminiRest.generateText(context, key, body.toString()), scenes) }
+                    viaRest.getOrNull()?.let { return@runCatching it }
+                    failures += "API key: ${viaRest.exceptionOrNull()?.message}"
+                }
+                error(failures.joinToString(" · "))
             }
         }
 

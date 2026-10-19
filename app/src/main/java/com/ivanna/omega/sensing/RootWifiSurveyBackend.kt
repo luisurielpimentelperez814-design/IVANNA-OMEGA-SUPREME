@@ -34,8 +34,8 @@ class RootWifiSurveyBackend {
         }
 
         val devs = runRoot("iw dev")
-        if (devs.exitCode != 0) return@withContext result(true, false, null, emptyList(),
-            "Root disponible, pero no se encontró una herramienta iw utilizable.", start)
+        if (devs.exitCode != 0) return@withContext cmdWifiScan(start,
+            "Root disponible, pero no hay herramienta iw utilizable.")
 
         // Parse only interface names emitted by iw; never accept user-provided shell fragments.
         val iface = Regex("(?m)^\\s*Interface\\s+([A-Za-z0-9_.-]{1,15})\\s*$")
@@ -44,12 +44,40 @@ class RootWifiSurveyBackend {
                 "iw está presente, pero no anuncia una interfaz Wi-Fi controlable.", start)
 
         val scan = runRoot("iw dev $iface scan")
-        if (scan.exitCode != 0) return@withContext result(true, true, iface, emptyList(),
-            "El controlador rechazó el escaneo root; no se fabrican resultados.", start)
+        if (scan.exitCode != 0) return@withContext cmdWifiScan(start,
+            "El controlador rechazó el escaneo con iw.")
 
         val observations = parseScan(scan.stdout)
         result(true, true, iface, observations,
             "Escaneo root completado con iw. Señal/frecuencia son metadatos Wi-Fi; no son CSI ni anatomía.", start)
+    }
+
+    /** Respaldo sin iw: el servicio Wi-Fi de Android vía `cmd wifi` (Android 11+, solo con root). */
+    private fun cmdWifiScan(start: Long, why: String): Result {
+        runRoot("cmd wifi start-scan")
+        try { Thread.sleep(2_500) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        val list = runRoot("cmd wifi list-scan-results")
+        val obs = if (list.exitCode == 0) parseCmdWifi(list.stdout, SystemClock.elapsedRealtime() * 1000L) else emptyList()
+        return if (obs.isEmpty()) result(true, false, null, emptyList(),
+            "$why Tampoco `cmd wifi` devolvió redes; no se fabrican resultados.", start)
+        else result(true, false, null, obs,
+            "Escaneo root completado con cmd wifi (${obs.size} redes). Señal/frecuencia son metadatos; no son CSI.", start)
+    }
+
+    companion object {
+        private val CMD_ROW = Regex("^\\s*([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})\\s+(\\d{4,5})\\s+(-?\\d+)\\s+(\\S+)\\s*(.*)$")
+
+        /** Puro y testeable: filas «BSSID Frecuencia RSSI Edad(s) SSID Flags» de `cmd wifi list-scan-results`. */
+        internal fun parseCmdWifi(output: String, nowMicros: Long): List<WifiObservation> =
+            output.lineSequence().mapNotNull { line ->
+                val m = CMD_ROW.find(line) ?: return@mapNotNull null
+                val age = m.groupValues[4].toDoubleOrNull() ?: 0.0
+                if (age > 180.0) return@mapNotNull null
+                val rest = m.groupValues[5]
+                val ssid = rest.substringBefore("[").trim()
+                WifiObservation(ssid.take(64).ifEmpty { "<red oculta>" },
+                    m.groupValues[3].toInt(), m.groupValues[2].toInt(), nowMicros)
+            }.distinctBy { Triple(it.ssid, it.frequencyMhz, it.rssiDbm) }.toList()
     }
 
     private data class CommandResult(val exitCode: Int, val stdout: String)

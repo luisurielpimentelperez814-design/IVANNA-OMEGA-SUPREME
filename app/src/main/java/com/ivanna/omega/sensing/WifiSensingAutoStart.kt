@@ -49,6 +49,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
     var observations by remember { mutableStateOf(0) }
     var signalSummary by remember { mutableStateOf("Sin datos de señal") }
     var userStopped by remember { mutableStateOf(false) }
+    var askedPermission by remember { mutableStateOf(false) }
     val session = remember(context) {
         WifiScanSession(context) { update ->
             status = update.message
@@ -79,7 +80,18 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
         fun syncAndStart() {
             optedIn = prefs.getBoolean("wifi_sensing_opt_in", false)
             if (optedIn && !userStopped) {
-                active = session.start(consentGranted = true)
+                val hasLocation = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                if (!hasLocation && !askedPermission) {
+                    // Con el consentimiento ya dado, se pide el permiso de ubicación una vez (Android
+                    // lo exige para listar redes Wi-Fi) en lugar de esperar a que se toque un botón oculto.
+                    askedPermission = true
+                    active = false
+                    status = "Solicitando el permiso de ubicación que Android exige para escanear Wi-Fi."
+                    locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                } else {
+                    active = session.start(consentGranted = true)
+                }
             } else {
                 session.stop()
                 active = false

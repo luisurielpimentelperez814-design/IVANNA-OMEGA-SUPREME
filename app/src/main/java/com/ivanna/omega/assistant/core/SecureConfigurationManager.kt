@@ -55,8 +55,10 @@ object SecureConfigurationManager {
         }
     }
 
-    fun setApiKey(key: String) {
+    fun setApiKey(rawKey: String) {
         requireInitialized()
+        // Al pegar suelen colarse espacios, saltos de línea o comillas que Google rechaza.
+        val key = rawKey.trim().trim('"', '\'', '`').filter { !it.isWhitespace() }
         if (!isValidKeyFormat(key)) { Log.w(TAG, "Invalid API key format rejected"); return }
         if (isUsingFallback) saveEncryptedFallback(KEY_GEMINI_API, key)
         else securePrefs?.edit()?.putString(KEY_GEMINI_API, key)?.apply()

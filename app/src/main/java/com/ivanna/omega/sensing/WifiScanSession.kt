@@ -48,7 +48,11 @@ class WifiScanSession(
             handler.removeCallbacks(scanTimeoutRunnable)
             val fresh = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
             if (!fresh) {
-                emit("Android no entregó resultados nuevos; el sondeo queda sin medición fresca y se reintentará dentro de 30 segundos.", emptyList(), false)
+                // Android entrega el último escaneo (a veces por límite de frecuencia): se usa si es reciente.
+                if (!emitCached("Android limitó el escaneo")) {
+                    emit("Android no entregó resultados nuevos; se reintentará en " + (SCAN_INTERVAL_MS / 1000) + " s.", emptyList(), false)
+                    tryRootFallback()
+                }
                 scheduleNext()
                 return
             }
@@ -70,14 +74,18 @@ class WifiScanSession(
         if (!running || !consented || scanRequestedAtMs == 0L) return@Runnable
         val elapsed = android.os.SystemClock.elapsedRealtime() - scanRequestedAtMs
         if (elapsed >= SCAN_TIMEOUT_MS) {
-            emit("Android no confirmó el escaneo en " + (SCAN_TIMEOUT_MS / 1000) + "s; resultado no verificado. Probando fallback root opt-in.", emptyList(), false)
-            tryRootFallback()
+            if (!emitCached("Android no confirmó el escaneo en " + (SCAN_TIMEOUT_MS / 1000) + " s")) {
+                emit("Android no confirmó el escaneo en " + (SCAN_TIMEOUT_MS / 1000) + " s; probando respaldo root opt-in.", emptyList(), false)
+                tryRootFallback()
+            }
             scheduleNext()
         }
     }
 
     companion object {
-        private const val SCAN_INTERVAL_MS = 30_000L
+        private const val SCAN_INTERVAL_MS = 45_000L   // Android limita a 4 escaneos/2 min en primer plano
+        private const val CACHE_MAX_AGE_S = 120L
+        private const val CACHE_FRESH_S = 60L
         private const val SCAN_TIMEOUT_MS = 15_000L
     }
 
@@ -122,6 +130,7 @@ class WifiScanSession(
             return true
         }
         emit("Sesión Wi-Fi opt-in activa en primer plano; solicitando medición.", emptyList(), false)
+        emitCached("Lectura inicial")
         requestScan()
         return true
     }
@@ -151,6 +160,25 @@ class WifiScanSession(
         emit(message, emptyList(), false)
     }
 
+    private fun isWifiOn(): Boolean = try { wifi?.isWifiEnabled == true } catch (_: Exception) { true }
+
+    /**
+     * Android conserva el último escaneo y lo devuelve aunque startScan() esté limitado.
+     * Se usa solo si es reciente (<= CACHE_MAX_AGE_S) y se marca "fresco" solo hasta CACHE_FRESH_S;
+     * el mensaje dice siempre la edad real. Devuelve true si emitió algo.
+     */
+    @SuppressLint("MissingPermission")
+    private fun emitCached(reason: String): Boolean {
+        val cached = try { wifi?.scanResults.orEmpty() } catch (_: SecurityException) { return false }
+        if (cached.isEmpty()) return false
+        val nowUs = android.os.SystemClock.elapsedRealtime() * 1000L
+        val ageS = cached.minOf { (nowUs - it.timestamp) / 1_000_000L }.coerceAtLeast(0L)
+        if (ageS > CACHE_MAX_AGE_S) return false
+        emit("$reason; usando el último escaneo de Android (hace ${ageS} s, ${cached.size} redes). RSSI no equivale a CSI.",
+            cached.map { it.toObservation() }.sortedByDescending { it.rssiDbm }, ageS <= CACHE_FRESH_S)
+        return true
+    }
+
     private fun isLocationEnabled(): Boolean = try {
         val lm = appContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm?.isLocationEnabled == true
@@ -178,12 +206,20 @@ class WifiScanSession(
             scheduleNext()
             return
         }
+        if (!isWifiOn()) {
+            emit("El Wi-Fi está apagado: enciéndelo para que Android pueda escanear redes.", emptyList(), false)
+            tryRootFallback()
+            scheduleNext()
+            return
+        }
         scanRequestedAtMs = android.os.SystemClock.elapsedRealtime()
         val accepted = try { wifi.startScan() } catch (_: SecurityException) { false } catch (_: RuntimeException) { false }
         if (!accepted) {
             handler.removeCallbacks(scanTimeoutRunnable)
-            emit("Android rechazó o limitó el escaneo; probando backend root opt-in.", emptyList(), false)
-            tryRootFallback()
+            if (!emitCached("Android limitó el escaneo")) {
+                emit("Android rechazó o limitó el escaneo; probando respaldo root opt-in.", emptyList(), false)
+                tryRootFallback()
+            }
             scheduleNext()
         } else {
             handler.removeCallbacks(scanTimeoutRunnable)

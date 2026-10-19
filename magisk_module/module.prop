@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.78
-versionCode=369
+version=v2.5.79
+versionCode=370
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.78 (FotoHolo·Nanotomix: scroll, Gemini y sincronía Ruta B)
+description=v2.5.79 (Gemini con causa real del error y sondeo Wi-Fi robusto)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

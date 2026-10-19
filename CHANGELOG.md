@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.79 (370) — Gemini con causa real del error y sondeo Wi-Fi robusto
+
+1. **Gemini en FotoHolo (antes: «HTTP 403» sin explicación):** ahora se intenta primero Firebase AI Logic (la misma vía del asistente) y luego REST con la clave guardada. Si Google rechaza, se lee el cuerpo del error y se muestra la causa real (clave restringida a otra app Android, API no habilitada, clave bloqueada por filtración, cuota, región). La clave viaja en header (ya no en la URL), se limpia de espacios/comillas/saltos de línea al guardarla y se envían los headers `X-Android-Package`/`X-Android-Cert` para claves restringidas a apps Android. Cadena de modelos 2.5-flash → 2.5-flash-lite → 2.0-flash solo ante 404/429/503.
+2. **Validación de la clave en el asistente:** el mensaje 401/403 ya no adivina «AQ.»; muestra lo que Google respondió de verdad.
+3. **Sondeo Wi-Fi:** intervalo de 45 s (Android limita a 4 escaneos/2 min y el anterior de 30 s chocaba con ese límite); si Android limita o no confirma el escaneo se usa su último resultado (si tiene ≤ 120 s, con la edad en el mensaje); aviso claro si el Wi-Fi está apagado; el permiso de ubicación se pide solo al reanudar con el consentimiento ya dado; respaldo root nuevo con `cmd wifi list-scan-results` cuando no hay `iw`.
+4. **Tests nuevos (JVM):** `GeminiRestTest`, `RootWifiCmdParseTest`.
+5. **No verificado aquí:** compilación y prueba en teléfono (lo cubre el CI del APK). Si la clave sigue rechazada, el mensaje dirá por qué: eso se corrige en AI Studio/Google Cloud, no en el código.
+
+---
+
 # CHANGELOG — v2.5.78 (369) — Panel FotoHolo·Nanotomix completo
 
 1. **Scroll del panel Spatial:** la escena WebGL ya no captura los gestos; el panel se desplaza normalmente y la interacción 3D se activa con «INTERACTUAR CON ESCENA 3D».

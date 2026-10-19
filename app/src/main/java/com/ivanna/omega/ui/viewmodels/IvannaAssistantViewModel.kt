@@ -374,45 +374,27 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
                     // Endpoint minimo: lista de modelos — si responde 200 la key
                     // es valida y tiene acceso; 401/403 = key rechazada; otro =
                     // red o endpoint. No se envia audio ni datos del usuario.
-                    val url = java.net.URL(
-                        "https://generativelanguage.googleapis.com/v1beta/models?key=$key"
-                    )
+                    val url = java.net.URL("https://generativelanguage.googleapis.com/v1beta/models")
                     val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
                         connectTimeout = 8000; readTimeout = 8000
                         requestMethod = "GET"
+                        // La clave va en header, no en la URL; los headers Android permiten
+                        // claves restringidas a «Aplicaciones Android» en AI Studio/Cloud.
+                        setRequestProperty("x-goog-api-key", com.ivanna.omega.ai.gemini.GeminiRest.cleanKey(key))
+                        setRequestProperty("X-Android-Package", getApplication<android.app.Application>().packageName)
+                        com.ivanna.omega.ai.gemini.GeminiRest.signingSha1(getApplication<android.app.Application>())
+                            ?.let { setRequestProperty("X-Android-Cert", it) }
                     }
-                    val code = try { conn.responseCode } finally { conn.disconnect() }
+                    var errBody = ""
+                    val code = try {
+                        conn.responseCode.also { c ->
+                            if (c !in 200..299) errBody = conn.errorStream?.bufferedReader()?.readText().orEmpty()
+                        }
+                    } finally { conn.disconnect() }
                     when (code) {
                         200 -> Pair(true, "OK")
-                        401, 403 -> {
-                            // FIX (verificado con fuentes oficiales de Google,
-                            // ai.google.dev/gemini-api/docs/api-key, 2026-09-04):
-                            // un 401/403 aquí con una key "AQ." (Auth key) NO es
-                            // necesariamente error del usuario — es un problema
-                            // de compatibilidad confirmado y reconocido por el
-                            // propio equipo de Google: las keys "AQ." son tokens
-                            // estilo OAuth y múltiples reportes (incluida
-                            // respuesta oficial de Google en su foro de
-                            // desarrolladores) muestran 401
-                            // ACCESS_TOKEN_TYPE_UNSUPPORTED contra este mismo
-                            // endpoint REST con ?key=, incluso con una key
-                            // recién generada y sin typos. Decirle al usuario
-                            // "verifica que sea válida" lo manda a regenerar la
-                            // key en un bucle inútil, porque las keys nuevas
-                            // YA SOLO salen en formato AQ. — regenerar no
-                            // cambia nada. El mensaje debe distinguir ese caso.
-                            val msg = if (com.ivanna.omega.assistant.core.SecureConfigurationManager
-                                    .getApiKey().startsWith("AQ.")) {
-                                "Google rechazó la key (HTTP $code). Tu key es formato \"AQ.\" (Auth key) — " +
-                                "hay un problema de compatibilidad conocido de Google con este tipo de key " +
-                                "en llamadas REST directas, no es un error tuyo. Si tienes una key \"AIza\" " +
-                                "antigua, restríngela a \"Gemini API only\" en AI Studio y úsala mientras " +
-                                "Google resuelve esto — las keys AIza siguen funcionando restringidas."
-                            } else {
-                                "Key rechazada por Google (HTTP $code) — verifica que sea una key válida de AI Studio"
-                            }
-                            Pair(false, msg)
-                        }
+                        400, 401, 403 -> Pair(false, com.ivanna.omega.ai.gemini.GeminiRest.explain(
+                            com.ivanna.omega.ai.gemini.GeminiRest.parseError(code, errBody)))
                         else -> Pair(false, "Sin respuesta válida (HTTP $code) — revisa la red")
                     }
                 }.getOrElse { Pair(false, "Error de red: ${it.message}") }
