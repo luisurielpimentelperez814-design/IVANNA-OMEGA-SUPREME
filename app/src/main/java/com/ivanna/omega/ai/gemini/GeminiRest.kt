@@ -29,7 +29,7 @@ object GeminiRest {
     private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/"
 
     /** Modelos probados en orden; solo se salta al siguiente si el actual no existe o está saturado. */
-    val MODEL_CHAIN = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash")
+    val MODEL_CHAIN = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite")
 
     /** Quita espacios, saltos de línea y comillas que se cuelan al pegar la clave. */
     fun cleanKey(raw: String): String =
