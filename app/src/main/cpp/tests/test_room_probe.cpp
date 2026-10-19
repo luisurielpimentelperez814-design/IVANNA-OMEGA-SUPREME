@@ -169,3 +169,28 @@ TEST(RoomCorrectionEq, UserBandShapesItsOwnRegionOnly) {
     EXPECT_NEAR(gainAt(1000.f), 6.0f, 0.6f);
     EXPECT_LT(std::fabs(gainAt(100.f)), 0.5f);
 }
+
+
+TEST(RoomCorrectionEq, ActiveCorrectionSanitizesAndKeepsStereoPeakBelowCeiling) {
+    RoomCorrectionEq q;
+    q.prepare(kSr);
+    float gains[10];
+    for (float& gain : gains) gain = 12.0f;
+    q.setTarget(gains);
+
+    std::vector<float> left(8192), right(8192);
+    for (size_t i = 0; i < left.size(); ++i) {
+        const float sample = 1.2f * std::sin(2.0f * kPi * 1000.0f * static_cast<float>(i) / kSr);
+        left[i] = sample;
+        right[i] = -sample;
+    }
+    for (size_t offset = 0; offset < left.size(); offset += 256) {
+        q.process(left.data() + offset, right.data() + offset, 256);
+    }
+    for (size_t i = 0; i < left.size(); ++i) {
+        EXPECT_TRUE(std::isfinite(left[i]));
+        EXPECT_TRUE(std::isfinite(right[i]));
+        EXPECT_LE(std::fabs(left[i]), 0.9801f);
+        EXPECT_LE(std::fabs(right[i]), 0.9801f);
+    }
+}

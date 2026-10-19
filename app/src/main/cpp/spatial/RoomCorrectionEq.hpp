@@ -27,6 +27,7 @@ public:
         eq_.init(sr_);
         for (int b = 0; b < room::kBands; ++b) { cur_[b] = 0.0f; tgt_[b] = 0.0f; }
         active_ = false;
+        safetyGain_ = 1.0f;
         eq_.setEnabled(false);
     }
 
@@ -57,7 +58,30 @@ public:
         }
         if (any != active_) { active_ = any; eq_.setEnabled(any); }
         if (!active_) return;                                // bypass bit-exacto
+
+        // Sanitize inputs before biquad state is touched, then enforce a stereo-linked
+        // post-EQ ceiling. The correction path must never undo downstream headroom.
+        for (int i = 0; i < n; ++i) {
+            if (!std::isfinite(L[i])) L[i] = 0.0f;
+            if (!std::isfinite(R[i])) R[i] = 0.0f;
+        }
         eq_.process(L, R, n);
+
+        float peak = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            if (!std::isfinite(L[i])) L[i] = 0.0f;
+            if (!std::isfinite(R[i])) R[i] = 0.0f;
+            peak = std::max(peak, std::max(std::fabs(L[i]), std::fabs(R[i])));
+        }
+        const float requiredGain = peak > 0.98f ? 0.98f / peak : 1.0f;
+        if (requiredGain < safetyGain_) safetyGain_ = requiredGain; // instant attack
+        else safetyGain_ = std::min(requiredGain, safetyGain_ + 0.05f);    // bounded release
+        for (int i = 0; i < n; ++i) {
+            const float left = L[i] * safetyGain_;
+            const float right = R[i] * safetyGain_;
+            L[i] = std::isfinite(left) ? std::clamp(left, -0.98f, 0.98f) : 0.0f;
+            R[i] = std::isfinite(right) ? std::clamp(right, -0.98f, 0.98f) : 0.0f;
+        }
     }
 
 private:
@@ -65,6 +89,7 @@ private:
     float sr_ = 48000.0f;
     float cur_[room::kBands] = {};
     float tgt_[room::kBands] = {};
+    float safetyGain_ = 1.0f;
     bool  active_ = false;
 };
 

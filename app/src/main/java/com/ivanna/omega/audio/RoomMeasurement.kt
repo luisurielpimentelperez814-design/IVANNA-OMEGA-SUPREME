@@ -8,6 +8,7 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.safmus.SafmusUniversalKernel
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.log10
@@ -198,6 +199,26 @@ object RoomMeasurement {
             applyCorrection(previousGains, previousEnabled)
             auditDecision(context, id, "ROLLED_BACK", "baseline_profile_unreliable", beforeDb = beforeError, rolledBack = true)
             return VerifiedOutcome.Failure("baseline_profile_unreliable", true, id)
+        }
+        val measuredEvidence = baseline.levelsDb.size == POINTS &&
+            baseline.snrDb.size == POINTS && beforeError.isFinite() &&
+            baseline.latencyMs in -50..(TAIL_S * 1000f).toInt()
+        val candidateSafe = baseline.gainsDb.size == 10 && baseline.gainsDb.all {
+            it.isFinite() && it in -9.0f..3.0f
+        }
+        // RoomCorrectionEq now sanitizes the active filter input and applies a linked
+        // post-EQ ceiling. This is a guaranteed headroom guard, not a calibrated SPL claim.
+        val roomGate = SafmusUniversalKernel.gateRoomCorrection(
+            measurementAvailable = measuredEvidence,
+            playbackChainIdentified = baseline.latencyMs in -50..(TAIL_S * 1000f).toInt(),
+            candidateFiniteAndStable = candidateSafe,
+            headroomValid = candidateSafe
+        )
+        if (!roomGate.allowed) {
+            applyCorrection(previousGains, previousEnabled)
+            val reason = "safmus_room_gate:${roomGate.reason}"
+            auditDecision(context, id, "ROLLED_BACK", reason, beforeDb = beforeError, rolledBack = true)
+            return VerifiedOutcome.Failure(reason, true, id)
         }
         applyCorrection(baseline.gainsDb, true)
         kotlinx.coroutines.delay(800)
