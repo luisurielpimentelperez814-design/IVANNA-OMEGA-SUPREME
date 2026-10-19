@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.74
-versionCode=365
+version=v2.5.75
+versionCode=366
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.74 (FotoHolo: consentimiento explícito y detección conservadora de capacidades Wi-Fi)
+description=v2.5.75 (FotoHolo: scroll vertical, reset neutro y controles)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
