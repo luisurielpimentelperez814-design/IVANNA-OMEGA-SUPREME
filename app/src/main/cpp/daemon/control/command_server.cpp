@@ -814,7 +814,9 @@ void CommandServer::acceptLoop() {
             int cfd = accept(m_server_fd,(struct sockaddr*)&cli,&clen);
             if (cfd<0) continue;
             if (!ivanna::security::isAuthorizedControlPeer(cfd)) {
-                CS_LOG("Rejected unauthorized peer on control socket");
+                if (ivanna::security::shouldLogRejectedPeer()) {
+                    CS_LOG("Rejected unauthorized peer on control socket (rate-limited log)");
+                }
                 close(cfd);
                 continue;
             }

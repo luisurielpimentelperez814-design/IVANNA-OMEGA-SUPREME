@@ -1,8 +1,12 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <dirent.h>
 #include <string>
+#include <mutex>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -38,12 +42,34 @@ inline std::vector<uid_t> discoverIvannaAppUids() {
     return result;
 }
 
+inline std::vector<uid_t> cachedIvannaAppUids() {
+    static std::mutex mutex;
+    static std::vector<uid_t> cached;
+    static std::chrono::steady_clock::time_point lastRefresh {};
+    static bool initialized = false;
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto now = std::chrono::steady_clock::now();
+    const auto refreshInterval = cached.empty() ? std::chrono::seconds(2) : std::chrono::seconds(30);
+    if (!initialized || now - lastRefresh >= refreshInterval) {
+        cached = discoverIvannaAppUids();
+        lastRefresh = now;
+        initialized = true;
+    }
+    return cached;
+}
+
+inline bool shouldLogRejectedPeer() noexcept {
+    static std::atomic<uint64_t> rejectedCount{0};
+    const uint64_t count = rejectedCount.fetch_add(1, std::memory_order_relaxed) + 1;
+    return count == 1 || count % 1000 == 0;
+}
+
 inline bool isAuthorizedControlPeer(int fd) {
     struct PeerCredentials { pid_t pid; uid_t uid; gid_t gid; } peer {};
     socklen_t length = sizeof(peer);
     if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &length) != 0 || length != sizeof(peer)) {
         return false;
     }
-    return isAuthorizedControlUid(peer.uid, discoverIvannaAppUids());
+    return isAuthorizedControlUid(peer.uid, cachedIvannaAppUids());
 }
 } // namespace ivanna::security

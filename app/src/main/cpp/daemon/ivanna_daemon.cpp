@@ -363,7 +363,9 @@ int main(int argc, char* argv[]) {
             int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
             if (client_fd<0) continue;
             if (!ivanna::security::isAuthorizedControlPeer(client_fd)) {
-                log_message("Conexión rechazada en socket daemon: UID no autorizado");
+                if (ivanna::security::shouldLogRejectedPeer()) {
+                    log_message("Conexión rechazada en socket daemon: UID no autorizado (registro limitado)");
+                }
                 close(client_fd);
                 continue;
             }
