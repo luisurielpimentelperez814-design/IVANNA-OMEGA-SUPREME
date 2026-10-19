@@ -578,6 +578,8 @@ private fun IvannaSliderRow(
     unit: String,
     onValueChange: (Float) -> Unit
 ) {
+    val safeValue = com.ivanna.omega.safmus.SafmusUniversalKernel
+        .sanitizeControlValue(value, min, max) ?: min
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -593,8 +595,11 @@ private fun IvannaSliderRow(
             )
         }
         Slider(
-            value = value,
-            onValueChange = onValueChange,
+            value = safeValue,
+            onValueChange = { proposed ->
+                com.ivanna.omega.safmus.SafmusUniversalKernel
+                    .sanitizeControlValue(proposed, min, max)?.let(onValueChange)
+            },
             valueRange = min..max,
             colors = SliderDefaults.colors(
                 thumbColor = AuroraCyan,

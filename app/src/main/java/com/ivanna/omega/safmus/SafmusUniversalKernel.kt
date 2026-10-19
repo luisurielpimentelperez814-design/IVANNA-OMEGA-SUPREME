@@ -28,6 +28,12 @@ object SafmusUniversalKernel {
 
     data class Gate(val allowed: Boolean, val reason: String)
 
+    /** Reject non-finite control values and clamp valid input to the widget's declared range. */
+    fun sanitizeControlValue(value: Float, min: Float, max: Float): Float? {
+        if (!value.isFinite() || !min.isFinite() || !max.isFinite() || min > max) return null
+        return value.coerceIn(min, max)
+    }
+
     fun decideRoute(e: RouteEvidence): RouteDecision = when {
         e.systemWideEffectActive -> RouteDecision(
             Route.ROUTE_B, false,

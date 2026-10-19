@@ -5,6 +5,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafmusUniversalKernelTest {
+    @Test fun sliderControlValuesRejectNonFiniteAndClampToDeclaredRange() {
+        assertTrue(SafmusUniversalKernel.sanitizeControlValue(0.5f, 0f, 1f) == 0.5f)
+        assertTrue(SafmusUniversalKernel.sanitizeControlValue(-2f, 0f, 1f) == 0f)
+        assertTrue(SafmusUniversalKernel.sanitizeControlValue(2f, 0f, 1f) == 1f)
+        assertTrue(SafmusUniversalKernel.sanitizeControlValue(Float.NaN, 0f, 1f) == null)
+        assertTrue(SafmusUniversalKernel.sanitizeControlValue(0.5f, Float.NEGATIVE_INFINITY, 1f) == null)
+        assertTrue(SafmusUniversalKernel.sanitizeControlValue(0.5f, 2f, 1f) == null)
+    }
+
     @Test fun globalRouteExcludesParallelRouteA() {
         val d = SafmusUniversalKernel.decideRoute(
             SafmusUniversalKernel.RouteEvidence(true, true, true, true, false)

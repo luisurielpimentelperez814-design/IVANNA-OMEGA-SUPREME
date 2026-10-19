@@ -400,6 +400,8 @@ internal fun AuroraSlider(
     displayValue: ((Float) -> String)? = null,
     onValueChange: (Float) -> Unit
 ) {
+    val safeValue = com.ivanna.omega.safmus.SafmusUniversalKernel
+        .sanitizeControlValue(value, range.start, range.endInclusive) ?: range.start
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -433,8 +435,12 @@ internal fun AuroraSlider(
                 )
         ) {
             Slider(
-                value = value,
-                onValueChange = onValueChange,
+                value = safeValue,
+                onValueChange = { proposed ->
+                    com.ivanna.omega.safmus.SafmusUniversalKernel
+                        .sanitizeControlValue(proposed, range.start, range.endInclusive)
+                        ?.let(onValueChange)
+                },
                 valueRange = range,
                 colors = SliderDefaults.colors(
                     thumbColor = AuroraCyan,

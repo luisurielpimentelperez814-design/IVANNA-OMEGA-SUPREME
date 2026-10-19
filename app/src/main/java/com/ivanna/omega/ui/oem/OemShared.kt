@@ -34,6 +34,8 @@ fun OemSliderRow(
     display: String,
     onValueChange: (Float) -> Unit
 ) {
+    val safeValue = com.ivanna.omega.safmus.SafmusUniversalKernel
+        .sanitizeControlValue(value, min, max) ?: min
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
@@ -42,8 +44,11 @@ fun OemSliderRow(
                 fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         }
         Slider(
-            value = value,
-            onValueChange = onValueChange,
+            value = safeValue,
+            onValueChange = { proposed ->
+                com.ivanna.omega.safmus.SafmusUniversalKernel
+                    .sanitizeControlValue(proposed, min, max)?.let(onValueChange)
+            },
             valueRange = min..max,
             modifier = Modifier.fillMaxWidth().height(28.dp),
             colors = SliderDefaults.colors(
