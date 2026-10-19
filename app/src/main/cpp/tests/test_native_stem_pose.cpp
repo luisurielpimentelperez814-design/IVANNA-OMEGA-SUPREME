@@ -32,7 +32,7 @@ TEST(NativeStemPoseTest, BatchPublishesAllFourPositionsAndPreservesStemGains) {
         EXPECT_NEAR(actual.y, requested[i].y, 1e-6f);
         EXPECT_NEAR(actual.z, requested[i].z, 1e-6f);
         EXPECT_NEAR(actual.width, requested[i].width, 1e-6f);
-        EXPECT_NEAR(actual.gain, ivanna::ai::kStemPositions[i].gain, 1e-6f);
+        EXPECT_NEAR(actual.gain, requested[i].gain, 1e-6f);
     }
 }
 
@@ -65,6 +65,9 @@ TEST(NativeStemPoseTest, OutOfBoundsWidthOrCoordinatesAreRejected) {
     EXPECT_FALSE(upmixer.setStemPositions(invalid));
     invalid = testPose();
     invalid[1].width = 0.0f;
+    EXPECT_FALSE(upmixer.setStemPositions(invalid));
+    invalid = testPose();
+    invalid[3].gain = 1.5f;
     EXPECT_FALSE(upmixer.setStemPositions(invalid));
 
     const auto after = upmixer.getStemPosition(StemType::VOCALS);
