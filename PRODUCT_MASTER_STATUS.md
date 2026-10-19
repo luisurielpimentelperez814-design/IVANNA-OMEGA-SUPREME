@@ -15,9 +15,9 @@
 | Compilación Release del APK en baseline | Falló en `SaFEngine.kt`, `CsiFeatureExtractor.kt` y `WifiSensingAutoStart.kt` |
 | Puertas estáticas del baseline | Fallaron por wrappers JavaScript mal clasificados, un header de test bajo producción y una cifra documental obsoleta |
 | Rama de auditoría | Contiene correcciones para los hallazgos anteriores y para el manejo de claves; aceptación pendiente de CI |
-| HRTF/SOFA | Parser Kotlin con pruebas; todavía no está conectado a la ruta de reproducción. El loader nativo documenta `VALID_NOT_PARSED` y reconstrucción PCA |
+| HRTF/SOFA | Ruta HRTF medida vía IHR1 sí existe y el renderer la carga; el parser Kotlin de SOFA es solo de pruebas. La ruta separada SofaHRTFLoader valida firma y usa PCA, no mediciones del SOFA crudo |
 | Wi-Fi/CSI | Fallback de metadatos RSSI; no se encontró un proveedor CSI registrado/verificado |
-| IA genérica | El clasificador CRNN TFLite existe; `AIInferenceEngine` es pass-through y el fine-tuning no está conectado a inferencia real |
+| IA genérica | El clasificador CRNN TFLite existe; `AIInferenceEngine` queda explícitamente inactivo/passthrough; el upmixer es heurístico y el fine-tuning no está conectado a inferencia real |
 | Audio en hardware | Latencia, underruns, clipping, THD y mejora A/B no verificados en un teléfono durante esta auditoría |
 | Protección de `main` | GitHub informó que la rama no está protegida; el CI no bloquea por sí solo pushes directos |
 

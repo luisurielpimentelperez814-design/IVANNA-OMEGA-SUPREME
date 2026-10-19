@@ -5,8 +5,6 @@
     <!-- Audio permissions -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
-    <uses-permission android:name="android.permission.CAPTURE_AUDIO_OUTPUT"
-        tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -30,15 +28,8 @@
     <!-- Estadísticas de uso de apps para detectar qué app produce audio -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions"/>
-    <!-- Leer propiedades de sistema seteadas por el módulo Magisk -->
-    <uses-permission android:name="android.permission.READ_LOGS"
-        tools:ignore="ProtectedPermissions"/>
     <!-- Vibración para feedback en cambio de preset desde el módulo -->
     <uses-permission android:name="android.permission.VIBRATE"/>
-
-    <!-- FIX: AudioEffect global session broadcast (como Wavelet/Poweramp) -->
-    <uses-permission android:name="android.permission.BIND_AUDIO_EFFECT_SERVICE"
-        tools:ignore="ProtectedPermissions"/>
 
     <!-- FIX (entrada tipo C / ruta libre DAC): sin este uses-feature la app ni
          siquiera se lista como compatible con accesorios USB y el sistema no

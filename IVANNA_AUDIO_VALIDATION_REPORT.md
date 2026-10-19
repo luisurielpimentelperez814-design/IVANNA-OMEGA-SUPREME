@@ -1,3 +1,5 @@
+> **Estado del documento:** este archivo define un **protocolo y umbrales objetivo**. No contiene resultados medidos de una ejecución real. Los valores bajo “PASS” son criterios de aceptación, no pruebas de que el producto ya los cumpla. La validación física requiere un teléfono, una ruta de audio identificada y mediciones guardadas con fecha/dispositivo/commit.
+
 # IVANNA AUDIO VALIDATION REPORT
 ## GORE TNS · IVANNA-OMEGA-SUPREME
 

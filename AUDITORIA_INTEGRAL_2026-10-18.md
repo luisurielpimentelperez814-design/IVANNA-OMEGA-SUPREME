@@ -43,10 +43,10 @@ En la rama de auditoría se fusionó `TAG` en el único companion, se convirtió
 
 ### 2. HRTF / SOFA
 
-- `SofaReader` y `Hdf5File` existen y tienen pruebas JVM que comparan dimensiones/valores de archivos SOFA con resultados de referencia h5py.
-- **Brecha de integración confirmada:** la búsqueda de usos de `SofaReader.read` encontró solo pruebas, no una llamada de producción.
-- `SofaHRTFLoader.cpp` declara explícitamente `VALID_NOT_PARSED`: verifica la firma HDF5, pero el HRIR que usa esa ruta se reconstruye desde la base PCA. Por tanto, validar o incluir el archivo `.sofa` no significa que sus mediciones alimenten la convolución.
-- Estado: lector probado como parser; **SOFA no conectado a la ruta de reproducción real**. No se afirma mejora audible por este lector.
+- `SofaReader` y `Hdf5File` tienen pruebas JVM que comparan valores de archivos SOFA con referencia h5py, pero la búsqueda de `SofaReader.read` encontró solo pruebas: el parser Kotlin no se ejecuta en producción.
+- **Sí existe una ruta HRTF medida de producción distinta:** `HRTFConvolver::init` busca datasets `.ihr1`, y `ObjectRenderer::loadHrtfDatasetFromFile` carga IHR1. `tools/sofa_to_ihr1.py` convierte los SOFA distribuidos a ese formato antes de su despliegue; el renderer puede consumir esas HRIR medidas cuando el archivo está presente y pasa validación.
+- La ruta separada `SofaHRTFLoader.cpp` declara `VALID_NOT_PARSED`: valida firma HDF5, pero esa ruta analítica reconstruye HRIR desde PCA. No debe confundirse con el loader IHR1.
+- Estado: **HRTF medido vía IHR1 está cableado; la importación directa de archivos .sofa arbitrarios en runtime no está implementada**. La selección de sujeto ahora verifica read-back nativo; aún requiere CI y prueba en dispositivo.
 
 ### 3. Sensado Wi-Fi / CSI / escena
 
@@ -57,9 +57,9 @@ En la rama de auditoría se fusionó `TAG` en el único companion, se convirtió
 ### 4. IA y redes neuronales
 
 - Hay un artefacto TFLite real, `app/src/main/assets/anti_dolby_crnn.tflite`, usado por `AntiDolbyCrnnClassifier`; `YamnetClassifier` es una fachada de compatibilidad que delega en ese clasificador.
-- `AIInferenceEngine.processAudioBlock` actualmente devuelve una copia sin modificar del audio y no ejecuta inferencia TFLite. `ModelManager.hasUsableFineTuningModel()` devuelve siempre `false`; el guardado de modelos finamente ajustados no equivale a entrenamiento ni inferencia activa.
-- `RealtimeLearningController` aplica sesgos EMA a parámetros y registra correcciones; eso no es entrenamiento de una red neuronal.
-- Estado: existe un clasificador TFLite específico; **no hay evidencia de que el motor genérico de fine-tuning/inferencia esté conectado a la señal de audio**. No se deben mezclar ambos estados.
+- `AIInferenceEngine.processAudioBlock` devuelve audio passthrough y no ejecuta inferencia TFLite. En la rama de auditoría se evita que `startSession` marque ese motor como activo y se deja el contador de inferencias en cero hasta que exista un ejecutor real. `ModelManager.hasUsableFineTuningModel()` sigue siendo `false`; ahora los archivos guardados se validan como FlatBuffer TFLite y se describen como no conectados a inferencia.
+- `NeuralUpmixer` es el nombre histórico de una separación espectral heurística en C++/SIMD; su implementación no carga una red neuronal ni TFLite. Se corrigieron los comentarios de API para no llamarlo inferencia neuronal.
+- `RealtimeLearningController` aplica sesgos EMA a parámetros y registra correcciones; eso no es entrenamiento de una red neuronal. El clasificador AntiDolby CRNN TFLite y el agente Gemini (cuando está configurado) son rutas separadas. No se deben mezclar estos estados.
 
 ### 5. Calibración y autonomía
 
@@ -68,6 +68,7 @@ En la rama de auditoría se fusionó `TAG` en el único companion, se convirtió
 
 ### 6. Seguridad de configuración
 
+- Se retiraron del manifest los permisos privilegiados `CAPTURE_AUDIO_OUTPUT`, `READ_LOGS` y `BIND_AUDIO_EFFECT_SERVICE`, que no tenían un uso de aplicación justificado en el código consultado. La captura de Ruta A usa MediaProjection con consentimiento.
 - `app/build.gradle.kts` empaquetaba `GEMINI_API_KEY` en un campo BuildConfig. Aunque no se encontró un consumidor de ese campo, cualquier clave empaquetada en APK es extraíble. Se eliminó ese campo sin uso de la rama.
 - `NetworkStatusPanel.kt` leía/escribía la clave en `SharedPreferences` sin cifrar pese a existir `SecureConfigurationManager`. En la rama se cambió a la configuración cifrada y se añadió migración de la clave heredada, eliminando la copia en texto plano.
 - El backend web mantiene su propia variable de entorno `GEMINI_API_KEY`; no debe exponerse en cliente ni registrarse en logs.
