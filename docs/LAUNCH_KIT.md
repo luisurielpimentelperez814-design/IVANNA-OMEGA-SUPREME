@@ -44,7 +44,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 
 | Día | Acción |
 |---|---|
-| −3 | Elegir licencia, confirmar licencias de datasets (`THIRD_PARTY_NOTICES.md`), restringir la clave de Firebase, subir *Social preview*, grabar el vídeo. |
+| −3 | Confirmar el aviso de propiedad intelectual y las licencias de datasets (`THIRD_PARTY_NOTICES.md`), restringir la clave de Firebase, subir *Social preview*, grabar el vídeo. |
 | 0 | **Show HN** (mañana, hora de EE. UU. este) + publicación en tu LinkedIn/X/Bluesky con el flyer. |
 | +1 | **XDA Forums** (hilo en la sección de Magisk/Software) y **r/Magisk** (si sus reglas lo permiten). |
 | +2 | **r/androiddev** / **r/androidapps** según reglas; artículo en **Dev.to** (§4.4). |
@@ -60,7 +60,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 
 **Primer comentario (publícalo tú justo después):**
 
-> Hi HN — I'm the author. IVANNA is an open-source audio engine for Android (C++20 native DSP + Kotlin/Compose) with
+> Hi HN — I'm the author. IVANNA is an proprietary commercial audio engine for Android (C++20 native DSP + Kotlin/Compose) with
 > two routes: an in-app route that needs no root, and a Magisk module + root daemon that processes system audio.
 >
 > The idea I'd like feedback on: instead of a chain of independent effects, a coordinator compares the original
@@ -78,7 +78,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 
 ### 4.2 Reddit / XDA (inglés; adapta el título a las reglas de cada sitio)
 
-**Título:** `[Open source] IVANNA — Android audio engine (HRTF, room IRs, closed-loop coordination). Looking for device testers`
+**Título:** `IVANNA — proprietary Android audio engine (HRTF, room IRs, closed-loop coordination). Commercial licensing inquiries and device testing`
 
 **Cuerpo:**
 
@@ -95,7 +95,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 ### 4.3 Redes cortas (X / Bluesky / Mastodon / LinkedIn) — español
 
 > Construí un motor de audio para Android que **mide su propia salida** antes de decidir cuánto aplica cada módulo
-> (ensanche, salas, excitador, compresor). 245 pruebas, ASan/UBSan, código abierto. Sin root o con Magisk.
+> (ensanche, salas, excitador, compresor). 245 pruebas, ASan/UBSan, producto propietario. Sin root o con Magisk.
 > Busco probadores de dispositivos reales 👇 github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME
 > (adjunta `ivanna_promo_flyer.png`)
 
@@ -111,7 +111,7 @@ Los puntos 3 y 4 son el contenido que más comparte la comunidad técnica: error
 
 ### 4.5 YouTube — publicación de Comunidad (usa el flyer vertical)
 
-> Estoy construyendo IVANNA, un motor de audio de código abierto para Android que mide su propia salida para que
+> Estoy construyendo IVANNA, un motor de audio propietario para Android que mide su propia salida para que
 > sus efectos no se pisen entre sí. Necesito probadores de dispositivos reales (con o sin root). Si te interesa el
 > audio o el desarrollo Android, el repositorio y el formulario de reporte están en el enlace. ¿Qué te gustaría
 > que probara primero? 👇
