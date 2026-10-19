@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.81
-versionCode=372
+version=v2.5.82
+versionCode=373
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.81 (imagen IA de lugar generada en el teléfono y automática con la música)
+description=v2.5.82 (sondeo Wi-Fi visual en tiempo real; gráfico RSSI y redes observadas)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
