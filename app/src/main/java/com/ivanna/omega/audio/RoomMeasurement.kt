@@ -153,6 +153,23 @@ object RoomMeasurement {
 
     private var nextDecisionId = 1L
 
+    private fun auditDecision(context: Context, id: Long, decision: String, reason: String,
+                              beforeDb: Float? = null, afterDb: Float? = null, rolledBack: Boolean) {
+        runCatching {
+            val prefs = context.getSharedPreferences("ivanna_agent_audit", Context.MODE_PRIVATE)
+            val old = runCatching { org.json.JSONArray(prefs.getString("records", "[]")) }.getOrElse { org.json.JSONArray() }
+            val entry = org.json.JSONObject()
+                .put("id", id).put("timeUtcMs", System.currentTimeMillis())
+                .put("decision", decision).put("reason", reason).put("rolledBack", rolledBack)
+            if (beforeDb != null && beforeDb.isFinite()) entry.put("beforeErrorDb", beforeDb.toDouble())
+            if (afterDb != null && afterDb.isFinite()) entry.put("afterErrorDb", afterDb.toDouble())
+            old.put(entry)
+            val bounded = org.json.JSONArray()
+            for (i in (old.length() - 50).coerceAtLeast(0) until old.length()) bounded.put(old.getJSONObject(i))
+            prefs.edit().putString("records", bounded.toString()).apply()
+        }
+    }
+
     /**
      * Ciclo cerrado real: mide sin corrección, aplica el perfil propuesto, vuelve a medir y compara.
      * La aplicación/rollback se delega a la API nativa existente. Nunca persiste el perfil aquí.
@@ -172,12 +189,14 @@ object RoomMeasurement {
             is Outcome.Success -> result
             is Outcome.Failure -> {
                 applyCorrection(previousGains, previousEnabled)
+                auditDecision(context, id, "ROLLED_BACK", "baseline:${result.reason}", rolledBack = true)
                 return VerifiedOutcome.Failure("baseline:${result.reason}", true, id)
             }
         }
         val beforeError = profileError(baseline.levelsDb, baseline.snrDb)
         if (!beforeError.isFinite()) {
             applyCorrection(previousGains, previousEnabled)
+            auditDecision(context, id, "ROLLED_BACK", "baseline_profile_unreliable", beforeDb = beforeError, rolledBack = true)
             return VerifiedOutcome.Failure("baseline_profile_unreliable", true, id)
         }
         applyCorrection(baseline.gainsDb, true)
@@ -186,6 +205,7 @@ object RoomMeasurement {
             is Outcome.Success -> result
             is Outcome.Failure -> {
                 applyCorrection(previousGains, previousEnabled)
+                auditDecision(context, id, "ROLLED_BACK", "verification:${result.reason}", beforeDb = beforeError, rolledBack = true)
                 return VerifiedOutcome.Failure("verification:${result.reason}", true, id)
             }
         }
@@ -193,12 +213,12 @@ object RoomMeasurement {
         // Reject unstable/weak measurements and revert if the measured profile did not improve.
         if (!afterError.isFinite() || beforeError - afterError < 0.25f) {
             applyCorrection(previousGains, previousEnabled)
-            return VerifiedOutcome.Failure(
-                if (!afterError.isFinite()) "verification_profile_unreliable"
-                else "no_verified_improvement: before=${"%.2f".format(java.util.Locale.ROOT, beforeError)}dB after=${"%.2f".format(java.util.Locale.ROOT, afterError)}dB",
-                true, id
-            )
+            val reason = if (!afterError.isFinite()) "verification_profile_unreliable"
+                else "no_verified_improvement: before=${"%.2f".format(java.util.Locale.ROOT, beforeError)}dB after=${"%.2f".format(java.util.Locale.ROOT, afterError)}dB"
+            auditDecision(context, id, "ROLLED_BACK", reason, beforeError, afterError, true)
+            return VerifiedOutcome.Failure(reason, true, id)
         }
+        auditDecision(context, id, "COMMITTED", "verified_improvement", beforeError, afterError, false)
         return VerifiedOutcome.Success(baseline.gainsDb, baseline.latencyMs, beforeError, afterError, id)
     }
 
