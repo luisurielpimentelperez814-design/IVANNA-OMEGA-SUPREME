@@ -52,6 +52,7 @@ object BassHaptics {
     @Volatile private var measuredLatencyMs = -1
     @Volatile private var measuredRoute: OutputRoute? = null
     @Volatile private var currentRoute: OutputRoute = OutputRoute.UNKNOWN
+    @Volatile private var lastProcessedBlockElapsedMs: Long = 0L
     @Volatile private var routeLabel = "—"
     @Volatile private var vibrator: Vibrator? = null
     @Volatile private var worker: Thread? = null
@@ -69,6 +70,8 @@ object BassHaptics {
     }
 
     data class SyncStatus(
+        val configured: Boolean,
+        val inputFresh: Boolean,
         val enabled: Boolean,
         val route: OutputRoute,
         val effectiveDelayMs: Int,
@@ -76,12 +79,18 @@ object BassHaptics {
         val routeDescription: String
     )
 
-    /** Read-only live state for the 10D contract; estimated and measured latency are distinguished. */
+    /** Read-only live state; "enabled" requires both a live worker and recent audio input. */
     fun syncStatus(): SyncStatus {
         val route = currentRoute
         val measured = measuredLatencyMs >= 0 && measuredRoute == route
+        val configured = enabled && worker?.isAlive == true
+        val lastInput = lastProcessedBlockElapsedMs
+        val now = SystemClock.elapsedRealtime()
+        val inputFresh = lastInput > 0L && now >= lastInput && now - lastInput <= 500L
         return SyncStatus(
-            enabled = enabled && worker?.isAlive == true,
+            configured = configured,
+            inputFresh = inputFresh,
+            enabled = configured && inputFresh,
             route = route,
             effectiveDelayMs = effectiveSyncMs(),
             latencyMeasuredForCurrentRoute = measured,
@@ -133,9 +142,11 @@ object BassHaptics {
 
     /** Hilo de audio: sin asignaciones ni bloqueos. */
     fun onBlock(buffer: FloatArray, frames: Int) {
-        if (!enabled) return
+        if (!enabled || frames <= 0 || buffer.size < frames * 2) return
+        val inputNowMs = SystemClock.elapsedRealtime()
+        lastProcessedBlockElapsedMs = inputNowMs
         if (resetRequested) { analyzer.reset(); rumbleFrames = 0; resetRequested = false }
-        val dueMs = SystemClock.elapsedRealtime() + effectiveSyncMs()
+        val dueMs = inputNowMs + effectiveSyncMs()
         val amp = analyzer.process(buffer, frames, strength)
         if (amp > 0) { push(dueMs, 0, amp); rumbleFrames = 0; return }
         rumbleFrames += frames
