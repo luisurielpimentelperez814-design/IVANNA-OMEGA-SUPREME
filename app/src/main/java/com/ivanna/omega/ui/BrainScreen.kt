@@ -675,6 +675,8 @@ private fun IvannaSliderRowBrain(
     label: String, value: Float, min: Float, max: Float, unit: String,
     onValueChange: (Float) -> Unit
 ) {
+    val safeValue = com.ivanna.omega.safmus.SafmusUniversalKernel
+        .sanitizeControlValue(value, min, max) ?: min
     Column {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, color = TextSecondary, fontSize = 11.sp)
@@ -682,7 +684,12 @@ private fun IvannaSliderRowBrain(
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
         }
         Slider(
-            value = value, onValueChange = onValueChange, valueRange = min..max,
+            value = safeValue,
+            onValueChange = { proposed ->
+                com.ivanna.omega.safmus.SafmusUniversalKernel
+                    .sanitizeControlValue(proposed, min, max)?.let(onValueChange)
+            },
+            valueRange = min..max,
             colors = SliderDefaults.colors(thumbColor = NeonMagenta, activeTrackColor = NeonMagenta, inactiveTrackColor = ObsidianEdge)
         )
     }

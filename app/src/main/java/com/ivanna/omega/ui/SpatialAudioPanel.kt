@@ -493,12 +493,20 @@ private fun RowSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Un
 
 @Composable
 private fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, fmt: String, onChange: (Float) -> Unit) {
+    val safeValue = com.ivanna.omega.safmus.SafmusUniversalKernel
+        .sanitizeControlValue(value, range.start, range.endInclusive) ?: range.start
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, color = TextSecondary, fontSize = 11.sp)
             Text(fmt.format(value), color = AuroraCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Slider(value = value, onValueChange = onChange, valueRange = range,
+        Slider(
+            value = safeValue,
+            onValueChange = { proposed ->
+                com.ivanna.omega.safmus.SafmusUniversalKernel
+                    .sanitizeControlValue(proposed, range.start, range.endInclusive)?.let(onChange)
+            },
+            valueRange = range,
             colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan))
     }
 }

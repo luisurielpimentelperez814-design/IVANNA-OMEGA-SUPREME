@@ -827,6 +827,8 @@ private fun IvannaSlider(
     steps: Int = 0, enabled: Boolean = true,
     onChanged: (Float) -> Unit
 ) {
+    val safeValue = com.ivanna.omega.safmus.SafmusUniversalKernel
+        .sanitizeControlValue(value, min, max) ?: min
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
@@ -839,7 +841,11 @@ private fun IvannaSlider(
             )
         }
         Slider(
-            value = value, onValueChange = onChanged,
+            value = safeValue,
+            onValueChange = { proposed ->
+                com.ivanna.omega.safmus.SafmusUniversalKernel
+                    .sanitizeControlValue(proposed, min, max)?.let(onChanged)
+            },
             valueRange = min..max, steps = steps, enabled = enabled,
             colors = SliderDefaults.colors(
                 thumbColor          = if (enabled) color else TextMuted,
