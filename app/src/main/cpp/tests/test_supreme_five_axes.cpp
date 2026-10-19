@@ -467,7 +467,7 @@ TEST(SofaSafRirMasterKnowledge, TrueStereoXtcDeClipperJilesAthertonAndWpeDerever
 
 
 
-TEST(SAFMUSLatentGuard, RejectsNonFiniteLatentAndPreservesFiniteMasterState) {
+TEST(SAFMUSLatentGuard, RejectsNonFiniteLatentValues) {
     std::array<float, 7> valid{{0.1f, -0.2f, 0.3f, 0.0f, 0.5f, -0.1f, 0.2f}};
     EXPECT_TRUE(ivanna::safmus::isFiniteLatent(valid.data()));
     valid[3] = std::numeric_limits<float>::quiet_NaN();

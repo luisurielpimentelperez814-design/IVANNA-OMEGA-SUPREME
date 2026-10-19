@@ -1,5 +1,6 @@
 #pragma once
 #include "IvannaFusionCore.hpp"
+#include "spatial/SafmusLatentGuard.hpp"
 #include "HRTFBinLoader.hpp"
 #include "hexagon/ivanna_fastrpc_client.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
@@ -71,7 +72,8 @@ public:
     // q[3..6] quedan reservados para morph fino de lóbulos en datasets medidos.
     // Rango esperado: [-1.0, +1.0] por dimensión (salida normalizada del SAF optimizer).
     void setSafLatentQ(const float* q, int size) noexcept {
-        if (!q || size < 1) return;
+        // SAFMUS: validate the complete latent before mutating any HRTF parameter.
+        if (size < 7 || !ivanna::safmus::isFiniteLatent(q)) return;
         // q[0] → curvatura Riemanniana base ±0.15 alrededor del valor por defecto
         const float cur = 0.15f + std::clamp(q[0], -1.f, 1.f) * 0.15f;
         m_intrinsicCurvature.store(cur, std::memory_order_relaxed);

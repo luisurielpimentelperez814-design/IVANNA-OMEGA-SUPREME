@@ -12,6 +12,7 @@
 
 #include "ihr1_format.hpp"
 #include "SofaSafRirMasterKnowledge.hpp"
+#include "SafmusLatentGuard.hpp"
 
 namespace ivanna {
 
@@ -177,6 +178,8 @@ public:
     // cada feedFeedback(); actualiza latentL_/latentR_ que generate()
     // lee de forma segura vía flag atómico latentDirty_.
     void setLatentParams(const float q[7]) noexcept {
+        // SAFMUS: never let NaN/Inf enter the HRTF morph state.
+        if (!ivanna::safmus::isFiniteLatent(q)) return;
         // Normalizar q a [-1,1] usando los rangos ±3σ del optimizador
         // (kPMax[k] ≈ 3*sqrt(kG0[k])). Aproximación suficiente sin cargar
         // el JSON completo en esta capa.

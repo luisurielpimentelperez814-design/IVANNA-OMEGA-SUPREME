@@ -3,6 +3,7 @@
 
 #include "RirConvolver.hpp"
 #include "SofaSafRirMasterKnowledge.hpp"
+#include "SafmusLatentGuard.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -92,6 +93,8 @@ RirConvolver::RirConvolver() {
 }
 
 void RirConvolver::applySofaCoupling(const float q[7]) noexcept {
+    // SAFMUS boundary: retain the previous safe room coupling on invalid input.
+    if (!ivanna::safmus::isFiniteLatent(q)) return;
     float earlyBoost = 1.08f, lateDecorrel = 0.62f, rt60Delta = 0.0f, wetScale = 1.0f;
     ivanna::master::computeSofaRirCoupling(q, earlyBoost, lateDecorrel, rt60Delta, wetScale);
     earlyBoost_.store(earlyBoost, std::memory_order_relaxed);

@@ -2,6 +2,8 @@
 
 #include "SafPcaDecoder.hpp"
 #include "spatial/synthetic_hrtf.hpp"
+#include "spatial/SafmusLatentGuard.hpp"
+#include <cmath>
 
 #include <array>
 
@@ -23,6 +25,7 @@ bool update(
     float azimuth
 )
 {
+    if (!ivanna::safmus::isFiniteLatent(q.data()) || !std::isfinite(azimuth)) return false;
     auto decoded =
         decoder_.decode(
             q.data(),
