@@ -49,6 +49,18 @@ data class SaFState(
 
 // ── Engine ────────────────────────────────────────────────────────────────────
 class SaFEngine(private val context: Context) {
+    companion object {
+        @Volatile private var latestStateSnapshot: SaFState? = null
+
+        /** Last state emitted by an actual SaFEngine instance; null until one initializes. */
+        fun latestTelemetry(): SaFState? = latestStateSnapshot?.let {
+            it.copy(params = it.params.copyOf())
+        }
+    }
+
+    private fun publishLatestState() {
+        latestStateSnapshot = _state.value.copy(params = _state.value.params.copyOf())
+    }
 
     private val _state = MutableStateFlow(SaFState())
     val state: StateFlow<SaFState> = _state.asStateFlow()
@@ -104,8 +116,10 @@ class SaFEngine(private val context: Context) {
                     converged   = conv,
                     phase       = if (conv) SaFPhase.DONE else SaFPhase.IDLE
                 )
+                publishLatestState()
             } else {
                 _state.value = SaFState(jniLoaded = loaded)
+                publishLatestState()
             }
         }
     }
@@ -127,6 +141,7 @@ class SaFEngine(private val context: Context) {
             currentDir = SaFDirection.ordered[0],
             jniLoaded  = IvannaNativeLib.isLoaded
         )
+        publishLatestState()
         // FIX (tonos): emitir el primer estímulo inmediatamente al entrar a
         // CALIBRATING. Sin esto la pantalla renderiza la flecha y el hint pero
         // no se oye nada — el botón CORRECTO/INCORRECTO se convierte en
@@ -220,6 +235,7 @@ class SaFEngine(private val context: Context) {
                 jniLoaded   = IvannaNativeLib.isLoaded,
                 modelLoaded = modelOk
             )
+            publishLatestState()
 
             // FIX (tonos): emitir el estímulo de la siguiente dirección al
             // instante de avançar. Si ya convergió (phase=DONE), silencio.
