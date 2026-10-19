@@ -1,19 +1,19 @@
 #include <gtest/gtest.h>
 #include "agent/AutonomousAcousticTransaction.hpp"
 using namespace ivanna::agent;
-struct Fake { bool applied=false; bool failVerification=false; std::array<float,10> appliedValues{}; };
+struct Fake { bool applied=false; bool failVerification=false; std::array<float,10> appliedValues{}; DecisionRecord last{}; };
 static bool measure(void* p, AcousticSnapshot& s) {
     auto& f=*static_cast<Fake*>(p); s.valid=true;s.confidence=0.95f;s.snrDb.fill(20.f);
     s.levelDb.fill(f.applied&&!f.failVerification?1.f:5.f);return true;
 }
 static bool propose(void*,const AcousticSnapshot&,std::array<float,10>& t){t.fill(-2.f);return true;}
 static bool apply(void* p,const std::array<float,10>& t){auto& f=*static_cast<Fake*>(p);f.applied=true;f.appliedValues=t;return true;}
-static void audit(void* p,const DecisionRecord& r){*static_cast<DecisionRecord*>(p)=r;}
+static void audit(void* p,const DecisionRecord& r){static_cast<Fake*>(p)->last=r;}
 TEST(AutonomousAcousticTransaction, CommitsOnlyAfterMeasuredImprovement) {
     Fake f;DecisionRecord log;AutonomousAcousticTransaction tx;
-    auto result=tx.execute(&f,{},measure,propose,apply,[](void* p,const DecisionRecord& r){*static_cast<DecisionRecord*>(p)=r;},17);
+    auto result=tx.execute(&f,{},measure,propose,apply,audit,17);
     EXPECT_TRUE(result.committed);EXPECT_FALSE(result.rolledBack);EXPECT_EQ(result.record.transactionId,17u);
-    EXPECT_EQ(result.record.decision,"COMMITTED");EXPECT_LT(result.record.afterErrorDb,result.record.beforeErrorDb);
+    EXPECT_EQ(result.record.decision,"COMMITTED");EXPECT_LT(result.record.afterErrorDb,result.record.beforeErrorDb);EXPECT_EQ(f.last.decision,"COMMITTED");
 }
 TEST(AutonomousAcousticTransaction, RollsBackWhenVerificationDoesNotImprove) {
     Fake f;f.failVerification=true;DecisionRecord log;AutonomousAcousticTransaction tx;
