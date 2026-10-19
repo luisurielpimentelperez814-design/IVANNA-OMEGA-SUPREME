@@ -158,6 +158,20 @@ object IvannaSpatialManager {
                     Log.w(TAG, "HRTF no confirmado: solicitado=$requestedSubject, activo=$actualSubject, loaded=$loaded")
                 }
                 synchronized(lock) {
+                    // A UI request can arrive while the native renderer is initializing.
+                    // Re-read the latest complete pose just before publishing readiness.
+                    val latestPose = requestedScenePose.get()
+                    if (upmixer != 0L) {
+                        val poseConfirmed = runCatching {
+                            applyScenePoseToUpmixer(
+                                upmixer, latestPose.azimuthRad,
+                                latestPose.elevationRad, latestPose.distanceScale
+                            ).also { ok ->
+                                if (ok) IvannaSpatialNative.nativeObjectRendererSyncStemObjects(handle, upmixer)
+                            }
+                        }.getOrDefault(false)
+                        if (!poseConfirmed) Log.w(TAG, "pose espacial inicial no confirmada; se mantiene pendiente")
+                    }
                     rendererHandle = handle
                     upmixerHandle = upmixer
                     headTracker = tracker
@@ -276,12 +290,14 @@ object IvannaSpatialManager {
     }
 
     fun setStemPosition(stemType: Int, x: Float, y: Float, z: Float, width: Float) {
-        val h = rendererHandle
-        val u = upmixerHandle
-        if (ready && h != 0L && u != 0L) {
-            runCatching {
-                IvannaSpatialNative.nativeUpmixerSetStemPosition(u, stemType, x, y, z, width)
-                IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
+        synchronized(lock) {
+            val h = rendererHandle
+            val u = upmixerHandle
+            if (ready && h != 0L && u != 0L && stemType in 0..3) {
+                runCatching {
+                    IvannaSpatialNative.nativeUpmixerSetStemPosition(u, stemType, x, y, z, width)
+                    IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
+                }
             }
         }
     }
