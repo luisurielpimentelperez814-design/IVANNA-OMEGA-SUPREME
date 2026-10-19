@@ -506,12 +506,13 @@ class IvannaAssistant(
         val command = decision.commandOverride ?: return
         val scene = memory.lastScene ?: "UNKNOWN"
         scope.launch(Dispatchers.IO) {
-            runCatching { dspOrchestrator.executeCommand(command) }
+            val applied = runCatching { dspOrchestrator.executeCommand(command) }.getOrDefault(false)
             profile.recordAdjustment(command, scene)
-            memory.recordAdjustment(command, decision.reason, applied = true)
-            memory.lastExplanation = decision.reason
+            memory.recordAdjustment(command, decision.reason, applied = applied)
+            memory.lastExplanation = if (applied) decision.reason else "Decisión '$command' generada, pero el DSP no confirmó su aplicación."
             launch(Dispatchers.Main) {
-                val text = decision.warningForUser ?: decision.reason
+                val text = if (applied) decision.warningForUser ?: decision.reason
+                    else "Detecté una necesidad de ajuste, pero no pude confirmar que '$command' se aplicara al DSP."
                 _ui.value = _ui.value.copy(processing = false, statusLine = text)
                 voice.speak(text)
             }
