@@ -143,7 +143,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         content()
-        if (optedIn || active) Surface(
+        if (true) Surface(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
             tonalElevation = 5.dp
@@ -170,12 +170,34 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                         }) {
                             Text("Detener y revocar")
                         }
-                    } else if (optedIn &&
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                         OutlinedButton(onClick = {
+                            userStopped = false
+                            prefs.edit().putBoolean("wifi_sensing_opt_in", true).apply()
+                            optedIn = true
                             locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                         }) {
-                            Text("Conceder permiso Wi-Fi")
+                            Text(if (optedIn) "Conceder permiso Wi-Fi" else "Activar escaneo Wi-Fi")
+                        }
+                    } else if (!optedIn) {
+                        OutlinedButton(onClick = {
+                            userStopped = false
+                            prefs.edit().putBoolean("wifi_sensing_opt_in", true).apply()
+                            optedIn = true
+                            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                active = session.start(consentGranted = true)
+                                if (!active) status = "No se pudo iniciar. Comprueba Wi-Fi, Ubicación y permiso preciso."
+                            }
+                        }) {
+                            Text("Activar escaneo Wi-Fi")
+                        }
+                    } else {
+                        OutlinedButton(onClick = {
+                            userStopped = false
+                            active = session.start(consentGranted = true)
+                            if (!active) status = "No se pudo iniciar. Comprueba Wi-Fi, Ubicación y permiso preciso."
+                        }) {
+                            Text("Reintentar escaneo")
                         }
                     }
                 }
