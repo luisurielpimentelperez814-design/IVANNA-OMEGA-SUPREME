@@ -200,7 +200,7 @@ class MainActivity : ComponentActivity() {
         // Se arranca aquí: el bridge se auto-reconecta en cuanto el daemon
         // bindea, sin intervención del usuario.
         OmegaEngineBridge.startKeepalive()
-        setContent { OmegaApp() }
+        setContent { com.ivanna.omega.ui.AcousticConsentGate { OmegaApp() } }
     }
 
     override fun onDestroy() {
