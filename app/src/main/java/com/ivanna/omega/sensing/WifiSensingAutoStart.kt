@@ -40,6 +40,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
     }
     var status by remember { mutableStateOf("Medición Wi-Fi inactiva.") }
     var active by remember { mutableStateOf(false) }
+    var optedIn by remember { mutableStateOf(prefs.getBoolean("wifi_sensing_opt_in", false)) }
     var observations by remember { mutableStateOf(0) }
     var userStopped by remember { mutableStateOf(false) }
     val session = remember(context) {
@@ -52,7 +53,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
 
     DisposableEffect(lifecycleOwner, session, prefs) {
         fun syncAndStart() {
-            val optedIn = prefs.getBoolean("wifi_sensing_opt_in", false)
+            optedIn = prefs.getBoolean("wifi_sensing_opt_in", false)
             if (optedIn && !userStopped) {
                 active = session.start(consentGranted = true)
             } else {
@@ -94,7 +95,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         content()
-        Surface(
+        if (optedIn || active) Surface(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
             tonalElevation = 5.dp
