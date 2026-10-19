@@ -198,6 +198,14 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
             outRight[n] *= scale;
         }
     }
+
+    // A positive counter is evidence that the actual native object path has
+    // received non-empty objects and completed a render block. It is not a
+    // claim that the input contained audible content or that the output device
+    // physically emitted it.
+    if (numActive > 0 && numObjects > 0) {
+        processedBlockCount_.fetch_add(1, std::memory_order_release);
+    }
 }
 
 void ObjectRenderer::updateVBAPGains(const AudioObject& obj, float gains[kNumVirtualSpeakers]) noexcept {
