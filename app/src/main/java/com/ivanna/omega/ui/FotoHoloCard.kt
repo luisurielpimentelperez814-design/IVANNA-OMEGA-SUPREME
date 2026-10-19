@@ -109,7 +109,23 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             val half = minOf(size.width, size.height) * 0.48f
             val pts = Array(FotoHoloMath.BANDS) { i ->
                 val p = FotoHoloMath.holoPoint(i, tel.bands.getOrElse(i) { 0f }, rotation)
-                floatArrayOf(cx + p[0] * half * (size.width / size.height).coerceIn(1f, 2.2f) * 0.55f, cy + p[1] * half, p[2])
+                val sceneScale = when (selectedScene) {
+                    "Estadio", "Recinto masivo", "Playa / exterior" -> 1.18f
+                    "Sala de mezcla élite", "Estudio de grabación", "Cabina DJ" -> 0.78f
+                    "Instrumento individual" -> 0.52f
+                    "Sala de cine", "Teatro", "Auditorio", "Iglesia" -> 0.92f
+                    else -> 1f
+                }
+                val depthScale = when (selectedScene) {
+                    "Rock 70s", "Rock 80s", "Rock 90s", "Escenario de concierto", "Recinto masivo", "Estadio" -> 1.18f
+                    "Automóvil", "Instrumento individual" -> 0.62f
+                    else -> 1f
+                }
+                floatArrayOf(
+                    cx + p[0] * half * (size.width / size.height).coerceIn(1f, 2.2f) * 0.55f * sceneScale,
+                    cy + p[1] * half * depthScale,
+                    p[2]
+                )
             }
             for (i in pts.indices) {
                 val a = pts[i]
