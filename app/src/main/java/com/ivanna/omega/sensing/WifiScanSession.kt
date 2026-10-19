@@ -90,13 +90,19 @@ class WifiScanSession(
             return false
         }
         if (running) return true
+        val hasFineLocation = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasFineLocation) {
+            emit("Falta el permiso de ubicación precisa para escanear Wi-Fi. Concede el permiso explícitamente; no se usará root para eludir una denegación.", emptyList(), false)
+            return false
+        }
+        if (!isLocationEnabled()) {
+            emit("Activa Ubicación en Android para permitir el escaneo Wi-Fi; no se usará root para eludir esta protección.", emptyList(), false)
+            return false
+        }
         consented = true
         running = true
-
-        val hasFineLocation = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (wifi == null || !appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI) ||
-            !hasFineLocation || !isLocationEnabled()) {
-            emit("Ruta Android no disponible con los permisos/servicios actuales; probando Magisk/root en primer plano.", emptyList(), false)
+        if (wifi == null || !appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI)) {
+            emit("La API Wi-Fi de Android no está disponible en este dispositivo; comprobando únicamente el backend root consentido.", emptyList(), false)
             tryRootFallback()
             scheduleNext()
             return true
@@ -134,6 +140,18 @@ class WifiScanSession(
         emit("Sesión Wi-Fi detenida; no se harán más solicitudes.", emptyList(), false)
     }
 
+    private fun stopWithMessage(message: String) {
+        running = false
+        consented = false
+        handler.removeCallbacks(scanRunnable)
+        handler.removeCallbacks(scanTimeoutRunnable)
+        if (receiverRegistered) {
+            runCatching { appContext.unregisterReceiver(receiver) }
+            receiverRegistered = false
+        }
+        emit(message, emptyList(), false)
+    }
+
     private fun isLocationEnabled(): Boolean = try {
         val lm = appContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm?.isLocationEnabled == true
@@ -148,7 +166,15 @@ class WifiScanSession(
     private fun requestScan() {
         if (!running || !consented) return
         val hasPermission = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!hasPermission || !isLocationEnabled() || wifi == null) {
+        if (!hasPermission) {
+            stopWithMessage("Permiso de ubicación revocado durante el sondeo; sesión detenida sin intentar eludir el permiso.")
+            return
+        }
+        if (!isLocationEnabled()) {
+            stopWithMessage("Ubicación de Android desactivada; sesión detenida hasta que se reactive.")
+            return
+        }
+        if (wifi == null) {
             tryRootFallback()
             scheduleNext()
             return
