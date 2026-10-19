@@ -859,7 +859,7 @@ fun SplashScreen(onAccept: () -> Unit) {
                     fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.height(10.dp))
                 Text("© 2025–2026 Luis Uriel Pimentel Pérez · GORE TNS. " +
-                    "El código propio se distribuye bajo Apache License 2.0 (consulta LICENSE y NOTICE); " +
+                    "IVANNA OMEGA SUPREME es un producto propietario; todos los derechos sobre el código propio quedan reservados. Consulta NOTICE para los avisos de terceros; " +
                     "los componentes y datasets de terceros conservan sus propias licencias. " +
                     "La aplicación puede modificar el pipeline de audio del sistema y requiere permisos específicos. " +
                     "Revisa los permisos y usa el producto bajo tu responsabilidad.",
