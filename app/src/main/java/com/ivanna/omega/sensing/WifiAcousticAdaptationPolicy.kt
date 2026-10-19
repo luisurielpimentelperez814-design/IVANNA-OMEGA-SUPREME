@@ -34,8 +34,17 @@ object WifiAcousticAdaptationPolicy {
         if (scene.level == UniversalWifiSensingAdapter.DataLevel.NO_WIFI) {
             return Decision(Action.NO_ACTION, "No hay observaciones Wi-Fi; conservar el estado de audio.")
         }
+        if (!scene.confidence.isFinite() || scene.confidence !in 0.0..1.0 ||
+            !input.minimumRadioConfidence.isFinite() || input.minimumRadioConfidence !in 0.0..1.0 ||
+            !input.minimumMovementIndicator.isFinite() || input.minimumMovementIndicator !in 0.0..1.0 ||
+            input.acousticCalibrationMaxAgeMs < 0L
+        ) {
+            return Decision(Action.WAIT_FOR_MORE_RADIO_DATA, "Los metadatos o umbrales de sensing no son válidos.")
+        }
         val movement = scene.movementIndicator
-        if (movement == null || scene.occupancy == UniversalWifiSensingAdapter.OccupancyHint.UNKNOWN) {
+        if (movement == null || !movement.isFinite() || movement !in 0.0..1.0 ||
+            scene.occupancy == UniversalWifiSensingAdapter.OccupancyHint.UNKNOWN
+        ) {
             return Decision(Action.WAIT_FOR_MORE_RADIO_DATA, "Falta una referencia temporal Wi-Fi comparable.")
         }
         if (scene.confidence < input.minimumRadioConfidence || movement < input.minimumMovementIndicator) {
