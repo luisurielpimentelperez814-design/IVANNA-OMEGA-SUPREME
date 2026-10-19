@@ -1,4 +1,5 @@
 import { StrictMode, useState } from 'react';
+import './index.css';
 import { createRoot } from 'react-dom/client';
 import { FotoHolo3DGenerator } from './components/FotoHolo3DGenerator';
 import type { DspParameters } from './types';
