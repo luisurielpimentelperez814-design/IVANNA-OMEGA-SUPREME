@@ -1,9 +1,11 @@
 package com.ivanna.omega.fotoholo
 
+import com.ivanna.omega.safmus.SafmusUniversalKernel
+
 /**
- * SAFMUS runtime guard for FotoHolo: deterministic route supervision, not a trained model.
- * Route B has priority when the system-wide effect is registered; Route A may adapt only
- * when B is absent and a fresh, valid in-process Bark frame exists. Otherwise abstain.
+ * Compatibility adapter for FotoHolo. All policy decisions live in the shared
+ * SAFMUS kernel so additional controls and DSP paths can reuse the same gates.
+ * SAFMUS is deterministic supervision, not a trained or perceptually validated model.
  */
 object SafmusRouteSupervisor {
     enum class Route { ROUTE_A, ROUTE_B, NONE }
@@ -19,34 +21,41 @@ object SafmusRouteSupervisor {
         routeAHasValidSignal: Boolean,
         enabled: Boolean,
         bypass: Boolean,
-    ): Decision = when {
-        systemWideEffectActive -> Decision(
-            Route.ROUTE_B, false,
-            "Ruta B global activa; no duplicar procesamiento en Ruta A"
+    ): Decision {
+        val d = SafmusUniversalKernel.decideRoute(
+            SafmusUniversalKernel.RouteEvidence(
+                systemWideEffectActive = systemWideEffectActive,
+                routeASignalValid = routeAHasValidSignal,
+                routeAFrameFresh = routeAHasValidSignal,
+                enabled = enabled,
+                bypass = bypass
+            )
         )
-        routeAHasValidSignal && enabled && !bypass -> Decision(
-            Route.ROUTE_A, true,
-            "Ruta A con señal válida; modulación adaptativa acotada permitida"
-        )
-        routeAHasValidSignal -> Decision(
-            Route.ROUTE_A, false,
-            if (bypass) "Bypass activo; conservar el ancho base"
-            else "Señal válida; modulación desactivada"
-        )
-        else -> Decision(
-            Route.NONE, false,
-            "Sin ruta procesable con evidencia válida; conservar estado seguro"
+        return Decision(
+            route = when (d.route) {
+                SafmusUniversalKernel.Route.ROUTE_A -> Route.ROUTE_A
+                SafmusUniversalKernel.Route.ROUTE_B -> Route.ROUTE_B
+                SafmusUniversalKernel.Route.NONE -> Route.NONE
+            },
+            allowSpectralAdaptation = d.allowSpectralAdaptation,
+            reason = d.reason
         )
     }
 
-    /** Fitness is only an optimizer score; without route + valid signal it cannot authorize activation. */
+    /** Fitness alone cannot authorize activation; Route A, valid signal and safety gates are required. */
     fun mayAcceptEvolutionProposal(
         route: Route,
         signalValid: Boolean,
         fitness: Float,
         headroomValid: Boolean,
-    ): Boolean = route == Route.ROUTE_A &&
-        signalValid &&
-        fitness.isFinite() &&
-        headroomValid
+    ): Boolean = SafmusUniversalKernel.mayAcceptEvolutionProposal(
+        route = when (route) {
+            Route.ROUTE_A -> SafmusUniversalKernel.Route.ROUTE_A
+            Route.ROUTE_B -> SafmusUniversalKernel.Route.ROUTE_B
+            Route.NONE -> SafmusUniversalKernel.Route.NONE
+        },
+        signalValid = signalValid,
+        fitness = fitness,
+        headroomValid = headroomValid
+    )
 }
