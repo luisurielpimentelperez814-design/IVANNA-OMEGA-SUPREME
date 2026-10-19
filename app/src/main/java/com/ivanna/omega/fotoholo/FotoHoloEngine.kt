@@ -269,7 +269,10 @@ object FotoHoloEngine {
                     // aceptada. El recorte térmico puede cambiar sin que cambie el
                     // comando; conservar el último valor haría que la UI mostrara una
                     // confirmación vieja como si describiera el estado actual.
-                    if (lastReturned) {
+                    if (routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_B) {
+                        // El read-back de A no describe el estado global de B.
+                        lastDspWidth = Float.NaN
+                    } else if (lastReturned && routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_A) {
                         lastDspWidth = runCatching { readDspWidth() }.getOrDefault(Float.NaN)
                     }
 
