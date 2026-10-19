@@ -276,6 +276,70 @@ app.post('/api/fotoholo/refine', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Generates an illustrative photorealistic place concept. It does not claim
+ * to be a verified reconstruction of the named location without source imagery.
+ */
+app.post('/api/fotoholo/render-place', async (req: Request, res: Response) => {
+  if (!checkAuth(req)) {
+    res.status(401).json({ error: 'No autorizado.' });
+    return;
+  }
+  const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+  const rate = checkRateLimit(clientIp);
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', String(rate.retryAfterSec));
+    res.status(429).json({ error: 'Límite temporal alcanzado; intenta de nuevo más tarde.' });
+    return;
+  }
+  if (!ai) {
+    res.status(503).json({ error: 'Generación de imagen no disponible: configura GEMINI_API_KEY en el servidor.' });
+    return;
+  }
+  const place = typeof req.body?.place === 'string' ? req.body.place.trim().slice(0, 240) : '';
+  const details = typeof req.body?.details === 'string' ? req.body.details.trim().slice(0, 500) : '';
+  if (place.length < 2) {
+    res.status(400).json({ error: 'Indica un lugar o entorno (2–240 caracteres).' });
+    return;
+  }
+  try {
+    const model = process.env.FOTOHOLO_IMAGE_MODEL || 'gemini-3-pro-image-preview';
+    const response = await ai.models.generateContent({
+      model,
+      contents: [{
+        role: 'user',
+        parts: [{ text:
+          'Create one highly photorealistic, cinematic 16:9 wide image, target image size 4K (3840x2160), of this place or environment: ' + place +
+          '. Additional visual direction: ' + (details || 'natural physically plausible lighting, realistic materials, high-detail architecture, credible perspective') +
+          '. Render as a premium architectural/location visualization with realistic global illumination, detailed surfaces, lens perspective and natural color. Do not add labels, watermarks, UI, text or logos. If the named place is a real specific location and no reference photo is provided, make a plausible illustrative interpretation rather than claiming exact documentary accuracy. This is a visual concept, not verified survey data.'
+        }],
+      }],
+      config: {
+        responseModalities: ['IMAGE', 'TEXT'],
+        imageConfig: { aspectRatio: '16:9', imageSize: '4K' },
+      },
+    });
+    const parts = response.candidates?.flatMap(candidate => candidate.content?.parts ?? []) ?? [];
+    const imagePart = parts.find(part => typeof part.inlineData?.data === 'string' && typeof part.inlineData?.mimeType === 'string' && part.inlineData.mimeType.startsWith('image/'));
+    if (!imagePart?.inlineData?.data || !imagePart.inlineData.mimeType) {
+      res.status(502).json({ error: 'El modelo no devolvió una imagen. Verifica que el modelo y la cuenta admitan generación 4K.' });
+      return;
+    }
+    res.json({
+      mimeType: imagePart.inlineData.mimeType,
+      imageBase64: imagePart.inlineData.data,
+      model,
+      requestedSize: '3840x2160',
+      accuracy: 'illustrative-unverified',
+      note: 'Concepto generado por IA. Para una reconstrucción fiel del lugar se necesita una fotografía o referencia verificable.',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown';
+    console.error('[server] Error en /api/fotoholo/render-place:', message.slice(0, 180));
+    res.status(502).json({ error: 'No se pudo generar la imagen. Comprueba el modelo de imágenes configurado y la cuota del proveedor.' });
+  }
+});
+
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
