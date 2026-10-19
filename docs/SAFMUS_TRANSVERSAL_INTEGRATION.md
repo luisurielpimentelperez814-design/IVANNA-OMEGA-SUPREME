@@ -22,6 +22,12 @@ Each slider, toggle, preset, environment, calibration action, HRTF/HRIR/IHR1 sel
 - No route may infer room geometry, SPL, RT60, or speaker response from genre, a scene label, or a device name.
 - SAFMUS must abstain on stale/conflicting evidence and preserve the last known-safe parameters.
 
+## Implemented safeguards in code
+
+- Shared Kotlin policy is called by the FotoHolo route adapter and the evolutionary fitness panel (telemetry inspection only; not candidate activation).
+- The native finite-latent guard now rejects NaN/Inf at the system-effect HRTF handoff, the SAF app-process snapshot publisher, HrtfManager, SyntheticHRTF, SafSpatialModifier, and RirConvolver::applySofaCoupling. Invalid updates preserve the last valid state instead of poisoning filter parameters.
+- Host regression coverage checks finite versus NaN/Inf latent vectors. These checks establish input integrity, not acoustic quality or proof that every UI control is routed through SAFMUS.
+
 ## Remaining integration work
 
 The shared kernel is an initial central policy boundary. Full universal integration still requires each control/UI environment and both app/system-effect processes to call it; a cross-process state bridge must be explicitly verified rather than inferred from a local snapshot. The native RIR coupling, HRTF read-back, evolutionary candidate validation/activation, and UI read-back must each be audited and tested on their real call paths. No final release should be claimed until Android/JVM/native CI and artifact-to-SHA checks pass.
