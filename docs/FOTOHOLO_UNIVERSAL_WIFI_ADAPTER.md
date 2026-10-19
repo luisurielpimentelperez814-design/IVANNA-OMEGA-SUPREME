@@ -35,3 +35,15 @@ CSI is generated and exposed by the Wi-Fi chipset/firmware/driver path. A generi
 ## Acceptance gate
 
 Do not mark a chipset as CSI-capable until an adapter has captured real CSI and passed repeatability, timestamp, packet-loss, environmental-shift and device-specific tests. Keep the CSI flag false otherwise.
+
+
+## Implemented extension points
+
+- `UniversalWifiSensingAdapter.startCsiSession(...)` starts only a registered, explicitly verified provider supported by the current device, then forwards captured frames to `CsiFeatureExtractor`.
+- `CsiFeatureExtractor` computes amplitude mean/dispersion, median absolute deviation, circular phase coherence, temporal amplitude change and a data-quality score from actual CSI frames. It never synthesizes CSI from RSSI.
+- `WifiSceneReconstruction.evaluate(...)` is a fail-closed gate. A future 3D reconstruction pipeline cannot report itself ready without a device-verified CSI provider, calibration ID, at least four known non-coplanar anchors, synchronized links, a minimum frame set, calibrated range/angle estimates and a versioned model.
+- JVM unit tests cover CSI feature statistics, temporal deltas, invalid frames and reconstruction readiness gates.
+
+## What is still not implemented or proven
+
+No chipset-specific CSI provider is registered by these extension points yet. Consequently, `startCsiSession` correctly returns unavailable on current builds until a real provider is implemented and verified. The reconstruction gate is not itself a 3D reconstruction algorithm; room dimensions, wall materials, person count and anatomy are not produced by the current scan path. Those require a calibrated measurement setup, datasets, model implementation and physical validation. No device-level accuracy or real-time performance is claimed.
