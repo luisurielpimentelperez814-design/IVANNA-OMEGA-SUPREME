@@ -48,6 +48,8 @@ object SafmusRouteSupervisor {
         signalValid: Boolean,
         fitness: Float,
         headroomValid: Boolean,
+        candidateFiniteAndStable: Boolean = false,
+        latencyWithinBudget: Boolean = false,
     ): Boolean = SafmusUniversalKernel.mayAcceptEvolutionProposal(
         route = when (route) {
             Route.ROUTE_A -> SafmusUniversalKernel.Route.ROUTE_A
@@ -56,6 +58,8 @@ object SafmusRouteSupervisor {
         },
         signalValid = signalValid,
         fitness = fitness,
-        headroomValid = headroomValid
+        headroomValid = headroomValid,
+        candidateFiniteAndStable = candidateFiniteAndStable,
+        latencyWithinBudget = latencyWithinBudget
     )
 }

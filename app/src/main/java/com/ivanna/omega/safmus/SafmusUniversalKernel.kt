@@ -140,8 +140,8 @@ object SafmusUniversalKernel {
         signalValid: Boolean,
         fitness: Float,
         headroomValid: Boolean,
-        candidateFiniteAndStable: Boolean = true,
-        latencyWithinBudget: Boolean = true
+        candidateFiniteAndStable: Boolean = false,
+        latencyWithinBudget: Boolean = false
     ): Boolean = route == Route.ROUTE_A &&
         signalValid &&
         fitness.isFinite() &&

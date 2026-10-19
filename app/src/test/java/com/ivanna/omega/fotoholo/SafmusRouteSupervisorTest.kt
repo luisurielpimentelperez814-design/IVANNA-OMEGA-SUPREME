@@ -20,10 +20,16 @@ class SafmusRouteSupervisorTest {
     }
 
     @Test fun evolutionProposalRequiresRouteSignalFiniteFitnessAndHeadroom() {
-        assertTrue(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_A, true, 0.8f, true))
-        assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_B, true, 0.8f, true))
-        assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_A, false, 0.8f, true))
-        assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_A, true, Float.NaN, true))
+        assertTrue(SafmusRouteSupervisor.mayAcceptEvolutionProposal(
+            SafmusRouteSupervisor.Route.ROUTE_A, true, 0.8f, true,
+            candidateFiniteAndStable = true, latencyWithinBudget = true
+        ))
+        assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(
+            SafmusRouteSupervisor.Route.ROUTE_A, true, 0.8f, true
+        )) // default evidence is absent: fail closed
+        assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_B, true, 0.8f, true, true, true))
+        assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_A, false, 0.8f, true, true, true))
+        assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_A, true, Float.NaN, true, true, true))
         assertFalse(SafmusRouteSupervisor.mayAcceptEvolutionProposal(SafmusRouteSupervisor.Route.ROUTE_A, true, 0.8f, false))
     }
 }
