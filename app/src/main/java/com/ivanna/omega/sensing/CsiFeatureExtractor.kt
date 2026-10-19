@@ -1,7 +1,6 @@
 package com.ivanna.omega.sensing
 
 import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -69,9 +68,9 @@ object CsiFeatureExtractor {
         val validAntenna = sample.antennaCount > 0
         val validRate = sample.sampleRateHz > 0
         val quality = (0.5 * (amplitudes.size / 64.0).coerceIn(0.0, 1.0) +
-            0.25 * if (phase != null) 1.0 else 0.0 +
-            0.15 * if (validAntenna) 1.0 else 0.0 +
-            0.10 * if (validRate) 1.0 else 0.0).coerceIn(0.0, 1.0)
+            0.25 * (if (phase != null) 1.0 else 0.0) +
+            0.15 * (if (validAntenna) 1.0 else 0.0) +
+            0.10 * (if (validRate) 1.0 else 0.0)).coerceIn(0.0, 1.0)
 
         return Features(
             sampleCount = amplitudes.size,
