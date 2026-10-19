@@ -113,6 +113,7 @@ jobs:
           run_check kotlin_wrapper_wiring python3 scripts/check_kotlin_wrapper_wiring.py
           run_check header_wiring         python3 scripts/check_header_wiring.py
           run_check rt_safety             python3 scripts/check_rt_safety.py
+          run_check "Fase 0 — verdad de los 10 ejes (10D)" python3 scripts/check_10d_axis_truth.py
           run_check build_flags           python3 scripts/check_build_flags.py
           run_check docs_claims           python3 scripts/check_docs_claims.py
           run_check datasets_deploy       python3 scripts/check_datasets_deploy.py

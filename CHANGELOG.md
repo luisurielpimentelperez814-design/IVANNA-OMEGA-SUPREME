@@ -1,3 +1,14 @@
+## v2.5.84 (versionCode 375) — El APK vuelve a compilar y entra la puerta de verdad de los 10 ejes
+
+### Causa raiz del build roto (reproducida desde el log real de Actions)
+`e: .../app/src/main/java/com/ivanna/omega/ui/SoundScreen.kt:369:77 Unresolved reference 'appContext'.`
+`Execution failed for task ':app:compileReleaseKotlin'` y `BUILD FAILED in 1m 18s` en el job **Build APK & Native Binaries** del run 39270954020 (sha `f209642a`). El commit `f209642a` renombro `val context` a `val appContext` en **un** composable, pero la lectura `PerceptualSceneRuntime.capture(appContext)` vivia dentro del `LaunchedEffect` de **otro** composable: el nombre quedo fuera de ambito. Se declara `val appContext = LocalContext.current` **en el composable correcto**, que es la correccion de raiz (antes se parcheo el sitio equivocado).
+
+### Fase 0 del plan 10D: puerta verificable de verdad de ejes
+Nuevo `scripts/check_10d_axis_truth.py`, deterministico y sin Android SDK, ejecutado en el paso **Fase 0** del workflow *Tests host*: exige 10 ejes en el snapshot de escena, que ningun `AxisState.APPLIED` exista sin variable de confirmacion del motor, que la confirmacion no se hardcodee, que el contrato exponga `DEGRADED`/`UNAVAILABLE`/`ERROR` con marca de tiempo, que el runtime haga lecturas nativas reales y que el roadmap enumere los diez ejes con su Fase 0.
+
+### No verificado aqui
+Compilacion Kotlin/APK y validacion audible en dispositivo: sin Android SDK en el entorno local; lo ejecuta el CI y se confirma por el resultado del workflow.
 ## v2.5.83 (versionCode 374) — Wiring JNI cerrado: verdad del HRTF de respaldo y read-back de stems
 - **Simbolo JNI que faltaba:** `NativeBridge.isHybridMagistralUsingFallbackHrtf()` se declaraba en Kotlin y se usaba desde `PerceptualSceneRuntime` (eje 6 del roadmap 10D), pero **no existia su simbolo C++**: la puerta `check_jni_wiring.py` lo detectaba y tumbaba el job CTest. Ahora se implementa en `ivanna_spatial_jni.cpp` leyendo el **mismo renderizador** del que ya lee `getHybridMagistralTelemetry()`, de modo que la UI recibe el estado real del motor y no una suposicion.
 - **Read-back de la pose de stems:** `nativeUpmixerGetStemPosition` tenia simbolo nativo pero **ningun llamador** (segunda causa del mismo fallo). Se anade `IvannaSpatialManager.readStemPosition()` y se usa dentro de `setStemPosition()` para confirmar lo aplicado con la **misma tolerancia de 0.015** que ya usa el lote nativo. `lastScenePoseWriteConfirmed` deja de ser incondicional y pasa a reflejar un contraste real; "no confirmado" es un estado explicito.

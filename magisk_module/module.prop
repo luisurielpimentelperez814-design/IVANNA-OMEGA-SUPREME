@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.83
-versionCode=374
+version=v2.5.84
+versionCode=375
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.83 (wiring JNI cerrado: simbolo de verdad del HRTF hibrido de respaldo y read-back real de la pose de stems con tolerancia identica a la nativa; 7 puertas estaticas en verde sobre v2.5.82 (sondeo Wi-Fi visual)
+description=v2.5.84 (ambito Kotlin del contexto corregido: el build del APK vuelve a compilar; puerta de verdad de los diez ejes perceptuales del plan 10D en Fase 0 sobre v2.5.83
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

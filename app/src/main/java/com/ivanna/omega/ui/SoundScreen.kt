@@ -311,6 +311,7 @@ private fun BinauralTab(
     prefs: AdaptiveControlsState,
     updatePrefs: ((AdaptiveControlsState) -> AdaptiveControlsState) -> Unit
 ) {
+    val appContext = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
     // Bug B fix — hrtfEnabled derivado del audioState para que re-sincronice
     // si la fuente cambia externamente (no val plana ni remember sin key)
