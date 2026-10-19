@@ -1,9 +1,10 @@
-# CHANGELOG — v2.5.88 (379) — Diagnóstico 10D visible y release verificable
+# CHANGELOG — v2.5.89 (380) — Diagnóstico 10D y CI aislada por SHA
 
 - **Runtime perceptual 10D:** el azimut compara direcciones con distancia angular circular; lecturas de la geometría anterior permanecen visibles como degradadas cuando la última solicitud no queda confirmada.
 - **Interfaz de diagnóstico:** cada uno de los diez ejes muestra su estado y motivo de degradación/no disponibilidad; el resumen también cuenta solicitudes y errores explícitos.
 - **Regresión espacial:** se agregan pruebas para lectura discrepante del renderer híbrido, coincidencia entre ±π, confirmación sin lectura del manager y reverberación sin RIR medida.
 - **CI / release:** las pruebas unitarias JVM son ahora una puerta obligatoria; una etiqueta de release inmutable que no contenga el APK del SHA actual provoca fallo, no éxito aparente.
+- **Cola de CI:** cada SHA de build tiene un grupo de concurrencia propio, de modo que una compilación antigua y lenta no impide validar el candidato actual; la publicación sigue serializada.
 - **Estado honesto:** los ejes que necesitan geometría física calibrada, personalización anatómica, separación semántica o sincronía extremo a extremo permanecen degradados/no disponibles hasta tener evidencia real. No se afirma validación acústica en hardware con esta entrega.
 
 ## v2.5.85 (376) — Inicio desbloqueado

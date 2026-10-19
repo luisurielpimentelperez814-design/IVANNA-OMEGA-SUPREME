@@ -12,10 +12,10 @@ permissions:
   actions: write
 
 concurrency:
-  group: omega-${{ github.ref }}
-  # En main NO se cancela: un push rápido mataba el build antes de publish-release
-  # y los artefactos (APK/zip) nunca llegaban actualizados al Release.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # Aislar por SHA evita que un build viejo/lento bloquee la validación del HEAD.
+  # publish-release conserva su propio grupo serializado para evitar carreras al publicar.
+  group: omega-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 env:
   ANDROID_COMPILE_SDK: "35"
