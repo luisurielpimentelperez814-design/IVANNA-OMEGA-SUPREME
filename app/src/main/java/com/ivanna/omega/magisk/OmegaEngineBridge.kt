@@ -3,6 +3,8 @@ import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.util.Log
 import org.json.JSONObject
+import org.json.JSONArray
+import com.ivanna.omega.safmus.SafmusUniversalKernel
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -201,7 +203,37 @@ object OmegaEngineBridge {
         return ex.reached
     }
 
+    /** SAFMUS boundary: no JSON command carrying NaN/Inf may cross into JNI or the daemon. */
+    private fun hasFiniteNumericValues(value: Any?): Boolean {
+        return when (value) {
+            is Float -> value.isFinite()
+            is Double -> value.isFinite()
+            is JSONObject -> {
+                val keys = value.keys()
+                var valid = true
+                while (keys.hasNext() && valid) {
+                    valid = hasFiniteNumericValues(value.opt(keys.next()))
+                }
+                valid
+            }
+            is JSONArray -> {
+                var valid = true
+                for (i in 0 until value.length()) {
+                    if (!hasFiniteNumericValues(value.opt(i))) { valid = false; break }
+                }
+                valid
+            }
+            is Iterable<*> -> value.all { hasFiniteNumericValues(it) }
+            is Array<*> -> value.all { hasFiniteNumericValues(it) }
+            else -> true
+        }
+    }
+
     fun sendCommand(payload: JSONObject): Boolean {
+        if (!hasFiniteNumericValues(payload)) {
+            Log.w(TAG, "SAFMUS rechazó comando con valor numérico no finito: ${payload.optString("action", "unknown")}")
+            return false
+        }
         val isMainThread = runCatching {
             android.os.Looper.getMainLooper()?.thread === Thread.currentThread()
         }.getOrDefault(false)
@@ -223,6 +255,7 @@ object OmegaEngineBridge {
     }
     @Synchronized
     fun requestCommand(payload: JSONObject): JSONObject? {
+        if (!hasFiniteNumericValues(payload)) return null
         var ex = exchange(payload)
         if (!ex.reached) ex = exchange(payload)
         isConnected = ex.reached
@@ -230,11 +263,22 @@ object OmegaEngineBridge {
         return runCatching { JSONObject(text) }.getOrNull()
     }
 
-    fun setPFParams(vararg params: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
-    fun pushAdaptiveState(targetGain: Float, compAmount: Float, excRed: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ADAPTIVE_STATE"); put("targetGain",targetGain); put("compAmount",compAmount); put("excRed",excRed); put("timestamp",System.currentTimeMillis()) })
+    fun setPFParams(vararg params: Float): Boolean {
+        if (params.any { !it.isFinite() }) return false
+        return sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
+    }
+    fun pushAdaptiveState(targetGain: Float, compAmount: Float, excRed: Float): Boolean {
+        val g = SafmusUniversalKernel.sanitizeControlValue(targetGain, 0f, 2f) ?: return false
+        val c = SafmusUniversalKernel.sanitizeControlValue(compAmount, 0f, 1f) ?: return false
+        val e = SafmusUniversalKernel.sanitizeControlValue(excRed, 0f, 1f) ?: return false
+        return sendCommand(JSONObject().apply { put("action","SET_ADAPTIVE_STATE"); put("targetGain",g); put("compAmount",c); put("excRed",e); put("timestamp",System.currentTimeMillis()) })
+    }
     fun setRoom(rt60S: Float, wet: Float = 0.22f, roomIdx: Int = -1): Boolean {
-        runCatching { nativeSetLocalRoom(rt60S, wet, roomIdx) }
-        return sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60S); put("wet",wet); put("idx",roomIdx) })
+        val rt60 = SafmusUniversalKernel.sanitizeControlValue(rt60S, 0f, 1.5f) ?: return false
+        val safeWet = SafmusUniversalKernel.sanitizeControlValue(wet, 0f, 1f) ?: return false
+        val safeIdx = roomIdx.coerceIn(-1, 199)
+        runCatching { nativeSetLocalRoom(rt60, safeWet, safeIdx) }
+        return sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60); put("wet",safeWet); put("idx",safeIdx) })
     }
     fun disableRoom(): Boolean = setRoom(0f,0f)
     fun getRoomStatus(): JSONObject? = requestCommand(JSONObject().apply { put("action","GET_ROOM_STATUS") })
@@ -329,14 +373,29 @@ object OmegaEngineBridge {
         }
     }
 
-    fun setIntensity(intensity: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity) })
-    fun setIntensity(intensity: Double): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", intensity) })
+    fun setIntensity(intensity: Float): Boolean {
+        val safe = SafmusUniversalKernel.sanitizeControlValue(intensity, 0f, 1f) ?: return false
+        return sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("intensity", safe) })
+    }
+    fun setIntensity(intensity: Double): Boolean {
+        if (!intensity.isFinite()) return false
+        return setIntensity(intensity.toFloat())
+    }
     fun setIntensity(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("args", args.map { it.toString() }) })
 
-    fun setHarmonicGain(gain: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_HARMONIC_GAIN"); put("gain", gain) })
-    fun setHarmonicGain(gain: Double): Boolean = sendCommand(JSONObject().apply { put("action","SET_HARMONIC_GAIN"); put("gain", gain) })
+    fun setHarmonicGain(gain: Float): Boolean {
+        val safe = SafmusUniversalKernel.sanitizeControlValue(gain, 0f, 1f) ?: return false
+        return sendCommand(JSONObject().apply { put("action","SET_HARMONIC_GAIN"); put("gain", safe) })
+    }
+    fun setHarmonicGain(gain: Double): Boolean {
+        if (!gain.isFinite()) return false
+        return setHarmonicGain(gain.toFloat())
+    }
 
-    fun pushSAFState(deltaEnergy: Float, metricNorm: Float, memory: Float, gain: Float): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("deltaEnergy", deltaEnergy); put("metricNorm", metricNorm); put("memory", memory); put("gain", gain) })
+    fun pushSAFState(deltaEnergy: Float, metricNorm: Float, memory: Float, gain: Float): Boolean {
+        if (!deltaEnergy.isFinite() || !metricNorm.isFinite() || !memory.isFinite() || !gain.isFinite()) return false
+        return sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("deltaEnergy", deltaEnergy); put("metricNorm", metricNorm); put("memory", memory); put("gain", gain.coerceIn(0f, 1f)) })
+    }
     /**
      * Envía el vector latente q[7] real de Φ_SAF-Room^∞ (SaFRoomBridge.getParams())
      * al daemon — este es el único punto donde q[7] llega al bus (saf_q en
@@ -345,35 +404,75 @@ object OmegaEngineBridge {
      * enviaba el vector calculado; el DSP nunca recibía la calibración real.
      */
     fun pushSafLatentQ(q: FloatArray, gain: Float = 1.0f): Boolean {
-        if (q.size < 7) return false
-        runCatching { nativePushLocalSafLatent(q, gain) }
+        if (q.size < 7 || q.take(7).any { !it.isFinite() }) return false
+        val safeGain = SafmusUniversalKernel.sanitizeControlValue(gain, 0f, 1f) ?: return false
+        val safeQ = FloatArray(7) { i -> q[i].coerceIn(-1f, 1f) }
+        runCatching { nativePushLocalSafLatent(safeQ, safeGain) }
         return sendCommand(JSONObject().apply {
             put("action", "PUSH_SAF_STATE")
-            put("q", org.json.JSONArray(q.take(7)))
-            put("gain", gain)
+            put("q", JSONArray(safeQ.toList()))
+            put("gain", safeGain)
         })
     }
     fun pushSAFState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("state", json) })
     fun pushSAFState(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("args", args.map { it.toString() }) })
 
-    fun sendPerceptualState(compressor: Float, exciterRed: Float, highCut: Float, spatialWidth: Float, loudnessTarget: Float, harmonicGain: Float, antiDolby: Float): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("compressor", compressor); put("exciterRed", exciterRed); put("highCut", highCut); put("spatialWidth", spatialWidth); put("loudnessTarget", loudnessTarget); put("harmonicGain", harmonicGain); put("antiDolby", antiDolby) })
+    fun sendPerceptualState(compressor: Float, exciterRed: Float, highCut: Float, spatialWidth: Float, loudnessTarget: Float, harmonicGain: Float, antiDolby: Float): Boolean {
+        val comp = SafmusUniversalKernel.sanitizeControlValue(compressor, -24f, 0f) ?: return false
+        val exciter = SafmusUniversalKernel.sanitizeControlValue(exciterRed, 0f, 1f) ?: return false
+        val cutoff = SafmusUniversalKernel.sanitizeControlValue(highCut, 1000f, 24000f) ?: return false
+        val width = SafmusUniversalKernel.sanitizeControlValue(spatialWidth, 0f, 2f) ?: return false
+        val loudness = SafmusUniversalKernel.sanitizeControlValue(loudnessTarget, -30f, -5f) ?: return false
+        val harmonic = SafmusUniversalKernel.sanitizeControlValue(harmonicGain, 0f, 1f) ?: return false
+        val anti = SafmusUniversalKernel.sanitizeControlValue(antiDolby, 0f, 1f) ?: return false
+        return sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("compressor", comp); put("exciterRed", exciter); put("highCut", cutoff); put("spatialWidth", width); put("loudnessTarget", loudness); put("harmonicGain", harmonic); put("antiDolby", anti) })
+    }
     fun sendPerceptualState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("state", json) })
     fun sendPerceptualState(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("args", args.map { it.toString() }) })
 
     fun setRouteProfile(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("profile", json) })
-    fun setRouteProfile(a: Float, b: Float, c: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("a", a); put("b", b); put("c", c) })
-    fun setRouteProfile(a: Float, b: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("a", a); put("b", b) })
-    fun setRouteProfile(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("args", args.map { it.toString() }) })
+    fun setRouteProfile(a: Float, b: Float, c: Float): Boolean {
+        if (!a.isFinite() || !b.isFinite() || !c.isFinite()) return false
+        return sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("a", a); put("b", b); put("c", c) })
+    }
+    fun setRouteProfile(a: Float, b: Float): Boolean {
+        if (!a.isFinite() || !b.isFinite()) return false
+        return sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("a", a); put("b", b) })
+    }
+    fun setRouteProfile(vararg args: Any): Boolean {
+        if (args.any { it is Float && !it.isFinite() || it is Double && !it.isFinite() }) return false
+        return sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("args", args.map { it.toString() }) })
+    }
 
-    fun pushYamnetScores(speech: Float, music: Float, classId: Int, confidence: Float): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("speech", speech); put("music", music); put("classId", classId); put("confidence", confidence) })
-    fun pushYamnetScores(speech: Float, music: Float, classId: Float, confidence: Float): Boolean = pushYamnetScores(speech, music, classId.toInt(), confidence)
+    fun pushYamnetScores(speech: Float, music: Float, classId: Int, confidence: Float): Boolean {
+        val s = SafmusUniversalKernel.sanitizeControlValue(speech, 0f, 1f) ?: return false
+        val m = SafmusUniversalKernel.sanitizeControlValue(music, 0f, 1f) ?: return false
+        val conf = SafmusUniversalKernel.sanitizeControlValue(confidence, 0f, 1f) ?: return false
+        return sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("speech", s); put("music", m); put("classId", classId.coerceAtLeast(0)); put("confidence", conf) })
+    }
+    fun pushYamnetScores(speech: Float, music: Float, classId: Float, confidence: Float): Boolean =
+        if (!classId.isFinite()) false else pushYamnetScores(speech, music, classId.toInt(), confidence)
     fun pushYamnetScores(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", json) })
-    fun pushYamnetScores(scores: FloatArray): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores.toList()) })
-    fun pushYamnetScores(scores: List<Float>): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores) })
-    fun pushYamnetScores(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("args", args.map { it.toString() }) })
+    fun pushYamnetScores(scores: FloatArray): Boolean {
+        if (scores.any { !it.isFinite() }) return false
+        return sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores.map { it.coerceIn(0f, 1f) }) })
+    }
+    fun pushYamnetScores(scores: List<Float>): Boolean {
+        if (scores.any { !it.isFinite() }) return false
+        return sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("scores", scores.map { it.coerceIn(0f, 1f) }) })
+    }
+    fun pushYamnetScores(vararg args: Any): Boolean {
+        if (args.any { it is Float && !it.isFinite() || it is Double && !it.isFinite() }) return false
+        return sendCommand(JSONObject().apply { put("action","PUSH_YAMNET_SCORES"); put("args", args.map { it.toString() }) })
+    }
 
     fun setPinnaMetrics(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("metrics", json) })
-    fun setPinnaMetrics(width: Float, height: Float, depth: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("width", width); put("height", height); put("depth", depth) })
+    fun setPinnaMetrics(width: Float, height: Float, depth: Float): Boolean {
+        val w = SafmusUniversalKernel.sanitizeControlValue(width, 20f, 45f) ?: return false
+        val h = SafmusUniversalKernel.sanitizeControlValue(height, 50f, 80f) ?: return false
+        val d = SafmusUniversalKernel.sanitizeControlValue(depth, 15f, 35f) ?: return false
+        return sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("width", w); put("height", h); put("depth", d) })
+    }
     fun setPinnaMetrics(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("args", args.map { it.toString() }) })
 
     /**
