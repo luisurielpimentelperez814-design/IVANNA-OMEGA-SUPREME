@@ -210,7 +210,7 @@ ghp_...REDACTADO-COMPROMETIDO...
 - ❌ Dolby: Parámetros estáticos
 - ✅ IVANNA: Precision 0.01m
 - ❌ Dolby: Object-based (menos preciso)
-- ✅ IVANNA: Transparente (open-source)
+- ✅ IVANNA: Transparente (producto propietario; evaluación técnica interna)
 - ❌ Dolby: Caja negra
 
 ### vs DTS:X
@@ -311,7 +311,7 @@ IVANNA OMEGA SUPREME es ahora un **producto de clase profesional**:
 ✅ **Limpio**: Soft clipping sin aliasing  
 ✅ **Espacial**: HRTF brillante y definida  
 ✅ **Eficiente**: CPU mínimo overhead  
-✅ **Transparente**: Open-source auditable  
+✅ **Transparente**: Producto propietario con documentación técnica  
 
 **Listo para competir contra Dolby/DTS en el mercado Android.**
 
