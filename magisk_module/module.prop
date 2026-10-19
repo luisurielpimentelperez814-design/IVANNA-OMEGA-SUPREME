@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.85
-versionCode=376
+version=v2.5.86
+versionCode=377
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.85: corrige bloqueo visual de inicio por panel FotoHolo Wi-Fi persistente
+description=v2.5.86: endurece confirmación de escena 10D y puertas de release
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

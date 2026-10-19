@@ -1,6 +1,15 @@
-# CHANGELOG — v2.5.85 (376) — Inicio desbloqueado
+# CHANGELOG — v2.5.86 (377) — Verdad de escena 10D y release verificable
+
+- **Runtime perceptual 10D:** el azimut compara direcciones con distancia angular circular; lecturas de la geometría anterior permanecen visibles como degradadas cuando la última solicitud no queda confirmada.
+- **Regresión espacial:** se agregan pruebas para lectura discrepante del renderer híbrido, coincidencia entre ±π, confirmación sin lectura del manager y reverberación sin RIR medida.
+- **CI / release:** las pruebas unitarias JVM son ahora una puerta obligatoria; una etiqueta de release inmutable que no contenga el APK del SHA actual provoca fallo, no éxito aparente.
+- **Estado honesto:** los ejes que necesitan geometría física calibrada, personalización anatómica, separación semántica o sincronía extremo a extremo permanecen degradados/no disponibles hasta tener evidencia real. No se afirma validación acústica en hardware con esta entrega.
+
+## v2.5.85 (376) — Inicio desbloqueado
 
 - **UI / Wi-Fi sensing:** se elimina el panel blanco fijo que se superponía a toda la app al iniciar. El panel de FotoHolo Wi-Fi solo aparece cuando el usuario habilitó explícitamente el sondeo o la sesión está activa; con el consentimiento opcional desactivado, no tapa la pantalla de inicio ni el botón «ACEPTAR E INICIAR».
+- **Privacidad:** el sondeo sigue sujeto al consentimiento explícito y permisos de Android; no se habilita automáticamente por este arreglo.
+
 - **Privacidad:** el sondeo sigue sujeto al consentimiento explícito y permisos de Android; no se habilita automáticamente por este arreglo.
 
 ## v2.5.84 (versionCode 375) — El APK vuelve a compilar y entra la puerta de verdad de los 10 ejes
