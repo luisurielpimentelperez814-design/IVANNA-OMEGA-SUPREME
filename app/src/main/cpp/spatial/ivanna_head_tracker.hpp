@@ -20,6 +20,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <mutex>
 
 namespace ivanna::spatial {
 
@@ -100,13 +101,30 @@ public:
     // Llamado desde hilo de sensor (Java/Kotlin) a ~100Hz
     void update(const float rotationVector[4], float timestampMs) noexcept;
 
-    // Llamado desde hilo de audio a ~96000Hz — interpolación suave
+    // Coherent, bounded-cost read for the audio callback. It uses atomic fields
+    // and never takes the sensor/control mutex.
+    HeadPose getLatestPose() const noexcept;
+
+    // Compatibility entry point. The supplied frame time historically used a
+    // block-duration clock, while sensor timestamps use Android boot time.
+    // Until both clocks share a real origin, always return the latest coherent pose.
     HeadPose getPoseForAudioFrame(float audioFrameTimeMs) const noexcept;
 
-    // Reset cuando el usuario se quita los auriculares
+    // Reset when the user pauses tracking or removes headphones.
     void reset() noexcept;
 
 private:
+    mutable std::mutex writerMutex_;
+    std::atomic<uint32_t> latestPoseSequence_{0};
+    std::atomic<float> latestX_{0.f};
+    std::atomic<float> latestY_{0.f};
+    std::atomic<float> latestZ_{0.f};
+    std::atomic<float> latestW_{1.f};
+    std::atomic<float> latestTimestampMs_{0.f};
+    std::atomic<float> latestConfidence_{1.f};
+
+    // Legacy state kept for ABI/source compatibility; reads for the active
+    // renderer use the coherent atomic snapshot above.
     HeadPose currentPoseSlots_[2]{};
     std::atomic<uint32_t> activePoseSlot_{0};
     HeadPose previousPose_{};
