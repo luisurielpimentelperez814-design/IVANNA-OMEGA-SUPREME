@@ -86,10 +86,22 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
             syncAndStart()
         }
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "wifi_sensing_opt_in" && !prefs.getBoolean("wifi_sensing_opt_in", false)) {
-                session.stop()
-                active = false
-                status = "Consentimiento Wi-Fi revocado; medición detenida."
+            if (key == "wifi_sensing_opt_in") {
+                val consentEnabled = prefs.getBoolean("wifi_sensing_opt_in", false)
+                optedIn = consentEnabled
+                if (consentEnabled) {
+                    // Un consentimiento nuevo explícito debe poder reactivar la sesión
+                    // en el mismo ciclo de vida; userStopped solo bloquea hasta esta acción.
+                    userStopped = false
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        active = session.start(consentGranted = true)
+                        if (!active) status = "Consentimiento guardado; el sondeo no pudo iniciarse."
+                    }
+                } else {
+                    session.stop()
+                    active = false
+                    status = "Consentimiento Wi-Fi revocado; medición detenida."
+                }
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
