@@ -77,7 +77,7 @@ class FotoHoloTelemetryBridge(context: Context) {
             return
         }
         val now = SystemClock.elapsedRealtime()
-        if (now - lastAiRequestMs < 8_000L || !aiInFlight.compareAndSet(false, true)) {
+        if ((lastAiRequestMs > 0L && now - lastAiRequestMs < 8_000L) || !aiInFlight.compareAndSet(false, true)) {
             deliverAiResult(JSONObject().put("requestId", requestId).put("error", "ai-rate-limited"))
             return
         }
@@ -139,10 +139,10 @@ class FotoHoloTelemetryBridge(context: Context) {
     private fun deliverAiResult(payload: JSONObject) {
         val encoded = JSONObject.quote(payload.toString())
         Handler(Looper.getMainLooper()).post {
-            webViewRef?.get()?.evaluateJavascript(
+            runCatching { webViewRef?.get()?.evaluateJavascript(
                 "window.dispatchEvent(new CustomEvent('ivanna-fotoholo-ai-result',{detail:JSON.parse($encoded)}));",
                 null
-            )
+            ) }
         }
     }
     @Volatile private var viewerCounted = false
