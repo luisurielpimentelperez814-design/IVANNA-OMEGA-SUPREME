@@ -446,7 +446,8 @@ object IvannaSpatialManager {
                 kotlin.math.abs(actual[0] - expected.x) > 0.02f ||
                 kotlin.math.abs(actual[1] - expected.y) > 0.02f ||
                 kotlin.math.abs(actual[2] - expected.z) > 0.02f ||
-                kotlin.math.abs(actual[3] - expected.width) > 0.02f
+                kotlin.math.abs(actual[3] - expected.width) > 0.02f ||
+                kotlin.math.abs(actual[4] - expected.gain) > 0.02f
             ) return false
         }
         return true
@@ -459,16 +460,17 @@ object IvannaSpatialManager {
         distanceScale: Float
     ): Boolean {
         if (upmixer == 0L) return false
-        val positions = FloatArray(baseStemPositions.size * 4)
+        val positions = FloatArray(baseStemPositions.size * 5)
         for (stem in baseStemPositions.indices) {
             val pose = SpatialScenePoseMath.transform(
                 baseStemPositions[stem], azimuthRad, elevationRad, distanceScale
             ) ?: return false
-            val offset = stem * 4
+            val offset = stem * 5
             positions[offset] = pose.x
             positions[offset + 1] = pose.y
             positions[offset + 2] = pose.z
             positions[offset + 3] = pose.width
+            positions[offset + 4] = pose.gain
         }
         return IvannaSpatialNative.nativeUpmixerSetStemPositions(upmixer, positions)
     }
