@@ -34,6 +34,9 @@ object IvannaSpatialNative {
     @JvmStatic external fun nativeObjectRendererDestroy(handle: Long)
     @JvmStatic external fun nativeObjectRendererSetHeadTracker(rendererHandle: Long, trackerHandle: Long)
     @JvmStatic external fun nativeObjectRendererSetReverb(handle: Long, level: Float)
+    @JvmStatic external fun nativeObjectRendererGetReverbLevel(handle: Long): Float
+    @JvmStatic external fun nativeObjectRendererIsRirActive(handle: Long): Boolean
+    @JvmStatic external fun nativeObjectRendererGetRoomRT60(handle: Long): Float
     @JvmStatic external fun nativeObjectRendererRenderBlock(
         handle: Long, objectsBuffer: java.nio.FloatBuffer, numObjects: Int,
         outLeftBuffer: java.nio.FloatBuffer, outRightBuffer: java.nio.FloatBuffer, numFrames: Int
@@ -58,6 +61,7 @@ object IvannaSpatialNative {
     @JvmStatic external fun nativeUpmixerDestroy(handle: Long)
     @JvmStatic external fun nativeUpmixerProcess(handle: Long, inBuffer: java.nio.FloatBuffer, outBuffer: java.nio.FloatBuffer, numFrames: Int)
     @JvmStatic external fun nativeUpmixerSetEnabled(handle: Long, enabled: Boolean)
+    @JvmStatic external fun nativeUpmixerIsEnabled(handle: Long): Boolean
     @JvmStatic external fun nativeUpmixerSetStemPosition(handle: Long, stemType: Int, x: Float, y: Float, z: Float, width: Float)
     /** Atomically validate, publish and read back four [x,y,z,width] stem poses (16 floats). */
     @JvmStatic external fun nativeUpmixerSetStemPositions(handle: Long, positions: FloatArray): Boolean
