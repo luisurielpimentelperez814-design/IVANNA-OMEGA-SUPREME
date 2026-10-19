@@ -1,7 +1,6 @@
 package com.ivanna.omega.ui
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
