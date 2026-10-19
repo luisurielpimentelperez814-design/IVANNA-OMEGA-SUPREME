@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.80 (371) — Daemon estable, HRTF que sobrevive al giro de pantalla, scroll del panel
+
+1. **Daemon «Caído / Corriendo» parpadeando cada segundo y comandos perdidos:** el daemon atiende UN comando por conexión y la cierra; la app reutilizaba un canal persistente, así que el 2.º comando escribía en un socket cerrado (isConnected=false y comando perdido) y el siguiente reconectaba (true). Ahora cada comando abre su conexión (loopback, con un reintento). El estado deja de alternar y ya no se pierde uno de cada dos comandos hacia la Ruta B.
+2. **HRTF «Renderer no inicializado»:** `MainActivity.onDestroy` liberaba el renderer HRTF, el motor adaptativo y la SHM también al girar la pantalla, pero `IvannaSpatialManager.init` solo corría una vez al crear el proceso. Ahora no se libera en cambios de configuración y `init` (idempotente) se reintenta al abrir la Activity.
+3. **Scroll del panel Spatial:** el WebView toma el alto real de su contenido (se quitó `min-height:100vh` de la página embebida) y un enrutador de gestos manda los arrastres verticales al panel y los toques/arrastres horizontales a la escena (botones, selectores, sliders, órbita). Desaparece el botón «INTERACTUAR / BLOQUEAR». Límite: sin pellizco ni órbita vertical con un dedo (usa el slider «Inclinación»).
+4. Incluye lo de 2.5.79: causa real del 403 de Gemini y sondeo Wi-Fi robusto.
+5. **No verificado aquí:** compilación y prueba en teléfono (lo cubre el CI del APK); el comportamiento del scroll, del daemon y de la HRTF solo se confirma en el dispositivo.
+
+---
+
 # CHANGELOG — v2.5.79 (370) — Gemini con causa real del error y sondeo Wi-Fi robusto
 
 1. **Gemini en FotoHolo (antes: «HTTP 403» sin explicación):** ahora se intenta primero Firebase AI Logic (la misma vía del asistente) y luego REST con la clave guardada. Si Google rechaza, se lee el cuerpo del error y se muestra la causa real (clave restringida a otra app Android, API no habilitada, clave bloqueada por filtración, cuota, región). La clave viaja en header (ya no en la URL), se limpia de espacios/comillas/saltos de línea al guardarla y se envían los headers `X-Android-Package`/`X-Android-Cert` para claves restringidas a apps Android. Cadena de modelos 2.5-flash → 2.5-flash-lite → 2.0-flash solo ante 404/429/503.

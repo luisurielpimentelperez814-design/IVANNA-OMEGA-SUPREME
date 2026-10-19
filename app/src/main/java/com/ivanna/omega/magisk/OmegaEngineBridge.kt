@@ -185,27 +185,20 @@ object OmegaEngineBridge {
         }
     }
 
+    /**
+     * FIX (estado del daemon parpadeando cada segundo, comandos perdidos): el daemon atiende UN
+     * comando por conexión y la cierra (command_server.cpp: close(cfd) tras responder). La app
+     * reutilizaba un «canal persistente»: el 1.er comando iba bien, el 2.º escribía en un socket ya
+     * cerrado (EPIPE / read=-1) → isConnected=false y el comando se perdía; el siguiente reconectaba
+     * → true. Resultado: «Corriendo · SHM lista» ↔ «Caído o sin root» y la mitad de los comandos
+     * sin entregar. Ahora cada comando usa su propia conexión (barata en loopback) con un reintento.
+     */
     @Synchronized
     private fun sendCommandBlocking(payload: JSONObject): Boolean {
-        return try {
-            val t0 = System.nanoTime()
-            val socket = ensureSocket()?: return false
-            val frame = payload.toString() + "\n"
-            socket.output.write(frame.toByteArray(Charsets.UTF_8))
-            socket.output.flush()
-            val buffer = ByteArray(4096)
-            val bytesRead = socket.input.read(buffer)
-            val t1 = System.nanoTime()
-            lastLatencyMs = (t1 - t0) / 1_000_000f
-            isConnected = bytesRead > 0
-            isConnected
-        } catch (e: Exception) {
-            Log.w(TAG, "sendCommand error: ${e.message}")
-            isConnected = false
-            runCatching { persistentChannel?.close() }
-            persistentChannel = null
-            false
-        }
+        var ex = exchange(payload)
+        if (!ex.reached) ex = exchange(payload)   // el daemon pudo reiniciarse entre sondas
+        isConnected = ex.reached
+        return ex.reached
     }
 
     fun sendCommand(payload: JSONObject): Boolean {
@@ -230,24 +223,11 @@ object OmegaEngineBridge {
     }
     @Synchronized
     fun requestCommand(payload: JSONObject): JSONObject? {
-        return try {
-            val t0 = System.nanoTime()
-            val socket = ensureSocket()?: return null
-            val frame = payload.toString() + "\n"
-            socket.output.write(frame.toByteArray(Charsets.UTF_8))
-            socket.output.flush()
-            val buffer = ByteArray(4096)
-            val bytesRead = socket.input.read(buffer)
-            val t1 = System.nanoTime()
-            lastLatencyMs = (t1 - t0) / 1_000_000f
-            isConnected = bytesRead > 0
-            if (isConnected) JSONObject(String(buffer, 0, bytesRead, Charsets.UTF_8)) else null
-        } catch (e: Exception) {
-            isConnected = false
-            runCatching { persistentChannel?.close() }
-            persistentChannel = null
-            null
-        }
+        var ex = exchange(payload)
+        if (!ex.reached) ex = exchange(payload)
+        isConnected = ex.reached
+        val text = ex.reply ?: return null
+        return runCatching { JSONObject(text) }.getOrNull()
     }
 
     fun setPFParams(vararg params: Float): Boolean = sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
@@ -289,8 +269,13 @@ object OmegaEngineBridge {
      * comando JSON y lee la respuesta completa balanceando llaves. Sin canal
      * persistente → imposible que quede stale. Cierra siempre.
      */
+    /** reached = se pudo abrir la conexión y entregar el comando; reply = respuesta JSON (si la hubo). */
+    private class Exchange(val reached: Boolean, val reply: String?)
+
+    private fun queryDaemonEphemeral(payload: JSONObject): String? = exchange(payload).reply
+
     @Synchronized
-    private fun queryDaemonEphemeral(payload: JSONObject): String? {
+    private fun exchange(payload: JSONObject): Exchange {
         val t0 = System.nanoTime()
         val channel: Channel = runCatching {
             val sock = LocalSocket()
@@ -305,7 +290,7 @@ object OmegaEngineBridge {
                 s.tcpNoDelay = true
                 TcpChannel(s)
             }.getOrNull()
-        } ?: return null
+        } ?: return Exchange(false, null)
         try {
             channel.output.write(payload.toString().toByteArray(Charsets.UTF_8))
             channel.output.flush()
@@ -327,7 +312,7 @@ object OmegaEngineBridge {
                         '{' -> { depth++; started = true }
                         '}' -> if (started && --depth == 0) {
                             lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
-                            return sb.toString()
+                            return Exchange(true, sb.toString())
                         }
                     }
                 }
@@ -335,10 +320,10 @@ object OmegaEngineBridge {
             }
             val raw = sb.toString().trim()
             lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
-            return if (raw.isNotEmpty()) raw else null
+            return Exchange(true, if (raw.isNotEmpty()) raw else null)
         } catch (e: Exception) {
-            Log.w(TAG, "queryDaemonEphemeral error: ${e.message}")
-            return null
+            Log.w(TAG, "exchange error: ${e.message}")
+            return Exchange(false, null)
         } finally {
             runCatching { channel.close() }
         }

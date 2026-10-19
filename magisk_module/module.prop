@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.79
-versionCode=370
+version=v2.5.80
+versionCode=371
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.79 (Gemini con causa real del error y sondeo Wi-Fi robusto)
+description=v2.5.80 (daemon estable, HRTF tras girar pantalla, scroll del panel, Gemini y Wi-Fi)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

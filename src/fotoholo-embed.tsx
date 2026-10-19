@@ -15,7 +15,7 @@ const initial: DspParameters = {
 
 function EmbeddedFotoHolo() {
   const [params, setParams] = useState<DspParameters>(initial);
-  return <main style={{ minHeight: '100vh', padding: 8, background: '#060a12' }}>
+  return <main style={{ padding: 8, background: '#060a12' }}>
     <FotoHolo3DGenerator params={params} onParamChange={(key, value) => {
       setParams(previous => ({ ...previous, [key]: value }));
     }} />

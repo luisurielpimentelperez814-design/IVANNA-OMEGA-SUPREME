@@ -4,6 +4,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -219,22 +220,69 @@ fun SpatialAudioPanel(
                 runCatching { holoWebView.destroy() }
             }
         }
-        // La escena WebGL consumía todos los gestos y bloqueaba el scroll del panel.
-        // Por defecto una capa transparente deja pasar el arrastre vertical al panel;
-        // el usuario activa la interacción 3D explícitamente.
-        var holoInteractive by remember { mutableStateOf(false) }
-        androidx.compose.material3.TextButton(onClick = { holoInteractive = !holoInteractive }) {
-            Text(if (holoInteractive) "BLOQUEAR ESCENA (volver a desplazar)" else "INTERACTUAR CON ESCENA 3D", color = AuroraCyan, fontSize = 11.sp)
-        }
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(if (holoInteractive) 560.dp else 420.dp)) {
-            AndroidView(factory = { holoWebView }, modifier = Modifier.matchParentSize())
-            if (!holoInteractive) {
-                androidx.compose.foundation.layout.Box(
-                    Modifier.matchParentSize().pointerInput(Unit) {
-                        awaitPointerEventScope { while (true) awaitPointerEvent() }
-                    }
-                )
+        // FIX (scroll del panel): la página embebida es larga (escena + controles + telemetría) y vivía
+        // en una caja de alto fijo con scroll PROPIO dentro del WebView: arrastrar con el dedo movía la
+        // página interna, no el panel, y el resto (HRTF, RIR…) quedaba inalcanzable. Ahora (1) el
+        // WebView toma el alto real de su contenido, así que no hay scroll interno, y (2) un
+        // enrutador de gestos decide por arrastre: vertical → desplaza el panel; toque y arrastre
+        // horizontal → se reenvían al WebView (botones, selectores, sliders, órbita 3D).
+        var holoHeightDp by remember { mutableStateOf(420) }
+        androidx.compose.runtime.LaunchedEffect(holoWebView) {
+            while (true) {
+                kotlinx.coroutines.delay(700)
+                holoWebView.evaluateJavascript(
+                    "(function(){var b=document.body,d=document.documentElement;" +
+                        "return Math.max(b?b.scrollHeight:0,d?d.scrollHeight:0);})()"
+                ) { raw ->
+                    val h = raw?.trim('"')?.toDoubleOrNull() ?: return@evaluateJavascript
+                    val target = h.coerceIn(420.0, 7000.0).toInt()
+                    if (kotlin.math.abs(target - holoHeightDp) > 6) holoHeightDp = target
+                }
             }
+        }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(holoHeightDp.dp)) {
+            AndroidView(factory = { holoWebView }, modifier = Modifier.matchParentSize())
+            androidx.compose.foundation.layout.Box(
+                Modifier.matchParentSize().pointerInput(holoWebView) {
+                    val slop = viewConfiguration.touchSlop
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val downTime = android.os.SystemClock.uptimeMillis()
+                            fun send(action: Int, x: Float, y: Float) {
+                                val ev = android.view.MotionEvent.obtain(
+                                    downTime, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+                                holoWebView.dispatchTouchEvent(ev)
+                                ev.recycle()
+                            }
+                            // 0 = sin decidir, 1 = reenviando al WebView, 2 = cedido al scroll del panel
+                            var mode = 0
+                            send(android.view.MotionEvent.ACTION_DOWN, down.position.x, down.position.y)
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    if (mode != 2) send(android.view.MotionEvent.ACTION_UP, change.position.x, change.position.y)
+                                    break
+                                }
+                                val dx = change.position.x - down.position.x
+                                val dy = change.position.y - down.position.y
+                                if (mode == 0 && (kotlin.math.abs(dx) > slop || kotlin.math.abs(dy) > slop)) {
+                                    if (kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
+                                        mode = 2
+                                        send(android.view.MotionEvent.ACTION_CANCEL, change.position.x, change.position.y)
+                                    } else mode = 1
+                                }
+                                if (mode == 1) {
+                                    send(android.view.MotionEvent.ACTION_MOVE, change.position.x, change.position.y)
+                                    change.consume()
+                                }
+                                // mode 2: sin consumir → el verticalScroll del panel recibe el arrastre.
+                            }
+                        }
+                    }
+                }
+            )
         }
 
         // ── HRTF ──────────────────────────────────────────────────────────

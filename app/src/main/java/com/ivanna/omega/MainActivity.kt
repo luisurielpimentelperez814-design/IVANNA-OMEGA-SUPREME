@@ -200,11 +200,19 @@ class MainActivity : ComponentActivity() {
         // Se arranca aquí: el bridge se auto-reconecta en cuanto el daemon
         // bindea, sin intervención del usuario.
         OmegaEngineBridge.startKeepalive()
+        // Idempotente: si el renderer HRTF se liberó (cierre real de la Activity con el proceso vivo) se
+        // vuelve a crear aquí; si ya está listo o en curso no hace nada.
+        com.ivanna.omega.spatial.IvannaSpatialManager.init(applicationContext)
         setContent { com.ivanna.omega.ui.AcousticConsentGate { OmegaApp() } }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        // FIX (HRTF «Renderer no inicializado» tras girar la pantalla): onDestroy también corre en
+        // cada cambio de configuración (rotación), pero el proceso y la Application siguen vivos y
+        // IvannaSpatialManager.init() solo se llamaba UNA vez en Application.onCreate → tras el primer
+        // giro el renderer HRTF, el motor adaptativo y la SHM se destruían y nunca volvían.
+        if (isChangingConfigurations) return
         runCatching { com.ivanna.omega.spatial.IvannaSpatialManager.release() }
         runCatching { ShmManager.release() }
         if (IvannaNativeLib.isLoaded) {
