@@ -151,7 +151,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         content()
-        if (true) Surface(
+        if (optedIn || active) Surface(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
             tonalElevation = 5.dp
