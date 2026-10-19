@@ -241,7 +241,10 @@ object ShmManager {
             val realSize = runCatching { android.system.Os.fstat(dupPfd.fileDescriptor).st_size.toInt() }
                 .also { runCatching { dupPfd.close() } }
                 .getOrDefault(SHM_SIZE_FALLBACK_V1).coerceAtLeast(SHM_SIZE_FALLBACK_V1)
-            val buf = nativeMapSharedFd(nativeFd.fileDescriptor, realSize)
+            // Transferir el descriptor entero a JNI. detachFd() evita que el
+            // ParcelFileDescriptor intente cerrar después un fd ya consumido por mmap.
+            val mappingFd = nativeFd.detachFd()
+            val buf = nativeMapSharedFd(mappingFd, realSize)
             if (buf == null) {
                 Log.e(TAG, "mmap del fd del daemon fallo (¿falta regla SELinux adb_data_file?)")
             } else {
