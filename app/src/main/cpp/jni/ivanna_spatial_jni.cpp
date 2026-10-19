@@ -234,6 +234,19 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSyncStemOb
     renderer->setObjects(objects);
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetObjectPosition(
+    JNIEnv* env, jclass, jlong rendererHandle, jint objectIndex) {
+    auto* renderer = toObjectRenderer(rendererHandle);
+    if (!renderer) return nullptr;
+    ivanna::spatial::AudioObject object{};
+    if (!renderer->getActiveObjectSnapshot(objectIndex, object)) return nullptr;
+    const jfloat values[5] = {object.x, object.y, object.z, object.width, object.gain};
+    jfloatArray result = env->NewFloatArray(5);
+    if (result) env->SetFloatArrayRegion(result, 0, 5, values);
+    return result;
+}
+
 // ============================================================================
 // NeuralUpmixer JNI
 // ============================================================================
