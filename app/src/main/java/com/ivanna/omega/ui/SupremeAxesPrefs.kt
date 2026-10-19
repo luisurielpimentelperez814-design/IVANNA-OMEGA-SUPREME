@@ -1,5 +1,7 @@
 package com.ivanna.omega.ui
 
+import com.ivanna.omega.safmus.SafmusUniversalKernel
+
 import android.content.Context
 import android.os.Process
 import com.ivanna.omega.core.NativeBridge
@@ -65,6 +67,32 @@ object SupremeAxesPrefs {
     private val _stateFlow = MutableStateFlow(SupremeAxesState())
     val stateFlow: StateFlow<SupremeAxesState> = _stateFlow.asStateFlow()
 
+    /** Canonical numeric boundary shared by persistence, Route A and Route B. */
+    private fun sanitizeState(input: SupremeAxesState): SupremeAxesState {
+        val d = SupremeAxesState()
+        fun safe(value: Float, min: Float, max: Float, fallback: Float): Float =
+            SafmusUniversalKernel.sanitizeControlValue(value, min, max) ?: fallback
+        return input.copy(
+            warpedLatticeBlDrive = safe(input.warpedLatticeBlDrive, 0f, 1f, d.warpedLatticeBlDrive),
+            warpedLatticeLambda = safe(input.warpedLatticeLambda, 0.50f, 0.85f, d.warpedLatticeLambda),
+            transharmonicHarmonicGain = safe(input.transharmonicHarmonicGain, 0f, 1f, d.transharmonicHarmonicGain),
+            transharmonicImdCancel = safe(input.transharmonicImdCancel, 0f, 1f, d.transharmonicImdCancel),
+            transharmonicAnalogTapeDrive = safe(input.transharmonicAnalogTapeDrive, 0f, 1f, d.transharmonicAnalogTapeDrive),
+            snnHoaImmersivity = safe(input.snnHoaImmersivity, 0f, 1f, d.snnHoaImmersivity),
+            snnSpikeThreshold = safe(input.snnSpikeThreshold, 0.15f, 1.50f, d.snnSpikeThreshold),
+            pinnaManifoldWetMix = safe(input.pinnaManifoldWetMix, 0f, 1f, d.pinnaManifoldWetMix),
+            pinnaConchaDepth = safe(input.pinnaConchaDepth, -1f, 1f, d.pinnaConchaDepth),
+            pinnaHelixCurl = safe(input.pinnaHelixCurl, -1f, 1f, d.pinnaHelixCurl),
+            pinnaHeadWidth = safe(input.pinnaHeadWidth, -1f, 1f, d.pinnaHeadWidth),
+            msoItdNanoseconds = safe(input.msoItdNanoseconds, -50000f, 50000f, d.msoItdNanoseconds),
+            realityIntensity = safe(input.realityIntensity, 0f, 1f, d.realityIntensity),
+            personalHeadRadiusM = safe(input.personalHeadRadiusM, 0.070f, 0.110f, d.personalHeadRadiusM),
+            personalPinnaDepthM = safe(input.personalPinnaDepthM, 0.010f, 0.030f, d.personalPinnaDepthM),
+            personalElevationBiasDeg = safe(input.personalElevationBiasDeg, -25f, 25f, d.personalElevationBiasDeg),
+            personalTransducerType = input.personalTransducerType.coerceIn(0, 3)
+        )
+    }
+
     fun load(context: Context): SupremeAxesState {
         val p = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val d = SupremeAxesState()
@@ -118,7 +146,8 @@ object SupremeAxesPrefs {
     @Volatile private var pendingSaveJob: kotlinx.coroutines.Job? = null
 
     fun save(context: Context, s: SupremeAxesState) {
-        _stateFlow.value = s
+        val safeState = sanitizeState(s)
+        _stateFlow.value = safeState
         val appCtx = context.applicationContext
         pendingSaveJob?.cancel()
         pendingSaveJob = ioScope.launch {
@@ -164,28 +193,29 @@ object SupremeAxesPrefs {
      * Sincroniza asíncronamente los 5 Ejes con `ivanna_daemon` -> `OmegaControlBus` -> `omega_effect.so` (Ruta B).
      */
     fun pushToDaemonRutaB(s: SupremeAxesState) {
+        val safeState = sanitizeState(s)
         ioScope.launch {
             runCatching {
                 OmegaEngineBridge.pushSupremeAxesState(
-                    warpedLatticeEnabled      = s.warpedLatticeEnabled,
-                    warpedLatticeMicroChirp   = s.warpedLatticeMicroChirp,
-                    warpedLatticeBlDrive      = s.warpedLatticeBlDrive,
-                    warpedLatticeLambda       = s.warpedLatticeLambda,
-                    transharmonicCvnnEnabled  = s.transharmonicCvnnEnabled,
-                    transharmonicHarmonicGain = s.transharmonicHarmonicGain,
-                    transharmonicImdCancel    = s.transharmonicImdCancel,
-                    transharmonicAnalogTapeDrive = s.transharmonicAnalogTapeDrive,
-                    snnHoaUpmixerEnabled      = s.snnHoaUpmixerEnabled,
-                    snnHoaImmersivity         = s.snnHoaImmersivity,
-                    snnSpikeThreshold         = s.snnSpikeThreshold,
-                    pinnaManifoldEnabled      = s.pinnaManifoldEnabled,
-                    pinnaManifoldWetMix       = s.pinnaManifoldWetMix,
-                    pinnaConchaDepth          = s.pinnaConchaDepth,
-                    pinnaHelixCurl            = s.pinnaHelixCurl,
-                    pinnaHeadWidth            = s.pinnaHeadWidth,
-                    farrowMsoEnabled          = s.farrowMsoEnabled,
-                    msoItdNanoseconds         = s.msoItdNanoseconds,
-                    ebpfBypassActive          = s.ebpfBypassActive
+                    warpedLatticeEnabled      = safeState.warpedLatticeEnabled,
+                    warpedLatticeMicroChirp   = safeState.warpedLatticeMicroChirp,
+                    warpedLatticeBlDrive      = safeState.warpedLatticeBlDrive,
+                    warpedLatticeLambda       = safeState.warpedLatticeLambda,
+                    transharmonicCvnnEnabled  = safeState.transharmonicCvnnEnabled,
+                    transharmonicHarmonicGain = safeState.transharmonicHarmonicGain,
+                    transharmonicImdCancel    = safeState.transharmonicImdCancel,
+                    transharmonicAnalogTapeDrive = safeState.transharmonicAnalogTapeDrive,
+                    snnHoaUpmixerEnabled      = safeState.snnHoaUpmixerEnabled,
+                    snnHoaImmersivity         = safeState.snnHoaImmersivity,
+                    snnSpikeThreshold         = safeState.snnSpikeThreshold,
+                    pinnaManifoldEnabled      = safeState.pinnaManifoldEnabled,
+                    pinnaManifoldWetMix       = safeState.pinnaManifoldWetMix,
+                    pinnaConchaDepth          = safeState.pinnaConchaDepth,
+                    pinnaHelixCurl            = safeState.pinnaHelixCurl,
+                    pinnaHeadWidth            = safeState.pinnaHeadWidth,
+                    farrowMsoEnabled          = safeState.farrowMsoEnabled,
+                    msoItdNanoseconds         = safeState.msoItdNanoseconds,
+                    ebpfBypassActive          = safeState.ebpfBypassActive
                 )
             }
         }
@@ -197,57 +227,58 @@ object SupremeAxesPrefs {
      * Operación 100% lock-free y noexcept.
      */
     fun applyToNative(s: SupremeAxesState) {
+        val safeState = sanitizeState(s)
         // EJE 1: Warped Lattice Transducer Inverter
-        NativeBridge.safeSetWarpedLatticeLambda(s.warpedLatticeLambda)
-        NativeBridge.safeSetWarpedLatticeBlDrive(s.warpedLatticeBlDrive)
-        NativeBridge.safeSetWarpedLatticeMicroChirp(s.warpedLatticeMicroChirp)
-        NativeBridge.safeSetWarpedLatticeEnabled(s.warpedLatticeEnabled)
+        NativeBridge.safeSetWarpedLatticeLambda(safeState.warpedLatticeLambda)
+        NativeBridge.safeSetWarpedLatticeBlDrive(safeState.warpedLatticeBlDrive)
+        NativeBridge.safeSetWarpedLatticeMicroChirp(safeState.warpedLatticeMicroChirp)
+        NativeBridge.safeSetWarpedLatticeEnabled(safeState.warpedLatticeEnabled)
 
         // EJE 2: Phase-Coherent Transharmonic Synthesizer (CVNN + DDSP + Cinta 2" Jiles-Atherton)
-        NativeBridge.safeSetTransharmonicHarmonicGain(s.transharmonicHarmonicGain)
-        NativeBridge.safeSetTransharmonicImdCancel(s.transharmonicImdCancel)
-        NativeBridge.safeSetTransharmonicAnalogTapeDrive(s.transharmonicAnalogTapeDrive)
-        NativeBridge.safeSetTransharmonicCvnnEnabled(s.transharmonicCvnnEnabled)
+        NativeBridge.safeSetTransharmonicHarmonicGain(safeState.transharmonicHarmonicGain)
+        NativeBridge.safeSetTransharmonicImdCancel(safeState.transharmonicImdCancel)
+        NativeBridge.safeSetTransharmonicAnalogTapeDrive(safeState.transharmonicAnalogTapeDrive)
+        NativeBridge.safeSetTransharmonicCvnnEnabled(safeState.transharmonicCvnnEnabled)
 
         // EJE 3: SNN INT8 + Online NMF -> 4th Order HOA Upmixer
-        NativeBridge.safeSetSnnHoaImmersivity(s.snnHoaImmersivity)
-        NativeBridge.safeSetSnnSpikeThreshold(s.snnSpikeThreshold)
-        NativeBridge.safeSetSnnHoaUpmixerEnabled(s.snnHoaUpmixerEnabled)
-        if (s.snnSchedFifoPromoted) {
+        NativeBridge.safeSetSnnHoaImmersivity(safeState.snnHoaImmersivity)
+        NativeBridge.safeSetSnnSpikeThreshold(safeState.snnSpikeThreshold)
+        NativeBridge.safeSetSnnHoaUpmixerEnabled(safeState.snnHoaUpmixerEnabled)
+        if (safeState.snnSchedFifoPromoted) {
             NativeBridge.safePromoteSnnThreadToSchedFifo(85)
         }
 
         // EJE 4: Pinna Manifold INR-SDF + 32-Tap Minimum-Phase FIR
-        NativeBridge.safeCalibratePinnaManifold(s.pinnaConchaDepth, s.pinnaHelixCurl, s.pinnaHeadWidth)
-        NativeBridge.safeSetPinnaManifoldWetMix(s.pinnaManifoldWetMix)
-        NativeBridge.safeSetPinnaManifoldEnabled(s.pinnaManifoldEnabled)
+        NativeBridge.safeCalibratePinnaManifold(safeState.pinnaConchaDepth, safeState.pinnaHelixCurl, safeState.pinnaHeadWidth)
+        NativeBridge.safeSetPinnaManifoldWetMix(safeState.pinnaManifoldWetMix)
+        NativeBridge.safeSetPinnaManifoldEnabled(safeState.pinnaManifoldEnabled)
 
         // EJE 5: SHM Lock-Free CAS Arbitrator + 5th-Order Farrow MSO Delay
-        NativeBridge.safeSetMsoItdNanoseconds(s.msoItdNanoseconds)
-        NativeBridge.safeSetEbpfBypassActive(s.ebpfBypassActive)
-        NativeBridge.safeSetFarrowMsoEnabled(s.farrowMsoEnabled)
+        NativeBridge.safeSetMsoItdNanoseconds(safeState.msoItdNanoseconds)
+        NativeBridge.safeSetEbpfBypassActive(safeState.ebpfBypassActive)
+        NativeBridge.safeSetFarrowMsoEnabled(safeState.farrowMsoEnabled)
         val pid = runCatching { Process.myPid() }.getOrDefault(1001)
-        if (s.shmArbitrationLockedByApp) {
+        if (safeState.shmArbitrationLockedByApp) {
             NativeBridge.safeAcquireShmArbitration(pid)
         }
 
         // ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE (Fases 1–8)
-        NativeBridge.safeSetRealityIntensity(s.realityIntensity)
+        NativeBridge.safeSetRealityIntensity(safeState.realityIntensity)
         NativeBridge.safeSetPersonalAuditoryProfile(
-            headRadiusM      = s.personalHeadRadiusM,
-            pinnaDepthM      = s.personalPinnaDepthM,
-            elevationBiasDeg = s.personalElevationBiasDeg,
-            transducerType   = s.personalTransducerType,
+            headRadiusM      = safeState.personalHeadRadiusM,
+            pinnaDepthM      = safeState.personalPinnaDepthM,
+            elevationBiasDeg = safeState.personalElevationBiasDeg,
+            transducerType   = safeState.personalTransducerType,
             sensitivityScore = 1.0f
         )
-        NativeBridge.safeSetRealityReconstructionEnabled(s.realityReconstructionEnabled)
+        NativeBridge.safeSetRealityReconstructionEnabled(safeState.realityReconstructionEnabled)
         NativeBridge.safeSetRoomProjectionParams(
-            inversionGain = (0.40f * s.realityIntensity).coerceIn(0f, 1f),
-            projectionWet = (0.25f * s.realityIntensity).coerceIn(0f, 1f)
+            inversionGain = (0.40f * safeState.realityIntensity).coerceIn(0f, 1f),
+            projectionWet = (0.25f * safeState.realityIntensity).coerceIn(0f, 1f)
         )
         NativeBridge.safeSetPhysicalSceneParams(
             occlusionFactor = 0.0f,
-            wallAbsorption  = (0.30f + 0.15f * s.realityIntensity).coerceIn(0.05f, 0.95f)
+            wallAbsorption  = (0.30f + 0.15f * safeState.realityIntensity).coerceIn(0.05f, 0.95f)
         )
         NativeBridge.safeSetHearingAdaptationParams(
             earTipSeal      = 1.0f,
@@ -263,7 +294,7 @@ object SupremeAxesPrefs {
         ioScope.launch {
             runCatching {
                 com.ivanna.omega.magisk.MagiskBridge.sendCommand(
-                    "{\"action\":\"SET_REALITY_RECONSTRUCTION\",\"enabled\":${if (s.realityReconstructionEnabled) "true" else "false"},\"intensity\":${s.realityIntensity}}"
+                    "{\"action\":\"SET_REALITY_RECONSTRUCTION\",\"enabled\":${if (safeState.realityReconstructionEnabled) "true" else "false"},\"intensity\":${safeState.realityIntensity}}"
                 )
             }
         }
