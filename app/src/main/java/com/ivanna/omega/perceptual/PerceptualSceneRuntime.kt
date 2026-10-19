@@ -99,13 +99,21 @@ object PerceptualSceneRuntime {
             (e.hybridWet ?: 0f) > 0.001f
         val hybridAzimuthRad = e.hybridAzimuthDeg?.let { Math.toRadians(it.toDouble()).toFloat() }
         val hybridElevationRad = e.hybridElevationDeg?.let { Math.toRadians(it.toDouble()).toFloat() }
+        // Compare azimuth on the circle, not as a linear scalar: +pi and -pi
+        // represent the same direction and must not create a false degradation.
+        fun angularDistanceRad(a: Float, b: Float): Float {
+            val delta = (a - b).toDouble()
+            return kotlin.math.abs(
+                kotlin.math.atan2(kotlin.math.sin(delta), kotlin.math.cos(delta)).toFloat()
+            )
+        }
         val hybridAzimuthMatches = hybridSpatialActive && hybridAzimuthRad != null &&
-            kotlin.math.abs(hybridAzimuthRad - e.requestedAzimuthRad) <= 0.02f
+            angularDistanceRad(hybridAzimuthRad, e.requestedAzimuthRad) <= 0.02f
         val hybridElevationMatches = hybridSpatialActive && hybridElevationRad != null &&
             kotlin.math.abs(hybridElevationRad - e.requestedElevationRad) <= 0.02f
         val managerPoseConfirmed = e.poseConfirmed && e.effectiveAzimuthRad != null
         val managerAzimuthMatches = managerPoseConfirmed &&
-            kotlin.math.abs(e.effectiveAzimuthRad!! - e.requestedAzimuthRad) <= 0.02f
+            angularDistanceRad(e.effectiveAzimuthRad!!, e.requestedAzimuthRad) <= 0.02f
         val azimuthConfirmed = hybridAzimuthMatches ||
             (managerAzimuthMatches && !hybridSpatialActive)
         // Vertical source placement alone is not equivalent to an elevated HRTF.
