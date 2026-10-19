@@ -16,6 +16,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import java.io.ByteArrayInputStream
 import androidx.webkit.WebViewAssetLoader
 import com.ivanna.omega.fotoholo.FotoHoloTelemetryBridge
 import androidx.compose.ui.text.font.FontWeight
@@ -193,8 +195,11 @@ fun SpatialAudioPanel(
                 isHorizontalScrollBarEnabled = false
                 setBackgroundColor(android.graphics.Color.rgb(6, 10, 18))
                 webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) =
-                        assetLoader.shouldInterceptRequest(request.url)
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                        // Serve only this app's bundled assets; block every non-bundled subresource.
+                        return assetLoader.shouldInterceptRequest(request.url)
+                            ?: WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                    }
 
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val uri = request.url
