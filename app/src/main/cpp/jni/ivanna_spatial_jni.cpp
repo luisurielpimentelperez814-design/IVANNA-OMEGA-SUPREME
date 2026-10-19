@@ -1050,4 +1050,18 @@ Java_com_ivanna_omega_core_NativeBridge_getHybridMagistralTelemetry(JNIEnv* env,
     return outArr;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_NativeBridge_isHybridMagistralUsingFallbackHrtf(JNIEnv*, jclass) {
+    // Verdad del MOTOR, no de la UI. Se consulta el MISMO renderizador del que lee
+    // getHybridMagistralTelemetry(), y HybridRenderer::usingFallbackHrtf() es true
+    // mientras el ultimo juego de filtros NO provino de HRIR medidos (incluido el
+    // estado inicial: sin un calculo previo no hay evidencia de HRTF medida). Es la
+    // senal honesta que el eje 6 (Personalizacion HRTF) del roadmap 10D necesita para
+    // no presentar un fallback como personalizacion del usuario.
+    const bool fallback = ivanna::spatial::IvannaAudioPipeline::getActiveInstance()
+                              .hybridMagistralRenderer()
+                              .usingFallbackHrtf();
+    return fallback ? JNI_TRUE : JNI_FALSE;
+}
+
 } // extern "C"

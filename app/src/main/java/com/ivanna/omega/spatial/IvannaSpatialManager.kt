@@ -494,6 +494,31 @@ object IvannaSpatialManager {
         }
     }
 
+    /**
+     * Lectura del estado REAL del motor nativo (read-back). Devuelve null si el
+     * upmixer no esta listo o el indice es invalido: "no confirmado" es un estado
+     * explicito; una orden de la UI nunca se presenta como aplicacion confirmada.
+     */
+    fun readStemPosition(stemType: Int): FloatArray? {
+        val u = upmixerHandle
+        if (!ready || u == 0L || stemType !in 0..3) return null
+        return runCatching {
+            IvannaSpatialNative.nativeUpmixerGetStemPosition(u, stemType)
+        }.getOrNull()
+    }
+
+    /** Contraste pedido vs aplicado con la MISMA tolerancia que usa el lote nativo (0.015). */
+    private fun scenePoseMatches(
+        actual: FloatArray?, x: Float, y: Float, z: Float, width: Float
+    ): Boolean {
+        if (actual == null || actual.size < 4) return false
+        val tol = 0.015f
+        return kotlin.math.abs(actual[0] - x) <= tol &&
+            kotlin.math.abs(actual[1] - y) <= tol &&
+            kotlin.math.abs(actual[2] - z) <= tol &&
+            kotlin.math.abs(actual[3] - width) <= tol
+    }
+
     fun setStemPosition(stemType: Int, x: Float, y: Float, z: Float, width: Float) {
         synchronized(lock) {
             val h = rendererHandle
@@ -502,7 +527,9 @@ object IvannaSpatialManager {
                 runCatching {
                     IvannaSpatialNative.nativeUpmixerSetStemPosition(u, stemType, x, y, z, width)
                     IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
-                    lastScenePoseWriteConfirmed = false
+                    lastScenePoseWriteConfirmed = scenePoseMatches(
+                        readStemPosition(stemType), x, y, z, width
+                    )
                 }
             }
         }

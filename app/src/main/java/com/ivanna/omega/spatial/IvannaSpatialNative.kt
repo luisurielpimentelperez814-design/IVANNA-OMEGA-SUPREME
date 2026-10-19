@@ -68,7 +68,7 @@ object IvannaSpatialNative {
     /** Atomically validate, publish and read back four [x,y,z,width] stem poses (16 floats). */
     @JvmStatic external fun nativeUpmixerSetStemPositions(handle: Long, positions: FloatArray): Boolean
     /** Native read-back: [x, y, z, width, gain] for the active stem position. */
-    @JvmStatic external fun nativeUpmixerGetStemPosition(handle: Long, stemType: Int): FloatArray
+    @JvmStatic external fun nativeUpmixerGetStemPosition(handle: Long, stemType: Int): FloatArray?
     @JvmStatic external fun nativeUpmixerReset(handle: Long)
 
     // ═══ Eje Supremo Neuroacústico: Inversión Biomecánica Coclear (PINN) ═══

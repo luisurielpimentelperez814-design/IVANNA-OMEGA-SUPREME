@@ -1,3 +1,10 @@
+## v2.5.83 (versionCode 374) — Wiring JNI cerrado: verdad del HRTF de respaldo y read-back de stems
+- **Simbolo JNI que faltaba:** `NativeBridge.isHybridMagistralUsingFallbackHrtf()` se declaraba en Kotlin y se usaba desde `PerceptualSceneRuntime` (eje 6 del roadmap 10D), pero **no existia su simbolo C++**: la puerta `check_jni_wiring.py` lo detectaba y tumbaba el job CTest. Ahora se implementa en `ivanna_spatial_jni.cpp` leyendo el **mismo renderizador** del que ya lee `getHybridMagistralTelemetry()`, de modo que la UI recibe el estado real del motor y no una suposicion.
+- **Read-back de la pose de stems:** `nativeUpmixerGetStemPosition` tenia simbolo nativo pero **ningun llamador** (segunda causa del mismo fallo). Se anade `IvannaSpatialManager.readStemPosition()` y se usa dentro de `setStemPosition()` para confirmar lo aplicado con la **misma tolerancia de 0.015** que ya usa el lote nativo. `lastScenePoseWriteConfirmed` deja de ser incondicional y pasa a reflejar un contraste real; "no confirmado" es un estado explicito.
+- **Correccion de tipo:** la declaracion devolvia `FloatArray` no nulo aunque el nativo devuelve `nullptr` para handle o stem invalidos; ahora es `FloatArray?` y el llamador lo trata como nullable (sin NPE en la frontera JNI).
+- Alinea version Android y modulo Magisk en v2.5.83 / 374 y sincroniza las insignias de README y LEAME.
+- **No verificado aqui:** compilacion Kotlin/APK (sin Android SDK en el entorno; lo cubre el CI) y validacion audible/latencia en hardware real.
+
 # Changelog — IVANNA OMEGA SUPREME
 
 ## v2.5.82 (versionCode 373) — Sondeo Wi-Fi visual
