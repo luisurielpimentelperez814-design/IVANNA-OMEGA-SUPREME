@@ -316,7 +316,7 @@ export default function App() {
         )}
         {activeTab === 'reality_hyperengine' && (
           <div className="space-y-6">
-            <FotoHolo3DGenerator />
+            <FotoHolo3DGenerator params={params} onParamChange={handleParamChange} />
             <AcousticRealityPanel params={params} onParamChange={handleParamChange} />
           </div>
         )}
