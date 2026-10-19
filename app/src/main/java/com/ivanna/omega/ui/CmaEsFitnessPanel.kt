@@ -110,7 +110,7 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
         GlassCard("512-BAND GENOME ENGINE  LM-CMA-ES EVOLUTIONARY FIR EQUALIZER", PhosphorGreen,
             subtitle = "256-Tap time-domain FIR · covariance adaptation · smooth phase penalization") {
             val stateColor = when { isRunning -> PhosphorGreen; currentGen > 0 -> AmberSignal; else -> TextMuted }
-            val stateLabel = when { isRunning -> "EVOLUTION RUNNING"; currentGen > 0 -> "CONVERGIDO gen. $currentGen"; else -> "EN ESPERA" }
+            val stateLabel = when { isRunning -> "EVOLUTION RUNNING"; currentGen > 0 -> "SIN AVANCE · gen. $currentGen"; else -> "EN ESPERA" }
             Box(Modifier.fillMaxWidth().height(40.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(stateColor.copy(0.12f))
