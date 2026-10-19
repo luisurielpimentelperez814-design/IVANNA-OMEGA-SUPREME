@@ -2651,3 +2651,12 @@ U+FFFD (conversión de texto UTF-8). Recuperado: 216 `.sofa` (208 del historial 
 `.sofa` pasan firma + EOF del superbloque + checksum lookup3 con `scripts/hdf5_integrity.py`). Retirado: `pca_basis_V.bin` (huérfano, sin consumidores,
 medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.py`; el runtime usa `ivanna_omega/pca_basis.bin`, íntegro).
 **RESUELTO:** `anti_dolby_crnn.tflite` restaurado e íntegro (reentrenado con el pipeline canónico log-mel `[1,32,40,1]` y 4 clases: Voz, Música, Bajos, Silencio; 0 secuencias U+FFFD, ops TFLite estándar; la puerta 0.6 lo verifica al 100% sin excepciones).
+
+### 🔒 TOMADO — Diagnóstico remoto + análisis IA autorizado (2026-10-18, PR #75)
+**Rama:** `feat/live-diagnostic-connector`. No fusionar ni declarar conexión remota verificada hasta CI completo y prueba E2E real.
+
+- Reutiliza `OEMTelemetry` y `IvannaAgentCore`; envío opt-in cada 15 s, HTTPS + bearer token, sin audio ni identificadores personales.
+- Servicio `diagnostic-bridge/server.mjs`: `POST /v1/diagnostics`, `GET /v1/diagnostics/latest`, y `POST /v1/diagnostics/analyze`. El análisis llama a OpenAI Responses API con `OPENAI_API_KEY` exclusivamente como secreto del servidor; la app nunca recibe la clave API.
+- UI de Sistema incorpora solicitud manual de análisis IA. La IA solo recomienda y distingue evidencia de hipótesis; no ejecuta reparaciones.
+- El puente no es una conexión a esta conversación ChatGPT ni comparte la memoria/cuenta de ChatGPT. Es integración separada con OpenAI API, requiere despliegue HTTPS y clave API válida (pueden aplicarse cargos).
+- Pruebas: workflow de puente pasó en SHA anterior; tests ampliados y CI Android tras la integración siguen pendientes de resultado. No se ha desplegado el servidor, ni probado dispositivo físico, ni verificado una llamada real a OpenAI. Mantener esta salvedad hasta obtener evidencia.
