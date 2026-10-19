@@ -314,6 +314,12 @@ fun SystemHubScreen(
                             Text("Permitir envío remoto", modifier = Modifier.weight(1f))
                             Switch(checked = diagnosticEnabled, onCheckedChange = { diagnosticEnabled = it })
                         }
+                        TextButton(onClick = {
+                            diagnosticMessage = "Solicitando análisis de la última telemetría…"
+                            LiveDiagnosticConnector.requestAnalysis(context) { diagnosticMessage = it }
+                        }, enabled = diagnosticEnabled) {
+                            Text("Analizar último diagnóstico con IA")
+                        }
                         if (diagnosticMessage.isNotBlank()) Text(diagnosticMessage, color = MaterialTheme.colorScheme.error)
                     }
                 },
