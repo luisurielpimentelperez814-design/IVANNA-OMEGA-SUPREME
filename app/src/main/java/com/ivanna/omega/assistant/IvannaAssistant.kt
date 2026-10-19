@@ -199,6 +199,8 @@ class IvannaAssistant(
                     "bass_boost"    -> IvannaLanguageCore.AcousticIntent.BASS_BOOST
                     "treble_reduce" -> IvannaLanguageCore.AcousticIntent.TREBLE_REDUCE
                     "optimize"      -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
+                    "auto_optimize" -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
+                    "self_heal"     -> IvannaLanguageCore.AcousticIntent.SELF_HEAL
                     "diagnose"      -> IvannaLanguageCore.AcousticIntent.DIAGNOSE
                     "musical_intent"-> IvannaLanguageCore.AcousticIntent.MUSICAL_INTENT
                     else -> null
@@ -458,9 +460,10 @@ class IvannaAssistant(
                         agentReply ?: IvannaLanguageCore.spokenResponse(parsed)
                     else
                         IvannaLanguageCore.spokenResponse(parsed)
+                    val applied = runCatching { dspOrchestrator.executeCommand(command) }.getOrDefault(false)
                     profile.recordAdjustment(command, scene ?: "UNKNOWN")
-                    memory.recordAdjustment(command, "usuario: \"$text\"", applied = true)
-                    memory.lastExplanation = baseReply
+                    memory.recordAdjustment(command, "usuario: \"$text\"", applied = applied)
+                    memory.lastExplanation = if (applied) baseReply else "No pude confirmar que el comando '$command' se aplicara al DSP."
                     memory.lastScene = when (parsed.acousticIntent) {
                         IvannaLanguageCore.AcousticIntent.VOICE_CLARITY,
                         IvannaLanguageCore.AcousticIntent.DIALOG_ENHANCEMENT -> "VOICE"
@@ -468,9 +471,9 @@ class IvannaAssistant(
                         IvannaLanguageCore.AcousticIntent.CONCERT_LIVE       -> "MUSIC"
                         else -> scene
                     }
-                    runCatching { dspOrchestrator.executeCommand(command) }
-                    IvannaConversationalCore.recordTurn(text, command, command, baseReply)
-                    decision.warningForUser ?: baseReply
+                    val spokenResult = if (applied) baseReply else "No pude confirmar la aplicación de '$command' al DSP; no lo marcaré como aplicado."
+                    IvannaConversationalCore.recordTurn(text, command, command, spokenResult)
+                    decision.warningForUser ?: spokenResult
                 }
             }
 
