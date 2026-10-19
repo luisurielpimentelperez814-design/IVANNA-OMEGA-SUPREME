@@ -40,6 +40,19 @@ object IvannaSpatialManager {
         get() = upmixerEnabledAtomic.get()
     private var upmixXfadeGain: Float = 1.0f
 
+    // Desired scene pose is retained before native initialization and applied to
+    // the four active stems when the upmixer becomes available.
+    @Volatile private var sceneAzimuthRad: Float = 0f
+    @Volatile private var sceneElevationRad: Float = 0f
+    @Volatile private var sceneDistanceScale: Float = 1f
+
+    private val baseStemPositions = arrayOf(
+        floatArrayOf(0f, 0f, 1.2f, 0.15f),    // vocals
+        floatArrayOf(0f, 0.3f, -0.8f, 0.45f), // drums
+        floatArrayOf(0f, -0.8f, 0.2f, 0.25f), // bass
+        floatArrayOf(0f, 0.1f, 0f, 0.85f)     // other
+    )
+
     // Buffers para el hot-path: direct FloatBuffers reutilizables (sin allocations por frame)
     private val stereoInBuf: FloatBuffer = ByteBuffer
         .allocateDirect(BLOCK_SIZE * 2 * java.lang.Float.BYTES)
@@ -117,6 +130,12 @@ object IvannaSpatialManager {
                 if (upmixer != 0L) {
                     runCatching {
                         IvannaSpatialNative.nativeUpmixerSetEnabled(upmixer, true)
+                        val poseConfirmed = applyScenePoseToUpmixer(
+                            upmixer, sceneAzimuthRad, sceneElevationRad, sceneDistanceScale
+                        )
+                        if (!poseConfirmed) {
+                            Log.w(TAG, "pose espacial inicial escrita sin read-back confirmado")
+                        }
                         IvannaSpatialNative.nativeObjectRendererSyncStemObjects(handle, upmixer)
                     }.onFailure { Log.w(TAG, "upmixer no sincronizado: ${it.message}") }
                 }
@@ -251,6 +270,68 @@ object IvannaSpatialManager {
                 IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
             }
         }
+    }
+
+    /**
+     * Rotate and scale the four heuristic stems as one scene, preserving their
+     * relative layout. Success means every native position was read back and
+     * matched; merely sending JNI commands is not treated as application.
+     *
+     * Coordinates follow the renderer's x/y horizontal plane and z vertical axis.
+     * This controls source placement; it does not claim measured HRTF elevation.
+     */
+    fun setScenePose(azimuthRad: Float, elevationRad: Float, distanceScale: Float = sceneDistanceScale): Boolean {
+        if (!azimuthRad.isFinite() || !elevationRad.isFinite() || !distanceScale.isFinite()) return false
+        if (azimuthRad !in -Math.PI.toFloat()..Math.PI.toFloat()) return false
+        if (elevationRad !in -Math.PI.toFloat() / 4f..Math.PI.toFloat() / 4f) return false
+        if (distanceScale !in 0.5f..2f) return false
+
+        sceneAzimuthRad = azimuthRad
+        sceneElevationRad = elevationRad
+        sceneDistanceScale = distanceScale
+
+        val h = rendererHandle
+        val u = upmixerHandle
+        if (!ready || h == 0L || u == 0L) return false
+        return runCatching {
+            if (!applyScenePoseToUpmixer(u, azimuthRad, elevationRad, distanceScale)) return@runCatching false
+            IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun applyScenePoseToUpmixer(
+        upmixer: Long,
+        azimuthRad: Float,
+        elevationRad: Float,
+        distanceScale: Float
+    ): Boolean {
+        if (upmixer == 0L) return false
+        val yawCos = kotlin.math.cos(azimuthRad)
+        val yawSin = kotlin.math.sin(azimuthRad)
+        val elevCos = kotlin.math.cos(elevationRad)
+        val elevSin = kotlin.math.sin(elevationRad)
+
+        for (stem in baseStemPositions.indices) {
+            val base = baseStemPositions[stem]
+            val yawX = base[0] * yawCos - base[1] * yawSin
+            val yawY = base[0] * yawSin + base[1] * yawCos
+            val yawZ = base[2]
+            val x = ((yawX * elevCos + yawZ * elevSin) * distanceScale).coerceIn(-2f, 2f)
+            val y = (yawY * distanceScale).coerceIn(-2f, 2f)
+            val z = ((-yawX * elevSin + yawZ * elevCos) * distanceScale).coerceIn(-2f, 2f)
+            val width = base[3].coerceIn(0.02f, 1f)
+
+            IvannaSpatialNative.nativeUpmixerSetStemPosition(upmixer, stem, x, y, z, width)
+            val actual = IvannaSpatialNative.nativeUpmixerGetStemPosition(upmixer, stem)
+            if (actual.size < 5 ||
+                kotlin.math.abs(actual[0] - x) > 0.015f ||
+                kotlin.math.abs(actual[1] - y) > 0.015f ||
+                kotlin.math.abs(actual[2] - z) > 0.015f ||
+                kotlin.math.abs(actual[3] - width) > 0.015f
+            ) return false
+        }
+        return true
     }
 
     fun reset() {
