@@ -440,11 +440,11 @@ private fun BinauralTab(
                 syncHybridToNative(next)
             }
             Text(
-                "DSP EN VIVO: ${if (hybridTele.getOrElse(0) { 1f } > 0.5f) "ONLINE" else "BYPASS"} · " +
-                "AZ=${"%.1f".format(hybridTele.getOrElse(2) { 30f })}° · " +
-                "EL=${"%.1f".format(hybridTele.getOrElse(3) { 0f })}° · " +
-                "RT-SALA=${"%.2f".format(hybridTele.getOrElse(4) { 0.55f })} · " +
-                "DAMP=${"%.2f".format(hybridTele.getOrElse(6) { 0.40f })}",
+                "DSP: ${if (hybridTele.size >= 8 && hybridTele[0].isFinite()) if (hybridTele[0] > 0.5f) "ACTIVO" else "BYPASS" else "N/D"} · " +
+                "AZ=${hybridTele.getOrNull(2)?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "N/D"}° · " +
+                "EL=${hybridTele.getOrNull(3)?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "N/D"}° · " +
+                "RT-SALA=${hybridTele.getOrNull(4)?.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "N/D"} · " +
+                "DAMP=${hybridTele.getOrNull(6)?.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "N/D"}",
                 color = PhosphorGreen,
                 fontSize = 10.sp,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
