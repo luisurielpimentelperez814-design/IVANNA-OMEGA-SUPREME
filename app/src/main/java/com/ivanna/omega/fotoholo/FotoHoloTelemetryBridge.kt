@@ -124,7 +124,7 @@ class FotoHoloTelemetryBridge(context: Context) {
             put("latencyMs", finiteOrNull(metrics.latencyMs) ?: JSONObject.NULL)
             put("underruns", metrics.underrunCount.coerceAtLeast(0))
             put("hrtfAssetAvailable", assetExists("ivanna_omega/hrtf/hrtf_index.json"))
-            put("rirAssetAvailable", assetExists("ivanna_omega/rir/metadata.csv") && assetExists("ivanna_omega/rir/rir_0000.wav"))
+            put("rirAssetAvailable", assetExists("ivanna_omega/rir/metadata.csv") && assetDirectoryContains("ivanna_omega/rir", ".wav"))
             put("rirDatasetLoaded", rirLoaded)
             put("rirRoomCount", rirRoomCount.coerceAtLeast(0))
             put("safAssetAvailable", assetExists("ivanna_omega/SAF_model.json"))
@@ -155,7 +155,6 @@ class FotoHoloTelemetryBridge(context: Context) {
             put("safIteration", saf?.iteration ?: JSONObject.NULL)
             put("safErrorEnergy", saf?.errorEnergy?.let { finiteOrNull(it) } ?: JSONObject.NULL)
             put("nativeSpatialState", nativeState.take(512))
-            put("freshnessMs", 0)
         }.toString()
     }.getOrElse {
         JSONObject().apply {
@@ -171,6 +170,10 @@ class FotoHoloTelemetryBridge(context: Context) {
 
     private fun assetExists(path: String): Boolean = runCatching {
         appContext.assets.open(path).use { true }
+    }.getOrDefault(false)
+
+    private fun assetDirectoryContains(directory: String, suffix: String): Boolean = runCatching {
+        appContext.assets.list(directory).orEmpty().any { it.endsWith(suffix, ignoreCase = true) }
     }.getOrDefault(false)
 
     private fun finiteOrNull(value: Float): Any =
