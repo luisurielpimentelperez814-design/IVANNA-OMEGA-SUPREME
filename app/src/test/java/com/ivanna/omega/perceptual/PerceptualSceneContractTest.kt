@@ -79,7 +79,29 @@ class PerceptualSceneContractTest {
             )
         ))
         assertTrue(validSnapshot(axes = axes).validate().any {
-            it.contains("without identified dataset provenance")
+            it.contains("without identified dataset and subject provenance")
+        })
+    }
+
+    @Test fun appliedHrtfPersonalizationRequiresSubjectId() {
+        val axes = axisStatuses(mapOf(
+            PerceptualAxis.HRTF_PERSONALIZATION to AxisStatus(
+                axis = PerceptualAxis.HRTF_PERSONALIZATION,
+                state = AxisState.APPLIED,
+                unit = "dataset",
+                engineConfirmed = true,
+                updatedAtEpochMs = 1_800_000_000_000L
+            )
+        ))
+        val hrtf = HrtfProvenance(
+            datasetId = "measured-dataset",
+            subjectId = null,
+            sampleRateHz = 48_000,
+            kind = HrtfProvenanceKind.MEASURED,
+            measuredAtEpochMs = 1_800_000_000_000L
+        )
+        assertTrue(validSnapshot(axes = axes, hrtf = hrtf).validate().any {
+            it.contains("without identified dataset and subject provenance")
         })
     }
 
