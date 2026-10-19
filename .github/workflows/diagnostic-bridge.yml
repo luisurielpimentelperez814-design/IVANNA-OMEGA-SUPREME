@@ -1,0 +1,26 @@
+name: Diagnostic bridge
+on:
+  push:
+    branches: [main, "feat/live-diagnostic-connector"]
+    paths:
+      - "diagnostic-bridge/**"
+      - ".github/workflows/diagnostic-bridge.yml"
+  pull_request:
+    paths:
+      - "diagnostic-bridge/**"
+      - ".github/workflows/diagnostic-bridge.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify syntax
+        run: node --check diagnostic-bridge/server.mjs
+      - name: Run bridge tests
+        run: node --test diagnostic-bridge/server.test.mjs
