@@ -153,6 +153,18 @@ class PerceptualSceneRuntimeTest {
     }
 
     @Test
+    fun localRirTailBudgetDegradationCannotBeReportedAsApplied() {
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(localRirTailStatus = 1)
+        )
+        val reverb = snapshot.axes.single { it.axis == PerceptualAxis.REVERBERANT_FIELD }
+        assertEquals(AxisState.DEGRADED, reverb.state)
+        assertFalse(reverb.engineConfirmed)
+        assertTrue(reverb.reason.orEmpty().contains("omitió la cola retrasada"))
+        assertTrue(snapshot.validate().isEmpty())
+    }
+
+    @Test
     fun reverbLevelAloneDoesNotConfirmMeasuredReverberantField() {
         val snapshot = PerceptualSceneRuntime.assemble(
             evidence().copy(
