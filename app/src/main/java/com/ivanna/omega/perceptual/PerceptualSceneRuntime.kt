@@ -5,6 +5,7 @@ import android.media.AudioManager
 import com.ivanna.omega.audio.AudioRouteManager
 import com.ivanna.omega.audio.BassHaptics
 import com.ivanna.omega.audio.OutputRoute as AudioOutputRoute
+import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.spatial.IvannaSpatialManager
 import java.util.UUID
 
@@ -24,6 +25,12 @@ object PerceptualSceneRuntime {
         val reverb = IvannaSpatialManager.reverbReadback()
         val haptics = BassHaptics.syncStatus()
         val hrtfSubject = IvannaSpatialManager.currentHrtfSubject()
+        // This JNI getter reads the exact HybridRenderer used by the active app
+        // spatial render path, not its separately owned control-pipeline sibling.
+        val hybridTelemetry = NativeBridge.safeGetHybridMagistralTelemetry()
+        val hybridTelemetryAvailable = hybridTelemetry.size >= 8 &&
+            (0 until 8).all { hybridTelemetry[it].isFinite() }
+        val hybridFallback = NativeBridge.safeIsHybridMagistralUsingFallbackHrtf()
         return assemble(
             PerceptualRuntimeEvidence(
                 capturedAtEpochMs = now,
@@ -51,7 +58,17 @@ object PerceptualSceneRuntime {
                 hapticsEnabled = haptics.enabled,
                 hapticDelayMs = haptics.effectiveDelayMs,
                 hapticLatencyMeasured = haptics.latencyMeasuredForCurrentRoute,
-                hapticRouteDescription = haptics.routeDescription
+                hapticRouteDescription = haptics.routeDescription,
+                hybridTelemetryAvailable = hybridTelemetryAvailable,
+                hybridEnabled = hybridTelemetryAvailable && hybridTelemetry[0] >= 0.5f,
+                hybridWet = hybridTelemetry.getOrNull(1)?.takeIf { it.isFinite() },
+                hybridAzimuthDeg = hybridTelemetry.getOrNull(2)?.takeIf { it.isFinite() },
+                hybridElevationDeg = hybridTelemetry.getOrNull(3)?.takeIf { it.isFinite() },
+                hybridRoomSize = hybridTelemetry.getOrNull(4)?.takeIf { it.isFinite() },
+                hybridAbsorption = hybridTelemetry.getOrNull(5)?.takeIf { it.isFinite() },
+                hybridDampening = hybridTelemetry.getOrNull(6)?.takeIf { it.isFinite() },
+                hybridRoomWetMix = hybridTelemetry.getOrNull(7)?.takeIf { it.isFinite() },
+                hybridUsingFallbackHrtf = hybridFallback
             )
         )
     }
@@ -77,27 +94,66 @@ object PerceptualSceneRuntime {
             updatedAtEpochMs = observedAt.takeIf { it > 0L }
         )
 
-        val azimuthConfirmed = e.poseConfirmed && e.effectiveAzimuthRad != null
-        val elevationConfirmed = e.poseConfirmed && e.effectiveElevationRad != null
+        val hybridSpatialActive = e.hybridTelemetryAvailable && e.hybridEnabled &&
+            (e.hybridWet ?: 0f) > 0.001f
+        val hybridAzimuthRad = e.hybridAzimuthDeg?.let { Math.toRadians(it.toDouble()).toFloat() }
+        val hybridElevationRad = e.hybridElevationDeg?.let { Math.toRadians(it.toDouble()).toFloat() }
+        val hybridAzimuthMatches = hybridSpatialActive && hybridAzimuthRad != null &&
+            kotlin.math.abs(hybridAzimuthRad - e.requestedAzimuthRad) <= 0.02f
+        val hybridElevationMatches = hybridSpatialActive && hybridElevationRad != null &&
+            kotlin.math.abs(hybridElevationRad - e.requestedElevationRad) <= 0.02f
+        val managerPoseConfirmed = e.poseConfirmed && e.effectiveAzimuthRad != null
+        val azimuthConfirmed = hybridAzimuthMatches ||
+            (managerPoseConfirmed && !hybridSpatialActive)
+        // Vertical source placement alone is not equivalent to an elevated HRTF.
+        // Promote elevation to APPLIED only when measured/non-fallback HRTF filters
+        // and the actual rendered hybrid angle agree with the requested value.
+        val elevationHrtfConfirmed = hybridElevationMatches && !e.hybridUsingFallbackHrtf
+        val elevationConfirmed = elevationHrtfConfirmed
         val distanceConfirmed = e.poseConfirmed && e.effectiveDistanceScale != null
         val movementConfirmed = e.movementActive && e.movementConfirmed
-        val hrtfConfirmed = e.hrtfConfirmed && !e.hrtfSubject.isNullOrBlank() && e.hrtfSubject != "none"
+        val managerHrtfConfirmed = e.hrtfConfirmed && !e.hrtfSubject.isNullOrBlank() && e.hrtfSubject != "none"
+        val measuredHybridHrtfActive = hybridSpatialActive && !e.hybridUsingFallbackHrtf
+        val hrtfAvailable = managerHrtfConfirmed || measuredHybridHrtfActive
+        val hybridRoomWetActive = e.hybridTelemetryAvailable && e.hybridEnabled &&
+            (e.hybridWet ?: 0f) > 0.001f && (e.hybridRoomWetMix ?: 0f) > 0.001f
 
         val axes = listOf(
             status(
                 PerceptualAxis.AZIMUTH,
-                if (azimuthConfirmed) AxisState.APPLIED else AxisState.UNAVAILABLE,
-                "rad", e.requestedAzimuthRad, e.effectiveAzimuthRad,
-                if (azimuthConfirmed) null else "El renderer no confirmó el azimut del buffer de objetos activo",
+                when {
+                    azimuthConfirmed -> AxisState.APPLIED
+                    managerPoseConfirmed -> AxisState.DEGRADED
+                    else -> AxisState.UNAVAILABLE
+                },
+                "rad", e.requestedAzimuthRad,
+                if (hybridSpatialActive) hybridAzimuthRad else e.effectiveAzimuthRad,
+                when {
+                    azimuthConfirmed -> null
+                    managerPoseConfirmed && hybridSpatialActive ->
+                        "La geometría de objetos sí se leyó, pero el azimut del HybridRenderer activo no coincide con el solicitado"
+                    managerPoseConfirmed -> "La posición relativa de los objetos se leyó del renderer"
+                    else -> "Ningún renderer activo confirmó el azimut solicitado"
+                },
                 e.poseUpdatedAtEpochMs
             ),
             status(
                 PerceptualAxis.ELEVATION,
-                if (elevationConfirmed) AxisState.DEGRADED else AxisState.UNAVAILABLE,
-                "rad", e.requestedElevationRad, e.effectiveElevationRad,
-                if (elevationConfirmed)
-                    "La geometría vertical se leyó del renderer; no existe confirmación de una respuesta HRTF medida individual por elevación"
-                else "No hay coordenadas verticales confirmadas por el renderer"
+                when {
+                    elevationHrtfConfirmed -> AxisState.APPLIED
+                    managerPoseConfirmed || hybridSpatialActive -> AxisState.DEGRADED
+                    else -> AxisState.UNAVAILABLE
+                },
+                "rad", e.requestedElevationRad,
+                if (hybridSpatialActive) hybridElevationRad else e.effectiveElevationRad,
+                when {
+                    elevationHrtfConfirmed -> null
+                    hybridSpatialActive && e.hybridUsingFallbackHrtf ->
+                        "El ángulo vertical está leído de vuelta, pero el HybridRenderer confirma HRTF de respaldo, no filtros medidos"
+                    managerPoseConfirmed ->
+                        "La posición vertical de los objetos se leyó de vuelta; el renderer de objetos no confirma por sí solo una respuesta HRTF elevada"
+                    else -> "No hay filtro HRTF de elevación activo confirmado"
+                }
             ),
             status(
                 PerceptualAxis.DISTANCE,
@@ -124,33 +180,47 @@ object PerceptualSceneRuntime {
             ),
             status(
                 PerceptualAxis.HRTF_PERSONALIZATION,
-                if (hrtfConfirmed) AxisState.DEGRADED else AxisState.UNAVAILABLE,
-                "subject-id", if (hrtfConfirmed) 1f else 0f, if (hrtfConfirmed) 1f else 0f,
-                if (hrtfConfirmed)
-                    "Carga y sujeto activo leídos del motor (" + e.hrtfSubject + "); no se declara personalización completa porque este snapshot no incluye procedencia medida ni calibración antropométrica confirmada del usuario"
-                else "No hay dataset HRTF cargado con sujeto activo confirmado"
+                if (hrtfAvailable) AxisState.DEGRADED else AxisState.UNAVAILABLE,
+                "subject-id",
+                if (managerHrtfConfirmed) 1f else 0f,
+                if (hrtfAvailable) 1f else 0f,
+                when {
+                    managerHrtfConfirmed ->
+                        "Sujeto HRTF leído del ObjectRenderer (" + e.hrtfSubject + "); falta procedencia/calibración antropométrica confirmada para llamarlo personalización completa"
+                    measuredHybridHrtfActive ->
+                        "El HybridRenderer activo usa filtros no-fallback, pero no confirma una personalización HRTF individual del oyente"
+                    else -> "No se confirmó HRTF medido activo ni un sujeto HRTF cargado"
+                }
             ),
             status(
                 PerceptualAxis.ROOM_GEOMETRY,
-                AxisState.UNAVAILABLE,
-                "meters",
-                reason = if (e.measuredRirActive)
-                    "Hay RIR medida activa, pero este camino no publica dimensiones y posición del oyente de una sala calibrada"
-                else "No hay geometría de sala medida y leída de vuelta; RT60 por sí solo no es geometría"
+                if (e.hybridTelemetryAvailable && e.hybridRoomSize != null) AxisState.DEGRADED else AxisState.UNAVAILABLE,
+                "normalized-room-size", e.hybridRoomSize, e.hybridRoomSize,
+                if (e.hybridTelemetryAvailable && e.hybridRoomSize != null)
+                    "El tamaño relativo, absorción y amortiguamiento están leídos del HybridRenderer; no publica ancho, profundidad, altura ni posición del oyente medidos en metros"
+                else if (e.measuredRirActive)
+                    "Hay RIR medida activa, pero no se publican dimensiones y posición del oyente de una sala calibrada"
+                else "No hay geometría de sala ni tamaño relativo confirmados por lectura del renderer"
             ),
             status(
                 PerceptualAxis.REVERBERANT_FIELD,
                 when {
-                    !e.reverbConfirmed || e.reverbEffectiveLevel == null -> AxisState.UNAVAILABLE
-                    e.measuredRirActive && e.measuredRt60Seconds != null -> AxisState.APPLIED
-                    else -> AxisState.DEGRADED
+                    e.reverbConfirmed && e.reverbEffectiveLevel != null &&
+                        e.measuredRirActive && e.measuredRt60Seconds != null -> AxisState.APPLIED
+                    e.reverbConfirmed && e.reverbEffectiveLevel != null || hybridRoomWetActive -> AxisState.DEGRADED
+                    else -> AxisState.UNAVAILABLE
                 },
                 "wet 0..1", e.reverbRequestedLevel, e.reverbEffectiveLevel,
                 when {
-                    !e.reverbConfirmed || e.reverbEffectiveLevel == null ->
-                        "El nivel de reverberación no fue confirmado por lectura nativa"
-                    e.measuredRirActive && e.measuredRt60Seconds != null -> null
-                    else -> "El nivel fue leído de vuelta, pero se usa el FDN de respaldo y no una RIR medida activa"
+                    e.reverbConfirmed && e.reverbEffectiveLevel != null &&
+                        e.measuredRirActive && e.measuredRt60Seconds != null -> null
+                    e.reverbConfirmed && e.reverbEffectiveLevel != null && hybridRoomWetActive ->
+                        "El nivel nativo fue leído; también está activo el modelo Schroeder/Moorer del HybridRenderer, pero no hay RIR medida confirmada en el renderer de objetos"
+                    e.reverbConfirmed && e.reverbEffectiveLevel != null ->
+                        "El nivel de reverberación fue leído, pero no hay una RIR medida activa confirmada"
+                    hybridRoomWetActive ->
+                        "El modelo de sala sintético está activo por telemetría; falta confirmación nativa del nivel/RIR medida"
+                    else -> "No se confirmó nivel de reverberación ni una sala húmeda activa"
                 }
             ),
             status(
@@ -223,5 +293,15 @@ internal data class PerceptualRuntimeEvidence(
     val hapticsEnabled: Boolean,
     val hapticDelayMs: Int,
     val hapticLatencyMeasured: Boolean,
-    val hapticRouteDescription: String
+    val hapticRouteDescription: String,
+    val hybridTelemetryAvailable: Boolean = false,
+    val hybridEnabled: Boolean = false,
+    val hybridWet: Float? = null,
+    val hybridAzimuthDeg: Float? = null,
+    val hybridElevationDeg: Float? = null,
+    val hybridRoomSize: Float? = null,
+    val hybridAbsorption: Float? = null,
+    val hybridDampening: Float? = null,
+    val hybridRoomWetMix: Float? = null,
+    val hybridUsingFallbackHrtf: Boolean = true
 )
