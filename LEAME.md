@@ -96,10 +96,10 @@ Estas funciones solo deben anunciarse como verificadas cuando exista evidencia a
 - [README técnico](README.md) — arquitectura, compilación, pruebas y límites.
 - [Ficha de ingeniería](docs/ENGINEERING.md) — decisiones técnicas y cómo verificarlas.
 - [Registro de cambios](CHANGELOG.md) — historial de implementaciones y pendientes.
-- [Código fuente](app/src/main/cpp/) — motor nativo.
+- Documentación técnica del motor nativo; el acceso al repositorio no concede derechos de reutilización del código propio.
 - [Issues](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) — reportes y propuestas.
 
 **Autor:** Luis Uriel Pimentel Pérez (GORE TNS).  
-**Licencia declarada del repositorio:** Apache-2.0; consulta `LICENSE`, `NOTICE` y las licencias de los recursos de terceros.
+**Propiedad:** IVANNA OMEGA SUPREME es un producto propietario y comercial. Todos los derechos sobre el código propio quedan reservados; no se concede aquí permiso de reutilización. Los componentes de terceros conservan sus propias licencias y avisos.
 
 El objetivo es construir un sistema serio y auditable: cada función debe poder localizarse en el código, cada prueba debe poder repetirse y cada limitación debe explicarse con claridad.
