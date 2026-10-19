@@ -110,7 +110,7 @@ object NativeBridge {
         if (isLoaded) runCatching { setWarpedLatticeRouteArchetype(routeIdx) }
     }
     fun safeGetWarpedLatticeDeclippedPeaks(): Int =
-        if (isLoaded) runCatching { getWarpedLatticeDeclippedPeaks() }.getOrDefault(0) else 0
+        if (isLoaded) runCatching { getWarpedLatticeDeclippedPeaks() }.getOrDefault(-1) else -1
     fun safeGetWarpedLatticeSubSampleDelay(): Float =
         if (isLoaded) runCatching { getWarpedLatticeSubSampleDelay() }.getOrDefault(Float.NaN) else Float.NaN
     fun safeRunWarpedLatticeLoopbackCalibration(f0Hz: Float = 92.0f, mu: Float = 0.005f) {
@@ -144,7 +144,7 @@ object NativeBridge {
     fun safeGetTransharmonicPhaseStep(): Float =
         if (isLoaded) runCatching { getTransharmonicPhaseStep() }.getOrDefault(Float.NaN) else Float.NaN
     fun safeGetTransharmonicTapeMagnetization(): Float =
-        if (isLoaded) runCatching { getTransharmonicTapeMagnetization() }.getOrDefault(0.0f) else 0.0f
+        if (isLoaded) runCatching { getTransharmonicTapeMagnetization() }.getOrDefault(Float.NaN) else Float.NaN
 
     // ── EJE 3: SnnNmfHoaUpmixer (Anti-Dolby SNN INT8 + NMF -> HOA 4º Orden) ─
     @JvmStatic external fun setSnnHoaUpmixerEnabled(enabled: Boolean)
