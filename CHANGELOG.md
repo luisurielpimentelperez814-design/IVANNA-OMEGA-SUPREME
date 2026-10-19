@@ -1,4 +1,4 @@
-# CHANGELOG — v2.5.86 (377) — Verdad de escena 10D y release verificable
+# CHANGELOG — v2.5.87 (378) — Verdad de escena 10D y release verificable
 
 - **Runtime perceptual 10D:** el azimut compara direcciones con distancia angular circular; lecturas de la geometría anterior permanecen visibles como degradadas cuando la última solicitud no queda confirmada.
 - **Regresión espacial:** se agregan pruebas para lectura discrepante del renderer híbrido, coincidencia entre ±π, confirmación sin lectura del manager y reverberación sin RIR medida.
