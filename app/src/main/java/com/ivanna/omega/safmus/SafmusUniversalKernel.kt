@@ -95,6 +95,13 @@ object SafmusUniversalKernel {
     }
 
     /**
+     * Allows the UI to inspect a telemetry candidate; this is NOT activation approval.
+     * Applying a candidate still requires [mayAcceptEvolutionProposal] and native read-back.
+     */
+    fun mayEvaluateEvolutionProposal(route: Route, signalValid: Boolean, fitness: Float): Boolean =
+        route == Route.ROUTE_A && signalValid && fitness.isFinite()
+
+    /**
      * Legacy Route-A evolution gate, strengthened with stability and latency checks.
      * Fitness is an optimizer metric, not proof of audible/perceptual improvement.
      */

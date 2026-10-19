@@ -43,6 +43,21 @@ class SafmusUniversalKernelTest {
         assertTrue(SafmusUniversalKernel.gateRoomCorrection(true, true, true, true).allowed)
     }
 
+    @Test fun evolutionUiMayInspectButDoesNotAuthorizeInvalidTelemetry() {
+        assertTrue(SafmusUniversalKernel.mayEvaluateEvolutionProposal(
+            SafmusUniversalKernel.Route.ROUTE_A, true, 0.8f
+        ))
+        assertFalse(SafmusUniversalKernel.mayEvaluateEvolutionProposal(
+            SafmusUniversalKernel.Route.ROUTE_B, true, 0.8f
+        ))
+        assertFalse(SafmusUniversalKernel.mayEvaluateEvolutionProposal(
+            SafmusUniversalKernel.Route.ROUTE_A, false, 0.8f
+        ))
+        assertFalse(SafmusUniversalKernel.mayEvaluateEvolutionProposal(
+            SafmusUniversalKernel.Route.ROUTE_A, true, Float.NaN
+        ))
+    }
+
     @Test fun evolutionRequiresFiniteFitnessHeadroomStabilityAndLatency() {
         val route = SafmusUniversalKernel.Route.ROUTE_A
         assertTrue(SafmusUniversalKernel.mayAcceptEvolutionProposal(route, true, 0.8f, true))

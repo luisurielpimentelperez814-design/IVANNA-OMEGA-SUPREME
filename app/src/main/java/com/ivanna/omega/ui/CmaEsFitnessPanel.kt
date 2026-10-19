@@ -166,8 +166,16 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
                 "ROUTE_B" -> "Ruta B · efecto global"
                 else -> "Sin ruta de procesamiento validada"
             }
-            val candidateMayBeEvaluated = safmusTelemetry.activeRoute == "ROUTE_A" &&
-                safmusTelemetry.hasSignal && bestFitness.isFinite()
+            // The shared SAFMUS kernel authorizes telemetry inspection only; it does not
+            // approve candidate activation (native stability/headroom/read-back are separate gates).
+            val candidateMayBeEvaluated = com.ivanna.omega.safmus.SafmusUniversalKernel
+                .mayEvaluateEvolutionProposal(
+                    route = if (safmusTelemetry.activeRoute == "ROUTE_A")
+                        com.ivanna.omega.safmus.SafmusUniversalKernel.Route.ROUTE_A
+                    else com.ivanna.omega.safmus.SafmusUniversalKernel.Route.NONE,
+                    signalValid = safmusTelemetry.hasSignal,
+                    fitness = bestFitness.toFloat()
+                )
             Text("Ruta observada: $routeLabel", color = TextPrimary, fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             Text(safmusTelemetry.safmusDecision, color = TextSecondary, fontSize = 10.sp)
