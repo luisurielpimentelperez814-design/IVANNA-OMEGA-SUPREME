@@ -113,7 +113,9 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             !tel.hasSignal -> "Sin señal: activa la captura de audio (Ruta A). Mientras tanto el ancho no se toca."
             !enabled -> "Espectro en vivo · modulación apagada."
             bypass -> "Bypass: suena el ancho que fijaste."
-            tel.readbackConfirmed -> "Modulando · agudos abren, graves cierran · el motor confirma el ancho."
+            tel.readbackConfirmed && tel.dspWidth < tel.appliedWidth - 0.03f ->
+                "Modulando · el motor reporta un ancho efectivo menor al comando; posible recorte térmico."
+            tel.readbackConfirmed -> "Modulando · agudos abren, graves cierran · read-back del motor actualizado."
             else -> "Modulando · esperando confirmación del motor (read-back)."
         }
         Text(status, color = if (tel.nativeWriteError != null) Color(0xFFFF6B6B) else AuroraCyan, fontSize = 11.sp)

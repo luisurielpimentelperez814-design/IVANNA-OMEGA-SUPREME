@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.73 (364) — Fotoholografía·Nanotomix consciente de transitorios
+
+1. **Ataques musicales:** la señal `flux` de las 64 bandas Bark ya no queda solo como telemetría. Atenúa hasta un 35 % la corrección de anchura durante transitorios fuertes, preservando la dirección de la adaptación y el límite de ±`MAX_OFFSET`. La intención es reducir movimientos espaciales innecesarios en ataques de percusión y consonantes; la preferencia final debe comprobarse con A/B igualado en sonoridad.
+2. **Telemetría del motor actualizada:** tras una escritura aceptada, el ancho efectivo del DSP se vuelve a leer en cada tick de control, porque el recorte térmico puede cambiar aunque el comando solicitado permanezca igual. Si el read-back falla, la UI recibe `NaN` en lugar de tratar un valor antiguo como confirmación actual.
+3. **Regresión:** pruebas para la atenuación de transitorios, conservación del sentido de la corrección y `flux` no finito.
+
+**Estado:** versión propuesta para PR #67. El build y los tests deben pasar antes de fusionar; el release v2.5.73 se publicará desde `main` tras la fusión. El release publicado v2.5.72 apunta a un commit anterior y no incluye los cambios posteriores de PR #66 ni esta refinación. Sin prueba física, esto es una mejora de control verificada por pruebas de lógica, no una afirmación de superioridad audible.
+
+---
+
 # CHANGELOG — v2.5.72 (363) — Lector SOFA/HDF5 real (verificado contra h5py), aún sin conectar a la reproducción
 
 1. **`spatial/sofa/Hdf5File.kt` + `SofaReader.kt` (nuevos, solo JDK, sin dependencias):** lee el `.sofa` de verdad — superbloque v0–v3, cabeceras de objeto v1/v2 con continuaciones, grupos por tabla de símbolos y por enlaces (incluido el almacenamiento DENSO: B-tree v2 de cualquier profundidad + heap fractal con raíz directa o indirecta), datasets compactos/contiguos/troceados (layout v3, B-tree v1) con filtros shuffle/deflate/fletcher32 y atributos de cadena. Lo no soportado lanza `Hdf5FormatException` con el motivo; nunca devuelve datos inventados.
