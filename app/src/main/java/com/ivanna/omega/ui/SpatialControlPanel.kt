@@ -376,10 +376,11 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 syncHybrid(adaptivePrefs.copy(hybridRoomWetMix = it))
             }
             Text(
-                "Az=${"%.1f".format(hybridTele.getOrElse(2) { 30f })}° · " +
-                "El=${"%.1f".format(hybridTele.getOrElse(3) { 0f })}° · " +
-                "Sala=${"%.2f".format(hybridTele.getOrElse(4) { 0.55f })} · " +
-                "Damp=${"%.2f".format(hybridTele.getOrElse(6) { 0.40f })}",
+                "DSP=${if (hybridTele.size >= 8 && hybridTele[0].isFinite()) if (hybridTele[0] > 0.5f) "ACTIVO" else "BYPASS" else "N/D"} · " +
+                "Az=${hybridTele.getOrNull(2)?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "N/D"}° · " +
+                "El=${hybridTele.getOrNull(3)?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "N/D"}° · " +
+                "Sala=${hybridTele.getOrNull(4)?.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "N/D"} · " +
+                "Damp=${hybridTele.getOrNull(6)?.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "N/D"}",
                 color = AuroraCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace
             )
         }
