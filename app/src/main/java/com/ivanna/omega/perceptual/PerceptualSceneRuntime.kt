@@ -82,14 +82,15 @@ object PerceptualSceneRuntime {
             requested: Float? = null,
             effective: Float? = null,
             reason: String? = null,
-            observedAt: Long = now
+            observedAt: Long = now,
+            engineConfirmed: Boolean = false
         ) = AxisStatus(
             axis = axis,
             state = state,
             unit = unit,
             requestedValue = requested,
             effectiveValue = effective,
-            engineConfirmed = state == AxisState.APPLIED,
+            engineConfirmed = engineConfirmed,
             reason = reason,
             updatedAtEpochMs = observedAt.takeIf { it > 0L }
         )
@@ -103,8 +104,10 @@ object PerceptualSceneRuntime {
         val hybridElevationMatches = hybridSpatialActive && hybridElevationRad != null &&
             kotlin.math.abs(hybridElevationRad - e.requestedElevationRad) <= 0.02f
         val managerPoseConfirmed = e.poseConfirmed && e.effectiveAzimuthRad != null
+        val managerAzimuthMatches = managerPoseConfirmed &&
+            kotlin.math.abs(e.effectiveAzimuthRad!! - e.requestedAzimuthRad) <= 0.02f
         val azimuthConfirmed = hybridAzimuthMatches ||
-            (managerPoseConfirmed && !hybridSpatialActive)
+            (managerAzimuthMatches && !hybridSpatialActive)
         // Vertical source placement alone is not equivalent to an elevated HRTF.
         // Promote elevation to APPLIED only when measured/non-fallback HRTF filters
         // and the actual rendered hybrid angle agree with the requested value.
@@ -135,7 +138,8 @@ object PerceptualSceneRuntime {
                     managerPoseConfirmed -> "La posición relativa de los objetos se leyó del renderer"
                     else -> "Ningún renderer activo confirmó el azimut solicitado"
                 },
-                e.poseUpdatedAtEpochMs
+                e.poseUpdatedAtEpochMs,
+                engineConfirmed = azimuthConfirmed
             ),
             status(
                 PerceptualAxis.ELEVATION,
@@ -153,7 +157,8 @@ object PerceptualSceneRuntime {
                     managerPoseConfirmed ->
                         "La posición vertical de los objetos se leyó de vuelta; el renderer de objetos no confirma por sí solo una respuesta HRTF elevada"
                     else -> "No hay filtro HRTF de elevación activo confirmado"
-                }
+                },
+                engineConfirmed = elevationHrtfConfirmed
             ),
             status(
                 PerceptualAxis.DISTANCE,
@@ -168,7 +173,8 @@ object PerceptualSceneRuntime {
                 if (movementConfirmed) AxisState.APPLIED else AxisState.UNAVAILABLE,
                 "active", if (e.movementActive) 1f else 0f, if (movementConfirmed) 1f else 0f,
                 if (movementConfirmed) null else "No hay trayectoria de fuente activa con confirmación reciente del renderer",
-                e.movementUpdatedAtEpochMs
+                e.movementUpdatedAtEpochMs,
+                engineConfirmed = movementConfirmed
             ),
             status(
                 PerceptualAxis.HEAD_ROTATION,
@@ -221,7 +227,9 @@ object PerceptualSceneRuntime {
                     hybridRoomWetActive ->
                         "El modelo de sala sintético está activo por telemetría; falta confirmación nativa del nivel/RIR medida"
                     else -> "No se confirmó nivel de reverberación ni una sala húmeda activa"
-                }
+                },
+                engineConfirmed = e.reverbConfirmed && e.reverbEffectiveLevel != null &&
+                    e.measuredRirActive && e.measuredRt60Seconds != null
             ),
             status(
                 PerceptualAxis.SOURCE_SEPARATION,
