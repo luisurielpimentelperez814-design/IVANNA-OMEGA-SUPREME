@@ -58,32 +58,56 @@ object SafmusUniversalKernel {
         )
     }
 
-    /** HRTF activation requires a binaural-compatible route and a compatible dataset or explicit fallback. */
+    /** Dataset/pose preflight used before a subject load; headroom is checked by the DSP path. */
+    fun gateHrtfDataset(
+        binauralOutput: Boolean,
+        coordinatesFinite: Boolean,
+        datasetCompatible: Boolean
+    ): Gate = when {
+        !binauralOutput -> Gate(false, "La salida no es binaural")
+        !coordinatesFinite -> Gate(false, "Coordenadas HRTF no finitas o fuera de rango")
+        !datasetCompatible -> Gate(false, "Dataset HRTF incompatible; no declarar aplicación")
+        else -> Gate(true, "Precondiciones de dataset HRTF satisfechas")
+    }
+
+    /** HRTF activation adds the separate measured headroom requirement. */
     fun gateHrtf(
         binauralOutput: Boolean,
         coordinatesFinite: Boolean,
         headroomValid: Boolean,
         datasetCompatible: Boolean
-    ): Gate = when {
-        !binauralOutput -> Gate(false, "La salida no es binaural")
-        !coordinatesFinite -> Gate(false, "Coordenadas HRTF no finitas")
-        !headroomValid -> Gate(false, "Headroom insuficiente")
-        !datasetCompatible -> Gate(false, "Dataset HRTF incompatible; no declarar aplicación")
-        else -> Gate(true, "Condiciones de ruta HRTF satisfechas")
+    ): Gate {
+        val preflight = gateHrtfDataset(binauralOutput, coordinatesFinite, datasetCompatible)
+        if (!preflight.allowed) return preflight
+        return if (!headroomValid) Gate(false, "Headroom insuficiente")
+        else Gate(true, "Condiciones de ruta HRTF satisfechas")
     }
 
-    /** RIR may be creative/user-selected, but its metadata and processing budget must still be valid. */
+    /** RIR configuration preflight; the caller separately owns real-time latency verification. */
+    fun gateRirConfiguration(
+        explicitlySelectedOrMeasured: Boolean,
+        metadataCompatible: Boolean,
+        sampleRateCompatible: Boolean
+    ): Gate = when {
+        !explicitlySelectedOrMeasured -> Gate(false, "No hay RIR medida o seleccionada explícitamente")
+        !metadataCompatible -> Gate(false, "Metadatos RIR incompatibles")
+        !sampleRateCompatible -> Gate(false, "Frecuencia de muestreo RIR incompatible")
+        else -> Gate(true, "Precondiciones de configuración RIR satisfechas")
+    }
+
+    /** RIR activation additionally requires the processing latency budget to be verified. */
     fun gateRir(
         explicitlySelectedOrMeasured: Boolean,
         metadataCompatible: Boolean,
         sampleRateCompatible: Boolean,
         latencyWithinBudget: Boolean
-    ): Gate = when {
-        !explicitlySelectedOrMeasured -> Gate(false, "No hay RIR medida o seleccionada explícitamente")
-        !metadataCompatible -> Gate(false, "Metadatos RIR incompatibles")
-        !sampleRateCompatible -> Gate(false, "Frecuencia de muestreo RIR incompatible")
-        !latencyWithinBudget -> Gate(false, "RIR excede el presupuesto de latencia")
-        else -> Gate(true, "Condiciones de RIR satisfechas")
+    ): Gate {
+        val preflight = gateRirConfiguration(
+            explicitlySelectedOrMeasured, metadataCompatible, sampleRateCompatible
+        )
+        if (!preflight.allowed) return preflight
+        return if (!latencyWithinBudget) Gate(false, "RIR excede el presupuesto de latencia")
+        else Gate(true, "Condiciones de RIR satisfechas")
     }
 
     /** Room correction must not infer a physical room from genre, presets, or synthetic responses. */

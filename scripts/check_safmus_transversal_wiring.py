@@ -67,6 +67,11 @@ require("app/src/test/java/com/ivanna/omega/safmus/SafmusUniversalKernelTest.kt"
         "sliderControlValuesRejectNonFiniteAndClampToDeclaredRange",
         "evolutionRequiresFiniteFitnessHeadroomStabilityAndLatency")
 
+require("app/src/main/java/com/ivanna/omega/safmus/SafmusUniversalKernel.kt",
+        "gateHrtfDataset", "gateRirConfiguration")
+require("app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialManager.kt", "gateHrtfDataset")
+require("app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt", "gateRirConfiguration")
+
 if errors:
     print("SAFMUS transversal wiring audit FAILED:")
     for error in errors:

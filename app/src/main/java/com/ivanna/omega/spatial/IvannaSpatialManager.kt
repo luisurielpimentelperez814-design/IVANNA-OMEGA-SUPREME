@@ -1,5 +1,7 @@
 package com.ivanna.omega.spatial
 
+import com.ivanna.omega.safmus.SafmusUniversalKernel
+
 import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
@@ -407,6 +409,22 @@ object IvannaSpatialManager {
         // seguía con el dataset anterior. Normalizamos SIEMPRE al ID de
         // archivo real antes de cruzar el JNI.
         val resolved = HrtfSubjectSelector.resolveSubjectId(subjectId)
+        val pose = requestedScenePose.get()
+        val poseFiniteAndBounded = pose.azimuthRad.isFinite() &&
+            pose.elevationRad.isFinite() && pose.distanceScale.isFinite() &&
+            pose.azimuthRad in -Math.PI.toFloat()..Math.PI.toFloat() &&
+            pose.elevationRad in -Math.PI.toFloat() / 4f..Math.PI.toFloat() / 4f &&
+            pose.distanceScale in 0.5f..2f
+        val hrtfGate = SafmusUniversalKernel.gateHrtfDataset(
+            binauralOutput = true, // ObjectRenderer's public output is binaural stereo.
+            coordinatesFinite = poseFiniteAndBounded,
+            datasetCompatible = resolved in HrtfSubjectSelector.AVAILABLE_SUBJECTS
+        )
+        if (!hrtfGate.allowed) {
+            hrtfStatus = "SAFMUS: ${hrtfGate.reason}"
+            Log.w(TAG, hrtfStatus)
+            return false
+        }
         if (resolved == activeSubject && isHrtfDatasetLoaded()) {
             return true
         }

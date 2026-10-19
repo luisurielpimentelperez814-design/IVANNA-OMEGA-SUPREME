@@ -30,11 +30,25 @@ class SafmusUniversalKernelTest {
         assertFalse(d.allowSpectralAdaptation)
     }
 
+    @Test fun hrtfDatasetPreflightIsUsedBeforeActivationGate() {
+        assertTrue(SafmusUniversalKernel.gateHrtfDataset(true, true, true).allowed)
+        assertFalse(SafmusUniversalKernel.gateHrtfDataset(false, true, true).allowed)
+        assertFalse(SafmusUniversalKernel.gateHrtfDataset(true, false, true).allowed)
+        assertFalse(SafmusUniversalKernel.gateHrtfDataset(true, true, false).allowed)
+    }
+
     @Test fun hrtfRequiresCompatibleBinauralRouteAndFiniteCoordinates() {
         assertTrue(SafmusUniversalKernel.gateHrtf(true, true, true, true).allowed)
         assertFalse(SafmusUniversalKernel.gateHrtf(false, true, true, true).allowed)
         assertFalse(SafmusUniversalKernel.gateHrtf(true, false, true, true).allowed)
         assertFalse(SafmusUniversalKernel.gateHrtf(true, true, true, false).allowed)
+    }
+
+    @Test fun rirConfigurationPreflightChecksDatasetAndSampleRate() {
+        assertTrue(SafmusUniversalKernel.gateRirConfiguration(true, true, true).allowed)
+        assertFalse(SafmusUniversalKernel.gateRirConfiguration(false, true, true).allowed)
+        assertFalse(SafmusUniversalKernel.gateRirConfiguration(true, false, true).allowed)
+        assertFalse(SafmusUniversalKernel.gateRirConfiguration(true, true, false).allowed)
     }
 
     @Test fun rirRequiresExplicitEvidenceMetadataAndBudget() {

@@ -274,9 +274,24 @@ object OmegaEngineBridge {
         return sendCommand(JSONObject().apply { put("action","SET_ADAPTIVE_STATE"); put("targetGain",g); put("compAmount",c); put("excRed",e); put("timestamp",System.currentTimeMillis()) })
     }
     fun setRoom(rt60S: Float, wet: Float = 0.22f, roomIdx: Int = -1): Boolean {
-        val rt60 = SafmusUniversalKernel.sanitizeControlValue(rt60S, 0f, 1.5f) ?: return false
+        if (!rt60S.isFinite() || rt60S < 0f) return false
+        val rt60 = if (rt60S == 0f) 0f
+            else SafmusUniversalKernel.sanitizeControlValue(rt60S, 0.1f, 1.5f) ?: return false
         val safeWet = SafmusUniversalKernel.sanitizeControlValue(wet, 0f, 1f) ?: return false
         val safeIdx = roomIdx.coerceIn(-1, 199)
+        val metadataCompatible = safeIdx == -1 || (
+            isRirDatasetLoaded() && safeIdx < rirRoomCount() && rirRoomInfo(safeIdx) != null
+        )
+        // The native RIR loader resamples source WAVs to the active engine rate.
+        val rirGate = SafmusUniversalKernel.gateRirConfiguration(
+            explicitlySelectedOrMeasured = rt60 == 0f || rt60 in 0.1f..1.5f,
+            metadataCompatible = metadataCompatible,
+            sampleRateCompatible = safeIdx == -1 || metadataCompatible
+        )
+        if (!rirGate.allowed) {
+            Log.w(TAG, "SAFMUS rechazó SET_ROOM_RT60: ${rirGate.reason}")
+            return false
+        }
         runCatching { nativeSetLocalRoom(rt60, safeWet, safeIdx) }
         return sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60); put("wet",safeWet); put("idx",safeIdx) })
     }
