@@ -21,6 +21,15 @@ import java.util.concurrent.atomic.AtomicLong
  * arbitrary remote pages.
  */
 class FotoHoloTelemetryBridge(context: Context) {
+    companion object {
+        /** Call before loading the trusted, bundled dashboard page into this WebView. */
+        fun installBeforeLoadingTrustedBundle(webView: android.webkit.WebView, context: Context): FotoHoloTelemetryBridge {
+            val bridge = FotoHoloTelemetryBridge(context)
+            webView.addJavascriptInterface(bridge, "IvannaFotoHoloBridge")
+            return bridge
+        }
+    }
+
     private val appContext = context.applicationContext
     private val sequence = AtomicLong(0L)
     @Volatile private var viewerCounted = false
