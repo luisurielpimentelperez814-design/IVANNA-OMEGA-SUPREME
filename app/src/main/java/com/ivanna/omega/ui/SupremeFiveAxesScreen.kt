@@ -971,7 +971,7 @@ fun WarpedLatticeAxisScreen(onBack: () -> Unit) {
                 for (m in 0 until 4) {
                     StatBlock(
                         label = "κ_$m",
-                        value = "%+.3f".format(kappas.getOrElse(m) { 0f }),
+                        value = kappas.getOrNull(m)?.takeIf { it.isFinite() }?.let { "%+.3f".format(it) } ?: "N/D",
                         accent = AuroraCyan,
                         modifier = Modifier.weight(1f)
                     )
@@ -984,7 +984,7 @@ fun WarpedLatticeAxisScreen(onBack: () -> Unit) {
                 for (m in 4 until 8) {
                     StatBlock(
                         label = "κ_$m",
-                        value = "%+.3f".format(kappas.getOrElse(m) { 0f }),
+                        value = kappas.getOrNull(m)?.takeIf { it.isFinite() }?.let { "%+.3f".format(it) } ?: "N/D",
                         accent = PhosphorGreen,
                         modifier = Modifier.weight(1f)
                     )
@@ -1099,13 +1099,13 @@ fun SnnNmfHoaAxisScreen(onBack: () -> Unit) {
             ) {
                 StatBlock(
                     label = "CENTRO (0°)",
-                    value = "%.0f %%".format(masks.getOrElse(0) { 0.25f } * 100f),
+                    value = masks.getOrNull(0)?.takeIf { it.isFinite() }?.let { "%.0f %%".format(it * 100f) } ?: "N/D",
                     accent = AuroraCyan,
                     modifier = Modifier.weight(1f)
                 )
                 StatBlock(
                     label = "LATERAL (±65°)",
-                    value = "%.0f %%".format(masks.getOrElse(1) { 0.25f } * 100f),
+                    value = masks.getOrNull(1)?.takeIf { it.isFinite() }?.let { "%.0f %%".format(it * 100f) } ?: "N/D",
                     accent = PhosphorGreen,
                     modifier = Modifier.weight(1f)
                 )
@@ -1116,13 +1116,13 @@ fun SnnNmfHoaAxisScreen(onBack: () -> Unit) {
             ) {
                 StatBlock(
                     label = "EARLY (±115°)",
-                    value = "%.0f %%".format(masks.getOrElse(2) { 0.25f } * 100f),
+                    value = masks.getOrNull(2)?.takeIf { it.isFinite() }?.let { "%.0f %%".format(it * 100f) } ?: "N/D",
                     accent = AmberSignal,
                     modifier = Modifier.weight(1f)
                 )
                 StatBlock(
                     label = "DIFFUSE (±155°)",
-                    value = "%.0f %%".format(masks.getOrElse(3) { 0.25f } * 100f),
+                    value = masks.getOrNull(3)?.takeIf { it.isFinite() }?.let { "%.0f %%".format(it * 100f) } ?: "N/D",
                     accent = NeonMagenta,
                     modifier = Modifier.weight(1f)
                 )
