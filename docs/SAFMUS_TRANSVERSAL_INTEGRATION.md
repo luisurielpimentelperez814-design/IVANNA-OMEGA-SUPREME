@@ -1,6 +1,6 @@
 # SAFMUS transversal integration — audit and acceptance contract
 
-**Status at this commit:** shared deterministic policy is implemented and JVM-tested for the FotoHolo route adapter, HRTF/RIR/correction eligibility, and evolutionary proposal safety. This is not a claim that every application control is already wired to the policy, that a learned SAFMUS model exists, or that acoustic/perceptual performance has been validated.
+**Implementation status:** SAFMUS now guards the principal live numeric control paths and the HRTF/RIR, room-correction, and evolutionary application boundaries listed below. This is a code-integration statement, not a claim that every control has been acoustically validated on hardware or that a learned SAFMUS model exists. The final Android/JVM CI and release-artifact-to-SHA verification remain mandatory before publishing.
 
 ## Non-negotiable contract for every control and processing path
 
@@ -24,10 +24,19 @@ Each slider, toggle, preset, environment, calibration action, HRTF/HRIR/IHR1 sel
 
 ## Implemented safeguards in code
 
-- Shared Kotlin policy is called by the FotoHolo route adapter and the evolutionary fitness panel (telemetry inspection only; not candidate activation).
-- The native finite-latent guard now rejects NaN/Inf at the system-effect HRTF handoff, the SAF app-process snapshot publisher, HrtfManager, SyntheticHRTF, SafSpatialModifier, and RirConvolver::applySofaCoupling. Invalid updates preserve the last valid state instead of poisoning filter parameters.
-- Host regression coverage checks finite versus NaN/Inf latent vectors. These checks establish input integrity, not acoustic quality or proof that every UI control is routed through SAFMUS.
+- **All shared UI sliders:** `SafmusComposeSlider` intercepts Material 3 `Slider` calls in the main UI package, rejects non-finite values, clamps to each declared range, and disables invalid ranges. The OEM shared slider uses the same numeric policy.
+- **Five-axis state:** `SupremeAxesPrefs.sanitizeState` is applied to UI updates, persistence, app-process native dispatch, and daemon dispatch. Invalid persisted floats fall back to safe defaults.
+- **Control-plane bridge:** `OmegaEngineBridge` recursively rejects JSON payloads containing NaN/Inf and validates/clamps the typed setters for room RT60/wet, SAF latent q[7], adaptive state, perceptual state, YAMNet scores, pinna metrics, and the Supreme axes. Generic legacy vararg paths reject non-finite numeric arguments.
+- **HRTF:** `IvannaSpatialManager.setHrtfSubject` runs the shared dataset/pose preflight before loading a subject. Native HRTF entrypoints reject non-finite latent vectors before mutating cached state; the manager still requires actual load/read-back confirmation.
+- **RIR:** `OmegaEngineBridge.setRoom` validates RT60/wet and requires a loaded, indexed room's metadata before selecting it. The native loader resamples source IRs to the engine rate. The convolver's SAF latent coupling rejects invalid q[7].
+- **Measured room correction:** `RoomMeasurement.runVerified` gates a candidate before application using measurement, playback-chain, finite/bounded-gain, and headroom-protection evidence. `RoomCorrectionEq` sanitizes active-path samples and applies a stereo-linked post-EQ ceiling at ±0.98; bypass remains bit-exact.
+- **Evolutionary kernel:** non-finite audio cues are rejected without overwriting the last valid cues; non-finite fitness is scored as worst-case. `audio_orchestrator` requires an enabled route, finite block, finite score above the existing threshold, bounded candidate gain, and block headroom before accepting a genome. Applied gain is headroom-limited and the output is capped at ±0.98. Missing Kotlin-side stability/latency evidence now fails closed by default.
+- **Native latent boundaries:** the shared finite-vector guard is applied at the system effect, app-process publisher, fusion engine, HrtfManager, SyntheticHRTF, SafSpatialModifier, ObjectRenderer, HRTFConvolver, and RirConvolver.
+- **Regression contract:** `scripts/check_safmus_transversal_wiring.py` runs in CI before native DSP tests and fails if key safeguards or their tests become disconnected.
 
-## Remaining integration work
+## Verification still required before release
 
-The shared kernel is an initial central policy boundary. Full universal integration still requires each control/UI environment and both app/system-effect processes to call it; a cross-process state bridge must be explicitly verified rather than inferred from a local snapshot. The native RIR coupling, HRTF read-back, evolutionary candidate validation/activation, and UI read-back must each be audited and tested on their real call paths. No final release should be claimed until Android/JVM/native CI and artifact-to-SHA checks pass.
+- CI must pass on the exact final `main` SHA, including the new wiring audit, native CTest, Android/JVM tests, and APK integrity checks. No release is valid for an earlier SHA if later commits exist.
+- The full `gateRir` latency-budget policy is tested as a policy function, but this code path currently performs a configuration preflight rather than feeding it measured per-block DSP latency. Do not describe that as real-time latency verification.
+- Acoustic/perceptual validation on supported devices, measured output SPL/headroom, and end-to-end read-back for every individual non-slider toggle/setter still require device-level evidence. UI presence or a successful IPC send is not proof of effective DSP application.
+- No learned SAFMUS model, calibrated room model, or measured HRTF provenance is created by these guards. They enforce safe integration and truthful status, not perceptual superiority by themselves.
