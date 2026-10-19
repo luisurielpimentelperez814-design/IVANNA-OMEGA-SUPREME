@@ -34,18 +34,18 @@ import kotlin.math.sin
  * y estado de sincronización cross-process Ruta B (OmegaEngineBridge / OmegaControlBus).
  */
 data class SupremeAxesLiveTelemetry(
-    val subSampleDelaySamples: Float = 0.24f,
+    val subSampleDelaySamples: Float = Float.NaN,
     val declippedPeaksCount: Int = 0,
-    val maxPhaseDerivativeRad: Float = 0.012f,
+    val maxPhaseDerivativeRad: Float = Float.NaN,
     val tapeMagnetization: Float = 0.0f,
-    val snnActiveSpikes: Int = 2,
-    val pinnaNotchFreqHz: Float = 7800f,
-    val pinnaItdMicroSec: Float = 620f,
+    val snnActiveSpikes: Int = -1,
+    val pinnaNotchFreqHz: Float = Float.NaN,
+    val pinnaItdMicroSec: Float = Float.NaN,
     val shmOwnerPid: Int = 0,
-    val latticeKappas: List<Float> = listOf(-0.38f, 0.24f, -0.15f, 0.09f, -0.055f, 0.032f, -0.018f, 0.009f),
-    val snnOrthogonalMasks: List<Float> = listOf(0.25f, 0.25f, 0.25f, 0.25f),
-    val pinnaLatents: List<Float> = listOf(0.15f, -0.05f, 0.10f, 0.02f, -0.04f, 0.08f),
-    val pinnaFirTaps: List<Float> = listOf(0.92f, -0.18f, 0.11f, -0.07f, 0.04f, -0.03f, 0.02f, -0.01f),
+    val latticeKappas: List<Float> = emptyList(),
+    val snnOrthogonalMasks: List<Float> = emptyList(),
+    val pinnaLatents: List<Float> = emptyList(),
+    val pinnaFirTaps: List<Float> = emptyList(),
     val shmCrossProcessMapped: Boolean = false,
     val daemonRutaBConnected: Boolean = false
 )
