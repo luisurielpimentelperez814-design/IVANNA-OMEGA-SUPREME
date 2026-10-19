@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "purpose": "SAFMUS Universal dataset discovery registry. Entries are leads for audit/acquisition, not proof that data have been downloaded or licensed for redistribution.",
+  "sources": [
+    {
+      "id": "princeton-3d3a-hrtf",
+      "family": ["HRTF", "HRIR", "anthropometry", "3d-scans", "simulated-HRTF"],
+      "url": "https://3d3a.princeton.edu/3d3a-lab-head-related-transfer-function-database",
+      "license_status": "Review current dataset-specific terms before use",
+      "priority": "high",
+      "notes": "Measured HRTFs and associated head/ear scans and computed HRTFs; retain measured vs computed labels."
+    },
+    {
+      "id": "princeton-3d3a-loudspeaker-directivity",
+      "family": ["loudspeaker-IR", "directivity", "frequency-response"],
+      "url": "https://3d3a.princeton.edu/loudspeaker-directivity-ongoing-experimental-survey",
+      "license_status": "CC BY 4.0 stated by source; preserve attribution and verify package terms",
+      "priority": "high",
+      "notes": "Anechoic horizontal/vertical radiation measurements; source reports 96 kHz sweeps and 5-degree angular increments."
+    },
+    {
+      "id": "detmold-spatial-rir",
+      "family": ["SRIR", "BRIR", "room-acoustics", "WFS", "room-enhancement"],
+      "url": "https://zenodo.org/records/4116247",
+      "license_status": "Inspect record files and license metadata before reuse",
+      "priority": "high",
+      "notes": "Approximately 600 multichannel responses from three performance spaces; includes stage/audience positions and special WFS/artificial reverberation configurations."
+    },
+    {
+      "id": "datares",
+      "family": ["RIR", "room-enhancement-system", "stage-audience", "system-microphones", "system-loudspeakers"],
+      "url": "https://pure.york.ac.uk/portal/en/datasets/datares/",
+      "license_status": "Resolve linked deposit license and terms",
+      "priority": "high",
+      "notes": "Impulse responses for rooms using active reverberation enhancement systems; preserve processing-block and room metadata."
+    },
+    {
+      "id": "princeton-multiloudspeaker-brir",
+      "family": ["BRIR", "multiloudspeaker", "head-tracking", "personal-sound-zones"],
+      "url": "https://3d3a.princeton.edu/publications/multi-loudspeaker-binaural-room-impulse-response-dataset-high-resolution-translational",
+      "license_status": "Inspect article/data deposit license",
+      "priority": "medium",
+      "notes": "Research dataset with high-resolution translational and rotational head coordinates."
+    },
+    {
+      "id": "sonicom",
+      "family": ["HRTF", "anthropometry", "3d-scans", "perceptual-evaluation", "headphones"],
+      "url": "https://www.sonicom.eu/",
+      "license_status": "Check each data package and consent/license restrictions",
+      "priority": "high",
+      "notes": "Use dataset-level provenance; do not assume all project assets share one license."
+    },
+    {
+      "id": "hutubs",
+      "family": ["HRTF", "3d-scans", "anthropometry", "headphones"],
+      "url": "https://depositonce.tu-berlin.de/",
+      "license_status": "Resolve exact dataset record and terms before acquisition",
+      "priority": "medium",
+      "notes": "Search for the HUTUBS dataset record; do not use the repository home page as a substitute for a verified dataset citation."
+    },
+    {
+      "id": "sofa-specification",
+      "family": ["format", "metadata", "conventions"],
+      "url": "https://www.sofaconventions.org/",
+      "license_status": "Specification/documentation; verify applicable terms",
+      "priority": "high",
+      "notes": "Use conventions to interpret SOFA files; format compatibility does not mean physical quantities are interchangeable."
+    }
+  ]
+}
