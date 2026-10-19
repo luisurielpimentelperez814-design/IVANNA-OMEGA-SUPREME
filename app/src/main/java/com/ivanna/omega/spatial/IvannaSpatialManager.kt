@@ -110,6 +110,25 @@ object IvannaSpatialManager {
         return runCatching { IvannaSpatialNative.nativeUpmixerIsEnabled(u) }.getOrDefault(false)
     }
 
+    /**
+     * True only if the same ObjectRenderer handle used by renderBlock has
+     * completed non-empty blocks recently. Settings/read-back alone do not
+     * prove that playback is reaching this engine.
+     */
+    fun isRenderPathActive(maxStaleMs: Long = 1_500L): Boolean {
+        val h = rendererHandle
+        val u = upmixerHandle
+        if (!ready || h == 0L || u == 0L) return false
+        val count = runCatching {
+            IvannaSpatialNative.nativeObjectRendererGetProcessedBlockCount(h)
+        }.getOrDefault(0L)
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastObservedRenderBlockCount.getAndSet(count)
+        if (count > previous) lastRenderProgressElapsedMs.set(now)
+        val last = lastRenderProgressElapsedMs.get()
+        return count > 0L && last > 0L && now >= last && now - last <= maxStaleMs
+    }
+
     /** true only when the Android rotation-vector sensor is registered and fresh data reached JNI. */
     fun isHeadTrackingFresh(): Boolean = headTracker?.isTrackingFresh == true
 
@@ -175,6 +194,11 @@ object IvannaSpatialManager {
     private val outR = FloatArray(BLOCK_SIZE)
 
     private val lock = Any()
+
+    // Native render path progress is sampled from control/UI threads, never
+    // polled from the real-time audio callback.
+    private val lastObservedRenderBlockCount = java.util.concurrent.atomic.AtomicLong(-1L)
+    private val lastRenderProgressElapsedMs = java.util.concurrent.atomic.AtomicLong(0L)
 
     private val movementLock = Any()
     private val movementGeneration = java.util.concurrent.atomic.AtomicLong(0L)
@@ -641,7 +665,15 @@ object IvannaSpatialManager {
      */
     fun renderBlock(buffer: FloatArray, frames: Int) {
         val h = rendererHandle
-        if (!ready || h == 0L || frames <= 0) return
+        if (!ready || h == 0L || frames <= 0 || frames > buffer.size / 2) return
+        val u = upmixerHandle
+        if (u == 0L) {
+            // The object renderer expects four planar objects; invoking it with
+            // numObjects=0 zeros the output. If stem generation is unavailable,
+            // preserve the input exactly rather than converting an optional
+            // spatial failure into silence.
+            return
+        }
         val n = minOf(frames, BLOCK_SIZE)
 
         // Deinterleave directo hacia FloatBuffers directos (sin arrays temporales)
@@ -664,8 +696,7 @@ object IvannaSpatialManager {
         try {
             outLBuf.clear()
             outRBuf.clear()
-            val u = upmixerHandle
-            if (u != 0L) {
+            run {
                 stereoInBuf.clear()
                 stereoInBuf.put(buffer, 0, n * 2)
                 stereoInBuf.position(0)
@@ -692,15 +723,6 @@ object IvannaSpatialManager {
                     h,
                     objectsInBuf,
                     4,
-                    outLBuf,
-                    outRBuf,
-                    n
-                )
-            } else {
-                IvannaSpatialNative.nativeObjectRendererRenderBlock(
-                    h,
-                    inLBuf,
-                    0,
                     outLBuf,
                     outRBuf,
                     n
