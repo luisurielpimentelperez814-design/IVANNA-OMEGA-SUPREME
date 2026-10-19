@@ -91,9 +91,9 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
         // ── Thermal ───────────────────────────────────────────────────────────
         val thermalLoad  = ThermalGovernor.currentThermalLoad
         val thermalApiOk = ThermalGovernor.thermalApiAvailable
-        val tempC        = runCatching { OmegaDaemon.getTemperature() }.getOrDefault(0f)
+        val tempC        = runCatching { OmegaDaemon.getTemperature() }.getOrDefault(Float.NaN)
         val sharedOmega  = com.ivanna.omega.audio.OmegaMetrics.shared.value
-        val latencyMs    = if (sharedOmega.latencyMs > 0f) sharedOmega.latencyMs else runCatching { OmegaDaemon.getLatency() }.getOrDefault(0f)
+        val latencyMs    = if (sharedOmega.latencyMs.isFinite() && sharedOmega.latencyMs > 0f) sharedOmega.latencyMs else runCatching { OmegaDaemon.getLatency() }.getOrDefault(Float.NaN)
 
         // ── Estado del motor derivado de thermal ──────────────────────────────
         val engineState = when {
