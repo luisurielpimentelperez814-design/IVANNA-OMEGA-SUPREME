@@ -319,7 +319,8 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPositions(
     JNIEnv* env, jclass, jlong handle, jfloatArray positions) {
     auto* upmixer = toUpmixer(handle);
-    if (!upmixer || !positions || env->GetArrayLength(positions) != 16) return JNI_FALSE;
+    // 4 objects × [x, y, z, width, gain]. Reject malformed requests atomically.
+    if (!upmixer || !positions || env->GetArrayLength(positions) != 20) return JNI_FALSE;
 
     jfloat* values = env->GetFloatArrayElements(positions, nullptr);
     if (!values) return JNI_FALSE;
@@ -327,18 +328,21 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPositions(
     std::array<ivanna::ai::StemPosition, 4> requested{};
     bool valid = true;
     for (int i = 0; i < 4; ++i) {
-        const jfloat x = values[i * 4];
-        const jfloat y = values[i * 4 + 1];
-        const jfloat z = values[i * 4 + 2];
-        const jfloat width = values[i * 4 + 3];
+        const int off = i * 5;
+        const jfloat x = values[off];
+        const jfloat y = values[off + 1];
+        const jfloat z = values[off + 2];
+        const jfloat width = values[off + 3];
+        const jfloat gain = values[off + 4];
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
-            !std::isfinite(width) || x < -2.f || x > 2.f ||
-            y < -2.f || y > 2.f || z < -2.f || z > 2.f ||
-            width < 0.02f || width > 1.f) {
+            !std::isfinite(width) || !std::isfinite(gain) ||
+            x < -2.f || x > 2.f || y < -2.f || y > 2.f ||
+            z < -2.f || z > 2.f || width < 0.02f || width > 1.f ||
+            gain < 0.f || gain > 1.35f) {
             valid = false;
             break;
         }
-        requested[i] = {x, y, z, width, 1.f};
+        requested[i] = {x, y, z, width, gain};
     }
     env->ReleaseFloatArrayElements(positions, values, JNI_ABORT);
     if (!valid || !upmixer->setStemPositions(requested)) return JNI_FALSE;
@@ -349,10 +353,12 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPositions(
         const auto& expected = requested[i];
         if (!std::isfinite(actual.x) || !std::isfinite(actual.y) ||
             !std::isfinite(actual.z) || !std::isfinite(actual.width) ||
+            !std::isfinite(actual.gain) ||
             std::fabs(actual.x - expected.x) > 0.015f ||
             std::fabs(actual.y - expected.y) > 0.015f ||
             std::fabs(actual.z - expected.z) > 0.015f ||
-            std::fabs(actual.width - expected.width) > 0.015f) {
+            std::fabs(actual.width - expected.width) > 0.015f ||
+            std::fabs(actual.gain - expected.gain) > 0.015f) {
             return JNI_FALSE;
         }
     }
