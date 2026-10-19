@@ -59,6 +59,8 @@ object IvannaSpatialNative {
     @JvmStatic external fun nativeUpmixerProcess(handle: Long, inBuffer: java.nio.FloatBuffer, outBuffer: java.nio.FloatBuffer, numFrames: Int)
     @JvmStatic external fun nativeUpmixerSetEnabled(handle: Long, enabled: Boolean)
     @JvmStatic external fun nativeUpmixerSetStemPosition(handle: Long, stemType: Int, x: Float, y: Float, z: Float, width: Float)
+    /** Native read-back: [x, y, z, width, gain] for the active stem position. */
+    @JvmStatic external fun nativeUpmixerGetStemPosition(handle: Long, stemType: Int): FloatArray
     @JvmStatic external fun nativeUpmixerReset(handle: Long)
 
     // ═══ Eje Supremo Neuroacústico: Inversión Biomecánica Coclear (PINN) ═══
