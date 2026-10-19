@@ -42,12 +42,19 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
     var active by remember { mutableStateOf(false) }
     var optedIn by remember { mutableStateOf(prefs.getBoolean("wifi_sensing_opt_in", false)) }
     var observations by remember { mutableStateOf(0) }
+    var signalSummary by remember { mutableStateOf("Sin datos de señal") }
     var userStopped by remember { mutableStateOf(false) }
     val session = remember(context) {
         WifiScanSession(context) { update ->
             status = update.message
             active = update.sessionRunning
             observations = update.observations.size
+            val scene = update.sceneFeatures
+            signalSummary = when (scene.level) {
+                UniversalWifiSensingAdapter.DataLevel.NO_WIFI -> "Sin señal Wi-Fi nueva"
+                UniversalWifiSensingAdapter.DataLevel.WIFI_METADATA_ONLY -> "RSSI · cambio=${scene.movementIndicator?.let { "%.2f".format(it) } ?: "sin referencia"} · confianza=${"%.0f".format(scene.confidence * 100)}%"
+                UniversalWifiSensingAdapter.DataLevel.CSI_VERIFIED -> "CSI verificado · proveedor CSI activo"
+            }
         }
     }
 
@@ -107,6 +114,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                     style = MaterialTheme.typography.labelMedium
                 )
                 Text(status, style = MaterialTheme.typography.bodySmall)
+                Text(signalSummary, style = MaterialTheme.typography.bodySmall)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
