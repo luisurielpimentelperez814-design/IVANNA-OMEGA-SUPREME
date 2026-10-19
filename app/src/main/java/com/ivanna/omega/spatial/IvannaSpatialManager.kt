@@ -46,12 +46,7 @@ object IvannaSpatialManager {
     @Volatile private var sceneElevationRad: Float = 0f
     @Volatile private var sceneDistanceScale: Float = 1f
 
-    private val baseStemPositions = arrayOf(
-        floatArrayOf(0f, 0f, 1.2f, 0.15f),    // vocals
-        floatArrayOf(0f, 0.3f, -0.8f, 0.45f), // drums
-        floatArrayOf(0f, -0.8f, 0.2f, 0.25f), // bass
-        floatArrayOf(0f, 0.1f, 0f, 0.85f)     // other
-    )
+    private val baseStemPositions = SpatialScenePoseMath.defaultStems
 
     // Buffers para el hot-path: direct FloatBuffers reutilizables (sin allocations por frame)
     private val stereoInBuf: FloatBuffer = ByteBuffer
@@ -307,28 +302,20 @@ object IvannaSpatialManager {
         distanceScale: Float
     ): Boolean {
         if (upmixer == 0L) return false
-        val yawCos = kotlin.math.cos(azimuthRad)
-        val yawSin = kotlin.math.sin(azimuthRad)
-        val elevCos = kotlin.math.cos(elevationRad)
-        val elevSin = kotlin.math.sin(elevationRad)
-
         for (stem in baseStemPositions.indices) {
-            val base = baseStemPositions[stem]
-            val yawX = base[0] * yawCos - base[1] * yawSin
-            val yawY = base[0] * yawSin + base[1] * yawCos
-            val yawZ = base[2]
-            val x = ((yawX * elevCos + yawZ * elevSin) * distanceScale).coerceIn(-2f, 2f)
-            val y = (yawY * distanceScale).coerceIn(-2f, 2f)
-            val z = ((-yawX * elevSin + yawZ * elevCos) * distanceScale).coerceIn(-2f, 2f)
-            val width = base[3].coerceIn(0.02f, 1f)
+            val pose = SpatialScenePoseMath.transform(
+                baseStemPositions[stem], azimuthRad, elevationRad, distanceScale
+            ) ?: return false
 
-            IvannaSpatialNative.nativeUpmixerSetStemPosition(upmixer, stem, x, y, z, width)
+            IvannaSpatialNative.nativeUpmixerSetStemPosition(
+                upmixer, stem, pose.x, pose.y, pose.z, pose.width
+            )
             val actual = IvannaSpatialNative.nativeUpmixerGetStemPosition(upmixer, stem)
             if (actual.size < 5 ||
-                kotlin.math.abs(actual[0] - x) > 0.015f ||
-                kotlin.math.abs(actual[1] - y) > 0.015f ||
-                kotlin.math.abs(actual[2] - z) > 0.015f ||
-                kotlin.math.abs(actual[3] - width) > 0.015f
+                kotlin.math.abs(actual[0] - pose.x) > 0.015f ||
+                kotlin.math.abs(actual[1] - pose.y) > 0.015f ||
+                kotlin.math.abs(actual[2] - pose.z) > 0.015f ||
+                kotlin.math.abs(actual[3] - pose.width) > 0.015f
             ) return false
         }
         return true
