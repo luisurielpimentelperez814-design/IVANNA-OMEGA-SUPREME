@@ -121,7 +121,7 @@ fun SofaAfRirSafPanelScreen(
     var hybridRoomWet by remember { mutableStateOf(initialHybridValue(7, adaptivePrefs.hybridRoomWetMix)) }
 
     fun applyHybridMagistral() {
-        adaptivePrefs = adaptivePrefs.copy(
+        val nextPrefs = adaptivePrefs.copy(
             hybridMagistralEnabled = hybridEnabled,
             hybridBinauralWet = hybridBinauralWet,
             binauralAzimuth = hybridAzimuthDeg,
@@ -129,15 +129,15 @@ fun SofaAfRirSafPanelScreen(
             hybridRoomSize = hybridRoomSize,
             hybridRoomWetMix = hybridRoomWet
         )
-        AdaptiveControlsPrefs.save(ctx, adaptivePrefs)
+        AdaptiveControlsPrefs.save(ctx, nextPrefs)
         com.ivanna.omega.core.NativeBridge.safeSetHybridMagistralParams(
             enabled = hybridEnabled,
             binauralWet = hybridBinauralWet,
             virtualAzimuthDeg = hybridAzimuthDeg,
             virtualElevationDeg = hybridElevationDeg,
             roomSize = hybridRoomSize,
-            roomAbsorption = adaptivePrefs.hybridRoomAbsorption,
-            roomDampening = adaptivePrefs.hybridRoomDampening,
+            roomAbsorption = nextPrefs.hybridRoomAbsorption,
+            roomDampening = nextPrefs.hybridRoomDampening,
             roomWetMix = hybridRoomWet
         )
     }
