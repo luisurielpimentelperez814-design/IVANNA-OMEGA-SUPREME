@@ -1055,12 +1055,10 @@ fun DashboardScreen(
             roomProgress = 0f
             roomStatus = "Preparando medición: volumen cómodo y sala en silencio."
             try {
-                applyRoomCorrection(null, false)
-                delay(800)
-                when (val measurement = com.ivanna.omega.audio.RoomMeasurement.run(context) {
-                    roomProgress = it
-                }) {
-                    is com.ivanna.omega.audio.RoomMeasurement.Outcome.Success -> {
+                when (val measurement = com.ivanna.omega.audio.RoomMeasurement.runVerified(
+                    context, previousGains, previousEnabled, applyRoomCorrection
+                ) { roomProgress = it }) {
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Success -> {
                         paramStore.setRoomCorrection(measurement.gainsDb, true)
                         runCatching {
                             com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, measurement.latencyMs)
@@ -1068,11 +1066,11 @@ fun DashboardScreen(
                         roomGains = measurement.gainsDb
                         roomEnabled = true
                         applyRoomCorrection(measurement.gainsDb, true)
-                        roomStatus = "Medición lista · latencia de salida ${measurement.latencyMs} ms"
+                        roomStatus = "Verificado · error tonal ${"%.2f".format(java.util.Locale.ROOT, measurement.beforeErrorDb)} → ${"%.2f".format(java.util.Locale.ROOT, measurement.afterErrorDb)} dB · decisión #${measurement.decisionId}"
                     }
-                    is com.ivanna.omega.audio.RoomMeasurement.Outcome.Failure -> {
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Failure -> {
                         applyRoomCorrection(previousGains, previousEnabled)
-                        roomStatus = measurement.reason
+                        roomStatus = "Reversión automática · ${measurement.reason} · decisión #${measurement.decisionId}"
                     }
                 }
             } catch (t: Throwable) {
