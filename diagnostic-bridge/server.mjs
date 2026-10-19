@@ -69,14 +69,50 @@ function sanitize(s) {
   };
   return out;
 }
+async function analyzeWithOpenAI(snapshot) {
+  const apiKey = process.env.OPENAI_API_KEY || '';
+  if (!apiKey) return { status: 503, body: { error: 'ai_not_configured', detail: 'Set OPENAI_API_KEY on the server; never place it in the app.' } };
+  const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + apiKey, 'content-type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        instructions: 'You are the diagnostic analyst for IVANNA OMEGA. Analyze only the supplied sanitized telemetry snapshot. Return concise Spanish with: estado, hallazgos respaldados por métricas, incertidumbres, and recommended next diagnostic checks. Never claim a repair was performed, never issue commands, never infer personal identity, and never recommend changing settings automatically. Distinguish evidence from hypotheses.',
+        input: JSON.stringify(snapshot),
+        max_output_tokens: 700
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { status: 502, body: { error: 'ai_provider_error', providerStatus: response.status } };
+    const answer = (data.output || []).flatMap(item => item.content || [])
+      .filter(part => part.type === 'output_text' && typeof part.text === 'string')
+      .map(part => part.text).join('\n').trim();
+    if (!answer) return { status: 502, body: { error: 'ai_empty_response' } };
+    return { status: 200, body: { ok: true, model, snapshotId: snapshot.snapshotId, analysis: answer, repairAuthority: 'recommendations_only' } };
+  } catch (error) {
+    return { status: 502, body: { error: error?.name === 'AbortError' ? 'ai_timeout' : 'ai_unavailable' } };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/healthz') return json(res, 200, { ok: true, service: 'ivanna-diagnostic-bridge' });
-  if (!['POST /v1/diagnostics', 'GET /v1/diagnostics/latest'].includes(req.method + ' ' + req.url))
+  if (!['POST /v1/diagnostics', 'GET /v1/diagnostics/latest', 'POST /v1/diagnostics/analyze'].includes(req.method + ' ' + req.url))
     return json(res, 404, { error: 'not_found' });
   if (!authorized(req)) return json(res, 401, { error: 'unauthorized' });
   const ip = req.socket.remoteAddress || 'unknown';
   if (!rateAllowed(ip)) return json(res, 429, { error: 'rate_limited' });
   if (req.method === 'GET') return latest ? json(res, 200, latest) : json(res, 404, { error: 'no_snapshot_yet' });
+  if (req.method === 'POST' && req.url === '/v1/diagnostics/analyze') {
+    if (!latest) return json(res, 404, { error: 'no_snapshot_yet' });
+    const result = await analyzeWithOpenAI(latest);
+    return json(res, result.status, result.body);
+  }
   let raw = '';
   try {
     for await (const chunk of req) {
