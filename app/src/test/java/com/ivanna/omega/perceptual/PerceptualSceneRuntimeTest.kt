@@ -132,8 +132,8 @@ class PerceptualSceneRuntimeTest {
 
     @Test
     fun azimuthReadbackAcrossPiBoundaryMatchesSameDirection() {
-        val requestedAzimuth = 3.13f
-        val equivalentReadbackDegrees = Math.toDegrees(-3.13).toFloat()
+        val requestedAzimuth = 3.135f
+        val equivalentReadbackDegrees = Math.toDegrees(-3.135).toFloat()
         val snapshot = PerceptualSceneRuntime.assemble(
             evidence().copy(
                 requestedAzimuthRad = requestedAzimuth,

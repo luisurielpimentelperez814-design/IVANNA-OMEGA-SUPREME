@@ -47,7 +47,13 @@ object GeminiRest {
                 if (r.isNotEmpty()) { reason = r; break }
             }
         }
-        return ApiError(http, err.optString("status"), reason, err.optString("message").take(300))
+        val message = err.optString("message").take(300)
+        // Some Google gateways omit details[].reason but still identify the
+        // Android application restriction in the actual error message.
+        if (reason.isBlank() && "android client application" in message.lowercase()) {
+            reason = "API_KEY_ANDROID_APP_BLOCKED"
+        }
+        return ApiError(http, err.optString("status"), reason, message)
     }
 
     /** Puro y testeable: causa probable en español, según lo que Google respondió de verdad. */
