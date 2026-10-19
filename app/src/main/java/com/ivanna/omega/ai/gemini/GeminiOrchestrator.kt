@@ -116,7 +116,7 @@ class GeminiOrchestrator(
 
     private val registry = listOf(
         ModelEntry("gemini-3.8-flash", "Gemini 3.8 Flash", 1_000_000, 32768, true, true, true, ModelEntry.CostTier.PREMIUM, ModelEntry.LatencyProfile.MODERATE),
-        ModelEntry("gemini-3.8-flash", "Gemini 3.8 Flash", 1_000_000, 32768, true, true, true, ModelEntry.CostTier.STANDARD, ModelEntry.LatencyProfile.FAST),
+        ModelEntry("gemini-3.6-flash", "Gemini 3.6 Flash", 1_000_000, 32768, true, true, true, ModelEntry.CostTier.STANDARD, ModelEntry.LatencyProfile.FAST),
         ModelEntry("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite", 1_000_000, 32768, true, false, true, ModelEntry.CostTier.ECONOMY, ModelEntry.LatencyProfile.VERY_FAST)
     )
 
