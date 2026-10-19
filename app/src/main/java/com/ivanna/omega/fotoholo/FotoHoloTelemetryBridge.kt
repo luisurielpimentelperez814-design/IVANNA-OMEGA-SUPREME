@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.webkit.JavascriptInterface
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.saf.SaFEngine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
@@ -58,6 +59,7 @@ class FotoHoloTelemetryBridge(context: Context) {
     fun getSnapshotJson(): String = runCatching {
         val tel = FotoHoloEngine.telemetry.value
         val metrics = OmegaMetrics.shared.value
+        val saf = SaFEngine.latestTelemetry()
         val nativeState = if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeGetSpatialState() }.getOrNull().orEmpty()
         } else ""
@@ -97,9 +99,18 @@ class FotoHoloTelemetryBridge(context: Context) {
                 else -> "not-confirmed-by-readback"
             })
             put("rirRuntime", "not-exposed-by-native-readback")
-            put("safRuntime", "not-exposed-by-shared-state")
-            put("safModelLoaded", JSONObject.NULL)
-            put("safConverged", JSONObject.NULL)
+            put("safRuntime", when {
+                saf == null -> "not-initialized"
+                !saf.jniLoaded -> "jni-unavailable"
+                saf.modelLoaded && saf.converged -> "loaded-converged"
+                saf.modelLoaded -> "loaded-not-converged"
+                else -> "model-not-confirmed"
+            })
+            put("safModelLoaded", saf?.modelLoaded ?: JSONObject.NULL)
+            put("safConverged", saf?.converged ?: JSONObject.NULL)
+            put("safPhase", saf?.phase?.name ?: "not-initialized")
+            put("safIteration", saf?.iteration ?: JSONObject.NULL)
+            put("safErrorEnergy", saf?.errorEnergy?.let { finiteOrNull(it) } ?: JSONObject.NULL)
             put("nativeSpatialState", nativeState.take(512))
             put("freshnessMs", 0)
         }.toString()
