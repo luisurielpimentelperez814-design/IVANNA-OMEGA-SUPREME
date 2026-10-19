@@ -44,16 +44,31 @@ import kotlinx.coroutines.withContext
 private const val PREFS_NETWORK = "ivanna_network_prefs"
 private const val KEY_GEMINI_API = "gemini_api_key"
 
-private fun loadGeminiKey(ctx: Context): String =
-    ctx.getSharedPreferences(PREFS_NETWORK, Context.MODE_PRIVATE)
-        .getString(KEY_GEMINI_API, "") ?: ""
+private fun loadGeminiKey(ctx: Context): String {
+    val prefs = ctx.getSharedPreferences(PREFS_NETWORK, Context.MODE_PRIVATE)
+    val legacyKey = prefs.getString(KEY_GEMINI_API, "").orEmpty()
+    SecureConfigurationManager.initialize(ctx.applicationContext)
+    var secureKey = runCatching { SecureConfigurationManager.getApiKey() }.getOrDefault("")
+
+    // Migración única: rescata la clave antigua y borra inmediatamente la copia en texto plano.
+    if (secureKey.isBlank() && legacyKey.isNotBlank()) {
+        runCatching { SecureConfigurationManager.setApiKey(legacyKey) }
+        secureKey = runCatching { SecureConfigurationManager.getApiKey() }.getOrDefault("")
+    }
+    prefs.edit().remove(KEY_GEMINI_API).apply()
+    return secureKey
+}
 
 private fun saveGeminiKey(ctx: Context, key: String) {
-    // FIX (CI rojo): la línea `val context = LocalContext.current` quedó huérfana
-    // dentro de una función top-level NO composable (Compose invocable solo desde
-    // @Composable) y la variable ni siquiera se usaba — se elimina.
+    SecureConfigurationManager.initialize(ctx.applicationContext)
+    if (key.isBlank()) {
+        runCatching { SecureConfigurationManager.clearApiKey() }
+    } else {
+        SecureConfigurationManager.setApiKey(key)
+    }
+    // No mantener una segunda copia menos protegida.
     ctx.getSharedPreferences(PREFS_NETWORK, Context.MODE_PRIVATE)
-        .edit().putString(KEY_GEMINI_API, key).apply()
+        .edit().remove(KEY_GEMINI_API).apply()
 }
 
 // ─── Estado de red ────────────────────────────────────────────────────────────
