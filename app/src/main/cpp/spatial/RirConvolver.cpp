@@ -103,6 +103,7 @@ void RirConvolver::applySofaCoupling(const float q[7]) noexcept {
 
 void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexcept {
     const int sr = (sampleRate > 8000) ? sampleRate : 48000;
+    setSampleRate(sr);
     const float rt60 = std::clamp(rt60S, 0.18f, 1.80f);
     if (!needsMasterStudioBrirSynthesis(rt60, sr)) {
         return;
@@ -151,6 +152,11 @@ void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexc
 
 void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept {
     if (!irL || !irR || irLen <= 0) return;
+    const bool tailOverBudget = irLen > MAX_IR && !tailLatencyWithinBudget();
+    tailLatencyBudgetExceeded_.store(tailOverBudget, std::memory_order_release);
+    // The direct head is zero-latency. If one 512-frame tail block would exceed
+    // SAFMUS's 20 ms budget, keep the safe head and omit only the delayed tail.
+    if (tailOverBudget) irLen = MAX_IR;
     lastSynthRt60_ = -1.0f;
     lastSynthSr_   = 0;
 
@@ -360,6 +366,7 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
 void RirConvolver::unload() noexcept {
     wetDry_.store(0.0f, std::memory_order_relaxed);
     pending_.store(false, std::memory_order_relaxed);
+    tailLatencyBudgetExceeded_.store(false, std::memory_order_release);
 }
 
 void RirConvolver::process(float* L, float* R, int frames) noexcept {

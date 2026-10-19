@@ -475,3 +475,22 @@ TEST(SAFMUSLatentGuard, RejectsNonFiniteLatentValues) {
     valid[3] = std::numeric_limits<float>::infinity();
     EXPECT_FALSE(ivanna::safmus::isFiniteLatent(valid.data()));
 }
+
+
+TEST(SAFMUSRirLatencyGate, EnforcesTailBlockLatencyBudget) {
+    EXPECT_FALSE(Ivanna::RirConvolver::tailLatencyWithinBudgetFor(16000, 20.0f));
+    EXPECT_TRUE(Ivanna::RirConvolver::tailLatencyWithinBudgetFor(44100, 20.0f));
+    EXPECT_TRUE(Ivanna::RirConvolver::tailLatencyWithinBudgetFor(48000, 20.0f));
+    EXPECT_FALSE(Ivanna::RirConvolver::tailLatencyWithinBudgetFor(48000, NAN));
+    EXPECT_FALSE(Ivanna::RirConvolver::tailLatencyWithinBudgetFor(0, 20.0f));
+}
+
+TEST(SAFMUSRirLatencyGate, OmitsDelayedTailWhenSampleRateExceedsBudget) {
+    Ivanna::RirConvolver conv;
+    conv.setSampleRate(16000);
+    std::vector<float> left(Ivanna::RirConvolver::MAX_IR + 1024, 0.01f);
+    std::vector<float> right(Ivanna::RirConvolver::MAX_IR + 1024, -0.01f);
+    conv.load(left.data(), right.data(), static_cast<int>(left.size()));
+    EXPECT_TRUE(conv.tailLatencyBudgetExceeded());
+    EXPECT_FALSE(conv.tailLatencyWithinBudget());
+}

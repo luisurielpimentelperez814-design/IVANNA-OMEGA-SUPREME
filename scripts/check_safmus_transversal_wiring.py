@@ -77,6 +77,9 @@ require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "if (value.
 require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "internal fun sanitizeState(input: SupremeAxesState)", "val safeState = sanitizeState(s)", "safeSetWarpedLatticeBlDrive(safeState.warpedLatticeBlDrive)")
 require("app/src/main/java/com/ivanna/omega/audio/RoomMeasurement.kt", "gateRoomCorrection", "candidateFiniteAndStable = candidateSafe")
 require("app/src/main/cpp/spatial/RoomCorrectionEq.hpp", "safetyGain_", "std::clamp(left, -0.98f, 0.98f)")
+require("app/src/main/cpp/spatial/RirConvolver.hpp", "tailLatencyWithinBudgetFor", "tailLatencyBudgetExceeded_")
+require("app/src/main/cpp/spatial/RirConvolver.cpp", "if (tailOverBudget) irLen = MAX_IR")
+require("app/src/main/cpp/tests/test_supreme_five_axes.cpp", "SAFMUSRirLatencyGate", "OmitsDelayedTailWhenSampleRateExceedsBudget")
 require("app/src/main/cpp/tests/test_room_probe.cpp", "ActiveCorrectionSanitizesAndKeepsStereoPeakBelowCeiling")
 
 if errors:

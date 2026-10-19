@@ -23,6 +23,7 @@
 #include <atomic>
 #include <cstring>
 #include <algorithm>  // std::clamp en setLateDecorrelation()
+#include <cmath>
 
 namespace Ivanna {
 
@@ -41,6 +42,25 @@ public:
     static constexpr int MAX_IR_TAIL  = 16384;            // ~341 ms @48k de cola
     static constexpr int TAIL_PARTS   = MAX_IR_TAIL / BLOCK; // 32 particiones de cola
     static constexpr int MAX_IR_TOTAL = MAX_IR + MAX_IR_TAIL;
+    static constexpr float TAIL_LATENCY_BUDGET_MS = 20.0f;
+
+    static bool tailLatencyWithinBudgetFor(int sampleRate, float budgetMs = TAIL_LATENCY_BUDGET_MS) noexcept {
+        return sampleRate >= 8000 && sampleRate <= 384000 &&
+               std::isfinite(budgetMs) && budgetMs > 0.0f &&
+               (static_cast<float>(BLOCK) * 1000.0f / static_cast<float>(sampleRate)) <= budgetMs;
+    }
+
+    void setSampleRate(int sampleRate) noexcept {
+        if (sampleRate >= 8000 && sampleRate <= 384000)
+            sampleRate_.store(sampleRate, std::memory_order_relaxed);
+    }
+    int sampleRate() const noexcept { return sampleRate_.load(std::memory_order_relaxed); }
+    bool tailLatencyWithinBudget() const noexcept {
+        return tailLatencyWithinBudgetFor(sampleRate(), TAIL_LATENCY_BUDGET_MS);
+    }
+    bool tailLatencyBudgetExceeded() const noexcept {
+        return tailLatencyBudgetExceeded_.load(std::memory_order_acquire);
+    }
 
     RirConvolver();
 
@@ -121,6 +141,8 @@ private:
     float workRe_[FFT_SIZE] = {};  // Buffers de trabajo — sin malloc en process()
     float workIm_[FFT_SIZE] = {};
 
+    std::atomic<int> sampleRate_{48000};
+    std::atomic<bool> tailLatencyBudgetExceeded_{false};
     std::atomic<float> wetDry_{0.f};
     std::atomic<float> decorrel_{0.62f};     // Acoplado a coherencia interaural SOFA por defecto
     std::atomic<float> earlyBoost_{1.08f};   // Pre-énfasis de claridad temprana acoplado a muesca de pinna SOFA
