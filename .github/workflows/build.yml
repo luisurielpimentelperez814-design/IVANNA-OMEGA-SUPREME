@@ -64,7 +64,7 @@ jobs:
           java-version: '17'
 
       - name: Setup Node for the embedded FotoHolo WebGL bundle
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
