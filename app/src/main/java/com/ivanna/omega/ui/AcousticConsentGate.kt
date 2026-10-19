@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.ivanna.omega.sensing.WifiSensingAutoStart
 
 /**
  * First-run disclosure gate for optional acoustic features.
@@ -29,7 +30,7 @@ fun AcousticConsentGate(content: @Composable () -> Unit) {
     var adaptive by remember { mutableStateOf(prefs.getBoolean("adaptive_dsp_opt_in", false)) }
 
     if (accepted) {
-        content()
+        WifiSensingAutoStart(content = content)
         return
     }
 
