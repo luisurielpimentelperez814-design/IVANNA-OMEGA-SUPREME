@@ -19,6 +19,15 @@ class GeminiRestTest {
         assertTrue(GeminiRest.explain(e).contains("restringida a otra app Android"))
     }
 
+    @Test fun androidRestrictionIsRecognizedEvenWhenGatewayBodyIsTruncated() {
+        val e = GeminiRest.parseError(
+            403,
+            """{"error":{"message":"Requests from this Android client application <empty> are blocked."""
+        )
+        assertEquals("API_KEY_ANDROID_APP_BLOCKED", e.reason)
+        assertTrue(GeminiRest.explain(e).contains("restringida a otra app Android"))
+    }
+
     @Test fun disabledApiAndLeakedKeyAreDistinguished() {
         val disabled = GeminiRest.parseError(403,
             """{"error":{"message":"Generative Language API has not been used in project 1 before","status":"PERMISSION_DENIED"}}""")

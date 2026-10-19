@@ -37,8 +37,16 @@ object GeminiRest {
 
     /** Puro y testeable: extrae status/reason/message del cuerpo de error de Google. */
     fun parseError(http: Int, body: String): ApiError {
+        // Classify the provider's authoritative restriction signal before JSON parsing.
+        // Some gateways/proxies return malformed or partially truncated error bodies.
+        val rawLower = body.lowercase()
+        val rawAndroidRestriction = when {
+            "API_KEY_ANDROID_APP_BLOCKED" in body ||
+                "android client application" in rawLower -> "API_KEY_ANDROID_APP_BLOCKED"
+            else -> ""
+        }
         val err = runCatching { JSONObject(body).optJSONObject("error") }.getOrNull()
-            ?: return ApiError(http, "", "", body.take(200))
+            ?: return ApiError(http, "", rawAndroidRestriction, body.take(200))
         val details = err.optJSONArray("details")
         var reason = ""
         if (details != null) {
@@ -52,7 +60,8 @@ object GeminiRest {
         // Android application restriction in the actual error message.
         // The message is an authoritative signal even if a gateway returns a malformed,
         // null-like, or unexpected details[].reason value. Do not let that metadata mask it.
-        if ("android client application" in message.lowercase()) {
+        if (rawAndroidRestriction.isNotBlank() ||
+            "android client application" in message.lowercase()) {
             reason = "API_KEY_ANDROID_APP_BLOCKED"
         }
         return ApiError(http, err.optString("status"), reason, message)
