@@ -5,6 +5,8 @@ import android.os.SystemClock
 import android.webkit.JavascriptInterface
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.saf.SaFEngine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -60,6 +62,10 @@ class FotoHoloTelemetryBridge(context: Context) {
         val tel = FotoHoloEngine.telemetry.value
         val metrics = OmegaMetrics.shared.value
         val saf = SaFEngine.latestTelemetry()
+        val hrtfLoaded = runCatching { IvannaSpatialManager.isHrtfDatasetLoaded() }.getOrDefault(false)
+        val hrtfSubject = runCatching { IvannaSpatialManager.currentHrtfSubject() }.getOrDefault("unknown")
+        val rirLoaded = runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)
+        val rirRoomCount = runCatching { OmegaEngineBridge.rirRoomCount() }.getOrDefault(0)
         val nativeState = if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeGetSpatialState() }.getOrNull().orEmpty()
         } else ""
@@ -91,14 +97,23 @@ class FotoHoloTelemetryBridge(context: Context) {
             put("underruns", metrics.underrunCount.coerceAtLeast(0))
             put("hrtfAssetAvailable", assetExists("ivanna_omega/hrtf/hrtf_index.json"))
             put("rirAssetAvailable", assetExists("ivanna_omega/rir/metadata.csv") && assetExists("ivanna_omega/rir/rir_0000.wav"))
+            put("rirDatasetLoaded", rirLoaded)
+            put("rirRoomCount", rirRoomCount.coerceAtLeast(0))
             put("safAssetAvailable", assetExists("ivanna_omega/SAF_model.json"))
+            put("hrtfDatasetLoaded", hrtfLoaded)
+            put("hrtfSubject", hrtfSubject)
             put("hrtfRuntime", when {
                 !IvannaNativeLib.isLoaded -> "native-library-unavailable"
                 nativeState.contains("HRTF_ON", ignoreCase = true) -> "reported-active"
+                hrtfLoaded -> "dataset-loaded-active-path-unconfirmed"
                 nativeState.isBlank() -> "unavailable"
-                else -> "not-confirmed-by-readback"
+                else -> "not-loaded"
             })
-            put("rirRuntime", "not-exposed-by-native-readback")
+            put("rirRuntime", when {
+                !IvannaNativeLib.isLoaded -> "native-library-unavailable"
+                rirLoaded && rirRoomCount > 0 -> "dataset-loaded-${rirRoomCount}-rooms-application-unconfirmed"
+                else -> "dataset-not-loaded"
+            })
             put("safRuntime", when {
                 saf == null -> "not-initialized"
                 !saf.jniLoaded -> "jni-unavailable"
