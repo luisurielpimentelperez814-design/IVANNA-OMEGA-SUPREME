@@ -5,20 +5,10 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    // Relative asset URLs also let the dedicated FotoHolo entry run from Android assets.
-    base: './',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
-      },
-    },
-    build: {
-      rollupOptions: {
-        input: {
-          dashboard: path.resolve(__dirname, 'index.html'),
-          fotoholoEmbed: path.resolve(__dirname, 'fotoholo-embed.html'),
-        },
       },
     },
     server: {
