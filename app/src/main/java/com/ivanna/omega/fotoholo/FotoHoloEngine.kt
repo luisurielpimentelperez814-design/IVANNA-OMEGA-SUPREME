@@ -1,6 +1,7 @@
 package com.ivanna.omega.fotoholo
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.spatial.IvannaSpatialEngine
@@ -32,6 +33,8 @@ data class FotoHoloTelemetry(
     val nativeWriteAttempted: Boolean = false,
     val nativeCallReturned: Boolean = false,
     val dspWidth: Float = Float.NaN,
+    /** Monotonic time of the latest valid Bark sample; 0 means no valid sample yet. */
+    val sampleTimestampMonotonicNs: Long = 0L,
 ) {
     /** true si el motor reporta un ancho finito y coherente con el último comando (puede ser menor por recorte térmico). */
     val readbackConfirmed: Boolean get() = dspWidth.isFinite() && nativeCallReturned && dspWidth <= appliedWidth + 0.01f
@@ -210,6 +213,7 @@ object FotoHoloEngine {
                         bands = buf.copyOf(), features = features,
                         nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
                         nativeCallReturned = lastReturned, dspWidth = lastDspWidth,
+                        sampleTimestampMonotonicNs = if (ready && features.valid) SystemClock.elapsedRealtimeNanos() else _telemetry.value.sampleTimestampMonotonicNs,
                     )
                     delay(TICK_MS)
                 } catch (cancel: CancellationException) {
