@@ -116,8 +116,14 @@ data class PerceptualSceneSnapshot(
             if (status.state in setOf(AxisState.DEGRADED, AxisState.UNAVAILABLE, AxisState.ERROR) &&
                 status.reason.isNullOrBlank()
             ) add("axes[$index] needs a reason for state ${status.state}")
+            if (status.updatedAtEpochMs != null && status.updatedAtEpochMs <= 0L) {
+                add("axes[$index].updatedAtEpochMs must be positive when provided")
+            }
             if (status.state == AxisState.APPLIED && (status.updatedAtEpochMs ?: 0L) <= 0L) {
                 add("axes[$index] is APPLIED without a timestamp")
+            }
+            if (status.state != AxisState.APPLIED && status.engineConfirmed) {
+                add("axes[" + index + "] has engineConfirmed=true but state is " + status.state)
             }
         }
 
@@ -126,6 +132,13 @@ data class PerceptualSceneSnapshot(
             if (!it.depthMeters.isFinite() || it.depthMeters <= 0f) add("room.depthMeters must be finite and positive")
             if (!it.heightMeters.isFinite() || it.heightMeters <= 0f) add("room.heightMeters must be finite and positive")
             if (!it.listenerPositionMeters.isFinite()) add("room.listenerPositionMeters is not finite")
+            if (it.listenerPositionMeters.x !in 0f..it.widthMeters ||
+                it.listenerPositionMeters.y !in 0f..it.depthMeters ||
+                it.listenerPositionMeters.z !in 0f..it.heightMeters
+            ) add("room.listenerPositionMeters must be inside room bounds")
+            if (it.measuredAtEpochMs != null && it.measuredAtEpochMs <= 0L) {
+                add("room.measuredAtEpochMs must be positive when provided")
+            }
             if (calibration.kind == CalibrationKind.MEASURED && (it.measuredAtEpochMs ?: 0L) <= 0L) {
                 add("measured room geometry needs measuredAtEpochMs")
             }
@@ -134,9 +147,13 @@ data class PerceptualSceneSnapshot(
         calibration.confidence?.let {
             if (!it.isFinite() || it !in 0f..1f) add("calibration.confidence must be in [0,1]")
         }
+        if (calibration.measuredAtEpochMs != null && calibration.measuredAtEpochMs <= 0L) {
+            add("calibration.measuredAtEpochMs must be positive when provided")
+        }
         if (calibration.kind == CalibrationKind.MEASURED) {
             if (calibration.calibrationId.isNullOrBlank()) add("measured calibration needs calibrationId")
             if ((calibration.measuredAtEpochMs ?: 0L) <= 0L) add("measured calibration needs measuredAtEpochMs")
+            if (calibration.confidence == null) add("measured calibration needs confidence")
         }
 
         hrtf?.let {
