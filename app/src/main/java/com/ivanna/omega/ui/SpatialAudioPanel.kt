@@ -12,6 +12,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import androidx.webkit.WebViewAssetLoader
+import com.ivanna.omega.fotoholo.FotoHoloTelemetryBridge
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -160,6 +166,56 @@ fun SpatialAudioPanel(
 
         // ── Fotoholografía·Nanotomix: escena paramétrica + ancho estéreo adaptativo ──
         FotoHoloCard()
+
+        // The same React/WebGL FotoHolo scene, packaged as a local asset and fed by
+        // the native read-only telemetry bridge. No remote page receives this bridge.
+        Text(
+            "ESCENA WEBGL CON TELEMETRÍA NATIVA",
+            color = AuroraCyan,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp
+        )
+        val webContext = context
+        val assetLoader = remember(webContext) {
+            WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(webContext))
+                .build()
+        }
+        val holoWebView = remember(webContext, assetLoader) {
+            WebView(webContext).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = false
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                isVerticalScrollBarEnabled = false
+                isHorizontalScrollBarEnabled = false
+                setBackgroundColor(android.graphics.Color.rgb(6, 10, 18))
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) =
+                        assetLoader.shouldInterceptRequest(request.url)
+
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        val uri = request.url
+                        return uri.host != "appassets.androidplatform.net" ||
+                            !uri.path.orEmpty().startsWith("/assets/fotoholo-web/")
+                    }
+                }
+                FotoHoloTelemetryBridge.installBeforeLoadingTrustedBundle(this, webContext)
+                loadUrl("https://appassets.androidplatform.net/assets/fotoholo-web/fotoholo-embed.html")
+            }
+        }
+        DisposableEffect(holoWebView) {
+            onDispose {
+                runCatching { holoWebView.stopLoading() }
+                runCatching { holoWebView.destroy() }
+            }
+        }
+        AndroidView(
+            factory = { holoWebView },
+            modifier = Modifier.fillMaxWidth().height(560.dp)
+        )
 
         // ── HRTF ──────────────────────────────────────────────────────────
         SpatialCard("HRTF BINAURAL", "Dataset IHR1 medido · deploy Magisk con SHA256") {
