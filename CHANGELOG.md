@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.75 (366) — FotoHolo: scroll vertical, reset neutro y controles de escena
+
+1. **Scroll vertical desde el lienzo WebGL:** el canvas permite el gesto vertical de la página con `touch-pan-y`, conserva el arrastre horizontal/vertical para orientar la escena y limpia el estado de arrastre al cancelar el puntero.
+2. **Reinicio coherente de anchura:** el preset Nanotomix vuelve al valor neutro de 1.00× (valor de control 53 en el mapeo actual), en vez de reiniciar a 1.32×.
+3. **Límite de verificación:** estos cambios conectan el desplazamiento y el reinicio de la escena web. La modulación DSP de Ruta A depende de señal de captura válida y la Ruta B requiere que el daemon Magisk responda; el código muestra su estado real y no presume que el efecto global esté activo. No se declara validación acústica en un teléfono.
+
+**Entrega:** se publica desde `main` cuando CI construya y verifique los artefactos para este commit. La publicación del APK/módulo y la prueba física A/B solo se consideran confirmadas con evidencia del workflow y del dispositivo.
+
+---
+
 # CHANGELOG — v2.5.74 (365) — FotoHolo: consentimiento y detección conservadora de capacidades
 
 1. **Consentimiento explícito de primer inicio:** opciones separadas y desactivadas por defecto para calibración acústica, red local, Wi-Fi sensing, geometría y DSP adaptativo.
