@@ -315,6 +315,7 @@ private fun BinauralTab(
     val hrtfEnabled by remember { derivedStateOf { audioState.binaural } }
     var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
     var spatialPoseStatus by remember { mutableStateOf("POSE 3D: esperando motor HRTF") }
+    var hrtfDatasetStatus by remember { mutableStateOf("HRTF: no confirmado") }
 
     fun syncSpatialPose(s: AdaptiveControlsState) {
         val azimuth = s.binauralAzimuth * Math.PI.toFloat() / 180f
@@ -352,6 +353,7 @@ private fun BinauralTab(
         var initialPoseConfirmed = false
         while (true) {
             hybridTele = NativeBridge.safeGetHybridMagistralTelemetry()
+            hrtfDatasetStatus = "HRTF: ${com.ivanna.omega.spatial.IvannaSpatialManager.hrtfStatus}"
             if (!initialPoseConfirmed) {
                 syncSpatialPose(prefs)
                 initialPoseConfirmed = spatialPoseStatus.startsWith("POSE 3D EN MOTOR")
@@ -364,6 +366,7 @@ private fun BinauralTab(
 
     GlassCard("HRTF BINAURAL", AuroraCyan, "KEMAR subject_165 · 24 azimuts · 7 elevaciones") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(hrtfDatasetStatus, color = TextSecondary, fontSize = 10.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("HRTF ACTIVO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Switch(
