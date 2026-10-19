@@ -19,6 +19,18 @@ object PersistedStateRestorer {
 
         // 1. Restaurar AdaptiveControlsPrefs
         val acPrefs = AdaptiveControlsPrefs.load(ctx)
+        // El motor híbrido es estado global nativo compartido por varias pantallas.
+        // Restaurarlo aquí evita que dependa de abrir SoundScreen/SpatialAudioPanel.
+        NativeBridge.safeSetHybridMagistralParams(
+            enabled = acPrefs.hybridMagistralEnabled,
+            binauralWet = acPrefs.hybridBinauralWet,
+            virtualAzimuthDeg = acPrefs.binauralAzimuth.takeIf { kotlin.math.abs(it) > 1f } ?: 30f,
+            virtualElevationDeg = acPrefs.binauralElevation,
+            roomSize = acPrefs.hybridRoomSize,
+            roomAbsorption = acPrefs.hybridRoomAbsorption,
+            roomDampening = acPrefs.hybridRoomDampening,
+            roomWetMix = acPrefs.hybridRoomWetMix
+        )
         if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeSetEta(acPrefs.nhoEta) }
             runCatching { IvannaNativeLib.nativeSetHarmonicGain(acPrefs.nhoHarmonicGain) }
