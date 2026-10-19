@@ -282,40 +282,38 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPositions(
 
     jfloat* values = env->GetFloatArrayElements(positions, nullptr);
     if (!values) return JNI_FALSE;
+
+    std::array<ivanna::ai::StemPosition, 4> requested{};
+    bool valid = true;
     for (int i = 0; i < 4; ++i) {
         const jfloat x = values[i * 4];
         const jfloat y = values[i * 4 + 1];
         const jfloat z = values[i * 4 + 2];
         const jfloat width = values[i * 4 + 3];
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
-            !std::isfinite(width) || x < -2.f || x > 2.f || y < -2.f || y > 2.f ||
-            z < -2.f || z > 2.f || width < 0.02f || width > 1.f) {
-            env->ReleaseFloatArrayElements(positions, values, JNI_ABORT);
-            return JNI_FALSE;
+            !std::isfinite(width) || x < -2.f || x > 2.f ||
+            y < -2.f || y > 2.f || z < -2.f || z > 2.f ||
+            width < 0.02f || width > 1.f) {
+            valid = false;
+            break;
         }
-    }
-
-    for (int i = 0; i < 4; ++i) {
-        upmixer->setStemPosition(
-            static_cast<ivanna::ai::StemType>(i),
-            values[i * 4], values[i * 4 + 1], values[i * 4 + 2], values[i * 4 + 3]);
+        requested[i] = {x, y, z, width, 1.f};
     }
     env->ReleaseFloatArrayElements(positions, values, JNI_ABORT);
+    if (!valid || !upmixer->setStemPositions(requested)) return JNI_FALSE;
 
-    // Confirm all four active positions from the upmixer's published buffer.
+    // Read back the published buffer, not the requested Java values.
     for (int i = 0; i < 4; ++i) {
         const auto actual = upmixer->getStemPosition(static_cast<ivanna::ai::StemType>(i));
-        // Compare the published coordinates against the requested Java values.
-        jfloat expectedValues[4]{};
-        env->GetFloatArrayRegion(positions, i * 4, 4, expectedValues);
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
+        const auto& expected = requested[i];
+        if (!std::isfinite(actual.x) || !std::isfinite(actual.y) ||
+            !std::isfinite(actual.z) || !std::isfinite(actual.width) ||
+            std::fabs(actual.x - expected.x) > 0.015f ||
+            std::fabs(actual.y - expected.y) > 0.015f ||
+            std::fabs(actual.z - expected.z) > 0.015f ||
+            std::fabs(actual.width - expected.width) > 0.015f) {
             return JNI_FALSE;
         }
-        if (std::fabs(actual.x - expectedValues[0]) > 0.015f ||
-            std::fabs(actual.y - expectedValues[1]) > 0.015f ||
-            std::fabs(actual.z - expectedValues[2]) > 0.015f ||
-            std::fabs(actual.width - expectedValues[3]) > 0.015f) return JNI_FALSE;
     }
     return JNI_TRUE;
 }
