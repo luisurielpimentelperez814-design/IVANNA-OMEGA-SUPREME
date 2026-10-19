@@ -76,4 +76,26 @@ class WifiAcousticAdaptationPolicyTest {
         )
         assertEquals(WifiAcousticAdaptationPolicy.Action.NO_ACTION, result.action)
     }
+
+    @Test
+    fun invalidConfidenceOrMovementFailsClosed() {
+        val badConfidence = WifiAcousticAdaptationPolicy.evaluate(
+            WifiAcousticAdaptationPolicy.Input(
+                scene = scene(confidence = Double.NaN),
+                acousticCalibrationAvailable = false,
+                acousticCalibrationAgeMs = null
+            )
+        )
+        val badMovement = WifiAcousticAdaptationPolicy.evaluate(
+            WifiAcousticAdaptationPolicy.Input(
+                scene = scene(movement = Double.NaN),
+                acousticCalibrationAvailable = false,
+                acousticCalibrationAgeMs = null
+            )
+        )
+        assertEquals(WifiAcousticAdaptationPolicy.Action.WAIT_FOR_MORE_RADIO_DATA, badConfidence.action)
+        assertEquals(WifiAcousticAdaptationPolicy.Action.WAIT_FOR_MORE_RADIO_DATA, badMovement.action)
+        assertFalse(badConfidence.dspMayChange)
+        assertFalse(badMovement.dspMayChange)
+    }
 }
