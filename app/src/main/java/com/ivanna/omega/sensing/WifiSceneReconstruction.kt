@@ -28,7 +28,11 @@ object WifiSceneReconstruction {
 
     data class Readiness(
         val ready: Boolean,
-        val confidenceCeiling: Double,
+        /**
+         * Null when the acquisition gate passes but no validated reconstruction model
+         * has produced a calibrated confidence bound. Readiness is not model confidence.
+         */
+        val confidenceCeiling: Double?,
         val blockers: List<String>
     )
 
@@ -61,7 +65,7 @@ object WifiSceneReconstruction {
         if (evidence.modelVersion.isNullOrBlank()) blockers += "Falta versión del modelo de reconstrucción validado."
         return Readiness(
             ready = blockers.isEmpty(),
-            confidenceCeiling = if (blockers.isEmpty()) 0.70 else 0.0,
+            confidenceCeiling = if (blockers.isEmpty()) null else 0.0,
             blockers = blockers
         )
     }
