@@ -582,11 +582,16 @@ object OmegaEngineBridge {
 
     // ── RIR dataset: listado real de salas + fallback sin root (2026-09-19) ──
     @JvmStatic external fun nativeGetRirRoomCount(): Int
+    @JvmStatic external fun nativeGetLocalRirTailStatus(): Int
     @JvmStatic external fun nativeIsRirDatasetLoaded(): Boolean
     @JvmStatic external fun nativeGetRirRoomInfo(idx: Int): String?
     @JvmStatic external fun nativeSetRirDataDir(dir: String): Boolean
     @JvmStatic external fun nativeSetLocalRoom(rt60S: Float, wet: Float, roomIdx: Int)
     @JvmStatic external fun nativePushLocalSafLatent(q: FloatArray, gain: Float)
+
+    /** Estado de la cola RIR local: -1 desconocido/no inicializada, 0 normal, 1 cola retrasada omitida por presupuesto. */
+    @JvmStatic
+    fun localRirTailStatus(): Int = runCatching { nativeGetLocalRirTailStatus() }.getOrDefault(-1)
 
     /** true si el dataset RIR (200 salas) esta cargado en el motor nativo. */
     @JvmStatic
