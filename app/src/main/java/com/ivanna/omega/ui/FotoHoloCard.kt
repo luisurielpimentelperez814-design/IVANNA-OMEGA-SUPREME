@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,6 +13,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +53,10 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
     var intensity by remember { mutableStateOf(FotoHoloEngine.intensity) }
     var bypass by remember { mutableStateOf(FotoHoloEngine.bypass) }
     var rotation by remember { mutableStateOf(0f) }
+    var sceneMenuExpanded by remember { mutableStateOf(false) }
+    var subEnvironmentOpen by remember { mutableStateOf(false) }
+    var selectedScene by remember { mutableStateOf("Escenario de concierto") }
+    val sceneOptions = listOf("Escenario de concierto", "Rock 70s", "Rock 80s", "Rock 90s", "Recinto masivo", "Sala de mezcla élite", "Estudio de grabación", "Sala de cine", "Teatro", "Club", "Auditorio", "Iglesia", "Estadio", "Playa / exterior", "Automóvil", "Cabina DJ", "Orquesta", "Instrumento individual", "Sala personalizada")
 
     // Mientras la tarjeta está visible el motor muestrea el espectro aunque el efecto esté apagado.
     DisposableEffect(Unit) {
@@ -75,13 +83,49 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             color = Color(0xFF9AA4B2), fontSize = 11.sp
         )
 
-        Canvas(Modifier.fillMaxWidth().height(170.dp).background(ObsidianDeep, RoundedCornerShape(10.dp))) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Box {
+                TextButton(onClick = { sceneMenuExpanded = true }) {
+                    Text("ENTORNO: $selectedScene", color = AuroraCyan)
+                }
+                DropdownMenu(expanded = sceneMenuExpanded, onDismissRequest = { sceneMenuExpanded = false }) {
+                    sceneOptions.forEach { scene ->
+                        DropdownMenuItem(
+                            text = { Text(scene) },
+                            onClick = { selectedScene = scene; sceneMenuExpanded = false }
+                        )
+                    }
+                }
+            }
+            TextButton(onClick = { subEnvironmentOpen = !subEnvironmentOpen }) {
+                Text(if (subEnvironmentOpen) "Cerrar subentorno" else "Abrir subentorno 3D", color = AuroraCyan)
+            }
+        }
+        Text("Vista paramétrica seleccionada: $selectedScene", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+
+        Canvas(Modifier.fillMaxWidth().height(if (subEnvironmentOpen) 340.dp else 170.dp).background(ObsidianDeep, RoundedCornerShape(10.dp))) {
             val cx = size.width / 2f
             val cy = size.height / 2f
             val half = minOf(size.width, size.height) * 0.48f
             val pts = Array(FotoHoloMath.BANDS) { i ->
                 val p = FotoHoloMath.holoPoint(i, tel.bands.getOrElse(i) { 0f }, rotation)
-                floatArrayOf(cx + p[0] * half * (size.width / size.height).coerceIn(1f, 2.2f) * 0.55f, cy + p[1] * half, p[2])
+                val sceneScale = when (selectedScene) {
+                    "Estadio", "Recinto masivo", "Playa / exterior" -> 1.18f
+                    "Sala de mezcla élite", "Estudio de grabación", "Cabina DJ" -> 0.78f
+                    "Instrumento individual" -> 0.52f
+                    "Sala de cine", "Teatro", "Auditorio", "Iglesia" -> 0.92f
+                    else -> 1f
+                }
+                val depthScale = when (selectedScene) {
+                    "Rock 70s", "Rock 80s", "Rock 90s", "Escenario de concierto", "Recinto masivo", "Estadio" -> 1.18f
+                    "Automóvil", "Instrumento individual" -> 0.62f
+                    else -> 1f
+                }
+                floatArrayOf(
+                    cx + p[0] * half * (size.width / size.height).coerceIn(1f, 2.2f) * 0.55f * sceneScale,
+                    cy + p[1] * half * depthScale,
+                    p[2]
+                )
             }
             for (i in pts.indices) {
                 val a = pts[i]
@@ -120,7 +164,8 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             else -> "Modulando · esperando confirmación del motor (read-back)."
         }
         Text(status, color = if (tel.nativeWriteError != null) Color(0xFFFF6B6B) else AuroraCyan, fontSize = 11.sp)
-        Text("Ruta B (efecto global): ${tel.routeB}", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        Text("Ruta activa: ${tel.activeRoute} · ${tel.safmusDecision}", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        Text("Ruta B (efecto global): ${tel.routeB}", color = if (tel.routeB.contains("aplicado en Ruta B")) AuroraCyan else Color(0xFFFFC36B), fontSize = 11.sp)
         Text(
             "Ancho tuyo %.2f → comando %.2f (Δ %+.3f) · motor %s · graves %d %% · agudos %d %%".format(
                 tel.baseWidth, tel.appliedWidth, tel.offset,
