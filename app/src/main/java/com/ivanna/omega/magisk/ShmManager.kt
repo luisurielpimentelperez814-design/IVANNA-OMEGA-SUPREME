@@ -10,7 +10,6 @@ import android.os.ParcelFileDescriptor
 import android.os.SharedMemory
 import android.util.Log
 import com.ivanna.omega.core.NativeLibraryLoader
-import java.io.FileDescriptor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
@@ -98,7 +97,7 @@ object ShmManager {
 
     private external fun nativeMlock(addr: Long, len: Long): Int
     private external fun nativeMlockBuffer(buffer: ByteBuffer): Int
-    private external fun nativeMapSharedFd(fd: FileDescriptor, size: Int): ByteBuffer?
+    private external fun nativeMapSharedFd(fd: Int, size: Int): ByteBuffer?
     private external fun nativeUnmapSharedFd(buffer: ByteBuffer): Int
 
     private fun lockDirectBuffer(buf: ByteBuffer): Int {
