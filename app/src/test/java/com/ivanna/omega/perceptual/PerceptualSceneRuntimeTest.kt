@@ -26,6 +26,7 @@ class PerceptualSceneRuntimeTest {
         reverbRequestedLevel = 0.4f,
         reverbEffectiveLevel = 0.4f,
         reverbConfirmed = true,
+        localRirTailStatus = 0,
         measuredRirActive = true,
         measuredRt60Seconds = 0.45f,
         heuristicUpmixerEnabled = true,
@@ -161,6 +162,19 @@ class PerceptualSceneRuntimeTest {
         assertEquals(AxisState.DEGRADED, reverb.state)
         assertFalse(reverb.engineConfirmed)
         assertTrue(reverb.reason.orEmpty().contains("omitió la cola retrasada"))
+        assertTrue(snapshot.validate().isEmpty())
+    }
+
+    @Test
+    fun unknownLocalRirTailStatusCannotBeReportedAsApplied() {
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(localRirTailStatus = -1)
+        )
+        val reverb = snapshot.axes.single { it.axis == PerceptualAxis.REVERBERANT_FIELD }
+        assertEquals(AxisState.DEGRADED, reverb.state)
+        assertFalse(reverb.engineConfirmed)
+        assertTrue(reverb.reason.orEmpty().contains("Estado de cola RIR local desconocido"))
+        assertTrue(reverb.reason.orEmpty().contains("daemon"))
         assertTrue(snapshot.validate().isEmpty())
     }
 

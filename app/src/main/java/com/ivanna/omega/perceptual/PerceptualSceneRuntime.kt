@@ -230,7 +230,7 @@ object PerceptualSceneRuntime {
                 PerceptualAxis.REVERBERANT_FIELD,
                 when {
                     e.localRirTailStatus == 1 -> AxisState.DEGRADED
-                    e.reverbConfirmed && e.reverbEffectiveLevel != null &&
+                    e.localRirTailStatus == 0 && e.reverbConfirmed && e.reverbEffectiveLevel != null &&
                         e.measuredRirActive && e.measuredRt60Seconds != null -> AxisState.APPLIED
                     e.reverbConfirmed && e.reverbEffectiveLevel != null || hybridRoomWetActive -> AxisState.DEGRADED
                     else -> AxisState.UNAVAILABLE
@@ -238,8 +238,11 @@ object PerceptualSceneRuntime {
                 "wet 0..1", e.reverbRequestedLevel, e.reverbEffectiveLevel,
                 when {
                     e.localRirTailStatus == 1 ->
-                        "La ruta RIR local omitió la cola retrasada porque el bloque de 512 muestras supera el presupuesto algorítmico de 20 ms; el estado del daemon se informa por separado"
-                    e.reverbConfirmed && e.reverbEffectiveLevel != null &&
+                        "La ruta RIR local omitió la cola retrasada porque el bloque de 512 muestras supera el presupuesto algorítmico de 20 ms; la ruta daemon aún no publica esta telemetría"
+                    e.localRirTailStatus < 0 &&
+                        (e.reverbConfirmed && e.reverbEffectiveLevel != null || hybridRoomWetActive) ->
+                        "Estado de cola RIR local desconocido; el daemon tampoco publica telemetría de degradación. No se declara la reverberación como aplicada"
+                    e.localRirTailStatus == 0 && e.reverbConfirmed && e.reverbEffectiveLevel != null &&
                         e.measuredRirActive && e.measuredRt60Seconds != null -> null
                     e.reverbConfirmed && e.reverbEffectiveLevel != null && hybridRoomWetActive ->
                         "El nivel nativo fue leído; también está activo el modelo Schroeder/Moorer del HybridRenderer, pero no hay RIR medida confirmada en el renderer de objetos"
@@ -249,7 +252,7 @@ object PerceptualSceneRuntime {
                         "El modelo de sala sintético está activo por telemetría; falta confirmación nativa del nivel/RIR medida"
                     else -> "No se confirmó nivel de reverberación ni una sala húmeda activa"
                 },
-                engineConfirmed = e.localRirTailStatus != 1 && e.reverbConfirmed &&
+                engineConfirmed = e.localRirTailStatus == 0 && e.reverbConfirmed &&
                     e.reverbEffectiveLevel != null && e.measuredRirActive &&
                     e.measuredRt60Seconds != null
             ),

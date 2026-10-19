@@ -82,7 +82,9 @@ require("app/src/main/cpp/spatial/RirConvolver.cpp", "if (tailOverBudget) irLen 
 require("app/src/main/cpp/jni/ivanna_omega_jni.cpp", "nativeGetLocalRirTailStatus", "tailLatencyBudgetExceeded()")
 require("app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt", "nativeGetLocalRirTailStatus", "fun localRirTailStatus(): Int")
 require("app/src/main/java/com/ivanna/omega/perceptual/PerceptualSceneRuntime.kt", "localRirTailStatus", "omitió la cola retrasada")
-require("app/src/test/java/com/ivanna/omega/perceptual/PerceptualSceneRuntimeTest.kt", "localRirTailBudgetDegradationCannotBeReportedAsApplied")
+require("app/src/test/java/com/ivanna/omega/perceptual/PerceptualSceneRuntimeTest.kt",
+        "localRirTailBudgetDegradationCannotBeReportedAsApplied",
+        "unknownLocalRirTailStatusCannotBeReportedAsApplied")
 require("app/src/main/cpp/tests/test_supreme_five_axes.cpp", "SAFMUSRirLatencyGate", "OmitsDelayedTailWhenSampleRateExceedsBudget")
 require("app/src/main/cpp/tests/test_room_probe.cpp", "ActiveCorrectionSanitizesAndKeepsStereoPeakBelowCeiling")
 

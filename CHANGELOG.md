@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.94 (385) — SAFMUS 10D unknown RIR status fails closed
+
+- **SAFMUS / 10D:** the reverberant-field axis is only marked APPLIED when local RIR tail telemetry is explicitly healthy (`0`) and measured-RIR readbacks agree.
+- **Fail-closed status:** unknown/uninitialized local RIR status (`-1`) can no longer be reported as APPLIED; the axis remains DEGRADED when reverberation is otherwise active.
+- **Truthful daemon limitation:** the UI no longer implies daemon RIR degradation telemetry is available. The global AudioFlinger effect still needs a dedicated status path and device validation.
+- **Release gate:** CI must pass for this exact commit; do not treat the previous v2.5.93 artifact as containing this fix.
+
+---
+
 # CHANGELOG — v2.5.93 (384) — SAFMUS + 10D RIR status final candidate
 
 - **Versión de publicación:** se reserva v2.5.93 para evitar que builds concurrentes de commits intermedios ocupen la etiqueta inmutable v2.5.92 antes de validar el SHA final.
