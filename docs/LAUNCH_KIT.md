@@ -118,7 +118,7 @@ Los puntos 3 y 4 son el contenido que más comparte la comunidad técnica: error
 
 ### 4.6 YouTube — vídeo de 60–90 s
 
-**Título:** `Un motor de audio para Android que mide lo que hace (open source)`
+**Título:** `Un motor de audio propietario para Android que mide lo que hace`
 
 | Seg. | Imagen | Locución |
 |---|---|---|
@@ -129,7 +129,7 @@ Los puntos 3 y 4 son el contenido que más comparte la comunidad técnica: error
 | 60–75 | Flyer + enlace | «Falta lo más importante: probarlo en teléfonos reales. Si quieres ayudar, el enlace está abajo.» |
 
 **Descripción:** resumen de 3 líneas + enlace al repositorio + enlace al formulario de reporte + «Soy el autor».
-**Etiquetas:** `android audio`, `magisk module`, `dsp`, `hrtf`, `open source`, `audio engine`.
+**Etiquetas:** `android audio`, `magisk module`, `dsp`, `hrtf`, `proprietary software`, `audio engine`.
 
 ### 4.6.1 Cómo llegar a otros canales (sin spam)
 
@@ -140,7 +140,7 @@ opinar, no promocionar) y el enlace. Si no responden, no insistas.
 ### 4.7 Mensaje individual a ingenieros/investigadores (esquema)
 
 > Hola [nombre]: vi tu trabajo sobre [tema concreto que de verdad conoces]. Estoy desarrollando un motor de audio
-> de código abierto para Android que mide la salida de su cadena DSP para arbitrar entre módulos
+> propietario para Android que mide la salida de su cadena DSP para arbitrar entre módulos
 > ([enlace]). Me interesaría tu opinión sobre [pregunta concreta, p. ej. los umbrales de fase/correlación]. Sin
 > compromiso: si no te encaja, gracias por leer. Cito tu trabajo en `THIRD_PARTY_NOTICES.md`/CITATION si aplica.
 
