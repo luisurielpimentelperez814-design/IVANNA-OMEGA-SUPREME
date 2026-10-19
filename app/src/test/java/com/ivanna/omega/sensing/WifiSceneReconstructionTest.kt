@@ -1,6 +1,7 @@
 package com.ivanna.omega.sensing
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,7 +45,7 @@ class WifiSceneReconstructionTest {
             )
         )
         assertTrue(result.ready)
-        assertTrue(result.confidenceCeiling in 0.0..1.0)
+        assertNull(result.confidenceCeiling)
     }
 
     @Test
