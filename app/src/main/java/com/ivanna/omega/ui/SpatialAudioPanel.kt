@@ -108,8 +108,10 @@ fun SpatialAudioPanel(
         )
     }
 
-    // Restore al arrancar: empuja lo persistido al motor (FASE 3 pasos 1-4) fuera del hilo UI
+    // Restaurar controles nativos fuera de operaciones de disco/IPC; el estado Compose
+    // y los parámetros híbridos se leen y aplican en el hilo UI.
     LaunchedEffect(Unit) {
+        pushHybridMagistral()
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             if (state.hrtfEnabled) {
                 IvannaSpatialEngine.enabled = true
@@ -129,7 +131,6 @@ fun SpatialAudioPanel(
                 com.ivanna.omega.core.NativeBridge.safeSetCochlearInverseEnabled(state.cochlearInverseEnabled)
                 com.ivanna.omega.core.NativeBridge.safeSetCochlearIntensity(state.cochlearIntensity)
                 SupremeAxesPrefs.applyToNative(supremeState)
-                pushHybridMagistral()
             }
             while (true) {
                 hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
