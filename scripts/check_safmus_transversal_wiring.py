@@ -36,7 +36,9 @@ for p in ui_root.rglob("*.kt"):
 bridge = "app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt"
 require(bridge, "private fun hasFiniteNumericValues", "if (!hasFiniteNumericValues(payload))",
         "sanitizeControlValue(rt60S, 0.1f, 1.5f)", "val safeQ = FloatArray(7)",
-        "sanitizeControlValue(compressor, -24f, 0f)", "scores.any { !it.isFinite() }")
+        "sanitizeControlValue(compressor, -24f, 0f)", "scores.any { !it.isFinite() }",
+        "private fun areFiniteNumericArgs", "sanitizeControlValue(warpedLatticeBlDrive, 0f, 1f)",
+        "sanitizeControlValue(msoItdNanoseconds, -50000f, 50000f)")
 
 # Native SAF latent boundaries must validate before mutating HRTF/RIR state.
 for path, tokens in {
@@ -71,6 +73,7 @@ require("app/src/main/java/com/ivanna/omega/safmus/SafmusUniversalKernel.kt",
         "gateHrtfDataset", "gateRirConfiguration")
 require("app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialManager.kt", "gateHrtfDataset")
 require("app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt", "gateRirConfiguration")
+require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "if (value.isFinite()) value else def")
 require("app/src/main/java/com/ivanna/omega/audio/RoomMeasurement.kt", "gateRoomCorrection", "candidateFiniteAndStable = candidateSafe")
 require("app/src/main/cpp/spatial/RoomCorrectionEq.hpp", "safetyGain_", "std::clamp(left, -0.98f, 0.98f)")
 require("app/src/main/cpp/tests/test_room_probe.cpp", "ActiveCorrectionSanitizesAndKeepsStereoPeakBelowCeiling")

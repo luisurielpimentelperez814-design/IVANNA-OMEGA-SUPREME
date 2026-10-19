@@ -72,7 +72,9 @@ object SupremeAxesPrefs {
         fun bool(k: String, def: Boolean): Boolean =
             runCatching { p.getBoolean(k, def) }.getOrDefault(def)
         fun flt(k: String, def: Float): Float =
-            runCatching { p.getFloat(k, def) }.getOrDefault(def)
+            runCatching { p.getFloat(k, def) }.getOrDefault(def).let { value ->
+                if (value.isFinite()) value else def
+            }
 
         return SupremeAxesState(
             warpedLatticeEnabled      = bool("warpedLatticeEnabled", d.warpedLatticeEnabled),

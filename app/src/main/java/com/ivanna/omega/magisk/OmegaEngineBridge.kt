@@ -203,6 +203,15 @@ object OmegaEngineBridge {
         return ex.reached
     }
 
+    private fun areFiniteNumericArgs(args: Array<out Any>): Boolean =
+        args.all { value ->
+            when (value) {
+                is Float -> value.isFinite()
+                is Double -> value.isFinite()
+                else -> true
+            }
+        }
+
     /** SAFMUS boundary: no JSON command carrying NaN/Inf may cross into JNI or the daemon. */
     private fun hasFiniteNumericValues(value: Any?): Boolean {
         return when (value) {
@@ -396,7 +405,10 @@ object OmegaEngineBridge {
         if (!intensity.isFinite()) return false
         return setIntensity(intensity.toFloat())
     }
-    fun setIntensity(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("args", args.map { it.toString() }) })
+    fun setIntensity(vararg args: Any): Boolean {
+        if (!areFiniteNumericArgs(args)) return false
+        return sendCommand(JSONObject().apply { put("action","SET_INTENSITY"); put("args", args.map { it.toString() }) })
+    }
 
     fun setHarmonicGain(gain: Float): Boolean {
         val safe = SafmusUniversalKernel.sanitizeControlValue(gain, 0f, 1f) ?: return false
@@ -430,7 +442,10 @@ object OmegaEngineBridge {
         })
     }
     fun pushSAFState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("state", json) })
-    fun pushSAFState(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("args", args.map { it.toString() }) })
+    fun pushSAFState(vararg args: Any): Boolean {
+        if (!areFiniteNumericArgs(args)) return false
+        return sendCommand(JSONObject().apply { put("action","PUSH_SAF_STATE"); put("args", args.map { it.toString() }) })
+    }
 
     fun sendPerceptualState(compressor: Float, exciterRed: Float, highCut: Float, spatialWidth: Float, loudnessTarget: Float, harmonicGain: Float, antiDolby: Float): Boolean {
         val comp = SafmusUniversalKernel.sanitizeControlValue(compressor, -24f, 0f) ?: return false
@@ -443,7 +458,10 @@ object OmegaEngineBridge {
         return sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("compressor", comp); put("exciterRed", exciter); put("highCut", cutoff); put("spatialWidth", width); put("loudnessTarget", loudness); put("harmonicGain", harmonic); put("antiDolby", anti) })
     }
     fun sendPerceptualState(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("state", json) })
-    fun sendPerceptualState(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("args", args.map { it.toString() }) })
+    fun sendPerceptualState(vararg args: Any): Boolean {
+        if (!areFiniteNumericArgs(args)) return false
+        return sendCommand(JSONObject().apply { put("action","SEND_PERCEPTUAL_STATE"); put("args", args.map { it.toString() }) })
+    }
 
     fun setRouteProfile(json: JSONObject): Boolean = sendCommand(JSONObject().apply { put("action","SET_ROUTE_PROFILE"); put("profile", json) })
     fun setRouteProfile(a: Float, b: Float, c: Float): Boolean {
@@ -488,7 +506,10 @@ object OmegaEngineBridge {
         val d = SafmusUniversalKernel.sanitizeControlValue(depth, 15f, 35f) ?: return false
         return sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("width", w); put("height", h); put("depth", d) })
     }
-    fun setPinnaMetrics(vararg args: Any): Boolean = sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("args", args.map { it.toString() }) })
+    fun setPinnaMetrics(vararg args: Any): Boolean {
+        if (!areFiniteNumericArgs(args)) return false
+        return sendCommand(JSONObject().apply { put("action","SET_PINNA_METRICS"); put("args", args.map { it.toString() }) })
+    }
 
     /**
      * Sincroniza los 5 Ejes de Supremacía Cuántico-Neuromórfica con el daemon Magisk (`ivanna_daemon`),
@@ -516,30 +537,43 @@ object OmegaEngineBridge {
         msoItdNanoseconds: Float,
         ebpfBypassActive: Boolean
     ): Boolean {
+        val blDrive = SafmusUniversalKernel.sanitizeControlValue(warpedLatticeBlDrive, 0f, 1f) ?: return false
+        val lambda = SafmusUniversalKernel.sanitizeControlValue(warpedLatticeLambda, 0.50f, 0.85f) ?: return false
+        val harmonic = SafmusUniversalKernel.sanitizeControlValue(transharmonicHarmonicGain, 0f, 1f) ?: return false
+        val imd = SafmusUniversalKernel.sanitizeControlValue(transharmonicImdCancel, 0f, 1f) ?: return false
+        val tape = SafmusUniversalKernel.sanitizeControlValue(transharmonicAnalogTapeDrive, 0f, 1f) ?: return false
+        val immersivity = SafmusUniversalKernel.sanitizeControlValue(snnHoaImmersivity, 0f, 1f) ?: return false
+        val spike = SafmusUniversalKernel.sanitizeControlValue(snnSpikeThreshold, 0.15f, 1.50f) ?: return false
+        val wet = SafmusUniversalKernel.sanitizeControlValue(pinnaManifoldWetMix, 0f, 1f) ?: return false
+        val concha = SafmusUniversalKernel.sanitizeControlValue(pinnaConchaDepth, -1f, 1f) ?: return false
+        val helix = SafmusUniversalKernel.sanitizeControlValue(pinnaHelixCurl, -1f, 1f) ?: return false
+        val headWidth = SafmusUniversalKernel.sanitizeControlValue(pinnaHeadWidth, -1f, 1f) ?: return false
+        val itd = SafmusUniversalKernel.sanitizeControlValue(msoItdNanoseconds, -50000f, 50000f) ?: return false
         val payload = JSONObject().apply {
             put("action", "SET_SUPREME_AXES")
             put("warpedLatticeEnabled", if (warpedLatticeEnabled) 1.0f else 0.0f)
             put("warpedLatticeMicroChirp", if (warpedLatticeMicroChirp) 1.0f else 0.0f)
-            put("warpedLatticeBlDrive", warpedLatticeBlDrive)
-            put("warpedLatticeLambda", warpedLatticeLambda)
+            put("warpedLatticeBlDrive", blDrive)
+            put("warpedLatticeLambda", lambda)
             put("transharmonicCvnnEnabled", if (transharmonicCvnnEnabled) 1.0f else 0.0f)
-            put("transharmonicHarmonicGain", transharmonicHarmonicGain)
-            put("transharmonicImdCancel", transharmonicImdCancel)
-            put("transharmonicAnalogTapeDrive", transharmonicAnalogTapeDrive)
+            put("transharmonicHarmonicGain", harmonic)
+            put("transharmonicImdCancel", imd)
+            put("transharmonicAnalogTapeDrive", tape)
             put("snnHoaUpmixerEnabled", if (snnHoaUpmixerEnabled) 1.0f else 0.0f)
-            put("snnHoaImmersivity", snnHoaImmersivity)
-            put("snnSpikeThreshold", snnSpikeThreshold)
+            put("snnHoaImmersivity", immersivity)
+            put("snnSpikeThreshold", spike)
             put("pinnaManifoldEnabled", if (pinnaManifoldEnabled) 1.0f else 0.0f)
-            put("pinnaManifoldWetMix", pinnaManifoldWetMix)
-            put("pinnaConchaDepth", pinnaConchaDepth)
-            put("pinnaHelixCurl", pinnaHelixCurl)
-            put("pinnaHeadWidth", pinnaHeadWidth)
+            put("pinnaManifoldWetMix", wet)
+            put("pinnaConchaDepth", concha)
+            put("pinnaHelixCurl", helix)
+            put("pinnaHeadWidth", headWidth)
             put("farrowMsoEnabled", if (farrowMsoEnabled) 1.0f else 0.0f)
-            put("msoItdNanoseconds", msoItdNanoseconds)
+            put("msoItdNanoseconds", itd)
             put("ebpfBypassActive", if (ebpfBypassActive) 1.0f else 0.0f)
         }
-        lastSupremeAxesPayload = payload
-        return sendCommand(payload)
+        val accepted = sendCommand(payload)
+        if (accepted) lastSupremeAxesPayload = payload
+        return accepted
     }
 
     fun disconnect() { isConnected = false; runCatching { persistentChannel?.close() }; persistentChannel = null }
