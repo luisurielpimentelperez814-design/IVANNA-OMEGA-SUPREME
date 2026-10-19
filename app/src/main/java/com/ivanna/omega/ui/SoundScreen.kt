@@ -325,7 +325,7 @@ private fun BinauralTab(
             )
         }.getOrDefault(false)
         spatialPoseStatus = if (confirmed) {
-            "POSE 3D CONFIRMADA · coordenadas de stems verificadas por lectura nativa"
+            "POSE 3D EN MOTOR · 4 coordenadas leídas de vuelta; no equivale a medición acústica"
         } else if (com.ivanna.omega.spatial.IvannaSpatialManager.ready) {
             "POSE 3D NO CONFIRMADA · el motor no devolvió las coordenadas solicitadas"
         } else {
@@ -354,7 +354,7 @@ private fun BinauralTab(
             hybridTele = NativeBridge.safeGetHybridMagistralTelemetry()
             if (!initialPoseConfirmed) {
                 syncSpatialPose(prefs)
-                initialPoseConfirmed = spatialPoseStatus.startsWith("POSE 3D CONFIRMADA")
+                initialPoseConfirmed = spatialPoseStatus.startsWith("POSE 3D EN MOTOR")
             }
             kotlinx.coroutines.delay(250L)
         }
