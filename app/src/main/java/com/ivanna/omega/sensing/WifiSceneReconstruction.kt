@@ -37,7 +37,17 @@ object WifiSceneReconstruction {
         if (!evidence.csiVerifiedOnDevice) blockers += "CSI no verificado en este dispositivo."
         if (evidence.providerId.isNullOrBlank()) blockers += "Falta identificar el proveedor CSI."
         if (evidence.calibrationId.isNullOrBlank()) blockers += "Falta calibración específica de la sala y del hardware."
-        if (evidence.anchors.map { it.id }.distinct().size < 4) {
+        val anchorIds = evidence.anchors.map { it.id }
+        if (anchorIds.any { it.isBlank() }) {
+            blockers += "Cada ancla CSI debe tener un identificador no vacío."
+        }
+        if (anchorIds.size != anchorIds.distinct().size) {
+            blockers += "Los identificadores de anclas CSI deben ser únicos."
+        }
+        if (evidence.anchors.any { !it.xMeters.isFinite() || !it.yMeters.isFinite() || !it.zMeters.isFinite() }) {
+            blockers += "Las coordenadas de las anclas CSI deben ser finitas."
+        }
+        if (anchorIds.distinct().size < 4) {
             blockers += "Se requieren al menos cuatro anclas con posiciones conocidas para geometría 3D."
         }
         if (!hasNonCoplanarAnchors(evidence.anchors)) {
@@ -79,7 +89,7 @@ object WifiSceneReconstruction {
                     val crossY = abz * acx - abx * acz
                     val crossZ = abx * acy - aby * acx
                     val volume6 = crossX * adx + crossY * ady + crossZ * adz
-                    if (kotlin.math.abs(volume6) > 1e-4) return true
+                    if (volume6.isFinite() && kotlin.math.abs(volume6) > 1e-4) return true
                 }
             }
         }
