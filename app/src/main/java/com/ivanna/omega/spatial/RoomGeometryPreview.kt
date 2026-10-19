@@ -2,6 +2,23 @@ package com.ivanna.omega.spatial
 
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.ivanna.omega.core.IvannaNativeLib
 import java.io.BufferedInputStream
 import java.io.File
@@ -54,4 +71,27 @@ object RoomGeometryPreview {
                 Result(file, bitmap, w, h)
             }
         }
+}
+
+
+@Composable
+fun RoomGeometryPreviewPanel() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var result by remember { mutableStateOf<RoomGeometryPreview.Result?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    Column {
+        OutlinedButton(enabled = !busy, onClick = {
+            busy = true
+            scope.launch {
+                result = RoomGeometryPreview.render(context)
+                busy = false
+            }
+        }) { Text(if (busy) "RENDERIZANDO 3D 4K…" else "GENERAR VISTA GEOMÉTRICA 3D 4K") }
+        result?.let { frame ->
+            Image(bitmap = frame.bitmap.asImageBitmap(), contentDescription = "Geometría tridimensional de la sala IVANNA",
+                modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp))
+            Text("Render ${frame.sourceWidth}×${frame.sourceHeight} · vista previa reducida para limitar memoria · PPM completo en almacenamiento privado")
+        }
+    }
 }
