@@ -1,3 +1,13 @@
+# AVISO DE PROPIEDAD — 2026-10-19
+
+- Se retira el archivo raíz `LICENSE` que declaraba Apache-2.0 para el código propio del proyecto.
+- La documentación y la página del producto identifican IVANNA OMEGA SUPREME como producto propietario y comercial.
+- Esta retirada no revoca retroactivamente concesiones Apache-2.0 aplicables a versiones o copias previamente distribuidas bajo esos términos.
+- Las dependencias, scripts de terceros, datasets, modelos y demás materiales de terceros conservan sus propias licencias. No eliminar sus avisos.
+- **Pendiente operativo:** el repositorio de GitHub todavía es público. Para que el código fuente deje de ser públicamente accesible, el propietario debe cambiar la visibilidad del repositorio a privado en GitHub Settings; retirar `LICENSE` por sí solo no oculta el código.
+
+---
+
 # CHANGELOG — v2.5.91 (382) — SAFMUS transversal: controles, HRTF/RIR y kernel evolutivo
 
 - **SAFMUS / controles:** la política numérica compartida se aplica antes de actualizar el estado de los cinco ejes; los valores no finitos y fuera de rango no se persisten ni se envían a los puentes de audio.
