@@ -166,7 +166,7 @@ class WifiScanSession(
     }
 
     private fun emit(message: String, observations: List<WifiObservation>, fresh: Boolean) {
-        onUpdate(WifiSurveyUpdate(message, observations, fresh, running))
+        onUpdate(WifiSurveyUpdate(message, observations, fresh, running, UniversalWifiSensingAdapter.analyzeMetadata(observations)))
     }
 
     private fun ScanResult.toObservation() = WifiObservation(
@@ -188,5 +188,6 @@ data class WifiSurveyUpdate(
     val message: String,
     val observations: List<WifiObservation>,
     val freshResults: Boolean,
-    val sessionRunning: Boolean
+    val sessionRunning: Boolean,
+    val sceneFeatures: UniversalWifiSensingAdapter.SceneFeatures
 )
