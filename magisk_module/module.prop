@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.89
-versionCode=380
+version=v2.5.90
+versionCode=381
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.89: diagnóstico 10D visible y CI aislada por SHA
+description=v2.5.90: pruebas JVM corregidas y diagnóstico 10D verificable
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

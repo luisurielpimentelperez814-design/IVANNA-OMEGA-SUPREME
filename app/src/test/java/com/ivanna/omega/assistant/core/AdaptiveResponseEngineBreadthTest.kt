@@ -12,7 +12,7 @@ class AdaptiveResponseEngineBreadthTest {
 
     @Test
     fun generalKnowledgeExplanationUsesDeepReasoning() {
-        val profile = AdaptiveResponseEngine.analyzeComplexity(
+        val profile = AdaptiveResponseEngine().analyzeComplexity(
             "Cuéntame sobre la historia de la astronomía y desarrolla el contexto histórico"
         )
         assertEquals(AdaptiveResponseEngine.ResponseProfile.DEEP_REASONING, profile)
@@ -20,7 +20,7 @@ class AdaptiveResponseEngineBreadthTest {
 
     @Test
     fun musicalAnalysisUsesDeepReasoning() {
-        val profile = AdaptiveResponseEngine.analyzeComplexity(
+        val profile = AdaptiveResponseEngine().analyzeComplexity(
             "Analiza la producción musical, la armonía y la mezcla de esta grabación"
         )
         assertEquals(AdaptiveResponseEngine.ResponseProfile.DEEP_REASONING, profile)
@@ -28,7 +28,7 @@ class AdaptiveResponseEngineBreadthTest {
 
     @Test
     fun simpleGreetingRemainsFast() {
-        val profile = AdaptiveResponseEngine.analyzeComplexity("Hola")
+        val profile = AdaptiveResponseEngine().analyzeComplexity("Hola")
         assertEquals(AdaptiveResponseEngine.ResponseProfile.FAST, profile)
     }
 }
