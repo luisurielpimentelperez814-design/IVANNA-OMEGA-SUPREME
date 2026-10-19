@@ -134,9 +134,10 @@ bool NeuralUpmixer::setStemPositions(const std::array<StemPosition, 4>& position
     // Reject the whole pose before publishing any coordinate.
     for (const auto& p : positions) {
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
-            !std::isfinite(p.width) || p.x < -2.f || p.x > 2.f ||
-            p.y < -2.f || p.y > 2.f || p.z < -2.f || p.z > 2.f ||
-            p.width < 0.02f || p.width > 1.f) {
+            !std::isfinite(p.width) || !std::isfinite(p.gain) ||
+            p.x < -2.f || p.x > 2.f || p.y < -2.f || p.y > 2.f ||
+            p.z < -2.f || p.z > 2.f || p.width < 0.02f || p.width > 1.f ||
+            p.gain < 0.f || p.gain > 1.35f) {
             return false;
         }
     }
@@ -155,6 +156,7 @@ bool NeuralUpmixer::setStemPositions(const std::array<StemPosition, 4>& position
         target.y = positions[i].y;
         target.z = positions[i].z;
         target.width = positions[i].width;
+        target.gain = positions[i].gain;
     }
 
     // Single publication point: audio sees either the old scene or the new scene.
