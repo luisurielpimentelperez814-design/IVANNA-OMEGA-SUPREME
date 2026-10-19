@@ -296,12 +296,9 @@ jobs:
            gradle assembleRelease --no-daemon --stacktrace --refresh-dependencies \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" 2>&1 | tee gradle_build.log)
 
-      # Las pruebas JVM de app/src/test (lectores SOFA/HDF5, colchon de salida, gobernador de carga, FotoHolo,
-      # permisos, clasificador...) NO corrian en ningun job: solo compilaba el codigo de produccion. Este paso las
-      # ejecuta tras el build (el compilado queda en cache de Gradle) y es INFORMATIVO: un fallo antiguo no bloquea
-      # el release, pero queda como anotacion roja con el nombre de la prueba.
-      - name: JVM unit tests (informativo, no bloquea el release)
-        continue-on-error: true
+      # Gate obligatorio: el release no se publica si fallan las pruebas JVM
+      # del APK. Las pruebas host y nativas no sustituyen estas regresiones Android.
+      - name: JVM unit tests (gate obligatorio de release)
         run: |
           set -o pipefail
           rc=0
