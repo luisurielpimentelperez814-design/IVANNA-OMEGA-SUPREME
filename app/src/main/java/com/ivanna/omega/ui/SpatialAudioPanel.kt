@@ -85,7 +85,7 @@ fun SpatialAudioPanel(
     var hybridRoomWet by remember { mutableStateOf(initialHybridValue(7, adaptivePrefs.hybridRoomWetMix)) }
 
     fun pushHybridMagistral() {
-        adaptivePrefs = adaptivePrefs.copy(
+        val nextPrefs = adaptivePrefs.copy(
             hybridMagistralEnabled = hybridEnabled,
             hybridBinauralWet = hybridBinauralWet,
             binauralAzimuth = hybridAzimuthDeg,
@@ -95,7 +95,7 @@ fun SpatialAudioPanel(
             hybridRoomDampening = hybridDampening,
             hybridRoomWetMix = hybridRoomWet
         )
-        AdaptiveControlsPrefs.save(context, adaptivePrefs)
+        AdaptiveControlsPrefs.save(context, nextPrefs)
         com.ivanna.omega.core.NativeBridge.safeSetHybridMagistralParams(
             enabled = hybridEnabled,
             binauralWet = hybridBinauralWet,
