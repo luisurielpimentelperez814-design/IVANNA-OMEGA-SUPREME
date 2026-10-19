@@ -50,8 +50,85 @@ object IvannaSpatialManager {
         val distanceScale: Float = 1f
     )
     private val requestedScenePose = java.util.concurrent.atomic.AtomicReference(RequestedScenePose())
+    @Volatile private var lastAppliedScenePose: RequestedScenePose? = null
+    @Volatile private var lastAppliedScenePoseAtEpochMs: Long = 0L
+    @Volatile private var lastScenePoseWriteConfirmed: Boolean = false
+
+    data class ScenePoseStatus(
+        val requestedAzimuthRad: Float,
+        val requestedElevationRad: Float,
+        val requestedDistanceScale: Float,
+        val effectiveAzimuthRad: Float?,
+        val effectiveElevationRad: Float?,
+        val effectiveDistanceScale: Float?,
+        val engineConfirmed: Boolean,
+        val updatedAtEpochMs: Long
+    )
+
+    data class ReverbReadback(
+        val requestedLevel: Float,
+        val effectiveLevel: Float?,
+        val engineConfirmed: Boolean,
+        val measuredRirActive: Boolean,
+        val measuredRt60Seconds: Float?
+    )
 
     private val baseStemPositions = SpatialScenePoseMath.defaultStems
+
+    fun scenePoseStatus(): ScenePoseStatus {
+        val requested = requestedScenePose.get()
+        val applied = lastAppliedScenePose
+        val confirmed = lastScenePoseWriteConfirmed && applied != null &&
+            applied == requested && ready && rendererHandle != 0L && upmixerHandle != 0L
+        return ScenePoseStatus(
+            requestedAzimuthRad = requested.azimuthRad,
+            requestedElevationRad = requested.elevationRad,
+            requestedDistanceScale = requested.distanceScale,
+            effectiveAzimuthRad = applied?.azimuthRad,
+            effectiveElevationRad = applied?.elevationRad,
+            effectiveDistanceScale = applied?.distanceScale,
+            engineConfirmed = confirmed,
+            updatedAtEpochMs = lastAppliedScenePoseAtEpochMs
+        )
+    }
+
+    fun isHrtfConfirmed(): Boolean {
+        val h = rendererHandle
+        if (!ready || h == 0L || activeSubject == "none") return false
+        return runCatching {
+            IvannaSpatialNative.nativeObjectRendererIsHrtfLoaded(h) &&
+                IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(h) == activeSubject
+        }.getOrDefault(false)
+    }
+
+    fun isHeuristicStemSeparationConfirmed(): Boolean {
+        val u = upmixerHandle
+        if (!ready || u == 0L) return false
+        return runCatching { IvannaSpatialNative.nativeUpmixerIsEnabled(u) }.getOrDefault(false)
+    }
+
+    fun reverbReadback(): ReverbReadback {
+        val h = rendererHandle
+        val expected = reverbLevel
+        if (!ready || h == 0L) {
+            return ReverbReadback(expected, null, false, false, null)
+        }
+        return runCatching {
+            val actual = IvannaSpatialNative.nativeObjectRendererGetReverbLevel(h)
+            val rirActive = IvannaSpatialNative.nativeObjectRendererIsRirActive(h)
+            val rt60 = IvannaSpatialNative.nativeObjectRendererGetRoomRT60(h)
+            val finiteRt60 = rt60.takeIf { it.isFinite() && it > 0f }
+            ReverbReadback(
+                requestedLevel = expected,
+                effectiveLevel = actual.takeIf { it.isFinite() && it in 0f..1f },
+                engineConfirmed = actual.isFinite() && kotlin.math.abs(actual - expected) <= 0.01f,
+                measuredRirActive = rirActive,
+                measuredRt60Seconds = finiteRt60
+            )
+        }.getOrElse {
+            ReverbReadback(expected, null, false, false, null)
+        }
+    }
 
     // Buffers para el hot-path: direct FloatBuffers reutilizables (sin allocations por frame)
     private val stereoInBuf: FloatBuffer = ByteBuffer
@@ -130,15 +207,7 @@ object IvannaSpatialManager {
                 if (upmixer != 0L) {
                     runCatching {
                         IvannaSpatialNative.nativeUpmixerSetEnabled(upmixer, true)
-                        val initialPose = requestedScenePose.get()
-                        val poseConfirmed = applyScenePoseToUpmixer(
-                            upmixer, initialPose.azimuthRad, initialPose.elevationRad, initialPose.distanceScale
-                        )
-                        if (!poseConfirmed) {
-                            Log.w(TAG, "pose espacial inicial escrita sin read-back confirmado")
-                        }
-                        IvannaSpatialNative.nativeObjectRendererSyncStemObjects(handle, upmixer)
-                    }.onFailure { Log.w(TAG, "upmixer no sincronizado: ${it.message}") }
+                    }.onFailure { Log.w(TAG, "upmixer no pudo activarse: ${it.message}") }
                 }
 
                 val requestedSubject = runCatching {
@@ -158,20 +227,29 @@ object IvannaSpatialManager {
                     Log.w(TAG, "HRTF no confirmado: solicitado=$requestedSubject, activo=$actualSubject, loaded=$loaded")
                 }
                 synchronized(lock) {
-                    // A UI request can arrive while the native renderer is initializing.
-                    // Re-read the latest complete pose just before publishing readiness.
-                    val latestPose = requestedScenePose.get()
-                    if (upmixer != 0L) {
-                        val poseConfirmed = runCatching {
-                            applyScenePoseToUpmixer(
-                                upmixer, latestPose.azimuthRad,
-                                latestPose.elevationRad, latestPose.distanceScale
-                            ).also { ok ->
-                                if (ok) IvannaSpatialNative.nativeObjectRendererSyncStemObjects(handle, upmixer)
-                            }
-                        }.getOrDefault(false)
-                        if (!poseConfirmed) Log.w(TAG, "pose espacial inicial no confirmada; se mantiene pendiente")
+                    // Apply and verify a coherent initial scene before exposing the engine as ready.
+                    val initialPose = requestedScenePose.get()
+                    val poseConfirmed = if (upmixer != 0L) runCatching {
+                        val accepted = applyScenePoseToUpmixer(
+                            upmixer, initialPose.azimuthRad,
+                            initialPose.elevationRad, initialPose.distanceScale
+                        )
+                        if (accepted) IvannaSpatialNative.nativeObjectRendererSyncStemObjects(handle, upmixer)
+                        accepted && verifyRendererPose(
+                            handle, initialPose.azimuthRad,
+                            initialPose.elevationRad, initialPose.distanceScale
+                        )
+                    }.getOrDefault(false) else false
+
+                    if (poseConfirmed) {
+                        lastAppliedScenePose = initialPose
+                        lastAppliedScenePoseAtEpochMs = System.currentTimeMillis()
+                    } else {
+                        lastAppliedScenePose = null
+                        lastAppliedScenePoseAtEpochMs = 0L
+                        Log.w(TAG, "pose espacial inicial no confirmada; se mantiene pendiente")
                     }
+                    lastScenePoseWriteConfirmed = poseConfirmed
                     rendererHandle = handle
                     upmixerHandle = upmixer
                     headTracker = tracker
@@ -273,6 +351,7 @@ object IvannaSpatialManager {
     }
 
     fun setReverbLevel(level: Float) {
+        if (!level.isFinite()) return
         val clamped = level.coerceIn(0f, 1f)
         reverbLevel = clamped
         val h = rendererHandle
@@ -297,6 +376,7 @@ object IvannaSpatialManager {
                 runCatching {
                     IvannaSpatialNative.nativeUpmixerSetStemPosition(u, stemType, x, y, z, width)
                     IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
+                    lastScenePoseWriteConfirmed = false
                 }
             }
         }
@@ -325,15 +405,51 @@ object IvannaSpatialManager {
         return synchronized(lock) {
             val h = rendererHandle
             val u = upmixerHandle
-            if (!ready || h == 0L || u == 0L) return@synchronized false
-            runCatching {
-                if (!applyScenePoseToUpmixer(u, azimuthRad, elevationRad, distanceScale)) {
-                    return@runCatching false
-                }
+            if (!ready || h == 0L || u == 0L) {
+                lastScenePoseWriteConfirmed = false
+                return@synchronized false
+            }
+            val poseToApply = requestedScenePose.get()
+            val success = runCatching {
+                val accepted = applyScenePoseToUpmixer(
+                    u, poseToApply.azimuthRad, poseToApply.elevationRad, poseToApply.distanceScale
+                )
+                if (!accepted) return@runCatching false
                 IvannaSpatialNative.nativeObjectRendererSyncStemObjects(h, u)
-                true
+                verifyRendererPose(
+                    h, poseToApply.azimuthRad, poseToApply.elevationRad, poseToApply.distanceScale
+                )
             }.getOrDefault(false)
+            if (success) {
+                lastAppliedScenePose = poseToApply
+                lastAppliedScenePoseAtEpochMs = System.currentTimeMillis()
+            }
+            lastScenePoseWriteConfirmed = success && requestedScenePose.get() == poseToApply
+            lastScenePoseWriteConfirmed
         }
+    }
+
+    private fun verifyRendererPose(
+        renderer: Long,
+        azimuthRad: Float,
+        elevationRad: Float,
+        distanceScale: Float
+    ): Boolean {
+        if (renderer == 0L) return false
+        for (index in baseStemPositions.indices) {
+            val expected = SpatialScenePoseMath.transform(
+                baseStemPositions[index], azimuthRad, elevationRad, distanceScale
+            ) ?: return false
+            val actual = IvannaSpatialNative.nativeObjectRendererGetObjectPosition(renderer, index)
+            if (actual.size < 5 ||
+                !actual[0].isFinite() || !actual[1].isFinite() || !actual[2].isFinite() ||
+                kotlin.math.abs(actual[0] - expected.x) > 0.02f ||
+                kotlin.math.abs(actual[1] - expected.y) > 0.02f ||
+                kotlin.math.abs(actual[2] - expected.z) > 0.02f ||
+                kotlin.math.abs(actual[3] - expected.width) > 0.02f
+            ) return false
+        }
+        return true
     }
 
     private fun applyScenePoseToUpmixer(
