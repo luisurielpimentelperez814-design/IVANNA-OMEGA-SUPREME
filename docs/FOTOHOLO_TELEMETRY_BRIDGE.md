@@ -38,3 +38,21 @@ El puente Android → dashboard/escena debe publicar un snapshot versionado y co
 4. **Validación final:** instrumentar y probar en dispositivo con auriculares y AUX por separado; comparar comandos y readback; verificar que la escena cambia solo cuando cambia la telemetría efectiva. Sin ese dispositivo y el canal nativo, no es honesto afirmar conexión acústica extremo a extremo.
 
 Este contrato es una propuesta de interfaz y alcance; no afirma que todos estos campos estén implementados actualmente.
+
+## Implementación añadida en la rama de integración
+
+- `FotoHoloEngine` publica un timestamp monotónico del último cuadro Bark válido, además de las 64 bandas, energía, reparto graves/agudos, centroide y flux. El timestamp se conserva cuando no hay una muestra nueva, para poder detectar datos obsoletos.
+- `FotoHoloTelemetryBridge.kt` expone un snapshot JSON de solo lectura a través de `@JavascriptInterface`. Incluye antigüedad de la muestra, ruta/frecuencia/latencia/cortes disponibles en `OmegaMetrics`, lectura espacial nativa y disponibilidad de assets.
+- `FotoHolo3DGenerator.tsx` consulta `window.IvannaFotoHoloBridge.getSnapshotJson()` cada 250 ms si el host la expone. Ajusta las superficies de onda a energía y transitorios Bark reales, y deja de mostrar esas lecturas como vivas cuando la muestra tiene más de 1 segundo.
+- El panel distingue disponibilidad de archivos y estado efectivo. HRTF solo se etiqueta como reportada activa si la consulta nativa lo informa; RIR y SAF se quedan como no confirmados porque las APIs compartidas actuales no proporcionan read-back fiable para esos dos estados.
+
+## Límite de integración que sigue abierto
+
+La aplicación Android actual usa Compose y la escena web React se construye por separado; no existe una instancia WebView que cargue este dashboard en `MainActivity`. Por ello, la clase Kotlin y el consumidor web ya comparten un contrato, pero **el puente Android→WebGL no queda operativo dentro de la app hasta que el host confiable instale `FotoHoloTelemetryBridge` con `WebView.addJavascriptInterface(..., "IvannaFotoHoloBridge")` antes de cargar el bundle web local**. No exponer esta interfaz a contenido remoto. El panel nativo `FotoHoloCard` sí consume el flujo Bark real de `FotoHoloEngine`; no debe confundirse con el dashboard WebGL.
+
+### Pruebas de aceptación pendientes
+1. Build Android y web en CI.
+2. Cargar el bundle web local en un WebView de la app y registrar el puente antes de cargar la página.
+3. Confirmar que `sampleAgeMs` permanece por debajo de 1000 ms con señal real y aumenta si se detiene la captura.
+4. Confirmar que la escena vuelve a la visualización no medida cuando el dato caduca.
+5. Añadir read-back nativo de carga/aplicación RIR y estado SAF antes de declarar ambos activos.
