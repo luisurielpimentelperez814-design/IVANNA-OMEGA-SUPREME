@@ -68,11 +68,11 @@ La pantalla de consentimiento ahora incluye una opción para probar mediciones W
 
 ## Implementación por niveles con Magisk/root
 
-La aplicación incluye ahora una ruta de sondeo opt-in con dos vías:
+La aplicación incluye una ruta de sondeo opt-in que se inicia al abrir la aplicación en primer plano solo si el usuario activó previamente Wi-Fi sensing. El sondeo tiene dos vías:
 1. API pública de Android cuando se cumplen los permisos y servicios requeridos.
 2. Backend Magisk/root que intenta ejecutar `iw dev` y un escaneo de la interfaz detectada mediante nombre validado. Se limita a metadatos estándar de redes y RSSI, no recopila ni afirma CSI.
 
-La sesión debe ser iniciada explícitamente tras consentimiento y detenida por la pantalla propietaria cuando deja de estar en primer plano. Los resultados se etiquetan con su procedencia; los rechazos, permisos ausentes o resultados no nuevos no se convierten en mediciones inventadas. El backend root no modifica configuración del router ni intenta cambiar el modo del controlador.
+Tras el consentimiento opt-in, `WifiSensingAutoStart` inicia la sesión automáticamente al entrar la aplicación en primer plano, muestra el estado en una banda visible y ofrece “Detener y revocar”. La sesión se detiene al pasar a segundo plano o al revocar la preferencia. Si no hay consentimiento, no inicia. Los resultados se etiquetan con su procedencia; los rechazos, permisos ausentes o resultados no nuevos no se convierten en mediciones inventadas. El backend root no modifica configuración del router ni intenta cambiar el modo del controlador. Los comandos root tienen un timeout real de 12 segundos: la lectura de stdout se hace en un hilo separado para que una herramienta bloqueada no congele la espera.
 
 ### Siguiente nivel para CSI real
 
