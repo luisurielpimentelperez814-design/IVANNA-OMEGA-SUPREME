@@ -10,8 +10,6 @@
 - **UI / Wi-Fi sensing:** se elimina el panel blanco fijo que se superponía a toda la app al iniciar. El panel de FotoHolo Wi-Fi solo aparece cuando el usuario habilitó explícitamente el sondeo o la sesión está activa; con el consentimiento opcional desactivado, no tapa la pantalla de inicio ni el botón «ACEPTAR E INICIAR».
 - **Privacidad:** el sondeo sigue sujeto al consentimiento explícito y permisos de Android; no se habilita automáticamente por este arreglo.
 
-- **Privacidad:** el sondeo sigue sujeto al consentimiento explícito y permisos de Android; no se habilita automáticamente por este arreglo.
-
 ## v2.5.84 (versionCode 375) — El APK vuelve a compilar y entra la puerta de verdad de los 10 ejes
 
 ### Causa raiz del build roto (reproducida desde el log real de Actions)
