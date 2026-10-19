@@ -166,6 +166,24 @@ class PerceptualSceneRuntimeTest {
     }
 
     @Test
+    fun failedPoseWriteKeepsPreviousReadbackVisibleAsDegraded() {
+        val snapshot = PerceptualSceneRuntime.assemble(
+            evidence().copy(
+                poseConfirmed = false,
+                requestedAzimuthRad = 0.9f,
+                requestedDistanceScale = 1.5f
+            )
+        )
+        val azimuth = snapshot.axes.single { it.axis == PerceptualAxis.AZIMUTH }
+        val distance = snapshot.axes.single { it.axis == PerceptualAxis.DISTANCE }
+        assertEquals(AxisState.DEGRADED, azimuth.state)
+        assertEquals(AxisState.DEGRADED, distance.state)
+        assertFalse(azimuth.engineConfirmed)
+        assertFalse(distance.engineConfirmed)
+        assertTrue(snapshot.validate().isEmpty())
+    }
+
+    @Test
     fun unknownOutputRouteRemainsAnExplicitValidationFailure() {
         val snapshot = PerceptualSceneRuntime.assemble(evidence().copy(outputRoute = OutputRoute.UNKNOWN))
         assertTrue(snapshot.validate().any { it.contains("outputRoute is unknown") })

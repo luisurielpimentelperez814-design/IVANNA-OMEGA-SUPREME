@@ -111,7 +111,8 @@ object PerceptualSceneRuntime {
             angularDistanceRad(hybridAzimuthRad, e.requestedAzimuthRad) <= 0.02f
         val hybridElevationMatches = hybridSpatialActive && hybridElevationRad != null &&
             kotlin.math.abs(hybridElevationRad - e.requestedElevationRad) <= 0.02f
-        val managerPoseConfirmed = e.poseConfirmed && e.effectiveAzimuthRad != null
+        val managerPoseReadbackAvailable = e.effectiveAzimuthRad != null
+        val managerPoseConfirmed = e.poseConfirmed && managerPoseReadbackAvailable
         val managerAzimuthMatches = managerPoseConfirmed &&
             angularDistanceRad(e.effectiveAzimuthRad!!, e.requestedAzimuthRad) <= 0.02f
         val azimuthConfirmed = hybridAzimuthMatches ||
@@ -121,7 +122,8 @@ object PerceptualSceneRuntime {
         // and the actual rendered hybrid angle agree with the requested value.
         val elevationHrtfConfirmed = hybridElevationMatches && !e.hybridUsingFallbackHrtf
         val elevationConfirmed = elevationHrtfConfirmed
-        val distanceConfirmed = e.poseConfirmed && e.effectiveDistanceScale != null
+        val distanceReadbackAvailable = e.effectiveDistanceScale != null
+        val distanceConfirmed = e.poseConfirmed && distanceReadbackAvailable
         val movementConfirmed = e.movementActive && e.movementConfirmed
         val managerHrtfConfirmed = e.hrtfConfirmed && !e.hrtfSubject.isNullOrBlank() && e.hrtfSubject != "none"
         val measuredHybridHrtfActive = hybridSpatialActive && !e.hybridUsingFallbackHrtf
@@ -134,16 +136,18 @@ object PerceptualSceneRuntime {
                 PerceptualAxis.AZIMUTH,
                 when {
                     azimuthConfirmed -> AxisState.APPLIED
-                    managerPoseConfirmed -> AxisState.DEGRADED
+                    managerPoseReadbackAvailable -> AxisState.DEGRADED
                     else -> AxisState.UNAVAILABLE
                 },
                 "rad", e.requestedAzimuthRad,
                 if (hybridSpatialActive) hybridAzimuthRad else e.effectiveAzimuthRad,
                 when {
                     azimuthConfirmed -> null
-                    managerPoseConfirmed && hybridSpatialActive ->
-                        "La geometría de objetos sí se leyó, pero el azimut del HybridRenderer activo no coincide con el solicitado"
+                    managerPoseReadbackAvailable && hybridSpatialActive ->
+                        "La geometría de objetos tiene lectura, pero el azimut del HybridRenderer activo no coincide con el solicitado"
                     managerPoseConfirmed -> "La posición relativa de los objetos se leyó del renderer"
+                    managerPoseReadbackAvailable ->
+                        "Hay una lectura de pose anterior, pero la última solicitud no está confirmada por el renderer"
                     else -> "Ningún renderer activo confirmó el azimut solicitado"
                 },
                 e.poseUpdatedAtEpochMs,
@@ -153,7 +157,7 @@ object PerceptualSceneRuntime {
                 PerceptualAxis.ELEVATION,
                 when {
                     elevationHrtfConfirmed -> AxisState.APPLIED
-                    managerPoseConfirmed || hybridSpatialActive -> AxisState.DEGRADED
+                    managerPoseReadbackAvailable || hybridSpatialActive -> AxisState.DEGRADED
                     else -> AxisState.UNAVAILABLE
                 },
                 "rad", e.requestedElevationRad,
@@ -170,11 +174,15 @@ object PerceptualSceneRuntime {
             ),
             status(
                 PerceptualAxis.DISTANCE,
-                if (distanceConfirmed) AxisState.DEGRADED else AxisState.UNAVAILABLE,
+                if (distanceReadbackAvailable) AxisState.DEGRADED else AxisState.UNAVAILABLE,
                 "scale", e.requestedDistanceScale, e.effectiveDistanceScale,
-                if (distanceConfirmed)
-                    "Aplicada posición relativa y ganancia acotada; no equivale a distancia física calibrada en metros"
-                else "No hay posición y atenuación relativa de distancia confirmadas"
+                when {
+                    distanceConfirmed ->
+                        "La posición relativa y ganancia acotada tienen lectura confirmada; no equivalen a distancia física calibrada en metros"
+                    distanceReadbackAvailable ->
+                        "Hay lectura de una distancia relativa anterior, pero la última solicitud no está confirmada"
+                    else -> "No hay posición y atenuación relativa de distancia disponibles por lectura del renderer"
+                }
             ),
             status(
                 PerceptualAxis.MOVEMENT,
