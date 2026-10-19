@@ -9,13 +9,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Cross-device sensing contract for FotoHolo.
- *
- * "Universal" means one stable application interface with interchangeable,
- * verified hardware adapters and an honest fallback. It does NOT mean that
- * Android exposes CSI on every chipset. The fallback derives only coarse
- * temporal signal-change indicators from ordinary RSSI observations; it must
- * never infer a person's anatomy, exact headcount, identity, or room geometry.
+ * Cross-device sensing contract with verified hardware providers and an honest fallback.
+ * CSI is never synthesized from RSSI; a 3D scene requires calibrated multi-link measurements.
  */
 object UniversalWifiSensingAdapter {
     enum class DataLevel { NO_WIFI, WIFI_METADATA_ONLY, CSI_VERIFIED }
@@ -44,10 +39,6 @@ object UniversalWifiSensingAdapter {
         val sampleRateHz: Int
     )
 
-    /**
-     * Implementations must be hardware-specific, permission-aware and tested
-     * against a real capture. A declaration alone does not prove CSI works.
-     */
     interface CsiProvider {
         val capabilities: CsiCapabilities
         fun isSupported(context: Context, device: DeviceDescriptor): Boolean
@@ -73,9 +64,10 @@ object UniversalWifiSensingAdapter {
     private val providers = CopyOnWriteArrayList<CsiProvider>()
     private val history = ArrayDeque<List<WifiObservation>>()
     private const val HISTORY_LIMIT = 8
+    @Volatile private var activeProvider: CsiProvider? = null
 
     fun registerProvider(provider: CsiProvider) {
-        // Registration is explicit; no arbitrary shell command or guessed plugin is loaded.
+        // Providers are opt-in code integrations, not arbitrary shell commands or guessed plugins.
         if (provider.capabilities.verifiedOnDevice &&
             provider.capabilities.providerId.isNotBlank() &&
             providers.none { it.capabilities.providerId == provider.capabilities.providerId }) {
@@ -84,11 +76,7 @@ object UniversalWifiSensingAdapter {
     }
 
     fun availableCsiProviders(context: Context): List<CsiCapabilities> {
-        val device = DeviceDescriptor(
-            manufacturer = Build.MANUFACTURER.orEmpty(),
-            model = Build.MODEL.orEmpty(),
-            androidApi = Build.VERSION.SDK_INT
-        )
+        val device = currentDevice()
         return providers.filter { provider ->
             runCatching { provider.capabilities.verifiedOnDevice && provider.isSupported(context, device) }
                 .getOrDefault(false)
@@ -96,25 +84,77 @@ object UniversalWifiSensingAdapter {
     }
 
     /**
-     * Conservative universal fallback: use only the RSSI/time series delivered
-     * by the platform or root scanner. This is a room-change cue, not a person
-     * counter, anatomical reconstruction, or calibrated acoustic measurement.
+     * Starts the first verified provider for this actual device and streams normalized CSI
+     * features. Returns false when no registered provider is compatible or start fails.
+     * No built-in provider is claimed until a chipset/driver combination has been tested.
      */
+    @Synchronized
+    fun startCsiSession(
+        context: Context,
+        onFeatures: (CsiFeatureExtractor.Features, CsiCapabilities) -> Unit,
+        onError: (String) -> Unit
+    ): Boolean {
+        stopCsiSession()
+        val device = currentDevice()
+        val provider = providers.firstOrNull {
+            runCatching { it.capabilities.verifiedOnDevice && it.isSupported(context, device) }
+                .getOrDefault(false)
+        } ?: run {
+            onError("No hay un proveedor CSI verificado para ${device.manufacturer} ${device.model}.")
+            return false
+        }
+        CsiFeatureExtractor.reset()
+        val started = runCatching {
+            provider.start(
+                onSample = { sample ->
+                    val features = CsiFeatureExtractor.analyze(sample)
+                    onFeatures(features, provider.capabilities)
+                },
+                onError = { message ->
+                    if (activeProvider === provider) onError(message)
+                }
+            )
+        }.getOrElse {
+            onError("El proveedor CSI falló al iniciar: ${it.javaClass.simpleName}")
+            false
+        }
+        if (!started) {
+            runCatching { provider.stop() }
+            onError("El proveedor CSI no pudo iniciar la captura.")
+            return false
+        }
+        activeProvider = provider
+        return true
+    }
+
+    @Synchronized
+    fun stopCsiSession() {
+        val provider = activeProvider
+        activeProvider = null
+        runCatching { provider?.stop() }
+        CsiFeatureExtractor.reset()
+    }
+
+    private fun currentDevice() = DeviceDescriptor(
+        manufacturer = Build.MANUFACTURER.orEmpty(),
+        model = Build.MODEL.orEmpty(),
+        androidApi = Build.VERSION.SDK_INT
+    )
+
+    /** RSSI fallback: a qualitative signal-change cue, never person count or geometry. */
     @Synchronized
     fun analyzeMetadata(observations: List<WifiObservation>): SceneFeatures {
         val now = SystemClock.elapsedRealtime()
         if (observations.isEmpty()) {
             return SceneFeatures(
-                level = DataLevel.NO_WIFI, observationCount = 0, medianRssiDbm = null,
-                signalVariabilityDb = null, movementIndicator = null,
-                occupancy = OccupancyHint.UNKNOWN, confidence = 0.0,
-                source = "none", timestampMs = now,
-                limitations = listOf("No hay observaciones Wi-Fi nuevas.", "No se estima ocupación ni anatomía.")
+                DataLevel.NO_WIFI, 0, null, null, null, OccupancyHint.UNKNOWN, 0.0,
+                "none", now,
+                listOf("No hay observaciones Wi-Fi nuevas.", "No se estima ocupación ni anatomía.")
             )
         }
 
         val rssi = observations.map { it.rssiDbm }.sorted()
-        val median = rssi[rssi.size / 2]
+        val median = if (rssi.size % 2 == 0) (rssi[rssi.size / 2 - 1] + rssi[rssi.size / 2]) / 2 else rssi[rssi.size / 2]
         history.addLast(observations.toList())
         while (history.size > HISTORY_LIMIT) history.removeFirst()
 
@@ -123,7 +163,7 @@ object UniversalWifiSensingAdapter {
         val deltas = observations.mapNotNull { current ->
             priorByKey[current.ssid to current.frequencyMhz]?.let { abs(current.rssiDbm - it.rssiDbm).toDouble() }
         }
-        val variability = if (deltas.isNotEmpty()) deltas.average() else null
+        val variability = deltas.takeIf { it.isNotEmpty() }?.average()
         val movement = variability?.let { (it / 12.0).coerceIn(0.0, 1.0) }
         val hint = when {
             movement == null -> OccupancyHint.UNKNOWN
@@ -136,26 +176,20 @@ object UniversalWifiSensingAdapter {
             else -> 0.0
         }
         return SceneFeatures(
-            level = DataLevel.WIFI_METADATA_ONLY,
-            observationCount = observations.size,
-            medianRssiDbm = median,
-            signalVariabilityDb = variability,
-            movementIndicator = movement,
-            occupancy = hint,
-            confidence = confidence,
-            source = "android_or_iw_rssi",
-            timestampMs = now,
-            limitations = listOf(
+            DataLevel.WIFI_METADATA_ONLY, observations.size, median, variability, movement, hint,
+            confidence, "android_or_iw_rssi", now,
+            listOf(
                 "RSSI es metadato de señal, no CSI.",
                 "Cambios pueden deberse a movimiento, interferencia, roaming o cambios del entorno.",
-                "No se calcula número de personas, anatomía, distancia exacta ni plano de la habitación.",
-                "La acústica debe calibrarse con medición acústica real y consentimiento separado."
+                "No se calcula número de personas, anatomía, distancia exacta ni plano de habitación.",
+                "La acústica debe calibrarse con medición acústica real."
             )
         )
     }
 
     fun resetSession() {
         synchronized(this) { history.clear() }
+        stopCsiSession()
     }
 
     fun normalizeConfidence(value: Double): Double = max(0.0, min(1.0, value))
