@@ -52,6 +52,8 @@ object IvannaSpatialNative {
     @JvmStatic external fun nativeObjectRendererSyncStemObjects(rendererHandle: Long, upmixerHandle: Long)
     /** Read-back [x, y, z, width, gain] from the active renderer object buffer. */
     @JvmStatic external fun nativeObjectRendererGetObjectPosition(handle: Long, objectIndex: Int): FloatArray
+    /** Completed non-empty render blocks from this exact native renderer instance. */
+    @JvmStatic external fun nativeObjectRendererGetProcessedBlockCount(handle: Long): Long
     @JvmStatic external fun nativeObjectRendererSetHrtfSubject(handle: Long, subject: String)
     @JvmStatic external fun nativeObjectRendererIsHrtfLoaded(handle: Long): Boolean
     @JvmStatic external fun nativeObjectRendererGetCurrentSubject(handle: Long): String
