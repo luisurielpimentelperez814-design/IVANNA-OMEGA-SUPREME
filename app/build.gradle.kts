@@ -199,8 +199,8 @@ dependencies {
     // Legacy Google AI Client (fallback si Firebase no está disponible)
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
-    implementation("io.coil-kt:coil-compose:2.5.0")
-    implementation("io.coil-kt:coil-video:2.5.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-video:2.7.0")
 
     testImplementation("junit:junit:4.13.2")
     // Required by IvannaMemoryArchitectureTest (Robolectric + ApplicationProvider).
