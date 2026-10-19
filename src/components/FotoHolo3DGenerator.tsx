@@ -7,7 +7,7 @@ type V3 = [number, number, number];
 type Mesh = { positions: number[]; normals: number[]; indices: number[]; color: V3; wire?: boolean };
 type GpuMeshBuffers = { vb: WebGLBuffer; nb: WebGLBuffer; ib: WebGLBuffer; count: number; wire: boolean; color: V3 };
 type RuntimeTelemetry = { schemaVersion:number; sequence:number; timestampMonotonicNs:number; sampleTimestampMonotonicNs:number; sampleAgeMs:number|null; source:string; signalValid:boolean; bands:number[]; features:{energy:number;lowShare:number;highShare:number;centroid:number;flux:number;valid:boolean}; commandedWidth:number|null; dspWidth:number|null; nativeWriteError:string|null; outputRoute:string; sampleRateHz:number; latencyMs:number; underruns:number; hrtfRuntime:string; hrtfSubject:string; hrtfDatasetLoaded:boolean; rirAssetAvailable:boolean; rirDatasetLoaded:boolean; rirRoomCount:number; rirRuntime:string; hrtfAssetAvailable:boolean; safAssetAvailable:boolean; safRuntime:string; safPhase:string; safIteration:number|null; };
-declare global { interface Window { IvannaFotoHoloBridge?: { getSnapshotJson: () => string; attach?: () => void; release?: () => void; setSpatialWidth?: (width:number) => boolean; setSpatialAngleDeg?: (angle:number) => boolean }; } }
+declare global { interface Window { IvannaFotoHoloBridge?: { getSnapshotJson: () => string; attach?: () => void; release?: () => void; setSpatialWidth?: (width:number) => boolean; setSpatialAngleDeg?: (angle:number) => boolean; requestVisualRefinement?: (requestId:string, sceneJson:string, telemetryJson:string) => void }; } }
 const PRESETS: Record<ScenePreset, { label: string; spread: number; depth: number; height: number }> = {
   nanotomix: { label: 'FotoHolo Nanotomix', spread: 1, depth: 1, height: 1 },
   concert: { label: 'Concierto inmersivo', spread: 1.25, depth: 1.2, height: 1.15 },
@@ -97,9 +97,24 @@ export function FotoHolo3DGenerator({ params, onParamChange }: FotoHolo3DGenerat
     const fresh=!!(telemetry?.signalValid&&telemetry.sampleAgeMs!==null&&telemetry.sampleAgeMs<1000);
     const payload={goal:'Refina en caliente esta escena para máxima claridad espacial y lectura del escenario. No cambies procesamiento de audio.',scene:{preset,width,depth,height,rotation,elevation},telemetry:{signalValid:fresh,sampleAgeMs:fresh?telemetry?.sampleAgeMs:null,energy:fresh?telemetry?.features.energy:null,flux:fresh?telemetry?.features.flux:null,lowShare:fresh?telemetry?.features.lowShare:null,highShare:fresh?telemetry?.features.highShare:null,route:fresh?telemetry?.outputRoute:'unreported'}};
     try{
-      const response=await fetch('/api/fotoholo/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(18000)});
-      if(!response.ok){const err=await response.json().catch(()=>({}));throw new Error(err.error||'Servicio IA no disponible');}
-      const suggestion=await response.json() as {width:number;depth:number;height:number;rotation:number;elevation:number;rationale:string;source:string};
+      type Suggestion={width:number;depth:number;height:number;rotation:number;elevation:number;rationale:string;source:string;requestId?:string;error?:string};
+      let suggestion:Suggestion;
+      const nativeBridge=window.IvannaFotoHoloBridge;
+      if(nativeBridge?.requestVisualRefinement){
+        const requestId='fotoholo-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+        suggestion=await new Promise<Suggestion>((resolve,reject)=>{
+          let finished=false;
+          const cleanup=()=>{if(finished)return;finished=true;window.clearTimeout(timer);window.removeEventListener('ivanna-fotoholo-ai-result',onResult);};
+          const onResult=(event:Event)=>{const detail=(event as CustomEvent<Suggestion>).detail;if(detail?.requestId!==requestId)return;cleanup();if(detail.error)reject(new Error(detail.error));else resolve(detail);};
+          const timer=window.setTimeout(()=>{cleanup();reject(new Error('Tiempo de espera de IA nativa agotado'));},22000);
+          window.addEventListener('ivanna-fotoholo-ai-result',onResult);
+          nativeBridge.requestVisualRefinement!(requestId,JSON.stringify(payload.scene),JSON.stringify(payload.telemetry));
+        });
+      }else{
+        const response=await fetch('/api/fotoholo/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(18000)});
+        if(!response.ok){const err=await response.json().catch(()=>({}));throw new Error(err.error||'Servicio IA no disponible');}
+        suggestion=await response.json() as Suggestion;
+      }
       if(![suggestion.width,suggestion.depth,suggestion.height,suggestion.rotation,suggestion.elevation].every(Number.isFinite))throw new Error('Respuesta IA inválida');
       const nw=Math.max(20,Math.min(110,Math.round(suggestion.width)));setWidth(nw);setDepth(Math.max(20,Math.min(110,Math.round(suggestion.depth))));setHeight(Math.max(20,Math.min(100,Math.round(suggestion.height))));changeWidth(nw);changeRotation(Math.max(-180,Math.min(180,Math.round(suggestion.rotation))));setElevation(Math.max(-50,Math.min(65,Math.round(suggestion.elevation))));
       setAiSource('gemini');setAiMessage('Gemini aplicó el ajuste visual en vivo: '+(suggestion.rationale||'escena refinada'));
