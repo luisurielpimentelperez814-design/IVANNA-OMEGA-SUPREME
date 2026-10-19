@@ -15,6 +15,7 @@
 #include "../include/omega_effect_beacon.h"   // readEffectBeacon(): senal real de que omega_effect procesa
 #include <android/log.h>
 #include <cstring>
+#include <string>
 #include <cmath>
 #include <atomic>
 #include <algorithm>
