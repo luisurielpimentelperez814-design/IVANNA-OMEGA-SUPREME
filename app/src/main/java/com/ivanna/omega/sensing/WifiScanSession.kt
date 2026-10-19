@@ -45,6 +45,7 @@ class WifiScanSession(
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != WifiManager.SCAN_RESULTS_AVAILABLE_ACTION || !running) return
+            handler.removeCallbacks(scanTimeoutRunnable)
             val fresh = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
             if (!fresh) {
                 emit("Android no entregó resultados nuevos; se intentará la ruta root opt-in.", emptyList(), false)
@@ -66,6 +67,22 @@ class WifiScanSession(
     }
 
     private val scanRunnable = Runnable { requestScan() }
+    // Android may accept startScan() but never deliver a completion broadcast.
+    // A watchdog prevents a driver/OEM failure from leaving the session stuck.
+    private val scanTimeoutRunnable = Runnable {
+        if (!running || !consented || scanRequestedAtMs == 0L) return@Runnable
+        val elapsed = android.os.SystemClock.elapsedRealtime() - scanRequestedAtMs
+        if (elapsed >= SCAN_TIMEOUT_MS) {
+            emit("Android no confirmó el escaneo en " + (SCAN_TIMEOUT_MS / 1000) + "s; resultado no verificado. Probando fallback root opt-in.", emptyList(), false)
+            tryRootFallback()
+            scheduleNext()
+        }
+    }
+
+    companion object {
+        private const val SCAN_INTERVAL_MS = 30_000L
+        private const val SCAN_TIMEOUT_MS = 15_000L
+    }
 
     fun start(consentGranted: Boolean): Boolean {
         if (!consentGranted) {
@@ -109,6 +126,7 @@ class WifiScanSession(
         running = false
         consented = false
         handler.removeCallbacks(scanRunnable)
+        handler.removeCallbacks(scanTimeoutRunnable)
         if (receiverRegistered) {
             runCatching { appContext.unregisterReceiver(receiver) }
             receiverRegistered = false
@@ -138,9 +156,13 @@ class WifiScanSession(
         scanRequestedAtMs = android.os.SystemClock.elapsedRealtime()
         val accepted = try { wifi.startScan() } catch (_: SecurityException) { false } catch (_: RuntimeException) { false }
         if (!accepted) {
+            handler.removeCallbacks(scanTimeoutRunnable)
             emit("Android rechazó o limitó el escaneo; probando backend root opt-in.", emptyList(), false)
             tryRootFallback()
             scheduleNext()
+        } else {
+            handler.removeCallbacks(scanTimeoutRunnable)
+            handler.postDelayed(scanTimeoutRunnable, SCAN_TIMEOUT_MS)
         }
     }
 
@@ -161,8 +183,7 @@ class WifiScanSession(
     private fun scheduleNext() {
         if (!running || !consented) return
         handler.removeCallbacks(scanRunnable)
-        val elapsed = android.os.SystemClock.elapsedRealtime() - scanRequestedAtMs
-        handler.postDelayed(scanRunnable, (30_000L - elapsed).coerceAtLeast(30_000L))
+        handler.postDelayed(scanRunnable, SCAN_INTERVAL_MS)
     }
 
     private fun emit(message: String, observations: List<WifiObservation>, fresh: Boolean) {
