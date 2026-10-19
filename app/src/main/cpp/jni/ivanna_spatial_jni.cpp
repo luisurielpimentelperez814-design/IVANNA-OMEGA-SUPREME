@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -304,8 +305,7 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPositions(
     // Confirm all four active positions from the upmixer's published buffer.
     for (int i = 0; i < 4; ++i) {
         const auto actual = upmixer->getStemPosition(static_cast<ivanna::ai::StemType>(i));
-        const jfloat* expected = nullptr;
-        // Read expected values from the Java array only after the native write is done.
+        // Compare the published coordinates against the requested Java values.
         jfloat expectedValues[4]{};
         env->GetFloatArrayRegion(positions, i * 4, 4, expectedValues);
         if (env->ExceptionCheck()) {
