@@ -335,6 +335,10 @@ object NativeBridge {
         roomWetMix: Float
     )
     @JvmStatic external fun getHybridMagistralTelemetry(): FloatArray?
+    @JvmStatic external fun isHybridMagistralUsingFallbackHrtf(): Boolean
+
+    fun safeIsHybridMagistralUsingFallbackHrtf(): Boolean =
+        if (isLoaded) runCatching { isHybridMagistralUsingFallbackHrtf() }.getOrDefault(true) else true
 
     fun safeSetHybridMagistralParams(
         enabled: Boolean = true,

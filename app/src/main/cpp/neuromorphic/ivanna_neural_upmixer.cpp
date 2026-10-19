@@ -111,20 +111,58 @@ void NeuralUpmixer::stemsToObjects(const float* /*stems*/, int /*numFrames*/,
 
 void NeuralUpmixer::setStemPosition(StemType stem, float x, float y, float z, float width) noexcept {
     const int idx = static_cast<int>(stem);
-    if (idx >= 0 && idx < 4) {
-        const int curIdx = activePosBuf_.load(std::memory_order_acquire);
-        const int nextIdx = 1 - curIdx;
-        customPositionsBuf_[nextIdx] = customPositionsBuf_[curIdx];
-        customPositionsBuf_[nextIdx][idx] = {
-            std::clamp(x, -2.f, 2.f),
-            std::clamp(y, -2.f, 2.f),
-            std::clamp(z, -2.f, 2.f),
-            std::clamp(width, 0.02f, 1.f),
-            customPositionsBuf_[curIdx][idx].gain
-        };
-        activePosBuf_.store(nextIdx, std::memory_order_release);
-        useCustomPositions_.store(true, std::memory_order_release);
+    if (idx < 0 || idx >= 4 ||
+        !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(width)) {
+        return;
     }
+    std::lock_guard<std::mutex> guard(positionWriteMutex_);
+    const int curIdx = activePosBuf_.load(std::memory_order_acquire);
+    const int nextIdx = 1 - curIdx;
+    const bool useCustom = useCustomPositions_.load(std::memory_order_acquire);
+    const auto& current = useCustom ? customPositionsBuf_[curIdx] : kStemPositions;
+    customPositionsBuf_[nextIdx] = current;
+    auto& p = customPositionsBuf_[nextIdx][idx];
+    p.x = std::clamp(x, -2.f, 2.f);
+    p.y = std::clamp(y, -2.f, 2.f);
+    p.z = std::clamp(z, -2.f, 2.f);
+    p.width = std::clamp(width, 0.02f, 1.f);
+    activePosBuf_.store(nextIdx, std::memory_order_release);
+    useCustomPositions_.store(true, std::memory_order_release);
+}
+
+bool NeuralUpmixer::setStemPositions(const std::array<StemPosition, 4>& positions) noexcept {
+    // Reject the whole pose before publishing any coordinate.
+    for (const auto& p : positions) {
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+            !std::isfinite(p.width) || !std::isfinite(p.gain) ||
+            p.x < -2.f || p.x > 2.f || p.y < -2.f || p.y > 2.f ||
+            p.z < -2.f || p.z > 2.f || p.width < 0.02f || p.width > 1.f ||
+            p.gain < 0.f || p.gain > 1.35f) {
+            return false;
+        }
+    }
+
+    std::lock_guard<std::mutex> guard(positionWriteMutex_);
+    const int curIdx = activePosBuf_.load(std::memory_order_acquire);
+    const int nextIdx = 1 - curIdx;
+    const bool useCustom = useCustomPositions_.load(std::memory_order_acquire);
+    const auto& current = useCustom ? customPositionsBuf_[curIdx] : kStemPositions;
+
+    // Start with the active configuration so per-stem gains are preserved.
+    customPositionsBuf_[nextIdx] = current;
+    for (int i = 0; i < 4; ++i) {
+        auto& target = customPositionsBuf_[nextIdx][i];
+        target.x = positions[i].x;
+        target.y = positions[i].y;
+        target.z = positions[i].z;
+        target.width = positions[i].width;
+        target.gain = positions[i].gain;
+    }
+
+    // Single publication point: audio sees either the old scene or the new scene.
+    activePosBuf_.store(nextIdx, std::memory_order_release);
+    useCustomPositions_.store(true, std::memory_order_release);
+    return true;
 }
 
 StemPosition NeuralUpmixer::getStemPosition(StemType stem) const noexcept {

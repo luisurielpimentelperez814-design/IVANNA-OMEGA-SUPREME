@@ -117,9 +117,11 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
     HeadPose pose;
     bool haveHeadPose = false;
     if (headTracker_) {
-        float frameTimeMs = static_cast<float>(numFrames) / sampleRate_ * 1000.f;
-        pose = headTracker_->getPoseForAudioFrame(frameTimeMs);
-        haveHeadPose = true;
+        // SensorEvent timestamps are milliseconds since boot; block duration
+        // (numFrames / sampleRate) is NOT on that clock. Read the latest
+        // coherent atomic pose instead of querying history with a ~10 ms value.
+        pose = headTracker_->getLatestPose();
+        haveHeadPose = pose.timestampMs > 0.f && std::isfinite(pose.timestampMs);
     }
 
     // [FIX-WHISTLE] Reorientar el azimut de cada speaker según el yaw de la
@@ -195,6 +197,14 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
             outLeft[n] *= scale;
             outRight[n] *= scale;
         }
+    }
+
+    // A positive counter is evidence that the actual native object path has
+    // received non-empty objects and completed a render block. It is not a
+    // claim that the input contained audible content or that the output device
+    // physically emitted it.
+    if (numActive > 0 && numObjects > 0) {
+        processedBlockCount_.fetch_add(1, std::memory_order_release);
     }
 }
 

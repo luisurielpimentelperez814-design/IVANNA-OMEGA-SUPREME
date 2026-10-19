@@ -68,6 +68,27 @@ object BassHaptics {
         return (base - MOTOR_LATENCY_MS + trimMs).coerceIn(0, 500)
     }
 
+    data class SyncStatus(
+        val enabled: Boolean,
+        val route: OutputRoute,
+        val effectiveDelayMs: Int,
+        val latencyMeasuredForCurrentRoute: Boolean,
+        val routeDescription: String
+    )
+
+    /** Read-only live state for the 10D contract; estimated and measured latency are distinguished. */
+    fun syncStatus(): SyncStatus {
+        val route = currentRoute
+        val measured = measuredLatencyMs >= 0 && measuredRoute == route
+        return SyncStatus(
+            enabled = enabled && worker?.isAlive == true,
+            route = route,
+            effectiveDelayMs = effectiveSyncMs(),
+            latencyMeasuredForCurrentRoute = measured,
+            routeDescription = routeLabel
+        )
+    }
+
     /** Guarda la latencia real medida para la ruta de salida actual (se invalida sola si la ruta cambia). */
     fun setMeasuredLatency(context: Context, ms: Int) {
         val am = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return

@@ -10,6 +10,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 
 /**
  * IvannaHeadTracker — Rastreo de cabeza 6DoF para audio holográfico.
@@ -52,7 +53,16 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
 
     internal var nativeHandle: Long = 0
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var isRunning = false
+    @Volatile private var isRunning = false
+    @Volatile private var lastGoodSensorTimestampNs = 0L
+
+    /** True only when the Android sensor subscription is registered and recent data reached JNI. */
+    val isTrackingFresh: Boolean
+        get() {
+            val last = lastGoodSensorTimestampNs
+            val age = SystemClock.elapsedRealtimeNanos() - last
+            return isRunning && nativeHandle != 0L && last > 0L && age in 0L..250_000_000L
+        }
 
     // Callback para notificar a la UI de cambios de orientación
     var onOrientationChanged: ((pitch: Float, yaw: Float, roll: Float) -> Unit)? = null
@@ -67,18 +77,21 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
     fun start() {
         if (isRunning) return
         init()
+        if (nativeHandle == 0L) return
 
-        rotationSensor?.let {
-            // 100Hz = 10ms de latencia IMU — suficiente para audio
-            sensorManager.registerListener(this, it, 10000, mainHandler)
-            isRunning = true
-        }
+        val sensor = rotationSensor ?: return
+        // 100Hz = 10ms nominal sensor interval. Android can still refuse registration.
+        isRunning = runCatching {
+            sensorManager.registerListener(this, sensor, 10000, mainHandler)
+        }.getOrDefault(false)
+        if (!isRunning) lastGoodSensorTimestampNs = 0L
     }
 
     fun stop() {
         if (!isRunning) return
         sensorManager.unregisterListener(this)
         isRunning = false
+        lastGoodSensorTimestampNs = 0L
     }
 
     fun reset() {
@@ -116,8 +129,17 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
                 }
         val timestampMs = event.timestamp / 1_000_000f  // ns → ms
 
-        runCatching { IvannaSpatialNative.nativeHeadTrackerUpdate(nativeHandle, x, y, z, w, timestampMs) }
-            .onFailure { nativeHandle = 0L }  // JNI muerto → desactivar para no reintentar
+        val accepted = runCatching {
+            IvannaSpatialNative.nativeHeadTrackerUpdate(nativeHandle, x, y, z, w, timestampMs)
+        }.isSuccess
+        if (accepted) {
+            lastGoodSensorTimestampNs = event.timestamp
+        } else {
+            nativeHandle = 0L  // JNI muerto → desactivar para no reintentar
+            isRunning = false
+            lastGoodSensorTimestampNs = 0L
+            sensorManager.unregisterListener(this)
+        }
 
         // FIX: alimentar SaFRoomBridge con el estado del campo sonoro S_t.
         // SaFRoomBridge.setSoundFieldState() usaba diffuseness=0 (constante)

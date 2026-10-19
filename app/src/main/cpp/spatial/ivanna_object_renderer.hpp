@@ -24,6 +24,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <android/log.h>
 
@@ -93,6 +94,20 @@ public:
 public:
     void init(float sampleRate, int blockSize) noexcept;
     void setObjects(const std::vector<AudioObject>& objects) noexcept;
+    /** Count of non-empty native object-render blocks; diagnostic readback only. */
+    std::uint64_t processedBlockCount() const noexcept {
+        return processedBlockCount_.load(std::memory_order_acquire);
+    }
+
+    // Read-back of the object buffer currently published to the renderer.
+    // Intended for control/diagnostics; never call from the audio callback.
+    bool getActiveObjectSnapshot(int index, AudioObject& out) const noexcept {
+        const int readBuffer = activeBuffer_.load(std::memory_order_acquire);
+        const int count = numActiveObjects_.load(std::memory_order_acquire);
+        if (index < 0 || index >= count || index >= kMaxObjects) return false;
+        out = (readBuffer == 0 ? objectsA_ : objectsB_)[static_cast<size_t>(index)];
+        return out.active;
+    }
 
     // [FIX-HRTF] process ahora recibe L/R separados (5 args) como HRTFConvolver::process
     void renderBlock(const float* objectsIn, int numObjects, 
@@ -231,6 +246,7 @@ private:
     std::array<AudioObject, kMaxObjects> objectsB_{};
     std::atomic<int> activeBuffer_{0};
     std::atomic<int> numActiveObjects_{0};
+    std::atomic<std::uint64_t> processedBlockCount_{0};
 
     struct ReverbFDN {
         static constexpr int kNumDelays = 4;

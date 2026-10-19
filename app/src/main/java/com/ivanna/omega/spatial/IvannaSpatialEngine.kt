@@ -18,11 +18,26 @@ class IvannaSpatialEngine private constructor() {
         val reflectionGain: Float
             get() = shared.earlyReflectionGains[0] / sqrt(shared.distance.coerceAtLeast(0.5f))
 
-        fun setAzimuth(rad: Float) { shared.azimuthRad = rad }
+        fun setAzimuth(rad: Float) {
+            if (!rad.isFinite()) return
+            shared.azimuthRad = rad.coerceIn(-Math.PI.toFloat(), Math.PI.toFloat())
+            // Apply to the production object renderer too; legacy Kotlin state alone
+            // is not enough when PlaybackCaptureService is using native HRTF.
+            runCatching {
+                IvannaSpatialManager.setScenePose(
+                    shared.azimuthRad, shared.elevationRad, shared.distance
+                )
+            }
+        }
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }
         fun setDistance(v: Float) {
             val d = v.coerceIn(0.5f, 2.0f)
             shared.distance = d
+            runCatching {
+                IvannaSpatialManager.setScenePose(
+                    shared.azimuthRad, shared.elevationRad, shared.distance
+                )
+            }
             if (IvannaNativeLib.isLoaded) {
                 val distScale = 1f / sqrt(d)
                 for (i in shared.earlyReflectionTimes.indices) {
@@ -46,6 +61,13 @@ class IvannaSpatialEngine private constructor() {
             if (IvannaNativeLib.isLoaded) runCatching {
                 IvannaNativeLib.nativeSetSpatialParams(
                     """{"azimuth_rad":${shared.azimuthRad},"elevation_rad":${shared.elevationRad}}"""
+                )
+            }
+            // The object renderer receives the same source pose; setScenePose
+            // reports success only after the native stem coordinates read back.
+            runCatching {
+                IvannaSpatialManager.setScenePose(
+                    shared.azimuthRad, shared.elevationRad, shared.distance
                 )
             }
         }

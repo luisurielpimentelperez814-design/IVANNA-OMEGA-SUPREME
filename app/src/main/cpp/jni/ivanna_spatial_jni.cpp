@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -163,6 +164,27 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSetReverb(
     if (renderer) renderer->setReverbLevel(level);
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetReverbLevel(
+    JNIEnv*, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    return renderer ? renderer->reverbLevel() : -1.f;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererIsRirActive(
+    JNIEnv*, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    return (renderer && renderer->rirActive()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetRoomRT60(
+    JNIEnv*, jclass, jlong handle) {
+    auto* renderer = toObjectRenderer(handle);
+    return renderer ? renderer->currentRoomRT60() : -1.f;
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererRenderBlock(
     JNIEnv* env, jclass, jlong handle, jobject objectsBuffer, jint numObjects,
@@ -210,6 +232,19 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererSyncStemOb
     std::vector<ivanna::spatial::AudioObject> objects;
     upmixer->stemsToObjects(nullptr, 0, objects);
     renderer->setObjects(objects);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetObjectPosition(
+    JNIEnv* env, jclass, jlong rendererHandle, jint objectIndex) {
+    auto* renderer = toObjectRenderer(rendererHandle);
+    if (!renderer) return nullptr;
+    ivanna::spatial::AudioObject object{};
+    if (!renderer->getActiveObjectSnapshot(objectIndex, object)) return nullptr;
+    const jfloat values[5] = {object.x, object.y, object.z, object.width, object.gain};
+    jfloatArray result = env->NewFloatArray(5);
+    if (result) env->SetFloatArrayRegion(result, 0, 5, values);
+    return result;
 }
 
 // ============================================================================
@@ -264,6 +299,13 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetEnabled(
     if (upmixer) upmixer->setEnabled(enabled);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerIsEnabled(
+    JNIEnv*, jclass, jlong handle) {
+    auto* upmixer = toUpmixer(handle);
+    return (upmixer && upmixer->isEnabled()) ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPosition(
     JNIEnv*, jclass, jlong handle, jint stemType, jfloat x, jfloat y, jfloat z, jfloat width) {
@@ -271,6 +313,70 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPosition(
     if (upmixer) {
         upmixer->setStemPosition(static_cast<ivanna::ai::StemType>(stemType), x, y, z, width);
     }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerSetStemPositions(
+    JNIEnv* env, jclass, jlong handle, jfloatArray positions) {
+    auto* upmixer = toUpmixer(handle);
+    // 4 objects × [x, y, z, width, gain]. Reject malformed requests atomically.
+    if (!upmixer || !positions || env->GetArrayLength(positions) != 20) return JNI_FALSE;
+
+    jfloat* values = env->GetFloatArrayElements(positions, nullptr);
+    if (!values) return JNI_FALSE;
+
+    std::array<ivanna::ai::StemPosition, 4> requested{};
+    bool valid = true;
+    for (int i = 0; i < 4; ++i) {
+        const int off = i * 5;
+        const jfloat x = values[off];
+        const jfloat y = values[off + 1];
+        const jfloat z = values[off + 2];
+        const jfloat width = values[off + 3];
+        const jfloat gain = values[off + 4];
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+            !std::isfinite(width) || !std::isfinite(gain) ||
+            x < -2.f || x > 2.f || y < -2.f || y > 2.f ||
+            z < -2.f || z > 2.f || width < 0.02f || width > 1.f ||
+            gain < 0.f || gain > 1.35f) {
+            valid = false;
+            break;
+        }
+        requested[i] = {x, y, z, width, gain};
+    }
+    env->ReleaseFloatArrayElements(positions, values, JNI_ABORT);
+    if (!valid || !upmixer->setStemPositions(requested)) return JNI_FALSE;
+
+    // Read back the published buffer, not the requested Java values.
+    for (int i = 0; i < 4; ++i) {
+        const auto actual = upmixer->getStemPosition(static_cast<ivanna::ai::StemType>(i));
+        const auto& expected = requested[i];
+        if (!std::isfinite(actual.x) || !std::isfinite(actual.y) ||
+            !std::isfinite(actual.z) || !std::isfinite(actual.width) ||
+            !std::isfinite(actual.gain) ||
+            std::fabs(actual.x - expected.x) > 0.015f ||
+            std::fabs(actual.y - expected.y) > 0.015f ||
+            std::fabs(actual.z - expected.z) > 0.015f ||
+            std::fabs(actual.width - expected.width) > 0.015f ||
+            std::fabs(actual.gain - expected.gain) > 0.015f) {
+            return JNI_FALSE;
+        }
+    }
+    return JNI_TRUE;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeUpmixerGetStemPosition(
+    JNIEnv* env, jclass, jlong handle, jint stemType) {
+    auto* upmixer = toUpmixer(handle);
+    if (!upmixer || stemType < 0 || stemType >= static_cast<jint>(ivanna::ai::StemType::kNumStems)) {
+        return nullptr;
+    }
+    const auto p = upmixer->getStemPosition(static_cast<ivanna::ai::StemType>(stemType));
+    const jfloat values[5] = {p.x, p.y, p.z, p.width, p.gain};
+    jfloatArray result = env->NewFloatArray(5);
+    if (result) env->SetFloatArrayRegion(result, 0, 5, values);
+    return result;
 }
 
 JNIEXPORT void JNICALL

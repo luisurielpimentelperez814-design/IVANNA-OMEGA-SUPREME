@@ -17,6 +17,8 @@ import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.dsp.DSPBridge
+import com.ivanna.omega.perceptual.PerceptualSceneRuntime
+import com.ivanna.omega.perceptual.AxisState
 import com.ivanna.omega.ui.theme.*
 
 /**
@@ -314,12 +316,34 @@ private fun BinauralTab(
     // si la fuente cambia externamente (no val plana ni remember sin key)
     val hrtfEnabled by remember { derivedStateOf { audioState.binaural } }
     var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
+    var spatialPoseStatus by remember { mutableStateOf("POSE 3D: esperando motor HRTF") }
+    var hrtfDatasetStatus by remember { mutableStateOf("HRTF: no confirmado") }
+    var tenDStatus by remember { mutableStateOf("10D: recopilando estado real del motor") }
+    var tenDAxes by remember { mutableStateOf(emptyList<String>()) }
+    var movementEnabled by remember { mutableStateOf(com.ivanna.omega.spatial.IvannaSpatialManager.sceneMovementActive) }
+
+    fun syncSpatialPose(s: AdaptiveControlsState) {
+        val azimuth = s.binauralAzimuth * Math.PI.toFloat() / 180f
+        val elevation = s.binauralElevation * Math.PI.toFloat() / 180f
+        val confirmed = runCatching {
+            com.ivanna.omega.spatial.IvannaSpatialManager.setScenePose(
+                azimuth, elevation, com.ivanna.omega.spatial.IvannaSpatialEngine.distanceMeters
+            )
+        }.getOrDefault(false)
+        spatialPoseStatus = if (confirmed) {
+            "POSE 3D EN MOTOR · 4 coordenadas leídas de vuelta; no equivale a medición acústica"
+        } else if (com.ivanna.omega.spatial.IvannaSpatialManager.ready) {
+            "POSE 3D NO CONFIRMADA · el motor no devolvió las coordenadas solicitadas"
+        } else {
+            "POSE 3D PENDIENTE · el motor HRTF aún no está listo"
+        }
+    }
 
     fun syncHybridToNative(s: AdaptiveControlsState) {
         NativeBridge.safeSetHybridMagistralParams(
             enabled             = s.hybridMagistralEnabled,
             binauralWet         = s.hybridBinauralWet,
-            virtualAzimuthDeg   = if (kotlin.math.abs(s.binauralAzimuth) > 1f) s.binauralAzimuth else 30f,
+            virtualAzimuthDeg   = s.binauralAzimuth,
             virtualElevationDeg = s.binauralElevation,
             roomSize            = s.hybridRoomSize,
             roomAbsorption      = s.hybridRoomAbsorption,
@@ -331,8 +355,26 @@ private fun BinauralTab(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         syncHybridToNative(prefs)
+        var initialPoseConfirmed = false
+        var pollCount = 0
         while (true) {
             hybridTele = NativeBridge.safeGetHybridMagistralTelemetry()
+            hrtfDatasetStatus = "HRTF: " + com.ivanna.omega.spatial.IvannaSpatialManager.hrtfStatus
+            movementEnabled = com.ivanna.omega.spatial.IvannaSpatialManager.sceneMovementActive
+            if (!initialPoseConfirmed) {
+                syncSpatialPose(prefs)
+                initialPoseConfirmed = spatialPoseStatus.startsWith("POSE 3D EN MOTOR")
+            }
+            if (pollCount++ % 4 == 0) {
+                val snapshot = runCatching { PerceptualSceneRuntime.capture(context) }.getOrNull()
+                if (snapshot != null) {
+                    val applied = snapshot.axes.count { it.state == AxisState.APPLIED }
+                    val degraded = snapshot.axes.count { it.state == AxisState.DEGRADED }
+                    val unavailable = snapshot.axes.count { it.state == AxisState.UNAVAILABLE }
+                    tenDStatus = "10D · " + applied + " aplicadas · " + degraded + " degradadas · " + unavailable + " no disponibles"
+                    tenDAxes = snapshot.axes.map { it.axis.name + " · " + it.state.name }
+                }
+            }
             kotlinx.coroutines.delay(250L)
         }
     
@@ -341,6 +383,7 @@ private fun BinauralTab(
 
     GlassCard("HRTF BINAURAL", AuroraCyan, "KEMAR subject_165 · 24 azimuts · 7 elevaciones") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(hrtfDatasetStatus, color = TextSecondary, fontSize = 10.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("HRTF ACTIVO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Switch(
@@ -371,6 +414,7 @@ private fun BinauralTab(
                 updatePrefs { next }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setAzimuth(rad)
+                syncSpatialPose(next)
                 if (IvannaNativeLib.isLoaded) {
                     runCatching { IvannaNativeLib.nativeSetSpatialAngleRad(rad) }
                     runCatching { IvannaNativeLib.nativeSetBinauralPositionRad(rad, (audioState.spatialWidth / 2f).coerceIn(0f, 1f)) }
@@ -385,8 +429,31 @@ private fun BinauralTab(
                 updatePrefs { next }
                 val rad = v * Math.PI.toFloat() / 180f
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setElevation(rad)
+                syncSpatialPose(next)
                 syncHybridToNative(next)
             }
+            Text(spatialPoseStatus, color = TextSecondary, fontSize = 10.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("MOVIMIENTO 3D · ÓRBITA LENTA", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = movementEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            movementEnabled = com.ivanna.omega.spatial.IvannaSpatialManager.startSceneMovement(
+                                azimuthVelocityRadPerSec = 0.20f,
+                                elevationVelocityRadPerSec = 0f,
+                                distanceScaleVelocityPerSec = 0f
+                            )
+                        } else {
+                            com.ivanna.omega.spatial.IvannaSpatialManager.stopSceneMovement()
+                            movementEnabled = false
+                        }
+                    }
+                )
+            }
+            Text("La órbita se mueve fuera del hilo de audio y se detiene al alcanzar los límites espaciales.", color = TextSecondary, fontSize = 9.sp)
+            Text(tenDStatus, color = TextSecondary, fontSize = 10.sp)
+            Text(tenDAxes.joinToString("  •  "), color = TextSecondary, fontSize = 9.sp)
             IvannaSliderRow("ANCHO ESPACIAL", audioState.spatialWidth, 0f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(spatialWidth = v) }
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setWidth(v)
