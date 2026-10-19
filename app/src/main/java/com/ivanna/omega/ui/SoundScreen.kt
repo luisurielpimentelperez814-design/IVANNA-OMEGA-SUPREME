@@ -343,7 +343,7 @@ private fun BinauralTab(
         NativeBridge.safeSetHybridMagistralParams(
             enabled             = s.hybridMagistralEnabled,
             binauralWet         = s.hybridBinauralWet,
-            virtualAzimuthDeg   = if (kotlin.math.abs(s.binauralAzimuth) > 1f) s.binauralAzimuth else 30f,
+            virtualAzimuthDeg   = s.binauralAzimuth,
             virtualElevationDeg = s.binauralElevation,
             roomSize            = s.hybridRoomSize,
             roomAbsorption      = s.hybridRoomAbsorption,
