@@ -375,7 +375,9 @@ public:
 
             // 3. Eje 4: ObjectSpatialRenderer con mezcla húmeda controlada (Woodworth ITD + Brown-Duda + ER)
             spatialRenderer_.setEstimatedRoomT60(roomEngine_.estimatedRoomT60());
-            const bool hybridActive = hybridMagistralRenderer_.isEnabled();
+            // El híbrido solo cuenta como ruta activa si este bloque permite render espacial.
+            // Si no, debe conservarse el HRTF personalizador en vez de silenciarlo por un híbrido omitido.
+            const bool hybridActive = allowSpatialRender && hybridMagistralRenderer_.isEnabled();
             const float wetObj = (allowSpatialRender && !hybridActive)
                 ? std::clamp(baseSpatialWet + 0.22f * realityK, 0.0f, 0.45f)
                 : 0.0f;
