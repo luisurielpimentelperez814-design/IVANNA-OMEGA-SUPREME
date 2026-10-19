@@ -549,6 +549,23 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_native_stem_pose)
 
+# Sensor timestamps use Android elapsed-realtime; the audio renderer must not
+# compare them with a block-duration clock. Exercise the production tracker.
+add_executable(test_head_tracker_latest_pose
+  test_head_tracker_latest_pose.cpp
+  ../spatial/ivanna_head_tracker.cpp
+)
+target_link_libraries(test_head_tracker_latest_pose PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_head_tracker_latest_pose PRIVATE
+  .. ../include ../spatial host_stubs
+)
+target_compile_options(test_head_tracker_latest_pose PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_head_tracker_latest_pose PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_head_tracker_latest_pose PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_head_tracker_latest_pose)
+
 add_executable(test_hoa_binaural_decoder
   test_hoa_binaural_decoder.cpp
   ../spatial/HoaBinauralDecoder.cpp
