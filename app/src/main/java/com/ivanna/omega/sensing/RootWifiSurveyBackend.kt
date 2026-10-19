@@ -4,6 +4,7 @@ import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Root-assisted Wi-Fi survey fallback for devices with Magisk and a compatible
@@ -53,21 +54,42 @@ class RootWifiSurveyBackend {
 
     private data class CommandResult(val exitCode: Int, val stdout: String)
 
+    /**
+     * Enforce the deadline while output is being read. Reading the stream on the
+     * caller thread before waitFor() can block forever and makes a timeout fake.
+     */
     private fun runRoot(command: String): CommandResult {
         // All call sites pass constants or an interface validated by a strict regex.
+        var process: Process? = null
         return try {
-            val process = ProcessBuilder("su", "-c", command)
+            process = ProcessBuilder("su", "-c", command)
                 .redirectErrorStream(true)
                 .start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }
+            val output = AtomicReference("")
+            val reader = Thread({
+                output.set(runCatching {
+                    process!!.inputStream.bufferedReader().use { it.readText() }
+                }.getOrDefault(""))
+            }, "ivanna-root-wifi-output").apply {
+                isDaemon = true
+                start()
+            }
             val finished = process.waitFor(12, TimeUnit.SECONDS)
             if (!finished) {
-                process.destroyForcibly()
-                CommandResult(124, output)
+                process.destroy()
+                if (process.isAlive) process.destroyForcibly()
+                reader.join(250)
+                CommandResult(124, output.get())
             } else {
-                CommandResult(process.exitValue(), output)
+                reader.join(500)
+                CommandResult(process.exitValue(), output.get())
             }
+        } catch (e: InterruptedException) {
+            process?.destroyForcibly()
+            Thread.currentThread().interrupt()
+            CommandResult(124, "Comando root interrumpido.")
         } catch (e: Exception) {
+            process?.destroyForcibly()
             CommandResult(127, e.javaClass.simpleName)
         }
     }
