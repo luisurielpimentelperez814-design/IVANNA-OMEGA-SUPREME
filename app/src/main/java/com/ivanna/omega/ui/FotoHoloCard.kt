@@ -110,7 +110,8 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
 
         val status = when {
             tel.nativeWriteError != null -> "ERROR DE CONTROL: ${tel.nativeWriteError}"
-            !tel.hasSignal -> "Sin señal: activa la captura de audio (Ruta A). Mientras tanto el ancho no se toca."
+            tel.activeRoute == "ROUTE_B" -> "SAFMUS: Ruta B global detectada; Ruta A inhibida para evitar doble procesamiento. Control global: ${tel.routeB}. Modulación Bark local en abstención."
+            !tel.hasSignal -> "Sin señal válida de Ruta A: se conserva el ancho seguro; no se inventan datos acústicos."
             !enabled -> "Espectro en vivo · modulación apagada."
             bypass -> "Bypass: suena el ancho que fijaste."
             tel.readbackConfirmed && tel.dspWidth < tel.appliedWidth - 0.03f ->
