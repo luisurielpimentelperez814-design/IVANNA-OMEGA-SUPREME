@@ -121,7 +121,7 @@ fun WarpedLatticeAxisCard(
             StatBlock(
                 label = "DE-CLIPPER",
                 value = if (telemetry.declippedPeaksCount >= 0) "${telemetry.declippedPeaksCount} pk" else "N/D",
-                accent = if (telemetry.declippedPeaksCount > 0) AmberSignal else PhosphorGreen,
+                accent = when { telemetry.declippedPeaksCount < 0 -> TextMuted; telemetry.declippedPeaksCount > 0 -> AmberSignal; else -> PhosphorGreen },
                 modifier = Modifier.weight(1f)
             )
         }
