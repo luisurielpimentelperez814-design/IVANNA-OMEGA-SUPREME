@@ -53,6 +53,28 @@ class SpatialScenePoseMathTest {
     }
 
     @Test
+    fun stemFramesAreConvertedToObjectMajorPlanarStereoWithoutChannelMixing() {
+        val frames = 3
+        val source = FloatArray(frames * 8) { it.toFloat() }
+        val planar = FloatArray(frames * 8)
+        for (stem in 0 until 4) {
+            for (frame in 0 until frames) {
+                for (channel in 0 until 2) {
+                    val src = SpatialStemBufferLayout.interleavedStemIndex(frame, stem, channel)
+                    val dst = SpatialStemBufferLayout.planarObjectIndex(stem, frame, channel, frames)
+                    planar[dst] = source[src]
+                    assertEquals(source[src], planar[dst], 0f)
+                }
+            }
+        }
+
+        // Stem 2, right channel, frames 0..2 must land in its own planar run.
+        assertEquals(5f, planar[2 * 2 * frames + frames], 0f)
+        assertEquals(13f, planar[2 * 2 * frames + frames + 1], 0f)
+        assertEquals(21f, planar[2 * 2 * frames + frames + 2], 0f)
+    }
+
+    @Test
     fun nonFiniteAndOutOfRangeInputsAreRejected() {
         val base = SpatialScenePoseMath.defaultStems.first()
         assertNull(SpatialScenePoseMath.transform(base, Float.NaN, 0f, 1f))
