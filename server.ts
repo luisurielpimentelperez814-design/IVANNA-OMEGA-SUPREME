@@ -298,6 +298,7 @@ app.post('/api/fotoholo/render-place', async (req: Request, res: Response) => {
   }
   const place = typeof req.body?.place === 'string' ? req.body.place.trim().slice(0, 240) : '';
   const details = typeof req.body?.details === 'string' ? req.body.details.trim().slice(0, 500) : '';
+  const musicContext = typeof req.body?.musicContext === 'string' ? req.body.musicContext.trim().slice(0, 1400) : '';
   if (place.length < 2) {
     res.status(400).json({ error: 'Indica un lugar o entorno (2–240 caracteres).' });
     return;
@@ -311,7 +312,8 @@ app.post('/api/fotoholo/render-place', async (req: Request, res: Response) => {
         parts: [{ text:
           'Create one highly photorealistic, cinematic 16:9 wide image, target image size 4K (3840x2160), of this place or environment: ' + place +
           '. Additional visual direction: ' + (details || 'natural physically plausible lighting, realistic materials, high-detail architecture, credible perspective') +
-          '. Render as a premium architectural/location visualization with realistic global illumination, detailed surfaces, lens perspective and natural color. Do not add labels, watermarks, UI, text or logos. If the named place is a real specific location and no reference photo is provided, make a plausible illustrative interpretation rather than claiming exact documentary accuracy. This is a visual concept, not verified survey data.'
+          '. MUSIC-SYNCHRONIZED IMMERSIVE ART DIRECTION: ' + (musicContext || 'No live music analysis supplied; create a neutral ambience that fits the requested place.') +
+          '. The location must feel like a believable place the listener could mentally step into while hearing the current music. Match architecture, era, lighting, crowd density, stage/set design, colors, atmosphere, weather and camera position to the described genre and venue; treat current signal energy and low/high-frequency balance as subtle mood cues, never as facts about the song. Compose as a single cinematic environment, with strong foreground/midground/background depth, realistic materials, physically plausible global illumination, fine surface detail, atmospheric perspective and natural lens response. No labels, UI, text, watermarks or logos. Do not claim to identify the song from audio features. If a named real location has no reference image, make an explicitly illustrative interpretation rather than claiming documentary accuracy. This is an AI-generated immersive visual concept, not verified survey data.'
         }],
       }],
       config: {
