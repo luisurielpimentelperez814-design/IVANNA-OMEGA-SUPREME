@@ -186,4 +186,13 @@ class PerceptualSceneContractTest {
         ))
         assertTrue(snapshot.validate().any { it.contains("needs confidence") })
     }
+
+    @Test fun listenerOutsideRoomBoundsIsRejected() {
+        val t = 1_800_000_000_000L
+        val snapshot = validSnapshot(
+            room = RoomGeometry(4f, 5f, 2.5f, Vec3Meters(4.1f, 2f, 1f), t),
+            calibration = SceneCalibration(CalibrationKind.MEASURED, "room", t, 0.9f)
+        )
+        assertTrue(snapshot.validate().any { it.contains("must be inside room bounds") })
+    }
 }
