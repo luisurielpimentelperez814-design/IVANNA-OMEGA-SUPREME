@@ -147,8 +147,11 @@ data class PerceptualSceneSnapshot(
             }
         }
         val hrtfAxis = axes.singleOrNull { it.axis == PerceptualAxis.HRTF_PERSONALIZATION }
-        if (hrtfAxis?.state == AxisState.APPLIED && (hrtf == null || hrtf.datasetId.isBlank() || hrtf.kind == HrtfProvenanceKind.UNKNOWN)) {
-            add("HRTF axis cannot be APPLIED without identified dataset provenance")
+        if (hrtfAxis?.state == AxisState.APPLIED &&
+            (hrtf == null || hrtf.datasetId.isBlank() || hrtf.subjectId.isNullOrBlank() ||
+                hrtf.kind == HrtfProvenanceKind.UNKNOWN)
+        ) {
+            add("HRTF personalization cannot be APPLIED without identified dataset and subject provenance")
         }
         val roomAxis = axes.singleOrNull { it.axis == PerceptualAxis.ROOM_GEOMETRY }
         if (roomAxis?.state == AxisState.APPLIED && (room == null || calibration.kind != CalibrationKind.MEASURED)) {
