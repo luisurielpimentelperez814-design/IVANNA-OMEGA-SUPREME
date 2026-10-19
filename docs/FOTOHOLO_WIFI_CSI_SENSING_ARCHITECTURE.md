@@ -64,3 +64,18 @@ Añadir un módulo experimental, opt-in y local-first para investigar CSI y comb
 ## Estado
 
 La pantalla de consentimiento ahora incluye una opción para probar mediciones Wi-Fi en equipos compatibles y explica las limitaciones en lenguaje común. Esta documentación es un plan de ingeniería y una especificación de investigación; no significa que el repositorio ya contenga un receptor CSI, un modelo entrenado, escaneo anatómico ni calibración espacial validada.
+
+
+## Implementación por niveles con Magisk/root
+
+La aplicación incluye ahora una ruta de sondeo opt-in con dos vías:
+1. API pública de Android cuando se cumplen los permisos y servicios requeridos.
+2. Backend Magisk/root que intenta ejecutar `iw dev` y un escaneo de la interfaz detectada mediante nombre validado. Se limita a metadatos estándar de redes y RSSI, no recopila ni afirma CSI.
+
+La sesión debe ser iniciada explícitamente tras consentimiento y detenida por la pantalla propietaria cuando deja de estar en primer plano. Los resultados se etiquetan con su procedencia; los rechazos, permisos ausentes o resultados no nuevos no se convierten en mediciones inventadas. El backend root no modifica configuración del router ni intenta cambiar el modo del controlador.
+
+### Siguiente nivel para CSI real
+
+Para cada familia de hardware se necesita un adaptador mantenido y probado que exponga muestras CSI reales: chipset, versión de kernel/driver, firmware, bandas soportadas, API del proveedor, formato de muestras, timestamps y métricas de calidad. La detección debe ser por capacidad verificada y no por marca/modelo inferido. No se debe tratar la presencia de `iw`, root, Wi-Fi RTT o RSSI como prueba de que CSI está disponible.
+
+La compatibilidad multi-hardware se consigue con adaptadores intercambiables y degradación transparente, no prometiendo que todos los módems Android puedan exponer CSI con software únicamente.
