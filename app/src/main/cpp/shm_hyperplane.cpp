@@ -82,7 +82,17 @@ Java_com_ivanna_omega_magisk_ShmManager_nativeMapSharedFd(JNIEnv* env, jobject, 
     // El fd ya no hace falta: el mapeo mantiene viva la referencia al inode.
     close(fd);
     mlockAddr(addr, size);
-    return env->NewDirectByteBuffer(addr, size);
+    jobject buffer = env->NewDirectByteBuffer(addr, size);
+    if (buffer == nullptr) {
+        // Si JNI no puede crear el wrapper, liberar el mmap para no filtrar
+        // memoria virtual en cada intento fallido de handshake.
+        munlock(addr, static_cast<size_t>(size));
+        munmap(addr, static_cast<size_t>(size));
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        LOGE("mapSharedFd: NewDirectByteBuffer fallo; mmap liberado");
+        return nullptr;
+    }
+    return buffer;
 }
 
 JNIEXPORT jint JNICALL
