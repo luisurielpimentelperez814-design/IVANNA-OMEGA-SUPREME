@@ -35,7 +35,7 @@ for p in ui_root.rglob("*.kt"):
 # Every shared numeric command must reject non-finite JSON values; high-risk bridges also clamp domain values.
 bridge = "app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt"
 require(bridge, "private fun hasFiniteNumericValues", "if (!hasFiniteNumericValues(payload))",
-        "sanitizeControlValue(rt60S, 0f, 1.5f)", "val safeQ = FloatArray(7)",
+        "sanitizeControlValue(rt60S, 0.1f, 1.5f)", "val safeQ = FloatArray(7)",
         "sanitizeControlValue(compressor, -24f, 0f)", "scores.any { !it.isFinite() }")
 
 # Native SAF latent boundaries must validate before mutating HRTF/RIR state.
