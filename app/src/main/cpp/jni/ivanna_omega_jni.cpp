@@ -43,6 +43,7 @@
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
 #include "../spatial/RoomProbe.hpp"
+#include "../spatial/SceneGeometryRenderer.hpp"
 #include "../neuromorphic/NpeStereoCore.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../include/BlockPeakGuard.h"
@@ -3213,6 +3214,25 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeRoomDesign(
     jfloatArray arr = env->NewFloatArray(ivanna::room::kBands);
     if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, ivanna::room::kBands, out);
     return arr;
+}
+
+/** Render 3D de la geometría real de sala a PPM 4K. Solo escribe un nombre fijo en el directorio privado recibido. */
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeRenderRoomGeometry(
+    JNIEnv* env, jobject, jstring privateDirectory, jint width, jint height) {
+    if (privateDirectory == nullptr || width <= 0 || height <= 0 ||
+        width > static_cast<jint>(ivanna::spatial::render::SceneGeometryRenderer::k4kWidth) ||
+        height > static_cast<jint>(ivanna::spatial::render::SceneGeometryRenderer::k4kHeight)) return JNI_FALSE;
+    const char* raw = env->GetStringUTFChars(privateDirectory, nullptr);
+    if (raw == nullptr) return JNI_FALSE;
+    const std::string dir(raw);
+    env->ReleaseStringUTFChars(privateDirectory, raw);
+    if (dir.empty() || dir.front() != '/' || dir.find("..") != std::string::npos) return JNI_FALSE;
+    const std::string output = dir + "/ivanna_room_geometry.ppm";
+    const auto scene = ivanna::spatial::render::fromRoomGeometryConfig(
+        ivanna::spatial::RoomGeometryConfig::defaultLayout());
+    return ivanna::spatial::render::SceneGeometryRenderer::renderPpm(
+        scene, output, static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)) ? JNI_TRUE : JNI_FALSE;
 }
 
 // ── Dinamica espacial temporal ("4D"): puente app→daemon (SET_TEMPORAL_FIELD) ──
