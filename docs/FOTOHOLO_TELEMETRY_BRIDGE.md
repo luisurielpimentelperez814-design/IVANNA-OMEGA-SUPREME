@@ -42,9 +42,9 @@ Este contrato es una propuesta de interfaz y alcance; no afirma que todos estos 
 ## Implementación añadida en la rama de integración
 
 - `FotoHoloEngine` publica un timestamp monotónico del último cuadro Bark válido, además de las 64 bandas, energía, reparto graves/agudos, centroide y flux. El timestamp se conserva cuando no hay una muestra nueva, para poder detectar datos obsoletos.
-- `FotoHoloTelemetryBridge.kt` expone un snapshot JSON de solo lectura a través de `@JavascriptInterface`. Incluye antigüedad de la muestra, ruta/frecuencia/latencia/cortes disponibles en `OmegaMetrics`, lectura espacial nativa y disponibilidad de assets.
+- `FotoHoloTelemetryBridge.kt` expone un snapshot JSON de solo lectura a través de `@JavascriptInterface`. Incluye antigüedad de la muestra, ruta/frecuencia/latencia/cortes disponibles en `OmegaMetrics`, lectura espacial nativa, estado del perfil HRTF, carga/conteo del dataset RIR y último estado publicado por `SaFEngine`.
 - `FotoHolo3DGenerator.tsx` consulta `window.IvannaFotoHoloBridge.getSnapshotJson()` cada 250 ms si el host la expone. Ajusta las superficies de onda a energía y transitorios Bark reales, y deja de mostrar esas lecturas como vivas cuando la muestra tiene más de 1 segundo.
-- El panel distingue disponibilidad de archivos y estado efectivo. HRTF solo se etiqueta como reportada activa si la consulta nativa lo informa; RIR y SAF se quedan como no confirmados porque las APIs compartidas actuales no proporcionan read-back fiable para esos dos estados.
+- El panel distingue disponibilidad de archivos, dataset cargado y aplicación efectiva. HRTF separa perfil cargado de la bandera activa nativa; RIR expone carga y número de salas, pero no confirma qué IR está convolucionándose ni el wet aplicado; SAF expone el último estado real publicado por una instancia de `SaFEngine`, y se mantiene como no inicializado si no hay instancia.
 
 ## Límite de integración que sigue abierto
 
