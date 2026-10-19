@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "SafmusLatentGuard.hpp"
+
 #include <cstdint>
 #include <vector>
 #include <memory>
@@ -92,6 +94,7 @@ public:
     // y fuerza un reload de los filtros de frecuencia en el próximo bloque.
     // Llamar desde el hilo de control (no durante process()).
     void setLatentParams(const float q[7]) noexcept {
+        if (!ivanna::safmus::isFiniteLatent(q)) return;
         hrtf_.setLatentParams(q);
         // Marcar como pendiente de recalcular filtros en la próxima llamada a process()
         newTargetPending_.store(true, std::memory_order_release);

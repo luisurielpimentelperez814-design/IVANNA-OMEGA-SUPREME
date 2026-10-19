@@ -354,6 +354,8 @@ void ivanna::spatial::ObjectRenderer::setSafLatent(
     const std::array<float,7>& q
 )
 {
+    // Reject before mutating the cached latent or propagating it to HRTF/RIR.
+    if (!ivanna::safmus::isFiniteLatent(q.data())) return;
     saf_q_ = q;
 
     if (rirConvolver_) {

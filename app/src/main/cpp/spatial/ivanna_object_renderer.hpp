@@ -8,6 +8,8 @@
 // que hace único a Dolby Atmos, ahora en tu bolsillo.
 // ============================================================================
 #pragma once
+
+#include "SafmusLatentGuard.hpp"
 #include <atomic>
 #include <string>
 #include <cstdio>
@@ -85,9 +87,9 @@ public:
     // por si algún caller legacy con puntero crudo llega en el futuro.
     void setSafLatent(const std::array<float,7>& q);
     inline void setSafLatent(const float* q, int size) {
+        if (size < 7 || !ivanna::safmus::isFiniteLatent(q)) return;
         std::array<float,7> a{};
-        const int n = (size < 7) ? size : 7;
-        for (int i = 0; i < n; ++i) a[i] = q[i];
+        for (int i = 0; i < 7; ++i) a[i] = q[i];
         setSafLatent(a);
     }
 
@@ -140,6 +142,7 @@ public:
     // Propaga el vector latente q_t del optimizador Φ_SAF^∞ a los 12 virtual
     // speakers. Llamar desde el hilo de control tras cada feedFeedback().
     void setLatentParams(const float q[7]) noexcept {
+        if (!ivanna::safmus::isFiniteLatent(q)) return;
         for (int i = 0; i < kNumVirtualSpeakers; ++i) {
             hrtfConvolvers_[i].setLatentParams(q);
         }
