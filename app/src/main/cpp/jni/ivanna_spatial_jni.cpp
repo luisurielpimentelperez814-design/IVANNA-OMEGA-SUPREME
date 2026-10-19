@@ -247,6 +247,13 @@ Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetObjectP
     return result;
 }
 
+JNIEXPORT jlong JNICALL
+Java_com_ivanna_omega_spatial_IvannaSpatialNative_nativeObjectRendererGetProcessedBlockCount(
+    JNIEnv*, jclass, jlong rendererHandle) {
+    auto* renderer = toObjectRenderer(rendererHandle);
+    return renderer ? static_cast<jlong>(renderer->processedBlockCount()) : 0L;
+}
+
 // ============================================================================
 // NeuralUpmixer JNI
 // ============================================================================
