@@ -26,21 +26,28 @@ object CsiFeatureExtractor {
         val warnings: List<String>
     )
 
-    private var previous: FloatArray? = null
+    private data class PreviousFrame(
+        val timestampNanos: Long,
+        val amplitudes: FloatArray,
+        val antennaCount: Int,
+        val sampleRateHz: Int
+    )
+
+    private var previous: PreviousFrame? = null
 
     @Synchronized
     fun analyze(sample: UniversalWifiSensingAdapter.CsiSample): Features {
-        val amplitudes = sample.subcarrierAmplitudes
-            .filter { it.isFinite() && it >= 0f }
-            .map { it.toDouble() }
         val warnings = mutableListOf<String>()
-        if (amplitudes.isEmpty()) {
+        val rawAmplitudes = sample.subcarrierAmplitudes
+        if (rawAmplitudes.isEmpty() || rawAmplitudes.any { !it.isFinite() || it < 0f }) {
             previous = null
             return Features(0, sample.antennaCount.coerceAtLeast(0), sample.sampleRateHz.coerceAtLeast(0),
                 0.0, 0.0, 0.0, null, null, 0.0,
-                listOf("CSI sin amplitudes finitas válidas."))
+                listOf("CSI descartado: amplitudes vacías, no finitas o negativas."))
         }
+        val amplitudes = rawAmplitudes.map { it.toDouble() }
 
+        if (sample.timestampNanos <= 0L) warnings += "La marca temporal CSI no es válida."
         if (sample.antennaCount < 1) warnings += "El proveedor no informó una cantidad válida de antenas."
         if (sample.sampleRateHz < 1) warnings += "La frecuencia de muestreo no está validada."
         val mean = amplitudes.average()
@@ -48,22 +55,45 @@ object CsiFeatureExtractor {
         val sorted = amplitudes.sorted()
         val median = median(sorted)
         val mad = median(sorted.map { abs(it - median) }.sorted())
-        val phase = sample.subcarrierPhases
-            ?.filter { it.isFinite() }
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { phases ->
-                val x = phases.map { cos(it.toDouble()) }.average()
-                val y = phases.map { sin(it.toDouble()) }.average()
-                sqrt(x * x + y * y).coerceIn(0.0, 1.0)
-            }
+        val phaseArray = sample.subcarrierPhases
+        val phase = if (phaseArray == null) {
+            null
+        } else if (phaseArray.size != rawAmplitudes.size || phaseArray.any { !it.isFinite() }) {
+            warnings += "La fase CSI no coincide en longitud o contiene valores no finitos."
+            null
+        } else {
+            val x = phaseArray.map { cos(it.toDouble()) }.average()
+            val y = phaseArray.map { sin(it.toDouble()) }.average()
+            sqrt(x * x + y * y).coerceIn(0.0, 1.0)
+        }
 
         val old = previous
-        val temporalDelta = if (old != null && old.size == amplitudes.size) {
-            amplitudes.indices.map { abs(amplitudes[it] - old[it].toDouble()) }.average()
+        val compatible = old != null &&
+            sample.timestampNanos > old.timestampNanos &&
+            sample.timestampNanos > 0L &&
+            sample.antennaCount > 0 &&
+            sample.sampleRateHz > 0 &&
+            old.antennaCount == sample.antennaCount &&
+            old.sampleRateHz == sample.sampleRateHz &&
+            old.amplitudes.size == rawAmplitudes.size
+        if (old != null && sample.timestampNanos > 0L && sample.timestampNanos <= old.timestampNanos) {
+            warnings += "Trama CSI fuera de orden; se omite el delta temporal."
+        }
+        val temporalDelta = if (compatible) {
+            amplitudes.indices.map { abs(amplitudes[it] - old!!.amplitudes[it].toDouble()) }.average()
                 .let { it / (mean + 1e-9) }
                 .coerceIn(0.0, 10.0)
         } else null
-        previous = amplitudes.map { it.toFloat() }.toFloatArray()
+        if (sample.timestampNanos > 0L && sample.antennaCount > 0 && sample.sampleRateHz > 0 &&
+            (old == null || sample.timestampNanos > old.timestampNanos)
+        ) {
+            previous = PreviousFrame(
+                timestampNanos = sample.timestampNanos,
+                amplitudes = rawAmplitudes.copyOf(),
+                antennaCount = sample.antennaCount,
+                sampleRateHz = sample.sampleRateHz
+            )
+        }
 
         val validAntenna = sample.antennaCount > 0
         val validRate = sample.sampleRateHz > 0
