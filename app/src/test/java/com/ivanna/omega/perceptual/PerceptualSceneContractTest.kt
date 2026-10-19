@@ -176,4 +176,14 @@ class PerceptualSceneContractTest {
         assertTrue(snapshot.validate().toString(), snapshot.validate().isEmpty())
         assertFalse(snapshot.axes.any { it.state == AxisState.APPLIED && !it.engineConfirmed })
     }
+
+    @Test fun measuredCalibrationWithoutConfidenceIsRejected() {
+        val t = 1_800_000_000_000L
+        val snapshot = validSnapshot(calibration = SceneCalibration(
+            kind = CalibrationKind.MEASURED,
+            calibrationId = "measured",
+            measuredAtEpochMs = t
+        ))
+        assertTrue(snapshot.validate().any { it.contains("needs confidence") })
+    }
 }
