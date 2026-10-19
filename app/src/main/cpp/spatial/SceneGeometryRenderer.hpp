@@ -11,6 +11,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include "RoomGeometryConfig.hpp"
 
 namespace ivanna::spatial::render {
 
@@ -24,6 +25,14 @@ struct Scene {
     }};
 };
 struct RenderStats { std::uint32_t width=0,height=0; std::size_t bytes=0; std::size_t segments=0; };
+
+inline Scene fromRoomGeometryConfig(const ivanna::spatial::RoomGeometryConfig& c) {
+    Scene s; s.widthM=c.roomWidthM; s.heightM=c.roomHeightM; s.depthM=c.roomDepthM;
+    s.listener={c.listenerX,c.listenerY,c.listenerZ};
+    for(std::size_t i=0;i<s.speakers.size();++i)
+        s.speakers[i]={c.speakerX[i],c.speakerY[i],c.speakerZ[i]};
+    return s;
+}
 
 class SceneGeometryRenderer {
 public:
