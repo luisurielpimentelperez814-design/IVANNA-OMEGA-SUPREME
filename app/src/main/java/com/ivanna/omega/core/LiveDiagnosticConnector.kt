@@ -53,6 +53,8 @@ object LiveDiagnosticConnector {
      * Endpoint must be HTTPS; token remains in private app preferences and is never logged.
      */
     fun configure(context: Context, enabled: Boolean, endpoint: String, bearerToken: String): Boolean {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val effectiveToken = bearerToken.ifBlank { prefs.getString(KEY_TOKEN, "") ?: "" }
         val normalized = endpoint.trim().trimEnd('/')
         val valid = runCatching {
             val url = URL(normalized)
@@ -60,14 +62,20 @@ object LiveDiagnosticConnector {
                 url.host.isNotBlank() && url.userInfo == null &&
                 normalized.endsWith("/v1/diagnostics")
         }.getOrDefault(false)
-        if (enabled && (!valid || bearerToken.length < 32)) return false
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        if (enabled && (!valid || effectiveToken.length < 32)) return false
+        prefs.edit()
             .putBoolean(KEY_ENABLED, enabled)
             .putString(KEY_ENDPOINT, normalized)
-            .putString(KEY_TOKEN, bearerToken)
+            .putString(KEY_TOKEN, effectiveToken)
             .apply()
         return true
     }
+
+    fun isEnabled(context: Context): Boolean =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+
+    fun configuredEndpoint(context: Context): String =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ENDPOINT, "") ?: ""
 
     fun disable(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
