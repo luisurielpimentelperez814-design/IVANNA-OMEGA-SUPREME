@@ -195,4 +195,19 @@ class PerceptualSceneContractTest {
         )
         assertTrue(snapshot.validate().any { it.contains("must be inside room bounds") })
     }
+
+    @Test fun engineConfirmationMustMatchAppliedState() {
+        val statuses = axisStatuses(mapOf(
+            PerceptualAxis.AZIMUTH to AxisStatus(
+                axis = PerceptualAxis.AZIMUTH,
+                state = AxisState.UNAVAILABLE,
+                unit = "deg",
+                engineConfirmed = true,
+                reason = "No spatial renderer"
+            )
+        ))
+        assertTrue(validSnapshot(axes = statuses).validate().any {
+            it.contains("engineConfirmed=true but state is UNAVAILABLE")
+        })
+    }
 }
