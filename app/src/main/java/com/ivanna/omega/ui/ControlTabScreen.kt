@@ -86,22 +86,28 @@ fun ControlTabScreen(
             val prevGains = roomGains; val prevEnabled = roomEnabled
             roomBusy = true; roomProgress = 0f
             roomStatus = "Prepara: volumen cómodo, teléfono donde te sientas, sala en silencio."
-            applyRoom(null, false)                                   // se mide la sala SIN la corrección anterior
-            kotlinx.coroutines.delay(800)
-            when (val out = com.ivanna.omega.audio.RoomMeasurement.run(context) { roomProgress = it }) {
-                is com.ivanna.omega.audio.RoomMeasurement.Outcome.Success -> {
-                    paramStore.setRoomCorrection(out.gainsDb, true)
-                    runCatching { com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, out.latencyMs) }   // háptica con latencia real
-                    roomGains = out.gainsDb; roomEnabled = true
-                    applyRoom(out.gainsDb, true)
-                    roomStatus = "Medición lista · retardo de la salida medido: ${out.latencyMs} ms"
+            try {
+                when (val out = com.ivanna.omega.audio.RoomMeasurement.runVerified(
+                    context, prevGains, prevEnabled, applyRoom
+                ) { roomProgress = it }) {
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Success -> {
+                        paramStore.setRoomCorrection(out.gainsDb, true)
+                        runCatching { com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, out.latencyMs) }
+                        roomGains = out.gainsDb; roomEnabled = true
+                        applyRoom(out.gainsDb, true)
+                        roomStatus = "Verificado · error tonal ${"%.2f".format(java.util.Locale.ROOT, out.beforeErrorDb)} → ${"%.2f".format(java.util.Locale.ROOT, out.afterErrorDb)} dB · decisión #${out.decisionId}"
+                    }
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Failure -> {
+                        applyRoom(prevGains, prevEnabled)
+                        roomStatus = "Reversión automática · ${out.reason} · decisión #${out.decisionId}"
+                    }
                 }
-                is com.ivanna.omega.audio.RoomMeasurement.Outcome.Failure -> {
-                    applyRoom(prevGains, prevEnabled)                // vuelve a como estaba
-                    roomStatus = out.reason
-                }
+            } catch (t: Throwable) {
+                applyRoom(prevGains, prevEnabled)
+                roomStatus = "Falló la calibración; se restauró el perfil previo: ${t.message ?: "error desconocido"}"
+            } finally {
+                roomBusy = false
             }
-            roomBusy = false
         }
     }
     val micLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
