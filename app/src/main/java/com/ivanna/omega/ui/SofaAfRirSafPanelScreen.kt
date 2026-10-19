@@ -104,24 +104,40 @@ fun SofaAfRirSafPanelScreen(
     // ── Daemon ───────────────────────────────────────────────────────────────
     var daemonConnected by remember { mutableStateOf(OmegaEngineBridge.isConnected) }
 
-    // ── Motor Híbrido Magistral (VBAP 3D + Ambisonics + HRTF 128-tap + Sala) ─
+    // Estado híbrido compartido con SoundScreen y SpatialAudioPanel.
+    // Si falta telemetría, recuperar preferencias reales; nunca asumir OFF/defaults sintéticos.
+    var adaptivePrefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(ctx)) }
     val initHybrid = remember { com.ivanna.omega.core.NativeBridge.safeGetHybridMagistralTelemetry() }
-    var hybridEnabled by remember { mutableStateOf(initHybrid.getOrElse(0) { 0f } >= 0.5f) }
-    var hybridBinauralWet by remember { mutableStateOf(initHybrid.getOrElse(1) { 0.65f }) }
-    var hybridAzimuthDeg by remember { mutableStateOf(initHybrid.getOrElse(2) { 30f }) }
-    var hybridElevationDeg by remember { mutableStateOf(initHybrid.getOrElse(3) { 0f }) }
-    var hybridRoomSize by remember { mutableStateOf(initHybrid.getOrElse(4) { 0.55f }) }
-    var hybridRoomWet by remember { mutableStateOf(initHybrid.getOrElse(7) { 0.25f }) }
+    fun initialHybridValue(index: Int, saved: Float): Float =
+        initHybrid.getOrNull(index)?.takeIf { it.isFinite() } ?: saved
+    var hybridEnabled by remember {
+        mutableStateOf(initHybrid.getOrNull(0)?.takeIf { it.isFinite() }?.let { it >= 0.5f }
+            ?: adaptivePrefs.hybridMagistralEnabled)
+    }
+    var hybridBinauralWet by remember { mutableStateOf(initialHybridValue(1, adaptivePrefs.hybridBinauralWet)) }
+    var hybridAzimuthDeg by remember { mutableStateOf(initialHybridValue(2, adaptivePrefs.binauralAzimuth.takeIf { kotlin.math.abs(it) > 1f } ?: 30f)) }
+    var hybridElevationDeg by remember { mutableStateOf(initialHybridValue(3, adaptivePrefs.binauralElevation)) }
+    var hybridRoomSize by remember { mutableStateOf(initialHybridValue(4, adaptivePrefs.hybridRoomSize)) }
+    var hybridRoomWet by remember { mutableStateOf(initialHybridValue(7, adaptivePrefs.hybridRoomWetMix)) }
 
     fun applyHybridMagistral() {
+        adaptivePrefs = adaptivePrefs.copy(
+            hybridMagistralEnabled = hybridEnabled,
+            hybridBinauralWet = hybridBinauralWet,
+            binauralAzimuth = hybridAzimuthDeg,
+            binauralElevation = hybridElevationDeg,
+            hybridRoomSize = hybridRoomSize,
+            hybridRoomWetMix = hybridRoomWet
+        )
+        AdaptiveControlsPrefs.save(ctx, adaptivePrefs)
         com.ivanna.omega.core.NativeBridge.safeSetHybridMagistralParams(
             enabled = hybridEnabled,
             binauralWet = hybridBinauralWet,
             virtualAzimuthDeg = hybridAzimuthDeg,
             virtualElevationDeg = hybridElevationDeg,
             roomSize = hybridRoomSize,
-            roomAbsorption = 0.35f,
-            roomDampening = 0.40f,
+            roomAbsorption = adaptivePrefs.hybridRoomAbsorption,
+            roomDampening = adaptivePrefs.hybridRoomDampening,
             roomWetMix = hybridRoomWet
         )
     }
