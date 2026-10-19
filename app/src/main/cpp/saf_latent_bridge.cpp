@@ -25,6 +25,7 @@
 #include <cstring>
 #include <android/log.h>
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
+#include "spatial/SafmusLatentGuard.hpp"
 
 #define TAG "SaFLatentBridge"
 
@@ -48,7 +49,8 @@ extern "C" uint32_t ivanna_saf_get_latent_seq() {
 }
 
 extern "C" void ivanna_saf_apply_latent(const float q[7]) {
-    if (!q) return;
+    // Reject invalid optimizer output before publishing it to any local renderer.
+    if (!ivanna::safmus::isFiniteLatent(q)) return;
     static std::atomic<bool> logged{false};
     if (!logged.exchange(true)) {
         __android_log_print(ANDROID_LOG_INFO, TAG,

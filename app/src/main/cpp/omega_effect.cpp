@@ -7,6 +7,7 @@
 #include "spatial/RirConvolver.hpp"
 #include "spatial/RirDataset.hpp"
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
+#include "spatial/SafmusLatentGuard.hpp"
 #include "spatial/HearingAdaptationEngine.hpp"
 #include "spatial/IvannaAudioPipeline.hpp"
 #include "spatial/HRTFDatabase.h"
@@ -394,7 +395,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     //   q[2..6] → morph de dataset (reservado)
     // El comentario anterior ("q[7] no cabe sin cambio de ABI") ya no aplica —
     // la ABI fue extendida (saf_q[7] en omega_control_bus.h, OMEGA_CTRL_SAF_Q).
-    if (s.saf_q_valid == 1u) {
+    if (s.saf_q_valid == 1u && ivanna::safmus::isFiniteLatent(s.saf_q)) {
         fc->setSafLatentParams(s.saf_q);
     }
     // Aplicar saf_gain como modulación de harmonic_gain (compatibilidad con
@@ -607,7 +608,8 @@ static void omega_rir_worker_loop() {
             if (!omega_rir_ctx_alive_locked(ctx) || !ctx->rirConvolver) continue;
             const uint32_t srSession = (ctx->config.outputCfg.samplingRate != 0)
                                      ? ctx->config.outputCfg.samplingRate : 48000u;
-            const float* q = (ctx->pendingSnap.saf_q_valid == 1u)
+            const float* q = (ctx->pendingSnap.saf_q_valid == 1u &&
+                              ivanna::safmus::isFiniteLatent(ctx->pendingSnap.saf_q))
                 ? ctx->pendingSnap.saf_q
                 : ivanna::master::kMasterSafGoldenQ;
             ctx->rirConvolver->applySofaCoupling(q);
@@ -651,7 +653,8 @@ static void omega_rir_worker_loop() {
         }
         int irLen = (int)irL.size();
         if (irLen > Ivanna::RirConvolver::MAX_IR_TOTAL) irLen = Ivanna::RirConvolver::MAX_IR_TOTAL;
-        const float* q = (ctx->pendingSnap.saf_q_valid == 1u)
+        const float* q = (ctx->pendingSnap.saf_q_valid == 1u &&
+                          ivanna::safmus::isFiniteLatent(ctx->pendingSnap.saf_q))
             ? ctx->pendingSnap.saf_q
             : ivanna::master::kMasterSafGoldenQ;
         ctx->rirConvolver->applySofaCoupling(q);

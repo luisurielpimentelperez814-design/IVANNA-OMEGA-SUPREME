@@ -17,6 +17,7 @@ std::atomic<float> g_upmixing_immersivity{1.25f};
 #include "IvannaAudioClassifier.hpp"
 #include "include/acoustic_reality_hyperengine.hpp"
 #include "include/acoustic_unity_engine.hpp"
+#include "spatial/SafmusLatentGuard.hpp"
 #include <iostream>
 #include <atomic>
 
@@ -531,7 +532,8 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
 
 
 void IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {
-    if (!q) return;
+    // SAFMUS: invalid/non-finite proposals are rejected; preserve the last safe HRTF state.
+    if (!ivanna::safmus::isFiniteLatent(q)) return;
 
     if (m_hrtf) {
         m_hrtf->setSafLatentQ(q, 7);

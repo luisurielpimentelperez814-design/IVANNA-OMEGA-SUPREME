@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "supreme/WarpedLatticeTransducerInverter.hpp"
@@ -15,6 +16,7 @@
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
 #include "spatial/IvannaAudioPipeline.hpp"
+#include "spatial/SafmusLatentGuard.hpp"
 #include "include/omega_control_bus.h"
 
 using namespace ivanna::supreme;
@@ -463,3 +465,13 @@ TEST(SofaSafRirMasterKnowledge, TrueStereoXtcDeClipperJilesAthertonAndWpeDerever
 }
 
 
+
+
+TEST(SAFMUSLatentGuard, RejectsNonFiniteLatentAndPreservesFiniteMasterState) {
+    std::array<float, 7> valid{{0.1f, -0.2f, 0.3f, 0.0f, 0.5f, -0.1f, 0.2f}};
+    EXPECT_TRUE(ivanna::safmus::isFiniteLatent(valid.data()));
+    valid[3] = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(ivanna::safmus::isFiniteLatent(valid.data()));
+    valid[3] = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(ivanna::safmus::isFiniteLatent(valid.data()));
+}
