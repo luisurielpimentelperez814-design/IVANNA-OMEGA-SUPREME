@@ -60,7 +60,9 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
             status = update.message
             active = update.sessionRunning
             observations = update.observations.size
-            networkRows = update.observations.sortedByDescending { it.rssiDbm }.take(12)
+            if (update.observations.isNotEmpty()) {
+                networkRows = update.observations.sortedByDescending { it.rssiDbm }.take(12)
+            }
             val scene = update.sceneFeatures
             signalSummary = when (scene.level) {
                 UniversalWifiSensingAdapter.DataLevel.NO_WIFI -> "Sin señal Wi-Fi nueva"
