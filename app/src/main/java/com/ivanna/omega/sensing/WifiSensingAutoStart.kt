@@ -1,6 +1,10 @@
 package com.ivanna.omega.sensing
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -55,6 +60,18 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                 UniversalWifiSensingAdapter.DataLevel.WIFI_METADATA_ONLY -> "RSSI · cambio=${scene.movementIndicator?.let { "%.2f".format(it) } ?: "sin referencia"} · confianza=${"%.0f".format(scene.confidence * 100)}%"
                 UniversalWifiSensingAdapter.DataLevel.CSI_VERIFIED -> "CSI verificado · proveedor CSI activo"
             }
+        }
+    }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted && optedIn && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            active = session.start(consentGranted = true)
+            if (!active) status = "Permiso concedido, pero el escaneo no pudo iniciarse. Comprueba Ubicación y Wi-Fi."
+        } else {
+            active = false
+            status = if (granted) "Permiso concedido; activa la medición Wi-Fi desde la aplicación."
+                else "Permiso de ubicación denegado; el escaneo Android no se iniciará ni se eludirá con root."
         }
     }
 
@@ -140,6 +157,13 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                             status = "Consentimiento Wi-Fi revocado; medición detenida."
                         }) {
                             Text("Detener y revocar")
+                        }
+                    } else if (optedIn &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                        OutlinedButton(onClick = {
+                            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        }) {
+                            Text("Conceder permiso Wi-Fi")
                         }
                     }
                 }
