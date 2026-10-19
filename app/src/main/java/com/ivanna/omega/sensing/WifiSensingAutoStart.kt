@@ -103,9 +103,10 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(
                     if (active) "FotoHolo Wi-Fi · sesión en primer plano · $observations observaciones"
-                    else "FotoHolo Wi-Fi · $status",
+                    else "FotoHolo Wi-Fi · inactiva",
                     style = MaterialTheme.typography.labelMedium
                 )
+                Text(status, style = MaterialTheme.typography.bodySmall)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
