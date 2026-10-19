@@ -35,9 +35,9 @@ import kotlin.math.sin
  */
 data class SupremeAxesLiveTelemetry(
     val subSampleDelaySamples: Float = Float.NaN,
-    val declippedPeaksCount: Int = 0,
+    val declippedPeaksCount: Int = -1,
     val maxPhaseDerivativeRad: Float = Float.NaN,
-    val tapeMagnetization: Float = 0.0f,
+    val tapeMagnetization: Float = Float.NaN,
     val snnActiveSpikes: Int = -1,
     val pinnaNotchFreqHz: Float = Float.NaN,
     val pinnaItdMicroSec: Float = Float.NaN,
@@ -120,7 +120,7 @@ fun WarpedLatticeAxisCard(
             )
             StatBlock(
                 label = "DE-CLIPPER",
-                value = "${telemetry.declippedPeaksCount} pk",
+                value = if (telemetry.declippedPeaksCount >= 0) "${telemetry.declippedPeaksCount} pk" else "N/D",
                 accent = if (telemetry.declippedPeaksCount > 0) AmberSignal else PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
@@ -251,7 +251,7 @@ fun TransharmonicCvnnAxisCard(
             label = "HISTÉRESIS MAGNÉTICA DE CINTA 2\" (JILES-ATHERTON RK2)",
             value = state.transharmonicAnalogTapeDrive,
             range = 0f..1f,
-            displayValue = { "%.0f %% (M=%.3f)".format(it * 100f, telemetry.tapeMagnetization) },
+            displayValue = { if (telemetry.tapeMagnetization.isFinite()) "%.0f %% (M=%.3f)".format(it * 100f, telemetry.tapeMagnetization) else "%.0f %% (M=N/D)".format(it * 100f) },
             onValueChange = { tape ->
                 onUpdate { it.copy(transharmonicAnalogTapeDrive = tape) }
                 NativeBridge.safeSetTransharmonicAnalogTapeDrive(tape)
