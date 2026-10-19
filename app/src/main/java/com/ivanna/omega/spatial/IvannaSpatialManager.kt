@@ -107,6 +107,9 @@ object IvannaSpatialManager {
         return runCatching { IvannaSpatialNative.nativeUpmixerIsEnabled(u) }.getOrDefault(false)
     }
 
+    /** true only when the Android rotation-vector sensor is registered and fresh data reached JNI. */
+    fun isHeadTrackingFresh(): Boolean = headTracker?.isTrackingFresh == true
+
     fun reverbReadback(): ReverbReadback {
         val h = rendererHandle
         val expected = reverbLevel
@@ -195,6 +198,12 @@ object IvannaSpatialManager {
                 }
                 handle = IvannaSpatialNative.nativeObjectRendererCreate(
                     SAMPLE_RATE.toFloat(), BLOCK_SIZE)
+                if (handle != 0L) {
+                    // Initialize the native wet value from the value the UI reports.
+                    // Otherwise the first read-back would compare 0.25 (Kotlin) to
+                    // the renderer's 0.30 native default and truthfully fail.
+                    IvannaSpatialNative.nativeObjectRendererSetReverb(handle, reverbLevel)
+                }
                 if (handle == 0L) {
                     initError = "nativeObjectRendererCreate devolvió 0"
                     Log.e(TAG, "nativeObjectRendererCreate devolvió 0"); return@Runnable
