@@ -145,6 +145,7 @@ object FotoHoloEngine {
             var nextRouteProbeMs = 0L
             var lastRouteBCommanded = Float.NaN
             var lastRouteBPushMs = 0L
+            var routeARestorePending = false
 
             while (true) {
                 try {
@@ -161,6 +162,21 @@ object FotoHoloEngine {
                     val shouldSample = (wantsModulation || viewers > 0) && !systemWideRouteActive
                     val rawBase = IvannaSpatialEngine.shared.widthFactor
                     val base = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
+
+                    // Si B tomó la propiedad mientras A modulaba, no escribir sobre A durante
+                    // la coexistencia. Al desaparecer B, restaurar primero el ancho base seguro.
+                    if (routeARestorePending && !systemWideRouteActive) {
+                        lastAttempted = true
+                        lastError = writeWidth(base)
+                        lastReturned = lastError == null
+                        if (lastReturned) {
+                            lastCommanded = base
+                            lastDspWidth = runCatching { readDspWidth() }.getOrDefault(Float.NaN)
+                            routeARestorePending = false
+                            current = Float.NaN
+                            modulating = false
+                        }
+                    }
 
                     if (!shouldSample && !modulating && !systemWideRouteActive) {
                         _telemetry.value = _telemetry.value.copy(
@@ -195,7 +211,7 @@ object FotoHoloEngine {
                         enabled = enabled,
                         bypass = bypass
                     )
-                    val shouldModulate = routeDecision.allowSpectralAdaptation && features.valid
+                    val shouldModulate = routeDecision.allowSpectralAdaptation && features.valid && !routeARestorePending
                     var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
                     if (shouldModulate) {
                         val target = FotoHoloMath.targetWidth(base, intensity, features)
@@ -209,6 +225,13 @@ object FotoHoloEngine {
                         }
                         modulating = true
                         displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
+                    } else if (modulating && systemWideRouteActive) {
+                        // B tomó la ruta global: no escribir al motor A en paralelo. Restaurar A
+                        // en cuanto B deje de estar activo.
+                        routeARestorePending = true
+                        modulating = false
+                        current = Float.NaN
+                        displayedCommand = base
                     } else if (modulating) {
                         // Restore is retried until the setter call returns without a known error.
                         lastAttempted = true
