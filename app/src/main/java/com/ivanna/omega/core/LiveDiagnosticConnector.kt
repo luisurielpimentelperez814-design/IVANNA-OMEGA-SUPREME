@@ -10,6 +10,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -80,6 +81,56 @@ object LiveDiagnosticConnector {
     fun disable(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_ENABLED, false).remove(KEY_TOKEN).apply()
+    }
+
+    /** Requests an on-demand AI analysis of the latest uploaded snapshot. Recommendations only. */
+    fun requestAnalysis(context: Context, onResult: (String) -> Unit) {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_ENABLED, false)) {
+            onResult("Activa primero el envío remoto de diagnósticos.")
+            return
+        }
+        val endpoint = prefs.getString(KEY_ENDPOINT, null) ?: run {
+            onResult("Falta configurar el endpoint de diagnóstico.")
+            return
+        }
+        val token = prefs.getString(KEY_TOKEN, null) ?: run {
+            onResult("Falta configurar el token de diagnóstico.")
+            return
+        }
+        val worker = scope ?: run {
+            onResult("El conector local todavía no está iniciado.")
+            return
+        }
+        worker.launch {
+            val result = runCatching {
+                val analysisUrl = endpoint.trimEnd('/') + "/analyze"
+                val connection = (URL(analysisUrl).openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 5_000
+                    connection.readTimeout = 15_000
+                    connection.doOutput = true
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(byteArrayOf()) }
+                    val status = connection.responseCode
+                    val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                    val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                    val json = runCatching { JSONObject(text) }.getOrNull()
+                    if (status in 200..299) json?.optString("analysis")?.takeIf { it.isNotBlank() }
+                        ?: "El servicio no devolvió un análisis legible."
+                    else when (json?.optString("error")) {
+                        "ai_not_configured" -> "El servidor aún no tiene configurada la clave de OpenAI."
+                        "no_snapshot_yet" -> "Todavía no hay una telemetría recibida; espera un ciclo de envío."
+                        else -> "No se pudo obtener análisis IA (HTTP $status)."
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            }.getOrElse { "No se pudo conectar al servicio de análisis (${it.javaClass.simpleName})." }
+            withContext(Dispatchers.Main) { onResult(result) }
+        }
     }
 
     private fun uploadIfConfigured() {
