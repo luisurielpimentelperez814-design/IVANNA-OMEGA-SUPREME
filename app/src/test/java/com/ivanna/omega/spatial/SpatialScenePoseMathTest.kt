@@ -15,6 +15,7 @@ class SpatialScenePoseMathTest {
             assertEquals(base.y, actual.y, 1e-5f)
             assertEquals(base.z, actual.z, 1e-5f)
             assertEquals(base.width, actual.width, 1e-5f)
+            assertEquals(base.gain, actual.gain, 1e-5f)
         }
     }
 
@@ -48,6 +49,7 @@ class SpatialScenePoseMathTest {
         assertEquals(1f, actual.y, 1e-5f)
         assertEquals(1f, actual.z, 1e-5f)
         assertEquals(0.2f, actual.width, 1e-5f)
+        assertEquals(1f / kotlin.math.sqrt(2f), actual.gain, 1e-5f)
     }
 
     @Test
