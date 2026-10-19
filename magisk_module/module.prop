@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.76
-versionCode=367
+version=v2.5.77
+versionCode=368
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.76 (SAFMUS: supervisión exclusiva de rutas A/B)
+description=v2.5.77 (Wi-Fi y permisos honestos, DSP sin falsa ejecución, FotoHolo 3D con subentorno sobre v2.5.76 (SAFMUS: supervisión exclusiva de rutas A/B)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

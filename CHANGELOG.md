@@ -1,3 +1,16 @@
+# CHANGELOG — v2.5.77 (368) — Wi-Fi y permisos honestos, DSP sin falsa ejecución, FotoHolo 3D con subentorno y diagnóstico opt-in
+
+1. **Wi-Fi y permisos (sin atajos de root):** corrige el tiempo de espera y la reprogramación de recuperación del escaneo; respeta la revocación del permiso de Wi-Fi y **detiene el respaldo con root cuando el usuario lo deniega**; solicita explícitamente el permiso de ubicación de Android para el sondeo; **nunca esquiva con root un fallo de permiso de escaneo de Android**; y reinicia el historial de sensado Wi-Fi entre sesiones consentidas.
+2. **El DSP no se declara aplicado sin confirmación:** los comandos de optimización de Gemini se enrutan al ejecutor y reportan su ejecución con veracidad; las decisiones DSP proactivas solo se marcan como aplicadas tras la confirmación del ejecutor.
+3. **FotoHolo 3D con subentorno seleccionable (#76):** selector de escena y subentorno 3D expandible; la proyección 3D se adapta al entorno elegido.
+4. **Conector de diagnóstico en vivo, opt-in (#75):** puente de diagnóstico autenticado y desactivado por defecto; falla cerrado sin token (prueba incluida) y trae su guía de despliegue.
+5. **Escenas fotorrealistas conscientes de la música (#77):** generación de imagen de «cualquier lugar» con un servicio de IA (requiere red y su clave; opt-in) y la UI correspondiente; la afirmación está registrada en la puerta de claims de la documentación.
+6. **Auditoría documental:** nueva auditoría de cableado de punta a punta entre UI y motor.
+7. **Por qué 2.5.77:** estos cambios llegaron después del release `v2.5.76` (publicado sobre `e5b57a5`); sin versión nueva el CI solo deja borradores `staging-*` y no se genera el lanzamiento.
+8. **No verificado aquí:** compilación y comportamiento en un teléfono real (lo cubre el CI del APK y la validación física pendiente); la calidad de las imágenes generadas y la latencia del servicio de IA dependen de la red.
+
+---
+
 # CHANGELOG — v2.5.76 (367) — SAFMUS: exclusividad de rutas y supervisión CMA-ES
 
 1. **Supervisor SAFMUS determinista:** prioriza Ruta B cuando el efecto global está registrado; permite la modulación Bark solo en Ruta A con señal válida, habilitación y bypass desactivado. Sin evidencia, se abstiene.
