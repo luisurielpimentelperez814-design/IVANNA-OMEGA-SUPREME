@@ -108,7 +108,7 @@ fun WarpedLatticeAxisCard(
         ) {
             StatBlock(
                 label = "τ_g INVERSO",
-                value = "%.3f smp".format(telemetry.subSampleDelaySamples),
+                value = if (telemetry.subSampleDelaySamples.isFinite()) "%.3f smp".format(telemetry.subSampleDelaySamples) else "N/D",
                 accent = AuroraCyan,
                 modifier = Modifier.weight(1f)
             )
@@ -207,7 +207,7 @@ fun TransharmonicCvnnAxisCard(
         ) {
             StatBlock(
                 label = "Δφ̇ MÁX",
-                value = "%.4f rad".format(telemetry.maxPhaseDerivativeRad),
+                value = if (telemetry.maxPhaseDerivativeRad.isFinite()) "%.4f rad".format(telemetry.maxPhaseDerivativeRad) else "N/D",
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
@@ -297,7 +297,7 @@ fun SnnNmfHoaAxisCard(
         ) {
             StatBlock(
                 label = "LIF SPIKES",
-                value = "${telemetry.snnActiveSpikes} / 4",
+                value = if (telemetry.snnActiveSpikes >= 0) "${telemetry.snnActiveSpikes} / 4" else "N/D",
                 accent = PhosphorGreen,
                 modifier = Modifier.weight(1f)
             )
@@ -396,13 +396,13 @@ fun PinnaManifoldAxisCard(
         ) {
             StatBlock(
                 label = "NOTCH PINNA",
-                value = "%.0f Hz".format(telemetry.pinnaNotchFreqHz),
+                value = if (telemetry.pinnaNotchFreqHz.isFinite()) "%.0f Hz".format(telemetry.pinnaNotchFreqHz) else "N/D",
                 accent = AmberSignal,
                 modifier = Modifier.weight(1f)
             )
             StatBlock(
                 label = "ITD LATENTE",
-                value = "%.1f μs".format(telemetry.pinnaItdMicroSec),
+                value = if (telemetry.pinnaItdMicroSec.isFinite()) "%.1f μs".format(telemetry.pinnaItdMicroSec) else "N/D",
                 accent = AuroraCyan,
                 modifier = Modifier.weight(1f)
             )
@@ -1043,7 +1043,7 @@ fun TransharmonicCvnnAxisScreen(onBack: () -> Unit) {
             ) {
                 StatBlock(
                     label = "CONTINUIDAD C¹",
-                    value = if (telemetry.maxPhaseDerivativeRad < 0.25f) "ÓPTIMA" else "ACTIVA",
+                    value = if (!telemetry.maxPhaseDerivativeRad.isFinite()) "N/D" else if (telemetry.maxPhaseDerivativeRad < 0.25f) "ÓPTIMA" else "ACTIVA",
                     accent = PhosphorGreen,
                     modifier = Modifier.weight(1f)
                 )
