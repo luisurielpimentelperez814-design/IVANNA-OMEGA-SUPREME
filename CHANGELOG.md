@@ -1,3 +1,15 @@
+# CHANGELOG — v2.5.76 (367) — SAFMUS: exclusividad de rutas y supervisión CMA-ES
+
+1. **Supervisor SAFMUS determinista:** prioriza Ruta B cuando el efecto global está registrado; permite la modulación Bark solo en Ruta A con señal válida, habilitación y bypass desactivado. Sin evidencia, se abstiene.
+2. **Rutas A/B sin escrituras cruzadas:** con Ruta B activa, FotoHolo no muestrea ni escribe el ancho al motor A; solo envía el ancho base al demonio global. Si B toma la propiedad durante una modulación A, la restauración de A se aplaza hasta que B libere la ruta.
+3. **Panel evolutivo honesto:** muestra la ruta observada y el motivo de SAFMUS; la curva se denomina historial de fitness, no respuesta de magnitud medida. El estado “en ejecución” se infiere del avance real de generaciones, no del estado general del Adaptive Engine.
+4. **Pruebas añadidas:** casos JVM para exclusividad A/B, bypass, señal válida y compuertas de aceptación de propuestas.
+5. **Límites de validación:** SAFMUS aquí es supervisión determinista, no un modelo entrenado. El fitness no prueba mejora audible; la aplicación automática de candidatos CMA-ES todavía requiere interfaz nativa de candidato, validación de estabilidad/headroom y medición. No se declara prueba física de audio.
+
+La publicación de APK/módulo queda condicionada a que CI construya y verifique los artefactos de esta versión.
+
+---
+
 # CHANGELOG — v2.5.75 (366) — FotoHolo: scroll vertical, reset neutro y controles de escena
 
 1. **Scroll vertical desde el lienzo WebGL:** el canvas permite el gesto vertical de la página con `touch-pan-y`, conserva el arrastre horizontal/vertical para orientar la escena y limpia el estado de arrastre al cancelar el puntero.
