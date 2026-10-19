@@ -351,7 +351,6 @@ object NativeBridge {
     }
 
     fun safeGetHybridMagistralTelemetry(): FloatArray =
-        if (isLoaded) runCatching { getHybridMagistralTelemetry() }.getOrNull()
-            ?: floatArrayOf(1f, 0.65f, 30f, 0f, 0.55f, 0.35f, 0.40f, 0.25f)
-        else floatArrayOf(1f, 0.65f, 30f, 0f, 0.55f, 0.35f, 0.40f, 0.25f)
+        if (isLoaded) runCatching { getHybridMagistralTelemetry() }.getOrNull() ?: FloatArray(0)
+        else FloatArray(0)
 }
