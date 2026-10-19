@@ -370,10 +370,16 @@ private fun BinauralTab(
                 val snapshot = runCatching { PerceptualSceneRuntime.capture(appContext) }.getOrNull()
                 if (snapshot != null) {
                     val applied = snapshot.axes.count { it.state == AxisState.APPLIED }
+                    val requested = snapshot.axes.count { it.state == AxisState.REQUESTED }
                     val degraded = snapshot.axes.count { it.state == AxisState.DEGRADED }
                     val unavailable = snapshot.axes.count { it.state == AxisState.UNAVAILABLE }
-                    tenDStatus = "10D · " + applied + " aplicadas · " + degraded + " degradadas · " + unavailable + " no disponibles"
-                    tenDAxes = snapshot.axes.map { it.axis.name + " · " + it.state.name }
+                    val errors = snapshot.axes.count { it.state == AxisState.ERROR }
+                    tenDStatus = "10D · " + applied + " aplicadas · " + requested + " solicitadas · " +
+                        degraded + " degradadas · " + unavailable + " no disponibles · " + errors + " errores"
+                    tenDAxes = snapshot.axes.map { axisStatus ->
+                        axisStatus.axis.name + " · " + axisStatus.state.name +
+                            (axisStatus.reason?.takeIf { it.isNotBlank() }?.let { " — " + it } ?: "")
+                    }
                 }
             }
             kotlinx.coroutines.delay(250L)
@@ -454,7 +460,11 @@ private fun BinauralTab(
             }
             Text("La órbita se mueve fuera del hilo de audio y se detiene al alcanzar los límites espaciales.", color = TextSecondary, fontSize = 9.sp)
             Text(tenDStatus, color = TextSecondary, fontSize = 10.sp)
-            Text(tenDAxes.joinToString("  •  "), color = TextSecondary, fontSize = 9.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                tenDAxes.forEach { axisLine ->
+                    Text(axisLine, color = TextSecondary, fontSize = 9.sp, maxLines = 2)
+                }
+            }
             IvannaSliderRow("ANCHO ESPACIAL", audioState.spatialWidth, 0f, 2f, "x") { v ->
                 AudioStateManager.updateState { it.copy(spatialWidth = v) }
                 com.ivanna.omega.spatial.IvannaSpatialEngine.setWidth(v)

@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.87
-versionCode=378
+version=v2.5.88
+versionCode=379
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.87: endurece confirmación de escena 10D y puertas de release
+description=v2.5.88: diagnóstico visible de los diez ejes perceptuales
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
