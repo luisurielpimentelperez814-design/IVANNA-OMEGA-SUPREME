@@ -74,11 +74,12 @@ jobs:
           set -euo pipefail
           npm ci
           npm run build
-          test -s dist/fotoholo-embed.html
+          npx vite build --config vite.fotoholo.config.ts
+          test -s dist-fotoholo/fotoholo-embed.html
           rm -rf app/src/main/assets/fotoholo-web
           mkdir -p app/src/main/assets/fotoholo-web
-          cp dist/fotoholo-embed.html app/src/main/assets/fotoholo-web/
-          cp -R dist/assets app/src/main/assets/fotoholo-web/assets
+          cp dist-fotoholo/fotoholo-embed.html app/src/main/assets/fotoholo-web/
+          cp -R dist-fotoholo/assets app/src/main/assets/fotoholo-web/assets
 
       # ═══════════════════════════════════════════════════════════════════
       # ARTIFACT INTEGRITY (auditoría 2026-08-16)
