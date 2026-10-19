@@ -74,7 +74,7 @@ require("app/src/main/java/com/ivanna/omega/safmus/SafmusUniversalKernel.kt",
 require("app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialManager.kt", "gateHrtfDataset")
 require("app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt", "gateRirConfiguration")
 require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "if (value.isFinite()) value else def")
-require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "private fun sanitizeState(input: SupremeAxesState)", "val safeState = sanitizeState(s)", "safeSetWarpedLatticeBlDrive(safeState.warpedLatticeBlDrive)")
+require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "internal fun sanitizeState(input: SupremeAxesState)", "val safeState = sanitizeState(s)", "safeSetWarpedLatticeBlDrive(safeState.warpedLatticeBlDrive)")
 require("app/src/main/java/com/ivanna/omega/audio/RoomMeasurement.kt", "gateRoomCorrection", "candidateFiniteAndStable = candidateSafe")
 require("app/src/main/cpp/spatial/RoomCorrectionEq.hpp", "safetyGain_", "std::clamp(left, -0.98f, 0.98f)")
 require("app/src/main/cpp/tests/test_room_probe.cpp", "ActiveCorrectionSanitizesAndKeepsStereoPeakBelowCeiling")

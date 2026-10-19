@@ -68,7 +68,7 @@ object SupremeAxesPrefs {
     val stateFlow: StateFlow<SupremeAxesState> = _stateFlow.asStateFlow()
 
     /** Canonical numeric boundary shared by persistence, Route A and Route B. */
-    private fun sanitizeState(input: SupremeAxesState): SupremeAxesState {
+    internal fun sanitizeState(input: SupremeAxesState): SupremeAxesState {
         val d = SupremeAxesState()
         fun safe(value: Float, min: Float, max: Float, fallback: Float): Float =
             SafmusUniversalKernel.sanitizeControlValue(value, min, max) ?: fallback

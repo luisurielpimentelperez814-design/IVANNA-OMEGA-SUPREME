@@ -647,7 +647,7 @@ fun SupremeFiveAxesHubScreen(
     val telemetry by rememberSupremeAxesTelemetry()
 
     fun updateState(transform: (SupremeAxesState) -> SupremeAxesState): SupremeAxesState {
-        val next = transform(state)
+        val next = SupremeAxesPrefs.sanitizeState(transform(state))
         state = next
         SupremeAxesPrefs.save(context, next)
         return next
