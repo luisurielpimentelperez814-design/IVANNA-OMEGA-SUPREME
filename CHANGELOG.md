@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.93 (384) — SAFMUS + 10D RIR status final candidate
+
+- **Versión de publicación:** se reserva v2.5.93 para evitar que builds concurrentes de commits intermedios ocupen la etiqueta inmutable v2.5.92 antes de validar el SHA final.
+- **SAFMUS / 10D:** incluye el estado JNI de degradación de cola RIR local, el read-back en Kotlin y la protección del eje de campo reverberante para no declararlo aplicado cuando se omitió la cola.
+- **Trazabilidad:** la publicación solo se considera válida si el build APK/ZIP y el SHA publicado corresponden exactamente al commit final y pasan los gates de CI.
+- **Limitación:** el estado de la ruta local no representa al daemon AudioFlinger; la telemetría de la ruta daemon y la validación acústica en dispositivo siguen pendientes.
+
+---
+
 # CHANGELOG — v2.5.92 (383) — SAFMUS RIR tail status + 10D truth
 
 - **RIR local / JNI:** expone un estado explícito de cola RIR local: desconocido/no inicializado, sin degradación detectada o cola retrasada omitida por presupuesto algorítmico.

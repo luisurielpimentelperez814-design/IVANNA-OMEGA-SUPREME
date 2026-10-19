@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.92
-versionCode=383
+version=v2.5.93
+versionCode=384
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.92: SAFMUS RIR tail status and 10D truthful degradation
+description=v2.5.93: SAFMUS RIR tail status and 10D truthful degradation
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
