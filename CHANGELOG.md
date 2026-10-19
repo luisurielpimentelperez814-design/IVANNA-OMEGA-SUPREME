@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.78 (369) — Panel FotoHolo·Nanotomix completo
+
+1. **Scroll del panel Spatial:** la escena WebGL ya no captura los gestos; el panel se desplaza normalmente y la interacción 3D se activa con «INTERACTUAR CON ESCENA 3D».
+2. **Gemini en FotoHolo:** «SUGERIR CON GEMINI» usa la API key configurada en el asistente, envía solo proporciones graves/agudos y aplica escena + intensidad validadas.
+3. **Ruta B:** botón «SINCRONIZAR RUTA B» reenvía el ancho base al demonio global; el estado real sigue mostrándose.
+4. **Persistencia:** el entorno elegido se guarda y se restaura.
+5. **No verificado aquí:** compilación y prueba en teléfono (lo cubre el CI del APK).
+
+---
+
 # CHANGELOG — v2.5.77 (368) — Wi-Fi y permisos honestos, DSP sin falsa ejecución, FotoHolo 3D con subentorno y diagnóstico opt-in
 
 1. **Wi-Fi y permisos (sin atajos de root):** corrige el tiempo de espera y la reprogramación de recuperación del escaneo; respeta la revocación del permiso de Wi-Fi y **detiene el respaldo con root cuando el usuario lo deniega**; solicita explícitamente el permiso de ubicación de Android para el sondeo; **nunca esquiva con root un fallo de permiso de escaneo de Android**; y reinicia el historial de sensado Wi-Fi entre sesiones consentidas.

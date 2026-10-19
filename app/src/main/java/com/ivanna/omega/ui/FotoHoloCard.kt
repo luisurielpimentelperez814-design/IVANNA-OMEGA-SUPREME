@@ -33,6 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.fotoholo.FotoHoloEngine
+import com.ivanna.omega.fotoholo.FotoHoloGemini
+import com.ivanna.omega.fotoholo.FotoHoloRouteB
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.ivanna.omega.fotoholo.FotoHoloMath
 import com.ivanna.omega.ui.theme.AuroraCyan
 import com.ivanna.omega.ui.theme.ObsidianDeep
@@ -55,7 +59,12 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
     var rotation by remember { mutableStateOf(0f) }
     var sceneMenuExpanded by remember { mutableStateOf(false) }
     var subEnvironmentOpen by remember { mutableStateOf(false) }
-    var selectedScene by remember { mutableStateOf("Escenario de concierto") }
+    val prefs = remember(context) { context.getSharedPreferences("fotoholo_ui", android.content.Context.MODE_PRIVATE) }
+    var selectedScene by remember { mutableStateOf(prefs.getString("scene", "Escenario de concierto") ?: "Escenario de concierto") }
+    fun chooseScene(scene: String) { selectedScene = scene; prefs.edit().putString("scene", scene).apply() }
+    val scope = rememberCoroutineScope()
+    var geminiBusy by remember { mutableStateOf(false) }
+    var geminiStatus by remember { mutableStateOf("") }
     val sceneOptions = listOf("Escenario de concierto", "Rock 70s", "Rock 80s", "Rock 90s", "Recinto masivo", "Sala de mezcla élite", "Estudio de grabación", "Sala de cine", "Teatro", "Club", "Auditorio", "Iglesia", "Estadio", "Playa / exterior", "Automóvil", "Cabina DJ", "Orquesta", "Instrumento individual", "Sala personalizada")
 
     // Mientras la tarjeta está visible el motor muestrea el espectro aunque el efecto esté apagado.
@@ -92,7 +101,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
                     sceneOptions.forEach { scene ->
                         DropdownMenuItem(
                             text = { Text(scene) },
-                            onClick = { selectedScene = scene; sceneMenuExpanded = false }
+                            onClick = { chooseScene(scene); sceneMenuExpanded = false }
                         )
                     }
                 }
@@ -102,6 +111,22 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             }
         }
         Text("Vista paramétrica seleccionada: $selectedScene", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(enabled = !geminiBusy, onClick = {
+                geminiBusy = true; geminiStatus = "Gemini analizando el espectro…"
+                scope.launch {
+                    val r = FotoHoloGemini.suggest(context, tel.features.lowShare, tel.features.highShare, sceneOptions)
+                    r.onSuccess { sug ->
+                        chooseScene(sug.scene)
+                        intensity = sug.intensity; FotoHoloEngine.setIntensity(context, sug.intensity)
+                        geminiStatus = "Gemini: ${sug.scene} · intensidad ${(sug.intensity * 100).toInt()} %"
+                    }.onFailure { geminiStatus = "Gemini: ${it.message}" }
+                    geminiBusy = false
+                }
+            }) { Text(if (geminiBusy) "GEMINI…" else "SUGERIR CON GEMINI", color = AuroraCyan) }
+            TextButton(onClick = { FotoHoloRouteB.push(tel.baseWidth) }) { Text("SINCRONIZAR RUTA B", color = AuroraCyan) }
+        }
+        if (geminiStatus.isNotEmpty()) Text(geminiStatus, color = Color(0xFF9AA4B2), fontSize = 11.sp)
 
         Canvas(Modifier.fillMaxWidth().height(if (subEnvironmentOpen) 340.dp else 170.dp).background(ObsidianDeep, RoundedCornerShape(10.dp))) {
             val cx = size.width / 2f

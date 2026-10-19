@@ -1,5 +1,7 @@
 package com.ivanna.omega.ui
 
+import androidx.compose.ui.input.pointer.pointerInput
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -217,10 +219,23 @@ fun SpatialAudioPanel(
                 runCatching { holoWebView.destroy() }
             }
         }
-        AndroidView(
-            factory = { holoWebView },
-            modifier = Modifier.fillMaxWidth().height(560.dp)
-        )
+        // La escena WebGL consumía todos los gestos y bloqueaba el scroll del panel.
+        // Por defecto una capa transparente deja pasar el arrastre vertical al panel;
+        // el usuario activa la interacción 3D explícitamente.
+        var holoInteractive by remember { mutableStateOf(false) }
+        androidx.compose.material3.TextButton(onClick = { holoInteractive = !holoInteractive }) {
+            Text(if (holoInteractive) "BLOQUEAR ESCENA (volver a desplazar)" else "INTERACTUAR CON ESCENA 3D", color = AuroraCyan, fontSize = 11.sp)
+        }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(if (holoInteractive) 560.dp else 420.dp)) {
+            AndroidView(factory = { holoWebView }, modifier = Modifier.matchParentSize())
+            if (!holoInteractive) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.matchParentSize().pointerInput(Unit) {
+                        awaitPointerEventScope { while (true) awaitPointerEvent() }
+                    }
+                )
+            }
+        }
 
         // ── HRTF ──────────────────────────────────────────────────────────
         SpatialCard("HRTF BINAURAL", "Dataset IHR1 medido · deploy Magisk con SHA256") {
