@@ -6,9 +6,8 @@
 
 ### Audio digital, calibración acústica y herramientas espaciales para Android
 
-**Un proyecto de ingeniería abierta que se puede inspeccionar, compilar y poner a prueba.**
+**Producto propietario en desarrollo. El acceso público a este repositorio no concede una licencia para reutilizar el código propio.**
 
-[![Licencia Apache-2.0](https://img.shields.io/badge/licencia-Apache--2.0-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
 [![Versión de código](https://img.shields.io/badge/versión-según%20version.properties-64748b.svg)](version.properties)
 [![Android](https://img.shields.io/badge/plataforma-Android%20%7C%20ARM64-3ddc84.svg)](app/)
@@ -176,8 +175,10 @@ Al abrir un issue, indica si puedes:
 
 [Crear un issue](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) · [Consultar cambios](CHANGELOG.md) · [Ver código](app/src/main/cpp/)
 
-## Licencia, autoría y alcance
+## Propiedad intelectual y licenciamiento
 
-El repositorio declara la licencia Apache-2.0; revisa también `NOTICE` y las licencias individuales de los recursos incluidos. El proyecto está desarrollado por **Luis Uriel Pimentel Pérez (GORE TNS)**. Para colaboración, revisión técnica o consultas de licencia, utiliza los canales del repositorio.
+© 2026 Luis Uriel Pimentel Pérez (GORE TNS). **IVANNA OMEGA SUPREME es un producto propietario y comercial. Todos los derechos sobre el código propio quedan reservados.** No se concede por este README una licencia para copiar, modificar, redistribuir ni explotar comercialmente el código propio. Para adquirir o negociar una licencia comercial, contacta al titular.
+
+Esta declaración no modifica las licencias de bibliotecas, herramientas, modelos, datasets ni otros materiales de terceros; deben respetarse sus avisos y términos por separado. Las versiones anteriores que se hayan distribuido expresamente bajo Apache-2.0 y las copias cubiertas por esa concesión siguen sujetas a los términos aplicables a esas versiones.
 
 La aspiración de este proyecto es que cada afirmación importante pueda rastrearse hasta código, pruebas o mediciones. **No se promete superioridad sonora universal, latencia cero ni compatibilidad universal: se documentan mecanismos, resultados verificables y trabajo pendiente.**
