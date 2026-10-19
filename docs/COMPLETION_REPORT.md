@@ -363,7 +363,7 @@ docs: Add comprehensive deployment and testing instructions
 ### vs Dolby Atmos
 - ✅ IVANNA: Adaptive parameters (Dolby: static)
 - ✅ IVANNA: Sub-meter positioning (Dolby: object-based)
-- ✅ IVANNA: Open-source transparency (Dolby: black-box)
+- ✅ IVANNA: Documentación técnica del producto propietario (Dolby: black-box)
 - ✅ IVANNA: Lower CPU cost (Dolby: 2-3% typical)
 
 ### vs DTS:X
