@@ -1,4 +1,11 @@
-# CHANGELOG — v2.5.73 (364) — Fotoholografía·Nanotomix consciente de transitorios
+# CHANGELOG — v2.5.74 (365) — FotoHolo: consentimiento y detección conservadora de capacidades
+
+1. **Consentimiento explícito de primer inicio:** opciones separadas y desactivadas por defecto para calibración acústica, red local, Wi-Fi sensing, geometría y DSP adaptativo.
+2. **Detección de capacidades Wi-Fi Android:** nueva sonda conservadora que distingue API Wi-Fi estándar y Wi-Fi RTT de CSI real; no inicia escaneos, no inventa datos ni presenta RSSI como reconstrucción espacial.
+3. **Compatibilidad por niveles:** en hardware sin proveedor CSI verificado, el sistema debe indicar que CSI no está disponible y reservar funciones avanzadas para un adaptador compatible probado. La compatibilidad universal no se puede garantizar desde las APIs públicas de Android.
+4. **Privacidad:** medición voluntaria y visible, estimaciones con incertidumbre y consentimiento de las personas potencialmente detectables; no se habilita identificación biométrica ni reconstrucción anatómica detallada.
+5. **Estado de entrega:** esta versión incorpora el onboarding y la sonda de capacidades; adquisición CSI real, integración con todos los consumidores, revocación en Ajustes y validación física siguen siendo trabajo pendiente y no se anuncian como terminados.
+
 
 1. **Ataques musicales:** la señal `flux` de las 64 bandas Bark ya no queda solo como telemetría. Atenúa hasta un 35 % la corrección de anchura durante transitorios fuertes, preservando la dirección de la adaptación y el límite de ±`MAX_OFFSET`. La intención es reducir movimientos espaciales innecesarios en ataques de percusión y consonantes; la preferencia final debe comprobarse con A/B igualado en sonoridad.
 2. **Telemetría del motor actualizada:** tras una escritura aceptada, el ancho efectivo del DSP se vuelve a leer en cada tick de control, porque el recorte térmico puede cambiar aunque el comando solicitado permanezca igual. Si el read-back falla, la UI recibe `NaN` en lugar de tratar un valor antiguo como confirmación actual.
