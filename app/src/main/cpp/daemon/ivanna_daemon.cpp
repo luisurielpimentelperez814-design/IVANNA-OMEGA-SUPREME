@@ -1,5 +1,6 @@
 #include "../ivanna_hires_config.hpp"
 #include "control/command_server.h"
+#include "control/peer_auth.hpp"
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
 #include "../include/omega_control_bus.h"
@@ -169,7 +170,11 @@ int create_socket_server(const std::string& socket_path) {
         __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "bind(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
         close(server_fd); return -1;
     }
-    if (socket_path[0] != '@') chmod(socket_path.c_str(), 0666);
+    if (socket_path[0] != '@' && chmod(socket_path.c_str(), 0600) != 0) {
+        int e = errno;
+        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "chmod(0600) %s errno=%d (%s)", socket_path.c_str(), e, strerror(e));
+        close(server_fd); unlink(socket_path.c_str()); return -1;
+    }
     if (listen(server_fd, 16) < 0) {
         int e = errno;
         __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "listen(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
@@ -309,68 +314,11 @@ int main(int argc, char* argv[]) {
         log_message("Master Control Bus: OmegaControlBus writer opened successfully.");
     }
 
-    // Start TCP fallback listener (if requested) on loopback in a detached thread.
+    // El listener TCP de loopback no ofrece SO_PEERCRED ni token de autenticación.
+    // Se deshabilita incluso si se pasa --tcp-port; el control soportado usa UNIX
+    // sockets con validación de credenciales de kernel.
     if (tcp_port > 0) {
-        try {
-            std::thread([tcp_port, &commandServer]() {
-                int s = socket(AF_INET, SOCK_STREAM, 0);
-                if (s < 0) return;
-                int one = 1; setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-                struct sockaddr_in addr; memset(&addr,0,sizeof(addr));
-                addr.sin_family = AF_INET;
-                addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-                addr.sin_port = htons((uint16_t)tcp_port);
-                if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) { close(s); return; }
-                if (listen(s, 8) < 0) { close(s); return; }
-                log_message(std::string("TCP fallback listener active on 127.0.0.1:") + std::to_string(tcp_port));
-                while (g_running) {
-                    struct sockaddr_in caddr; socklen_t clen = sizeof(caddr);
-                    int cfd = accept(s, (struct sockaddr*)&caddr, &clen);
-                    if (cfd < 0) { if (errno==EINTR) continue; break; }
-                    std::thread([cfd, &commandServer]() {
-                        // Simple TCP handler: read until EOF or a full JSON object/newline and dispatch
-                        std::string pending; pending.reserve(8192);
-                        char buf[8192];
-                        while (true) {
-                            ssize_t n = recv(cfd, buf, sizeof(buf), 0);
-                            if (n <= 0) break;
-                            pending.append(buf, (size_t)n);
-                            // try to extract JSON object
-                            size_t start = pending.find_first_not_of(" \t\r\n");
-                            if (start==std::string::npos) { pending.clear(); continue; }
-                            pending.erase(0, start);
-                            if (pending.empty()) continue;
-                            if (pending[0] != '{') {
-                                // treat as single-line command
-                                size_t nl = pending.find('\n');
-                                std::string line = (nl==std::string::npos) ? pending : pending.substr(0,nl);
-                                char reply[4096] = {};
-                                int rlen = commandServer.handleTextCommand(line.c_str(), reply, sizeof(reply));
-                                if (rlen>0) send(cfd, reply, rlen, MSG_NOSIGNAL);
-                                if (nl==std::string::npos) pending.clear(); else pending.erase(0,nl+1);
-                                continue;
-                            }
-                            // find matching braces
-                            int depth=0; bool inStr=false, esc=false; size_t endPos = std::string::npos;
-                            for (size_t i=0;i<pending.size();++i) {
-                                char ch = pending[i];
-                                if (inStr) { if (esc) esc=false; else if (ch=='\\') esc=true; else if (ch=='"') inStr=false; continue; }
-                                if (ch=='"') { inStr=true; continue; }
-                                if (ch=='{') ++depth; else if (ch=='}' && --depth==0) { endPos = i+1; break; }
-                            }
-                            if (endPos==std::string::npos) { if (pending.size()>65536) pending.clear(); continue; }
-                            std::string js = pending.substr(0,endPos);
-                            pending.erase(0,endPos);
-                            char reply[8192] = {};
-                            int rlen = commandServer.handleJsonCommand(js.c_str(), reply, sizeof(reply));
-                            if (rlen>0) send(cfd, reply, rlen, MSG_NOSIGNAL);
-                        }
-                        close(cfd);
-                    }).detach();
-                }
-                close(s);
-            }).detach();
-        } catch (...) { /* swallow thread creation failures */ }
+        log_message("TCP fallback rechazado por seguridad: control solo por UNIX socket autenticado.");
     }
 
     // FIX (daemon bloqueante / fd leak / buffer overflow):
@@ -414,6 +362,11 @@ int main(int argc, char* argv[]) {
             struct sockaddr_un client_addr; socklen_t client_len=sizeof(client_addr);
             int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
             if (client_fd<0) continue;
+            if (!ivanna::security::isAuthorizedControlPeer(client_fd)) {
+                log_message("Conexión rechazada en socket daemon: UID no autorizado");
+                close(client_fd);
+                continue;
+            }
             ivanna::shmManager().bumpHealthCounter(4); // clientes_conectados
             commandServer.bumpClientsServed(); // telemetria visible en GET_STATUS
 
