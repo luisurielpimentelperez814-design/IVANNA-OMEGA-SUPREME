@@ -33,6 +33,8 @@ object IvannaSpatialManager {
         private set
     @Volatile var activeSubject: String = "none"
         private set
+    @Volatile var hrtfStatus: String = "NO CONFIRMADO"
+        private set
     @Volatile var reverbLevel: Float = 0.25f
         private set
     private val upmixerEnabledAtomic = java.util.concurrent.atomic.AtomicBoolean(true)
@@ -135,21 +137,32 @@ object IvannaSpatialManager {
                     }.onFailure { Log.w(TAG, "upmixer no sincronizado: ${it.message}") }
                 }
 
-                val subject = runCatching {
+                val requestedSubject = runCatching {
                     HrtfSubjectSelector.activate(context, handle, headWidthMm, headDepthMm, sex)
                 }.getOrElse {
-                    Log.w(TAG, "selección de sujeto HRTF falló, se usa el predeterminado: ${it.message}")
+                    Log.w(TAG, "selección de sujeto HRTF falló: ${it.message}")
                     HrtfSubjectSelector.DEFAULT_SUBJECT
+                }
+                val loaded = runCatching {
+                    IvannaSpatialNative.nativeObjectRendererIsHrtfLoaded(handle)
+                }.getOrDefault(false)
+                val actualSubject = runCatching {
+                    IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(handle)
+                }.getOrDefault("none")
+                val confirmedSubject = if (loaded && actualSubject == requestedSubject) actualSubject else "none"
+                if (confirmedSubject == "none") {
+                    Log.w(TAG, "HRTF no confirmado: solicitado=$requestedSubject, activo=$actualSubject, loaded=$loaded")
                 }
                 synchronized(lock) {
                     rendererHandle = handle
                     upmixerHandle = upmixer
                     headTracker = tracker
-                    activeSubject  = subject
+                    activeSubject = confirmedSubject
+                    hrtfStatus = if (confirmedSubject != "none") "CARGADO · $confirmedSubject" else "NO CARGADO / NO CONFIRMADO"
                     ready = true
                 }
                 initError = null
-                Log.i(TAG, "Spatial manager listo — sujeto HRTF: $subject")
+                Log.i(TAG, "Spatial manager listo — HRTF: $hrtfStatus")
             } catch (t: Throwable) {   // Throwable: los fallos de JNI son Error, no Exception
                 initError = "${t.javaClass.simpleName}: ${t.message}"
                 Log.e(TAG, "Error init SpatialManager", t)
@@ -180,10 +193,12 @@ object IvannaSpatialManager {
             val loaded = IvannaSpatialNative.nativeObjectRendererIsHrtfLoaded(h)
             val actual = IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(h)
             if (!loaded || actual != resolved) {
+                hrtfStatus = "NO CARGADO / NO CONFIRMADO"
                 Log.w(TAG, "HRTF no confirmado: solicitado=$resolved, activo=$actual, loaded=$loaded")
                 false
             } else {
                 activeSubject = actual
+                hrtfStatus = "CARGADO · $actual"
                 true
             }
         }.getOrDefault(false)
@@ -440,7 +455,15 @@ object IvannaSpatialManager {
         val h = rendererHandle
         if (h == 0L) { init(context, headWidthMm, headDepthMm, sex); return }
         val subject = HrtfSubjectSelector.activate(context, h, headWidthMm, headDepthMm, sex)
-        activeSubject = subject
-        Log.i(TAG, "HRTF recargado — sujeto: $subject")
+        val loaded = runCatching { IvannaSpatialNative.nativeObjectRendererIsHrtfLoaded(h) }.getOrDefault(false)
+        val actual = runCatching { IvannaSpatialNative.nativeObjectRendererGetCurrentSubject(h) }.getOrDefault("none")
+        if (loaded && actual == subject) {
+            activeSubject = actual
+            hrtfStatus = "CARGADO · $actual"
+        } else {
+            activeSubject = "none"
+            hrtfStatus = "NO CARGADO / NO CONFIRMADO"
+        }
+        Log.i(TAG, "HRTF recargado — solicitado=$subject, activo=$actual, loaded=$loaded")
     }
 }
