@@ -147,7 +147,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
@@ -162,7 +162,7 @@ dependencies {
     implementation("androidx.compose.runtime:runtime-livedata:1.6.0")
 
     implementation("androidx.activity:activity-compose:1.8.2")
-    implementation("androidx.navigation:navigation-compose:2.10.2")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
 
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.media:media:1.8.0")
@@ -170,7 +170,7 @@ dependencies {
     implementation("androidx.security:security-crypto-ktx:1.1.0")
 
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.5.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.11.0")
