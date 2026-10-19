@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.84
-versionCode=375
+version=v2.5.85
+versionCode=376
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.84 (ambito Kotlin del contexto corregido: el build del APK vuelve a compilar; puerta de verdad de los diez ejes perceptuales del plan 10D en Fase 0 sobre v2.5.83
+description=v2.5.85: corrige bloqueo visual de inicio por panel FotoHolo Wi-Fi persistente
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
