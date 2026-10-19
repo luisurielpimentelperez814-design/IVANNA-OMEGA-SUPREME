@@ -13,6 +13,7 @@
 #include "omega_shared.h"
 #include "audio_control_plane.hpp"
 #include "evolutionary_kernel.h"
+#include "spatial/SafmusEvolutionGate.hpp"
 #include "dsp/loudness_meter.hpp"  // BS.1770-4 LUFS real (K-weighting + gating)
 
 #define LOG_TAG "AudioOrchestrator"
@@ -532,89 +533,94 @@ extern "C" void ivanna_orchestrate(
 
 
 
-    if(g_orch.manifoldEnabled.load(std::memory_order_relaxed) &&
-       evo_best_fitness()>0.5f){
+    const bool routeEnabled = g_orch.manifoldEnabled.load(std::memory_order_relaxed);
+    bool signalFinite = samples > 0 && buffer != nullptr;
+    float blockPeak = 0.0f;
 
-        uint8_t gen[GENOME_SIZE];
-
-        evo_get_best_genome(
-            gen,
-            GENOME_SIZE);
-
-
-        for(int i=0;i<GENOME_SIZE;i++){
-
-            g_orch.active_genome[i] =
-              static_cast<uint8_t>(
-              (g_orch.active_genome[i]*3+
-               gen[i])/4);
+    // SAFMUS checks the actual block before accepting or applying an evolved state.
+    // Replace corrupt samples with silence and abstain from adaptation for this block.
+    if (signalFinite) {
+        for (int i = 0; i < samples; ++i) {
+            if (!std::isfinite(buffer[i])) {
+                buffer[i] = 0.0f;
+                signalFinite = false;
+                g_orch.sanitizedNanCount.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                blockPeak = std::max(blockPeak, std::fabs(buffer[i]));
+            }
         }
-
-
-        g_orch.genome_valid=true;
-
-        g_orch.genome_generation =
-            evo_get_generation();
     }
 
+    if (routeEnabled && signalFinite && samples > 0) {
+        const float fitness = evo_best_fitness();
+        uint8_t candidate[GENOME_SIZE];
+        evo_get_best_genome(candidate, GENOME_SIZE);
 
+        double sum = 0.0;
+        for (int i = 0; i < GENOME_SIZE; ++i) sum += candidate[i];
+        const float candidateMean = static_cast<float>(
+            sum / (GENOME_SIZE * 255.0));
+        const float candidateGain = 1.0f + candidateMean * 0.1f;
+        // The current genome ABI is uint8_t[GENOME_SIZE], so each gene is finite by construction.
+        constexpr bool candidateFinite = true;
+        const bool candidateBounded = std::isfinite(candidateGain) &&
+            candidateGain >= 1.0f && candidateGain <= 1.1f;
+        const bool headroomValid = std::isfinite(blockPeak) &&
+            (blockPeak <= 1.0e-8f || blockPeak * candidateGain <= 0.98f);
 
-    if(g_orch.genome_valid){
-
-
-        double acc=0.0;
-
-
-        for(int i=0;i<GENOME_SIZE;i++)
-            acc+=g_orch.active_genome[i];
-
-
-        float envAvg =
-          static_cast<float>(
-          acc/
-          (GENOME_SIZE*255.0));
-
-
-        float gTarget =
-          1.f+
-          envAvg*0.1f;
-
-
-        float gStart =
-          g_orch.genomeGainSmoothed;
-
-
-        int chan =
-          channels>0 ? channels:1;
-
-
-        int nFrames =
-          samples/chan;
-
-
-        if(nFrames>0){
-
-
-            float step =
-              (gTarget-gStart)/
-              static_cast<float>(nFrames);
-
-
-            float g=gStart;
-
-
-            for(int f=0,i=0;
-                f<nFrames;
-                f++,g+=step){
-
-
-                for(int c=0;c<chan;c++,i++)
-                    buffer[i]*=g;
+        const ivanna::safmus::EvolutionCandidateEvidence evidence{
+            fitness, routeEnabled, signalFinite, candidateFinite,
+            candidateBounded, headroomValid
+        };
+        if (ivanna::safmus::mayApplyEvolutionCandidate(evidence)) {
+            for (int i = 0; i < GENOME_SIZE; ++i) {
+                g_orch.active_genome[i] = static_cast<uint8_t>(
+                    (static_cast<unsigned>(g_orch.active_genome[i]) * 3u +
+                     static_cast<unsigned>(candidate[i])) / 4u);
             }
+            g_orch.genome_valid = true;
+            g_orch.genome_generation = evo_get_generation();
+        }
+    }
 
+    // Disabling the route disables evolved gain too; a previously valid genome
+    // must never continue modifying audio behind the user's back.
+    if (routeEnabled && g_orch.genome_valid && signalFinite && samples > 0) {
+        double acc = 0.0;
+        for (int i = 0; i < GENOME_SIZE; ++i) acc += g_orch.active_genome[i];
+        const float envAvg = static_cast<float>(acc / (GENOME_SIZE * 255.0));
+        const float naturalTarget = 1.0f + envAvg * 0.1f;
 
-            g_orch.genomeGainSmoothed =
-                gTarget;
+        // Preserve headroom after evolution, not before it. The old ordering
+        // could multiply by up to 1.1 after the upstream limiter had run.
+        const float maxSafeGain = blockPeak > 1.0e-8f
+            ? std::min(1.1f, 0.98f / blockPeak)
+            : 1.1f;
+        const float gTarget = std::min(
+            std::isfinite(naturalTarget) ? naturalTarget : 1.0f,
+            std::isfinite(maxSafeGain) ? maxSafeGain : 1.0f);
+        const float previousGain = std::isfinite(g_orch.genomeGainSmoothed)
+            ? g_orch.genomeGainSmoothed : 1.0f;
+        const float gStart = std::clamp(previousGain, 0.0f, gTarget);
+
+        const int chan = channels > 0 ? channels : 1;
+        const int nFrames = samples / chan;
+        if (nFrames > 0) {
+            const float step = (gTarget - gStart) / static_cast<float>(nFrames);
+            float gain = gStart;
+            for (int frame = 0, i = 0; frame < nFrames; ++frame, gain += step) {
+                const float safeGain = std::clamp(gain, 0.0f, gTarget);
+                for (int c = 0; c < chan; ++c, ++i) {
+                    const float output = buffer[i] * safeGain;
+                    if (!std::isfinite(output)) {
+                        buffer[i] = 0.0f;
+                        g_orch.sanitizedNanCount.fetch_add(1, std::memory_order_relaxed);
+                    } else {
+                        buffer[i] = std::clamp(output, -0.98f, 0.98f);
+                    }
+                }
+            }
+            g_orch.genomeGainSmoothed = gTarget;
         }
     }
 }

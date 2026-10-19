@@ -38,6 +38,7 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <cmath>
 
 // Pesos del fitness multi-criterio (suman 1.0)
 static constexpr float W_FLATNESS   = 0.25f;
@@ -152,7 +153,7 @@ static void initAWeightTable() {
 // ── Fitness psicoacústico multi-criterio ──────────────────────────────────────
 static float computePsychoacousticFitness(const uint8_t* genome, int len) {
     initAWeightTable();
-    if (len < 4) return 0.0f;
+    if (!genome || len < 4 || len > GENOME_SIZE) return 0.0f;
 
     // Convertir genoma de uint8 a espectro de amplitud normalizado
     float spectrum[GENOME_SIZE];
@@ -234,6 +235,7 @@ static float computePsychoacousticFitness(const uint8_t* genome, int len) {
                   + W_DYNAMIC   * dynamicScore
                   + W_TONAL     * tonalConsistency;
 
+    if (!std::isfinite(F)) return 0.0f;
     return std::max(0.0f, std::min(1.0f, F));
 }
 
@@ -380,6 +382,7 @@ void evo_get_best_genome(uint8_t* out, int len) {
 }
 
 void evo_update_audio_cues(float loudness, float transient, float spatial) {
+    if (!std::isfinite(loudness) || !std::isfinite(transient) || !std::isfinite(spatial)) return;
     g_loudness  .store(loudness,  std::memory_order_relaxed);
     g_transient .store(transient, std::memory_order_relaxed);
     g_spatial   .store(spatial,   std::memory_order_relaxed);
@@ -388,12 +391,15 @@ void evo_update_audio_cues(float loudness, float transient, float spatial) {
 // v2.0: cues adicionales
 void evo_update_audio_cues_v2(float loudness, float transient, float spatial,
                                float centroid, float tonality, float dynamicRange) {
+    if (!std::isfinite(loudness) || !std::isfinite(transient) ||
+        !std::isfinite(spatial) || !std::isfinite(centroid) ||
+        !std::isfinite(tonality) || !std::isfinite(dynamicRange)) return;
     g_loudness        .store(loudness,      std::memory_order_relaxed);
     g_transient       .store(transient,     std::memory_order_relaxed);
     g_spatial         .store(spatial,       std::memory_order_relaxed);
-    g_spectralCentroid.store(centroid,      std::memory_order_relaxed);
-    g_tonality        .store(tonality,      std::memory_order_relaxed);
-    g_dynamicRange    .store(dynamicRange,  std::memory_order_relaxed);
+    g_spectralCentroid.store(std::clamp(centroid, 0.0f, 24000.0f), std::memory_order_relaxed);
+    g_tonality        .store(std::clamp(tonality, 0.0f, 1.0f), std::memory_order_relaxed);
+    g_dynamicRange    .store(std::clamp(dynamicRange, 0.0f, 1.0f), std::memory_order_relaxed);
 }
 
 void evo_set_mutation_rate(float rate) {

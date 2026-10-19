@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include <jni.h>
 #include <cmath>
+#include "spatial/SafmusEvolutionGate.hpp"
 
 extern "C" {
 void  evo_initialize_population(void);
@@ -25,6 +26,7 @@ float evo_best_fitness(void);
 int   evo_get_generation(void);
 void  evo_set_mutation_rate(float rate);
 float evo_get_mutation_rate(void);
+void  evo_update_audio_cues_v2(float loudness, float transient, float spatial, float centroid, float tonality, float dynamicRange);
 void  evo_set_population_size(int n);
 int   evo_get_population_size(void);
 void  evo_set_max_generations(int n);
@@ -139,4 +141,30 @@ TEST(EvolutionaryKernelV2, GenerationCapStopsTheLoopAndLiveTuningDoesNotReset) {
 
     evo_set_population_size(128);
     evo_set_max_generations(0);
+}
+
+
+TEST(SAFMUSEvolutionGate, RequiresFiniteBoundedCandidateAndHeadroom) {
+    using ivanna::safmus::EvolutionCandidateEvidence;
+    using ivanna::safmus::mayApplyEvolutionCandidate;
+    const EvolutionCandidateEvidence safe{0.75f, true, true, true, true, true};
+    EXPECT_TRUE(mayApplyEvolutionCandidate(safe));
+    EXPECT_FALSE(mayApplyEvolutionCandidate({NAN, true, true, true, true, true}));
+    EXPECT_FALSE(mayApplyEvolutionCandidate({0.75f, false, true, true, true, true}));
+    EXPECT_FALSE(mayApplyEvolutionCandidate({0.75f, true, false, true, true, true}));
+    EXPECT_FALSE(mayApplyEvolutionCandidate({0.75f, true, true, false, true, true}));
+    EXPECT_FALSE(mayApplyEvolutionCandidate({0.75f, true, true, true, false, true}));
+    EXPECT_FALSE(mayApplyEvolutionCandidate({0.75f, true, true, true, true, false}));
+}
+
+TEST(EvolutionaryKernelV2, NonFiniteAudioCuesAreRejectedWithoutPoisoningFitness) {
+    evo_update_audio_cues_v2(0.5f, 0.2f, 0.3f, 4000.0f, 0.7f, 0.6f);
+    evo_update_audio_cues_v2(NAN, 0.2f, 0.3f, 4000.0f, 0.7f, 0.6f);
+    evo_initialize_population();
+    EXPECT_TRUE(std::isfinite(evo_best_fitness()));
+    for (int i = 0; i < 5; ++i) {
+        evo_evolve_generation();
+        EXPECT_TRUE(std::isfinite(evo_best_fitness()));
+    }
+    evo_update_audio_cues_v2(0.0f, 0.0f, 0.0f, 2000.0f, 0.5f, 0.5f);
 }
