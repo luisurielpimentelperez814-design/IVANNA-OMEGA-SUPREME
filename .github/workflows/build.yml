@@ -33,6 +33,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
+      - name: SAFMUS transversal wiring contract
+        run: python3 scripts/check_safmus_transversal_wiring.py
       - name: Configure (Release)
         run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
       - name: Build
