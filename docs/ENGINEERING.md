@@ -42,4 +42,4 @@ La CI (`.github/workflows`) corre lo mismo más ASan/UBSan, valida los datasets 
 Abierto a conversar con equipos de audio, plataforma Android o DSP, y a colaboraciones o adquisición/licenciamiento del producto: abre un issue en este repositorio o escríbeme desde mi perfil de GitHub.
 *Open to conversations with audio, Android-platform or DSP teams, and to collaboration or licensing/acquisition of the product: open an issue here or reach me from my GitHub profile.*
 
-Licencia / License: Apache-2.0 (ver `LICENSE`, `NOTICE`).
+Propiedad / Ownership: producto propietario y comercial. Todos los derechos sobre el código propio reservados; las licencias de terceros no se modifican. Las versiones anteriores distribuidas expresamente bajo Apache-2.0 siguen sujetas a los términos de esa concesión.
