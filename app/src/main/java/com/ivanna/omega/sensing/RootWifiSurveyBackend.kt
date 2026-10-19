@@ -62,27 +62,28 @@ class RootWifiSurveyBackend {
         // All call sites pass constants or an interface validated by a strict regex.
         var process: Process? = null
         return try {
-            process = ProcessBuilder("su", "-c", command)
+            val runningProcess = ProcessBuilder("su", "-c", command)
                 .redirectErrorStream(true)
                 .start()
+            process = runningProcess
             val output = AtomicReference("")
             val reader = Thread({
                 output.set(runCatching {
-                    process!!.inputStream.bufferedReader().use { it.readText() }
+                    runningProcess.inputStream.bufferedReader().use { it.readText() }
                 }.getOrDefault(""))
             }, "ivanna-root-wifi-output").apply {
                 isDaemon = true
                 start()
             }
-            val finished = process.waitFor(12, TimeUnit.SECONDS)
+            val finished = runningProcess.waitFor(12, TimeUnit.SECONDS)
             if (!finished) {
-                process.destroy()
-                if (process.isAlive) process.destroyForcibly()
+                runningProcess.destroy()
+                if (runningProcess.isAlive) runningProcess.destroyForcibly()
                 reader.join(250)
                 CommandResult(124, output.get())
             } else {
                 reader.join(500)
-                CommandResult(process.exitValue(), output.get())
+                CommandResult(runningProcess.exitValue(), output.get())
             }
         } catch (e: InterruptedException) {
             process?.destroyForcibly()
