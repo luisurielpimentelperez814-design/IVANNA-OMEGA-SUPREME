@@ -73,22 +73,42 @@ object IvannaSpatialManager {
     private val lock = Any()
 
     // ── Inicialización ────────────────────────────────────────────────────────
+    /** Motivo del último fallo de inicialización (null si no hubo o si ya está listo). La UI lo muestra. */
+    @Volatile var initError: String? = null
+        private set
+    private val initInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Idempotente: una segunda llamada mientras hay una en curso, o cuando ya está listo, no hace
+     * nada; tras un fallo se puede reintentar. Antes un fallo dejaba `ready=false` PARA SIEMPRE y
+     * sin motivo visible ("No inicializado · sujeto none"): el hilo solo capturaba `Exception`
+     * (un `UnsatisfiedLinkError`/`LinkageError` lo mataba en silencio), y el head tracker y el
+     * upmixer —opcionales— podían impedir que el renderer, que ya existía, se publicara como listo.
+     */
     fun init(context: Context, headWidthMm: Double? = null,
              headDepthMm: Double? = null, sex: String? = null) {
+        if (ready || !initInFlight.compareAndSet(false, true)) return
         Thread(Runnable {
+            var handle = 0L
             try {
-                val handle = IvannaSpatialNative.nativeObjectRendererCreate(
+                if (!IvannaSpatialNative.isLoaded) {
+                    initError = "biblioteca nativa no cargada"
+                    Log.e(TAG, "init: biblioteca nativa no cargada"); return@Runnable
+                }
+                handle = IvannaSpatialNative.nativeObjectRendererCreate(
                     SAMPLE_RATE.toFloat(), BLOCK_SIZE)
-
                 if (handle == 0L) {
+                    initError = "nativeObjectRendererCreate devolvió 0"
                     Log.e(TAG, "nativeObjectRendererCreate devolvió 0"); return@Runnable
                 }
-                
-                // Inicializar Head Tracker y acoplarlo al Renderer Espacial Nativo
+
+                // Opcionales: su fallo degrada (sin head tracking / sin upmix) pero NO impide el renderer.
                 val tracker = IvannaHeadTracker(context)
-                tracker.init()
-                tracker.start()
-                runCatching { IvannaSpatialNative.nativeObjectRendererSetHeadTracker(handle, tracker.nativeHandle) }
+                runCatching {
+                    tracker.init()
+                    tracker.start()
+                    IvannaSpatialNative.nativeObjectRendererSetHeadTracker(handle, tracker.nativeHandle)
+                }.onFailure { Log.w(TAG, "head tracker no disponible (sin seguimiento de cabeza): ${it.message}") }
 
                 // Inicializar NeuralUpmixer (4 stems) y sincronizar objetos activos [FIX-SILENCE]
                 val upmixer = runCatching {
@@ -98,11 +118,15 @@ object IvannaSpatialManager {
                     runCatching {
                         IvannaSpatialNative.nativeUpmixerSetEnabled(upmixer, true)
                         IvannaSpatialNative.nativeObjectRendererSyncStemObjects(handle, upmixer)
-                    }
+                    }.onFailure { Log.w(TAG, "upmixer no sincronizado: ${it.message}") }
                 }
 
-                val subject = HrtfSubjectSelector.activate(
-                    context, handle, headWidthMm, headDepthMm, sex)
+                val subject = runCatching {
+                    HrtfSubjectSelector.activate(context, handle, headWidthMm, headDepthMm, sex)
+                }.getOrElse {
+                    Log.w(TAG, "selección de sujeto HRTF falló, se usa el predeterminado: ${it.message}")
+                    HrtfSubjectSelector.DEFAULT_SUBJECT
+                }
                 synchronized(lock) {
                     rendererHandle = handle
                     upmixerHandle = upmixer
@@ -110,9 +134,14 @@ object IvannaSpatialManager {
                     activeSubject  = subject
                     ready = true
                 }
+                initError = null
                 Log.i(TAG, "Spatial manager listo — sujeto HRTF: $subject")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error init SpatialManager: ${e.message}", e)
+            } catch (t: Throwable) {   // Throwable: los fallos de JNI son Error, no Exception
+                initError = "${t.javaClass.simpleName}: ${t.message}"
+                Log.e(TAG, "Error init SpatialManager", t)
+                if (handle != 0L && !ready) runCatching { IvannaSpatialNative.nativeObjectRendererDestroy(handle) }
+            } finally {
+                initInFlight.set(false)
             }
         }, "IvannaSpatialMgrInit").start()
     }

@@ -1,6 +1,11 @@
 // AutonomousAcousticTransaction.hpp — transactional control policy for the
 // measurement -> bounded proposal -> apply -> remeasure -> rollback loop.
 // All callbacks run on an orchestration thread, never the real-time audio thread.
+//
+// ESTADO: modelo de referencia SOLO DE PRUEBAS (vive en tests/). Ninguna unidad de
+// produccion lo incluye: el bucle verificado que corre en la app es Kotlin
+// (`runVerified`, umbral 0,25 dB), no este. Los umbrales de aqui (0,5 dB) NO son los de
+// produccion. Para convertirlo en produccion hay que cablearlo por JNI y alinear umbrales.
 #pragma once
 #include <algorithm>
 #include <array>

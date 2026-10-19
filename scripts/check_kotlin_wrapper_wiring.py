@@ -339,18 +339,61 @@ def count_wrapper_callers(
     return total
 
 
+JS_ROOTS = ("src",)
+JS_EXT = {".ts", ".tsx", ".js", ".jsx"}
+
+
+def load_js_sources() -> List[str]:
+    """Texto de cada fuente web empaquetada en la app (puente WebView)."""
+    chunks: List[str] = []
+    for root in JS_ROOTS:
+        base = ROOT / root
+        if not base.is_dir():
+            continue
+        for f in base.rglob("*"):
+            if f.suffix in JS_EXT and "node_modules" not in f.parts:
+                chunks.append(f.read_text(encoding="utf-8", errors="replace"))
+    return chunks
+
+
+def is_js_interface_called(w: "KtWrapper", js_srcs: List[str]) -> bool:
+    """Un metodo @JavascriptInterface sin llamador Kotlin es valido solo si el JS
+    empaquetado lo invoca a traves del objeto registrado con addJavascriptInterface
+    (directo, window.Puente?.metodo, o via alias local del mismo fichero:
+    const b = window.Puente; b?.metodo()). Un fichero JS debe nombrar el puente
+    registrado Y llamar al metodo; un nombre suelto no basta."""
+    kt = (ROOT / w.rel_file).read_text(encoding="utf-8", errors="replace")
+    lines = kt.splitlines()
+    prev = lines[w.line - 2] if w.line >= 2 else ""
+    if "@JavascriptInterface" not in prev and "@JavascriptInterface" not in lines[w.line - 1]:
+        return False
+    m = re.search(r'addJavascriptInterface\([^,]+,\s*"([A-Za-z0-9_]+)"\)', kt)
+    if not m:
+        return False
+    bridge = re.escape(m.group(1))
+    meth = re.escape(w.name)
+    invoke = re.compile(r"\??\.\s*" + meth + r"\s*\??\.?\s*\(")
+    return any(re.search(bridge, src) and invoke.search(src) for src in js_srcs)
+
+
 def main() -> int:
     externals, _, cleaned_kt = parse_kotlin_files()
     per_file_types, global_types = infer_kotlin_var_types(cleaned_kt)
     wrappers = find_public_wrappers(externals, cleaned_kt, per_file_types, global_types)
 
     uncalled: List[KtWrapper] = []
+    js_called: List[KtWrapper] = []
+    js_sources = load_js_sources()
     for w in wrappers:
         if count_wrapper_callers(w, cleaned_kt, per_file_types, global_types) == 0:
-            uncalled.append(w)
+            if is_js_interface_called(w, js_sources):
+                js_called.append(w)
+            else:
+                uncalled.append(w)
 
     print("=== [A2] CHECK KOTLIN WRAPPER WIRING REPORT ===")
     print(f"Total public Kotlin JNI wrappers : {len(wrappers)}")
+    print(f"Called only from WebView JS      : {len(js_called)}")
     print(f"Uncalled public JNI wrappers     : {len(uncalled)}")
     print()
 
