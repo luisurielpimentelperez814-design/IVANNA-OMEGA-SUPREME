@@ -1,5 +1,6 @@
 package com.ivanna.omega.ui
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +32,9 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
     var bestFitness by remember { mutableDoubleStateOf(0.0) }
     var currentGen  by remember { mutableIntStateOf(0) }
     var isRunning   by remember { mutableStateOf(false) }
+    var lastObservedGeneration by remember { mutableIntStateOf(-1) }
+    var lastGenerationProgressAt by remember { mutableLongStateOf(0L) }
+    val safmusTelemetry by com.ivanna.omega.fotoholo.FotoHoloEngine.telemetry.collectAsState()
     // FIX (sin persistencia): el step size sí llegaba al motor, pero no se
     // guardaba; si el motor nativo no estaba cargado al reabrir, la UI
     // volvía a 0.10 y el usuario perdía su calibración.
@@ -72,8 +76,19 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
                     // usar la función real, respaldada por evolutionary_kernel_v2.cpp.
                     val bf  = IvannaNativeLib.nativeGetEvoBestFitness().toDouble()
                     val gen = IvannaNativeLib.nativeGetGeneration()
-                    val run = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
-                    bestFitness = bf; currentGen = gen; isRunning = run
+                    val now = SystemClock.elapsedRealtime()
+                    if (lastObservedGeneration >= 0 && gen > lastObservedGeneration) {
+                        lastGenerationProgressAt = now
+                    }
+                    if (lastObservedGeneration < 0 || gen < lastObservedGeneration) {
+                        lastGenerationProgressAt = 0L
+                    }
+                    lastObservedGeneration = gen
+                    bestFitness = bf
+                    currentGen = gen
+                    // No confundir el estado del Adaptive Engine con el del optimizador CMA-ES.
+                    // "Running" solo se muestra cuando la generación realmente avanza.
+                    isRunning = lastGenerationProgressAt != 0L && now - lastGenerationProgressAt < 2_500L
                     // Normalización adaptativa: rango crece con los valores observados.
                     // La normalización fija (bf+1)/1 comprimía todo a ~1.0 cuando
                     // bestFitness > 0, dejando la curva pegada al tope del canvas.
@@ -106,7 +121,7 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
             }
         }
 
-        GlassCard("512-BAND EVOLUTIONARY MAGNITUDE RESPONSE CURVE", PhosphorGreen,
+        GlassCard("EVOLUTIONARY FITNESS HISTORY · NO ES UNA MEDICIÓN ACÚSTICA", PhosphorGreen,
             rightSlot = {
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Fitness Score:", color = TextMuted, fontSize = 9.sp)
@@ -143,6 +158,27 @@ internal fun CmaEsFitnessPanel(popSize: Int = 4, modifier: Modifier = Modifier) 
                     Text(it, color = TextMuted, fontSize = 8.sp, fontFamily = FontFamily.Monospace)
                 }
             }
+        }
+
+        GlassCard("SAFMUS · SUPERVISIÓN DE RUTA Y VALIDACIÓN", AuroraCyan) {
+            val routeLabel = when (safmusTelemetry.activeRoute) {
+                "ROUTE_A" -> "Ruta A · captura interna"
+                "ROUTE_B" -> "Ruta B · efecto global"
+                else -> "Sin ruta de procesamiento validada"
+            }
+            val candidateMayBeEvaluated = safmusTelemetry.activeRoute == "ROUTE_A" &&
+                safmusTelemetry.hasSignal && bestFitness.isFinite()
+            Text("Ruta observada: $routeLabel", color = TextPrimary, fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text(safmusTelemetry.safmusDecision, color = TextSecondary, fontSize = 10.sp)
+            Text(
+                if (candidateMayBeEvaluated)
+                    "SAFMUS: hay señal para evaluar una propuesta; aún requiere validación de estabilidad, headroom y mejora medible antes de aplicarse."
+                else
+                    "SAFMUS: abstención segura. El fitness es una puntuación interna, no prueba de calidad audible; no se activa un candidato sin señal/ruta compatible y validación.",
+                color = if (candidateMayBeEvaluated) AuroraCyan else AmberSignal,
+                fontSize = 10.sp
+            )
         }
 
         GlassCard("PARÁMETROS CMA-ES", AuroraCyan) {
