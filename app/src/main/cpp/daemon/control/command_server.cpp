@@ -869,9 +869,13 @@ int CommandServer::handleTextCommand(const char* text, char* reply, int reply_sz
         uint64_t gen=publishCurrentState(m_state);
         n=snprintf(reply,reply_sz,"{\"ok\":true,\"pf_drive\":%.3f,\"gen\":%llu}",v,(unsigned long long)gen);
     } else if (tUpper=="GET_TELEMETRY" || tUpper=="TELEMETRY") {
+        const int bypass = (m_state.user_flags_mask & m_state.user_flags_value &
+                            ivanna::OMEGA_FLAG_MASTER_BYPASS) ? 1 : 0;
+        // No inventar temperatura, latencia, frames ni SR: este handler no
+        // tiene fuentes vivas para esos campos. -1 indica dato no disponible.
         n=snprintf(reply,(size_t)reply_sz,
-            "temp=%.1f latency=%.3f frames=%llu bypass=%d samplerate=%d version=2.3.1",
-            -1.0f, 0.0, 0ULL, 0, 48000);
+            "temp=%.1f latency=%.3f frames=%lld bypass=%d samplerate=%d version=unknown",
+            -1.0, -1.0, -1LL, bypass, -1);
     } else if (t.find("SET_PF_")==0 && t.find(':')!=std::string::npos) {
         std::string key = t.substr(7, t.find(':')-7);
         int idx = pfIndexForName(key);
