@@ -91,38 +91,37 @@ def inspect(path: Path, root: Path) -> dict:
                     }
                 if isinstance(obj, h5py.Dataset):
                     # Indexar todos los datasets y sus atributos, incluidos metadatos específicos de cada corpus.
-                    if True:
-                        attrs = {str(k): plain(v) for k, v in obj.attrs.items()}
-                        item = {
-                            "shape": list(obj.shape),
-                            "dtype": str(obj.dtype),
-                            "attrs": attrs,
-                        }
-                        # Leer solo arrays pequeños de metadatos; nunca cargar Data.IR.
-                        if name in DATASETS and name != "Data.IR" and obj.size <= 20000:
-                            item["values"] = plain(obj[()])
-                        if name == "Data.IR" and len(obj.shape) >= 2:
-                            item["measurements"] = int(obj.shape[0])
-                            item["receiver_count"] = int(obj.shape[-2])
-                            item["ir_sample_count"] = int(obj.shape[-1])
-                        if name in ("SourcePosition", "ReceiverPosition") and obj.size:
-                            try:
-                                arr = np.asarray(obj[()], dtype=float)
-                                cols = int(arr.shape[-1]) if arr.ndim else 1
-                                coords = arr.reshape((-1, cols))
-                                item["point_count"] = int(coords.shape[0])
-                                item["unique_point_count"] = int(np.unique(coords, axis=0).shape[0])
-                                item["coordinate_min"] = coords.min(axis=0).tolist()
-                                item["coordinate_max"] = coords.max(axis=0).tolist()
-                                typ = str(attrs.get("Type", "")).lower()
-                                units = str(attrs.get("Units", "")).lower()
-                                if "cartesian" in typ and ("metre" in units or "meter" in units) and cols == 3:
-                                    radii = np.linalg.norm(coords, axis=1)
-                                    item["radius_m_min"] = float(radii.min())
-                                    item["radius_m_max"] = float(radii.max())
-                            except (TypeError, ValueError, OverflowError) as exc:
-                                item["summary_error"] = str(exc)
-                        record["datasets"][name] = item
+                    attrs = {str(k): plain(v) for k, v in obj.attrs.items()}
+                    item = {
+                        "shape": list(obj.shape),
+                        "dtype": str(obj.dtype),
+                        "attrs": attrs,
+                    }
+                    # Leer solo arrays pequeños de metadatos; nunca cargar Data.IR.
+                    if name in DATASETS and name != "Data.IR" and obj.size <= 20000:
+                        item["values"] = plain(obj[()])
+                    if name == "Data.IR" and len(obj.shape) >= 2:
+                        item["measurements"] = int(obj.shape[0])
+                        item["receiver_count"] = int(obj.shape[-2])
+                        item["ir_sample_count"] = int(obj.shape[-1])
+                    if name in ("SourcePosition", "ReceiverPosition") and obj.size:
+                        try:
+                            arr = np.asarray(obj[()], dtype=float)
+                            cols = int(arr.shape[-1]) if arr.ndim else 1
+                            coords = arr.reshape((-1, cols))
+                            item["point_count"] = int(coords.shape[0])
+                            item["unique_point_count"] = int(np.unique(coords, axis=0).shape[0])
+                            item["coordinate_min"] = coords.min(axis=0).tolist()
+                            item["coordinate_max"] = coords.max(axis=0).tolist()
+                            typ = str(attrs.get("Type", "")).lower()
+                            units = str(attrs.get("Units", "")).lower()
+                            if "cartesian" in typ and ("metre" in units or "meter" in units) and cols == 3:
+                                radii = np.linalg.norm(coords, axis=1)
+                                item["radius_m_min"] = float(radii.min())
+                                item["radius_m_max"] = float(radii.max())
+                        except (TypeError, ValueError, OverflowError) as exc:
+                            item["summary_error"] = str(exc)
+                    record["datasets"][name] = item
             f.visititems(visitor)
             record["classification"] = classify(path, record["global_attributes"], record["datasets"])
     except Exception as exc:
