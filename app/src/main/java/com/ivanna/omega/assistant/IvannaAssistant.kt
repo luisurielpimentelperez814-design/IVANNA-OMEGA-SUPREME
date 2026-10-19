@@ -176,7 +176,9 @@ class IvannaAssistant(
             val agentResponse = geminiAgent.processQuery(text)
             val agentReply: String? = when (agentResponse) {
                 is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success -> agentResponse.text
-                is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline -> agentResponse.cachedResponse
+                // No reutilizar una respuesta vieja como si contestara a la
+                // pregunta actual: la caché offline no está asociada a la query.
+                is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline -> null
                 is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Error -> null
             }
             val agentCommand: String? = (agentResponse as? com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success)
@@ -292,6 +294,17 @@ class IvannaAssistant(
 
             // ── Si la rama LLM produjo respuesta conversacional sin comando ──
             if (agentReply != null && agentCommand == null && simulatedIntent == null) {
+                // Persistir también las respuestas generales del LLM en la
+                // memoria conversacional: antes solo se registraban ramas
+                // musicales y órdenes, por lo que las preguntas abiertas no
+                // alimentaban el historial que Gemini recibe en el siguiente turno.
+                IvannaConversationalCore.recordTurn(
+                    text,
+                    if (agentResponse is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success)
+                        "GENERAL_CHAT_LLM" else "OFFLINE_FALLBACK",
+                    null,
+                    agentReply
+                )
                 launch(Dispatchers.Main) {
                     _ui.value = _ui.value.copy(
                         processing = false,
@@ -368,8 +381,17 @@ class IvannaAssistant(
                     reply
                 }
                 IvannaLanguageCore.AcousticIntent.GENERAL_CHAT -> {
-                    val reply = IvannaSmallTalk.generalChatResponse()
-                    IvannaConversationalCore.recordTurn(text, "GENERAL_CHAT", null, reply)
+                    val reply = if (agentResponse is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline) {
+                        "Ahora mismo estoy sin conexión, así que no puedo consultar mi modelo de conocimiento amplio. Puedo seguir con las funciones locales de audio y retomar la conversación completa cuando vuelva la conexión."
+                    } else {
+                        IvannaSmallTalk.generalChatResponse()
+                    }
+                    IvannaConversationalCore.recordTurn(
+                        text,
+                        if (agentResponse is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline) "OFFLINE_FALLBACK" else "GENERAL_CHAT",
+                        null,
+                        reply
+                    )
                     reply
                 }
                 else -> null

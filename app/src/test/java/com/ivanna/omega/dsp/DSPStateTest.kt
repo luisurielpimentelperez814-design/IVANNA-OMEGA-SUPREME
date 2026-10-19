@@ -32,7 +32,8 @@ class DSPStateTest {
     @Test
     fun `omega metrics defaults are sane`() {
         val m = com.ivanna.omega.audio.OmegaMetrics()
-        assertTrue(m.latencyMs > 0f)
+        // Zero means no latency measurement has been published yet.
+        assertTrue(m.latencyMs >= 0f)
         assertTrue(m.sampleRate == 48000)
         assertFalse(m.dspActive)
     }

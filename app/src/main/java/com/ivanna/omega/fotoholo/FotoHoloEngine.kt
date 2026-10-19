@@ -1,6 +1,7 @@
 package com.ivanna.omega.fotoholo
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.spatial.IvannaSpatialEngine
@@ -34,6 +35,8 @@ data class FotoHoloTelemetry(
     val dspWidth: Float = Float.NaN,
     /** Resultado real del envío del ancho a la Ruta B (demonio); ver [FotoHoloRouteB]. */
     val routeB: String = "sin enviar",
+    /** Monotonic time of the latest valid Bark sample; 0 means no valid sample yet. */
+    val sampleTimestampMonotonicNs: Long = 0L,
 ) {
     /** true si el motor reporta un ancho finito y coherente con el último comando (puede ser menor por recorte térmico). */
     val readbackConfirmed: Boolean get() = dspWidth.isFinite() && nativeCallReturned && dspWidth <= appliedWidth + 0.01f
@@ -123,7 +126,8 @@ object FotoHoloEngine {
             started = true
         }
         load(context)
-        scope.launch(Dispatchers.Default) {
+        val job = scope.launch(Dispatchers.Default) {
+            try {
             val buf = FloatArray(FotoHoloMath.BANDS)
             var prev: FloatArray? = null
             var current = Float.NaN
@@ -136,8 +140,8 @@ object FotoHoloEngine {
 
             while (true) {
                 try {
-                    val shouldModulate = enabled && !bypass
-                    val shouldSample = shouldModulate || viewers > 0
+                    val wantsModulation = enabled && !bypass
+                    val shouldSample = wantsModulation || viewers > 0
                     val rawBase = IvannaSpatialEngine.shared.widthFactor
                     val base = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
 
@@ -163,6 +167,10 @@ object FotoHoloEngine {
                         FotoHoloFeatures.NONE
                     }
 
+                    // No enviar cambios al DSP si no hay una trama Bark válida de la captura.
+                    // Si la señal desaparece durante la modulación, el branch de restauración
+                    // de abajo devuelve el ancho base y lo reintenta hasta que JNI responda.
+                    val shouldModulate = wantsModulation && features.valid
                     var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
                     if (shouldModulate) {
                         val target = FotoHoloMath.targetWidth(base, intensity, features)
@@ -172,7 +180,7 @@ object FotoHoloEngine {
                             lastAttempted = true
                             lastError = writeWidth(current)
                             lastReturned = lastError == null
-                            if (lastReturned) { lastCommanded = current; lastDspWidth = readDspWidth(); FotoHoloRouteB.push(current) }
+                            if (lastReturned) { lastCommanded = current; FotoHoloRouteB.push(current) }
                         }
                         modulating = true
                         displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
@@ -183,7 +191,6 @@ object FotoHoloEngine {
                         lastReturned = lastError == null
                         if (lastReturned) {
                             lastCommanded = base
-                            lastDspWidth = readDspWidth()
                             FotoHoloRouteB.push(base)
                             current = Float.NaN
                             modulating = false
@@ -195,12 +202,21 @@ object FotoHoloEngine {
                         displayedCommand = base
                     }
 
+                    // Refrescar read-back en cada tick de control tras una escritura
+                    // aceptada. El recorte térmico puede cambiar sin que cambie el
+                    // comando; conservar el último valor haría que la UI mostrara una
+                    // confirmación vieja como si describiera el estado actual.
+                    if (lastReturned) {
+                        lastDspWidth = runCatching { readDspWidth() }.getOrDefault(Float.NaN)
+                    }
+
                     _telemetry.value = FotoHoloTelemetry(
                         enabled = enabled, bypass = bypass, hasSignal = features.valid,
                         baseWidth = base, appliedWidth = displayedCommand,
                         bands = buf.copyOf(), features = features,
                         nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
                         nativeCallReturned = lastReturned, dspWidth = lastDspWidth, routeB = FotoHoloRouteB.status,
+                        sampleTimestampMonotonicNs = if (ready && features.valid) SystemClock.elapsedRealtimeNanos() else _telemetry.value.sampleTimestampMonotonicNs,
                     )
                     delay(TICK_MS)
                 } catch (cancel: CancellationException) {
@@ -216,6 +232,20 @@ object FotoHoloEngine {
                     delay(IDLE_MS)
                 }
             }
+            } finally {
+                // No dejar el ancho adaptativo pegado si el scope propietario se cancela.
+                // Restaurar desde un hilo de control, nunca desde el callback de audio.
+                val rawBase = IvannaSpatialEngine.shared.widthFactor
+                val safeBase = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
+                val restoreError = writeWidth(safeBase)
+                if (restoreError != null) Log.w(TAG, "No se pudo restaurar el ancho al cancelar: $restoreError")
+                // Permitir que una futura llamada a start() vuelva a levantar el lazo.
+                synchronized(this@FotoHoloEngine) { started = false }
+            }
+        }
+        // Also handles cancellation before the coroutine body starts executing.
+        job.invokeOnCompletion {
+            synchronized(FotoHoloEngine) { started = false }
         }
     }
 }

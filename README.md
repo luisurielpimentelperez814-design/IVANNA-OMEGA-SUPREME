@@ -1,58 +1,183 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/release_media/ivanna_omega_hero.svg">
-  <img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.68 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
-</picture>
+<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME — motor de audio para Android" width="100%" />
 
-<a href="https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new?labels=device-report&title=Reporte+de+dispositivo">
-  <img src="docs/release_media/ivanna_promo_flyer.png" alt="IVANNA OMEGA SUPREME — busco probadores de dispositivos reales" width="420" />
-</a>
+# IVANNA OMEGA SUPREME
 
-> **¿Tienes un teléfono Android?** Ayúdame a probarlo y [cuéntame cómo suena](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new?labels=device-report&title=Reporte+de+dispositivo). Si te gusta el proyecto, una ⭐ ayuda a que más gente lo encuentre.
+### Audio digital, calibración acústica y herramientas espaciales para Android
 
-# ⬡ IVANNA OMEGA SUPREME `v2.5.68` ⬡
-### **Sistema Operativo de Supremacía Neuroacústica, Sincronía A/V Cero-Desfase y Reconstrucción Holográfica de Realidad Acústica en Lazo Cerrado para Android**
-#### *Arquitectura Nativa en C++20 · SIMD ARM64 NEON · Inversión Biomecánica Coclear PINN · Blindaje $C^2$ Cero-Artefactos · Atlas de Escena Musical de 12 Estilos*
+**Un proyecto de ingeniería abierta que se puede inspeccionar, compilar y poner a prueba.**
 
-**Diseñado y Creado por [Luis Uriel Pimentel Pérez (GORE TNS)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME)**  
-*Arquitecto Principal de Audio DSP & Especialista en TinyML a Nivel Kernel*
+[![Licencia Apache-2.0](https://img.shields.io/badge/licencia-Apache--2.0-blue.svg)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
+[![Versión de código](https://img.shields.io/badge/versión-según%20version.properties-64748b.svg)](version.properties)
+[![Android](https://img.shields.io/badge/plataforma-Android%20%7C%20ARM64-3ddc84.svg)](app/)
+[![C++20](https://img.shields.io/badge/motor-C%2B%2B20-00599C.svg)](app/src/main/cpp/)
 
----
-
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v2.5.68%20%28Build%20359%29-00F0FF?style=for-the-badge&logo=android&logoColor=000)](version.properties)
-[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.68&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![CTest](https://img.shields.io/badge/CTest-402%2F402%20PASSING%20%28100%25%29-23F09A?style=for-the-badge&logo=cmake&logoColor=fff)](telemetry/ctest_summary.json)
-[![Static Gates](https://img.shields.io/badge/Static%20Gates-6%2F6%20VERIFIED-00F0FF?style=for-the-badge&logo=checkmarx&logoColor=fff)](scripts/)
-[![C++ Standard](https://img.shields.io/badge/Standard-C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge&logo=c%2B%2B&logoColor=000)](app/src/main/cpp/CMakeLists.txt)
-[![RT-Audio Safety](https://img.shields.io/badge/RT--Safety-0%20Malloc%20%C2%B7%200%20Locks%20%C2%B7%20Lock--Free-22C55E?style=for-the-badge&logo=speedtest&logoColor=fff)](scripts/check_rt_safety.py)
-[![Atlas de Escena](https://img.shields.io/badge/Atlas%20de%20Escena-12%20Estilos%20%C2%B7%208%20774%20Pesos%20IVW1-FF2E93?style=for-the-badge&logo=musicbrainz&logoColor=fff)](docs/ATLAS_ESCENA.md)
-[![Spatial Datasets](https://img.shields.io/badge/Spatial%20Datasets-255%20SOFA%20%C2%B7%207D%20SAF%20%C2%B7%20200%20BRIR-38BDF8?style=for-the-badge&logo=airplayaudio&logoColor=fff)](app/src/main/cpp/spatial/SofaSafRirMasterKnowledge.hpp)
-[![Distortion Guard](https://img.shields.io/badge/Headroom-C%C2%B2%20Rational%20Ceiling%20%C2%B7%20Hermite%20C%C2%B9-F59E0B?style=for-the-badge&logo=shield&logoColor=fff)](app/src/main/cpp/supreme/SupremeAcousticStabilityGuard.hpp)
-[![Dual Route](https://img.shields.io/badge/Ruta%20Dual-Root%20HAL%20%28B%29%20%26%20Non--Root%20USB%20DAC%20%28A%29-A855F7?style=for-the-badge&logo=magisk&logoColor=fff)](app/src/main/cpp/omega_effect.cpp)
-
-<br/>
-
-> **«No es un ecualizador cosmético ni un reproductor con plugins de Android. Es un sistema operativo neuroacústico integral compilado en C++20 con aceleración vectorial ARM64 NEON. Combina la física electrodinámica no-lineal de transductores, inversión activa biomecánica coclear basada en PINN, síntesis holográfica entrenada sobre mediciones anatómicas humanas reales, un Atlas de Escena Musical de 12 estilos con reconfiguración lock-free sin clics, blindaje matemático $C^2$ contra saturación digital y un cerebro de inteligencia acústica en lazo cerrado que evalúa cada muestra para entregar supremacía sonora absoluta.»**  
-> — *Luis Uriel Pimentel Pérez (GORE TNS)*
+[LÉAME para público general](LEAME.md) · [Documentación técnica](docs/ENGINEERING.md) · [Cambios recientes](CHANGELOG.md) · [Versiones y paquetes](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) · [Reportar un problema](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues)
 
 </div>
 
 ---
 
-> 🧑‍💻 **¿Evalúas el trabajo en 5 minutos?** Lee la [Ficha de ingeniería](docs/ENGINEERING.md): cifras medidas, decisiones de diseño, cómo verificarlo y límites honestos.
+## En pocas palabras
 
-> 🔎 **Estado verificado (2026-10-18):** la puerta de tests host corre **406/406 (100 %)** en el commit `c93103e6` con esta rama. La HRTF que suena en tiempo de ejecución se **reconstruye desde la base maestra SOFA-PCA**; el archivo `.sofa` se valida por firma HDF5 pero sus mediciones **no se parsean en runtime** (ver `SofaHRTFLoader.hpp`, estado `VALID_NOT_PARSED`). La decodificación real de SOFA en el dispositivo sigue **pendiente**. La mejora audible y la latencia solo se pueden afirmar en hardware real.
+IVANNA OMEGA SUPREME es un proyecto para Android que combina una aplicación de control en Kotlin, un motor de procesamiento digital de audio escrito en C++ y herramientas para medir y visualizar aspectos de un entorno de escucha. Su objetivo es que los ajustes de audio puedan analizarse, probarse y —cuando hay mediciones suficientes— verificarse en lugar de depender únicamente de impresiones o de valores supuestos.
 
+El repositorio contiene código de producción, módulos experimentales, pruebas automatizadas y documentación de los límites conocidos. **La presencia de una clase, modelo, dataset o pantalla no significa por sí sola que esa función esté conectada al sonido en tiempo real ni validada en un teléfono.** En este README distinguimos lo implementado, lo que necesita validación y lo que aún no está terminado.
 
-### 🧭 Matriz de Navegación Rápida
+## Qué incluye
 
-| Área Arquitectónica | Módulos y Enlaces Directos |
-| :--- | :--- |
-| **I. Fundamentos & Métricas** | [**§1. Visión General & Tablero Ejecutivo v2.4.44**](#-1-visión-general-y-tablero-ejecutivo-v2444) · [**§2. Arquitectura de Sistema Dual (Ruta A $\leftrightarrow$ Ruta B)**](#-2-arquitectura-de-sistema-dual-ruta-a-sin-root--ruta-b-con-root) |
-| **II. Cine & Sincronía A/V** | [**§3. Sincronía A/V Cero-Eco para Cine & Streaming**](#-3-sincronía-av-y-cero-eco-en-cine--streaming-amazon-prime-video-netflix-disney) · [**§4. Vástago Central de Diálogo & TOF Directo ($t = 0	ext{ ms}$)**](#-4-alineación-tof-rígida-y-vástago-central-de-diálogo-in-place) |
-| **III. Física Matemática & Blindaje** | [**§5. Blindaje Acústico $C^2$ Cero-Artefactos (`SupremeAcousticStabilityGuard`)**](#-5-blindaje-acústico-cero-artefactos-y-cero-clipping-supremeacousticstabilityguard) · [**§6. Costura Hermite $C^1$ & Zero-Pop Atómico**](#-6-costura-polinomial-cúbica-de-hermite-c¹-y-reset-zero-pop) |
-| **IV. Inteligencia & Atlas v2.4.44** | [**§7. Atlas de Escena Musical de 12 Estilos (`IVW1` 8 774 Parámetros)**](#-7-atlas-de-escena-musical-12-estilos-pesos-ivw1-y-motores-físicos-de-sala) · [**§8. Fusión en Lazo Cerrado (`OmniHolographicSingularityEngine`)**](#-8-fusión-maestra-en-lazo-cerrado-omniholographicsingularityengine--declarativeunifiedpipeline) |
-| **V. Ejes Supremos & Biomecánica** | [**§9. Los 5 Ejes Supremos + Inversión Coclear PINN (0 lookahead)**](#-9-los-5-ejes-de-supremacía-cuántico-neuromórfica--inversión-coclear-pinn) · [**§10. Motor de Reconstrucción de Realidad (Fases 0–15)**](#-10-hipermotor-de-reconstrucción-de-realidad-acústica-fases-015) |
-| **VI. Acústica Medida & Hardware** | [**§11. Datasets Reales: 255 SOFA · 7D SAF · 200 BRIR**](#-11-entrenamiento-conjunto-sofa-255-aes69--saf-manifold-7-d--rir-200-salas) · [**§12. Cadena DSP de 9 Etapas & DAC USB-C Directo**](#-12-cadena-dsp-de-9-etapas-ruta-isócrona-usb-c-dac-y-bluetooth-master-path) |
+<details open>
+<summary><strong>Motor de audio y aplicación Android</strong></summary>
+
+- Aplicación Android con interfaz Kotlin/Jetpack Compose.
+- Motor nativo C++20 conectado mediante JNI y compilación dirigida a ARM64.
+- Herramientas de procesamiento espacial y recursos acústicos, incluidos datos en formato SOFA.
+- Controles y telemetría que deben distinguir los parámetros solicitados de los valores realmente confirmados por el motor.
+- Rutas de integración que contemplan dispositivos con root/Magisk y escenarios sin root; la disponibilidad real depende del dispositivo, permisos, ruta de salida y configuración.
+
+</details>
+
+<details open>
+<summary><strong>Medición de sala y calibración verificada</strong></summary>
+
+El módulo `RoomMeasurement` reproduce y graba una secuencia de prueba usando el micrófono y la salida del teléfono. Emplea 27 tonos distribuidos aproximadamente entre 25 Hz y 12,7 kHz para estimar niveles, ruido y retardo. La corrección se diseña a partir de puntos considerados fiables, con un alcance tonal más conservador que el rango completo de la secuencia.
+
+El flujo `runVerified` compara una medición inicial con otra posterior a la corrección. Si la medición falla, es poco fiable o no alcanza la mejora mínima definida por el código (0,25 dB en la métrica interna), vuelve a aplicar el estado anterior y registra la decisión. El historial se limita a los 50 registros más recientes.
+
+**Límites:** el micrófono integrado de un teléfono no es un instrumento calibrado; la posición del teléfono, el volumen, el ruido, la sala y la salida utilizada afectan los resultados. Esta métrica interna no demuestra por sí sola una mejora perceptible para todas las personas ni sustituye una medición acústica de laboratorio.
+
+</details>
+
+<details open>
+<summary><strong>Renderizador geométrico 3D</strong></summary>
+
+El módulo nativo `SceneGeometryRenderer` dibuja una representación geométrica de la sala, la posición del oyente y las fuentes definidas en `RoomGeometryConfig`. Puede generar una imagen PPM de hasta 3840 × 2160 píxeles; el tamaño de la imagen y las dimensiones de sala están acotados para limitar el consumo de memoria. La vista previa Android reduce la imagen para mostrarla con un uso de memoria más moderado, mientras conserva el archivo renderizado en el almacenamiento privado de la aplicación.
+
+**Qué significa y qué no:** es un renderizador geométrico real, pero la salida actual representa la configuración geométrica proporcionada. No debe interpretarse como un escaneo automático de una habitación, una reconstrucción física obtenida de CSI Wi-Fi ni una simulación acústica validada.
+
+</details>
+
+<details open>
+<summary><strong>Wi-Fi como indicio de contexto</strong></summary>
+
+La política de adaptación separa las observaciones de radio de las decisiones del procesador de audio: una variación Wi-Fi puede solicitar una nueva medición acústica, pero no autoriza directamente un cambio de DSP. Las API Wi-Fi estándar y Wi-Fi RTT no equivalen a CSI real.
+
+La adquisición CSI depende de un proveedor compatible y de hardware y permisos específicos. **No se afirma compatibilidad CSI universal, detección fiable de ocupación en cualquier dispositivo ni reconstrucción anatómica.** La privacidad y el consentimiento deben mantenerse como condiciones explícitas para las funciones de sensado.
+
+</details>
+
+## Cómo encajan las piezas
+
+```mermaid
+flowchart TD
+    UI["Aplicación Android<br/>Kotlin / Compose"] --> JNI["Puente JNI"]
+    JNI --> DSP["Motor nativo<br/>C++20 / DSP"]
+    UI --> MEASURE["Medición de sala<br/>captura + tonos"]
+    MEASURE --> ANALYSIS["Análisis de señal<br/>niveles, ruido y retardo"]
+    ANALYSIS --> VERIFY["Verificación antes/después"]
+    VERIFY -->|mejora suficiente| APPLY["Aceptar corrección"]
+    VERIFY -->|fallo o mejora insuficiente| ROLLBACK["Restaurar estado anterior"]
+    VERIFY --> AUDIT["Registro acotado de decisiones"]
+    UI --> GEOMETRY["Configuración geométrica"]
+    GEOMETRY --> RENDER["Renderizador nativo<br/>PPM hasta 4K"]
+    WIFI["Indicios Wi-Fi disponibles"] --> POLICY["Política conservadora"]
+    POLICY -->|solo solicita| MEASURE
+```
+
+El diagrama describe el diseño de los componentes presentes; no implica que toda función avanzada esté disponible en cualquier dispositivo o que cada ruta se haya probado físicamente.
+
+## Estado de implementación y verificación
+
+| Área | Qué podemos afirmar | Qué falta comprobar |
+|---|---|---|
+| Código del proyecto | Los módulos descritos están presentes en el repositorio. | Revisar cada ruta de ejecución y sus dependencias en la versión que se vaya a distribuir. |
+| Renderizador geométrico | Existe un renderizador nativo con límites de dimensiones y memoria, además de una vista previa Android. | Rendimiento, consumo y visualización en distintos dispositivos reales. |
+| Medición y reversión | El código implementa medición inicial, aplicación, segunda medición, criterio de aceptación, restauración y registro. | Pruebas físicas repetidas con distintos teléfonos, salas y salidas de audio. |
+| Wi-Fi/CSI | Hay detección conservadora de capacidades y una política que no cambia DSP directamente. | Proveedor CSI real y compatible, adquisición fiable e integración completa con hardware concreto. |
+| APK y módulo Magisk | La CI contiene pasos para compilar y comprobar artefactos. | La entrega debe corresponder al último commit, superar CI y las pruebas y verificarse por hash e instalación. |
+| Calidad audible | El código y las pruebas pueden verificar comportamientos técnicos concretos. | Cualquier afirmación de mejora audible requiere pruebas A/B controladas y, cuando corresponda, medición independiente. |
+
+### Estado de la compilación
+
+El estado actualizado se muestra en el distintivo **CI** de la parte superior y en [GitHub Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions). No se fija en el README un número de pruebas aprobadas ni una promesa de compilación exitosa: esos datos deben venir de una ejecución real y del commit correspondiente.
+
+Los paquetes de [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) pueden incluir borradores o artefactos de commits anteriores. Antes de instalar un APK o ZIP, comprueba su SHA/commit de origen y que sea la versión que quieres probar. Un archivo existente no prueba que proceda del último código.
+
+## Empezar
+
+### Requisitos
+
+- Android Studio y JDK 17 para el proyecto Android.
+- Android SDK 35 y NDK 26.1.10909125, según la configuración del proyecto.
+- CMake 3.22.1 y Gradle Wrapper del repositorio.
+- Node.js 22 y npm para compilar el paquete web FotoHolo integrado.
+- Un entorno Linux compatible con los comandos de CI para reproducir la suite nativa completa.
+
+### Compilar y probar
+
+Clona el repositorio:
+
+```bash
+git clone https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
+cd IVANNA-OMEGA-SUPREME
+```
+
+Ejecuta las pruebas nativas en el host:
+
+```bash
+cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
+cmake --build build-tests -j4
+ctest --test-dir build-tests --output-on-failure
+```
+
+Ejecuta las comprobaciones estáticas disponibles:
+
+```bash
+for s in scripts/check_*.py; do python3 "$s" || exit 1; done
+```
+
+Para reproducir la compilación Android, consulta el flujo de CI y usa el Gradle Wrapper del repositorio. La CI también prepara el paquete web FotoHolo antes de incorporarlo a los assets. **No se debe declarar una compilación válida hasta que los comandos terminen con código cero y se inspeccionen los artefactos resultantes.**
+
+## Cómo revisar una entrega
+
+Antes de distribuir una nueva versión, comprueba:
+
+1. El SHA exacto de `main` que se está compilando.
+2. El resultado de CI y de CTest para ese mismo SHA.
+3. Que el APK y el ZIP Magisk se hayan generado en esa ejecución, no copiado de una compilación anterior.
+4. La arquitectura de los binarios nativos, los hashes SHA-256 y el contenido del ZIP.
+5. La instalación, el arranque, los permisos y las funciones clave en un dispositivo compatible.
+6. El funcionamiento de la reversión ante mediciones fallidas o resultados insuficientes.
+7. Los límites y errores visibles para el usuario, sin telemetría inventada.
+
+Consulta [`docs/ENGINEERING.md`](docs/ENGINEERING.md) para el resumen técnico y [`CHANGELOG.md`](CHANGELOG.md) para el historial de cambios. El changelog contiene anotaciones históricas: cuando una nota y una prueba reciente discrepen, prevalecen el código actual y los resultados reproducibles de la ejecución pertinente.
+
+## Privacidad y seguridad
+
+- Solicita solo los permisos necesarios y explica por qué se requieren.
+- Las mediciones de sala necesitan acceso al micrófono y deben ser iniciadas de forma consciente por la persona usuaria.
+- No conviertas RSSI, Wi-Fi RTT o datos incompletos en afirmaciones de CSI o reconstrucción espacial.
+- No afirmes identificación biométrica ni reconstrucción anatómica.
+- La restauración automática de una corrección de audio no sustituye límites de seguridad del sistema, pruebas de permisos ni validación de todos los modos de fallo.
+- Revisa las licencias de datasets, modelos y dependencias antes de redistribuirlos; consulta `LICENSE` y `NOTICE`.
+
+## Contribuir y reportar problemas
+
+Las contribuciones útiles incluyen informes reproducibles, pruebas de regresión, documentación de dispositivos y mejoras que mantengan la separación entre medición, decisión y aplicación.
+
+Al abrir un issue, indica si puedes:
+
+- reproducirlo en el último commit o en una versión publicada;
+- compartir modelo de dispositivo, versión Android, ruta de audio y pasos de reproducción;
+- adjuntar logs sin datos personales ni grabaciones privadas;
+- distinguir un resultado medido de una impresión subjetiva.
+
+[Crear un issue](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) · [Consultar cambios](CHANGELOG.md) · [Ver código](app/src/main/cpp/)
+
+## Licencia, autoría y alcance
+
+El repositorio declara la licencia Apache-2.0; revisa también `NOTICE` y las licencias individuales de los recursos incluidos. El proyecto está desarrollado por **Luis Uriel Pimentel Pérez (GORE TNS)**. Para colaboración, revisión técnica o consultas de licencia, utiliza los canales del repositorio.
+
+La aspiración de este proyecto es que cada afirmación importante pueda rastrearse hasta código, pruebas o mediciones. **No se promete superioridad sonora universal, latencia cero ni compatibilidad universal: se documentan mecanismos, resultados verificables y trabajo pendiente.**

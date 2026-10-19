@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.68
-versionCode=359
+version=v2.5.74
+versionCode=365
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.68 (sincronizacion documental honesta y read-back del ancho espacial VERIFICADO en host: README/LEAME/CHANGELOG alineados al conteo real de CTest; contrato del read-back de Fotoholografia extraido y probado sobre v2.5.67 (4D en Ruta B, HRTF alineada en el tiempo y Fotoholografia con read-back nativo)
+description=v2.5.74 (FotoHolo: consentimiento explícito y detección conservadora de capacidades Wi-Fi)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

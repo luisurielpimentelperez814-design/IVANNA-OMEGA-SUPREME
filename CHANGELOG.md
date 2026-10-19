@@ -1,3 +1,53 @@
+# CHANGELOG — v2.5.74 (365) — FotoHolo: consentimiento y detección conservadora de capacidades
+
+1. **Consentimiento explícito de primer inicio:** opciones separadas y desactivadas por defecto para calibración acústica, red local, Wi-Fi sensing, geometría y DSP adaptativo.
+2. **Detección de capacidades Wi-Fi Android:** nueva sonda conservadora que distingue API Wi-Fi estándar y Wi-Fi RTT de CSI real; no inicia escaneos, no inventa datos ni presenta RSSI como reconstrucción espacial.
+3. **Compatibilidad por niveles:** en hardware sin proveedor CSI verificado, el sistema debe indicar que CSI no está disponible y reservar funciones avanzadas para un adaptador compatible probado. La compatibilidad universal no se puede garantizar desde las APIs públicas de Android.
+4. **Privacidad:** medición voluntaria y visible, estimaciones con incertidumbre y consentimiento de las personas potencialmente detectables; no se habilita identificación biométrica ni reconstrucción anatómica detallada.
+5. **Estado de entrega:** esta versión incorpora el onboarding y la sonda de capacidades; adquisición CSI real, integración con todos los consumidores, revocación en Ajustes y validación física siguen siendo trabajo pendiente y no se anuncian como terminados.
+
+
+1. **Ataques musicales:** la señal `flux` de las 64 bandas Bark ya no queda solo como telemetría. Atenúa hasta un 35 % la corrección de anchura durante transitorios fuertes, preservando la dirección de la adaptación y el límite de ±`MAX_OFFSET`. La intención es reducir movimientos espaciales innecesarios en ataques de percusión y consonantes; la preferencia final debe comprobarse con A/B igualado en sonoridad.
+2. **Telemetría del motor actualizada:** tras una escritura aceptada, el ancho efectivo del DSP se vuelve a leer en cada tick de control, porque el recorte térmico puede cambiar aunque el comando solicitado permanezca igual. Si el read-back falla, la UI recibe `NaN` en lugar de tratar un valor antiguo como confirmación actual.
+3. **Regresión:** pruebas para la atenuación de transitorios, conservación del sentido de la corrección y `flux` no finito.
+
+**Estado:** versión propuesta para PR #67. El build y los tests deben pasar antes de fusionar; el release v2.5.73 se publicará desde `main` tras la fusión. El release publicado v2.5.72 apunta a un commit anterior y no incluye los cambios posteriores de PR #66 ni esta refinación. Sin prueba física, esto es una mejora de control verificada por pruebas de lógica, no una afirmación de superioridad audible.
+
+---
+
+# CHANGELOG — v2.5.72 (363) — Lector SOFA/HDF5 real (verificado contra h5py), aún sin conectar a la reproducción
+
+1. **`spatial/sofa/Hdf5File.kt` + `SofaReader.kt` (nuevos, solo JDK, sin dependencias):** lee el `.sofa` de verdad — superbloque v0–v3, cabeceras de objeto v1/v2 con continuaciones, grupos por tabla de símbolos y por enlaces (incluido el almacenamiento DENSO: B-tree v2 de cualquier profundidad + heap fractal con raíz directa o indirecta), datasets compactos/contiguos/troceados (layout v3, B-tree v1) con filtros shuffle/deflate/fletcher32 y atributos de cadena. Lo no soportado lanza `Hdf5FormatException` con el motivo; nunca devuelve datos inventados.
+2. **Verificado contra una implementación independiente, no contra sí mismo:** los valores de referencia salen de h5py/libhdf5. De los 216 `.sofa` de `app/src/main/assets/sofa`, **212 HRIR salen idénticas a h5py** (forma, frecuencia de muestreo, suma de toda la IR y de las posiciones) y **4 SOS sin `Data.IR` se rechazan** con mensaje claro. 8 tests JVM: archivo v0, v2, auriculares con `SourcePosition` 1×3 y atributos densos, el mayor del proyecto (10 MB, 360×2×2048), barrido de los 216, no-HDF5 y truncado.
+3. **Lo que NO cambia:** la reproducción. El IR que suena sigue reconstruyéndose desde la base maestra SOFA-PCA. Conectar este lector a la ruta de audio (selección de la medición más cercana, remuestreo, normalización de nivel, A/B contra la reconstrucción PCA) es el siguiente paso y no se hace sin medir en el dispositivo. README/LÉAME lo dicen así.
+4. **Bug propio descubierto por el barrido:** mi primera validación exigía `SourcePosition` M×3 y rechazaba 200 archivos de auriculares (1×3 según SOFA); ahora se acepta 1×3 y se normaliza a M×3.
+
+**No verificado aquí:** compilación en Android (CI) y uso en el teléfono. Es código nuevo no usado por la app, por lo que no cambia el sonido todavía.
+
+# CHANGELOG — v2.5.71 (362) — La vuelta completa del bucle de audio se mide y, bajo presión, solo se decima lo visual
+
+1. **Hueco encontrado:** `AudioThreadBudgetGuard` cronometra captura→DSP→salida (el «DSP 79 %» de la telemetría), pero tras escribir al AudioTrack el bucle aún alimenta visualizadores, analizadores y medidores ANTES de la siguiente lectura. Ese tramo no se medía. Además `AudioThreadBudgetGuard.canExecute()` no se llama desde ningún sitio: la «degradación controlada» que describe su documentación no estaba conectada.
+2. **`LoopLoadGovernor` (nuevo, lógica pura, 8 tests JVM):** mide la vuelta COMPLETA frente al periodo del bloque (6,67 ms) con EMA y pide ejecutar los análisis visuales cada 1, 2 o 4 bloques (umbrales 55 % / 75 %, con histéresis de 8 puntos; un pico aislado, p. ej. un GC, se acota y no cambia el paso — el test lo detectó antes de integrarlo).
+3. **`PlaybackCaptureService`:** `IvannaVisualizerBridge`, `…V2` y `…Bark64` se deciman SOLO bajo presión. El DSP, el limitador, la escritura al AudioTrack, el clasificador de voz y el medidor de laboratorio NO se tocan. Con carga normal el comportamiento es idéntico al anterior. Cada cambio de paso queda en logcat (`CaptureEngine`: «Carga de la vuelta del bucle…»).
+
+**No verificado aquí:** compilación Android (CI) ni cuánto baja la carga o los underruns en un Moto G85. Para comprobarlo: `adb logcat -s CaptureEngine` durante 5 min de música; si nunca aparece el aviso, la carga estaba por debajo de 55 % y este cambio no hace nada (es lo esperado con carga sana).
+
+# CHANGELOG — v2.5.70 (361) — Colchón de salida de la Ruta A: ataca los underruns/micro-cortes de raíz
+
+1. **Causa encontrada leyendo el bucle de captura (no medida en el teléfono):** el `AudioTrack` arrancaba VACÍO y se alimentaba 1 bloque por bloque capturado, así que la cola real era ~1 bloque (6,7 ms a 320 frames). Cualquier retraso del hilo > 6,7 ms (GC, planificador, decodificador de vídeo) la vaciaba → underrun del HAL → micro-corte. `targetHeadroomFrames` (20 ms) se calculaba pero nada llevaba la cola hasta él, y `MasterTimingController.applyMicroExtension` no se invoca desde ningún sitio.
+2. **`OutputCushionPolicy` (nuevo, lógica pura, 10 tests JVM):** colchón = headroom objetivo acotado a «pista − 2 bloques» (nunca bloquea `WRITE_BLOCKING`); re-llenado SOLO tras un underrun nuevo, con la cola < ½ colchón y con cooldown de 750 ms (una racha de underruns no puede inflar la latencia). Escribe únicamente lo que falta.
+3. **`PlaybackCaptureService`:** la pista se pre-llena con silencio antes de `play()`. Con la reinyección diferencial (`LEGACY_HAAS_MIX=false`) por la pista solo va `procesado − seco`, así que el silencio es la señal neutra: no mete clics ni cambia el timbre; el reinyector ya alinea con la latencia MEDIDA, por lo que no hay peine.
+4. **Mientras hay vídeo la pista ya no se queda sin escribir:** antes quedaba a volumen 0 pero sin datos, y el HAL contaba un underrun por ciclo de mezcla; ahora se alimenta con ceros (mismo silencio, cola lista al reanudar).
+5. **Contador de frames escritos reiniciado** al crear la pista: arrastraba el de la sesión anterior y medía una latencia falsa enorme (disparaba un resync de 1,5 s).
+
+**No verificado aquí:** compilación Kotlin Android/APK (la cubre el CI) y, sobre todo, **que los underruns bajen en un Moto G85**. Cómo comprobarlo: abrir Telemetría, dejar sonar 5 min un tema real y comparar «Underruns Reales HAL» con la versión anterior; `adb logcat -s CaptureEngine` muestra `Colchon de salida` al arrancar y `Colchon repuesto` si aún ocurren. El coste es más latencia de la rama procesada (≈13–20 ms) a cambio de estabilidad.
+
+# CHANGELOG — v2.5.69 (360) — Modelo Anti-Dolby CRNN TFLite íntegro y sincronización de release
+
+1. **Modelo Anti-Dolby CRNN TFLite restaurado e íntegro (`app/src/main/assets/anti_dolby_crnn.tflite`):** la versión histórica del modelo estaba corrupta con 45 552 secuencias U+FFFD (conversión de texto errónea) impidiendo la carga del intérprete en Android. Se regeneró y entrenó un modelo CRNN ligero nativo respetando el contrato estricto del pipeline (`[1, 32, 40, 1]` log-mel spectrogram -> `[1, 4]` softmax: Voz, Música, Bajos, Silencio) con 0 bytes de corrupción y ops TFLite estándar sin dependencias Flex.
+2. **Compuerta 0.6 libre de anomalías (`scripts/check_datasets_deploy.py`):** `anti_dolby_crnn.tflite` pasa la verificación con 0 secuencias de corrupción U+FFFD; se retira de la lista de conocidos y todos los 435 binarios pasan limpios.
+3. **Sincronización de release v2.5.69:** `version.properties` (2.5.69 / 360), `magisk_module/module.prop` y `magisk_module/update.json` actualizados al nombre canónico del release (`ivanna_omega_supreme_v2.5.69.zip`) para desbloquear la publicación en CI ante la inmutabilidad de v2.5.68.
+
 # CHANGELOG — v2.5.68 (359) — Sincronización documental honesta + read-back del ancho espacial VERIFICADO en host
 
 1. **Read-back del ancho espacial extraído y probado (nuevo):** la fórmula que alimenta `nativeGetSpatialWidthDirect` (`clamp(base × escalaTérmica, 0, 2)`) vivía SOLO dentro de `ivanna_omega_jni.cpp`, que no se compila en host (necesita jni.h/AudioFlinger). Por eso el contrato del que depende `FotoHoloEngine.readbackConfirmed` no tenía NINGUNA prueba. Se extrae a `supreme/SpatialWidthReadback.hpp` (función pura, sin dependencias), el JNI usa exactamente esa función y 8 pruebas de host lo verifican: identidad sin recorte, el recorte térmico SOLO reduce, acotado a [0, 2], monotonía y entradas no finitas seguras.

@@ -144,6 +144,107 @@ object RoomMeasurement {
         analyze(rec)
     }
 
+
+    sealed class VerifiedOutcome {
+        data class Success(val gainsDb: FloatArray, val latencyMs: Int, val beforeErrorDb: Float,
+                           val afterErrorDb: Float, val decisionId: Long) : VerifiedOutcome()
+        data class Failure(val reason: String, val rolledBack: Boolean, val decisionId: Long) : VerifiedOutcome()
+    }
+
+    private var nextDecisionId = 1L
+
+    private fun auditDecision(context: Context, id: Long, decision: String, reason: String,
+                              beforeDb: Float? = null, afterDb: Float? = null, rolledBack: Boolean) {
+        runCatching {
+            val prefs = context.getSharedPreferences("ivanna_agent_audit", Context.MODE_PRIVATE)
+            val old = runCatching { org.json.JSONArray(prefs.getString("records", "[]")) }.getOrElse { org.json.JSONArray() }
+            val entry = org.json.JSONObject()
+                .put("id", id).put("timeUtcMs", System.currentTimeMillis())
+                .put("decision", decision).put("reason", reason).put("rolledBack", rolledBack)
+            if (beforeDb != null && beforeDb.isFinite()) entry.put("beforeErrorDb", beforeDb.toDouble())
+            if (afterDb != null && afterDb.isFinite()) entry.put("afterErrorDb", afterDb.toDouble())
+            old.put(entry)
+            val bounded = org.json.JSONArray()
+            for (i in (old.length() - 50).coerceAtLeast(0) until old.length()) bounded.put(old.getJSONObject(i))
+            prefs.edit().putString("records", bounded.toString()).apply()
+        }
+    }
+
+    /**
+     * Ciclo cerrado real: mide sin corrección, aplica el perfil propuesto, vuelve a medir y compara.
+     * La aplicación/rollback se delega a la API nativa existente. Nunca persiste el perfil aquí.
+     * Ejecutar desde una corrutina de trabajo; cada transacción puede durar hasta ~70 s.
+     */
+    suspend fun runVerified(
+        context: Context,
+        previousGains: FloatArray?,
+        previousEnabled: Boolean,
+        applyCorrection: (FloatArray?, Boolean) -> Unit,
+        onProgress: (Float) -> Unit
+    ): VerifiedOutcome {
+        val id = synchronized(this) { nextDecisionId++ }
+        applyCorrection(null, false)
+        kotlinx.coroutines.delay(800)
+        val baseline = when (val result = run(context) { onProgress(it * 0.45f) }) {
+            is Outcome.Success -> result
+            is Outcome.Failure -> {
+                applyCorrection(previousGains, previousEnabled)
+                auditDecision(context, id, "ROLLED_BACK", "baseline:${result.reason}", rolledBack = true)
+                return VerifiedOutcome.Failure("baseline:${result.reason}", true, id)
+            }
+        }
+        val beforeError = profileError(baseline.levelsDb, baseline.snrDb)
+        if (!beforeError.isFinite()) {
+            applyCorrection(previousGains, previousEnabled)
+            auditDecision(context, id, "ROLLED_BACK", "baseline_profile_unreliable", beforeDb = beforeError, rolledBack = true)
+            return VerifiedOutcome.Failure("baseline_profile_unreliable", true, id)
+        }
+        applyCorrection(baseline.gainsDb, true)
+        kotlinx.coroutines.delay(800)
+        val verified = when (val result = run(context) { onProgress(0.45f + it * 0.55f) }) {
+            is Outcome.Success -> result
+            is Outcome.Failure -> {
+                applyCorrection(previousGains, previousEnabled)
+                auditDecision(context, id, "ROLLED_BACK", "verification:${result.reason}", beforeDb = beforeError, rolledBack = true)
+                return VerifiedOutcome.Failure("verification:${result.reason}", true, id)
+            }
+        }
+        val afterError = profileError(verified.levelsDb, verified.snrDb)
+        // Reject unstable/weak measurements and revert if the measured profile did not improve.
+        if (!afterError.isFinite() || beforeError - afterError < 0.25f) {
+            applyCorrection(previousGains, previousEnabled)
+            val reason = if (!afterError.isFinite()) "verification_profile_unreliable"
+                else "no_verified_improvement: before=${"%.2f".format(java.util.Locale.ROOT, beforeError)}dB after=${"%.2f".format(java.util.Locale.ROOT, afterError)}dB"
+            auditDecision(context, id, "ROLLED_BACK", reason, beforeError, afterError, true)
+            return VerifiedOutcome.Failure(reason, true, id)
+        }
+        auditDecision(context, id, "COMMITTED", "verified_improvement", beforeError, afterError, false)
+        return VerifiedOutcome.Success(baseline.gainsDb, baseline.latencyMs, beforeError, afterError, id)
+    }
+
+    /** RMS residual from the 250 Hz–2 kHz reference, only reliable points between 50 Hz and 6 kHz. */
+    internal fun profileError(levels: FloatArray, snr: FloatArray): Float {
+        if (levels.size != POINTS || snr.size != POINTS) return Float.NaN
+        var refSum = 0.0; var refN = 0
+        for (i in 0 until POINTS) {
+            val hz = probeHz(i)
+            if (hz in 250f..2000f && levels[i].isFinite() && snr[i].isFinite() && snr[i] >= 10f) {
+                refSum += levels[i]; refN++
+            }
+        }
+        if (refN < 3) return Float.NaN
+        val reference = (refSum / refN).toFloat()
+        var sumSq = 0.0; var n = 0
+        for (i in 0 until POINTS) {
+            val hz = probeHz(i)
+            if (hz in 50f..6000f && levels[i].isFinite() && snr[i].isFinite() && snr[i] >= 10f) {
+                val d = levels[i] - reference
+                sumSq += d * d; n++
+            }
+        }
+        return if (n >= 5) kotlin.math.sqrt(sumSq / n).toFloat() else Float.NaN
+    }
+
     /** Análisis puro de la grabación (separado para poder revisarlo/probarlo): latencia, ruido, niveles, diseño. */
     internal fun analyze(rec: FloatArray): Outcome {
         var peak = 0f

@@ -58,6 +58,27 @@ class FotoHoloMathTest {
         assertEquals(0.9f, FotoHoloMath.targetWidth(0.9f, 1f, FotoHoloFeatures.NONE), 0f)
     }
 
+    @Test fun `los transitorios fuertes atenúan la corrección de anchura sin invertirla`() {
+        val quiet = bands { 0.05f }
+        val steadyHigh = FotoHoloMath.features(highHeavy, null)
+        val attackHigh = FotoHoloMath.features(highHeavy, quiet)
+        val steadyWidth = FotoHoloMath.targetWidth(0.7f, 1f, steadyHigh)
+        val attackWidth = FotoHoloMath.targetWidth(0.7f, 1f, attackHigh)
+
+        assertTrue(attackHigh.flux > 0.3f)
+        assertTrue(steadyWidth > attackWidth)
+        assertTrue(attackWidth > 0.7f)
+        assertTrue(attackWidth - 0.7f <= steadyWidth - 0.7f)
+        assertTrue(steadyWidth - 0.7f <= FotoHoloMath.MAX_OFFSET + 1e-6f)
+    }
+
+    @Test fun `flux no finito no contamina el objetivo`() {
+        val features = FotoHoloMath.features(highHeavy, null).copy(flux = Float.NaN)
+        val width = FotoHoloMath.targetWidth(0.7f, 1f, features)
+        assertEquals(0.7f + FotoHoloMath.MAX_OFFSET *
+            (features.highShare - features.lowShare), width, 1e-5f)
+    }
+
     @Test fun `nunca supera el techo ni baja de cero y respeta una base del usuario mayor al techo`() {
         val hi = FotoHoloMath.features(highHeavy, null)
         assertTrue(FotoHoloMath.targetWidth(1.19f, 1f, hi) <= FotoHoloMath.WIDTH_CEIL + 1e-6f)

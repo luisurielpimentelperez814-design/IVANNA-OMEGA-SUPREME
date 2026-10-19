@@ -327,6 +327,14 @@ arreglado con ataque instantáneo/release en rampa, no una rampa
 simétrica ingenua — la protección real no se puede debilitar por
 suavidad).
 
+**Continuación dirigida por el propietario (2026-10-18, PR #66; validación CI pendiente):**
+- Se amplió el prompt de `IvannaGeminiAgent`: música/audio como prioridad, pero conversación amplia en otras materias; honestidad explícita sobre actualidad, ejecución DSP y límites de conexión.
+- El prompt ahora inyecta hasta 12 turnos recientes con límites por mensaje. Las respuestas abiertas del LLM se guardan en `IvannaConversationalCore`, para que el historial realmente alimente la siguiente consulta.
+- Las entradas que el clasificador local no reconoce pasan a `GENERAL_CHAT` (sin generar por sí mismas comandos DSP); se ampliaron las señales para seleccionar razonamiento profundo en preguntas de conocimiento y análisis musical.
+- La política autónoma musical consume preferencias de volumen, calidez/detalle y espacialidad. Se corrigió la histeresis para comparar todos los knobs; si cambia una preferencia aunque se conserve el nombre de política, los nuevos parámetros vuelven a enviarse.
+- Pruebas nuevas: políticas musicales neutras/preferencias/clipping/silencio; clasificación de conversación amplia; selección de razonamiento profundo y saludo FAST. No declararlas verdes hasta que CI compile y ejecute la suite.
+- La política actual no controla graves mediante este canal: no se debe afirmar que esa preferencia ya está aplicada por el agente autónomo hasta conectar y verificar un control de graves real.
+
 **Criterio de "terminado, world-class" (no cerrar antes de esto):**
 1. Cada etapa de la cadena compila para el target real, de forma
    consistente, no solo "a veces".
@@ -2636,3 +2644,10 @@ Alcance honesto: solo Ruta A (cadena de la app); Ruta B no tiene el arco. Apagad
 Calibrado con el extractor real (la señal fiable del pulso es `subBandRatio`); no hay medición con música real ni escucha en dispositivo.
 Kotlin no compilado en la sesión (sin SDK Android): cubierto por las compuertas estáticas y por el CI.
 NOTA PARA OTROS AGENTES: no dupliques el arco; el siguiente paso útil es llevarlo a Ruta B (palabra de flags del daemon) y medirlo en el equipo.
+
+### INTEGRIDAD DE ASSETS BINARIOS (sesión Claude, 2026-10-18) — ENTREGADO
+Hallazgo: 216 `.sofa` de `assets/sofa/`, `anti_dolby_crnn.tflite` y `assets/saf/pca_basis_V.bin` tenían cada byte >= 0x80 sustituido por
+U+FFFD (conversión de texto UTF-8). Recuperado: 216 `.sofa` (208 del historial git, 8 de la copia sana de `assets/ivanna_omega/sofa`; los 694
+`.sofa` pasan firma + EOF del superbloque + checksum lookup3 con `scripts/hdf5_integrity.py`). Retirado: `pca_basis_V.bin` (huérfano, sin consumidores,
+medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.py`; el runtime usa `ivanna_omega/pca_basis.bin`, íntegro).
+**RESUELTO:** `anti_dolby_crnn.tflite` restaurado e íntegro (reentrenado con el pipeline canónico log-mel `[1,32,40,1]` y 4 clases: Voz, Música, Bajos, Silencio; 0 secuencias U+FFFD, ops TFLite estándar; la puerta 0.6 lo verifica al 100% sin excepciones).

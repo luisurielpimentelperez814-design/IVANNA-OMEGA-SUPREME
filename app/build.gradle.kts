@@ -153,10 +153,12 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 
     implementation("androidx.compose.ui:ui:1.6.0")
+    implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
     implementation("androidx.compose.material3:material3:1.2.0")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
@@ -204,6 +206,9 @@ dependencies {
     implementation("io.coil-kt:coil-video:2.5.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Required by IvannaMemoryArchitectureTest (Robolectric + ApplicationProvider).
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
 
 tasks.register("validateUnifiedVersion") {

@@ -13,6 +13,7 @@ import { ParameterControls } from './components/ParameterControls';
 import { usePersist } from './usePersist';
 import { IvannaVoicePanel } from './components/IvannaVoicePanel';
 import { AcousticRealityPanel } from './components/AcousticRealityPanel';
+import { FotoHolo3DGenerator } from './components/FotoHolo3DGenerator';
 
 // Code-splitting: estos dos tabs se cargan bajo demanda.
 // CodeExporter arrastra todas las fuentes C++ del DSP (imports ?raw) y
@@ -314,7 +315,10 @@ export default function App() {
           />
         )}
         {activeTab === 'reality_hyperengine' && (
-          <AcousticRealityPanel params={params} onParamChange={handleParamChange} />
+          <div className="space-y-6">
+            <FotoHolo3DGenerator params={params} onParamChange={handleParamChange} />
+            <AcousticRealityPanel params={params} onParamChange={handleParamChange} />
+          </div>
         )}
         {activeTab === 'tinyml' && (
           <TinyMlClassifierPanel params={params} classification={classification} onParamChange={handleParamChange} />

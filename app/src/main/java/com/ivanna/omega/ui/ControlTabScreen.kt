@@ -1,6 +1,9 @@
 package com.ivanna.omega.ui
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +67,16 @@ fun ControlTabScreen(
     var roomProgress by remember { mutableStateOf(0f) }
     var roomStatus by remember { mutableStateOf("") }
     val roomScope = rememberCoroutineScope()
+    // Canal conflado: los cambios rápidos del slider conservan solo el último
+    // estado y el socket del daemon nunca bloquea el hilo de interfaz.
+    val perceptualCommands = remember { Channel<String>(Channel.CONFLATED) }
+    LaunchedEffect(perceptualCommands) {
+        for (command in perceptualCommands) {
+            withContext(Dispatchers.IO) {
+                runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand(command) }
+            }
+        }
+    }
     val applyRoom: (FloatArray?, Boolean) -> Unit = { g, en ->
         if (IvannaNativeLib.isLoaded)
             runCatching { IvannaNativeLib.nativeSetRoomCorrection(if (en && g != null) g else FloatArray(10)) }
@@ -73,22 +86,28 @@ fun ControlTabScreen(
             val prevGains = roomGains; val prevEnabled = roomEnabled
             roomBusy = true; roomProgress = 0f
             roomStatus = "Prepara: volumen cómodo, teléfono donde te sientas, sala en silencio."
-            applyRoom(null, false)                                   // se mide la sala SIN la corrección anterior
-            kotlinx.coroutines.delay(800)
-            when (val out = com.ivanna.omega.audio.RoomMeasurement.run(context) { roomProgress = it }) {
-                is com.ivanna.omega.audio.RoomMeasurement.Outcome.Success -> {
-                    paramStore.setRoomCorrection(out.gainsDb, true)
-                    runCatching { com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, out.latencyMs) }   // háptica con latencia real
-                    roomGains = out.gainsDb; roomEnabled = true
-                    applyRoom(out.gainsDb, true)
-                    roomStatus = "Medición lista · retardo de la salida medido: ${out.latencyMs} ms"
+            try {
+                when (val out = com.ivanna.omega.audio.RoomMeasurement.runVerified(
+                    context, prevGains, prevEnabled, applyRoom
+                ) { roomProgress = it }) {
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Success -> {
+                        paramStore.setRoomCorrection(out.gainsDb, true)
+                        runCatching { com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, out.latencyMs) }
+                        roomGains = out.gainsDb; roomEnabled = true
+                        applyRoom(out.gainsDb, true)
+                        roomStatus = "Verificado · error tonal ${"%.2f".format(java.util.Locale.ROOT, out.beforeErrorDb)} → ${"%.2f".format(java.util.Locale.ROOT, out.afterErrorDb)} dB · decisión #${out.decisionId}"
+                    }
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Failure -> {
+                        applyRoom(prevGains, prevEnabled)
+                        roomStatus = "Reversión automática · ${out.reason} · decisión #${out.decisionId}"
+                    }
                 }
-                is com.ivanna.omega.audio.RoomMeasurement.Outcome.Failure -> {
-                    applyRoom(prevGains, prevEnabled)                // vuelve a como estaba
-                    roomStatus = out.reason
-                }
+            } catch (t: Throwable) {
+                applyRoom(prevGains, prevEnabled)
+                roomStatus = "Falló la calibración; se restauró el perfil previo: ${t.message ?: "error desconocido"}"
+            } finally {
+                roomBusy = false
             }
-            roomBusy = false
         }
     }
     val micLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -326,13 +345,13 @@ fun ControlTabScreen(
             paramStore.setHoaUpmixingEnabled(enabled)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled) }
-            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (enabled) 1.0f else 0.0f}}") }
+            perceptualCommands.trySend("""{"action":"SET_PERCEPTUAL_STATE","upmixingEnabled":${if (enabled) 1.0f else 0.0f}}""")
         },
         onHoaImmersivityChange = { v ->
             paramStore.setHoaImmersivity(v)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(v.coerceIn(0f, 2f)) }
-            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingImmersivity\":${v.coerceIn(0f, 2f)}}") }
+            perceptualCommands.trySend("""{"action":"SET_PERCEPTUAL_STATE","upmixingImmersivity":${v.coerceIn(0f, 2f)}}""")
         },
 
         // ── Wave Field Synthesis — mismo patrón que Upmixing (persist + JNI + daemon),

@@ -9,13 +9,34 @@ ui_print " "
 
 SKIPUNZIP=0
 
+# El propio instalador y los helpers de permisos recursivos heredan esta prioridad
+# reducida. Así también se suaviza el trabajo de metadatos, no solo los cp.
+if command -v renice >/dev/null 2>&1; then
+    renice -n 5 -p $ >/dev/null 2>&1 || true
+fi
+if command -v ionice >/dev/null 2>&1; then
+    ionice -c 3 -p $ >/dev/null 2>&1 || true
+fi
+
+# La instalación despliega cientos de MB de datasets. Reducir prioridad de CPU
+# y, cuando el kernel lo permita, de I/O para que el instalador no compita tanto
+# con la interfaz del teléfono. No se envía el trabajo al fondo: Magisk debe
+# esperar a que termine la copia y la validación antes de declarar éxito.
+run_low_priority() {
+    if command -v ionice >/dev/null 2>&1 && ionice -c 3 true >/dev/null 2>&1; then
+        ionice -c 3 nice -n 10 "$@"
+    else
+        nice -n 10 "$@"
+    fi
+}
+
 # ── SAF model deployment ──────────────────────────────────────────────────────
 SAF_DIR="/data/adb/ivanna_omega"
 ui_print "- Deploying Φ_SAF^∞ SAF_model.json..."
 mkdir -p "$SAF_DIR"
 
 if [ -f "$MODPATH/saf/SAF_model.json" ]; then
-    cp -f "$MODPATH/saf/SAF_model.json" "$SAF_DIR/SAF_model.json"
+    run_low_priority cp -f "$MODPATH/saf/SAF_model.json" "$SAF_DIR/SAF_model.json"
     set_perm "$SAF_DIR/SAF_model.json" root root 0644
     ui_print "  ✓ SAF_model.json → $SAF_DIR (214 subjects, K=7)"
 else
@@ -42,8 +63,8 @@ RIR_SRC="$MODPATH/system/etc/ivanna_omega/rir"
 RIR_DEST="$SAF_DIR/rir"
 if [ -d "$RIR_SRC" ] && [ -f "$RIR_SRC/metadata.csv" ]; then
     mkdir -p "$RIR_DEST"
-    cp -f "$RIR_SRC"/*.wav "$RIR_DEST/" 2>/dev/null
-    cp -f "$RIR_SRC/metadata.csv" "$RIR_DEST/metadata.csv"
+    run_low_priority cp -f "$RIR_SRC"/*.wav "$RIR_DEST/" 2>/dev/null
+    run_low_priority cp -f "$RIR_SRC/metadata.csv" "$RIR_DEST/metadata.csv"
     set_perm_recursive "$RIR_DEST" root root 0755 0644
     RIR_COUNT=$(ls "$RIR_DEST"/*.wav 2>/dev/null | wc -l)
     ui_print "  ✓ RIR dataset → $RIR_DEST (${RIR_COUNT} salas)"
@@ -58,14 +79,14 @@ HRTF_DST="/data/adb/ivanna_omega/hrtf"
 if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
     ui_print "- Deploying HRTF datasets (IHR1, 12 subjects)..."
     mkdir -p "$HRTF_DST"
-    cp -f "$HRTF_SRC"/*.ihr1 "$HRTF_SRC/hrtf_index.json" "$HRTF_DST/" 2>/dev/null
+    run_low_priority cp -f "$HRTF_SRC"/*.ihr1 "$HRTF_SRC/hrtf_index.json" "$HRTF_DST/" 2>/dev/null
     # Validación por hash contra el índice — rollback si alguno no coincide
     HRTF_OK=1
     cd "$HRTF_DST" || { ui_print "  ! no se pudo entrar a $HRTF_DST — se descarta HRTF"; HRTF_OK=0; }
     for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1/'); do
         EXPECTED=$(grep -A6 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
         if [ -n "$EXPECTED" ] && [ -f "$F" ]; then
-            ACTUAL=$(sha256sum "$F" 2>/dev/null | awk '{print $1}')
+            ACTUAL=$(run_low_priority sha256sum "$F" 2>/dev/null | awk '{print $1}')
             [ "$ACTUAL" = "$EXPECTED" ] || { ui_print "  ! hash mismatch en $F — rollback"; HRTF_OK=0; break; }
         fi
     done
@@ -95,7 +116,7 @@ SOFA_SRC="$MODPATH/system/etc/ivanna_omega/sofa"
 SOFA_DEST="$SAF_DIR/sofa"
 if [ -d "$SOFA_SRC" ] && find "$SOFA_SRC" -name '*.sofa' | grep -q .; then
     mkdir -p "$SOFA_DEST"
-    cp -rf "$SOFA_SRC"/. "$SOFA_DEST/" 2>/dev/null
+    run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_DEST/" 2>/dev/null
     set_perm_recursive "$SOFA_DEST" root root 0755 0644
     SOFA_COUNT=$(find "$SOFA_DEST" -name '*.sofa' 2>/dev/null | wc -l)
     ARI_COUNT=$(find "$SOFA_DEST/ari" -name '*.sofa' 2>/dev/null | wc -l)

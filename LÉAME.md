@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.68 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
+<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME v2.5.69 — Luis Uriel Pimentel Pérez (GORE TNS)" width="100%" />
 
-# ⬡ IVANNA OMEGA SUPREME `v2.5.68` ⬡
+# ⬡ IVANNA OMEGA SUPREME `v2.5.69` ⬡
 
 ### Sistema Operativo de Supremacía Neuroacústica para Android — C++20 / NEON ARM64, Sincronía A/V Cero-Desfase en Cine & Streaming, `OmniHolographicSingularityEngine` en Lazo Cerrado, Guardia de Estabilidad $C^2$ Cero-Artefactos, Atlas de Escena Musical (`12 Estilos · IVW1 8 774 Parámetros`), 5 Ejes Cuántico-Neuromórficos + Inversión Coclear PINN (0 muestras de lookahead), Entrenamiento Conjunto 255-SOFA + 7D-SAF + 200-RIR desde $t = 0\text{ ms}$ (Root & Sin Root) y Asistente Cognitivo con Gemini 2.5 Flash
 
 *Arquitectura y Autoría Principal: **Luis Uriel Pimentel Pérez — GORE TNS***
 
-[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.68&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
-[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=CTEST%20402%2F402%20GREEN&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
-[![Version](https://img.shields.io/badge/Release-v2.5.68%20%28359%29-00F0FF?style=for-the-badge)](version.properties)
+[![Build](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&style=for-the-badge&logo=github&label=BUILD%20v2.5.69&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
+[![Tests host](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/tests-host.yml?branch=main&style=for-the-badge&logo=github&label=CTEST%20412%2F412%20GREEN&color=23F09A)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/tests-host.yml)
+[![Version](https://img.shields.io/badge/Release-v2.5.69%20%28360%29-00F0FF?style=for-the-badge)](version.properties)
 [![DSP](https://img.shields.io/badge/DSP-456%20Archivos%20C%2B%2B20%20%C2%B7%20NEON%20ARM64-6FF3FF?style=for-the-badge)](app/src/main/cpp/)
 [![Atlas](https://img.shields.io/badge/Atlas%20de%20Escena-12%20Estilos%20%C2%B7%208774%20Pesos%20IVW1-FF2E93?style=for-the-badge)](docs/ATLAS_ESCENA.md)
 [![SOFA-SAF-RIR](https://img.shields.io/badge/SOFA%20255%20%C2%B7%20SAF%207D%20%C2%B7%20RIR%20200-Trained%20Master-00E5FF?style=for-the-badge)](app/src/main/cpp/spatial/SofaSafRirMasterKnowledge.hpp)
@@ -19,12 +19,12 @@
 
 > 📖 Este archivo es el resumen ejecutivo en español de entrada rápida al proyecto. La documentación arquitectónica exhaustiva con diagramas matemáticos e infografías vectoriales se encuentra en **[README.md](README.md)**.
 
-> 🔎 **Estado verificado (2026-10-18):** tests host **406/406 (100 %)**. Honestidad de la ruta HRTF: el IR que suena se **reconstruye** desde la base maestra SOFA-PCA; el `.sofa` se valida por firma HDF5 pero **no se parsea en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`). Decodificación SOFA real: **pendiente**.
+> 🔎 **Estado verificado (2026-10-18):** tests host **412/412 (100 %)**. Honestidad de la ruta HRTF: el IR que suena se **reconstruye** desde la base maestra SOFA-PCA; el `.sofa` se valida por firma HDF5 pero **no se parsea en runtime** (`SofaHRTFLoader.hpp` → `VALID_NOT_PARSED`). Lector HDF5/SOFA en Kotlin (`spatial/sofa/`) verificado en host contra h5py en 212 de 212 HRIR, **aún sin conectar a la reproducción** (sigue sonando la reconstrucción PCA).
 
 
 ---
 
-## ✦ Resumen Ejecutivo (`v2.5.68`)
+## ✦ Resumen Ejecutivo (`v2.5.69`)
 
 1. **Sincronía A/V y Cero-Eco en Cine & Streaming (Amazon Prime Video, Netflix, Disney+)**:
    - Desactiva de raíz el efecto Haas y filtrado en peine (+35 ms) mediante el **Árbitro Dinámico de Transmisión**. En apps de video se excluye la captura loopback y se mutea la re-inyección por `AudioTrack` a nivel HAL, procesando el audio en sitio con **cero latencia agregada (< 0.1 ms)**. Bloquea en fase el vástago central vocal (`lateralObjPtrs[0] = nullptr;`) para no desfasar el diálogo con retardo ITD, alinea rígidamente el pico directo RIR a la muestra 0 ($t = 0\text{ ms}$) y apaga reverberación artificial en diálogos hablados.

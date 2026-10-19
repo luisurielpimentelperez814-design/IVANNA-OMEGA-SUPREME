@@ -25,3 +25,11 @@ gradlew       text eol=lf
 gradlew.bat   text eol=crlf
 *.bat         text eol=crlf
 *.bin    -text -diff binary
+
+# 2026-10-18: 216 .sofa de assets/sofa/ se corrompieron (todo byte >= 0x80 -> U+FFFD por una conversión de texto UTF-8)
+# y ninguna puerta lo detectó. Los datasets binarios nunca pasan por conversión de texto ni de fin de línea.
+*.sofa  -text -diff binary
+*.ihr1  -text -diff binary
+*.tflite -text -diff binary
+*.npy   -text -diff binary
+*.bpf   -text -diff binary

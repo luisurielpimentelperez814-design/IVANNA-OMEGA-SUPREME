@@ -9,6 +9,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -178,10 +180,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
         val sr = am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull() ?: 48000
-        DSPBridge.init(sr)
-        if (IvannaNativeLib.isLoaded) {
-            runCatching { IvannaNativeLib.nativeInitDSP(sr) }
-            IvannaNativeLib.nativeStartEvoThread()
+        // La inicialización JNI/DSP puede tardar al cargar el motor o despertar
+        // hilos nativos. No bloquear el hilo de UI: hacerlo en IO para evitar
+        // jank/ANR en el primer frame. El sample rate sigue siendo el del HAL.
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { DSPBridge.init(sr) }
+            if (IvannaNativeLib.isLoaded) {
+                runCatching { IvannaNativeLib.nativeInitDSP(sr) }
+                runCatching { IvannaNativeLib.nativeStartEvoThread() }
+            }
         }
         // FIX (root / sin root): elige el backend real de procesado. En
         // dispositivos sin root arranca el camino AudioEffect +
@@ -193,7 +200,7 @@ class MainActivity : ComponentActivity() {
         // Se arranca aquí: el bridge se auto-reconecta en cuanto el daemon
         // bindea, sin intervención del usuario.
         OmegaEngineBridge.startKeepalive()
-        setContent { OmegaApp() }
+        setContent { com.ivanna.omega.ui.AcousticConsentGate { OmegaApp() } }
     }
 
     override fun onDestroy() {
@@ -828,7 +835,7 @@ fun SplashScreen(onAccept: () -> Unit) {
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
             )
             Spacer(Modifier.height(12.dp))
-            Text("GORE TNS · LUPP-OR9 · DSP ENGINE v2.2.0", color = CyanGlow,
+            Text("GORE TNS · LUPP-OR9 · IVANNA OMEGA SUPREME v2.5.72", color = CyanGlow,
                 fontSize = 10.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.height(6.dp))
             Text("PI-LSTM Milenio · Neuro-Cochlear · Volterra H2 · Ω-Atlas",
@@ -844,10 +851,10 @@ fun SplashScreen(onAccept: () -> Unit) {
                     fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.height(10.dp))
                 Text("© 2025–2026 Luis Uriel Pimentel Pérez · GORE TNS. " +
-                    "Software propietario y confidencial. " +
-                    "Uso no autorizado prohibido. " +
-                    "Este software modifica el pipeline de audio del sistema. " +
-                    "El usuario asume plena responsabilidad.",
+                    "El código propio se distribuye bajo Apache License 2.0 (consulta LICENSE y NOTICE); " +
+                    "los componentes y datasets de terceros conservan sus propias licencias. " +
+                    "La aplicación puede modificar el pipeline de audio del sistema y requiere permisos específicos. " +
+                    "Revisa los permisos y usa el producto bajo tu responsabilidad.",
                     color = TextMid, fontSize = 12.sp, lineHeight = 18.sp,
                     textAlign = TextAlign.Justify)
             }
@@ -1013,6 +1020,77 @@ fun DashboardScreen(
     }
 
     val paramStore = remember { ParameterStore(context) }
+
+    // Cableado de corrección de sala: medición en coroutine, con permisos
+    // explícitos y restauración del estado anterior si falla.
+    var roomGains by remember { mutableStateOf(paramStore.getRoomCorrectionGains()) }
+    var roomEnabled by remember { mutableStateOf(paramStore.isRoomCorrectionEnabled()) }
+    var roomBusy by remember { mutableStateOf(false) }
+    var roomProgress by remember { mutableFloatStateOf(0f) }
+    var roomStatus by remember { mutableStateOf("") }
+    val roomScope = rememberCoroutineScope()
+    // No bloquear los gestos con IPC al daemon; conservar el último estado HOA.
+    val perceptualCommands = remember {
+        kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    }
+    LaunchedEffect(perceptualCommands) {
+        for (command in perceptualCommands) {
+            withContext(Dispatchers.IO) {
+                runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand(command) }
+            }
+        }
+    }
+    val applyRoomCorrection: (FloatArray?, Boolean) -> Unit = { gains, enabled ->
+        if (IvannaNativeLib.isLoaded) runCatching {
+            IvannaNativeLib.nativeSetRoomCorrection(
+                if (enabled && gains != null) gains else FloatArray(10)
+            )
+        }
+    }
+    val startRoomMeasure: () -> Unit = {
+        if (!roomBusy) roomScope.launch {
+            val previousGains = roomGains
+            val previousEnabled = roomEnabled
+            roomBusy = true
+            roomProgress = 0f
+            roomStatus = "Preparando medición: volumen cómodo y sala en silencio."
+            try {
+                when (val measurement = com.ivanna.omega.audio.RoomMeasurement.runVerified(
+                    context, previousGains, previousEnabled, applyRoomCorrection
+                ) { roomProgress = it }) {
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Success -> {
+                        paramStore.setRoomCorrection(measurement.gainsDb, true)
+                        runCatching {
+                            com.ivanna.omega.audio.BassHaptics.setMeasuredLatency(context, measurement.latencyMs)
+                        }
+                        roomGains = measurement.gainsDb
+                        roomEnabled = true
+                        applyRoomCorrection(measurement.gainsDb, true)
+                        roomStatus = "Verificado · error tonal ${"%.2f".format(java.util.Locale.ROOT, measurement.beforeErrorDb)} → ${"%.2f".format(java.util.Locale.ROOT, measurement.afterErrorDb)} dB · decisión #${measurement.decisionId}"
+                    }
+                    is com.ivanna.omega.audio.RoomMeasurement.VerifiedOutcome.Failure -> {
+                        applyRoomCorrection(previousGains, previousEnabled)
+                        roomStatus = "Reversión automática · ${measurement.reason} · decisión #${measurement.decisionId}"
+                    }
+                }
+            } catch (t: Throwable) {
+                applyRoomCorrection(previousGains, previousEnabled)
+                roomStatus = "Falló la medición: ${t.message ?: "error desconocido"}"
+            } finally {
+                roomBusy = false
+            }
+        }
+    }
+    val roomMicLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startRoomMeasure()
+        else roomStatus = com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(
+            com.ivanna.omega.hardware.PermissionGate.stateFor(
+                context, android.Manifest.permission.RECORD_AUDIO
+            )
+        )
+    }
 
     // FIX: initialize() ahora hace un handshake por LocalSocket con el daemon
     // (hasta 1.5 s de timeout). En el hilo principal eso era un ANR potencial
@@ -1226,6 +1304,120 @@ fun DashboardScreen(
                 else antiDolbyController.disableAntiDolby()
             },
             adaptiveTelemetry = adaptiveTelemetry,
+            // Estado persistente de los módulos que también aparecen en el panel
+            // legado del dashboard (no depender de los defaults de callbacks).
+            initialHoaUpmixingEnabled = paramStore.isHoaUpmixingEnabled(),
+            initialHoaImmersivity = paramStore.getHoaImmersivity(),
+            initialWfsEnabled = paramStore.isWfsEnabled(),
+            initialWfsSpread = paramStore.getWfsSpread(),
+            initialAuxFieldEnabled = paramStore.isAuxFieldEnabled(),
+            initialAuxXoverHz = paramStore.getAuxXoverHz(),
+            initialAuxCoherence = paramStore.getAuxCoherence(),
+            initialPunchAmount = paramStore.getPunchAmount(),
+            initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
+            initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
+            initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
+            initialBassHapticEnabled = paramStore.isBassHapticEnabled(),
+            initialBassHapticStrength = paramStore.getBassHapticStrength(),
+            initialBassHapticRumble = paramStore.getBassHapticRumble(),
+            initialBassHapticTrimMs = paramStore.getBassHapticTrimMs(),
+            bassHapticSupported = com.ivanna.omega.audio.BassHaptics.isSupported(context),
+            roomGains = roomGains,
+            roomEnabled = roomEnabled,
+            roomBusy = roomBusy,
+            roomProgress = roomProgress,
+            roomStatus = roomStatus,
+            onRoomMeasure = {
+                val micState = com.ivanna.omega.hardware.PermissionGate.stateFor(
+                    context, android.Manifest.permission.RECORD_AUDIO
+                )
+                when (micState) {
+                    com.ivanna.omega.hardware.PermissionState.GRANTED -> startRoomMeasure()
+                    com.ivanna.omega.hardware.PermissionState.OPEN_SETTINGS -> {
+                        roomStatus = com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(micState)
+                        com.ivanna.omega.hardware.PermissionGate.openAppSettings(context)
+                    }
+                    else -> {
+                        com.ivanna.omega.hardware.PermissionGate.markRequested(
+                            context, android.Manifest.permission.RECORD_AUDIO
+                        )
+                        roomMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+            },
+            onRoomToggle = { enabled ->
+                roomEnabled = enabled && roomGains != null
+                paramStore.setRoomCorrection(roomGains, roomEnabled)
+                applyRoomCorrection(roomGains, roomEnabled)
+            },
+            onRoomClear = {
+                roomGains = null
+                roomEnabled = false
+                roomStatus = ""
+                paramStore.setRoomCorrection(null, false)
+                applyRoomCorrection(null, false)
+            },
+            onHoaUpmixingEnabledChange = { enabled ->
+                paramStore.setHoaUpmixingEnabled(enabled)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled)
+                }
+                perceptualCommands.trySend(
+                    """{"action":"SET_PERCEPTUAL_STATE","upmixingEnabled":${if (enabled) 1.0f else 0.0f}}"""
+                )
+            },
+            onHoaImmersivityChange = { value ->
+                val bounded = value.coerceIn(0f, 2f)
+                paramStore.setHoaImmersivity(bounded)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetUpmixingImmersivity(bounded)
+                }
+                perceptualCommands.trySend(
+                    """{"action":"SET_PERCEPTUAL_STATE","upmixingImmersivity":$bounded}"""
+                )
+            },
+            onWfsEnabledChange = { enabled ->
+                paramStore.setWfsEnabled(enabled)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetWfsEnabled(enabled)
+                }
+            },
+            onWfsSpreadChange = { value ->
+                val bounded = value.coerceIn(0f, 2f)
+                paramStore.setWfsSpread(bounded)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetWfsSpread(bounded)
+                }
+            },
+            onAuxFieldChange = { enabled, crossover, coherence ->
+                val boundedXover = crossover.coerceIn(60f, 200f)
+                val boundedCoherence = coherence.coerceIn(0f, 1f)
+                paramStore.setAuxField(enabled, boundedXover, boundedCoherence)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetAuxField(enabled, boundedXover, boundedCoherence)
+                }
+            },
+            onPunchChange = { amount ->
+                val bounded = amount.coerceIn(0f, 1f)
+                paramStore.setPunchAmount(bounded)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetPunch(bounded)
+                }
+            },
+            onTemporalFieldChange = { enabled, amount, adaptive ->
+                val bounded = amount.coerceIn(0f, 1f)
+                paramStore.setTemporalField(enabled, bounded, adaptive)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetTemporalField(enabled, bounded, adaptive)
+                }
+            },
+            onBassHapticChange = { enabled, strength, rumble, trimMs ->
+                paramStore.setBassHaptic(enabled, strength, rumble, trimMs)
+                com.ivanna.omega.audio.BassHaptics.configure(
+                    context, enabled, strength, rumble, trimMs.toInt()
+                )
+            },
+            onOpenSupremeAxesHub = { nav.navigate(IvannaRoute.SUPREME_AXES_HUB) },
             onOpenAdaptive = { nav.navigate(IvannaRoute.BRAIN) },
             // FIX (pantalla muerta): el botón "MOTOR ADAPTATIVO"
             // (IvannaOmniComponents.kt:260) disparaba este callback hacia
@@ -1242,14 +1434,26 @@ fun DashboardScreen(
             onAdaptiveModeChange = { uiMode ->
                 val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
                 com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetAdaptiveControls(
+                        backendMode.ordinal,
+                        com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveIntensity * 100f
+                    )
+                }
                 if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
                     com.ivanna.omega.audio.AudioStateManager.audioState.value
                 )
             },
             adaptiveIntensity = audioState.adaptiveIntensity * 100f,
             onAdaptiveIntensityChange = { percent ->
-                val v = percent / 100f
+                val v = percent.coerceIn(0f, 100f) / 100f
                 com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetAdaptiveControls(
+                        com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveMode.ordinal,
+                        percent.coerceIn(0f, 100f)
+                    )
+                }
                 if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
                     com.ivanna.omega.audio.AudioStateManager.audioState.value
                 )

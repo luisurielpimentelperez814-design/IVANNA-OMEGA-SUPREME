@@ -63,6 +63,24 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Node for the embedded FotoHolo WebGL bundle
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Build and stage the standalone FotoHolo WebGL bundle
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npx vite build --config vite.fotoholo.config.ts
+          test -s dist-fotoholo/fotoholo-embed.html
+          rm -rf app/src/main/assets/fotoholo-web
+          mkdir -p app/src/main/assets/fotoholo-web
+          cp dist-fotoholo/fotoholo-embed.html app/src/main/assets/fotoholo-web/
+          cp -R dist-fotoholo/assets app/src/main/assets/fotoholo-web/assets
+
       # ═══════════════════════════════════════════════════════════════════
       # ARTIFACT INTEGRITY (auditoría 2026-08-16)
       # El zip Magisk distribuido contenía un ivanna_daemon ARM32 / NDK r25b
@@ -277,6 +295,33 @@ jobs:
           (echo "Retrying assembleDebug with --refresh-dependencies..." && \
            gradle assembleRelease --no-daemon --stacktrace --refresh-dependencies \
             -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" 2>&1 | tee gradle_build.log)
+
+      # Las pruebas JVM de app/src/test (lectores SOFA/HDF5, colchon de salida, gobernador de carga, FotoHolo,
+      # permisos, clasificador...) NO corrian en ningun job: solo compilaba el codigo de produccion. Este paso las
+      # ejecuta tras el build (el compilado queda en cache de Gradle) y es INFORMATIVO: un fallo antiguo no bloquea
+      # el release, pero queda como anotacion roja con el nombre de la prueba.
+      - name: JVM unit tests (informativo, no bloquea el release)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          rc=0
+          gradle testReleaseUnitTest --no-daemon --continue \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" 2>&1 | tee gradle_unit_tests.log || rc=${PIPESTATUS[0]}
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          t = f = e = s = 0
+          bad = []
+          for p in glob.glob("app/build/test-results/**/*.xml", recursive=True):
+              r = ET.parse(p).getroot()
+              t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0)); s += int(r.get("skipped", 0))
+              for tc in r.iter("testcase"):
+                  if tc.find("failure") is not None or tc.find("error") is not None:
+                      bad.append(f"{tc.get('classname')}.{tc.get('name')}")
+          print(f"JVM unit tests: {t} ejecutadas, {f} fallos, {e} errores, {s} omitidas")
+          for b in bad[:40]:
+              print(f"::error title=JVM unit test fallida::{b}")
+          PY
+          exit $rc
 
       # Diagnostico: el log de un job fallido solo es legible con sesion en la
       # web; la API de check-runs SI expone las anotaciones. Se publican como
@@ -758,6 +803,13 @@ jobs:
           cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
           ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
 
+      - name: Generar flyer promocional dinámico de la versión
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          pip install Pillow matplotlib
+          python3 tools/promo/generate_release_flyer.py "${{ steps.ver.outputs.version }}"
+
       - name: Crear o actualizar el Release (sin enmascarar fallos)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -767,11 +819,17 @@ jobs:
           TAG="${{ steps.ver.outputs.version }}"
           ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
           APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          FLYER_TAG="docs/release_media/ivanna_promo_flyer_${TAG}.png"
+          FLYER_CANONICAL="docs/release_media/ivanna_promo_flyer.png"
           NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
           STAGE_TAG="staging-${GITHUB_SHA}"
 
+          EXTRA_ASSETS=()
+          [ -f "$FLYER_TAG" ] && EXTRA_ASSETS+=("$FLYER_TAG")
+          [ -f "$FLYER_CANONICAL" ] && EXTRA_ASSETS+=("$FLYER_CANONICAL")
+
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" \
+            gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" "${EXTRA_ASSETS[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "IVANNA OMEGA SUPREME $TAG" \
@@ -814,4 +872,13 @@ jobs:
             --jq '.[] | select(.isDraft and (.tagName|startswith("staging-")) and ((.createdAt|fromdateiso8601) < (now-21600))) | .tagName' \
             | while read -r t; do gh release delete "$t" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true; done
           echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
+
+      - name: Difundir lanzamiento en redes sociales y webhooks
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SOCIAL_BROADCAST_WEBHOOK_URL: ${{ secrets.SOCIAL_BROADCAST_WEBHOOK_URL }}
+        run: |
+          python3 tools/promo/broadcast_release.py
 

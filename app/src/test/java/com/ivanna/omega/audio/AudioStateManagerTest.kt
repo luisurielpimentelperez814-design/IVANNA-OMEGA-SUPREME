@@ -8,14 +8,19 @@ package com.ivanna.omega.audio
 
 import org.junit.Test
 import org.junit.Assert.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class AudioStateManagerTest {
     
     @Test
     fun testInitialState() {
         val state = AudioState()
-        assertEquals(AdaptiveMode.NATURAL, state.adaptiveMode)
-        assertEquals(0.7f, state.adaptiveIntensity, 0.01f)
+        assertEquals(AdaptiveMode.STUDIO, state.adaptiveMode)
+        assertEquals(0.82f, state.adaptiveIntensity, 0.01f)
         assertTrue(state.binaural)
         assertFalse(state.manifold)
     }
