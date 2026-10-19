@@ -83,37 +83,45 @@ object OmegaDaemon {
     // de la última muestra buena. Tras 1 s, la muestra deja de ser utilizable.
     private const val TELEMETRY_REFRESH_MS = 250L
     private const val TELEMETRY_MAX_AGE_MS = 1_000L
-    @Volatile private var lastTelemetryAtMs: Long = 0L
+    @Volatile private var lastTelemetryQueryAtMs: Long = 0L
+    @Volatile private var lastTempAtMs: Long = 0L
+    @Volatile private var lastLatencyAtMs: Long = 0L
     @Volatile private var lastTempC: Float = Float.NaN
     @Volatile private var lastLatencyMs: Float = Float.NaN
 
     fun getTemperature(): Float {
         refreshTelemetryIfStale()
-        return if (isTelemetryFresh()) lastTempC else Float.NaN
+        return if (isFieldFresh(lastTempAtMs)) lastTempC else Float.NaN
     }
 
     fun getLatency(): Float {
         refreshTelemetryIfStale()
-        return if (isTelemetryFresh()) lastLatencyMs else Float.NaN
+        return if (isFieldFresh(lastLatencyAtMs)) lastLatencyMs else Float.NaN
     }
 
-    private fun isTelemetryFresh(): Boolean {
-        val stamp = lastTelemetryAtMs
+    private fun isFieldFresh(stamp: Long): Boolean {
         return stamp > 0L && System.currentTimeMillis() - stamp <= TELEMETRY_MAX_AGE_MS
     }
 
     private fun refreshTelemetryIfStale() {
         val now = System.currentTimeMillis()
-        if (now - lastTelemetryAtMs < TELEMETRY_REFRESH_MS) return
+        if (now - lastTelemetryQueryAtMs < TELEMETRY_REFRESH_MS) return
+        // Throttle even failed/empty queries; otherwise a missing daemon can be
+        // hammered by every UI poll (10–30 Hz). Each field keeps its own age.
+        lastTelemetryQueryAtMs = now
         val raw = runCatching { MagiskBridge.getTelemetry() }.getOrNull().orEmpty()
         if (raw.isBlank()) return
 
         val temp = parseField(raw, "temp")?.takeIf { it in 0f..150f }
         val latency = parseField(raw, "latency")?.takeIf { it in 0f..10_000f }
-        if (temp != null) lastTempC = temp
-        if (latency != null) lastLatencyMs = latency
-        // Solo marcamos muestra nueva si al menos un campo llegó y pasó límites.
-        if (temp != null || latency != null) lastTelemetryAtMs = now
+        if (temp != null) {
+            lastTempC = temp
+            lastTempAtMs = now
+        }
+        if (latency != null) {
+            lastLatencyMs = latency
+            lastLatencyAtMs = now
+        }
     }
 
     private fun parseField(raw: String, key: String): Float? {
