@@ -7,6 +7,7 @@ import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.spatial.IvannaSpatialManager
+import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.saf.SaFEngine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -55,6 +56,33 @@ class FotoHoloTelemetryBridge(context: Context) {
                 viewerCounted = false
             }
         }
+    }
+
+    /** Apply the UI's base spatial width to the native engine; modulation may subsequently adjust it. */
+    @JavascriptInterface
+    fun setSpatialWidth(width: Float): Boolean {
+        if (!width.isFinite()) return false
+        val safe = width.coerceIn(0f, 1.5f)
+        return runCatching {
+            IvannaSpatialEngine.setWidth(safe)
+            if (!IvannaNativeLib.isLoaded) return false
+            IvannaNativeLib.nativeSetSpatialWidthDirect(safe)
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Apply a UI azimuth in degrees to the shared spatial engine and native renderer. */
+    @JavascriptInterface
+    fun setSpatialAngleDeg(angleDeg: Float): Boolean {
+        if (!angleDeg.isFinite()) return false
+        val safeDeg = angleDeg.coerceIn(-180f, 180f)
+        val radians = Math.toRadians(safeDeg.toDouble()).toFloat()
+        return runCatching {
+            IvannaSpatialEngine.setAzimuth(radians)
+            if (!IvannaNativeLib.isLoaded) return false
+            IvannaNativeLib.nativeSetSpatialAngleRad(radians)
+            true
+        }.getOrDefault(false)
     }
 
     @JavascriptInterface
