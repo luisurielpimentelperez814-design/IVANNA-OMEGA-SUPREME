@@ -1,3 +1,12 @@
+# Changelog — IVANNA OMEGA SUPREME
+
+## v2.5.82 (versionCode 373) — Sondeo Wi-Fi visual
+- Añade visualización en pantalla de redes Wi-Fi observadas y su intensidad RSSI en dBm, actualizada con los resultados que entrega el sondeo.
+- Muestra hasta 12 redes como barras de señal y lista las cinco más intensas; la interfaz indica cuando aún no hay datos.
+- Conserva la distinción explícita entre metadatos RSSI y CSI: no se presenta una reconstrucción 3D ficticia.
+- Alinea versión Android y módulo Magisk en v2.5.82 / 373.
+- Compatibilidad sujeta a chipset, bandas, permisos, servicios de ubicación y límites de escaneo de Android; no se afirma funcionamiento sin restricciones en todo hardware.
+
 # CHANGELOG — v2.5.81 (372) — La imagen IA de lugar ahora se genera DENTRO de la app y puede crearse sola con la música
 
 1. **Causa real de que no funcionara en el teléfono:** el panel FotoHolo pedía la imagen a `/api/fotoholo/render-place`, un endpoint de `server.ts` (servidor Node). El WebView del APK solo sirve assets empaquetados y bloquea el resto, así que esa petición recibía una respuesta vacía: en el teléfono la generación no podía responder nunca.
