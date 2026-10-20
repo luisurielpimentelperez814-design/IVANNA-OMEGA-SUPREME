@@ -40,7 +40,6 @@ struct alignas(8) EffectBeacon {
     std::atomic<uint64_t> head_pose_generation;
     std::atomic<uint32_t> head_yaw_bits;
     std::atomic<uint32_t> head_pitch_bits;
-    std::atomic<uint32_t> head_roll_bits;
 };
 static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 64 B");
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "se requieren atómicos de 64 bit lock-free");
@@ -50,7 +49,6 @@ struct EffectHeadPoseAck {
     uint64_t generation = 0;
     float yaw_rad = 0.0f;
     float pitch_rad = 0.0f;
-    float roll_rad = 0.0f;
     bool valid = false;
 };
 
@@ -72,10 +70,8 @@ inline bool readEffectHeadPoseAck(EffectHeadPoseAck& out,
         out.generation = b->head_pose_generation.load(std::memory_order_acquire);
         uint32_t yawBits = b->head_yaw_bits.load(std::memory_order_relaxed);
         uint32_t pitchBits = b->head_pitch_bits.load(std::memory_order_relaxed);
-        uint32_t rollBits = b->head_roll_bits.load(std::memory_order_relaxed);
         std::memcpy(&out.yaw_rad, &yawBits, sizeof(float));
         std::memcpy(&out.pitch_rad, &pitchBits, sizeof(float));
-        std::memcpy(&out.roll_rad, &rollBits, sizeof(float));
         out.valid = out.generation > 0;
     }
     ::munmap(addr, OMEGA_EFFECT_BEACON_SIZE);
@@ -162,7 +158,6 @@ public:
         b->head_pose_generation.store(0ull, std::memory_order_relaxed);
         b->head_yaw_bits.store(0u, std::memory_order_relaxed);
         b->head_pitch_bits.store(0u, std::memory_order_relaxed);
-        b->head_roll_bits.store(0u, std::memory_order_relaxed);
         b->magic.store(OMEGA_EFFECT_BEACON_MAGIC, std::memory_order_release);
         m_beacon.store(b, std::memory_order_release);
         return true;
@@ -183,16 +178,14 @@ public:
         b->stamp_ms.store(effectBeaconNowMs(), std::memory_order_relaxed);
     }
     // RT-safe: la pose ya fue aplicada y el bloque terminó el DSP.
-    void onHeadPoseApplied(uint64_t generation, float yawRad, float pitchRad, float rollRad) noexcept {
+    void onHeadPoseApplied(uint64_t generation, float yawRad, float pitchRad) noexcept {
         EffectBeacon* b = m_beacon.load(std::memory_order_acquire);
-        if (!b || generation == 0u || !std::isfinite(yawRad) || !std::isfinite(pitchRad) || !std::isfinite(rollRad)) return;
-        uint32_t yawBits = 0u, pitchBits = 0u, rollBits = 0u;
+        if (!b || generation == 0u || !std::isfinite(yawRad) || !std::isfinite(pitchRad)) return;
+        uint32_t yawBits = 0u, pitchBits = 0u;
         std::memcpy(&yawBits, &yawRad, sizeof(float));
         std::memcpy(&pitchBits, &pitchRad, sizeof(float));
-        std::memcpy(&rollBits, &rollRad, sizeof(float));
         b->head_yaw_bits.store(yawBits, std::memory_order_relaxed);
         b->head_pitch_bits.store(pitchBits, std::memory_order_relaxed);
-        b->head_roll_bits.store(rollBits, std::memory_order_relaxed);
         b->head_pose_generation.store(generation, std::memory_order_release);
     }
     // RT-safe: un bloque pasó por TODO el DSP.
