@@ -27,6 +27,9 @@ object CinematicEngineHost {
     private var engine: RealTimeCinematicEngine? = null
     @Volatile private var active = false
 
+    /** Single shared classification stream consumed by the UI controller. */
+    @Volatile var onClassification: ((speech: Float, music: Float, bass: Float) -> Unit)? = null
+
     /** Idempotente: si ya hay un engine corriendo, no lo recrea. */
     fun start(context: Context, sampleRate: Int) {
         if (engine == null) {
@@ -35,9 +38,12 @@ object CinematicEngineHost {
                 sampleRate = sampleRate
             ).also { eng ->
                 eng.onModeChanged = { mode, result ->
-                    AudioEngine.nativeSetAntiDolbyScoresStatic(
-                        result.speech, result.music, result.bass
-                    )
+                    // Sanitize model output before crossing the JNI/DSP boundary.
+                    val speech = result.speech.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+                    val music = result.music.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+                    val bass = result.bass.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+                    AudioEngine.nativeSetAntiDolbyScoresStatic(speech, music, bass)
+                    onClassification?.invoke(speech, music, bass)
                 }
             }
             Log.i(TAG, "Engine creado @ ${sampleRate}Hz")
