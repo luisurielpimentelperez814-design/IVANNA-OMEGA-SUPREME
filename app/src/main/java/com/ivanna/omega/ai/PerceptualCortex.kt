@@ -38,6 +38,13 @@ private const val ADAPTIVE_LAMBDA_T_UNAVAILABLE = -1f
  */
 class PerceptualCortex {
 
+    private data class ContentClassification(
+        val speech: Float = 0f,
+        val music: Float = 0f,
+        val bass: Float = 0f
+    )
+    @Volatile private var contentClassification = ContentClassification()
+
     private val decisionEngine = PerceptualDecisionEngine()
     private val psychoacousticAnalyzer =
         PsychoacousticAnalyzer()
@@ -142,6 +149,32 @@ class PerceptualCortex {
      * exciter   0..1
      * spatial   0..1
      */
+    /**
+     * Single ingress for AntiDolby CRNN evidence. It publishes sanitized scores
+     * to the native DSP bus and retains them for the next perceptual decision.
+     * This is content classification only; it must not be treated as room data.
+     */
+    @Synchronized
+    fun updateContentClassification(speech: Float, music: Float, bass: Float) {
+        val safe = ContentClassification(
+            speech = speech.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
+            music = music.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
+            bass = bass.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+        )
+        contentClassification = safe
+        runCatching {
+            com.ivanna.omega.audio.AudioEngine.nativeSetAntiDolbyScoresStatic(safe.speech, safe.music, safe.bass)
+        }.onFailure { Log.w("PerceptualCortex", "AntiDolby score publish unavailable") }
+    }
+
+    @Synchronized
+    fun clearContentClassification() {
+        contentClassification = ContentClassification()
+        runCatching {
+            com.ivanna.omega.audio.AudioEngine.nativeSetAntiDolbyScoresStatic(0f, 0f, 0f)
+        }.onFailure { Log.w("PerceptualCortex", "AntiDolby reset unavailable") }
+    }
+
     private fun barkToDSP(
         analysis: PsychoacousticAnalysis,
         fatigue: HearingFatigueState
@@ -270,6 +303,7 @@ class PerceptualCortex {
                 }
                 if (n > 0) above.toFloat() / n.toFloat() else 0f
             }
+            val content = contentClassification
             val snapshot = PerceptualSnapshot(
                 fatigue              = lastFatigue?.cumulativeSessionFatigueScore ?: 0f,
                 immersion            = ctrl.spatial,
@@ -284,7 +318,10 @@ class PerceptualCortex {
                     EmotionalState.NEUTRAL   -> 0.5f
                     EmotionalState.INTIMATE  -> 0.4f
                     EmotionalState.CALM      -> 0.3f
-                }
+                },
+                contentSpeech = content.speech,
+                contentMusic = content.music,
+                contentBass = content.bass
             )
             val decision = decisionEngine.evaluate(snapshot)
             decisionEngine.dispatchDecision(decision)
