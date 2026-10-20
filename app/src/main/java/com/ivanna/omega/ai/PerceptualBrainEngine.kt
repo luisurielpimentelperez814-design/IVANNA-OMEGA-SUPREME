@@ -92,6 +92,11 @@ data class PerceptualSnapshot(
     val convNextConfidence: Float = 0f,
     val ringBufferOccupancy: Float = 0f,
     val dominantClassLabel: String = "—",
+    // Shared AntiDolby CRNN outputs routed through PerceptualCortex (0..1).
+    // These are content-class scores, not room measurements or preference labels.
+    val contentSpeech: Float = 0f,
+    val contentMusic: Float = 0f,
+    val contentBass: Float = 0f,
 
     // DSP Cortex Metrics
     val hrtfStatus: String = "—",
