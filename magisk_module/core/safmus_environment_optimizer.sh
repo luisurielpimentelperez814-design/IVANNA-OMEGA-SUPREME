@@ -6,8 +6,9 @@ ROOT="/data/adb/ivanna_omega"
 OUT="$ROOT/safmus"
 PROFILE="$OUT/environment_profile.env"
 REPORT="$OUT/environment_report.txt"
+CAPABILITIES="$OUT/hardware_capabilities.env"
 mkdir -p "$OUT" 2>/dev/null || exit 0
-TMP="$PROFILE.tmp.$$"; RTMP="$REPORT.tmp.$$"
+TMP="$PROFILE.tmp.$"; RTMP="$REPORT.tmp.$"; CTMP="$CAPABILITIES.tmp.$"
 getprop_safe() { getprop "$1" 2>/dev/null | tr '\n' ' ' | cut -c1-160; }
 read_num() { v=$(cat "$1" 2>/dev/null | tr -d '[:space:]'); case "$v" in ''|*[!0-9]*) echo ""; ;; *) echo "$v";; esac; }
 mem_kb=$(awk '/MemAvailable:/ {print $2; exit}' /proc/meminfo 2>/dev/null)
@@ -20,10 +21,31 @@ for z in /sys/class/thermal/thermal_zone*/temp; do
   if [ "$t" -gt 1000 ] 2>/dev/null; then t=$((t / 1000)); fi
   if [ "$t" -gt 0 ] 2>/dev/null && { [ -z "$thermal_max" ] || [ "$t" -gt "$thermal_max" ]; }; then thermal_max=$t; fi
 done
+# Inventario transversal: presencia/capacidad observable; no confundir detección con control efectivo.
 camera_nodes=0
 for n in /dev/video* /dev/media*; do [ -e "$n" ] && camera_nodes=$((camera_nodes + 1)); done
 sound_nodes=0
 for n in /dev/snd/pcmC*D*c /dev/snd/controlC*; do [ -e "$n" ] && sound_nodes=$((sound_nodes + 1)); done
+cpu_policies=0
+for n in /sys/devices/system/cpu/cpufreq/policy*; do [ -d "$n" ] && cpu_policies=$((cpu_policies + 1)); done
+gpu_nodes=0
+for n in /sys/class/devfreq/*gpu* /sys/class/kgsl/kgsl-3d0 /sys/devices/platform/*gpu*; do [ -e "$n" ] && gpu_nodes=$((gpu_nodes + 1)); done
+display_nodes=0
+for n in /sys/class/backlight/* /sys/class/drm/card*-*/status; do [ -e "$n" ] && display_nodes=$((display_nodes + 1)); done
+input_nodes=0
+for n in /dev/input/event*; do [ -e "$n" ] && input_nodes=$((input_nodes + 1)); done
+sensor_nodes=0
+for n in /sys/bus/iio/devices/iio:device* /sys/class/sensors/*; do [ -e "$n" ] && sensor_nodes=$((sensor_nodes + 1)); done
+battery_nodes=0
+for n in /sys/class/power_supply/*; do [ -e "$n" ] && battery_nodes=$((battery_nodes + 1)); done
+cpu_governors=""
+for n in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do
+  [ -r "$n" ] || continue
+  g=$(cat "$n" 2>/dev/null | tr -d '\\n')
+  [ -n "$g" ] && cpu_governors="${cpu_governors}${cpu_governors:+,}$g"
+done
+display_brightness=$(settings get system screen_brightness 2>/dev/null | tr -d '\\n')
+display_refresh=$(settings get system peak_refresh_rate 2>/dev/null | tr -d '\\n')
 audio_class=unknown
 [ -d /sys/class/sound ] && audio_class=kernel_sound_class_present
 budget=normal; reason="telemetria básica disponible"
@@ -38,7 +60,7 @@ if [ -f "$MODDIR/../.safe_mode" ]; then budget=safe_mode; reason="módulo en mod
  echo "device=$(getprop_safe ro.product.device)"
  echo "soc=$(getprop_safe ro.board.platform)"
  echo "kernel=$(uname -r 2>/dev/null)"
- echo "cpu_count=$cpu_count"; echo "mem_available_kb=$mem_kb"
+ echo "cpu_count=$cpu_count"; echo "cpu_frequency_policies=$cpu_policies"; echo "cpu_governors=$cpu_governors"; echo "gpu_nodes=$gpu_nodes"; echo "display_nodes=$display_nodes"; echo "input_nodes=$input_nodes"; echo "sensor_nodes=$sensor_nodes"; echo "battery_nodes=$battery_nodes"; echo "display_brightness=$display_brightness"; echo "display_peak_refresh_setting=$display_refresh"; echo "mem_available_kb=$mem_kb"
  echo "thermal_max_c=$thermal_max"; echo "camera_device_nodes=$camera_nodes"
  echo "sound_device_nodes=$sound_nodes"; echo "audio_class=$audio_class"
  echo "resource_budget=$budget"; echo "budget_reason=$reason"
@@ -52,10 +74,30 @@ if [ -f "$MODDIR/../.safe_mode" ]; then budget=safe_mode; reason="módulo en mod
  echo "Camera/media device nodes: $camera_nodes (presence only; no camera opened)"
  echo "Sound device nodes: $sound_nodes (presence only; no capture/playback started)"
  echo "Audio class: $audio_class"
- echo "Policy: never mutate unknown vendor/HAL/sysfs controls or bypass Android permissions."
+ echo "CPU frequency policies/governors: $cpu_policies / ${cpu_governors:-unknown}"
+ echo "GPU nodes: $gpu_nodes; display/backlight nodes: $display_nodes"
+ echo "Input nodes: $input_nodes; sensor nodes: $sensor_nodes; power-supply nodes: $battery_nodes"
+ echo "Display settings: brightness=${display_brightness:-unknown}, peak_refresh=${display_refresh:-unknown}"
+ echo "Policy: detect all available classes; only use validated, supported controls for changes."
  echo "Room acoustics need a user-authorized in-app measurement; boot telemetry cannot infer a room."
 } > "$RTMP"
-chmod 600 "$TMP" "$RTMP" 2>/dev/null
+{
+ echo "schema=1"
+ echo "cpu_policies=$cpu_policies"
+ echo "cpu_governors=$cpu_governors"
+ echo "gpu_nodes=$gpu_nodes"
+ echo "display_nodes=$display_nodes"
+ echo "camera_nodes=$camera_nodes"
+ echo "sound_nodes=$sound_nodes"
+ echo "input_nodes=$input_nodes"
+ echo "sensor_nodes=$sensor_nodes"
+ echo "battery_nodes=$battery_nodes"
+ echo "display_brightness=$display_brightness"
+ echo "display_peak_refresh_setting=$display_refresh"
+ echo "capability_detection_only=1"
+} > "$CTMP"
+chmod 600 "$TMP" "$RTMP" "$CTMP" 2>/dev/null
 mv -f "$TMP" "$PROFILE" 2>/dev/null || rm -f "$TMP"
 mv -f "$RTMP" "$REPORT" 2>/dev/null || rm -f "$RTMP"
+mv -f "$CTMP" "$CAPABILITIES" 2>/dev/null || rm -f "$CTMP"
 exit 0
