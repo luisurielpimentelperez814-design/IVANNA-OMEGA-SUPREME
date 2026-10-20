@@ -92,6 +92,8 @@ ivanna_add_test(test_stage_ceiling_continuity)
 ivanna_add_test(test_hoa_gain_matrix)
 # Closed-form bounded MAP solver, exact minimizer and projected KKT residual.
 ivanna_add_test(test_perceptual_optimizer_v2)
+# Experimental Fisher-Rao natural-gradient step; isolated from production DSP.
+ivanna_add_test(test_perceptual_geometry_v3)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
