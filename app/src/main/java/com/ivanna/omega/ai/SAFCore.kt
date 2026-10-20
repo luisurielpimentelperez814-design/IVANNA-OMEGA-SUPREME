@@ -106,8 +106,8 @@ object SAFCore {
     // Wrapper de alto nivel sobre SaFRoomBridge para uso desde AdaptiveBackend
     // y PerceptualCortex sin importar el bridge directamente.
     //
-    //   M_t := G_t + λ_t · I  ≻  0,   λ_t = λ_0·(1 + σ(R_t,H_t,S_t))
-    //   α*  = E_t / (E_t + ‖M_t⁻¹Δ‖²_{M_t} + λ_t·σ + ε)
+    //   J(p) = 1/2 ||p - τ||² + λ/2 ||p - p₀||²
+    //   λ = λ₀ exp(0.15·RT60 + HRTF_mismatch_energy + 0.40·diffuseness)
     //   p* = clip((τ + λ p₀)/(1 + λ), p_min, p_max)
     //
     // @return peso efectivo del target 1/(1+λ), ó 0f si el bridge falla.

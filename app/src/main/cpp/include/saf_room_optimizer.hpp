@@ -28,30 +28,19 @@
 //  α*(R,H,S)            Optimal step-size (Barzilai–Borwein + room coupling)
 //
 // Optimal step-size derivation
-// ─────────────────────────────
-//  Standard Riemannian BB:
-//    α_BB = E_t / (E_t + ‖M_t^{-1}Δ_t‖²_{M_t} + ε)
+// SAF-Room compatibility facade. The iterative natural-gradient update has
+// been replaced by the exact constrained MAP solution for this declared
+// convex quadratic objective:
 //
-//  Room coupling modulates the denominator via σ(R_t, H_t, S_t):
-//    α*(R,H,S) = E_t / (E_t + ‖M_t^{-1}Δ_t‖²_{M_t} + λ_t·σ + ε)
+//   J(p) = 1/2 ||p - tau||^2 + lambda/2 ||p - p0||^2
+//   p*   = clip((tau + lambda*p0)/(1 + lambda), p_min, p_max)
+//   lambda = lambda0 * exp(0.15*RT60 + HRTF_mismatch_energy + 0.40*diffuseness)
 //
-//  σ(R_t, H_t, S_t) = α_R · RT60_t  +  α_H · ‖H_mismatch‖²  +  α_S · D_t
-//    · α_R  = 0.15  (reverb weighting — RT60 measured in [0, 5]s)
-//    · α_H  = 1.00  (HRTF mismatch energy, normalized [0,1]²)
-//    · α_S  = 0.40  (sound-field diffuseness D ∈ [0,1])
-//
-// Riemannian projection Proj_S^{M_t}
-// ─────────────────────────────────────
-//  For box constraints [p_min, p_max] the M_t-weighted projection reduces
-//  to element-wise clamping (diagonal metric is self-dual on box sets):
-//    Proj_S^{M_t}(x)_i = clamp(x_i, p_min_i, p_max_i)
-//
-// Thread safety
-// ─────────────
-//  step() is protected by a mutex.
-//  RoomState/HrtfState/SoundFieldState can be written concurrently from
-//  the audio thread without locking via atomic<float> (platform: arm64).
-// ─────────────────────────────────────────────────────────────────────────────
+// This is exact for the quadratic objective and box constraints. It does not
+// solve non-convex perceptual terms that have not yet been implemented and
+// validated. Public C++ methods and JNI signatures remain compatible.
+// The mutex protects the 7-D latent state; context inputs are atomically
+// observed and sanitized by the v2 solver.
 
 #include <algorithm>
 #include <atomic>
