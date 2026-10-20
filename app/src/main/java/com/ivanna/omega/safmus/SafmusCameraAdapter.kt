@@ -86,7 +86,7 @@ object SafmusCameraAdapter {
         requested: Range<Int>?,
         result: android.hardware.camera2.CaptureResult
     ): SafmusUniversalKernel.Gate {
-        val effective = result.get(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE)
+        val effective = result.get(android.hardware.camera2.CaptureResult.CONTROL_AE_TARGET_FPS_RANGE)
         val gate = SafmusUniversalKernel.confirmHardwareOptimization(
             SafmusUniversalKernel.Gate(requested != null, "No hay solicitud de FPS válida"),
             effective == requested
