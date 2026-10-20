@@ -108,6 +108,16 @@ require("magisk_module/core/safmus_environment_optimizer.sh",
 require("magisk_module/service.sh", "safmus_environment_optimizer.sh",
         "SAFMUS: map whole-device resource conditions", '"$SAFMUS_ENV"')
 
+# Whole-device adapters must be started by Application and feed the existing DSP governor.
+require("app/src/main/java/com/ivanna/omega/safmus/SafmusHardwareCoordinator.kt",
+        "object SafmusHardwareCoordinator", "HardwareProbe.probe(context)",
+        "setExternalResourceBudget(", "actuation=delegated_to_existing_ivanna_subsystems",
+        "thermal_status", "available_memory_kb", "camera_count", "audio_outputs", "sensor_count")
+require("app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt",
+        "SafmusHardwareCoordinator.start(this, appScope)")
+require("app/src/main/java/com/ivanna/omega/audio/ThermalGovernor.kt",
+        "fun setExternalResourceBudget(level: Int)", "applyCombinedPolicy", "externalResourcePressure")
+
 if errors:
     print("SAFMUS transversal wiring audit FAILED:")
     for error in errors:
