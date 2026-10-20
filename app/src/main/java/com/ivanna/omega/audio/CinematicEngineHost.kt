@@ -54,9 +54,17 @@ object CinematicEngineHost {
     val activeModeOrdinal: Int
         get() = if (active) (engine?.activeMode?.ordinal ?: 0) else 0
 
-    /** Identidad si el engine no está activo — no altera el audio. */
+    /** True only while the AntiDolby classifier is actually running. */
+    val isActive: Boolean
+        get() = active && engine != null
+
+    /**
+     * AntiDolby must not inject cinematic reverb, delay or sub-harmonics.
+     * Feed audio to the CRNN asynchronously and return the original buffer.
+     */
     fun processBlock(buf: FloatArray, count: Int = buf.size): FloatArray {
         val eng = engine
-        return if (active && eng != null) eng.processBlock(buf, buf, count) else buf
+        if (active && eng != null) eng.observeBlock(buf, count)
+        return buf
     }
 }
