@@ -36,6 +36,58 @@ object SafmusUniversalKernel {
         val acousticCalibrationReady: Boolean = false
     )
 
+    data class SpatialPoint3(val x: Float, val y: Float, val z: Float)
+    data class SpatialCloudOptimization(
+        val points: List<SpatialPoint3>,
+        val inputCount: Int,
+        val rejectedInvalidCount: Int,
+        val reducedByVoxelCount: Int,
+        val truncatedCount: Int
+    )
+
+    /**
+     * SAFMUS spatial preprocessing: discard non-finite/out-of-domain coordinates,
+     * voxel-thin redundant samples, and enforce a hard output limit. This optimizes
+     * geometry payload size without pretending to reconstruct unseen surfaces.
+     */
+    fun optimizeSpatialPointCloud(
+        input: List<SpatialPoint3>,
+        voxelSizeMeters: Float = 0.02f,
+        maxOutputPoints: Int = 100_000
+    ): SpatialCloudOptimization {
+        val voxel = sanitizeControlValue(voxelSizeMeters, 0.005f, 0.25f) ?: 0.02f
+        val limit = maxOutputPoints.coerceIn(1, 250_000)
+        val output = ArrayList<SpatialPoint3>(minOf(input.size, limit))
+        val occupied = HashSet<String>(minOf(input.size, limit))
+        var invalid = 0
+        var reduced = 0
+        var truncated = 0
+        for (point in input) {
+            if (!point.x.isFinite() || !point.y.isFinite() || !point.z.isFinite() ||
+                kotlin.math.abs(point.x) > 1_000f ||
+                kotlin.math.abs(point.y) > 1_000f ||
+                kotlin.math.abs(point.z) > 1_000f
+            ) {
+                invalid++
+                continue
+            }
+            val gx = kotlin.math.floor(point.x / voxel).toLong()
+            val gy = kotlin.math.floor(point.y / voxel).toLong()
+            val gz = kotlin.math.floor(point.z / voxel).toLong()
+            val key = "$gx:$gy:$gz"
+            if (!occupied.add(key)) {
+                reduced++
+                continue
+            }
+            if (output.size >= limit) {
+                truncated++
+                continue
+            }
+            output.add(point)
+        }
+        return SpatialCloudOptimization(output, input.size, invalid, reduced, truncated)
+    }
+
     /**
      * SAFMUS quality gate for ARCore geometry. AR points/poses are estimates,
      * not acoustic measurements; this gate never authorizes RIR/RT60 calibration.
