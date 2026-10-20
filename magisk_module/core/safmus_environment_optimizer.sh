@@ -41,7 +41,7 @@ for n in /sys/class/power_supply/*; do [ -e "$n" ] && battery_nodes=$((battery_n
 cpu_governors=""
 for n in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do
   [ -r "$n" ] || continue
-  g=$(cat "$n" 2>/dev/null | tr -d '\\n')
+  g=$(cat "$n" 2>/dev/null | tr -d '\n')
   [ -n "$g" ] && cpu_governors="${cpu_governors}${cpu_governors:+,}$g"
 done
 display_brightness=$(settings get system screen_brightness 2>/dev/null | tr -d '\\n')
