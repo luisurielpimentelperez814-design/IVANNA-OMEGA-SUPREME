@@ -18,6 +18,15 @@ class SafmusAdapterPolicyTest {
         assertEquals(false, safe.probeCameraInventory)
     }
 
+    @Test fun microphoneRingAbsorbsMoreSchedulerJitterUnderPressure() {
+        val min = 1024
+        val block = 2048
+        assertEquals(8192, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.NORMAL))
+        assertEquals(12288, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.CONSERVATIVE))
+        assertEquals(16384, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.SAFE))
+        assertEquals(20_000, SafmusAdapterPolicy.captureBufferBytes(20_000, block, SafmusAdapterPolicy.Load.NORMAL))
+    }
+
     @Test fun resourcePressureBoundsRouteEnhancementWithoutAddingGain() {
         val base = RouteProfile(bassBoostDb = 0f, dialogBoostDb = 4.5f, widenerMult = 0.5f)
         val normal = SafmusAdapterPolicy.optimizeRouteProfile(base, SafmusAdapterPolicy.Load.NORMAL)
