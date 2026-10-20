@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.104 (395) — Reencarnación AntiDolby + SAFMUS
+
+- **AntiDolby unificado:** un único CRNN compartido entre el controlador y el pipeline; se elimina el clasificador duplicado y el sondeo de un buffer que nunca recibía audio.
+- **Audio transparente:** AntiDolby ya no activa los efectos creativos de Cinematic (reverb/delay/subarmónicos). El CRNN observa bloques asíncronamente y devuelve el buffer de audio intacto.
+- **Rutas A/B:** Ruta A estéreo se convierte a mono antes del remuestreo; captura externa Ruta B declara su canal mono y alimenta el mismo clasificador. La heurística antigua no sobrescribe los scores cuando CRNN está activo.
+- **Seguridad y gobierno:** scores finitos limitados a [0,1] antes de JNI; la salida continúa por el DSP nativo existente bajo el gobernador de recursos/temperatura SAFMUS. Sin motores paralelos ni ganancia artificial añadida.
+- **Validación pendiente:** CI debe completar build y pruebas; RMS/clasificación/aplicación nativa y calidad acústica final requieren comprobación en dispositivo real.
+
+---
+
 # CHANGELOG — v2.5.100 (391) — Distancia de escena y HRIR por elevación en Ruta B
 
 - **Distancia (Ruta B):** `SET_SCENE_POSE` (azimut ±π, elevación ±π/4, distancia 0.5..2) publica azimut/elevación por el yaw/pitch del bus v8 (mismo camino y confirmación que `SET_HEAD_POSE`) y la distancia en `npe_ctl` bits 16..31 (el snapshot sigue en 512 B, sin cambio de ABI). `libomega_effect` aplica una ley 1/d de **solo nivel** (tope +3 dB, −6 dB a d=2) con rampa sin clic. Lo fuera de rango se rechaza (`ok:false`), no se satura.
