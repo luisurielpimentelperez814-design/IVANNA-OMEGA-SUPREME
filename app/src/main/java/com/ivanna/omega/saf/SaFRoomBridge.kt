@@ -29,7 +29,7 @@ object SaFRoomBridge {
 
     /**
      * Resuelve el MAP cuadrático acotado en una evaluación directa.
-     * @return 1f si aplicó una solución válida; 0f si la rechazó o falla.
+     * @return peso efectivo del target en el MAP [0,1]; 0f si la solución se rechaza o falla.
      */
     fun step(): Float =
         if (loaded) runCatching { nativeSafrStep() }.getOrElse { 0f } else 0f
@@ -81,7 +81,7 @@ object SaFRoomBridge {
 
     /**
      * Diagnósticos del último paso:
-     * [0] estado     — 1 = solución exacta aplicada; 0 = rechazada
+     * [0] peso τ      — coeficiente exacto del target en el MAP; 0 si se rechaza
      * [1] J*         — objetivo MAP cuadrático en la solución
      * [2] λ_t        — fuerza del prior dependiente del contexto
      * [3] βᵀz        — exponente contextual de λ_t

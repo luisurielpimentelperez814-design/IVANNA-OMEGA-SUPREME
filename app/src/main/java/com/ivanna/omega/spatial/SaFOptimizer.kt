@@ -199,9 +199,9 @@ object SaFOptimizer {
             // target por defecto del optimizador nativo es el Golden Master (kMasterSafGoldenQ), no
             // cero, y SAFCore.update() fija el suyo. No existe una conversión validada de los cinco
             // errores direccionales a un target latente 7-D, así que no se inventa uno.
-            // Ejecutar un paso Φ_SAF-Room^∞ con el contexto actual
+            // Resolver el MAP cuadrático exacto con el contexto actual
             val alpha = SaFRoomBridge.step()
-            Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} α*=$alpha rt60=$rt60Applied")
+            Log.v(TAG, "syncToRoomBridge: iteration=${st.iteration} targetWeight=$alpha rt60=$rt60Applied")
         } catch (t: Throwable) {
             Log.w(TAG, "syncToRoomBridge omitido (bridge no listo): ${t.message}")
         }

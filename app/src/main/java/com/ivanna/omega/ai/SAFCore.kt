@@ -108,9 +108,9 @@ object SAFCore {
     //
     //   M_t := G_t + λ_t · I  ≻  0,   λ_t = λ_0·(1 + σ(R_t,H_t,S_t))
     //   α*  = E_t / (E_t + ‖M_t⁻¹Δ‖²_{M_t} + λ_t·σ + ε)
-    //   p_{t+1} = Proj_S^{M_t}(p_t + α* M_t^{-1} Δ_t)
+    //   p* = clip((τ + λ p₀)/(1 + λ), p_min, p_max)
     //
-    // @return α*(R_t, H_t, S_t) — paso óptimo, ó 0f si el bridge falla.
+    // @return peso efectivo del target 1/(1+λ), ó 0f si el bridge falla.
     fun stepRoom(
         current:      DoubleArray,
         target:       DoubleArray,
@@ -127,7 +127,7 @@ object SAFCore {
         // 2. Fijar target en C++
         com.ivanna.omega.saf.SaFRoomBridge.setTarget(target.map { it.toFloat() }.toFloatArray())
 
-        // 3. Paso Riemanniano C++ — α*(R,H,S) con M_t = G_t + λ_t I
+        // 3. Solución MAP cuadrática cerrada en C++
         val alphaRoom = com.ivanna.omega.saf.SaFRoomBridge.step()
 
         // 4. También actualizar estado Kotlin (getState() sigue válido)

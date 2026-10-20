@@ -154,8 +154,9 @@ public:
 
     // ── Exact constrained MAP update (perceptual optimizer v2) ───────────
     // For J(p)=0.5||p-target||² + 0.5*lambda||p-GoldenQ||², the
-    // constrained minimizer has a closed form. Return 1.0 for the direct
-    // solve (keeps the existing JNI float contract); 0.0 means rejected.
+    // constrained minimizer has a closed form. Return the target's exact
+    // MAP mixing coefficient 1/(1+lambda), preserving a meaningful [0,1]
+    // scalar for existing Kotlin callers; 0.0 means rejected.
     float step() noexcept {
         std::lock_guard<std::mutex> lk(m_mtx);
 
@@ -184,12 +185,13 @@ public:
         for (int i = 0; i < SAFR_K; ++i)
             m_p[i] = solved.params[static_cast<std::size_t>(i)];
 
-        m_lastAlpha.store(1.0f, std::memory_order_relaxed);
+        const float targetWeight = 1.0f / (1.0f + solved.lambda);
+        m_lastAlpha.store(targetWeight, std::memory_order_relaxed);
         m_lastE.store(static_cast<float>(solved.objective), std::memory_order_relaxed);
         m_lastLambda.store(solved.lambda, std::memory_order_relaxed);
         m_lastSigma.store(solved.contextExponent, std::memory_order_relaxed);
         m_iter.fetch_add(1, std::memory_order_relaxed);
-        return 1.0f;
+        return targetWeight;
     }
 
     // ── Diagnostics (read from any thread) ───────────────────────────────
