@@ -71,6 +71,12 @@ require("app/src/test/java/com/ivanna/omega/safmus/SafmusUniversalKernelTest.kt"
 
 require("app/src/main/java/com/ivanna/omega/safmus/SafmusUniversalKernel.kt",
         "gateHrtfDataset", "gateRirConfiguration")
+require("app/src/main/java/com/ivanna/omega/safmus/SafmusUniversalKernel.kt",
+        "enum class HardwareResource", "gateHardwareOptimization", "confirmHardwareOptimization",
+        "owningSessionConfirmed", "telemetryFresh", "rollbackAvailable")
+require("app/src/test/java/com/ivanna/omega/safmus/SafmusUniversalKernelTest.kt",
+        "hardwareOptimizationRequiresPermissionFreshnessBudgetAndRollback",
+        "hardwareOptimizationReadbackMustMatchBeforeSuccessIsReported")
 require("app/src/main/java/com/ivanna/omega/spatial/IvannaSpatialManager.kt", "gateHrtfDataset")
 require("app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt", "gateRirConfiguration")
 require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "if (value.isFinite()) value else def")
