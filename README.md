@@ -27,6 +27,16 @@ El repositorio contiene código de producción, módulos experimentales, pruebas
 
 ## Qué incluye
 
+<details>
+<summary><strong>Captura espacial con cámara AR (experimental)</strong></summary>
+
+La actividad **Captura espacial AR** usa ARCore para seguir el movimiento del teléfono y recopilar puntos 3D. Cuando el dispositivo admite la API de profundidad, toma muestras de profundidad y las proyecta al espacio; si no, conserva puntos dispersos de seguimiento. Al finalizar, permite exportar un ZIP con una nube de puntos PLY y metadatos JSON (poses, seguimiento, modo de profundidad y límites espaciales estimados).
+
+**Límites:** no es una malla cerrada ni una medición certificada de las dimensiones de la habitación. Las superficies sin textura, el vidrio, la oscuridad, el movimiento rápido y los dispositivos sin profundidad reducen la calidad. La captura no mide RT60/RIR; la conexión acústica debe calibrarse por separado. ARCore requiere un dispositivo compatible y permiso de cámara.
+
+</details>
+
+
 <details open>
 <summary><strong>Motor de audio y aplicación Android</strong></summary>
 
