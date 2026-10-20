@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.101
-versionCode=392
+version=v2.5.102
+versionCode=393
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.101: integración SAFMUS transversal, presupuesto adaptativo y adaptadores reversibles
+description=v2.5.102: telemetría de ruta activa y correcciones SAFMUS, presupuesto adaptativo y adaptadores reversibles
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
