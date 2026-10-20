@@ -94,6 +94,7 @@ class AudioPipeline {
     // setea desde start(context) si el caller la provee. Sin esto la clase
     // nunca sabía que UsbAudioProManager existía.
     private var usbManagerRef: UsbAudioProManager? = null
+    @Volatile private var appContext: android.content.Context? = null
 
     @Volatile private var dspState = DSPState()
     @Volatile private var lastRms = 0f
@@ -132,6 +133,7 @@ class AudioPipeline {
      * Antes no había forma de que AudioPipeline supiera que ese manager existía.
      */
     fun start(context: android.content.Context) {
+        appContext = context.applicationContext
         usbManagerRef = UsbAudioProManager.getInstance(context)
         start()
     }
@@ -156,7 +158,8 @@ class AudioPipeline {
     private suspend fun runPipeline() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
 
-        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        val captureContext = appContext
+        if (captureContext == null || captureContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             Log.w(tag, "SAFMUS microphone adapter abstains: RECORD_AUDIO permission missing")
             IvannaUnifiedPipeline.notifyRouteAStopped()
             isRunning = false
