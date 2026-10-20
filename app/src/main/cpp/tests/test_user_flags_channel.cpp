@@ -136,6 +136,46 @@ TEST(SpatialPoseDaemon, SetHeadPosePublishesClampedPoseThroughSnapshot) {
     EXPECT_FLOAT_EQ(snap.head_pitch_rad, -0.78539816f);
 }
 
+TEST(SafmusDaemon, RejectsMalformedLatentWithoutCorruptingLastValidVector) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\\"action\\":\\"SET_SAF_STATE\\",\\"q\\":[0.1,0.2,0.3,0.4,0.5,0.6,0.7]}",
+        reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\\"ok\\":true"), std::string::npos) << reply;
+    OmegaDspSnapshot before{};
+    ASSERT_TRUE(h.reader.readLatest(before, h.seen));
+    ASSERT_TRUE(before.isValid());
+    for (int i = 0; i < OMEGA_CTRL_SAF_Q; ++i)
+        EXPECT_NEAR(before.saf_q[i], 0.1f * static_cast<float>(i + 1), 1e-6f);
+
+    // Vector parcial y vector con infinito: ambos deben rechazarse sin publicar.
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\\"action\\":\\"SET_SAF_STATE\\",\\"q\\":[0.9,0.8]}",
+        reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\\"ok\\":false"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\\"invalid_latent_vector\\""), std::string::npos) << reply;
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\\"action\\":\\"SET_SAF_STATE\\",\\"q\\":[0.9,0.8,1e999,0.6,0.5,0.4,0.3]}",
+        reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\\"ok\\":false"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\\"invalid_latent_vector\\""), std::string::npos) << reply;
+
+    // Un comando compatible sin q publica el resto del estado, pero conserva
+    // intacto el último vector válido, no un fragmento de una petición fallida.
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\\"action\\":\\"SET_SAF_STATE\\",\\"gain\\":0.6}",
+        reply, sizeof reply), 0);
+    OmegaDspSnapshot after{};
+    ASSERT_TRUE(h.reader.readLatest(after, h.seen));
+    ASSERT_TRUE(after.isValid());
+    for (int i = 0; i < OMEGA_CTRL_SAF_Q; ++i)
+        EXPECT_FLOAT_EQ(after.saf_q[i], before.saf_q[i]);
+}
+
 TEST(SpatialPoseDaemon, StatusNeverClaimsAppliedWithoutConsumerAck) {
     Harness h;
     CommandServer cs;
