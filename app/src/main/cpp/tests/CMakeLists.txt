@@ -97,6 +97,8 @@ ivanna_add_test(test_perceptual_geometry_v3)
 # Production-path integration tests: exercise SaFRoomOptimizer, not only its helper.
 ivanna_add_test(test_saf_room_optimizer)
 ivanna_add_test(test_wasserstein_latent_flow)
+# Bounded adaptive residual geometry feedback on the SAF 7-D control state.
+ivanna_add_test(test_topological_feedback_operator)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
