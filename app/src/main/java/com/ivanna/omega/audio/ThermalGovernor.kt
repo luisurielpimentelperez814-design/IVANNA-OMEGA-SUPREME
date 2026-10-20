@@ -142,7 +142,7 @@ object ThermalGovernor {
             if (exciterRed != lastExciterRed) {
                 IvannaNativeLib.nativeSetExciterReduction(exciterRed)
                 lastExciterRed = exciterRed
-                Log.i(TAG, "térmico: exciter_reduction=$exciterRed (headroom=$headroom)")
+                Log.i(TAG, "SAFMUS/DSP: tier=${tier.label}, exciter_reduction=$exciterRed, thermalHeadroom=${currentThermalLoad.takeIf { thermalApiAvailable } ?: "unknown"}")
             }
             if (compCut != lastCompCut) {
                 IvannaNativeLib.nativeSetCompressorAmount(1.0f - compCut)
