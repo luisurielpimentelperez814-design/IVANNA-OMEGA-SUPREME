@@ -23,6 +23,20 @@ class SafmusUniversalKernelTest {
         assertTrue(result.truncatedCount == 0)
     }
 
+    @Test fun spatialPointCloudOptimizationHonorsHardOutputCap() {
+        val result = SafmusUniversalKernel.optimizeSpatialPointCloud(
+            listOf(
+                SafmusUniversalKernel.SpatialPoint3(0f, 0f, 0f),
+                SafmusUniversalKernel.SpatialPoint3(1f, 0f, 0f),
+                SafmusUniversalKernel.SpatialPoint3(2f, 0f, 0f)
+            ),
+            voxelSizeMeters = 0.02f,
+            maxOutputPoints = 1
+        )
+        assertTrue(result.points.size == 1)
+        assertTrue(result.truncatedCount == 2)
+    }
+
     @Test fun spatialCaptureGateLabelsEstimatedGeometryAndNeverClaimsAcousticCalibration() {
         val good = SafmusUniversalKernel.assessSpatialCapture(
             pointCount = 500, depthPointCount = 400, sparsePointCount = 100,
