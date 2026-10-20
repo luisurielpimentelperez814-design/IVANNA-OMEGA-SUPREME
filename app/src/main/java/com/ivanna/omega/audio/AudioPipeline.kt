@@ -59,8 +59,8 @@ class AudioPipeline {
         const val FRAMES_PER_BLOCK = 256
         const val BUFFER_SIZE = FRAMES_PER_BLOCK * 2   // estéreo intercalado
 
-        // Throttle YAMNet: clasificar cada N bloques (~1s @ 48kHz con bloques de 256)
-        private const val YAMNET_CLASSIFY_EVERY_N = 187  // 187 × 256 = ~96000 frames = 1s
+        // El clasificador recibe una ventana real de 0.975 s a 16 kHz;
+        // la acumulación se hace por bloque, no por una llamada aislada cada segundo.
 
         // 3J: resultado YAMNet global — actualizado por cualquier instancia activa
         // de AudioPipeline; collectado en TelemetryDashboard sin pasar Context.
@@ -106,10 +106,12 @@ class AudioPipeline {
     private val _yamnetResult = MutableStateFlow(YamnetResult())
     val yamnetResult: StateFlow<YamnetResult> = _yamnetResult.asStateFlow()
 
-    // FIX: buffer para downsample 48kHz→16kHz para YAMNet
-    private val yamnetBuffer = FloatArray(15600)  // 0.975s @ 16kHz
+    // Ventanas independientes: Ruta A estéreo y captura externa mono pueden
+    // coexistir; nunca deben escribir simultáneamente en el mismo acumulador.
+    private val yamnetBuffer = FloatArray(15600)        // 0.975 s @ 16 kHz
     private var yamnetWritePos = 0
-    private var blockCounter = 0
+    private val capturedYamnetBuffer = FloatArray(15600)
+    private var capturedYamnetWritePos = 0
 
     fun setState(state: DSPState) {
         dspState = state
@@ -256,11 +258,9 @@ class AudioPipeline {
                 val cinematic = CinematicEngineHost.processBlock(buf, read)
                 if (cinematic !== buf) System.arraycopy(cinematic, 0, buf, 0, minOf(cinematic.size, buf.size))
 
-                // FIX: acumular muestras para YAMNet (downsample 48kHz→16kHz, ratio 3:1)
-                blockCounter++
-                if (blockCounter % YAMNET_CLASSIFY_EVERY_N == 0) {
-                    feedYamnet(buf, read)
-                }
+                // Acumular cada bloque; la ventana completa dispara una clasificación
+                // aproximadamente cada segundo sin perder los bloques intermedios.
+                feedYamnet(buf, read)
 
                 for (i in 0 until read) buf[i] = buf[i].coerceIn(-1f, 1f)
 
@@ -288,15 +288,14 @@ class AudioPipeline {
      * llegaban al nativeSetAntiDolbyScores() — este era el eslabón roto.
      */
     private fun feedYamnet(buf: FloatArray, read: Int) {
-        // Downsample simple 3:1: tomar cada 3er sample del canal L (índices pares)
-        var pos = 0
+        // Downsample 3:1 usando el canal izquierdo de PCM estéreo intercalado.
+        var pos = yamnetWritePos
         var i = 0
         while (i < read && pos < yamnetBuffer.size) {
             yamnetBuffer[pos++] = buf[i]
-            i += 6  // saltar 3 frames estéreo (6 floats)
+            i += 6  // un sample por cada 3 frames estéreo
         }
-        // Si tenemos suficientes datos, clasificar
-        if (pos >= 15600) {
+        if (pos >= yamnetBuffer.size) {
             classifyAndRoute(yamnetBuffer)
             pos = 0
         }
@@ -386,23 +385,19 @@ class AudioPipeline {
             dspActive = true,
         )
 
-        // Alimentar YAMNet en modo throttled (mismo ritmo que Ruta A directa).
-        blockCounter++
-        if (blockCounter % YAMNET_CLASSIFY_EVERY_N == 0) {
-            // El feedYamnet original espera stereo intercalado: aqui es mono,
-            // asi que hacemos el downsample 3:1 in-place sobre el mono.
-            var pos = yamnetWritePos
-            var i = 0
-            while (i < n && pos < yamnetBuffer.size) {
-                yamnetBuffer[pos++] = mono[i]
-                i += 3
-            }
-            if (pos >= 15600) {
-                classifyAndRoute(yamnetBuffer)
-                pos = 0
-            }
-            yamnetWritePos = pos
+        // Alimentar una ventana mono independiente: downsample 48 kHz → 16 kHz.
+        // La acumulación por llamada evita descartar casi todo el audio entre inferencias.
+        var pos = capturedYamnetWritePos
+        var i = 0
+        while (i < n && pos < capturedYamnetBuffer.size) {
+            capturedYamnetBuffer[pos++] = mono[i]
+            i += 3
         }
+        if (pos >= capturedYamnetBuffer.size) {
+            classifyAndRoute(capturedYamnetBuffer)
+            pos = 0
+        }
+        capturedYamnetWritePos = pos
     }
 
     fun setBypass(bypass: Boolean) { setState(dspState.copy(bypass = bypass)) }
