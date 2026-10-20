@@ -5,6 +5,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafmusUniversalKernelTest {
+    @Test fun spatialCaptureGateLabelsEstimatedGeometryAndNeverClaimsAcousticCalibration() {
+        val good = SafmusUniversalKernel.assessSpatialCapture(
+            pointCount = 500, depthPointCount = 400, sparsePointCount = 100,
+            poseCount = 8, durationMs = 12_000L, trackingState = "TRACKING",
+            coordinatesFinite = true, posesFinite = true
+        )
+        assertTrue(good.exportAllowed)
+        assertTrue(good.quality == "REVIEWABLE_DEPTH_ESTIMATE")
+        assertTrue(good.evidenceKind == "ESTIMATED_AR_GEOMETRY")
+        assertFalse(good.acousticCalibrationReady)
+    }
+
+    @Test fun spatialCaptureGateFailsClosedOnInvalidCoordinatesAndLabelsWeakCaptureDegraded() {
+        val invalid = SafmusUniversalKernel.assessSpatialCapture(
+            500, 400, 100, 8, 12_000L, "TRACKING", false, true
+        )
+        assertFalse(invalid.exportAllowed)
+        val weak = SafmusUniversalKernel.assessSpatialCapture(
+            12, 0, 12, 1, 500L, "PAUSED", true, true
+        )
+        assertTrue(weak.exportAllowed)
+        assertTrue(weak.quality == "DEGRADED")
+        assertFalse(weak.acousticCalibrationReady)
+    }
+
     @Test fun sliderControlValuesRejectNonFiniteAndClampToDeclaredRange() {
         assertTrue(SafmusUniversalKernel.sanitizeControlValue(0.5f, 0f, 1f) == 0.5f)
         assertTrue(SafmusUniversalKernel.sanitizeControlValue(-2f, 0f, 1f) == 0f)
