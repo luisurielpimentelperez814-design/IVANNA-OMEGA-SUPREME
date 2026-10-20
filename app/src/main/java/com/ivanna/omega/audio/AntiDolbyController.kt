@@ -2,6 +2,7 @@ package com.ivanna.omega.audio
 
 import android.content.Context
 import android.util.Log
+import com.ivanna.omega.core.IVANNAApplication
 import kotlin.math.max
 
 /**
@@ -45,6 +46,9 @@ class AntiDolbyController(private val context: Context) {
         if (isAntiDolbyEnabled) return
 
         CinematicEngineHost.onClassification = { speech, music, bass ->
+            (context.applicationContext as? IVANNAApplication)
+                ?.perceptualCortex
+                ?.updateContentClassification(speech, music, bass)
             adjustParameters(speech, music, bass)
         }
         CinematicEngineHost.start(context.applicationContext, sampleRate = AudioPipeline.SAMPLE_RATE)
@@ -58,7 +62,9 @@ class AntiDolbyController(private val context: Context) {
         isAntiDolbyEnabled = false
         CinematicEngineHost.onClassification = null
         CinematicEngineHost.stop()
-        AudioEngine.nativeSetAntiDolbyScoresStatic(0f, 0f, 0f)
+        (context.applicationContext as? IVANNAApplication)
+            ?.perceptualCortex
+            ?.clearContentClassification()
         emaSpeech = 0f
         emaMusic = 0f
         emaBass = 0f
@@ -81,8 +87,6 @@ class AntiDolbyController(private val context: Context) {
     }
 
     private fun adjustParameters(speech: Float, music: Float, bass: Float) {
-        if (onDspUpdate == null) return
-
         val s = speech.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
         val m = music.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
         val b = bass.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
