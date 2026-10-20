@@ -44,14 +44,14 @@ object SafmusAdapterPolicy {
     fun optimizeRouteProfile(base: RouteProfile, load: Load): RouteProfile = when (load) {
         Load.NORMAL -> base
         Load.CONSERVATIVE -> RouteProfile(
-            bassBoostDb = base.bassBoostDb.coerceIn(-6f, 6f),
-            dialogBoostDb = base.dialogBoostDb.coerceIn(0f, 3f),
-            widenerMult = base.widenerMult.coerceIn(0.65f, 1f)
+            bassBoostDb = if (base.bassBoostDb > 0f) base.bassBoostDb * 0.5f else base.bassBoostDb,
+            dialogBoostDb = (base.dialogBoostDb.coerceAtLeast(0f) * (2f / 3f)).coerceAtMost(3f),
+            widenerMult = base.widenerMult.coerceIn(0f, 1f) * 0.85f
         )
         Load.SAFE -> RouteProfile(
-            bassBoostDb = base.bassBoostDb.coerceIn(-3f, 3f),
-            dialogBoostDb = base.dialogBoostDb.coerceIn(0f, 1.5f),
-            widenerMult = base.widenerMult.coerceIn(0.85f, 1f)
+            bassBoostDb = base.bassBoostDb.coerceAtMost(0f),
+            dialogBoostDb = (base.dialogBoostDb.coerceAtLeast(0f) / 3f).coerceAtMost(1.5f),
+            widenerMult = base.widenerMult.coerceIn(0f, 1f) * 0.65f
         )
     }
 }
