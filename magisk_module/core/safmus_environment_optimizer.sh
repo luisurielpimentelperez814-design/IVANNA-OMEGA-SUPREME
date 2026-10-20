@@ -29,7 +29,7 @@ audio_class=unknown
 budget=normal; reason="telemetria básica disponible"
 if [ "$mem_kb" -gt 0 ] && [ "$mem_kb" -lt 262144 ]; then budget=conservative; reason="memoria disponible baja"; fi
 if [ -n "$thermal_max" ] && [ "$thermal_max" -ge 75 ]; then budget=conservative; reason="temperatura reportada alta"; fi
-if [ -f "$MODDIR/../.safe_mode" ] || [ -f "$MODDIR/../.safe_mode" ]; then budget=safe_mode; reason="módulo en modo seguro"; fi
+if [ -f "$MODDIR/../.safe_mode" ]; then budget=safe_mode; reason="módulo en modo seguro"; fi
 {
  echo "schema=1"; echo "timestamp=$(date +%s)"
  echo "android_release=$(getprop_safe ro.build.version.release)"
