@@ -15,6 +15,7 @@
 #pragma once
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
@@ -36,9 +37,47 @@ struct alignas(8) EffectBeacon {
     std::atomic<uint64_t> frames;         // frames procesados por el DSP completo (monótono)
     std::atomic<uint64_t> last_block_ms;  // CLOCK_MONOTONIC del último bloque procesado
     std::atomic<uint64_t> stamp_ms;       // CLOCK_MONOTONIC de la última actividad (enable/bloque)
+    std::atomic<uint64_t> head_pose_generation;
+    std::atomic<uint32_t> head_yaw_bits;
+    std::atomic<uint32_t> head_pitch_bits;
 };
 static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 64 B");
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "se requieren atómicos de 64 bit lock-free");
+static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 64 B");
+
+struct EffectHeadPoseAck {
+    uint64_t generation = 0;
+    float yaw_rad = 0.0f;
+    float pitch_rad = 0.0f;
+    bool valid = false;
+};
+
+inline bool readEffectHeadPoseAck(EffectHeadPoseAck& out,
+                                  const char* path = OMEGA_EFFECT_BEACON_PATH) noexcept {
+    const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    struct stat st{};
+    if (::fstat(fd, &st) < 0 || static_cast<size_t>(st.st_size) < OMEGA_EFFECT_BEACON_SIZE) {
+        ::close(fd);
+        return false;
+    }
+    void* addr = ::mmap(nullptr, OMEGA_EFFECT_BEACON_SIZE, PROT_READ, MAP_SHARED, fd, 0);
+    ::close(fd);
+    if (addr == MAP_FAILED) return false;
+    const auto* b = static_cast<const EffectBeacon*>(addr);
+    bool ok = b->magic.load(std::memory_order_acquire) == OMEGA_EFFECT_BEACON_MAGIC;
+    if (ok) {
+        out.generation = b->head_pose_generation.load(std::memory_order_acquire);
+        uint32_t yawBits = b->head_yaw_bits.load(std::memory_order_relaxed);
+        uint32_t pitchBits = b->head_pitch_bits.load(std::memory_order_relaxed);
+        std::memcpy(&out.yaw_rad, &yawBits, sizeof(float));
+        std::memcpy(&out.pitch_rad, &pitchBits, sizeof(float));
+        out.valid = out.generation > 0;
+    }
+    ::munmap(addr, OMEGA_EFFECT_BEACON_SIZE);
+    return ok && out.valid;
+}
+
 
 // Estado visible a la app. Unavailable obliga al llamador a NO cambiar su comportamiento.
 enum class EffectBeaconState : int {
@@ -116,6 +155,9 @@ public:
         b->frames.store(0ull, std::memory_order_relaxed);
         b->last_block_ms.store(0ull, std::memory_order_relaxed);
         b->stamp_ms.store(effectBeaconNowMs(), std::memory_order_relaxed);
+        b->head_pose_generation.store(0ull, std::memory_order_relaxed);
+        b->head_yaw_bits.store(0u, std::memory_order_relaxed);
+        b->head_pitch_bits.store(0u, std::memory_order_relaxed);
         b->magic.store(OMEGA_EFFECT_BEACON_MAGIC, std::memory_order_release);
         m_beacon.store(b, std::memory_order_release);
         return true;
@@ -134,6 +176,17 @@ public:
         uint32_t c = b->enabled_count.load(std::memory_order_relaxed);
         while (c > 0u && !b->enabled_count.compare_exchange_weak(c, c - 1u, std::memory_order_relaxed)) {}
         b->stamp_ms.store(effectBeaconNowMs(), std::memory_order_relaxed);
+    }
+    // RT-safe: la pose ya fue aplicada y el bloque terminó el DSP.
+    void onHeadPoseApplied(uint64_t generation, float yawRad, float pitchRad) noexcept {
+        EffectBeacon* b = m_beacon.load(std::memory_order_acquire);
+        if (!b || generation == 0u || !std::isfinite(yawRad) || !std::isfinite(pitchRad)) return;
+        uint32_t yawBits = 0u, pitchBits = 0u;
+        std::memcpy(&yawBits, &yawRad, sizeof(float));
+        std::memcpy(&pitchBits, &pitchRad, sizeof(float));
+        b->head_yaw_bits.store(yawBits, std::memory_order_relaxed);
+        b->head_pitch_bits.store(pitchBits, std::memory_order_relaxed);
+        b->head_pose_generation.store(generation, std::memory_order_release);
     }
     // RT-safe: un bloque pasó por TODO el DSP.
     void onBlock(uint32_t frames) noexcept {

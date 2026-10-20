@@ -182,6 +182,7 @@ private:
 
     pthread_mutex_t m_mutex;
     OmegaDspState m_state;
+    uint64_t m_head_pose_generation = 0;
     int m_server_fd;
     std::string m_socket_path;
     bool m_running;

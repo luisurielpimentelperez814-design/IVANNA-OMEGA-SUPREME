@@ -6,6 +6,7 @@
 #include "../core/shm_manager.h"
 #include "../../include/omega_shared.h"
 #include "../../include/omega_control_bus.h"
+#include "../../include/omega_effect_beacon.h"
 #include "../../include/omega_user_flags.hpp"   // v2.5.16: SET_USER_FLAGS (tabla blanca de bits)
 #include "../../ivanna_hires_config.hpp"
 #include <sys/socket.h>
@@ -310,15 +311,36 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         // Campos ausentes conservan el valor vigente; rangos seguros en radianes.
         m_state.head_yaw_rad = _clamp(_jsonFloat(json,"yawRad",m_state.head_yaw_rad), -3.14159265f, 3.14159265f);
         m_state.head_pitch_rad = _clamp(_jsonFloat(json,"pitchRad",m_state.head_pitch_rad), -0.78539816f, 0.78539816f);
-        const uint64_t gen = publishCurrentState(m_state);
-        // Publishing a snapshot proves acceptance only. The audio-effect consumer
-        // acknowledges its generation asynchronously; never report DSP application here.
+        cons        m_head_pose_generation = gen;
+        ivanna::EffectHeadPoseAck ack{};
+        const bool ackReadable = ivanna::readEffectHeadPoseAck(ack);
+        const bool applied = gen > 0u && ackReadable && ack.generation >= gen &&
+            std::fabs(ack.yaw_rad - m_state.head_yaw_rad) <= 0.001f &&
+            std::fabs(ack.pitch_rad - m_state.head_pitch_rad) <= 0.001f;
         n = snprintf(reply, reply_sz,
-            "{\"ok\":%s,\"action\":\"SET_HEAD_POSE\",\"applied\":false,\"status\":\"%s\",\"generation\":%llu,\"yawRad\":%.6f,\"pitchRad\":%.6f}",
-            gen > 0 ? "true" : "false", gen > 0 ? "accepted_pending_consumer" : "publish_failed",
-            static_cast<unsigned long long>(gen), m_state.head_yaw_rad, m_state.head_pitch_rad);
+            "{\\"ok\\":%s,\\"action\\":\\"SET_HEAD_POSE\\",\\"applied\\":%s,\\"status\\":\\"%s\\",\\"generation\\":%llu,\\"consumerGeneration\\":%llu,\\"yawRad\\":%.6f,\\"pitchRad\\":%.6f}",
+            gen > 0 ? "true" : "false", applied ? "true" : "false",
+            gen == 0u ? "publish_failed" : (applied ? "applied" : "accepted_pending_consumer"),
+            static_cast<unsigned long long>(gen),
+            static_cast<unsigned long long>(ackReadable ? ack.generation : 0u),
+            m_state.head_yaw_rad, m_state.head_pitch_rad); m_state.head_yaw_rad, m_state.head_pitch_rad);
 
-    } else if (strcmp(action,"SET_PUNCH")==0) {
+    } else if (strcmp(action,"SET_PUNCH")==0) {    } else if (strcmp(action,"GET_HEAD_POSE_STATUS")==0) {
+        ivanna::EffectHeadPoseAck ack{};
+        const bool ackReadable = ivanna::readEffectHeadPoseAck(ack);
+        const bool requested = m_head_pose_generation > 0u;
+        const bool applied = requested && ackReadable && ack.generation >= m_head_pose_generation &&
+            std::fabs(ack.yaw_rad - m_state.head_yaw_rad) <= 0.001f &&
+            std::fabs(ack.pitch_rad - m_state.head_pitch_rad) <= 0.001f;
+        n = snprintf(reply, reply_sz,
+            "{\\"ok\\":true,\\"action\\":\\"GET_HEAD_POSE_STATUS\\",\\"applied\\":%s,\\"status\\":\\"%s\\",\\"generation\\":%llu,\\"consumerGeneration\\":%llu,\\"yawRad\\":%.6f,\\"pitchRad\\":%.6f}",
+            applied ? "true" : "false",
+            !requested ? "no_request" : (applied ? "applied" : (ackReadable ? "accepted_pending_consumer" : "consumer_unavailable")),
+            static_cast<unsigned long long>(m_head_pose_generation),
+            static_cast<unsigned long long>(ackReadable ? ack.generation : 0u),
+            m_state.head_yaw_rad, m_state.head_pitch_rad);
+
+
         // v2.5.41: impacto predictivo por bandas. Clave ausente conserva el valor. La resolución publicada es 1/15.
         m_state.punch_amount = _clamp(_jsonFloat(json,"punchAmount", m_state.punch_amount), 0.f, 1.f);
         uint64_t gen = publishCurrentState(m_state);

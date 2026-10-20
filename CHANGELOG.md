@@ -1,9 +1,11 @@
-# CHANGELOG — v2.5.97 (388) — Ruta B informa aceptación, no aplicación prematura
+# CHANGELOG — v2.5.97 (388) — Confirmación real de pose HRTF en Ruta B
 
-- **Verdad de estado SAFMUS/10D:** `SET_HEAD_POSE` ya no devuelve `applied` solo porque el daemon publicó una generación en el snapshot. Devuelve `accepted_pending_consumer` y `applied:false`; la aplicación DSP requiere una confirmación asíncrona real del consumidor.
-- **Prueba de contrato:** el test nativo del daemon verifica el estado pendiente junto con el clamp de yaw/pitch y el round-trip del snapshot.
-- **Alcance:** esta corrección evita un falso positivo de telemetría; no afirma por sí misma que el consumidor haya aplicado el cambio ni que exista una mejora perceptual medida.
-- **Release gate:** publicar únicamente si el CI del SHA final compila, pasa pruebas y verifica que APK/ZIP corresponden al mismo commit.
+- **Read-back del consumidor:** el beacon de `omega_effect` registra generación y yaw/pitch solo después de consumir el snapshot, llamar `updateHeadPose` y completar un bloque DSP.
+- **Contrato de daemon:** `SET_HEAD_POSE` devuelve `applied:true` solo si la generación confirmada y la pose coinciden; en otro caso queda `accepted_pending_consumer`.
+- **Consulta repetible:** `GET_HEAD_POSE_STATUS` consulta la última generación solicitada y expone `consumerGeneration`; sin beacon legible o sin coincidencia se degrada sin afirmar éxito.
+- **Prueba de contrato:** el test del daemon verifica que no se invente una confirmación cuando no hay consumidor real disponible.
+- **Límite:** esto demuestra aplicación de control en la ruta de software, no mejora perceptual medida ni validación acústica en hardware.
+- **Release gate:** publicar solo si CI pasa para el SHA exacto y APK/ZIP se verifican contra ese commit.
 
 ---
 

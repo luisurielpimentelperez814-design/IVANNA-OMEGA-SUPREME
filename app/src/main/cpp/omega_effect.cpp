@@ -1520,6 +1520,15 @@ static int32_t omega_process(effect_handle_t self,
     // Beacon (RT-safe): un bloque paso por TODO el DSP. Es la unica senal que la app puede
     // usar para saber que Ruta B realmente suena (isDaemonRunning solo prueba el daemon).
     ivanna::effectBeacon().onBlock(static_cast<uint32_t>(frames));
+    // Ack solo tras consumir la generación, llamar updateHeadPose y completar el bloque DSP.
+    const auto& appliedPose = ctx->pendingSnap;
+    if (appliedPose.generation > 0u &&
+        static_cast<ivanna::RouteMode>(appliedPose.active_route) == ivanna::RouteMode::SYSTEM_WIDE &&
+        std::isfinite(appliedPose.head_yaw_rad) && std::isfinite(appliedPose.head_pitch_rad)) {
+        ivanna::effectBeacon().onHeadPoseApplied(appliedPose.generation,
+                                                 appliedPose.head_yaw_rad,
+                                                 appliedPose.head_pitch_rad);
+    }
     return 0;
 }
 

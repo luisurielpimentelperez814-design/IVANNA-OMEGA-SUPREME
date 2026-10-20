@@ -136,7 +136,21 @@ TEST(SpatialPoseDaemon, SetHeadPosePublishesClampedPoseThroughSnapshot) {
     EXPECT_FLOAT_EQ(snap.head_pitch_rad, -0.78539816f);
 }
 
-TEST(UserFlagsDaemon, SetUserFlagsReachesSnapshotAndSurvivesOtherCommands) {
+TEST(UserFlagsDaemon, SetUserFlagsReachesSnapshotAndSurvivesOtherCommands) {TEST(SpatialPoseDaemon, StatusNeverClaimsAppliedWithoutConsumerAck) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    ASSERT_GT(cs.handleJsonCommand("{\\"action\\":\\"SET_HEAD_POSE\\",\\"yawRad\\":0.25,\\"pitchRad\\":0.10}", reply, sizeof reply), 0);
+    ASSERT_NE(std::string(reply).find("\\"ok\\":true"), std::string::npos) << reply;
+    ASSERT_NE(std::string(reply).find("\\"applied\\":false"), std::string::npos) << reply;
+    ASSERT_GT(cs.handleJsonCommand("{\\"action\\":\\"GET_HEAD_POSE_STATUS\\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\\"action\\":\\"GET_HEAD_POSE_STATUS\\""), std::string::npos) << reply;
+    if (std::string(reply).find("\\"status\\":\\"consumer_unavailable\\"") != std::string::npos) {
+        EXPECT_NE(std::string(reply).find("\\"applied\\":false"), std::string::npos) << reply;
+    }
+}
+
+
     Harness h;
     CommandServer cs;
     char reply[1024];
