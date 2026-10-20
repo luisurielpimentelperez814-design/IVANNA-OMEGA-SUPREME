@@ -7,6 +7,8 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.ivanna.omega.safmus.SafmusAdapterPolicy
+import com.ivanna.omega.safmus.SafmusHardwareCoordinator
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -98,7 +100,7 @@ object AudioRouteManager {
      */
     fun refreshRoute() {
         val am = audioManager ?: return
-        applyRoute(detectOutputRoute(am))
+        applyRoute(detectOutputRoute(am), force = true)
     }
 
     fun detectOutputRoute(am: AudioManager): OutputRoute {
@@ -205,8 +207,8 @@ object AudioRouteManager {
                 RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
         }
 
-    private fun applyRoute(route: OutputRoute) {
-        if (route == currentRoute) return
+    private fun applyRoute(route: OutputRoute, force: Boolean = false) {
+        if (route == currentRoute && !force) return
         val previousRoute = currentRoute
         currentRoute = route
         appContextRef?.let { ctx ->
@@ -215,8 +217,14 @@ object AudioRouteManager {
                 runCatching { BluetoothAudioProfiler.refresh(ctx) }
             }, "BtAudioProfilerRefresh").start()
         }
-        val p = profileFor(route)
-        Log.i(TAG, "Ruta de salida: $route -> bassBoost=${p.bassBoostDb}dB dialogBoost=${p.dialogBoostDb}dB widenerMult=${p.widenerMult}")
+        val baseProfile = profileFor(route)
+        val load = when (SafmusHardwareCoordinator.lastSnapshot?.budget) {
+            SafmusHardwareCoordinator.Budget.CONSERVATIVE -> SafmusAdapterPolicy.Load.CONSERVATIVE
+            SafmusHardwareCoordinator.Budget.SAFE -> SafmusAdapterPolicy.Load.SAFE
+            else -> SafmusAdapterPolicy.Load.NORMAL
+        }
+        val p = SafmusAdapterPolicy.optimizeRouteProfile(baseProfile, load)
+        Log.i(TAG, "Ruta de salida: $route SAFMUS=$load -> perfil DSP aplicado")
         AudioEngine.nativeSetRouteProfileStatic(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
         // (implementado vía AudioEngine.nativeSetRouteProfileJni -> control_set_route_profile)
 
