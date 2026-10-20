@@ -8,7 +8,7 @@ PROFILE="$OUT/environment_profile.env"
 REPORT="$OUT/environment_report.txt"
 CAPABILITIES="$OUT/hardware_capabilities.env"
 mkdir -p "$OUT" 2>/dev/null || exit 0
-TMP="$PROFILE.tmp.$"; RTMP="$REPORT.tmp.$"; CTMP="$CAPABILITIES.tmp.$"
+TMP="$PROFILE.tmp.$$"; RTMP="$REPORT.tmp.$$"; CTMP="$CAPABILITIES.tmp.$$"
 getprop_safe() { getprop "$1" 2>/dev/null | tr '\n' ' ' | cut -c1-160; }
 read_num() { v=$(cat "$1" 2>/dev/null | tr -d '[:space:]'); case "$v" in ''|*[!0-9]*) echo ""; ;; *) echo "$v";; esac; }
 mem_kb=$(awk '/MemAvailable:/ {print $2; exit}' /proc/meminfo 2>/dev/null)
@@ -44,8 +44,8 @@ for n in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do
   g=$(cat "$n" 2>/dev/null | tr -d '\n')
   [ -n "$g" ] && cpu_governors="${cpu_governors}${cpu_governors:+,}$g"
 done
-display_brightness=$(settings get system screen_brightness 2>/dev/null | tr -d '\\n')
-display_refresh=$(settings get system peak_refresh_rate 2>/dev/null | tr -d '\\n')
+display_brightness=$(settings get system screen_brightness 2>/dev/null | tr -d '[:space:]')
+display_refresh=$(settings get system peak_refresh_rate 2>/dev/null | tr -d '[:space:]')
 audio_class=unknown
 [ -d /sys/class/sound ] && audio_class=kernel_sound_class_present
 budget=normal; reason="telemetria básica disponible"
