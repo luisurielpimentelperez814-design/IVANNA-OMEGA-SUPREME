@@ -478,25 +478,30 @@ class IvannaGlobalEffectManager(
      * SAFMUS valida los límites antes de enviar el perfil a los AudioEffects existentes.
      * No crea una ruta DSP nueva: normaliza la propuesta y conserva el dueño actual de la sesión.
      */
+    private fun safmusBoundedInt(value: Int, min: Int, max: Int, fallback: Int = min): Int =
+        SafmusUniversalKernel.sanitizeControlValue(value.toFloat(), min.toFloat(), max.toFloat())
+            ?.toInt() ?: fallback
+
     private fun validateProfileWithSafmus(profile: IvannaEffectProfile): IvannaEffectProfile {
-        val eq = IntArray(10) { i -> profile.eqBands.getOrElse(i) { 0 }.coerceIn(-1500, 1500) }
+        val eq = IntArray(10) { i ->
+            safmusBoundedInt(profile.eqBands.getOrElse(i) { 0 }, -1500, 1500, 0)
+        }
         val threshold = SafmusUniversalKernel.sanitizeControlValue(
             profile.compThresholdDb, -60f, 0f
         ) ?: -18f
         val ratio = SafmusUniversalKernel.sanitizeControlValue(
             profile.compRatio, 1f, 20f
         ) ?: 2.2f
-        val decay = profile.reverbDecayTimeMs.coerceIn(100, 20_000)
         return profile.copy(
             eqBands = eq,
-            bassStrength = profile.bassStrength.toInt().coerceIn(0, 1000).toShort(),
-            virtualizerStrength = profile.virtualizerStrength.toInt().coerceIn(0, 1000).toShort(),
-            loudnessGainMb = profile.loudnessGainMb.coerceIn(0, 1000),
+            bassStrength = safmusBoundedInt(profile.bassStrength.toInt(), 0, 1000, 420).toShort(),
+            virtualizerStrength = safmusBoundedInt(profile.virtualizerStrength.toInt(), 0, 1000, 380).toShort(),
+            loudnessGainMb = safmusBoundedInt(profile.loudnessGainMb, 0, 1000, 80),
             compThresholdDb = threshold,
             compRatio = ratio,
-            reverbRoomLevelMb = profile.reverbRoomLevelMb.coerceIn(-9000, 1000),
-            reverbDecayTimeMs = decay,
-            reverbReflectionsLevelMb = profile.reverbReflectionsLevelMb.coerceIn(-9000, 1000)
+            reverbRoomLevelMb = safmusBoundedInt(profile.reverbRoomLevelMb, -9000, 0, -9000),
+            reverbDecayTimeMs = safmusBoundedInt(profile.reverbDecayTimeMs, 100, 20_000, 1000),
+            reverbReflectionsLevelMb = safmusBoundedInt(profile.reverbReflectionsLevelMb, -9000, 1000, -9000)
         )
     }
 
