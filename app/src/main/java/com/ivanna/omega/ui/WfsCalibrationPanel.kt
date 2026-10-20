@@ -27,7 +27,7 @@ fun WfsCalibrationPanel() {
     var lx by remember { mutableStateOf(WfsCalibrationManager.listenerX) }
     var ly by remember { mutableStateOf(WfsCalibrationManager.listenerY) }
     var lz by remember { mutableStateOf(WfsCalibrationManager.listenerZ) }
-    var status by remember { mutableStateOf("Ajusta la posición del oyente para recalcular la geometría relativa.") }
+    var status by remember { mutableStateOf("Ajusta la posición; al soltar cada control se aplica la geometría relativa.") }
 
     fun applyPosition(x: Float, y: Float, z: Float) {
         val sent = WfsCalibrationManager.setListener(ctx, x, y, z)
@@ -45,11 +45,11 @@ fun WfsCalibrationPanel() {
         Text("WFS — CALIBRACIÓN DE SALA", style = MaterialTheme.typography.titleMedium)
         Text("Preset: ${WfsCalibrationManager.presetName}")
         Text("Oyente X (ancho, 0–3.5 m): ${String.format(Locale.getDefault(), "%.2f", lx)} m")
-        Slider(value = lx, onValueChange = { lx = it; applyPosition(lx, ly, lz) }, valueRange = 0f..3.5f)
+        Slider(value = lx, onValueChange = { lx = it }, onValueChangeFinished = { applyPosition(lx, ly, lz) }, valueRange = 0f..3.5f)
         Text("Oyente Y (altura, 0–3.5 m): ${String.format(Locale.getDefault(), "%.2f", ly)} m")
-        Slider(value = ly, onValueChange = { ly = it; applyPosition(lx, ly, lz) }, valueRange = 0f..3.5f)
+        Slider(value = ly, onValueChange = { ly = it }, onValueChangeFinished = { applyPosition(lx, ly, lz) }, valueRange = 0f..3.5f)
         Text("Oyente Z (fondo, 0–7 m): ${String.format(Locale.getDefault(), "%.2f", lz)} m")
-        Slider(value = lz, onValueChange = { lz = it; applyPosition(lx, ly, lz) }, valueRange = 0f..7f)
+        Slider(value = lz, onValueChange = { lz = it }, onValueChangeFinished = { applyPosition(lx, ly, lz) }, valueRange = 0f..7f)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
                 val sent = WfsCalibrationManager.applyLayout(ctx, "7ch-default")
