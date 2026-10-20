@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.97 (388) — Ruta B informa aceptación, no aplicación prematura
+
+- **Verdad de estado SAFMUS/10D:** `SET_HEAD_POSE` ya no devuelve `applied` solo porque el daemon publicó una generación en el snapshot. Devuelve `accepted_pending_consumer` y `applied:false`; la aplicación DSP requiere una confirmación asíncrona real del consumidor.
+- **Prueba de contrato:** el test nativo del daemon verifica el estado pendiente junto con el clamp de yaw/pitch y el round-trip del snapshot.
+- **Alcance:** esta corrección evita un falso positivo de telemetría; no afirma por sí misma que el consumidor haya aplicado el cambio ni que exista una mejora perceptual medida.
+- **Release gate:** publicar únicamente si el CI del SHA final compila, pasa pruebas y verifica que APK/ZIP corresponden al mismo commit.
+
+---
+
 # CHANGELOG — v2.5.96 (387) — Pose HRTF conectada a Ruta B
 
 - **ABI v8 del bus:** se agregan yaw/pitch con CRC y versionado explícito, manteniendo el snapshot dentro del límite de 512 bytes.

@@ -311,9 +311,11 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.head_yaw_rad = _clamp(_jsonFloat(json,"yawRad",m_state.head_yaw_rad), -3.14159265f, 3.14159265f);
         m_state.head_pitch_rad = _clamp(_jsonFloat(json,"pitchRad",m_state.head_pitch_rad), -0.78539816f, 0.78539816f);
         const uint64_t gen = publishCurrentState(m_state);
+        // Publishing a snapshot proves acceptance only. The audio-effect consumer
+        // acknowledges its generation asynchronously; never report DSP application here.
         n = snprintf(reply, reply_sz,
-            "{\"ok\":%s,\"action\":\"SET_HEAD_POSE\",\"status\":\"%s\",\"generation\":%llu,\"yawRad\":%.6f,\"pitchRad\":%.6f}",
-            gen > 0 ? "true" : "false", gen > 0 ? "applied" : "accepted_pending_consumer",
+            "{\"ok\":%s,\"action\":\"SET_HEAD_POSE\",\"applied\":false,\"status\":\"%s\",\"generation\":%llu,\"yawRad\":%.6f,\"pitchRad\":%.6f}",
+            gen > 0 ? "true" : "false", gen > 0 ? "accepted_pending_consumer" : "publish_failed",
             static_cast<unsigned long long>(gen), m_state.head_yaw_rad, m_state.head_pitch_rad);
 
     } else if (strcmp(action,"SET_PUNCH")==0) {

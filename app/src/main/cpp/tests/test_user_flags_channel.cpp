@@ -126,6 +126,8 @@ TEST(SpatialPoseDaemon, SetHeadPosePublishesClampedPoseThroughSnapshot) {
     char reply[1024];
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_HEAD_POSE\",\"yawRad\":9.0,\"pitchRad\":-2.0}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\"applied\":false"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\"status\":\"accepted_pending_consumer\""), std::string::npos) << reply;
     OmegaDspSnapshot snap{};
     ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
     ASSERT_TRUE(snap.isValid());
