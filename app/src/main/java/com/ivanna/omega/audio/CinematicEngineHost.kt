@@ -31,6 +31,7 @@ object CinematicEngineHost {
     @Volatile var onClassification: ((speech: Float, music: Float, bass: Float) -> Unit)? = null
 
     /** Idempotente: si ya hay un engine corriendo, no lo recrea. */
+    @Synchronized
     fun start(context: Context, sampleRate: Int) {
         if (engine == null) {
             engine = RealTimeCinematicEngine(
@@ -52,6 +53,7 @@ object CinematicEngineHost {
         active = true
     }
 
+    @Synchronized
     fun stop() {
         active = false
         engine?.stop()
