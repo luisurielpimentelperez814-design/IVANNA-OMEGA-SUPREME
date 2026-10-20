@@ -28,6 +28,52 @@ object SafmusUniversalKernel {
 
     data class Gate(val allowed: Boolean, val reason: String)
 
+    data class SpatialCaptureAssessment(
+        val exportAllowed: Boolean,
+        val quality: String,
+        val reason: String,
+        val evidenceKind: String = "ESTIMATED_AR_GEOMETRY",
+        val acousticCalibrationReady: Boolean = false
+    )
+
+    /**
+     * SAFMUS quality gate for ARCore geometry. AR points/poses are estimates,
+     * not acoustic measurements; this gate never authorizes RIR/RT60 calibration.
+     * Weak captures remain exportable with an explicit degraded-quality label.
+     */
+    fun assessSpatialCapture(
+        pointCount: Int,
+        depthPointCount: Int,
+        sparsePointCount: Int,
+        poseCount: Int,
+        durationMs: Long,
+        trackingState: String,
+        coordinatesFinite: Boolean,
+        posesFinite: Boolean
+    ): SpatialCaptureAssessment {
+        if (!coordinatesFinite || !posesFinite) {
+            return SpatialCaptureAssessment(false, "REJECTED_INVALID", "SAFMUS rechazó coordenadas o poses no finitas")
+        }
+        if (pointCount <= 0 || poseCount <= 0 || durationMs <= 0L) {
+            return SpatialCaptureAssessment(false, "REJECTED_INCOMPLETE", "SAFMUS requiere puntos, poses y duración válidos")
+        }
+        val enoughSamples = pointCount >= 100 && poseCount >= 3 && durationMs >= 3_000L
+        val trackingOk = trackingState == "TRACKING"
+        val depthBacked = depthPointCount > 0 && depthPointCount + sparsePointCount >= pointCount.coerceAtMost(depthPointCount + sparsePointCount)
+        val quality = when {
+            !enoughSamples || !trackingOk -> "DEGRADED"
+            depthBacked -> "REVIEWABLE_DEPTH_ESTIMATE"
+            sparsePointCount > 0 -> "REVIEWABLE_VISUAL_ESTIMATE"
+            else -> "DEGRADED"
+        }
+        val reason = when (quality) {
+            "REVIEWABLE_DEPTH_ESTIMATE" -> "Captura con muestras de profundidad y seguimiento final activo; geometría estimada, no acústica"
+            "REVIEWABLE_VISUAL_ESTIMATE" -> "Captura visual suficiente; geometría estimada, no acústica"
+            else -> "Captura exportable con calidad limitada; mejora el barrido y confirma seguimiento"
+        }
+        return SpatialCaptureAssessment(true, quality, reason)
+    }
+
     /** Reject non-finite control values and clamp valid input to the widget's declared range. */
     fun sanitizeControlValue(value: Float, min: Float, max: Float): Float? {
         if (!value.isFinite() || !min.isFinite() || !max.isFinite() || min > max) return null
