@@ -82,8 +82,10 @@ object SafmusHardwareCoordinator {
         val app = context.applicationContext
         job = scope.launch(Dispatchers.IO) {
             while (isActive) {
+                val previousBudget = lastSnapshot?.budget
+                val deepProbe = previousBudget == null || previousBudget == Budget.NORMAL
                 runCatching {
-                    val snapshot = collect(app)
+                    val snapshot = collect(app, deepProbe)
                     lastSnapshot = snapshot
                     // Connect the cross-domain resource budget to IVANNA's existing
                     // native DSP governor; NORMAL restores its baseline tier.
@@ -94,6 +96,10 @@ object SafmusHardwareCoordinator {
                             Budget.SAFE -> 2
                         }
                     )
+                    if (previousBudget != snapshot.budget) {
+                        // Re-apply route DSP when the SAFMUS budget changes.
+                        runCatching { com.ivanna.omega.audio.AudioRouteManager.refreshRoute() }
+                    }
                     app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                         .putString("last_snapshot", snapshot.asText())
                         .putString("last_budget", snapshot.budget.name)
@@ -103,7 +109,12 @@ object SafmusHardwareCoordinator {
                     // The existing ThermalGovernor owns native DSP actuation. This coordinator
                     // only publishes the cross-domain budget; it never writes arbitrary sysfs/HAL.
                 }.onFailure { Log.w(TAG, "Hardware adapters failed safely: ${it.message}") }
-                delay(POLL_MS)
+                val load = when (lastSnapshot?.budget ?: Budget.NORMAL) {
+                    Budget.NORMAL -> SafmusAdapterPolicy.Load.NORMAL
+                    Budget.CONSERVATIVE -> SafmusAdapterPolicy.Load.CONSERVATIVE
+                    Budget.SAFE -> SafmusAdapterPolicy.Load.SAFE
+                }
+                delay(SafmusAdapterPolicy.cadence(load).intervalMs)
             }
         }
     }
@@ -113,7 +124,7 @@ object SafmusHardwareCoordinator {
         job = null
     }
 
-    private fun collect(context: Context): Snapshot {
+    private fun collect(context: Context, deepProbe: Boolean): Snapshot {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val memory = ActivityManager.MemoryInfo()
         runCatching { am?.getMemoryInfo(memory) }
@@ -128,10 +139,12 @@ object SafmusHardwareCoordinator {
         }.getOrNull()
         val powerSave = runCatching { pm?.isPowerSaveMode == true }.getOrDefault(false)
 
-        val caps = runCatching { HardwareProbe.probe(context) }.getOrNull()
-        val cameraCount = runCatching {
+        // Inventory probes are lower priority than live safety signals.
+        val prior = lastSnapshot
+        val caps = if (deepProbe) runCatching { HardwareProbe.probe(context) }.getOrNull() else null
+        val cameraCount = if (deepProbe) runCatching {
             (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager).cameraIdList.size
-        }.getOrDefault(caps?.cameraCount ?: 0)
+        }.getOrDefault(caps?.cameraCount ?: prior?.cameraCount ?: 0) else (prior?.cameraCount ?: 0)
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         val inputs = runCatching {
             audio?.getDevices(AudioManager.GET_DEVICES_INPUTS)?.size
@@ -139,19 +152,19 @@ object SafmusHardwareCoordinator {
         val outputs = runCatching {
             audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.size
         }.getOrNull() ?: 0
-        val sensors = runCatching {
+        val sensors = if (deepProbe) runCatching {
             (context.getSystemService(Context.SENSOR_SERVICE) as SensorManager).getSensorList(
                 android.hardware.Sensor.TYPE_ALL
             ).size
-        }.getOrDefault(0)
-        val displayRefresh = runCatching {
+        }.getOrDefault(prior?.sensorCount ?: 0) else (prior?.sensorCount ?: 0)
+        val displayRefresh = if (deepProbe) runCatching {
             val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
             dm.getDisplay(Display.DEFAULT_DISPLAY)?.refreshRate?.takeIf { it.isFinite() && it > 0f }
-        }.getOrNull() ?: caps?.displayRefreshRateHz
+        }.getOrNull() ?: caps?.displayRefreshRateHz else prior?.displayRefreshHz
         val gpuApi = when {
             caps?.hasVulkan == true -> "vulkan_declared"
             !caps?.glEsVersion.isNullOrBlank() -> "gles_${caps?.glEsVersion}"
-            else -> "unknown"
+            else -> prior?.gpuApi ?: "unknown"
         }
         val reasons = mutableListOf<String>()
         var budget = Budget.NORMAL
@@ -185,7 +198,7 @@ object SafmusHardwareCoordinator {
             audioInputs = inputs,
             audioOutputs = outputs,
             sensorCount = sensors,
-            hasVibrator = caps?.hasVibrator == true,
+            hasVibrator = caps?.hasVibrator ?: prior?.hasVibrator ?: false,
             budget = budget,
             reasons = reasons
         )
