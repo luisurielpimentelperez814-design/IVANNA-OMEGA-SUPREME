@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.96
-versionCode=387
+version=v2.5.97
+versionCode=388
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.96: ABI v8 conecta la pose HRTF con la Ruta B
+description=v2.5.97: telemetría de pose HRTF con estado pendiente veraz
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
