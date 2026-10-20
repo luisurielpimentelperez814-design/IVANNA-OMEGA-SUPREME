@@ -62,6 +62,7 @@ object SafmusDisplayAdapter {
         if (budget == SafmusHardwareCoordinator.Budget.NORMAL && originalId == 0) {
             // 0 means "let Android choose"; restore that exact policy instead of
             // pinning the low-refresh mode selected during a power-saving budget.
+            if (lastAppliedBudget == budget && window.attributes.preferredDisplayModeId == 0) return
             if (window.attributes.preferredDisplayModeId != 0) {
                 val params = window.attributes
                 params.preferredDisplayModeId = 0
