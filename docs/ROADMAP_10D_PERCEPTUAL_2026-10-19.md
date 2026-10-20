@@ -94,3 +94,21 @@ Las pruebas sintéticas de host prueban propiedades del código, no la percepci�
 ## Estado de inicio
 
 Este archivo define el plan y la puerta de aceptación; no afirma que las fases estén implementadas. Prioridad inmediata: corregir telemetría de respaldo y semántica de fallo de los puentes antes de ampliar procesamiento. Después cerrar una única ruta DSP, fijar geometría y HRTF, integrar ejes, ejecutar CI y validar hardware. La etiqueta “10D” solo debe publicarse como capacidad verificada cuando pase los criterios anteriores.
+
+
+## Extensión transversal: refinamiento SAFMUS del hardware del dispositivo
+
+Esta extensión no crea un undécimo eje perceptual ni un segundo motor: SAFMUS supervisa las capacidades físicas que ya utiliza IVANNA, y cada subsistema existente conserva la propiedad de su sesión y su ruta de procesamiento.
+
+### Recursos cubiertos
+
+- **Cámara / FotoHolo / ARCore:** consultar capacidades Camera2, respetar al propietario de la sesión, mantener coherencia temporal entre imagen, pose y profundidad, y ajustar solo modos anunciados por el dispositivo. No reconfigurar una sesión ARCore desde un segundo controlador.
+- **Micrófono / captura / medición:** usar exclusivamente una sesión autorizada, respetar el permiso de micrófono y los indicadores de privacidad, comprobar formato/ruta/efectos activos y evitar encadenar cancelación de ruido, AGC o supresión duplicados.
+- **Altavoz integrado / cable / USB / Bluetooth:** arbitrar una única ruta DSP, consultar endpoint y formato reales, evitar doble espacialización/virtualización/reverb y aplicar perfiles específicos solo cuando exista evidencia válida de la ruta y, para corrección física, medición real.
+- **Otros recursos compatibles:** sensores, GPU, memoria y aceleración solo se aprovechan cuando existe una API soportada, presupuesto medido y reversión segura. El sondeo de capacidades no implica que el hardware esté optimizado.
+
+### Gate común ya añadido a SAFMUS
+
+El kernel compartido expone una política sin dependencias Android que exige capacidad detectada, permiso vigente, sesión propietaria confirmada, telemetría fresca, configuración soportada, presupuesto de recursos válido y rollback disponible. Después de aplicar un cambio, la optimización solo se considera confirmada si el read-back efectivo coincide. Las pruebas JVM cubren ausencia de cada precondición y desajuste de read-back; la auditoría de cableado de CI comprueba que estas puertas y pruebas permanezcan presentes.
+
+**Límite de implementación:** la política compartida y sus pruebas son una base de seguridad; no significan que los HAL de cámara/micrófono, el firmware del fabricante ni todas las rutas de altavoz ya reciban ajustes. Cada adaptador físico debe integrarse y probarse por separado con APIs permitidas, y la optimización debe permanecer desactivada si no existe read-back fiable. Ninguna afirmación de mejora física se acepta sin medición en el dispositivo.
