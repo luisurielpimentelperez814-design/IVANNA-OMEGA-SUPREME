@@ -15,7 +15,7 @@ internal object AudioBandEnergyClassifier {
         if (samples.isEmpty() || sampleRate <= 0) return Scores(0f, 0f, 0f, 0f)
 
         val lowAlpha = (1.0 - exp(-2.0 * PI * 250.0 / sampleRate)).toFloat()
-        val midAlpha = (1.0 - exp(-2.0 * PI * 4_000.0 / sampleRate)).toFloat()
+        val midAlpha = (1.0 - exp(-2.0 * PI * 2_000.0 / sampleRate)).toFloat()
         var low = 0f
         var midLowpass = 0f
         var bassEnergy = 0.0
