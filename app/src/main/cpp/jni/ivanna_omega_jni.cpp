@@ -2812,6 +2812,16 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpatialWidthDirect(JNIEnv*, 
 // nativeSetEta ya usaba g_pd.set_nho_wet() con semántica de η de la ODE,
 // pero nativeSetSpatialWet es el control explícito de wet expuesto en la UI
 // GlassCard de espacialización — semánticamente distinto aunque misma función.
+// Lectura real (read-back) del estado que fijan nativeSetHRTFEnabled / nativeSetSpatialWet. Antes la UI de FotoHolo
+// mostraba constantes propias y la telemetría no podía confirmar nunca que el HRTF estuviera activo.
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetHRTFEnabled(JNIEnv*, jobject) {
+    return (g_pd.get_mode() >= 2 && g_pd.binaural_enabled()) ? JNI_TRUE : JNI_FALSE;
+}
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpatialWet(JNIEnv*, jobject) {
+    return g_nho_wet_spatial.load(std::memory_order_relaxed);
+}
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialWet(
     JNIEnv*, jobject, jfloat v) {

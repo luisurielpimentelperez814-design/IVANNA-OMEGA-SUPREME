@@ -75,6 +75,10 @@ object IvannaNativeLib {
     external fun nativeSetCochlearEnabled(enabled: Boolean)
     external fun nativeSetHarmonicGain(v: Float)
     external fun nativeSetHRTFEnabled(en: Boolean)
+    /** Read-back real: true solo si el modo PD es BINAURAL/EVOLUTIVO y el render binaural está activo. */
+    external fun nativeGetHRTFEnabled(): Boolean
+    /** Read-back real del wet espacial [0,1] fijado por [nativeSetSpatialWet]. */
+    external fun nativeGetSpatialWet(): Float
     external fun nativeSetAdaptEnabled(en: Boolean)
     external fun nativeSetNPMax(v: Float)
     external fun nativeSetReflectionGain(i: Int, g: Float)

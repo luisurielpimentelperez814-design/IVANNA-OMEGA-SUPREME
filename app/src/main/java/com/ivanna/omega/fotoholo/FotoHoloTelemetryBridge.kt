@@ -39,6 +39,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class FotoHoloTelemetryBridge(context: Context) {
     companion object {
+        /** Estado del HRTF a partir de lecturas reales del motor. Puro: se prueba en JVM. */
+        fun hrtfRuntimeStatus(nativeLoaded: Boolean, engineOn: Boolean?, datasetLoaded: Boolean, nativeStateBlank: Boolean): String = when {
+            !nativeLoaded -> "native-library-unavailable"
+            engineOn == true && datasetLoaded -> "reported-active"
+            engineOn == true -> "engine-on-dataset-not-loaded"
+            engineOn == false && datasetLoaded -> "dataset-loaded-hrtf-off"
+            datasetLoaded -> "dataset-loaded-active-path-unconfirmed"
+            nativeStateBlank -> "unavailable"
+            else -> "not-loaded"
+        }
         /** Carpeta de caché privada y ruta virtual (mismo nombre) desde la que el WebView sirve las imágenes. */
         const val PLACE_DIR = "place-images"
         private const val PLACE_MIN_INTERVAL_MS = 20_000L
@@ -281,14 +291,29 @@ class FotoHoloTelemetryBridge(context: Context) {
     @JavascriptInterface
     fun setSpatialDepth(depth: Float): Boolean {
         val meters = FotoHoloAudioImpact.distanceMetersFromDepth(depth) ?: return false
-        return runCatching { IvannaSpatialEngine.setDistance(meters); true }.getOrDefault(false)
+        return runCatching { IvannaSpatialEngine.setDistance(meters); true }
+            .onFailure { android.util.Log.w("FotoHoloBridge", "setSpatialDepth falló", it) }.getOrDefault(false)
     }
 
     /** Elevación del sonido en grados (±45) hacia el HRTF. Ruta A; sin lectura de confirmación. */
     @JavascriptInterface
     fun setSpatialElevationDeg(deg: Float): Boolean {
         val rad = FotoHoloAudioImpact.elevationRadFromDeg(deg) ?: return false
-        return runCatching { IvannaSpatialEngine.setElevation(rad); true }.getOrDefault(false)
+        return runCatching { IvannaSpatialEngine.setElevation(rad); true }
+            .onFailure { android.util.Log.w("FotoHoloBridge", "setSpatialElevationDeg falló", it) }.getOrDefault(false)
+    }
+
+    /** Activa/desactiva el HRTF en la Ruta A y devuelve true SOLO si la lectura nativa posterior lo confirma. */
+    @JavascriptInterface
+    fun setHrtfEnabled(on: Boolean): Boolean {
+        if (!IvannaNativeLib.isLoaded) return false
+        return try {
+            IvannaNativeLib.nativeSetHRTFEnabled(on)
+            IvannaNativeLib.nativeGetHRTFEnabled() == on
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w("FotoHoloBridge", "setHrtfEnabled: JNI no disponible", e)
+            false
+        }
     }
 
     @JavascriptInterface
@@ -300,6 +325,11 @@ class FotoHoloTelemetryBridge(context: Context) {
         val hrtfSubject = runCatching { IvannaSpatialManager.currentHrtfSubject() }.getOrDefault("unknown")
         val rirLoaded = runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)
         val rirRoomCount = runCatching { OmegaEngineBridge.rirRoomCount() }.getOrDefault(0)
+        // Read-back nativo real (null = no se pudo leer; nunca se inventa un valor).
+        val hrtfEngineOn: Boolean? = if (IvannaNativeLib.isLoaded)
+            runCatching { IvannaNativeLib.nativeGetHRTFEnabled() }.getOrNull() else null
+        val spatialWetEngine: Float? = if (IvannaNativeLib.isLoaded)
+            runCatching { IvannaNativeLib.nativeGetSpatialWet() }.getOrNull()?.takeIf { it.isFinite() } else null
         val nativeState = if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeGetSpatialState() }.getOrNull().orEmpty()
         } else ""
@@ -336,13 +366,9 @@ class FotoHoloTelemetryBridge(context: Context) {
             put("safAssetAvailable", assetExists("ivanna_omega/SAF_model.json"))
             put("hrtfDatasetLoaded", hrtfLoaded)
             put("hrtfSubject", hrtfSubject)
-            put("hrtfRuntime", when {
-                !IvannaNativeLib.isLoaded -> "native-library-unavailable"
-                nativeState.contains("HRTF_ON", ignoreCase = true) -> "reported-active"
-                hrtfLoaded -> "dataset-loaded-active-path-unconfirmed"
-                nativeState.isBlank() -> "unavailable"
-                else -> "not-loaded"
-            })
+            put("hrtfEngineEnabled", hrtfEngineOn ?: JSONObject.NULL)
+            put("spatialWetEngine", spatialWetEngine?.toDouble() ?: JSONObject.NULL)
+            put("hrtfRuntime", hrtfRuntimeStatus(IvannaNativeLib.isLoaded, hrtfEngineOn, hrtfLoaded, nativeState.isBlank()))
             put("rirRuntime", when {
                 !IvannaNativeLib.isLoaded -> "native-library-unavailable"
                 rirLoaded && rirRoomCount > 0 -> "dataset-loaded-${rirRoomCount}-rooms-application-unconfirmed"

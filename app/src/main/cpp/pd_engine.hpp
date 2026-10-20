@@ -304,6 +304,7 @@ public:
     void set_binaural_enabled(bool v) noexcept {
         binauralEnabled_.store(v, std::memory_order_relaxed);
     }
+    bool binaural_enabled() const noexcept { return binauralEnabled_.load(std::memory_order_relaxed); }
     void set_binaural_position(float azimuthDeg, float aggressiveness) noexcept {
         hrtf.set_position(azimuthDeg, aggressiveness);
     }
