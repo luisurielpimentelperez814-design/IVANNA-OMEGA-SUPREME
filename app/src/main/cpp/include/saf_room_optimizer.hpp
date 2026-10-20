@@ -51,6 +51,7 @@
 #include "perceptual_optimizer_v2.hpp"
 #include "perceptual_geometry_v3.hpp"
 #include "wasserstein_latent_flow.hpp"
+#include "topological_feedback_operator.hpp"
 
 namespace ivanna {
 
@@ -173,6 +174,17 @@ public:
             return 0.0f;
         }
 
+        // Bounded feedback geometry observes the 7-D residual on the control path.
+        // This is a residual-based heuristic, not a Ricci-curvature calculation.
+        topological_feedback::Vector feedbackResidual{};
+        for (int i = 0; i < SAFR_K; ++i) {
+            const auto k = static_cast<std::size_t>(i);
+            feedbackResidual[k] = static_cast<double>(solved.params[k]) -
+                                  static_cast<double>(m_p[i]);
+        }
+        const auto feedback = m_feedback.observe(feedbackResidual);
+        if (!feedback.valid) return 0.0f;
+
         // Production Wasserstein-2 latent transport: move the absolute
         // 7-D latent-amplitude distribution along a bounded displacement
         // interpolation toward the MAP target before applying the Fisher step.
@@ -185,7 +197,7 @@ public:
             currentLatent[k] = static_cast<double>(m_p[i]);
             mapTarget[k] = static_cast<double>(solved.params[k]);
         }
-        constexpr double kWassersteinFraction = 0.15;
+        const double kWassersteinFraction = 0.15 * (feedback.trustRadius / 0.10);
         const auto transport = wasserstein_latent_flow::transportTarget(
             currentLatent, mapTarget, kWassersteinFraction);
         if (!transport.valid) return 0.0f;
@@ -198,13 +210,12 @@ public:
         for (int i = 0; i < SAFR_K; ++i) {
             const auto k = static_cast<std::size_t>(i);
             const double range = static_cast<double>(kSAFR_Pmax[i] - kSAFR_Pmin[i]);
-            const double metric = 1.0 / (range * range);
+            const double metric = feedback.metricScale[k] / (range * range);
             fisher[k][k] = metric;
             gradient[k] = -metric * (transport.target[k] - currentLatent[k]);
         }
-        constexpr double kNaturalTrustRadius = 0.10; // at most 10% of normalized feasible-space norm per call
         const auto natural = perceptual_geometry_v3::boundedNaturalDescent(
-            fisher, gradient, kNaturalTrustRadius);
+            fisher, gradient, feedback.trustRadius);
         if (!natural.valid) {
             // Geometry failure must never corrupt the last known-safe state.
             return 0.0f;
@@ -267,6 +278,8 @@ private:
     std::atomic<float> m_sComp{0.0f};
 
     // ── Diagnostics ───────────────────────────────────────────────────────
+    topological_feedback::Operator m_feedback;
+
     std::atomic<float> m_lastAlpha{0.0f};
     std::atomic<float> m_lastE{0.0f};
     std::atomic<float> m_lastLambda{kSAFR_Lambda0};
