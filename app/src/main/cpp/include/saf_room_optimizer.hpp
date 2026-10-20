@@ -197,7 +197,7 @@ public:
             currentLatent[k] = static_cast<double>(m_p[i]);
             mapTarget[k] = static_cast<double>(solved.params[k]);
         }
-        const double kWassersteinFraction = 0.15 * (feedback.trustRadius / 0.10);
+        const double kWassersteinFraction = 0.35 * (feedback.trustRadius / 0.10);
         const auto transport = wasserstein_latent_flow::transportTarget(
             currentLatent, mapTarget, kWassersteinFraction);
         if (!transport.valid) return 0.0f;
