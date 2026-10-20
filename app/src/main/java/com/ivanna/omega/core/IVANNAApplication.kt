@@ -271,6 +271,26 @@ class IVANNAApplication : Application() {
             }.onFailure { Log.w(TAG, "USB DAC cold-scan: ${it.message}") }
         }
 
+        // SAFMUS display adapter lifecycle: bind only IVANNA's foreground UI,
+        // restore the original window preference as soon as it leaves the foreground.
+        registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: android.app.Activity) {
+                if (activity is com.ivanna.omega.MainActivity) {
+                    com.ivanna.omega.safmus.SafmusDisplayAdapter.bind(activity)
+                }
+            }
+            override fun onActivityPaused(activity: android.app.Activity) {
+                if (activity is com.ivanna.omega.MainActivity) {
+                    com.ivanna.omega.safmus.SafmusDisplayAdapter.unbind(activity)
+                }
+            }
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityStarted(activity: android.app.Activity) = Unit
+            override fun onActivityStopped(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
+
         // SAFMUS: conectores de hardware transversal (CPU/memoria, térmica,
         // batería, GPU declarada, pantalla, cámaras, audio, sensores y háptica).
         // Public Android APIs only; the coordinator publishes one resource budget
