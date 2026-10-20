@@ -92,7 +92,7 @@ private:
     }
     PllStatus status(bool valid) const noexcept {
         return {valid && m_initialized, m_phase,
-                (m_nominalOmega + m_ki * m_integral) / kPllTwoPi, m_lastError};
+                (m_nominalOmega + m_kp * m_lastError + m_ki * m_integral) / kPllTwoPi, m_lastError};
     }
 
     double m_nominalOmega = 0.0, m_kp = 0.0, m_ki = 0.0;
