@@ -51,6 +51,14 @@ fun ControlTabScreen(
 ) {
     val context = LocalContext.current
     val paramStore = remember { ParameterStore(context) }
+
+    // La pestaña CONTROL es la pantalla activa que dibuja AdaptiveEngineStatusCard.
+    // No depender de que otra ruta (dashboard legado o AdaptiveEngineScreen) haya
+    // iniciado el sondeo: sin este ciclo el panel conserva el snapshot inicial 0/OFFLINE.
+    DisposableEffect(adaptiveBack) {
+        adaptiveBack.startTelemetry()
+        onDispose { adaptiveBack.stopTelemetry() }
+    }
     val audioState by AudioStateManager.audioState.collectAsState()
     val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
     val voiceActive by voiceMgr.voiceProtectionActive.observeAsState(false)
