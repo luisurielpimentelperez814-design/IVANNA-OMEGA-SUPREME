@@ -124,7 +124,7 @@ TEST(SpatialPoseDaemon, SetHeadPosePublishesClampedPoseThroughSnapshot) {
     Harness h;
     CommandServer cs;
     char reply[1024];
-    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_HEAD_POSE\",\"yawRad\":9.0,\"pitchRad\":-2.0}", reply, sizeof reply), 0);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_HEAD_POSE\",\"yawRad\":9.0,\"pitchRad\":-2.0,\"rollRad\":0.5}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
     EXPECT_NE(std::string(reply).find("\"applied\":false"), std::string::npos) << reply;
     EXPECT_NE(std::string(reply).find("\"status\":\"accepted_pending_consumer\""), std::string::npos) << reply;
@@ -134,6 +134,7 @@ TEST(SpatialPoseDaemon, SetHeadPosePublishesClampedPoseThroughSnapshot) {
     EXPECT_EQ(snap.version, OMEGA_CTRL_VERSION);
     EXPECT_FLOAT_EQ(snap.head_yaw_rad, 3.14159265f);
     EXPECT_FLOAT_EQ(snap.head_pitch_rad, -0.78539816f);
+    EXPECT_FLOAT_EQ(snap.head_roll_rad, 0.5f);
 }
 
 TEST(SafmusDaemon, RejectsMalformedLatentWithoutCorruptingLastValidVector) {
