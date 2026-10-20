@@ -49,6 +49,7 @@
 #include <mutex>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
 #include "perceptual_optimizer_v2.hpp"
+#include "perceptual_geometry_v3.hpp"
 
 namespace ivanna {
 
@@ -171,12 +172,47 @@ public:
             return 0.0f;
         }
 
-        for (int i = 0; i < SAFR_K; ++i)
-            m_p[i] = solved.params[static_cast<std::size_t>(i)];
+        // Production activation: apply the MAP target through a bounded
+        // Fisher-metric natural-gradient step. The diagonal metric is scaled
+        // by each latent coordinate's feasible range, making the trust radius
+        // dimensionless and comparable across PCA components. This is a
+        // rate-limited step toward the MAP solution, not a claim that the
+        // nonlinear perceptual objective has a closed-form global solution.
+        perceptual_geometry_v3::Matrix fisher{};
+        perceptual_geometry_v3::Vector gradient{};
+        for (int i = 0; i < SAFR_K; ++i) {
+            const auto k = static_cast<std::size_t>(i);
+            const double range = static_cast<double>(kSAFR_Pmax[i] - kSAFR_Pmin[i]);
+            const double metric = 1.0 / (range * range);
+            fisher[k][k] = metric;
+            // -G * delta makes the natural-descent direction equal delta
+            // before trust-region clipping: delta = MAP target - current p.
+            gradient[k] = -metric *
+                (static_cast<double>(solved.params[k]) - static_cast<double>(m_p[i]));
+        }
+        constexpr double kNaturalTrustRadius = 0.10; // at most 10% of normalized feasible-space norm per call
+        const auto natural = perceptual_geometry_v3::boundedNaturalDescent(
+            fisher, gradient, kNaturalTrustRadius);
+        if (!natural.valid) {
+            // Geometry failure must never corrupt the last known-safe state.
+            return 0.0f;
+        }
+
+        double appliedObjective = 0.0;
+        for (int i = 0; i < SAFR_K; ++i) {
+            const auto k = static_cast<std::size_t>(i);
+            const double candidate = static_cast<double>(m_p[i]) + natural.descent[k];
+            if (!std::isfinite(candidate)) return 0.0f;
+            m_p[i] = static_cast<float>(std::clamp(candidate,
+                static_cast<double>(kSAFR_Pmin[i]), static_cast<double>(kSAFR_Pmax[i])));
+            const double dt = static_cast<double>(m_p[i]) - target[k];
+            const double dp = static_cast<double>(m_p[i]) - prior[k];
+            appliedObjective += 0.5 * dt * dt + 0.5 * solved.lambda * dp * dp;
+        }
 
         const float targetWeight = 1.0f / (1.0f + solved.lambda);
         m_lastAlpha.store(targetWeight, std::memory_order_relaxed);
-        m_lastE.store(static_cast<float>(solved.objective), std::memory_order_relaxed);
+        m_lastE.store(static_cast<float>(appliedObjective), std::memory_order_relaxed);
         m_lastLambda.store(solved.lambda, std::memory_order_relaxed);
         m_lastSigma.store(solved.contextExponent, std::memory_order_relaxed);
         m_iter.fetch_add(1, std::memory_order_relaxed);
