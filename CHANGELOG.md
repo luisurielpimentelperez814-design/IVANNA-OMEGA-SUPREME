@@ -1,10 +1,9 @@
-# CHANGELOG — v2.5.99 (390) — Pose de cabeza HRTF de tres ejes en Ruta B
+# CHANGELOG — v2.5.99 (390) — Integridad de estado y compatibilidad ABI
 
-- **Orientación completa:** se añade roll al snapshot ABI v9 junto con yaw y pitch; el daemon limita el ángulo y publica el valor con CRC/seqlock.
-- **Aplicación en DSP:** `omega_effect` aplica yaw/pitch/roll en el callback y el beacon confirma los tres valores solo después de consumir la generación y completar el bloque DSP.
-- **Estado honesto:** `SET_HEAD_POSE` y `GET_HEAD_POSE_STATUS` solo marcan `applied` cuando el consumidor confirma generación y los tres ángulos; clientes antiguos que omiten `rollRad` conservan el valor anterior (inicialmente neutro).
-- **Pruebas:** el contrato nativo verifica clamp de yaw/pitch y round-trip del roll en el snapshot; CI debe validar build y CTest para el SHA final.
-- **Límite:** roll completa la orientación de cabeza; no añade distancia de fuente ni demuestra mejora perceptual sin medición en dispositivo.
+- **Contrato ABI conservado:** se mantiene el snapshot compartido dentro del límite de tamaño de 512 bytes y se conserva la versión ABI v8 para evitar romper los lectores de Ruta B.
+- **Pose HRTF verificable:** la confirmación de `SET_HEAD_POSE` y `GET_HEAD_POSE_STATUS` sigue limitada a yaw/pitch, con generación confirmada por el consumidor real.
+- **SAFMUS protegido:** se conserva la validación atómica del vector latente de siete dimensiones; entradas incompletas o no finitas se rechazan sin sustituir el último vector válido.
+- **Límite:** esta versión prioriza integridad y compatibilidad; no incorpora roll en el snapshot ni afirma una mejora acústica perceptible sin medición en dispositivo.
 
 ---
 
