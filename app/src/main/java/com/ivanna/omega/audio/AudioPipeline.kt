@@ -7,6 +7,8 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Process
 import android.util.Log
+import com.ivanna.omega.safmus.SafmusAdapterPolicy
+import com.ivanna.omega.safmus.SafmusHardwareCoordinator
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
 import kotlinx.coroutines.*
@@ -161,14 +163,22 @@ class AudioPipeline {
             isRunning = false; return
         }
 
+        val adapterLoad = when (SafmusHardwareCoordinator.lastSnapshot?.budget) {
+            SafmusHardwareCoordinator.Budget.CONSERVATIVE -> SafmusAdapterPolicy.Load.CONSERVATIVE
+            SafmusHardwareCoordinator.Budget.SAFE -> SafmusAdapterPolicy.Load.SAFE
+            else -> SafmusAdapterPolicy.Load.NORMAL
+        }
+        val captureRingBytes = SafmusAdapterPolicy.captureBufferBytes(
+            minBytes = minIn,
+            bytesPerBlock = BUFFER_SIZE * Float.SIZE_BYTES,
+            load = adapterLoad
+        )
         val record = try {
             AudioRecord(MediaRecorder.AudioSource.UNPROCESSED, SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_STEREO, enc,
-                maxOf(minIn, BUFFER_SIZE * Float.SIZE_BYTES * 4))
+                AudioFormat.CHANNEL_IN_STEREO, enc, captureRingBytes)
                 .takeIf { it.state == AudioRecord.STATE_INITIALIZED }
                 ?: AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_STEREO, enc,
-                    maxOf(minIn, BUFFER_SIZE * Float.SIZE_BYTES * 4))
+                    AudioFormat.CHANNEL_IN_STEREO, enc, captureRingBytes)
         } catch (t: Throwable) {
             Log.e(tag, "AudioRecord falló", t); isRunning = false; return
         }
@@ -193,7 +203,7 @@ class AudioPipeline {
         }
         audioTrack = track
 
-        Log.i(tag, "Pipeline activo: ${SAMPLE_RATE}Hz | DSP=${DSPBridge.isLoaded}")
+        Log.i(tag, "Pipeline activo: ${SAMPLE_RATE}Hz | DSP=${DSPBridge.isLoaded} | SAFMUS mic-ring=${captureRingBytes}B load=${adapterLoad}")
 
         // ── Análisis de concurrencia con Ruta B (omega_effect.cpp) ─────────────
         // Ruta A (este pipeline): captura MIC/UNPROCESSED → DSPBridge → AudioTrack.
