@@ -59,6 +59,18 @@ object SafmusDisplayAdapter {
 
         val originalId = originalPreferredModeId ?: window.attributes.preferredDisplayModeId
         val currentMode = display.mode
+        if (budget == SafmusHardwareCoordinator.Budget.NORMAL && originalId == 0) {
+            // 0 means "let Android choose"; restore that exact policy instead of
+            // pinning the low-refresh mode selected during a power-saving budget.
+            if (window.attributes.preferredDisplayModeId != 0) {
+                val params = window.attributes
+                params.preferredDisplayModeId = 0
+                window.attributes = params
+            }
+            lastAppliedBudget = budget
+            Log.i(TAG, "SAFMUS budget=NORMAL; restored system-selected display mode; effectiveHz=${display.refreshRate}")
+            return
+        }
         val target = when (budget) {
             SafmusHardwareCoordinator.Budget.NORMAL ->
                 modes.firstOrNull { it.modeId == originalId }
