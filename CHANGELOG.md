@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.98 (389) — Validación atómica del vector latente SAFMUS
+
+- **Frontera SAFMUS endurecida:** `SET_SAF_STATE`/`PUSH_SAF_STATE` valida las siete dimensiones antes de modificar estado o publicar al bus.
+- **Sin mutaciones parciales:** vectores incompletos, sobredimensionados o con valores no finitos se rechazan con `invalid_latent_vector`; el último vector válido permanece intacto.
+- **Compatibilidad:** los clientes antiguos que omiten `q` siguen conservando el vector anterior.
+- **Pruebas de contrato:** se cubren vector válido, vector parcial, infinito y persistencia del último estado válido a través del snapshot CRC/seqlock.
+- **Límite:** la validación protege la integridad de los parámetros; no afirma por sí sola una mejora acústica perceptible.
+
+---
+
 # CHANGELOG — v2.5.97 (388) — Confirmación real de pose HRTF en Ruta B
 
 - **Read-back del consumidor:** el beacon de `omega_effect` registra generación y yaw/pitch solo después de consumir el snapshot, llamar `updateHeadPose` y completar un bloque DSP.
