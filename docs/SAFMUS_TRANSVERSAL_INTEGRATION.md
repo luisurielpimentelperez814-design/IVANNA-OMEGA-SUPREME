@@ -14,6 +14,16 @@ Each slider, toggle, preset, environment, calibration action, HRTF/HRIR/IHR1 sel
 6. UI status derived from read-back, including degraded/unavailable/error reasons.
 7. Regression test covering success, stale/missing evidence, route conflict, non-finite input, latency/headroom failure, and rollback.
 
+## Shared acoustic decision path — AntiDolby, Surround, SAFMUS
+
+`PerceptualCortex` is the single Kotlin-side acoustic decision ingress. `CinematicEngineHost` owns the one CRNN lifecycle; its sanitized voice/music/bass scores are delivered to `AntiDolbyController`, then to `PerceptualCortex.updateContentClassification()`. The spectral fallback in `AudioPipeline` uses the same ingress and cannot overwrite the CRNN while it is active. `PerceptualCortex` publishes the scores to the existing native DSP score bus and attaches the latest class scores to the next `PerceptualDecisionEngine` snapshot. The decision policy treats those scores only as weak content cues, never as room geometry, measured response, SPL, RT60, or user preference.
+
+The same decision engine already emits the spatial mode/width to the existing SAF/native bridge; Surround/HRTF/RIR remains in its current DSP route. SAFMUS resource/thermal governance continues to constrain the owning route. The app-process and AudioFlinger/system-effect paths still run in separate process address spaces, so they share a policy/contract and route arbitration—not an impossible single in-memory singleton. Do not run a competing third audio path.
+
+### Training truth and next gate
+
+The packaged `anti_dolby_crnn.tflite` is the content classifier, not a trained universal acoustic-policy model. The SOFA/IHR1/SAF/RIR preparation script generates spatial knowledge/PCA artifacts; it does not by itself train a neural network to choose DSP actions. `research/safmus/dataset_sources.json` is a source registry, not proof of acquisition or licensing. To train a policy safely, prepare separate targets for route/capability selection and bounded parameter proposals, keep measured/simulated/estimated/user-declared labels distinct, review each dataset license, split by subject/room/device, and compare against deterministic/no-op baselines. Preference learning additionally requires consented, level-matched listening-test labels. Until those artifacts and held-out metrics exist, report the policy as supervised deterministic orchestration—not as a trained SAFMUS neural network.
+
 ## Evidence honesty
 
 - HRTF/HRIR provenance must distinguish measured, interpolated, and synthetic data.
