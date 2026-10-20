@@ -55,12 +55,14 @@ object SafmusCameraAdapter {
             SafmusUniversalKernel.HardwareOptimizationEvidence(
                 capabilityDetected = ranges.isNotEmpty(),
                 permissionGranted = permission,
-                owningSessionConfirmed = !session.device.id.isNullOrBlank(),
+                owningSessionConfirmed = session.device.id.isNotBlank(),
                 telemetryFresh = snapshotFresh,
                 configurationSupported = candidate != null && candidate in ranges,
                 resourceBudgetValid = budget != SafmusHardwareCoordinator.Budget.SAFE ||
                     ranges.any { it.lower >= 10 && it.upper <= 24 },
-                rollbackAvailable = previous != null
+                // The owner can restore the prior explicit value or clear the key (null)
+                // to return Android's camera HAL to its default policy.
+                rollbackAvailable = true
             )
         )
         if (!gate.allowed) return ApplyResult(false, candidate, previous, gate.reason)
