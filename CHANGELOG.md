@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.96 (387) — Pose HRTF conectada a Ruta B
+
+- **ABI v8 del bus:** se agregan yaw/pitch/roll con CRC y versionado explícito, manteniendo el snapshot dentro del límite de 512 bytes.
+- **Canal completo:** `IvannaSpatialEngine` publica `SET_HEAD_POSE`; el daemon valida y limita los ángulos, el snapshot seqlock los transporta y `omega_effect` los entrega a `IvannaFusionEngine::updateHeadPose()`.
+- **Pruebas de contrato:** se cubren valores por defecto, round-trip del snapshot y clamp del comando del daemon.
+- **Release gate:** el artefacto solo se considera publicado si GitHub Actions compila y supera `verify-release` para este commit.
+
+---
+
 # CHANGELOG — v2.5.95 (386) — Franja Wi-Fi oscura, plegable y sin tapar la app
 
 - **Panel blanco:** la franja «FotoHolo Wi-Fi» se dibujaba fuera del tema oscuro (fondo blanco, texto negro) y ENCIMA del contenido, tapando la barra inferior y estorbando el scroll. Ahora ocupa su propio espacio bajo el contenido (la app se encoge en vez de quedar tapada), usa colores oscuros explícitos y el gráfico queda plegado («Ver gráfico»).

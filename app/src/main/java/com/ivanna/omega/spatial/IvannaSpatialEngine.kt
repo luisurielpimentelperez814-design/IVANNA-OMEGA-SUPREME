@@ -2,6 +2,7 @@ package com.ivanna.omega.spatial
 
 import kotlin.math.*
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.magisk.MagiskBridge
 
 class IvannaSpatialEngine private constructor() {
 
@@ -21,12 +22,22 @@ class IvannaSpatialEngine private constructor() {
         fun setAzimuth(rad: Float) {
             if (!rad.isFinite()) return
             shared.azimuthRad = rad.coerceIn(-Math.PI.toFloat(), Math.PI.toFloat())
+            publishHeadPoseToSystemWide()
             // Apply to the production object renderer too; legacy Kotlin state alone
             // is not enough when PlaybackCaptureService is using native HRTF.
             runCatching {
                 IvannaSpatialManager.setScenePose(
                     shared.azimuthRad, shared.elevationRad, shared.distance
                 )
+            }
+        }
+        private fun publishHeadPoseToSystemWide() {
+            val yaw = shared.azimuthRad
+            val pitch = shared.elevationRad
+            if (!yaw.isFinite() || !pitch.isFinite()) return
+            // Socket IPC se invoca desde controles de app, nunca desde el callback de audio.
+            runCatching {
+                MagiskBridge.sendCommand("""{"action":"SET_HEAD_POSE","yawRad":$yaw,"pitchRad":$pitch,"rollRad":0.0}""")
             }
         }
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }
@@ -58,6 +69,7 @@ class IvannaSpatialEngine private constructor() {
         // con JSON {elevation_rad: v} que el motor HRTF ya acepta.
         fun setElevation(rad: Float) {
             shared.elevationRad = rad.coerceIn(-Math.PI.toFloat() / 4f, Math.PI.toFloat() / 4f)
+            publishHeadPoseToSystemWide()
             if (IvannaNativeLib.isLoaded) runCatching {
                 IvannaNativeLib.nativeSetSpatialParams(
                     """{"azimuth_rad":${shared.azimuthRad},"elevation_rad":${shared.elevationRad}}"""

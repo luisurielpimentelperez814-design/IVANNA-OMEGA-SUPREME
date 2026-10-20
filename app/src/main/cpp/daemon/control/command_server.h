@@ -145,6 +145,8 @@ struct OmegaDspState {
     // Cadena 4D en Ruta B (snapshot.ext_flags16 bits 4..15). Apagada por defecto: snapshot idéntico al anterior.
     bool  fourd_on = false, fourd_arc = false, fourd_xtc = false;
     float fourd_arc_depth = 0.f, fourd_depth = 0.7f, fourd_lead_ms = 7.5f;
+    // ABI v8: pose de cabeza para HRTF Ruta B, expresada en radianes.
+    float head_yaw_rad = 0.f, head_pitch_rad = 0.f, head_roll_rad = 0.f;
 };
 
 class CommandServer {
