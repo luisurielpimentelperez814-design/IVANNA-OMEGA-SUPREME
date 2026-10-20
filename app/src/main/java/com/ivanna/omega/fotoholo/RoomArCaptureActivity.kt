@@ -41,6 +41,7 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import org.json.JSONArray
 import org.json.JSONObject
+import com.ivanna.omega.safmus.SafmusUniversalKernel
 
 /**
  * Escáner espacial ARCore. Los puntos y las dimensiones son estimaciones visuales,
@@ -261,6 +262,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 trackingState = lastTrackingState
             )
         }
+        val safmusAssessment = assessSafmus(snapshot)
         lastSnapshot = snapshot
         startButton.isEnabled = session != null
         finishButton.isEnabled = false
@@ -270,7 +272,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             "Captura vacía: apunta a superficies con textura y buena luz, y vuelve a intentar."
         } else {
             "Captura lista · ${snapshot.points.size} puntos · profundidad ${snapshot.depthPointCount} · ${snapshot.poses.size} poses\n" +
-                "Extensión observada aprox.: ${"%.2f".format(Locale.US, b[3] - b[0])} × ${"%.2f".format(Locale.US, b[4] - b[1])} × ${"%.2f".format(Locale.US, b[5] - b[2])} m. No es plano certificado."
+                "Extensión observada aprox.: ${"%.2f".format(Locale.US, b[3] - b[0])} × ${"%.2f".format(Locale.US, b[4] - b[1])} × ${"%.2f".format(Locale.US, b[5] - b[2])} m. No es plano certificado.\n" +
+                "SAFMUS · ${safmusAssessment.quality}: ${safmusAssessment.reason}"
         }
     }
 
@@ -331,6 +334,14 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .put("sparseFeaturePointCount", snapshot.sparsePointCount)
             .put("arcoreDepthApiEnabled", snapshot.depthSupported)
             .put("lastTrackingState", snapshot.trackingState)
+            .put("safmusAssessment", JSONObject().apply {
+                val assessment = assessSafmus(snapshot)
+                put("exportAllowed", assessment.exportAllowed)
+                put("quality", assessment.quality)
+                put("reason", assessment.reason)
+                put("evidenceKind", assessment.evidenceKind)
+                put("acousticCalibrationReady", assessment.acousticCalibrationReady)
+            })
             .put("coordinateSystem", "ARCore world coordinates; scale is an estimate from visual-inertial tracking")
             .put("boundsMeters", JSONObject()
                 .put("minX", b[0]).put("minY", b[1]).put("minZ", b[2])
@@ -349,6 +360,20 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             })
         return json.toString(2).toByteArray(Charsets.UTF_8)
     }
+
+    private fun assessSafmus(snapshot: CaptureSnapshot): SafmusUniversalKernel.SpatialCaptureAssessment =
+        SafmusUniversalKernel.assessSpatialCapture(
+            pointCount = snapshot.points.size,
+            depthPointCount = snapshot.depthPointCount,
+            sparsePointCount = snapshot.sparsePointCount,
+            poseCount = snapshot.poses.size,
+            durationMs = snapshot.durationMs,
+            trackingState = snapshot.trackingState,
+            coordinatesFinite = snapshot.points.all { it.x.isFinite() && it.y.isFinite() && it.z.isFinite() },
+            posesFinite = snapshot.poses.all { p ->
+                listOf(p.x, p.y, p.z, p.qx, p.qy, p.qz, p.qw).all { it.isFinite() }
+            }
+        )
 
     private fun bounds(data: List<Point3>): FloatArray {
         if (data.isEmpty()) return floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f)
