@@ -5,9 +5,13 @@ import com.ivanna.omega.core.IvannaNativeLib
 /**
  * SaFRoomBridge — JNI Kotlin-side interface para SaFRoomOptimizer (C++).
  *
- * Implementa la fórmula:
- *   Φ_SAF-Room^∞ = lim Proj_S^{M_t}( p_t + α*(R_t,H_t,S_t) · M_t^{-1} · Δ_t )
- *   M_t = G_t + λ_t · I  ≻  0
+ * Resuelve el MAP cuadrático acotado de SAF-Room v2:
+ *   J(p) = 1/2 ||p - τ||² + λ/2 ||p - p₀||²
+ *   p* = clip((τ + λ p₀)/(1 + λ), p_min, p_max)
+ *   λ = λ₀ exp(0.15 RT60 + HRTF_mismatch_energy + 0.40 diffuseness)
+ *
+ * Esta solución es exacta para el objetivo cuadrático declarado; no afirma
+ * resolver términos perceptuales no convexos aún no cableados ni calibrados.
  *
  * Flujo de uso:
  *   1. setTarget(floatArrayOf(...))     — fijar τ_t desde calibración HRTF
@@ -24,8 +28,8 @@ object SaFRoomBridge {
     // ── Fórmula principal ────────────────────────────────────────────────────
 
     /**
-     * Ejecuta un paso Riemanniano de Φ_SAF-Room^∞.
-     * @return α*(R_t, H_t, S_t) — paso óptimo usado en este ciclo, ó 0f si falla.
+     * Resuelve el MAP cuadrático acotado en una evaluación directa.
+     * @return 1f si aplicó una solución válida; 0f si la rechazó o falla.
      */
     fun step(): Float =
         if (loaded) runCatching { nativeSafrStep() }.getOrElse { 0f } else 0f
