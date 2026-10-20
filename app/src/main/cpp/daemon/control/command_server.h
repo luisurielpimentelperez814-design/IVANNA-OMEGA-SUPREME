@@ -147,6 +147,7 @@ struct OmegaDspState {
     float fourd_arc_depth = 0.f, fourd_depth = 0.7f, fourd_lead_ms = 7.5f;
     // ABI v8: azimut/elevación para HRTF Ruta B, expresados en radianes.
     float head_yaw_rad = 0.f, head_pitch_rad = 0.f;
+    uint32_t scene_distance_word = 0u;   // omega_scene_distance_encode() (ya desplazada a bits 16..31 de npe_ctl); 0 = no publicada
 };
 
 class CommandServer {

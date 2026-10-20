@@ -737,6 +737,17 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_hrtf_time_align COMMAND test_hrtf_time_align)
 
+# Selección de HRIR por pose (az+el, con envoltura) y ley de distancia de la escena (Ruta B).
+add_executable(test_hrir_pose_select test_hrir_pose_select.cpp)
+target_link_libraries(test_hrir_pose_select PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_hrir_pose_select PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_hrir_pose_select PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_hrir_pose_select PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_hrir_pose_select PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_hrir_pose_select COMMAND test_hrir_pose_select)
+
 # BinauralRenderer: el cambio de filtro HRTF (head-tracking / fuente móvil) se funde, no parte la onda.
 add_executable(test_binaural_crossfade
   test_binaural_crossfade.cpp

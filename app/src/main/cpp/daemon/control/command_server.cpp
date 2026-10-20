@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
+#include <limits>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
@@ -180,7 +181,7 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
                         | (s.xtc_enabled ? ivanna::OMEGA_TEMPORAL_FIELD_XTC_BIT : 0u);
     // v2.5.49: corrección acústica de sala.
     for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) snap.room_corr_db[i] = s.room_corr_db[i];
-    snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db);
+    snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db) | s.scene_distance_word;   // distancia en bits 16..31
     snap.npe_lateral_inhib = s.npe_lateral_inhib;
     snap.npe_ohc_compression = s.npe_ohc_compression;
     snap.head_yaw_rad = s.head_yaw_rad;
@@ -371,6 +372,42 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             static_cast<unsigned long long>(m_head_pose_generation),
             static_cast<unsigned long long>(ackReadable ? ack.generation : 0u),
             m_state.head_yaw_rad, m_state.head_pitch_rad);
+
+    } else if (strcmp(action,"SET_SCENE_POSE")==0) {
+        // Pose de la escena en Ruta B = azimut/elevación (yaw/pitch del bus v8, MISMO camino y ack que SET_HEAD_POSE)
+        // + distancia (npe_ctl bits 16..31). Se RECHAZA (ok:false) lo no finito o fuera de rango en vez de saturarlo en
+        // silencio: azimut ±pi, elevación ±pi/4, distancia 0.5..2. {"clear":1} vuelve a pose 0 y sin distancia.
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        const bool clearIt = _jsonFloat(json,"clear", 0.f) > 0.5f;
+        const float az = clearIt ? 0.f : _jsonFloat(json,"azimuthRad", nan);
+        const float el = clearIt ? 0.f : _jsonFloat(json,"elevationRad", nan);
+        const float di = clearIt ? 1.f : _jsonFloat(json,"distance", 1.f);
+        const uint32_t dw = clearIt ? 0u : ivanna::omega_scene_distance_encode(di);
+        const bool ok = clearIt || (std::isfinite(az) && std::isfinite(el) && az >= -3.14159265f - 1e-3f && az <= 3.14159265f + 1e-3f &&
+                                   el >= -0.78539816f - 1e-3f && el <= 0.78539816f + 1e-3f && dw != 0u);
+        if (!ok) {
+            n = snprintf(reply,reply_sz,
+                "{\"ok\":false,\"command\":\"SET_SCENE_POSE\",\"applied\":false,\"status\":\"rejected\",\"error\":\"pose_invalid_or_out_of_range\"}");
+        } else {
+            m_state.head_yaw_rad = _clamp(az, -3.14159265f, 3.14159265f);
+            m_state.head_pitch_rad = _clamp(el, -0.78539816f, 0.78539816f);
+            m_state.scene_distance_word = dw;
+            const uint64_t gen = publishCurrentState(m_state);
+            m_head_pose_generation = gen;
+            ivanna::EffectHeadPoseAck ack{};
+            const bool ackReadable = ivanna::readEffectHeadPoseAck(ack);
+            const bool applied = gen > 0u && ackReadable && ack.generation >= gen &&
+                std::fabs(ack.yaw_rad - m_state.head_yaw_rad) <= 0.001f &&
+                std::fabs(ack.pitch_rad - m_state.head_pitch_rad) <= 0.001f;
+            n = snprintf(reply,reply_sz,
+                "{\"ok\":%s,\"command\":\"SET_SCENE_POSE\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"consumerGeneration\":%llu,\"azimuthRad\":%.5f,\"elevationRad\":%.5f,\"distance\":%.4f,\"consumer\":%s}",
+                gen>0?"true":"false", applied?"true":"false",
+                gen==0u?"publish_failed":(applied?"applied":"accepted_pending_consumer"),
+                (unsigned long long)gen, (unsigned long long)(ackReadable?ack.generation:0u),
+                (double)m_state.head_yaw_rad, (double)m_state.head_pitch_rad,
+                (double)(dw?ivanna::omega_scene_distance_decode(dw):1.f),
+                hasActiveConsumer()?"\"omega_effect\"":"null");
+        }
 
     } else if (strcmp(action,"SET_PUNCH")==0) {
         // v2.5.41: impacto predictivo por bandas. Clave ausente conserva el valor. La resolución publicada es 1/15.

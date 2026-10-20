@@ -30,6 +30,12 @@ public:
     void processBinauralScene(Ivanna::AudioBuffer* buffer);
     void setHeadPose(float yaw, float pitch, float roll);
 
+    // Ruta B (omega_effect): distancia de la ESCENA publicada por el daemon (omega_control_bus.h, npe_ctl bits 16..31).
+    // Aplica la ley 1/d de nivel (HrirPoseSelect.hpp::sceneDistanceGain) con rampa sin clic; el azimut/elevación llegan por
+    // setHeadPose() (head_yaw/pitch_rad). Rechaza (false) lo no finito o fuera de 0.5..2 sin tocar el estado.
+    bool setSceneDistance(float distanceScale) noexcept;
+    float getSceneDistanceGainTarget() const noexcept { return m_distGainTarget.load(std::memory_order_relaxed); }
+
     // FIX (cableado binaural, FASE 8): pose de cabeza actual expuesta como
     // grados azimuth/elevation — mismo valor que setHeadPose() ya calcula
     // internamente para el dataset medido (yaw*(180/pi) + safBias), pero
@@ -89,9 +95,13 @@ public:
 private:
     // Síntesis analítica (Rayleigh esférico) — fallback cuando no hay dataset
     void synthesizeHrtf(float yaw, float pitch, float roll, int bank);
+    void processBinauralSceneImpl(Ivanna::AudioBuffer* buffer);
+    void applyDistanceGain(Ivanna::AudioBuffer* buffer) noexcept;
+    std::atomic<float> m_distGainTarget{1.0f};
+    float              m_distGainCur = 1.0f;
 
     // Carga los filtros de la posición del dataset más cercana al azimut dado
-    void loadFromDatasetAtAzimuth(float azimuthDeg, int bank);
+    void loadFromDatasetAtPose(float azimuthDeg, float elevationDeg, int bank);
 
     std::atomic<float> m_wetDry{1.0f};   // FIX DAC USB-C: 0=dry, 1=full HRTF
     ivanna::supreme::SupremeTransitionEnvelope m_wetEnv{};

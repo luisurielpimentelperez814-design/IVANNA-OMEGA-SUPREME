@@ -1,5 +1,6 @@
 #include "HrtfManager.hpp"
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
+#include "spatial/HrirPoseSelect.hpp"
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -128,7 +129,7 @@ void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
     const int inactive = 1 - m_activeBank.load(std::memory_order_relaxed);
     if (m_datasetLoaded) {
         const float azDeg = (yaw * kRadToDeg) + safBias;
-        loadFromDatasetAtAzimuth(azDeg, inactive);
+        loadFromDatasetAtPose(azDeg, pitch * kRadToDeg, inactive);
     } else {
         synthesizeHrtf(yaw, pitch, roll, inactive);
     }
@@ -137,7 +138,32 @@ void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
     m_xfadeTrigger.store(true,  std::memory_order_release);
 }
 
+bool HrtfManager::setSceneDistance(float distanceScale) noexcept {
+    if (!std::isfinite(distanceScale) || distanceScale < 0.5f - 1e-3f || distanceScale > 2.f + 1e-3f) return false;
+    m_distGainTarget.store(ivanna::spatial::sceneDistanceGain(distanceScale), std::memory_order_relaxed);   // idempotente
+    return true;
+}
+
+// Rampa lineal por bloque hacia la ganancia de distancia (sin clic). Identidad exacta mientras el objetivo es 1.
+void HrtfManager::applyDistanceGain(Ivanna::AudioBuffer* buffer) noexcept {
+    const float target = m_distGainTarget.load(std::memory_order_relaxed);
+    if (m_distGainCur == 1.0f && target == 1.0f) return;
+    const float step = (target - m_distGainCur) / static_cast<float>(BLOCK_SIZE);
+    float g = m_distGainCur;
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        g += step;
+        buffer->left[i]  *= g;
+        buffer->right[i] *= g;
+    }
+    m_distGainCur = (std::fabs(target - 1.0f) < 1e-6f) ? 1.0f : target;
+}
+
 void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
+    processBinauralSceneImpl(buffer);
+    applyDistanceGain(buffer);
+}
+
+void HrtfManager::processBinauralSceneImpl(Ivanna::AudioBuffer* buffer) {
     if (m_fastRpcClient.isDSPReady()) {
         // FIX (cableado binaural, FASE 8): azimuth/elevation ya NO se
         // envían fijos en cero — se leen de la última pose real recibida
@@ -304,20 +330,19 @@ void HrtfManager::flushHistory() noexcept {
 bool HrtfManager::loadFromDataset(const char* path) {
     if (!m_loader.load(path)) return false;
     m_datasetLoaded = true;
-    loadFromDatasetAtAzimuth(0.f, 0);
-    loadFromDatasetAtAzimuth(0.f, 1);
+    loadFromDatasetAtPose(0.f, 0.f, 0);
+    loadFromDatasetAtPose(0.f, 0.f, 1);
     return true;
 }
 
-void HrtfManager::loadFromDatasetAtAzimuth(float azimuthDeg, int bank) {
+void HrtfManager::loadFromDatasetAtPose(float azimuthDeg, float elevationDeg, int bank) {
     if (!m_datasetLoaded || m_loader.size() == 0) return;
     const size_t n = m_loader.size();
-    float  bestDiff = 1e9f;
-    size_t bestIdx  = 0;
-    for (size_t i = 0; i < n; ++i) {
-        const float diff = std::fabs(m_loader.entry(i).azimuthDeg - azimuthDeg);
-        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
-    }
+    // Distancia angular sobre la esfera (envuelve el azimut y usa la elevación): ver HrirPoseSelect.hpp.
+    const size_t bestIdx = ivanna::spatial::nearestHrirIndex(n,
+        [this](size_t i) { return m_loader.entry(i).azimuthDeg; },
+        [this](size_t i) { return m_loader.entry(i).elevationDeg; },
+        azimuthDeg, elevationDeg);
     const auto& e = m_loader.entry(bestIdx);
     const size_t cL = std::min(static_cast<size_t>(HRTF_TAPS), e.left.size());
     const size_t cR = std::min(static_cast<size_t>(HRTF_TAPS), e.right.size());

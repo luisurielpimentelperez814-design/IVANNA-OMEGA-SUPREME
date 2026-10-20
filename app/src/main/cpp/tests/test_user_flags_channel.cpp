@@ -595,3 +595,49 @@ TEST(FourDChannel, Set4DReachesTheSnapshotWithoutTouchingPunch) {
     ASSERT_TRUE(h.reader.readLatest(s, h.seen));
     EXPECT_FALSE(omega_4d_decode(s.ext_flags16).on);
 }
+
+TEST(ScenePoseChannel, DistanceWordRoundTripRejectsOutOfRangeAndKeepsNpeBits) {
+    const uint32_t w = omega_scene_distance_encode(1.5f);
+    ASSERT_NE(w, 0u);
+    EXPECT_NEAR(omega_scene_distance_decode(w), 1.5f, 1e-4f);
+    EXPECT_NEAR(omega_scene_distance_decode(omega_scene_distance_encode(0.5f)), 0.5f, 1e-4f);
+    EXPECT_NEAR(omega_scene_distance_decode(omega_scene_distance_encode(2.0f)), 2.0f, 1e-4f);
+    EXPECT_EQ(omega_scene_distance_encode(3.0f), 0u);              // fuera de 0.5..2
+    EXPECT_EQ(omega_scene_distance_encode(0.2f), 0u);
+    EXPECT_EQ(omega_scene_distance_encode(NAN), 0u);
+    EXPECT_EQ(omega_scene_distance_decode(0u), 0.f);               // 0 = no publicada
+    bool on = false; float db = 0.f;                               // los bits del NPE no se pisan
+    omega_npe_ctl_decode(omega_npe_ctl_encode(true, -6.f) | w, on, db);
+    EXPECT_TRUE(on); EXPECT_EQ(db, -6.f);
+}
+
+TEST(ScenePoseChannel, DaemonPublishesPoseAndDistanceRejectsInvalidAndClears) {
+    Harness h;
+    CommandServer cs;
+    char reply[1024];
+    cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":0.6}", reply, sizeof reply);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_SCENE_POSE\",\"azimuthRad\":0.5,\"elevationRad\":0.2,\"distance\":1.5}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+    OmegaDspSnapshot s{};
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_NEAR(s.head_yaw_rad, 0.5f, 1e-5f);
+    EXPECT_NEAR(s.head_pitch_rad, 0.2f, 1e-5f);
+    EXPECT_NEAR(omega_scene_distance_decode(s.npe_ctl), 1.5f, 1e-4f);
+    EXPECT_NEAR(omega_punch_decode(s.ext_flags16), 9.0f / 15.0f, 1e-6f);
+    EXPECT_TRUE(s.isCrcValid());
+    // Inválido: rechazado (ok:false) y se conserva el último valor bueno.
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_SCENE_POSE\",\"azimuthRad\":0,\"elevationRad\":0,\"distance\":9}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("pose_invalid_or_out_of_range"), std::string::npos) << reply;
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_SCENE_POSE\",\"azimuthRad\":0,\"elevationRad\":1.5,\"distance\":1}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;      // elevación > 45°
+    cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":0.6}", reply, sizeof reply);
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_NEAR(omega_scene_distance_decode(s.npe_ctl), 1.5f, 1e-4f);
+    // clear
+    cs.handleJsonCommand("{\"action\":\"SET_SCENE_POSE\",\"clear\":1}", reply, sizeof reply);
+    ASSERT_TRUE(h.reader.readLatest(s, h.seen));
+    EXPECT_EQ(omega_scene_distance_decode(s.npe_ctl), 0.f);
+    EXPECT_EQ(s.head_yaw_rad, 0.f); EXPECT_EQ(s.head_pitch_rad, 0.f);
+    EXPECT_TRUE(s.isCrcValid());
+}

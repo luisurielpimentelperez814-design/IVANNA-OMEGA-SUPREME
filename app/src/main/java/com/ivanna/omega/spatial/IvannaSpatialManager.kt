@@ -573,6 +573,11 @@ object IvannaSpatialManager {
 
         // Store one coherent request even if native initialization has not finished.
         requestedScenePose.set(RequestedScenePose(azimuthRad, elevationRad, distanceScale))
+        // Ruta B: el efecto del sistema (HRTF medido por pose + ley de distancia) consume la misma pose.
+        // Sin daemon el comando simplemente no sale; la Ruta A sigue su propio read-back.
+        runCatching {
+            com.ivanna.omega.magisk.OmegaEngineBridge.setScenePose(azimuthRad, elevationRad, distanceScale)
+        }
         return synchronized(lock) {
             val h = rendererHandle
             val u = upmixerHandle

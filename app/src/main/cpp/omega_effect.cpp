@@ -404,6 +404,13 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     if (s.saf_q_valid == 1u && ivanna::safmus::isFiniteLatent(s.saf_q)) {
         fc->setSafLatentParams(s.saf_q);
     }
+    // ── Distancia de la escena → motor HRTF de la Ruta B ─────────────────────────────────────────────────────
+    // Azimut/elevación ya llegan por head_yaw/pitch_rad (updateHeadPose). La distancia viaja en npe_ctl bits 16..31;
+    // 0 = no publicada: no se toca el nivel (identidad con escritores antiguos). setSceneDistance() es idempotente.
+    {
+        const float d = ivanna::omega_scene_distance_decode(s.npe_ctl);
+        if (d > 0.f) fc->setSceneDistance(d);
+    }
     // Aplicar saf_gain como modulación de harmonic_gain (compatibilidad con
     // clientes que solo envían escalares SAF sin vector q[7]).
     if (std::isfinite(s.saf_gain) && s.saf_gain > 0.f) {

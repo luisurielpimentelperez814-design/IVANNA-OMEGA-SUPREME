@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.99
-versionCode=390
+version=v2.5.100
+versionCode=391
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.99: compatibilidad ABI de pose HRTF y validación SAFMUS
+description=v2.5.100: distancia de escena y HRIR por elevación en Ruta B
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

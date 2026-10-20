@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.100 (391) — Distancia de escena y HRIR por elevación en Ruta B
+
+- **Distancia (Ruta B):** `SET_SCENE_POSE` (azimut ±π, elevación ±π/4, distancia 0.5..2) publica azimut/elevación por el yaw/pitch del bus v8 (mismo camino y confirmación que `SET_HEAD_POSE`) y la distancia en `npe_ctl` bits 16..31 (el snapshot sigue en 512 B, sin cambio de ABI). `libomega_effect` aplica una ley 1/d de **solo nivel** (tope +3 dB, −6 dB a d=2) con rampa sin clic. Lo fuera de rango se rechaza (`ok:false`), no se satura.
+- **Defecto corregido en la HRTF medida:** la selección del HRIR comparaba solo el azimut con `fabs()` (sin envolver ±180°, sin mirar la elevación): con un dataset az+el elegía la primera entrada de ese azimut. Ahora usa distancia angular esférica (`HrirPoseSelect.hpp`).
+- **App:** `OmegaEngineBridge.setScenePose/clearScenePose`, reenviado desde `IvannaSpatialManager.setScenePose`.
+- **Pruebas:** `test_hrir_pose_select` y `ScenePoseChannel.*` (palabra de distancia, publicación, rechazo y clear en bus/daemon); suite host completa en verde.
+- **Límite honesto:** la distancia es solo nivel (sin campo cercano ni reverberación directa/reverberante). `setElevation` de la Ruta A sigue sin efecto nativo propio; la compilación Kotlin/JNI y el efecto en teléfono los valida el CI y una prueba en dispositivo.
+
+---
+
 # CHANGELOG — v2.5.99 (390) — Integridad de estado y compatibilidad ABI
 
 - **Contrato ABI conservado:** se mantiene el snapshot compartido dentro del límite de tamaño de 512 bytes y se conserva la versión ABI v8 para evitar romper los lectores de Ruta B.

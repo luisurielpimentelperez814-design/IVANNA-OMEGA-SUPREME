@@ -98,6 +98,9 @@ public:
 
     void setSafLatentParams(const float q[7]) noexcept;
 
+    // Pose de la escena (Ruta B): azimut/elevación en rad y distancia relativa (0.5..2). Devuelve true si el motor HRTF la aplicó.
+    bool setSceneDistance(float distanceScale) noexcept;
+
     // ── Supremacía Acústica: TinyML Kernel, Volterra H2 & Hexagon cDSP ────────
     void setVolterraEnabled(bool enable) noexcept { m_volterraEnabled = enable; }
     bool isVolterraEnabled() const noexcept { return m_volterraEnabled; }

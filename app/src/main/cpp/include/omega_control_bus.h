@@ -189,6 +189,21 @@ inline Omega4DExt omega_4d_decode(uint32_t ext) noexcept {
     e.leadMs   = 5.f + static_cast<float>((ext >> 13u) & 7u) * (5.f / 7.f);
     return e;
 }
+// v8 — Distancia de la escena para la Ruta B (azimut/elevación viajan en head_yaw_rad/head_pitch_rad).
+// 16 bits en npe_ctl bits 16..31 (el snapshot v8 está al límite de 512 B: sin campo nuevo). 0 = sin distancia publicada
+// (el efecto no toca el nivel); 1..65535 mapean linealmente 0.5..2.0 (escala relativa al campo lejano de referencia).
+// omega_npe_ctl_decode() solo mira los bits 0 y 8..15: compatible con lectores antiguos. No finito / fuera de rango -> 0.
+constexpr uint32_t OMEGA_SCENE_DIST_SHIFT = 16u;
+inline uint32_t omega_scene_distance_encode(float distance) noexcept {
+    if (!(distance == distance) || distance < 0.4999f || distance > 2.0001f) return 0u;
+    int w = static_cast<int>((distance - 0.5f) / 1.5f * 65534.f + 0.5f) + 1;
+    return static_cast<uint32_t>(w < 1 ? 1 : (w > 65535 ? 65535 : w)) << OMEGA_SCENE_DIST_SHIFT;
+}
+// Devuelve 0 si no hay distancia publicada; si no, la distancia en 0.5..2.0.
+inline float omega_scene_distance_decode(uint32_t npeCtl) noexcept {
+    const uint32_t w = npeCtl >> OMEGA_SCENE_DIST_SHIFT;
+    return w == 0u ? 0.f : 0.5f + static_cast<float>(w - 1u) * (1.5f / 65534.f);
+}
 // v2.5.36 — Modo AUX/altavoces (campo de presion coherente, AuxFieldCoherence.hpp). Cero cambio de ABI:
 //   bit 25      = modo activo
 //   bits 26..28 = crossover, paso 0..7  -> 60 + 20*paso Hz (60..200)

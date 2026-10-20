@@ -272,6 +272,22 @@ object OmegaEngineBridge {
         return runCatching { JSONObject(text) }.getOrNull()
     }
 
+    /**
+     * Ruta B: pose de escena (azimut ±π, elevación ±π/4, distancia 0.5..2) hacia el efecto del sistema
+     * (libomega_effect) vía bus de control v8. El daemon valida y rechaza lo fuera de rango.
+     * Devuelve si el comando salió; la aplicación real se confirma con requestCommand (campo "ok").
+     */
+    fun setScenePose(azimuthRad: Float, elevationRad: Float, distance: Float): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action", "SET_SCENE_POSE")
+            put("azimuthRad", azimuthRad.toDouble())
+            put("elevationRad", elevationRad.toDouble())
+            put("distance", distance.toDouble())
+        })
+
+    fun clearScenePose(): Boolean =
+        sendCommand(JSONObject().apply { put("action", "SET_SCENE_POSE"); put("clear", 1) })
+
     fun setPFParams(vararg params: Float): Boolean {
         if (params.any { !it.isFinite() }) return false
         return sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })

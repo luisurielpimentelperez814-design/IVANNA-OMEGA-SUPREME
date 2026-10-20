@@ -531,6 +531,10 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
 }
 
 
+bool IvannaFusionEngine::setSceneDistance(float distanceScale) noexcept {
+    return m_hrtf ? m_hrtf->setSceneDistance(distanceScale) : false;
+}
+
 void IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {
     // SAFMUS: invalid/non-finite proposals are rejected; preserve the last safe HRTF state.
     if (!ivanna::safmus::isFiniteLatent(q)) return;
