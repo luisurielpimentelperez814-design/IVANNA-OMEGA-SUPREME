@@ -134,3 +134,23 @@ SAFMUS must improve the way IVANNA uses available device hardware through the **
 - A/B comparisons with fixed content, route, environment, and level; record frame timing/drop rate for camera, capture latency/clipping for microphone, and output latency/true peak/underruns for audio.
 - Clearly label host tests, emulator tests, device tests, and measured laboratory results. Emulator/host success is not physical-hardware validation.
 - No global or vendor-level tuning is enabled by default until device-specific compatibility and recovery are demonstrated.
+
+
+## Magisk runtime coordinator: whole-device environment
+
+The existing `magisk_module/service.sh` now invokes
+`magisk_module/core/safmus_environment_optimizer.sh` before starting the shared daemon.
+The coordinator atomically publishes a permission-restricted snapshot at
+`/data/adb/ivanna_omega/safmus/environment_profile.env` and a human-readable report beside it.
+The snapshot records Android/device identity, available-memory estimate, CPU thread count,
+readable thermal-zone maximum, and presence-only camera/media and sound device nodes. Missing
+telemetry remains unknown; it is not guessed. A conservative resource budget is recorded when
+memory is low or a readable thermal zone is at least 75 C, and SAFE_MODE takes precedence.
+
+This is a read-only inventory and supervisory input, not a claim that the script changes camera
+HAL controls or tunes every physical endpoint. Audio DSP thermal degradation remains owned by
+the existing native `ThermalGovernor`; room correction remains owned by the existing
+`RoomMeasurement` / `gateRoomCorrection` path and requires an explicit, user-authorized
+measurement. Any future actuator must consume verified capabilities, respect Android permission
+and privacy indicators, validate effective read-back, and retain a rollback path. Do not disable
+SELinux, bypass AppOps, or write guessed vendor/sysfs values to manufacture a success state.
