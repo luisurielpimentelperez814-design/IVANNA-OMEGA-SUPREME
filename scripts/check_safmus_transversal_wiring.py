@@ -59,7 +59,7 @@ for path, tokens in {
 require("app/src/main/cpp/include/perceptual_optimizer_v2.hpp",
         "solveMapQuadratic", "projectedKktResidual", "std::exp(exponent)")
 require("app/src/main/cpp/include/saf_room_optimizer.hpp",
-        "perceptual_v2::solveMapQuadratic", "Fail closed", "return 1.0f")
+        "perceptual_v2::solveMapQuadratic", "Fail closed", "return targetWeight")
 require("app/src/main/cpp/tests/test_perceptual_optimizer_v2.cpp",
         "ClosedFormMatchesMapQuadraticExactMinimizer",
         "ClosedFormBeatsLegacyIterationAgainstSameExactObjective",
