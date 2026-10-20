@@ -279,7 +279,11 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
 
     private fun requestExport() {
         val snapshot = lastSnapshot ?: return
-        if (snapshot.points.isEmpty()) return
+        val assessment = assessSafmus(snapshot)
+        if (!assessment.exportAllowed) {
+            statusView.text = "SAFMUS bloqueó la exportación: ${assessment.reason}"
+            return
+        }
         pendingExport = snapshot
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -448,6 +452,9 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         val t = pose.translation
         val q = pose.rotationQuaternion
         val elapsed = ((SystemClock.elapsedRealtimeNanos() - captureStartedNs).coerceAtLeast(0L)) / 1_000_000L
+        val poseValues = listOf(t[0], t[1], t[2], q[0], q[1], q[2], q[3])
+        val quaternionNorm = kotlin.math.sqrt(q.sumOf { (it * it).toDouble() }).toFloat()
+        if (poseValues.any { !it.isFinite() } || !quaternionNorm.isFinite() || quaternionNorm < 0.5f || quaternionNorm > 1.5f) return
         synchronized(pointsLock) {
             if (poseSamples.size < MAX_POSES) poseSamples.add(PoseSample(elapsed, t[0], t[1], t[2], q[0], q[1], q[2], q[3]))
         }
