@@ -94,6 +94,8 @@ ivanna_add_test(test_hoa_gain_matrix)
 ivanna_add_test(test_perceptual_optimizer_v2)
 # Experimental Fisher-Rao natural-gradient step; isolated from production DSP.
 ivanna_add_test(test_perceptual_geometry_v3)
+# Production-path integration tests: exercise SaFRoomOptimizer, not only its helper.
+ivanna_add_test(test_saf_room_optimizer)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
