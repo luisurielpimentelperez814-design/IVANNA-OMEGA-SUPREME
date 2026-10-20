@@ -98,7 +98,7 @@ object SafmusHardwareCoordinator {
                     )
                     if (previousBudget != snapshot.budget) {
                         // Re-apply route DSP when the SAFMUS budget changes.
-                        runCatching { com.ivanna.omega.audio.AudioRouteManager.refreshRoute() }
+                        runCatching { com.ivanna.omega.audio.AudioRouteManager.refreshResourceBudgetProfile() }
                     }
                     app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                         .putString("last_snapshot", snapshot.asText())
