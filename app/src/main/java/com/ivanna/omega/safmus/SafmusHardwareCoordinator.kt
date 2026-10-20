@@ -96,6 +96,8 @@ object SafmusHardwareCoordinator {
                             Budget.SAFE -> 2
                         }
                     )
+                    // Apply the budget to the foreground window adapter on main thread.
+                    runCatching { SafmusDisplayAdapter.applyActive(snapshot.budget) }
                     if (previousBudget != snapshot.budget) {
                         // Re-apply route DSP when the SAFMUS budget changes.
                         runCatching { com.ivanna.omega.audio.AudioRouteManager.refreshResourceBudgetProfile() }
