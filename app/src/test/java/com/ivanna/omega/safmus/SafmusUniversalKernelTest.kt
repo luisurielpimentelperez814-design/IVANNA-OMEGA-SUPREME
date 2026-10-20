@@ -5,6 +5,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafmusUniversalKernelTest {
+    @Test fun spatialPointCloudOptimizationRejectsInvalidAndRedundantPointsAndBoundsOutput() {
+        val result = SafmusUniversalKernel.optimizeSpatialPointCloud(
+            listOf(
+                SafmusUniversalKernel.SpatialPoint3(0.001f, 0.001f, 0.001f),
+                SafmusUniversalKernel.SpatialPoint3(0.002f, 0.002f, 0.002f),
+                SafmusUniversalKernel.SpatialPoint3(1f, 1f, 1f),
+                SafmusUniversalKernel.SpatialPoint3(Float.NaN, 0f, 0f),
+                SafmusUniversalKernel.SpatialPoint3(2_000f, 0f, 0f)
+            ),
+            voxelSizeMeters = 0.02f,
+            maxOutputPoints = 10
+        )
+        assertTrue(result.points.size == 2)
+        assertTrue(result.rejectedInvalidCount == 2)
+        assertTrue(result.reducedByVoxelCount == 1)
+        assertTrue(result.truncatedCount == 0)
+    }
+
     @Test fun spatialCaptureGateLabelsEstimatedGeometryAndNeverClaimsAcousticCalibration() {
         val good = SafmusUniversalKernel.assessSpatialCapture(
             pointCount = 500, depthPointCount = 400, sparsePointCount = 100,
