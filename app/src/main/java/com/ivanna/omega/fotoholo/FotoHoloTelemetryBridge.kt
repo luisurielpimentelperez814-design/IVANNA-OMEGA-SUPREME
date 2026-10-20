@@ -273,6 +273,24 @@ class FotoHoloTelemetryBridge(context: Context) {
         }.getOrDefault(false)
     }
 
+    /**
+     * Quinto eje: IMPACTO EN EL AUDIO. La profundidad de la escena (20..110) pasa a distancia de
+     * reflexiones tempranas del motor espacial (retardo y ganancia de las 4 primeras reflexiones).
+     * Actúa en la Ruta A. El motor no devuelve lectura de confirmación de este parámetro.
+     */
+    @JavascriptInterface
+    fun setSpatialDepth(depth: Float): Boolean {
+        val meters = FotoHoloAudioImpact.distanceMetersFromDepth(depth) ?: return false
+        return runCatching { IvannaSpatialEngine.setDistance(meters); true }.getOrDefault(false)
+    }
+
+    /** Elevación del sonido en grados (±45) hacia el HRTF. Ruta A; sin lectura de confirmación. */
+    @JavascriptInterface
+    fun setSpatialElevationDeg(deg: Float): Boolean {
+        val rad = FotoHoloAudioImpact.elevationRadFromDeg(deg) ?: return false
+        return runCatching { IvannaSpatialEngine.setElevation(rad); true }.getOrDefault(false)
+    }
+
     @JavascriptInterface
     fun getSnapshotJson(): String = runCatching {
         val tel = FotoHoloEngine.telemetry.value
