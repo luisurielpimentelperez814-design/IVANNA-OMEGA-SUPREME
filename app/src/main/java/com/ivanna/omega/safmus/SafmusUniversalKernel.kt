@@ -28,6 +28,106 @@ object SafmusUniversalKernel {
 
     data class Gate(val allowed: Boolean, val reason: String)
 
+    data class SpatialCaptureAssessment(
+        val exportAllowed: Boolean,
+        val quality: String,
+        val reason: String,
+        val evidenceKind: String = "ESTIMATED_AR_GEOMETRY",
+        val acousticCalibrationReady: Boolean = false
+    )
+
+    data class SpatialPoint3(val x: Float, val y: Float, val z: Float)
+    data class SpatialCloudOptimization(
+        val points: List<SpatialPoint3>,
+        val inputCount: Int,
+        val rejectedInvalidCount: Int,
+        val reducedByVoxelCount: Int,
+        val truncatedCount: Int
+    )
+
+    /**
+     * SAFMUS spatial preprocessing: discard non-finite/out-of-domain coordinates,
+     * voxel-thin redundant samples, and enforce a hard output limit. This optimizes
+     * geometry payload size without pretending to reconstruct unseen surfaces.
+     */
+    fun optimizeSpatialPointCloud(
+        input: List<SpatialPoint3>,
+        voxelSizeMeters: Float = 0.02f,
+        maxOutputPoints: Int = 100_000
+    ): SpatialCloudOptimization {
+        val voxel = sanitizeControlValue(voxelSizeMeters, 0.005f, 0.25f) ?: 0.02f
+        val limit = maxOutputPoints.coerceIn(1, 250_000)
+        val output = ArrayList<SpatialPoint3>(minOf(input.size, limit))
+        val occupied = HashSet<String>(minOf(input.size, limit))
+        var invalid = 0
+        var reduced = 0
+        var truncated = 0
+        for (point in input) {
+            if (!point.x.isFinite() || !point.y.isFinite() || !point.z.isFinite() ||
+                kotlin.math.abs(point.x) > 1_000f ||
+                kotlin.math.abs(point.y) > 1_000f ||
+                kotlin.math.abs(point.z) > 1_000f
+            ) {
+                invalid++
+                continue
+            }
+            val gx = kotlin.math.floor(point.x / voxel).toLong()
+            val gy = kotlin.math.floor(point.y / voxel).toLong()
+            val gz = kotlin.math.floor(point.z / voxel).toLong()
+            val key = "$gx:$gy:$gz"
+            if (!occupied.add(key)) {
+                reduced++
+                continue
+            }
+            if (output.size >= limit) {
+                truncated++
+                continue
+            }
+            output.add(point)
+        }
+        return SpatialCloudOptimization(output, input.size, invalid, reduced, truncated)
+    }
+
+    /**
+     * SAFMUS quality gate for ARCore geometry. AR points/poses are estimates,
+     * not acoustic measurements; this gate never authorizes RIR/RT60 calibration.
+     * Weak captures remain exportable with an explicit degraded-quality label.
+     */
+    fun assessSpatialCapture(
+        pointCount: Int,
+        depthPointCount: Int,
+        sparsePointCount: Int,
+        poseCount: Int,
+        durationMs: Long,
+        trackingState: String,
+        coordinatesFinite: Boolean,
+        posesFinite: Boolean
+    ): SpatialCaptureAssessment {
+        if (!coordinatesFinite || !posesFinite) {
+            return SpatialCaptureAssessment(false, "REJECTED_INVALID", "SAFMUS rechazó coordenadas o poses no finitas")
+        }
+        if (pointCount <= 0) {
+            return SpatialCaptureAssessment(false, "REJECTED_INCOMPLETE", "SAFMUS no permite exportar una nube vacía")
+        }
+        val enoughSamples = pointCount >= 100 && poseCount >= 3 && durationMs >= 3_000L
+        val trackingOk = trackingState == "TRACKING"
+        val depthBacked = depthPointCount > 0
+        val quality = when {
+            !enoughSamples || !trackingOk -> "DEGRADED"
+            depthBacked -> "REVIEWABLE_DEPTH_ESTIMATE"
+            sparsePointCount > 0 -> "REVIEWABLE_VISUAL_ESTIMATE"
+            else -> "DEGRADED"
+        }
+        val reason = when (quality) {
+            "REVIEWABLE_DEPTH_ESTIMATE" -> "Captura con muestras de profundidad y seguimiento final activo; geometría estimada, no acústica"
+            "REVIEWABLE_VISUAL_ESTIMATE" -> "Captura visual suficiente; geometría estimada, no acústica"
+            else -> "Captura exportable con calidad limitada; mejora el barrido y confirma seguimiento"
+        }
+        return SpatialCaptureAssessment(true, quality, reason)
+    }
+
+
+
     /** Hardware classes are capabilities, not permission to mutate a device by themselves. */
     enum class HardwareResource { CAMERA, MICROPHONE, AUDIO_OUTPUT }
 

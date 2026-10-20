@@ -76,6 +76,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".fotoholo.RoomArCaptureActivity" android:exported="false" android:screenOrientation="fullSensor" android:label="Captura espacial AR" />
+
         <!-- Playback capture service (MediaProjection) -->
         <service
             android:name=".audio.PlaybackCaptureService"

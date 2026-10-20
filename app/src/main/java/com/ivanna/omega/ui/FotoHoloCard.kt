@@ -1,5 +1,8 @@
 package com.ivanna.omega.ui
 
+import android.content.Intent
+import com.ivanna.omega.fotoholo.RoomArCaptureActivity
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -110,6 +113,9 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             }
         }
         Text("Vista paramétrica seleccionada: $selectedScene", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        TextButton(onClick = { context.startActivity(Intent(context, RoomArCaptureActivity::class.java)) }) {
+            Text("CAPTURAR LUGAR CON CÁMARA AR", color = AuroraCyan)
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(enabled = !geminiBusy, onClick = {
                 geminiBusy = true; geminiStatus = "Gemini analizando el espectro…"
