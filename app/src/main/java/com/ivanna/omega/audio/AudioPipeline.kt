@@ -159,6 +159,7 @@ class AudioPipeline {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
 
         val captureContext = appContext
+            ?: runCatching { com.ivanna.omega.core.IVANNAApplication.instance.applicationContext }.getOrNull()
         if (captureContext == null || captureContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             Log.w(tag, "SAFMUS microphone adapter abstains: RECORD_AUDIO permission missing")
             IvannaUnifiedPipeline.notifyRouteAStopped()
