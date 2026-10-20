@@ -54,12 +54,12 @@ object SafmusUniversalKernel {
         if (!coordinatesFinite || !posesFinite) {
             return SpatialCaptureAssessment(false, "REJECTED_INVALID", "SAFMUS rechazó coordenadas o poses no finitas")
         }
-        if (pointCount <= 0 || poseCount <= 0 || durationMs <= 0L) {
-            return SpatialCaptureAssessment(false, "REJECTED_INCOMPLETE", "SAFMUS requiere puntos, poses y duración válidos")
+        if (pointCount <= 0) {
+            return SpatialCaptureAssessment(false, "REJECTED_INCOMPLETE", "SAFMUS no permite exportar una nube vacía")
         }
         val enoughSamples = pointCount >= 100 && poseCount >= 3 && durationMs >= 3_000L
         val trackingOk = trackingState == "TRACKING"
-        val depthBacked = depthPointCount > 0 && depthPointCount + sparsePointCount >= pointCount.coerceAtMost(depthPointCount + sparsePointCount)
+        val depthBacked = depthPointCount > 0
         val quality = when {
             !enoughSamples || !trackingOk -> "DEGRADED"
             depthBacked -> "REVIEWABLE_DEPTH_ESTIMATE"
