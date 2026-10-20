@@ -56,6 +56,17 @@ for path, tokens in {
     require(path, *tokens)
 
 # Evolution can only change audio with finite cues, bounded gain and measured block headroom.
+require("app/src/main/cpp/include/perceptual_optimizer_v2.hpp",
+        "solveMapQuadratic", "projectedKktResidual", "std::exp(exponent)")
+require("app/src/main/cpp/include/saf_room_optimizer.hpp",
+        "perceptual_v2::solveMapQuadratic", "Fail closed", "return 1.0f")
+require("app/src/main/cpp/tests/test_perceptual_optimizer_v2.cpp",
+        "ClosedFormMatchesAnalyticMapMinimizerInOneSolve",
+        "BoxConstraintProducesConstrainedOptimum",
+        "ExponentialContextRegularizationIsPositiveAndMonotonic",
+        "RejectsNonFiniteTargetAndInvalidBounds")
+require("app/src/main/cpp/tests/CMakeLists.txt", "ivanna_add_test(test_perceptual_optimizer_v2)")
+
 require("app/src/main/cpp/spatial/SafmusEvolutionGate.hpp", "mayApplyEvolutionCandidate",
         "std::isfinite(e.fitness)", "e.headroomValid")
 require("app/src/main/cpp/audio_orchestrator.cpp", "SafmusEvolutionGate.hpp",
