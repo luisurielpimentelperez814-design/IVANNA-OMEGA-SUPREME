@@ -15,7 +15,7 @@
 // Bump cuando se anadan/eliminen acciones o cambie un payload. El reader
 // Kotlin (OmegaEngineBridge) la usa para degradar con ruido en vez de fallar
 // en silencio cuando habla con un daemon de otra epoca.
-inline constexpr uint32_t OMEGA_PROTO_VERSION = 1u;
+inline constexpr uint32_t OMEGA_PROTO_VERSION = 2u;
 
 struct OmegaDspState {
     float eq_gains[OMEGA_EQ_BANDS];
