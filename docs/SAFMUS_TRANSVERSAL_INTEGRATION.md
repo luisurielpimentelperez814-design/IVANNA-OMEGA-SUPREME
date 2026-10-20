@@ -75,3 +75,62 @@ These gates extend the shared SAFMUS contract to the open implementation work. T
 10. **Release/device validation:** publish only artifacts traceable to the green SHA; separately document device tests and level-matched listening results.
 
 A step is not complete merely because its UI exists, a command was sent, a PR was opened, or a build started. Mark it complete only when its specified evidence is attached to the exact candidate commit.
+
+
+## Hardware adaptation through the existing Magisk module (new acceptance contract)
+
+SAFMUS must improve the way IVANNA uses available device hardware through the **same installed IVANNA Magisk module and the existing Android audio/camera service paths**. This is a capability and safety contract, not a promise that software can change the physical limits of a sensor or transducer.
+
+### Shared architecture and permissions
+
+- Keep a single policy/orchestration layer: SAFMUS evaluates capability, permission, route ownership, thermal/battery constraints, freshness, and confidence; IVANNA's existing subsystem remains the owner of the actual device API and DSP chain.
+- Never open a second camera or microphone session just to run SAFMUS. Consume the same authorized capture/session or its explicitly shared metadata. If Android/vendor APIs do not permit safe sharing, report `UNAVAILABLE` and do not bypass permissions, privacy indicators, AppOps, SELinux, or foreground-service requirements.
+- The Magisk module may provide privileged device-level integration only where the target device, Android version, vendor implementation, and policy explicitly support it. No blind writes to vendor camera/audio configuration, no global gain changes without bounded validation, and no system-file replacement as a generic optimization strategy.
+- Every hardware feature is capability-detected at runtime. No sensor, HAL, effect, camera mode, or audio endpoint is assumed from a model name. Unsupported paths remain unchanged and report a reason.
+- Separate requested settings from confirmed effective settings. A successful command, property write, IPC response, or permission grant is not proof that the HAL or physical hardware changed behavior.
+- Keep a last-known-safe configuration and a reversible feature flag for every device-level modification. On crash, stale evidence, thermal pressure, route conflict, invalid read-back, or failed startup, restore the safe path and leave stock behavior intact.
+- Store no camera frames or raw microphone audio for optimization telemetry by default. Prefer derived, bounded metadata; require explicit user consent for any diagnostic capture or persistence.
+
+### Camera path
+
+- SAFMUS may optimize only modes actually exposed by Camera2/CameraX or a supported vendor API: supported resolution/FPS combinations, capture-session configuration, stabilization/HDR/low-light modes, focus/exposure/white-balance behavior, and bounded frame-processing scheduling.
+- Query camera characteristics and stream combinations first; validate requested mode against advertised capabilities, thermal budget, memory budget, and the active session. Do not claim higher sensor resolution, optical capability, or improved image quality solely because a setting was requested.
+- IVANNA's FotoHolo/ARCore capture must use one coordinated camera session, preserve timestamps and tracking/depth provenance, and mark frames/poses stale when synchronization is lost. SAFMUS must not silently reconfigure the camera while ARCore owns a session.
+- Any image enhancement runs in an explicitly budgeted pipeline with frame-drop/backpressure limits. If latency or thermal limits are exceeded, reduce optional processing or revert to the platform path; never block the camera callback on optimization work.
+- Acceptance tests: unsupported capability, permission denial/revocation, camera busy/in-use, session reconfiguration failure, stale frame timestamps, ARCore session ownership, memory/thermal pressure, and rollback.
+
+### Microphone path
+
+- SAFMUS may refine capture only through a permitted, existing capture session and supported platform/vendor controls: source selection, sample-rate/channel configuration, supported noise suppression/echo cancellation/automatic gain controls, and bounded downstream filtering.
+- Query the actual audio route and capture format. Do not assume that a requested sample rate, microphone array, beamforming mode, or vendor effect is active until read-back or a reliable platform status confirms it.
+- Do not force-enable multiple competing noise suppressors, AGC, or echo cancellers. Determine which effect is already owned by the route and avoid stacking processing that causes pumping, clipping, phase distortion, or speech loss.
+- Preserve consent and Android microphone privacy behavior. If IVANNA is not recording or does not hold the required permission, SAFMUS must not open a hidden microphone stream or keep a background capture alive.
+- Acceptance tests: permission denied/revoked, input device change, unavailable effect, format mismatch, clipping/NaN, stale route telemetry, competing effect ownership, thermal/CPU overload, and exact restoration of prior settings.
+
+### Native speakers, headphones, USB/Bluetooth audio
+
+- Route optimization must reuse the existing AudioTrack/AudioEffect/AAudio/Oboe/daemon path selected by IVANNA. SAFMUS validates sample rate, channel mask, output device, supported effects, latency, gain, and headroom before proposing changes.
+- Distinguish built-in speakers, wired output, USB DAC, Bluetooth codecs/endpoints, and vendor DSP using runtime route evidence. Never apply a speaker-specific EQ or calibration profile to a different endpoint after a route switch.
+- Use measured device/room response for device-specific correction. A device model, preset name, or inferred speaker layout is not a measurement. Without measurements, permit only conservative bounded processing and label it uncalibrated.
+- Enforce peak/headroom limits and a safe rollback. Do not change system-wide volume or vendor mixer controls unless the interface is explicitly supported, authorized, bounded, and has verified read-back. Protect the stock audio path if the daemon or module is unavailable.
+- Keep Surround, HRTF, room correction, and vendor effects under one route arbiter. Prevent duplicate virtualizers, spatializers, bass enhancers, or reverbs; a requested effect that is unsupported or already owned elsewhere must be reported as unavailable/skipped, not falsely marked active.
+- Acceptance tests: route hot-swap, unsupported endpoint, Bluetooth latency/codec change, effect contention, native effect read-back mismatch, clipping/headroom, daemon disconnect/restart, and rollback to the pre-optimization route.
+
+### Shared device optimization lifecycle
+
+1. Discover capabilities and current route without mutating hardware.
+2. Obtain required runtime permission and confirm the owning session.
+3. Capture freshness, thermal, memory, latency, and baseline evidence.
+4. SAFMUS produces a bounded proposal; the existing IVANNA subsystem applies it.
+5. Read back the effective configuration and compare against the requested change.
+6. Accept only if the capability-specific postconditions pass; otherwise roll back.
+7. Publish truthful UI status: `APPLIED`, `DEGRADED`, `UNAVAILABLE`, `DENIED`, or `ROLLED_BACK`, including a reason.
+8. Log versioned, privacy-preserving metadata and test evidence; never record raw AV data by default.
+
+### Release gates for device-level SAFMUS
+
+- Unit/contract tests for capability parsing, numeric bounds, permissions, stale state, route ownership, read-back mismatch, and rollback.
+- Instrumentation tests on supported Android versions and representative hardware for camera, microphone, built-in speaker, wired/USB, and Bluetooth paths where available.
+- A/B comparisons with fixed content, route, environment, and level; record frame timing/drop rate for camera, capture latency/clipping for microphone, and output latency/true peak/underruns for audio.
+- Clearly label host tests, emulator tests, device tests, and measured laboratory results. Emulator/host success is not physical-hardware validation.
+- No global or vendor-level tuning is enabled by default until device-specific compatibility and recovery are demonstrated.
