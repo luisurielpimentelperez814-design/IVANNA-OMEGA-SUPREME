@@ -286,6 +286,15 @@ fun ControlTabScreen(
             else antiDolbyController.disableAntiDolby()
         },
         onPresetSelected = { presetName ->
+            // Aplicar también el perfil real de AudioEffect por sesión. Antes la
+            // UI solo intentaba buscar ProfilesLoader y los presets nuevos de
+            // IvannaEffectProfile.byName podían quedar seleccionados sin aplicar
+            // EQ/BassBoost/Virtualizer/Dynamics al audio externo.
+            com.ivanna.omega.audio.IvannaEffectProfile.byName[presetName]?.let { effectProfile ->
+                runCatching {
+                    com.ivanna.omega.dsp.DSPState.globalEffectManager?.applyProfile(effectProfile)
+                }
+            }
             val profile = ProfilesLoader.load(context)
                 .firstOrNull { it.name.equals(presetName, ignoreCase = true) }
             if (profile != null) {
