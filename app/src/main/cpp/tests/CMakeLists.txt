@@ -99,6 +99,8 @@ ivanna_add_test(test_saf_room_optimizer)
 ivanna_add_test(test_wasserstein_latent_flow)
 # Bounded adaptive residual geometry feedback on the SAF 7-D control state.
 ivanna_add_test(test_topological_feedback_operator)
+# Bounded Berry-phase LUT and fixed-size complex FIR primitives.
+ivanna_add_test(test_gauge_field_engine)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
