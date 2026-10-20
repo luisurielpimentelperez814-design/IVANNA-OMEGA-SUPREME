@@ -71,6 +71,9 @@ jobs:
           node-version: '22'
           cache: npm
 
+      - name: Test the local procedural 3D place generator
+        run: node --test tests-web/holo-place.test.mjs
+
       - name: Build and stage the standalone FotoHolo WebGL bundle
         run: |
           set -euo pipefail

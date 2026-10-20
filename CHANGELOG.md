@@ -1,3 +1,13 @@
+# CHANGELOG — Sin publicar — Holografía 3D local (sin Gemini, sin cuota)
+
+- **Generador local:** `src/lib/proceduralHoloPlace.ts` convierte el texto del lugar (+ género/entorno) en una arquitectura 3D determinista (catedral, estadio, teatro, club, estudio, bodega, exterior, cueva, orbital o sala genérica) y el visor WebGL la dibuja. Sin red, sin claves, sin tokens: se puede regenerar sin límite.
+- **Honestidad:** es una síntesis paramétrica por palabras clave; no reconstruye el lugar real ni mide su acústica. Si ninguna palabra se reconoce, lo dice («sala genérica»). El brillo de las luminarias sigue la energía real del audio; la geometría no, así que es reproducible.
+- **Gemini pasa a ser opcional:** la imagen fotorrealista sigue disponible, rotulada como opcional y con uso de cuota. El modo automático ahora regenera la escena local.
+- **HRTF/Wet:** la tarjeta de FotoHolo lee `nativeGetHRTFEnabled`/`nativeGetSpatialWet` del motor en vez de constantes de la UI; `hrtfRuntime` solo dice «reported-active» con confirmación del motor.
+- **Pruebas:** `node --test tests-web/` (6 casos: determinismo, palabras clave, valores finitos, energía solo en brillo) y `FotoHoloHrtfRuntimeStatusTest`. TypeScript/Kotlin/JNI solo se compilan en CI; sin prueba en dispositivo.
+
+---
+
 # CHANGELOG — v2.5.100 (391) — Distancia de escena y HRIR por elevación en Ruta B
 
 - **Distancia (Ruta B):** `SET_SCENE_POSE` (azimut ±π, elevación ±π/4, distancia 0.5..2) publica azimut/elevación por el yaw/pitch del bus v8 (mismo camino y confirmación que `SET_HEAD_POSE`) y la distancia en `npe_ctl` bits 16..31 (el snapshot sigue en 512 B, sin cambio de ABI). `libomega_effect` aplica una ley 1/d de **solo nivel** (tope +3 dB, −6 dB a d=2) con rampa sin clic. Lo fuera de rango se rechaza (`ok:false`), no se satura.
