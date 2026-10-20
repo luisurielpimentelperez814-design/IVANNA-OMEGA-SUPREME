@@ -43,7 +43,6 @@ object CinematicEngineHost {
                     val speech = result.speech.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
                     val music = result.music.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
                     val bass = result.bass.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
-                    AudioEngine.nativeSetAntiDolbyScoresStatic(speech, music, bass)
                     onClassification?.invoke(speech, music, bass)
                 }
             }
