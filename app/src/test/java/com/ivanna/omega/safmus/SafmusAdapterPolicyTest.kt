@@ -36,7 +36,7 @@ class SafmusAdapterPolicyTest {
         assertEquals(4.5f, normal.dialogBoostDb, 0f)
         assertEquals(3f, conservative.dialogBoostDb, 0f)
         assertEquals(1.5f, safe.dialogBoostDb, 0f)
-        assertEquals(0.65f, conservative.widenerMult, 0f)
-        assertEquals(0.85f, safe.widenerMult, 0f)
+        assertEquals(0.425f, conservative.widenerMult, 0f)
+        assertEquals(0.325f, safe.widenerMult, 0f)
     }
 }
