@@ -303,45 +303,19 @@ class AudioPipeline {
     }
 
     private fun classifyAndRoute(frame: FloatArray) {
-        // Scores simples basados en energía espectral por bandas (fallback sin TFLite)
-        // En dispositivos con yamnet.tflite en assets, YamnetClassifier toma el control
-        var bassEnergy = 0f
-        var midEnergy = 0f
-        var highEnergy = 0f
-        var rms = 0f
-
-        for (i in frame.indices) {
-            val s = frame[i]
-            rms += s * s
-            // Aproximación de frecuencia por cruce de cero (muy simple)
-            if (i > 0) {
-                val diff = frame[i] - frame[i - 1]
-                when {
-                    diff.math_abs() < 0.01f -> bassEnergy += s * s
-                    diff.math_abs() < 0.1f  -> midEnergy += s * s
-                    else                    -> highEnergy += s * s
-                }
-            }
-        }
-
-        rms = kotlin.math.sqrt(rms / frame.size)
-        val total = bassEnergy + midEnergy + highEnergy + 1e-8f
-        val speechScore = (midEnergy / total).coerceIn(0f, 1f)
-        val musicScore  = ((bassEnergy + highEnergy) / total).coerceIn(0f, 1f)
-        val bassScore   = (bassEnergy / total).coerceIn(0f, 1f)
-
-        if (rms > 0.001f) {  // Solo clasificar si hay señal real
-            // FIX: enviar scores al orquestador nativo
+        // Estimador por energía de bandas mediante filtros paso-bajo en cascada.
+        // Es una heurística espectral, no un clasificador semántico de voz/música.
+        val scores = AudioBandEnergyClassifier.analyze(frame, SAMPLE_RATE / 3)
+        if (scores.rms > 0.001f) {
             try {
-                AudioEngine.nativeSetAntiDolbyScoresStatic(speechScore, musicScore, bassScore)
-                _yamnetResult.value = YamnetResult(speechScore, musicScore, bassScore, true)
-                // 3J: exponer globalmente para TelemetryDashboard
-                _sharedYamnet.value = SharedYamnetResult(speechScore, musicScore, bassScore, true, 0L, "Heurística espectral")
+                AudioEngine.nativeSetAntiDolbyScoresStatic(scores.speech, scores.music, scores.bass)
+                _yamnetResult.value = YamnetResult(scores.speech, scores.music, scores.bass, true)
+                _sharedYamnet.value = SharedYamnetResult(
+                    scores.speech, scores.music, scores.bass, true, 0L, "Heurística espectral por bandas"
+                )
             } catch (_: Exception) {}
         }
     }
-
-    private fun Float.math_abs() = if (this < 0) -this else this
 
     /**
      * FIX (Ruta A telemetria muerta): PlaybackCaptureService captura mono
