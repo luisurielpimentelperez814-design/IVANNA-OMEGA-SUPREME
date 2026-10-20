@@ -10,6 +10,7 @@ import android.util.Log
 import android.Manifest
 import android.content.pm.PackageManager
 import com.ivanna.omega.safmus.SafmusAdapterPolicy
+import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.safmus.SafmusHardwareCoordinator
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
@@ -312,7 +313,11 @@ class AudioPipeline {
         val scores = AudioBandEnergyClassifier.analyze(frame, SAMPLE_RATE / 3)
         if (scores.rms > 0.001f) {
             try {
-                AudioEngine.nativeSetAntiDolbyScoresStatic(scores.speech, scores.music, scores.bass)
+                // Both the learned CRNN and the deterministic fallback enter the same
+                // perceptual orchestrator. It is the sole owner of the native score bus.
+                (appContext?.applicationContext as? IVANNAApplication)
+                    ?.perceptualCortex
+                    ?.updateContentClassification(scores.speech, scores.music, scores.bass)
                 _yamnetResult.value = YamnetResult(scores.speech, scores.music, scores.bass, true)
                 _sharedYamnet.value = SharedYamnetResult(
                     scores.speech, scores.music, scores.bass, true, 0L, "Heurística espectral por bandas"
