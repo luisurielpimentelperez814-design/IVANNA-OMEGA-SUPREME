@@ -41,7 +41,7 @@ static bool publishSafLatentToAudioProcess(const float q[7]) noexcept {
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     constexpr char name[] = "omega_command_socket";
-    addr.sun_path[0] = '\\0';
+    addr.sun_path[0] = '\0';
     std::memcpy(addr.sun_path + 1, name, sizeof(name) - 1);
     const socklen_t addrLen = static_cast<socklen_t>(
         offsetof(sockaddr_un, sun_path) + 1 + sizeof(name) - 1);
@@ -51,7 +51,7 @@ static bool publishSafLatentToAudioProcess(const float q[7]) noexcept {
     }
     char json[320]{};
     const int n = std::snprintf(json, sizeof(json),
-        "{\\"action\\":\\"SET_SAF_STATE\\",\\"q\\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g]}",
+        "{\"action\":\"SET_SAF_STATE\",\"q\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g]}",
         static_cast<double>(q[0]), static_cast<double>(q[1]),
         static_cast<double>(q[2]), static_cast<double>(q[3]),
         static_cast<double>(q[4]), static_cast<double>(q[5]),
@@ -67,7 +67,7 @@ static bool publishSafLatentToAudioProcess(const float q[7]) noexcept {
         if (sent == static_cast<std::size_t>(n)) {
             char reply[512]{};
             const ssize_t got = ::read(fd, reply, sizeof(reply) - 1);
-            accepted = got > 0 && std::strstr(reply, "\\"ok\\":true") != nullptr;
+            accepted = got > 0 && std::strstr(reply, "\"ok\":true") != nullptr;
         }
     }
     ::close(fd);
