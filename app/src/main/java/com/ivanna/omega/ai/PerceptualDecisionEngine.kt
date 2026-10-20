@@ -61,7 +61,12 @@ class PerceptualDecisionEngine {
         
         val moodColoration = (mood * 0.5f + (1f - fatigueWeight) * 0.5f).coerceIn(0f, 1f)
         val harmonicGain = ((1.0f - exciterRed) * (1.0f + currentProfile.treblePreferenceDb * 0.05f)).coerceIn(0.2f, 1.5f)
-        val antiDolby = (compAmount * 0.8f + aggress * 0.2f).coerceIn(0.1f, 1.0f)
+        // CRNN class scores are weak content cues, never evidence of room geometry.
+        val speechCue = snapshot.contentSpeech.coerceIn(0f, 1f)
+        val musicCue = snapshot.contentMusic.coerceIn(0f, 1f)
+        val bassCue = snapshot.contentBass.coerceIn(0f, 1f)
+        val contentBias = musicCue * 0.10f + bassCue * 0.06f - speechCue * 0.08f
+        val antiDolby = (compAmount * 0.72f + aggress * 0.18f + contentBias + 0.10f).coerceIn(0.1f, 1.0f)
 
         val sMode = when {
             spatialWidth > 1.4f -> "3D_HOLOGRAM"
