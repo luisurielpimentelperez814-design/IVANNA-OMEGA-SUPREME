@@ -8,6 +8,16 @@ LOG="$STATE/daemon.log"
 
 mkdir -p "$STATE"
 
+# SAFMUS: map whole-device resource conditions before starting the shared daemon.
+# The probe is read-only; it publishes a bounded budget for later consumers.
+SAFMUS_ENV="$MODDIR/core/safmus_environment_optimizer.sh"
+if [ -x "$SAFMUS_ENV" ]; then
+    "$SAFMUS_ENV" >> "$LOG" 2>&1
+elif [ -f "$SAFMUS_ENV" ]; then
+    chmod 755 "$SAFMUS_ENV" 2>/dev/null
+    "$SAFMUS_ENV" >> "$LOG" 2>&1
+fi
+
 # Rotación de log: daemon.log crecía sin límite en /data (>1 MiB → .old).
 if [ -f "$LOG" ]; then
     LOG_SZ=$(wc -c < "$LOG" 2>/dev/null || echo 0)
