@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include "include/gauge_field_engine.hpp"
 
 namespace {
