@@ -154,3 +154,18 @@ the existing native `ThermalGovernor`; room correction remains owned by the exis
 measurement. Any future actuator must consume verified capabilities, respect Android permission
 and privacy indicators, validate effective read-back, and retain a rollback path. Do not disable
 SELinux, bypass AppOps, or write guessed vendor/sysfs values to manufacture a success state.
+## Whole-device Android adapters — wired runtime path
+
+`SafmusHardwareCoordinator` is started from `IVANNAApplication.onCreate()` alongside the existing `HardwareProbe`, `AudioRouteManager`, and `ThermalGovernor`. Every five seconds it samples public Android APIs for available memory, battery percentage, power-save state, thermal status, declared graphics API, display refresh, camera inventory, audio input/output routes, sensor inventory, and haptics. It stores a local last-snapshot and resource budget in private app preferences; no telemetry is uploaded.
+
+The coordinator feeds the shared resource budget into `ThermalGovernor.setExternalResourceBudget()`. The governor arbitrates the strongest of Android thermal pressure and SAFMUS resource pressure, then uses IVANNA's existing native DSP setters to reduce exciter, spatial width, and compressor load. Returning to the normal budget restores the baseline values unless thermal policy still requires a reduction. This is an effective connection to the existing DSP path, not a claim that the CPU/GPU clocks or camera/display HAL were directly modified.
+
+### Adapter boundary and honest status
+
+- **CPU / memory / power / thermal:** live signals drive the shared resource budget and existing DSP workload governor.
+- **GPU / display:** current public API capability and refresh are observed. No generic global GPU clock or refresh write is attempted because Android/OEM support is device-specific and display mode selection belongs to a foreground window.
+- **Audio input/output:** route inventory is observed; `AudioRouteManager`, the existing audio effects and the explicitly authorized room-measurement path remain owners of changes.
+- **Camera / microphone:** capability is inventoried only. The coordinator does not open parallel sessions or change capture settings behind an app's owner; a future camera/capture adapter must be integrated into the actual owning session and verify effective read-back.
+- **Sensors / haptics:** capability is inventoried without continuously activating sensors or triggering vibration.
+
+The runtime budget is a bounded supervisory signal, not a universal hardware overclock. Device-specific actuators must be added only where the OEM API or an explicitly supported module control exists, with read-back, rollback, permission and thermal checks. The wiring checker now enforces the application → coordinator → existing DSP governor path.
