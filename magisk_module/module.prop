@@ -3,5 +3,5 @@ name=IVANNA OMEGA SUPREME
 version=v2.5.99
 versionCode=390
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.99: pose HRTF Ruta B con yaw, pitch y roll
+description=v2.5.99: compatibilidad ABI de pose HRTF y validación SAFMUS
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
