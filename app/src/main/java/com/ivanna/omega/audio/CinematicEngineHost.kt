@@ -39,7 +39,7 @@ object CinematicEngineHost {
                 sampleRate = sampleRate
             ).also { eng ->
                 eng.onModeChanged = { mode, result ->
-                    // Sanitize model output before crossing the JNI/DSP boundary.
+                    // Sanitize model output before it enters the shared perceptual orchestrator.
                     val speech = result.speech.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
                     val music = result.music.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
                     val bass = result.bass.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
