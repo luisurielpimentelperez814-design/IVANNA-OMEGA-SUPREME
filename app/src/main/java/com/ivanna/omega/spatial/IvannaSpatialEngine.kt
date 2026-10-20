@@ -37,7 +37,7 @@ class IvannaSpatialEngine private constructor() {
             if (!yaw.isFinite() || !pitch.isFinite()) return
             // Socket IPC se invoca desde controles de app, nunca desde el callback de audio.
             runCatching {
-                MagiskBridge.sendCommand("""{"action":"SET_HEAD_POSE","yawRad":$yaw,"pitchRad":$pitch,"rollRad":0.0}""")
+                MagiskBridge.sendCommand("""{"action":"SET_HEAD_POSE","yawRad":$yaw,"pitchRad":$pitch}""")
             }
         }
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }

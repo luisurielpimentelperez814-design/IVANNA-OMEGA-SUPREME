@@ -152,7 +152,6 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     snap.npe_ohc_compression = s.npe_ohc_compression;
     snap.head_yaw_rad = s.head_yaw_rad;
     snap.head_pitch_rad = s.head_pitch_rad;
-    snap.head_roll_rad = s.head_roll_rad;
     // v2.5.49: PUNCH en la palabra extendida de 16 bits (los 32 bits de `flags` están agotados).
     snap.ext_flags16 = static_cast<uint16_t>((snap.ext_flags16 & ~ivanna::OMEGA_EXT_PUNCH_MASK) | ivanna::omega_punch_encode(s.punch_amount));
     // Cadena 4D (bits 4..15 de la misma palabra; el PUNCH ocupa 0..3).
@@ -311,12 +310,11 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         // Campos ausentes conservan el valor vigente; rangos seguros en radianes.
         m_state.head_yaw_rad = _clamp(_jsonFloat(json,"yawRad",m_state.head_yaw_rad), -3.14159265f, 3.14159265f);
         m_state.head_pitch_rad = _clamp(_jsonFloat(json,"pitchRad",m_state.head_pitch_rad), -0.78539816f, 0.78539816f);
-        m_state.head_roll_rad = _clamp(_jsonFloat(json,"rollRad",m_state.head_roll_rad), -3.14159265f, 3.14159265f);
         const uint64_t gen = publishCurrentState(m_state);
         n = snprintf(reply, reply_sz,
-            "{\"ok\":%s,\"action\":\"SET_HEAD_POSE\",\"status\":\"%s\",\"generation\":%llu,\"yawRad\":%.6f,\"pitchRad\":%.6f,\"rollRad\":%.6f}",
+            "{\"ok\":%s,\"action\":\"SET_HEAD_POSE\",\"status\":\"%s\",\"generation\":%llu,\"yawRad\":%.6f,\"pitchRad\":%.6f}",
             gen > 0 ? "true" : "false", gen > 0 ? "applied" : "accepted_pending_consumer",
-            static_cast<unsigned long long>(gen), m_state.head_yaw_rad, m_state.head_pitch_rad, m_state.head_roll_rad);
+            static_cast<unsigned long long>(gen), m_state.head_yaw_rad, m_state.head_pitch_rad);
 
     } else if (strcmp(action,"SET_PUNCH")==0) {
         // v2.5.41: impacto predictivo por bandas. Clave ausente conserva el valor. La resolución publicada es 1/15.

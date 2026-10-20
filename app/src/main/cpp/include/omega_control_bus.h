@@ -108,7 +108,7 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // ABI v5 (2026-09-26): añadidos los 5 Ejes de Supremacía Cuántico-Neuromórfica
 // (8 flags OMEGA_FLAG_SUPREME_* + 11 escalares supreme_*) manteniendo
 // sizeof(OmegaDspSnapshot) <= 512 bytes y copia trivial cross-process.
-constexpr uint16_t OMEGA_CTRL_VERSION = 8u;   // v8: yaw/pitch/roll para el consumidor HRTF de Ruta B.
+constexpr uint16_t OMEGA_CTRL_VERSION = 8u;   // v8: yaw/pitch para el consumidor HRTF de Ruta B.
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
@@ -398,7 +398,6 @@ struct OmegaDspSnapshot {
     // ABI v8: pose espacial publicada por el daemon; ángulos en radianes.
     float    head_yaw_rad;
     float    head_pitch_rad;
-    float    head_roll_rad;
 
     // ── Integridad ────────────────────────────────────────────────────────────
     uint32_t crc32;            // CRC32 de bytes [magic .. effect_frames] inclusive
@@ -441,7 +440,7 @@ struct OmegaDspSnapshot {
         s.dialog_boost_db   = 1.5f;
         s.widener_mult      = 1.38f;
         s.npe_ctl = omega_npe_ctl_encode(true, 0.0f); s.npe_lateral_inhib = 0.2f; s.npe_ohc_compression = 0.3f;
-        s.head_yaw_rad = 0.f; s.head_pitch_rad = 0.f; s.head_roll_rad = 0.f;
+        s.head_yaw_rad = 0.f; s.head_pitch_rad = 0.f;
         s.room_rt60_s = 0.34f;  // Golden Master Studio Control Room (rir_0051.wav, RT60=0.340s, DRR=10.31dB)
         s.room_idx    = 51;
         s.room_wet    = 0.22f;

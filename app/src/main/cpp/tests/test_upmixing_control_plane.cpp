@@ -33,7 +33,6 @@ TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
     EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 8u);
     EXPECT_FLOAT_EQ(d.head_yaw_rad, 0.f);
     EXPECT_FLOAT_EQ(d.head_pitch_rad, 0.f);
-    EXPECT_FLOAT_EQ(d.head_roll_rad, 0.f);
 }
 
 TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {
@@ -45,7 +44,6 @@ TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {
     OmegaDspSnapshot snap = OmegaDspSnapshot::makeDefault();
     snap.head_yaw_rad = 0.42f;
     snap.head_pitch_rad = -0.18f;
-    snap.head_roll_rad = 0.03f;
     snap.upmixing_enabled = 0u;
     snap.upmixing_immersivity = 1.0f;
     ASSERT_TRUE(writer.publish(snap));
@@ -69,7 +67,6 @@ TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {
     EXPECT_FLOAT_EQ(got.upmixing_immersivity, 0.7f);
     EXPECT_FLOAT_EQ(got.head_yaw_rad, 0.42f);
     EXPECT_FLOAT_EQ(got.head_pitch_rad, -0.18f);
-    EXPECT_FLOAT_EQ(got.head_roll_rad, 0.03f);
 
     // JNI desactiva -> vuelve a OFF sin artefactos (estado consistente)
     snap.upmixing_enabled = 0u;

@@ -1,7 +1,7 @@
 # CHANGELOG — v2.5.96 (387) — Pose HRTF conectada a Ruta B
 
-- **ABI v8 del bus:** se agregan yaw/pitch/roll con CRC y versionado explícito, manteniendo el snapshot dentro del límite de 512 bytes.
-- **Canal completo:** `IvannaSpatialEngine` publica `SET_HEAD_POSE`; el daemon valida y limita los ángulos, el snapshot seqlock los transporta y `omega_effect` los entrega a `IvannaFusionEngine::updateHeadPose()`.
+- **ABI v8 del bus:** se agregan yaw/pitch con CRC y versionado explícito, manteniendo el snapshot dentro del límite de 512 bytes.
+- **Canal completo:** `IvannaSpatialEngine` publica `SET_HEAD_POSE`; el daemon valida y limita azimut/elevación, el snapshot seqlock los transporta y `omega_effect` los entrega a `IvannaFusionEngine::updateHeadPose()` con roll neutro.
 - **Pruebas de contrato:** se cubren valores por defecto, round-trip del snapshot y clamp del comando del daemon.
 - **Release gate:** el artefacto solo se considera publicado si GitHub Actions compila y supera `verify-release` para este commit.
 

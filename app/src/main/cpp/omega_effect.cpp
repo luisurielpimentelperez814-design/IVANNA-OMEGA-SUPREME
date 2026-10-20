@@ -362,10 +362,9 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     fc->setWfsSpeakerLayout(s.wfs_speaker_x, s.wfs_speaker_y, s.wfs_speaker_z);
 
     // ABI v8: aplicar la pose HRTF solo cuando una nueva generación llega al callback.
-    if (std::isfinite(s.head_yaw_rad) && std::isfinite(s.head_pitch_rad) && std::isfinite(s.head_roll_rad)) {
+    if (std::isfinite(s.head_yaw_rad) && std::isfinite(s.head_pitch_rad)) {
         fc->updateHeadPose(std::clamp(s.head_yaw_rad, -3.14159265f, 3.14159265f),
-                           std::clamp(s.head_pitch_rad, -0.78539816f, 0.78539816f),
-                           std::clamp(s.head_roll_rad, -3.14159265f, 3.14159265f));
+                           std::clamp(s.head_pitch_rad, -0.78539816f, 0.78539816f), 0.0f);
     }
 
     // Spatial width: si HOA o WFS están activos, el ensanchador M/S se neutraliza
