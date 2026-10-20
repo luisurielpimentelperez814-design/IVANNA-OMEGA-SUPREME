@@ -8,6 +8,7 @@
 #include "../../include/omega_control_bus.h"
 #include "../../include/omega_effect_beacon.h"
 #include "../../include/omega_user_flags.hpp"   // v2.5.16: SET_USER_FLAGS (tabla blanca de bits)
+#include "../../spatial/SafmusLatentGuard.hpp" // valida el vector SAFMUS antes de publicarlo
 #include "../../ivanna_hires_config.hpp"
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -57,6 +58,28 @@ bool CommandServer::_jsonFloatArray(const char* j, const char* key, float* out, 
         while (*p==' '||*p==',') p++; if (*p==']') break;
         char* end; float v=strtof(p,&end); if (end==p || !std::isfinite(v)) break; out[n++]=v; p=end;
     } return n>0;
+}
+
+// Parser estricto para vectores SAFMUS: no muta estado y exige exactamente N
+// números finitos. El parser tolerante existente se conserva para otros comandos.
+static bool _jsonFloatArrayExact(const char* j, const char* key, float* out, int expectedN) noexcept {
+    if (!j || !key || !out || expectedN <= 0) return false;
+    char search[128]; snprintf(search, sizeof(search), "\\"%s\\"", key);
+    const char* p = strstr(j, search); if (!p) return false;
+    p += strlen(search); while (*p && *p != '[') p++; if (*p != '[') return false; p++;
+    int n = 0;
+    while (*p && *p != ']') {
+        while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r' || *p == ',') ++p;
+        if (*p == ']') break;
+        if (n >= expectedN) return false;
+        char* end = nullptr;
+        const float v = strtof(p, &end);
+        if (end == p || !std::isfinite(v)) return false;
+        out[n++] = v;
+        p = end;
+    }
+    while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r') ++p;
+    return *p == ']' && n == expectedN;
 }
 const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
     const char* p = strstr(j, "\"action\""); if (!p) { buf[0]='\0'; return buf; }
@@ -646,28 +669,32 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             (double)m_state.room_rt60_s, (int)m_state.room_idx, (double)m_state.room_wet);
 
     } else if (strcmp(action,"SET_SAF_STATE")==0 || strcmp(action,"PUSH_SAF_STATE")==0) {
-        m_state.saf_delta_e = _jsonFloat(json,"deltaEnergy", m_state.saf_delta_e);
-        m_state.saf_metric = _jsonFloat(json,"metricNorm", m_state.saf_metric);
-        m_state.saf_memory = _jsonFloat(json,"memory", m_state.saf_memory);
-        m_state.saf_gain = _jsonFloat(json,"gain", m_state.saf_gain);
-        // FIX: parsear el vector latente q[7] del payload JSON.
-        // Formato esperado: {"action":"SET_SAF_STATE","q":[q0,q1,q2,q3,q4,q5,q6],...}
-        // Si el campo "q" no viene (cliente antiguo), el vector queda sin cambio.
-        _jsonFloatArray(json, "q", m_state.saf_q, 7);
-        // Publicar el frame SAF también al SHM de OmegaShmManager (canal A).
-        // publishCurrentState() escribe al OmegaControlBus (canal B), pero el
-        // reader Kotlin (ShmManager.readAndApplySafFrame) lee el canal A en
-        // base+sizeof(ShmHeader) — antes nadie escribía ahí: la app nunca veía
-        // los valores SAF procesados por el daemon. Contrato fijo 16 bytes:
-        //   [gain][compressor][exciter][spatial] ← [saf_gain][saf_memory][saf_delta_e][saf_metric]
-        // write() aplica el seqlock (epoch impar→memcpy→par) que el reader valida.
-        {
-            float frame[4] = { m_state.saf_gain, m_state.saf_memory, m_state.saf_delta_e, m_state.saf_metric };
-            if (ivanna::shmManager().writeControl(ivanna::SHM_SAF_FRAME_OFFSET, frame, sizeof(frame)))
-                ivanna::shmManager().bumpHealthCounter(0); // saf_frames_publicados
+        // SAFMUS: si q está presente, exigir las 7 dimensiones finitas antes de
+        // modificar cualquier campo. Un vector malformado no debe dejar q parcial.
+        const bool hasLatent = strstr(json, "\\"q\\"") != nullptr;
+        float parsedLatent[7]{};
+        if (hasLatent &&
+            (!_jsonFloatArrayExact(json, "q", parsedLatent, 7) ||
+             !ivanna::safmus::isFiniteLatent(parsedLatent))) {
+            n = snprintf(reply, reply_sz,
+                "{\\"ok\\":false,\\"action\\":\\"SET_SAF_STATE\\",\\"status\\":\\"invalid_latent_vector\\",\\"expectedDimensions\\":7}");
+        } else {
+            m_state.saf_delta_e = _jsonFloat(json,"deltaEnergy", m_state.saf_delta_e);
+            m_state.saf_metric = _jsonFloat(json,"metricNorm", m_state.saf_metric);
+            m_state.saf_memory = _jsonFloat(json,"memory", m_state.saf_memory);
+            m_state.saf_gain = _jsonFloat(json,"gain", m_state.saf_gain);
+            // Cliente antiguo sin q: conservar el último vector válido.
+            if (hasLatent) std::memcpy(m_state.saf_q, parsedLatent, sizeof(parsedLatent));
+            // Publicar el frame SAF también al SHM de OmegaShmManager (canal A).
+            // Contrato fijo 16 bytes: [gain][compressor][exciter][spatial].
+            {
+                float frame[4] = { m_state.saf_gain, m_state.saf_memory, m_state.saf_delta_e, m_state.saf_metric };
+                if (ivanna::shmManager().writeControl(ivanna::SHM_SAF_FRAME_OFFSET, frame, sizeof(frame)))
+                    ivanna::shmManager().bumpHealthCounter(0);
+            }
+            uint64_t gen = publishCurrentState(m_state);
+            n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
         }
-        uint64_t gen = publishCurrentState(m_state);
-        n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
     } else if (strcmp(action,"SET_PINNA_METRICS")==0) {
         float concha = _jsonFloat(json,"concha",0.f);
