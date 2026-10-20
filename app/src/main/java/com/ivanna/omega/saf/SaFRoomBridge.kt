@@ -14,8 +14,8 @@ import com.ivanna.omega.core.IvannaNativeLib
  *   2. setRoomState(rt60, drr, mode)    — actualizar R_t (RoomSimulator)
  *   3. setHrtfState(mismatch, conv)     — actualizar H_t (SaFOptimizer)
  *   4. setSoundFieldState(diff, comp)   — actualizar S_t (SpatialEngine)
- *   5. step()                           — ejecutar un paso Φ_SAF-Room^∞
- *   6. getDiagnostics()                 — leer [α*, E, λ, σ, iter]
+ *   5. step()                           — resolver el MAP cuadrático acotado
+ *   6. getDiagnostics()                 — leer [estado, J*, λ, βᵀz, iter]
  */
 object SaFRoomBridge {
 
@@ -77,11 +77,11 @@ object SaFRoomBridge {
 
     /**
      * Diagnósticos del último paso:
-     * [0] α*         — paso óptimo
-     * [1] E_t        — error Mahalanobis ‖Δ‖²_{M_t}
-     * [2] λ_t        — regularización adaptativa
-     * [3] σ(R,H,S)   — acoplamiento sala/HRTF/campo
-     * [4] iteration  — contador de pasos
+     * [0] estado     — 1 = solución exacta aplicada; 0 = rechazada
+     * [1] J*         — objetivo MAP cuadrático en la solución
+     * [2] λ_t        — fuerza del prior dependiente del contexto
+     * [3] βᵀz        — exponente contextual de λ_t
+     * [4] iteration  — contador de soluciones aceptadas
      */
     fun getDiagnostics(): FloatArray =
         if (loaded) runCatching { nativeSafrDiag() }.getOrElse { FloatArray(5) }
@@ -90,15 +90,17 @@ object SaFRoomBridge {
     fun reset() { if (loaded) runCatching { nativeSafrReset() } }
 
     /**
-     * Actualiza el estado de sala R_t (rt60, drr, roomMode) y ejecuta [steps] pasos
-     * Riemannianos de Φ_SAF-Room^∞ para converger p_t al equilibrio SOFA-SAF-RIR.
+     * Actualiza el contexto de sala y aplica una solución MAP cerrada en un paso.
+     * [steps] se conserva por compatibilidad de API; el solver cuadrático no itera.
      */
-    fun optimiseForCurrentRoom(rt60: Float, drr: Float, steps: Int = 24, roomMode: Float = 0f): FloatArray {
+    fun optimiseForCurrentRoom(
+        rt60: Float,
+        drr: Float,
+        @Suppress("UNUSED_PARAMETER") steps: Int = 24,
+        roomMode: Float = 0f
+    ): FloatArray {
         setRoomState(rt60, drr, roomMode)
-        val n = steps.coerceIn(1, 128)
-        for (i in 0 until n) {
-            step()
-        }
+        step()
         return getParams()
     }
 

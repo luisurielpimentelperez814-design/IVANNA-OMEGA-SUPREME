@@ -3,13 +3,13 @@
 // Kotlin side: com.ivanna.omega.saf.SaFRoomBridge
 //
 // Each function maps 1:1 to the SaFRoomOptimizer API:
-//   nativeSafrStep()                → step()         → returns α*
+//   nativeSafrStep()                → step()         → 1 applied / 0 rejected
 //   nativeSafrSetRoom(rt60,drr,mode)→ setRoomState()
 //   nativeSafrSetHrtf(mismatch,conv)→ setHrtfState()
 //   nativeSafrSetField(diff,comp)   → setSoundFieldState()
 //   nativeSafrSetTarget(FloatArray) → setTarget()
 //   nativeSafrGetParams():FloatArray→ getParams()
-//   nativeSafrDiag():FloatArray     → [alpha,E,lambda,sigma,iter]
+//   nativeSafrDiag():FloatArray     → [status,J,lambda,betaDotZ,iter]
 //   nativeSafrReset()               → reset()
 
 #include "saf_room_optimizer.hpp"
@@ -20,7 +20,7 @@ extern "C" void ivanna_saf_apply_latent(const float q[7]);
 
 extern "C" {
 
-// α*(R_t, H_t, S_t) — one Riemannian step; returns the step size used
+// Exact constrained quadratic MAP solve; returns 1 on apply, 0 on rejection
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_saf_SaFRoomBridge_nativeSafrStep(JNIEnv*, jclass) {
     const float alpha = safRoomOptimizer().step();

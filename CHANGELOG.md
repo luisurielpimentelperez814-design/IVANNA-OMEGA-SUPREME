@@ -902,3 +902,12 @@ Nueva háptica de graves: el teléfono vibra con cada golpe de bombo/sub detecta
 5. **Auditoría de memoria / concurrencia** — se fijaron órdenes de memoria explícitos y se validó la suite con ASan/TSan.
 6. **Benchmarks** — se agregó `tools/benchmark_suite.cpp` y `docs/BENCHMARKS.md` con protocolo y referencias públicas comparativas.
 7. **Limpieza final** — README, `.gitignore` y changelog quedaron alineados con la arquitectura consolidada.
+
+
+## SAF-Room optimizer v2 — 2026-10-20
+
+- Replaced the legacy iterative update with the exact closed-form constrained MAP minimizer for the explicitly declared quadratic objective.
+- Added exponential context-dependent prior strength and finite/bounds checks; invalid candidates preserve the last known-safe latent vector.
+- Preserved the existing Kotlin/JNI signatures and diagnostics array shape; diagnostic meanings are now documented as status, objective, lambda, context exponent, and accepted-solve count.
+- Added host CTest coverage for analytic minimizer agreement, box constraints, contextual regularization, invalid inputs, and projected KKT residual.
+- Scope limitation: the implementation solves the convex quadratic MAP subproblem. Non-convex perceptual losses, trust-region/Armijo search, annealed multistart, empirical estimation of context weights, and real-device listening validation are not claimed as implemented.
