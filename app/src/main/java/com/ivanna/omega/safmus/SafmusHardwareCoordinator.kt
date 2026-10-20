@@ -85,6 +85,15 @@ object SafmusHardwareCoordinator {
                 runCatching {
                     val snapshot = collect(app)
                     lastSnapshot = snapshot
+                    // Connect the cross-domain resource budget to IVANNA's existing
+                    // native DSP governor; NORMAL restores its baseline tier.
+                    com.ivanna.omega.audio.ThermalGovernor.setExternalResourceBudget(
+                        when (snapshot.budget) {
+                            Budget.NORMAL -> 0
+                            Budget.CONSERVATIVE -> 1
+                            Budget.SAFE -> 2
+                        }
+                    )
                     app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                         .putString("last_snapshot", snapshot.asText())
                         .putString("last_budget", snapshot.budget.name)
