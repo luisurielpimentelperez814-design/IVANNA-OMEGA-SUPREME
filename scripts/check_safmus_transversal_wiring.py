@@ -99,6 +99,13 @@ require("app/src/main/cpp/spatial/ivanna_object_renderer.cpp", "rirConvolver_->s
 require("app/src/main/cpp/omega_effect.cpp", "ctx->rirConvolver->setSampleRate(static_cast<int>(srSession))")
 require("app/src/main/cpp/jni/ivanna_omega_jni.cpp", "conv->setSampleRate(sessionSr)")
 
+# Magisk environment coordinator is wired into the existing service and stays observation-only.
+require("magisk_module/core/safmus_environment_optimizer.sh",
+        "environment_profile.env", "resource_budget=$budget", "actuation=observation_only",
+        "Camera/media device nodes", "Room acoustics need a user-authorized in-app measurement")
+require("magisk_module/service.sh", "safmus_environment_optimizer.sh",
+        "SAFMUS: map whole-device resource conditions", '"$SAFMUS_ENV"')
+
 if errors:
     print("SAFMUS transversal wiring audit FAILED:")
     for error in errors:
