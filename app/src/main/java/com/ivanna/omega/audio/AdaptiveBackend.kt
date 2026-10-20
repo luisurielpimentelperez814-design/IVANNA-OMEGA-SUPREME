@@ -88,10 +88,15 @@ class AdaptiveBackend(context: Context) {
             val raw = IvannaNativeLib.nativeGetAdaptiveTelemetry() ?: return
             if (raw.size < 10) return
             val motorActive = IvannaNativeLib.nativeIsAdaptiveEngineRunning()
-            // FIX (telemetria 0% Ruta B): compAmount[4] y voiceProtect[8] en 0
-            // con motor activo = Ruta B sin Ruta A. Usar IvannaUnifiedPipeline.
-            val src = if (motorActive && raw[4] == 0f && raw[8] == 0f)
-                IvannaUnifiedPipeline.toAdaptiveTelemetryArray() else raw
+            val pipeline = IvannaUnifiedPipeline.state.value
+            val pipelineHasAudio = pipeline.activeRoute != ActiveRoute.NONE
+            // Ruta B puede producir audio aunque Motor A aún no reporte compresión
+            // ni protección vocal. La fuente se selecciona por actividad real de ruta,
+            // no por motorActive: ese gate dejaba el panel congelado en cero/OFFLINE.
+            val nativeHasSignal = raw[0] > 1.0e-6f || raw[1] > 1.0e-6f ||
+                raw[4] != 0f || raw[8] != 0f || raw[9] > 0f
+            val src = if (pipelineHasAudio && !nativeHasSignal)
+                pipeline.toAdaptiveTelemetryArray() else raw
             _telemetry.value = AdaptiveTelemetry(
                 rms          = src[0],
                 peakDb       = src[1],
@@ -102,6 +107,8 @@ class AdaptiveBackend(context: Context) {
                 spatialWidth = src[6],
                 safetyMargin = src[7],
                 voiceProtect = if (src[8] == 0f && voiceProtectionScore > 0f) voiceProtectionScore else src[8],
+                // No marcar el motor adaptativo como activo solo porque haya audio:
+                // el indicador representa el motor, no simplemente la ruta.
                 motorRunning = motorActive,
                 appliedCount = src.getOrElse(9) { 0f }.toLong()
             )
