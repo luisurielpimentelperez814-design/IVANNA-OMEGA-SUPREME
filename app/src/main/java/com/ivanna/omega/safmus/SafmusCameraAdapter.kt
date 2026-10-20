@@ -66,17 +66,18 @@ object SafmusCameraAdapter {
             )
         )
         if (!gate.allowed) return ApplyResult(false, candidate, previous, gate.reason)
+        val requested = candidate ?: return ApplyResult(false, null, previous, "No hay FPS objetivo válido")
         return try {
-            builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, candidate)
+            builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, requested)
             session.setRepeatingRequest(builder.build(), callback, handler)
-            Log.i(TAG, "SAFMUS budget=$budget requestedFps=$candidate; awaiting capture-result readback")
-            ApplyResult(true, candidate, previous, "Solicitud enviada; aún requiere read-back del CaptureResult")
+            Log.i(TAG, "SAFMUS budget=$budget requestedFps=$requested; awaiting capture-result readback")
+            ApplyResult(true, requested, previous, "Solicitud enviada; aún requiere read-back del CaptureResult")
         } catch (t: Throwable) {
             runCatching {
                 builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, previous)
                 session.setRepeatingRequest(builder.build(), callback, handler)
             }
-            ApplyResult(false, candidate, previous, "Falló la solicitud; reversión intentada: ${t.message}")
+            ApplyResult(false, requested, previous, "Falló la solicitud; reversión intentada: ${t.message}")
         }
     }
 
