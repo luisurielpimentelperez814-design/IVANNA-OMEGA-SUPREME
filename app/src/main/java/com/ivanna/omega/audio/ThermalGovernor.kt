@@ -103,11 +103,35 @@ object ThermalGovernor {
      * existentes del AdaptiveDecisionEngine. Cero asignaciones, cero locks;
      * los setters nativos ya son atómicos por diseño (atomic store).
      */
-    private fun applyThermalPolicy(headroom: Float) {
-        if (!IvannaNativeLib.isLoaded) return
+    /**
+     * Resource-pressure input from SAFMUS whole-device adapters.
+     * 0=normal, 1=conservative, 2=safe. The strongest active pressure wins;
+     * the app does not write CPU/GPU vendor nodes or alter Android security policy.
+     */
+    @Volatile private var externalResourcePressure: Int = 0
 
-        // Misma tabla que muestra la pantalla Sistema (ThermalTier): una sola fuente de verdad.
+    fun setExternalResourceBudget(level: Int) {
+        externalResourcePressure = level.coerceIn(0, 2)
+        val thermalTier = if (thermalApiAvailable) ThermalTier.of(currentThermalLoad) else null
+        applyCombinedPolicy(thermalTier)
+    }
+
+    private fun applyThermalPolicy(headroom: Float) {
         val tier = ThermalTier.of(headroom) ?: return
+        applyCombinedPolicy(tier)
+    }
+
+    private fun applyCombinedPolicy(thermalTier: ThermalTier?) {
+        if (!IvannaNativeLib.isLoaded) return
+        val externalTier = when (externalResourcePressure) {
+            2 -> ThermalTier.PROTECTED
+            1 -> ThermalTier.LIMITED
+            else -> ThermalTier.FULL
+        }
+        // Ordinals reflect increasing DSP sacrifice in ThermalTier declaration order.
+        val tier = if (thermalTier == null || externalTier.ordinal > thermalTier.ordinal) {
+            externalTier
+        } else thermalTier
         val exciterRed = tier.exciterReduction
         val spatialCut = tier.spatialCut
         val compCut = tier.compressorCut
