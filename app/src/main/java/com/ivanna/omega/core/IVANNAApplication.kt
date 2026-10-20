@@ -271,6 +271,14 @@ class IVANNAApplication : Application() {
             }.onFailure { Log.w(TAG, "USB DAC cold-scan: ${it.message}") }
         }
 
+        // SAFMUS: conectores de hardware transversal (CPU/memoria, térmica,
+        // batería, GPU declarada, pantalla, cámaras, audio, sensores y háptica).
+        // Public Android APIs only; the coordinator publishes one resource budget
+        // and leaves physical actuation to each existing IVANNA owner.
+        runCatching {
+            com.ivanna.omega.safmus.SafmusHardwareCoordinator.start(this, appScope)
+        }.onFailure { Log.w(TAG, "SAFMUS hardware coordinator unavailable (non-fatal): ${it.message}") }
+
         // ── Capacidades reales del teléfono (sin pedir permisos) ───────────
         // Solo consulta catálogos del sistema: no activa micrófono, cámara ni sensores.
         // Queda en HardwareProbe.last para los paneles y en logcat (tag IvannaHW) como
