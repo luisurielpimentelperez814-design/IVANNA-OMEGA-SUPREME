@@ -123,6 +123,21 @@ class RealTimeCinematicEngine(
         Log.i(TAG, "Engine detenido")
     }
 
+    /**
+     * AntiDolby observation path: feed the classifier without applying cinematic
+     * reverb/delay/sub-harmonic effects. Audio remains bit-transparent here;
+     * only the classifier thread receives a bounded snapshot.
+     */
+    fun observeBlock(input: FloatArray, count: Int = input.size) {
+        val n = minOf(count, input.size, exchangeBuf.size)
+        if (n <= 0 || !running) return
+        if (!exchangeReady.get()) {
+            System.arraycopy(input, 0, exchangeBuf, 0, n)
+            exchangeCount.set(n)
+            exchangeReady.set(true)
+        }
+    }
+
     fun processBlock(input: FloatArray, output: FloatArray = input, count: Int = input.size): FloatArray {
         val n = minOf(count, input.size, output.size, pingBuf.size)
         if (n <= 0) return output
@@ -219,7 +234,9 @@ class RealTimeCinematicEngine(
             bypassGain = if (new == AudioMode.NONE) 1f else 0f
             transCounter = transLen
             Log.d(TAG, "Modo → $new [sp=${r.speech} mu=${r.music} ba=${r.bass} si=${r.silence}]")
-            onModeChanged?.invoke(new, r)
         }
+        // Publish every valid classification, not only mode transitions, so the
+        // native AntiDolby controller receives continuously refreshed scores.
+        onModeChanged?.invoke(currentMode, r)
     }
 }
