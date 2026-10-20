@@ -7,6 +7,8 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Process
 import android.util.Log
+import android.Manifest
+import android.content.pm.PackageManager
 import com.ivanna.omega.safmus.SafmusAdapterPolicy
 import com.ivanna.omega.safmus.SafmusHardwareCoordinator
 import com.ivanna.omega.dsp.DSPBridge
@@ -153,6 +155,13 @@ class AudioPipeline {
 
     private suspend fun runPipeline() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(tag, "SAFMUS microphone adapter abstains: RECORD_AUDIO permission missing")
+            IvannaUnifiedPipeline.notifyRouteAStopped()
+            isRunning = false
+            return
+        }
 
         val enc = AudioFormat.ENCODING_PCM_FLOAT
         val minIn  = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, enc)
