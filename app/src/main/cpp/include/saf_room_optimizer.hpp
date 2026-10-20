@@ -59,6 +59,7 @@
 #include <cstring>
 #include <mutex>
 #include "../spatial/SofaSafRirMasterKnowledge.hpp"
+#include "perceptual_optimizer_v2.hpp"
 
 namespace ivanna {
 
@@ -151,72 +152,44 @@ public:
         std::memcpy(m_target, tau, sizeof(m_target));
     }
 
-    // ── Core update — one Riemannian step of Φ_SAF-Room^∞ ─────────────────
-    // Returns the optimal step size α* used.
+    // ── Exact constrained MAP update (perceptual optimizer v2) ───────────
+    // For J(p)=0.5||p-target||² + 0.5*lambda||p-GoldenQ||², the
+    // constrained minimizer has a closed form. Return 1.0 for the direct
+    // solve (keeps the existing JNI float contract); 0.0 means rejected.
     float step() noexcept {
         std::lock_guard<std::mutex> lk(m_mtx);
 
-        // ── 1. Load room context ─────────────────────────────────────────
-        const float rt60     = m_rt60.load(std::memory_order_relaxed);
-        const float hMismatch= m_hMismatch.load(std::memory_order_relaxed);
-        const float sDiff    = m_sDiff.load(std::memory_order_relaxed);
-
-        // ── 2. Adaptive λ_t = λ_0 · (1 + σ(R_t, H_t, S_t)) ────────────
-        //  σ captures how much the room/HRTF/field uncertainty should
-        //  increase regularization (dampen the update step).
-        const float sigma   = kAlpha_R * rt60
-                            + kAlpha_H * hMismatch * hMismatch
-                            + kAlpha_S * sDiff;
-        const float lambda_t = kSAFR_Lambda0 * (1.0f + sigma);
-
-        // ── 3. M_t = G_t + λ_t I  (element-wise on diagonal) ─────────────
-        float M[SAFR_K];
-        for (int i = 0; i < SAFR_K; ++i)
-            M[i] = m_G[i] + lambda_t;
-
-        // ── 4. Δ_t = τ_t − p_t ────────────────────────────────────────────
-        float delta[SAFR_K];
-        float E_t = 0.0f;        // Mahalanobis error ‖Δ‖²_{M_t}
+        perceptual_v2::Box box{};
+        std::array<float, SAFR_K> target{};
+        std::array<float, SAFR_K> prior{};
         for (int i = 0; i < SAFR_K; ++i) {
-            delta[i] = m_target[i] - m_p[i];
-            E_t      += delta[i] * M[i] * delta[i];
+            box.lower[static_cast<std::size_t>(i)] = kSAFR_Pmin[i];
+            box.upper[static_cast<std::size_t>(i)] = kSAFR_Pmax[i];
+            target[static_cast<std::size_t>(i)] = m_target[i];
+            prior[static_cast<std::size_t>(i)] = ivanna::master::kMasterSafGoldenQ[i];
         }
 
-        // ── 5. Natural gradient M_t^{-1} Δ_t ──────────────────────────────
-        float natGrad[SAFR_K];
-        float natGradNormSq = 0.0f;  // ‖M_t^{-1}Δ_t‖²_{M_t}
-        for (int i = 0; i < SAFR_K; ++i) {
-            natGrad[i]    = delta[i] / M[i];
-            // ‖g‖²_{M_t} = gᵀ M_t g = (M_t^{-1}Δ)ᵀ M_t (M_t^{-1}Δ) = Δᵀ M_t^{-1} Δ
-            natGradNormSq += natGrad[i] * delta[i];  // = delta[i]²/M[i]
+        const perceptual_v2::Context context{
+            m_rt60.load(std::memory_order_relaxed),
+            m_hMismatch.load(std::memory_order_relaxed),
+            m_sDiff.load(std::memory_order_relaxed)
+        };
+        const auto solved = perceptual_v2::solveMapQuadratic(
+            target, prior, box, context, kSAFR_Lambda0);
+        if (!solved.finite) {
+            // Fail closed: keep the last known-safe parameter vector.
+            return 0.0f;
         }
 
-        // ── 6. α*(R_t, H_t, S_t) — Barzilai-Borwein + room coupling ──────
-        //  Denominator damps the step when:
-        //   · the Mahalanobis error is small (near convergence)
-        //   · the natural gradient is large (avoid overshoot)
-        //   · σ is large (uncertain room/HRTF conditions → be cautious)
-        const float alpha_star = E_t / (E_t + natGradNormSq + lambda_t * sigma + kSAFR_Eps);
-
-        // ── 7. p_{t+1} = p_t + α* · M_t^{-1} · Δ_t ─────────────────────
         for (int i = 0; i < SAFR_K; ++i)
-            m_p[i] += alpha_star * natGrad[i];
+            m_p[i] = solved.params[static_cast<std::size_t>(i)];
 
-        // ── 8. Proj_S^{M_t}(p_{t+1}) — clamp to feasible set S ───────────
-        //  For box constraints S = ×[p_min_i, p_max_i], the M_t-weighted
-        //  Riemannian projection equals element-wise clamping (diagonal
-        //  positive-definite metrics are self-dual on box constraint sets).
-        for (int i = 0; i < SAFR_K; ++i)
-            m_p[i] = std::clamp(m_p[i], kSAFR_Pmin[i], kSAFR_Pmax[i]);
-
-        // ── 9. Update diagnostics ─────────────────────────────────────────
-        m_lastAlpha.store(alpha_star,  std::memory_order_relaxed);
-        m_lastE.store(E_t,             std::memory_order_relaxed);
-        m_lastLambda.store(lambda_t,   std::memory_order_relaxed);
-        m_lastSigma.store(sigma,       std::memory_order_relaxed);
-        m_iter.fetch_add(1,            std::memory_order_relaxed);
-
-        return alpha_star;
+        m_lastAlpha.store(1.0f, std::memory_order_relaxed);
+        m_lastE.store(static_cast<float>(solved.objective), std::memory_order_relaxed);
+        m_lastLambda.store(solved.lambda, std::memory_order_relaxed);
+        m_lastSigma.store(solved.contextExponent, std::memory_order_relaxed);
+        m_iter.fetch_add(1, std::memory_order_relaxed);
+        return 1.0f;
     }
 
     // ── Diagnostics (read from any thread) ───────────────────────────────
