@@ -195,22 +195,26 @@ data class IvannaEffectProfile(
         )
 
         /**
-         * ATMOS / GENEZY SURROUND COMPANION:
-         * Para una mezcla Atmos que Android/reproductor ya haya renderizado a estéreo
-         * y que saldrá por DAC USB-C → AUX a un procesador Surround externo.
-         * Evita virtualizador y reverberación duplicados; conserva transitorios,
-         * usa EQ casi neutra, graves contenidos y compresión suave. No decodifica
-         * objetos Atmos ni detecta el estado del Surround externo.
+         * IVANNA X SURROUND — realce de la mezcla estéreo ya renderizada.
+         *
+         * Pensado para DAC USB-C → AUX → procesador externo con Surround activado.
+         * Aporta cuerpo, presencia y expansión estéreo moderada ANTES del Genezy;
+         * la reverberación añadida se mantiene apagada para no emborronar transitorios
+         * ni apilar una sala artificial encima del procesador externo. DynamicsProcessing
+         * mantiene el limitador de seguridad cuando Android lo soporta.
+         *
+         * Es procesamiento de la señal estéreo disponible: no decodifica los objetos
+         * ni recupera canales/metadatos Atmos que ya no estén presentes en esa señal.
          */
         val ATMOS_SURROUND_COMPANION = IvannaEffectProfile(
-            eqBands = intArrayOf(0, 20, 30, 20, 0, 0, 20, 30, 20, 0),
-            bassStrength = 100,
-            virtualizerStrength = 0,
-            loudnessGainMb = 0,
-            compThresholdDb = -22f,
-            compRatio = 1.6f,
+            eqBands = intArrayOf(120, 100, 60, 20, -10, 20, 80, 130, 110, 70),
+            bassStrength = 460,
+            virtualizerStrength = 420,
+            loudnessGainMb = 40,
+            compThresholdDb = -18f,
+            compRatio = 2.2f,
             reverbRoomLevelMb = -9000,
-            reverbDecayTimeMs = 500,
+            reverbDecayTimeMs = 600,
             reverbReflectionsLevelMb = -9000
         )
 
