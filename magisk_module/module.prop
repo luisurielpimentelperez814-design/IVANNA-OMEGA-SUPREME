@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.104
-versionCode=395
+version=v2.5.105
+versionCode=396
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.104: AntiDolby CRNN unificado, audio transparente, clasificación de Ruta A/B y salida nativa sanitizada
+description=v2.5.105: SAFMUS geometric natural-gradient research kernel; AntiDolby CRNN unificado, audio transparente, clasificación de Ruta A/B y salida nativa sanitizada
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
