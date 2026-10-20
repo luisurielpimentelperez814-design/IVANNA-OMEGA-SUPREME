@@ -64,12 +64,12 @@ bool CommandServer::_jsonFloatArray(const char* j, const char* key, float* out, 
 // números finitos. El parser tolerante existente se conserva para otros comandos.
 static bool _jsonFloatArrayExact(const char* j, const char* key, float* out, int expectedN) noexcept {
     if (!j || !key || !out || expectedN <= 0) return false;
-    char search[128]; snprintf(search, sizeof(search), "\\"%s\\"", key);
+    char search[128]; snprintf(search, sizeof(search), "\"%s\"", key);
     const char* p = strstr(j, search); if (!p) return false;
     p += strlen(search); while (*p && *p != '[') p++; if (*p != '[') return false; p++;
     int n = 0;
     while (*p && *p != ']') {
-        while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r' || *p == ',') ++p;
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') ++p;
         if (*p == ']') break;
         if (n >= expectedN) return false;
         char* end = nullptr;
@@ -78,7 +78,7 @@ static bool _jsonFloatArrayExact(const char* j, const char* key, float* out, int
         out[n++] = v;
         p = end;
     }
-    while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r') ++p;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
     return *p == ']' && n == expectedN;
 }
 const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
@@ -671,13 +671,13 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     } else if (strcmp(action,"SET_SAF_STATE")==0 || strcmp(action,"PUSH_SAF_STATE")==0) {
         // SAFMUS: si q está presente, exigir las 7 dimensiones finitas antes de
         // modificar cualquier campo. Un vector malformado no debe dejar q parcial.
-        const bool hasLatent = strstr(json, "\\"q\\"") != nullptr;
+        const bool hasLatent = strstr(json, "\"q\"") != nullptr;
         float parsedLatent[7]{};
         if (hasLatent &&
             (!_jsonFloatArrayExact(json, "q", parsedLatent, 7) ||
              !ivanna::safmus::isFiniteLatent(parsedLatent))) {
             n = snprintf(reply, reply_sz,
-                "{\\"ok\\":false,\\"action\\":\\"SET_SAF_STATE\\",\\"status\\":\\"invalid_latent_vector\\",\\"expectedDimensions\\":7}");
+                "{\"ok\":false,\"action\":\"SET_SAF_STATE\",\"status\":\"invalid_latent_vector\",\"expectedDimensions\":7}");
         } else {
             m_state.saf_delta_e = _jsonFloat(json,"deltaEnergy", m_state.saf_delta_e);
             m_state.saf_metric = _jsonFloat(json,"metricNorm", m_state.saf_metric);
