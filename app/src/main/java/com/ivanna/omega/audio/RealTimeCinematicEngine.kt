@@ -51,6 +51,7 @@ class RealTimeCinematicEngine(
 
     // Intercambio lock-free entre el hilo de audio y el hilo de clasificación
     private val exchangeReady = AtomicBoolean(false)
+    private val exchangeWriting = AtomicBoolean(false)
     private val exchangeCount = AtomicInteger(0)
     private val exchangeBuf   = FloatArray(4096)
 
@@ -130,22 +131,28 @@ class RealTimeCinematicEngine(
      */
     fun observeBlock(input: FloatArray, count: Int = input.size, channels: Int = 2) {
         if (count <= 0 || !running || exchangeReady.get()) return
-        val n = minOf(count, input.size)
-        val ch = channels.coerceIn(1, 2)
-        val frames = minOf(n / ch, exchangeBuf.size)
-        if (frames <= 0) return
-        if (ch == 1) {
-            System.arraycopy(input, 0, exchangeBuf, 0, frames)
-        } else {
-            // Convert interleaved stereo to mono before the 48k→16k worker resample.
-            var i = 0
-            while (i < frames) {
-                exchangeBuf[i] = (input[i * 2] + input[i * 2 + 1]) * 0.5f
-                i++
+        if (!exchangeWriting.compareAndSet(false, true)) return
+        try {
+            if (exchangeReady.get()) return
+            val n = minOf(count, input.size)
+            val ch = channels.coerceIn(1, 2)
+            val frames = minOf(n / ch, exchangeBuf.size)
+            if (frames <= 0) return
+            if (ch == 1) {
+                System.arraycopy(input, 0, exchangeBuf, 0, frames)
+            } else {
+                // Convert interleaved stereo to mono before the 48k→16k worker resample.
+                var i = 0
+                while (i < frames) {
+                    exchangeBuf[i] = (input[i * 2] + input[i * 2 + 1]) * 0.5f
+                    i++
+                }
             }
+            exchangeCount.set(frames)
+            exchangeReady.set(true)
+        } finally {
+            exchangeWriting.set(false)
         }
-        exchangeCount.set(frames)
-        exchangeReady.set(true)
     }
 
     fun processBlock(input: FloatArray, output: FloatArray = input, count: Int = input.size): FloatArray {
