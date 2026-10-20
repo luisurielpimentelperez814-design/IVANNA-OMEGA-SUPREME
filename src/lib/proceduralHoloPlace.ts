@@ -10,8 +10,16 @@ export type V3 = [number, number, number];
 export type PlaceFamily =
   | 'cathedral' | 'stadium' | 'club' | 'theater' | 'studio' | 'outdoor' | 'warehouse' | 'cave' | 'orbital' | 'hall';
 
+/** Sala del catálogo RIR del motor: [idx, rt60 s, volumen m³, ancho m, alto m, profundidad m]. */
+export type CatalogRoom = { idx: number; rt60S: number; volumeM3: number; w: number; h: number; d: number };
+
 export type PlaceSpec = {
-  source: 'local-procedural';
+  source: 'local-procedural' | 'rir-catalog';
+  /** Sala del catálogo cuyo tamaño y RT60 se usan tal cual (null = proporciones paramétricas). */
+  catalogRoom: CatalogRoom | null;
+  /** RT60 típico de la familia pedida (s) y diferencia con la sala elegida; null sin catálogo. */
+  familyRt60S: number;
+  rt60GapS: number | null;
   seed: number;
   family: PlaceFamily;
   matched: string[];            // palabras clave que decidieron la familia (vacío = valor por defecto)
@@ -92,19 +100,62 @@ const BASE: Record<PlaceFamily, [number, number, number, number, number, boolean
   hall:      [4.0, 5.0, 3.0, 2, 1, false, 0.5],
 };
 
-export function derivePlaceSpec(prompt: string, genreLabel = '', venueLabel = ''): PlaceSpec {
+/** RT60 [s] y volumen [m³] TÍPICOS por familia (órdenes de magnitud de la literatura, no mediciones de un lugar). */
+export const FAMILY_TYPICAL: Record<PlaceFamily, { rt60S: number; volumeM3: number }> = {
+  cathedral: { rt60S: 5.0, volumeM3: 20000 }, stadium: { rt60S: 2.5, volumeM3: 200000 },
+  theater: { rt60S: 1.6, volumeM3: 8000 }, club: { rt60S: 0.6, volumeM3: 300 },
+  studio: { rt60S: 0.35, volumeM3: 80 }, warehouse: { rt60S: 2.0, volumeM3: 6000 },
+  outdoor: { rt60S: 0.3, volumeM3: 100000 }, cave: { rt60S: 3.0, volumeM3: 3000 },
+  orbital: { rt60S: 1.0, volumeM3: 5000 }, hall: { rt60S: 0.7, volumeM3: 150 },
+};
+
+/** Parsea el JSON del puente nativo; descarta filas no finitas o no positivas (nunca inventa valores). */
+export function parseCatalog(json: string): CatalogRoom[] {
+  let raw: unknown;
+  try { raw = JSON.parse(json); } catch { return []; }
+  if (!Array.isArray(raw)) return [];
+  const out: CatalogRoom[] = [];
+  for (const r of raw) {
+    if (!Array.isArray(r) || r.length < 6) continue;
+    const [idx, rt60S, volumeM3, w, h, d] = r as number[];
+    if ([idx, rt60S, volumeM3, w, h, d].every(Number.isFinite) && [rt60S, volumeM3, w, h, d].every(v => v > 0)) {
+      out.push({ idx, rt60S, volumeM3, w, h, d });
+    }
+  }
+  return out;
+}
+
+/** Sala más cercana en (log RT60, log volumen); null si el catálogo está vacío. */
+export function pickCatalogRoom(family: PlaceFamily, catalog: CatalogRoom[]): CatalogRoom | null {
+  if (!catalog.length) return null;
+  const t = FAMILY_TYPICAL[family];
+  let best = catalog[0], bestD = Infinity;
+  for (const r of catalog) {
+    const d = Math.hypot(Math.log(r.rt60S / t.rt60S), 0.5 * Math.log(r.volumeM3 / t.volumeM3));
+    if (d < bestD) { bestD = d; best = r; }
+  }
+  return best;
+}
+
+export function derivePlaceSpec(prompt: string, genreLabel = '', venueLabel = '', catalog: CatalogRoom[] = []): PlaceSpec {
   const text = (prompt || '').trim() || venueLabel;
   const { family, matched } = pickFamily(text + ' ' + venueLabel);
   const seed = hashSeed(text + '|' + genreLabel + '|' + venueLabel);
   const rnd = makeRng(seed);
   const [bw, bd, bh, bc, bt, bv, hue] = BASE[family];
   const jitter = (v: number, amt: number) => v * (1 + (rnd() - 0.5) * 2 * amt);
+  const room = pickCatalogRoom(family, catalog);
+  const typ = FAMILY_TYPICAL[family];
   return {
-    source: 'local-procedural',
+    source: room ? 'rir-catalog' : 'local-procedural',
+    catalogRoom: room,
+    familyRt60S: typ.rt60S,
+    rt60GapS: room ? Math.abs(room.rt60S - typ.rt60S) : null,
     seed, family, matched,
-    halfWidth: clamp(jitter(bw, 0.18), 1.8, 11),
-    halfDepth: clamp(jitter(bd, 0.18), 2.2, 11),
-    height: clamp(jitter(bh, 0.15), 1.6, 8),
+    // Con sala del catálogo se usan sus dimensiones reales (m); sin ella, proporciones paramétricas.
+    halfWidth: room ? clamp(room.w / 2, 1.5, 12) : clamp(jitter(bw, 0.18), 1.8, 11),
+    halfDepth: room ? clamp(room.d / 2, 1.5, 12) : clamp(jitter(bd, 0.18), 2.2, 11),
+    height: room ? clamp(room.h, 1.5, 9) : clamp(jitter(bh, 0.15), 1.6, 8),
     columns: Math.max(0, Math.round(bc + (rnd() - 0.5) * 2)),
     tiers: Math.max(0, Math.round(bt + (rnd() - 0.5))),
     vaulted: bv,

@@ -45,3 +45,25 @@ class FotoHoloAudioImpactTest {
         assertNotNull(FotoHoloAudioImpact.elevationRadFromDeg(10f))
     }
 }
+
+class FotoHoloRoomCatalogTest {
+    @org.junit.Test fun `parsea el formato nativo de sala`() {
+        val r = FotoHoloAudioImpact.parseRoomInfo(7, "rir_0007.wav|0.535|172.9|2.33|6.0x3.1x9.5")!!
+        org.junit.Assert.assertEquals(7, r.idx)
+        org.junit.Assert.assertEquals(0.535f, r.rt60S, 1e-4f)
+        org.junit.Assert.assertEquals(9.5f, r.depthM, 1e-4f)
+    }
+
+    @org.junit.Test fun `una sala dudosa no entra al catalogo`() {
+        org.junit.Assert.assertNull(FotoHoloAudioImpact.parseRoomInfo(0, null))
+        org.junit.Assert.assertNull(FotoHoloAudioImpact.parseRoomInfo(0, "x|nan|10|1|1x1x1"))
+        org.junit.Assert.assertNull(FotoHoloAudioImpact.parseRoomInfo(0, "x|0.5|10|1|1x1"))
+        org.junit.Assert.assertNull(FotoHoloAudioImpact.parseRoomInfo(0, "x|0.5|10|1|1x0x1"))
+        org.junit.Assert.assertNull(FotoHoloAudioImpact.parseRoomInfo(0, "corto"))
+    }
+
+    @org.junit.Test fun `el json es compacto y estable`() {
+        val j = FotoHoloAudioImpact.catalogJson(listOf(FotoHoloAudioImpact.CatalogRoom(3, 0.72f, 120f, 8.4f, 4.2f, 10.7f)))
+        org.junit.Assert.assertEquals("[[3,0.720,120.0,8.40,4.20,10.70]]", j)
+    }
+}

@@ -52,3 +52,45 @@ test('la energía solo cambia el brillo, no la geometría', () => {
   const strip = ps => ps.map(({ color, ...g }) => g);
   assert.deepEqual(strip(buildPlacePrimitives(spec, 0)), strip(buildPlacePrimitives(spec, 1)));
 });
+
+import { parseCatalog, pickCatalogRoom, FAMILY_TYPICAL } from '../src/lib/proceduralHoloPlace.ts';
+
+const CATALOG = [
+  { idx: 0, rt60S: 0.30, volumeM3: 60, w: 4, h: 2.6, d: 5 },
+  { idx: 1, rt60S: 0.70, volumeM3: 350, w: 8, h: 4.2, d: 10 },
+  { idx: 2, rt60S: 2.50, volumeM3: 1200, w: 14, h: 5.9, d: 19 },
+];
+
+test('parseCatalog descarta filas dudosas y JSON roto, sin inventar valores', () => {
+  assert.deepEqual(parseCatalog('no json'), []);
+  assert.deepEqual(parseCatalog('{"a":1}'), []);
+  const rows = parseCatalog('[[1,0.5,100,5,3,6],[2,null,1,1,1,1],[3,0.5,-1,1,1,1],[4,0.5,100,5,3]]');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].idx, 1);
+});
+
+test('elige la sala del catálogo más cercana a la familia y usa sus dimensiones reales', () => {
+  assert.equal(pickCatalogRoom('studio', CATALOG).idx, 0);
+  assert.equal(pickCatalogRoom('club', CATALOG).idx, 1);
+  assert.equal(pickCatalogRoom('cathedral', CATALOG).idx, 2);
+  assert.equal(pickCatalogRoom('hall', []), null);
+  const spec = derivePlaceSpec('club de jazz', '', '', CATALOG);
+  assert.equal(spec.source, 'rir-catalog');
+  assert.equal(spec.catalogRoom.idx, 1);
+  assert.equal(spec.halfWidth, 4);        // 8 m / 2
+  assert.equal(spec.height, 4.2);
+});
+
+test('declara la brecha de RT60 cuando el catálogo no alcanza a la familia (catedral)', () => {
+  const spec = derivePlaceSpec('catedral', '', '', CATALOG);
+  assert.equal(spec.catalogRoom.idx, 2);
+  assert.ok(spec.rt60GapS > 2, 'catedral típica ≈5 s vs sala 2.5 s: la brecha debe verse');
+  assert.equal(spec.familyRt60S, FAMILY_TYPICAL.cathedral.rt60S);
+});
+
+test('sin catálogo vuelve al modo paramétrico y lo dice', () => {
+  const spec = derivePlaceSpec('club de jazz');
+  assert.equal(spec.source, 'local-procedural');
+  assert.equal(spec.catalogRoom, null);
+  assert.equal(spec.rt60GapS, null);
+});

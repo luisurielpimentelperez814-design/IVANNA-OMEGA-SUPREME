@@ -303,6 +303,24 @@ class FotoHoloTelemetryBridge(context: Context) {
             .onFailure { android.util.Log.w("FotoHoloBridge", "setSpatialElevationDeg falló", it) }.getOrDefault(false)
     }
 
+    /** Catálogo de salas RIR del motor ([idx,rt60,vol,w,h,d]); "[]" si el dataset no está cargado. */
+    @JavascriptInterface
+    fun getRoomCatalogJson(): String {
+        val n = OmegaEngineBridge.rirRoomCount()
+        val rooms = (0 until n).mapNotNull { FotoHoloAudioImpact.parseRoomInfo(it, OmegaEngineBridge.rirRoomInfo(it)) }
+        return FotoHoloAudioImpact.catalogJson(rooms)
+    }
+
+    /**
+     * Pone en el audio la misma sala que dibuja el visor. Pasa por el gate SAFMUS de `setRoom` (RT60 0.1–1.5 s,
+     * índice válido). true = el comando salió; la aplicación real se lee con GET_ROOM_STATUS.
+     */
+    @JavascriptInterface
+    fun applyRoom(idx: Int, wet: Float): Boolean {
+        val room = FotoHoloAudioImpact.parseRoomInfo(idx, OmegaEngineBridge.rirRoomInfo(idx)) ?: return false
+        return OmegaEngineBridge.setRoom(room.rt60S, wet, idx)
+    }
+
     /** Activa/desactiva el HRTF en la Ruta A y devuelve true SOLO si la lectura nativa posterior lo confirma. */
     @JavascriptInterface
     fun setHrtfEnabled(on: Boolean): Boolean {
