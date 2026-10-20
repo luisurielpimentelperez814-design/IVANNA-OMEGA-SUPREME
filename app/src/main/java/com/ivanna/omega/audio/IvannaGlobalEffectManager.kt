@@ -44,6 +44,7 @@ import android.media.audiofx.Virtualizer
 import android.os.Build
 import android.util.Log
 import java.util.UUID
+import com.ivanna.omega.safmus.SafmusUniversalKernel
 import java.util.concurrent.ConcurrentHashMap
 
 data class IvannaEffectProfile(
@@ -194,6 +195,30 @@ data class IvannaEffectProfile(
             reverbRoomLevelMb = -4200, reverbDecayTimeMs = 500, reverbReflectionsLevelMb = -4800
         )
 
+        /**
+         * IVANNA X SURROUND — realce de la mezcla estéreo ya renderizada.
+         *
+         * Pensado para DAC USB-C → AUX → procesador externo con Surround activado.
+         * Aporta cuerpo, presencia y expansión estéreo moderada ANTES del Genezy;
+         * la reverberación añadida se mantiene apagada para no emborronar transitorios
+         * ni apilar una sala artificial encima del procesador externo. DynamicsProcessing
+         * mantiene el limitador de seguridad cuando Android lo soporta.
+         *
+         * Es procesamiento de la señal estéreo disponible: no decodifica los objetos
+         * ni recupera canales/metadatos Atmos que ya no estén presentes en esa señal.
+         */
+        val ATMOS_SURROUND_COMPANION = IvannaEffectProfile(
+            eqBands = intArrayOf(120, 100, 60, 20, -10, 20, 80, 130, 110, 70),
+            bassStrength = 460,
+            virtualizerStrength = 420,
+            loudnessGainMb = 40,
+            compThresholdDb = -18f,
+            compRatio = 2.2f,
+            reverbRoomLevelMb = -9000,
+            reverbDecayTimeMs = 600,
+            reverbReflectionsLevelMb = -9000
+        )
+
         // mapa nombre → perfil para la UI (LazyRow de FilterChip + comandos de voz)
         val byName: Map<String, IvannaEffectProfile> = linkedMapOf(
             "Flat"              to FLAT,
@@ -210,7 +235,8 @@ data class IvannaEffectProfile(
             "CINEMATOGRÁFICO"   to CINEMATIC,
             "ANALÓGICO"         to ANALOG_WARM,
             "ESTUDIO PRO"       to STUDIO_PRO,
-            "MICRODETALLE"      to MICRO_DETAIL
+            "MICRODETALLE"      to MICRO_DETAIL,
+            "ATMOS / GENEZY"     to ATMOS_SURROUND_COMPANION
         )
     }
 }
@@ -448,9 +474,41 @@ class IvannaGlobalEffectManager(
     }
 
     // ── Aplica un perfil a todas las sesiones activas ─────────────────────────
+    /**
+     * SAFMUS valida los límites antes de enviar el perfil a los AudioEffects existentes.
+     * No crea una ruta DSP nueva: normaliza la propuesta y conserva el dueño actual de la sesión.
+     */
+    private fun safmusBoundedInt(value: Int, min: Int, max: Int, fallback: Int = min): Int =
+        SafmusUniversalKernel.sanitizeControlValue(value.toFloat(), min.toFloat(), max.toFloat())
+            ?.toInt() ?: fallback
+
+    private fun validateProfileWithSafmus(profile: IvannaEffectProfile): IvannaEffectProfile {
+        val eq = IntArray(10) { i ->
+            safmusBoundedInt(profile.eqBands.getOrElse(i) { 0 }, -1500, 1500, 0)
+        }
+        val threshold = SafmusUniversalKernel.sanitizeControlValue(
+            profile.compThresholdDb, -60f, 0f
+        ) ?: -18f
+        val ratio = SafmusUniversalKernel.sanitizeControlValue(
+            profile.compRatio, 1f, 20f
+        ) ?: 2.2f
+        return profile.copy(
+            eqBands = eq,
+            bassStrength = safmusBoundedInt(profile.bassStrength.toInt(), 0, 1000, 420).toShort(),
+            virtualizerStrength = safmusBoundedInt(profile.virtualizerStrength.toInt(), 0, 1000, 380).toShort(),
+            loudnessGainMb = safmusBoundedInt(profile.loudnessGainMb, 0, 1000, 80),
+            compThresholdDb = threshold,
+            compRatio = ratio,
+            reverbRoomLevelMb = safmusBoundedInt(profile.reverbRoomLevelMb, -9000, 0, -9000),
+            reverbDecayTimeMs = safmusBoundedInt(profile.reverbDecayTimeMs, 100, 20_000, 1000),
+            reverbReflectionsLevelMb = safmusBoundedInt(profile.reverbReflectionsLevelMb, -9000, 1000, -9000)
+        )
+    }
+
     fun applyProfile(profile: IvannaEffectProfile) {
-        activeProfile = profile
-        activeSessions.keys.forEach { applyProfileToSession(it, profile) }
+        val approved = validateProfileWithSafmus(profile)
+        activeProfile = approved
+        activeSessions.keys.forEach { applyProfileToSession(it, approved) }
     }
 
     /**
