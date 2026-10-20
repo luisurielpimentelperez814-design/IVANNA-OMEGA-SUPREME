@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.97
-versionCode=388
+version=v2.5.98
+versionCode=389
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.97: telemetría de pose HRTF con estado pendiente veraz
+description=v2.5.98: validación atómica del vector latente SAFMUS
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
