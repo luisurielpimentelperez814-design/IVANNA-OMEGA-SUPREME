@@ -88,7 +88,10 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         val depthSupported: Boolean,
         val durationMs: Long,
         val createdAt: String,
-        val trackingState: String
+        val trackingState: String,
+        val optimizationRejectedCount: Int = 0,
+        val optimizationReducedCount: Int = 0,
+        val optimizationTruncatedCount: Int = 0
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -250,7 +253,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
 
     private fun finishCapture() {
         captureEnabled.set(false)
-        val snapshot = synchronized(pointsLock) {
+        val rawSnapshot = synchronized(pointsLock) {
             CaptureSnapshot(
                 points = points.toList(),
                 poses = poseSamples.toList(),
@@ -262,6 +265,15 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 trackingState = lastTrackingState
             )
         }
+        val optimizedCloud = SafmusUniversalKernel.optimizeSpatialPointCloud(
+            rawSnapshot.points.map { SafmusUniversalKernel.SpatialPoint3(it.x, it.y, it.z) }
+        )
+        val snapshot = rawSnapshot.copy(
+            points = optimizedCloud.points.map { Point3(it.x, it.y, it.z) },
+            optimizationRejectedCount = optimizedCloud.rejectedInvalidCount,
+            optimizationReducedCount = optimizedCloud.reducedByVoxelCount,
+            optimizationTruncatedCount = optimizedCloud.truncatedCount
+        )
         val safmusAssessment = assessSafmus(snapshot)
         lastSnapshot = snapshot
         startButton.isEnabled = session != null
@@ -273,7 +285,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         } else {
             "Captura lista · ${snapshot.points.size} puntos · profundidad ${snapshot.depthPointCount} · ${snapshot.poses.size} poses\n" +
                 "Extensión observada aprox.: ${"%.2f".format(Locale.US, b[3] - b[0])} × ${"%.2f".format(Locale.US, b[4] - b[1])} × ${"%.2f".format(Locale.US, b[5] - b[2])} m. No es plano certificado.\n" +
-                "SAFMUS · ${safmusAssessment.quality}: ${safmusAssessment.reason}"
+                "SAFMUS · ${safmusAssessment.quality}: ${safmusAssessment.reason}\\n" +
+                "Optimización de nube: -${snapshot.optimizationRejectedCount} inválidos, -${snapshot.optimizationReducedCount} redundantes, ${snapshot.points.size} puntos finales"
         }
     }
 
@@ -338,6 +351,11 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .put("sparseFeaturePointCount", snapshot.sparsePointCount)
             .put("arcoreDepthApiEnabled", snapshot.depthSupported)
             .put("lastTrackingState", snapshot.trackingState)
+            .put("safmusPointCloudOptimization", JSONObject()
+                .put("method", "20mm voxel thinning; invalid coordinates rejected; output capped at 100000")
+                .put("rejectedInvalidCount", snapshot.optimizationRejectedCount)
+                .put("reducedByVoxelCount", snapshot.optimizationReducedCount)
+                .put("truncatedCount", snapshot.optimizationTruncatedCount))
             .put("safmusAssessment", JSONObject().apply {
                 val assessment = assessSafmus(snapshot)
                 put("exportAllowed", assessment.exportAllowed)
