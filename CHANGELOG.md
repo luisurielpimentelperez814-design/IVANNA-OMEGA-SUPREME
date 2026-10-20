@@ -1,6 +1,8 @@
 # CHANGELOG — v2.5.104 (395) — Reencarnación AntiDolby + SAFMUS
 
 - **AntiDolby unificado:** un único CRNN compartido entre el controlador y el pipeline; se elimina el clasificador duplicado y el sondeo de un buffer que nunca recibía audio.
+- **Orquestador acústico único (Kotlin):** los scores CRNN y la heurística de respaldo pasan por `PerceptualCortex`, que es el único publicador Kotlin de scores AntiDolby al DSP nativo; los scores se incorporan a la decisión perceptual y a la salida espacial/SAFMUS existente.
+- **No se inventa entrenamiento:** el CRNN existente clasifica voz/música/bajos; SOFA/IHR1/SAF/RIR alimentan el conocimiento espacial existente, pero todavía no existe evidencia de un modelo SAFMUS de política acústica entrenado con etiquetas de decisiones y preferencias válidas. El entrenamiento final queda condicionado a corpus auditado, licencias, etiquetas y evaluación fuera de muestra.
 - **Audio transparente:** AntiDolby ya no activa los efectos creativos de Cinematic (reverb/delay/subarmónicos). El CRNN observa bloques asíncronamente y devuelve el buffer de audio intacto.
 - **Rutas A/B:** Ruta A estéreo se convierte a mono antes del remuestreo; captura externa Ruta B declara su canal mono y alimenta el mismo clasificador. La heurística antigua no sobrescribe los scores cuando CRNN está activo.
 - **Seguridad y gobierno:** scores finitos limitados a [0,1] antes de JNI; la salida continúa por el DSP nativo existente bajo el gobernador de recursos/temperatura SAFMUS. Sin motores paralelos ni ganancia artificial añadida.
