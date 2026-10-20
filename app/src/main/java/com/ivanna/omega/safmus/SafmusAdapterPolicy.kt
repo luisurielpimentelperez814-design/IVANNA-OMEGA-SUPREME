@@ -24,6 +24,20 @@ object SafmusAdapterPolicy {
     }
 
     /**
+     * Choose an AudioRecord ring size for the owning capture session.
+     * Bigger rings absorb scheduler jitter with few extra bytes; the audio loop
+     * still consumes one block at a time, so this is not an added fixed delay.
+     */
+    fun captureBufferBytes(minBytes: Int, bytesPerBlock: Int, load: Load): Int {
+        val blocks = when (load) {
+            Load.NORMAL -> 4
+            Load.CONSERVATIVE -> 6
+            Load.SAFE -> 8
+        }
+        return maxOf(minBytes, bytesPerBlock.coerceAtLeast(1) * blocks)
+    }
+
+    /**
      * Bound route compensation under resource pressure. The base route/codec profile
      * remains authoritative; SAFMUS only reduces extra DSP work and never adds gain.
      */
