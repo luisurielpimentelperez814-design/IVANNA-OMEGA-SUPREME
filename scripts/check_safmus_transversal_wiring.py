@@ -61,7 +61,7 @@ require("app/src/main/cpp/include/perceptual_optimizer_v2.hpp",
 require("app/src/main/cpp/include/saf_room_optimizer.hpp",
         "perceptual_v2::solveMapQuadratic", "Fail closed", "return 1.0f")
 require("app/src/main/cpp/tests/test_perceptual_optimizer_v2.cpp",
-        "ClosedFormMatchesAnalyticMapMinimizerInOneSolve",
+        "ClosedFormMatchesMapQuadraticExactMinimizer",\n        "ClosedFormBeatsLegacyIterationAgainstSameExactObjective",
         "BoxConstraintProducesConstrainedOptimum",
         "ExponentialContextRegularizationIsPositiveAndMonotonic",
         "RejectsNonFiniteTargetAndInvalidBounds")
