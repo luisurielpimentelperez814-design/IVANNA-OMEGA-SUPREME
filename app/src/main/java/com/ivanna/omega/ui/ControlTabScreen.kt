@@ -13,6 +13,7 @@ import com.ivanna.omega.audio.AdaptiveBackend
 import com.ivanna.omega.audio.AntiDolbyController
 import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.audio.OmegaMetrics
+import com.ivanna.omega.audio.IvannaUnifiedPipeline
 import com.ivanna.omega.audio.ProfilesLoader
 import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.audio.VolterraSwitch
@@ -55,7 +56,12 @@ fun ControlTabScreen(
     // La pestaña CONTROL es la pantalla activa que dibuja AdaptiveEngineStatusCard.
     // No depender de que otra ruta (dashboard legado o AdaptiveEngineScreen) haya
     // iniciado el sondeo: sin este ciclo el panel conserva el snapshot inicial 0/OFFLINE.
-    DisposableEffect(adaptiveBack) {
+    DisposableEffect(adaptiveBack, context) {
+        // El panel depende de routeState para seleccionar la telemetría de Ruta A/B.
+        // Arrancar el monitor aquí hace que CONTROL sea autosuficiente incluso si
+        // IVANNAApplication no llegó a iniciar el singleton por una ruta de arranque
+        // alternativa; start() es idempotente y no crea un segundo poller.
+        IvannaUnifiedPipeline.start(context.applicationContext)
         adaptiveBack.startTelemetry()
         onDispose { adaptiveBack.stopTelemetry() }
     }
