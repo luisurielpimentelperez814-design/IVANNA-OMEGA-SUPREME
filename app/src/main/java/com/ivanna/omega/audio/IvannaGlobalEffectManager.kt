@@ -194,6 +194,26 @@ data class IvannaEffectProfile(
             reverbRoomLevelMb = -4200, reverbDecayTimeMs = 500, reverbReflectionsLevelMb = -4800
         )
 
+        /**
+         * ATMOS / GENEZY SURROUND COMPANION:
+         * Para una mezcla Atmos que Android/reproductor ya haya renderizado a estéreo
+         * y que saldrá por DAC USB-C → AUX a un procesador Surround externo.
+         * Evita virtualizador y reverberación duplicados; conserva transitorios,
+         * usa EQ casi neutra, graves contenidos y compresión suave. No decodifica
+         * objetos Atmos ni detecta el estado del Surround externo.
+         */
+        val ATMOS_SURROUND_COMPANION = IvannaEffectProfile(
+            eqBands = intArrayOf(0, 20, 30, 20, 0, 0, 20, 30, 20, 0),
+            bassStrength = 100,
+            virtualizerStrength = 0,
+            loudnessGainMb = 0,
+            compThresholdDb = -22f,
+            compRatio = 1.6f,
+            reverbRoomLevelMb = -9000,
+            reverbDecayTimeMs = 500,
+            reverbReflectionsLevelMb = -9000
+        )
+
         // mapa nombre → perfil para la UI (LazyRow de FilterChip + comandos de voz)
         val byName: Map<String, IvannaEffectProfile> = linkedMapOf(
             "Flat"              to FLAT,
@@ -210,7 +230,8 @@ data class IvannaEffectProfile(
             "CINEMATOGRÁFICO"   to CINEMATIC,
             "ANALÓGICO"         to ANALOG_WARM,
             "ESTUDIO PRO"       to STUDIO_PRO,
-            "MICRODETALLE"      to MICRO_DETAIL
+            "MICRODETALLE"      to MICRO_DETAIL,
+            "ATMOS / GENEZY"     to ATMOS_SURROUND_COMPANION
         )
     }
 }
