@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.106 (397) — SAFMUS feedback + release integrity
+
+- **SAF-Room:** integra el flujo latente Wasserstein con el paso de gradiente natural acotado y la retroalimentación topológica suavizada; la actualización conserva límites y validaciones de estado.
+- **Puente nativo:** el JNI publica el vector latente al daemon por socket abstracto y el efecto nativo consume el snapshot publicado.
+- **Pruebas host:** la ejecución CTest del commit previo `c2ea0be3ede51946ffe0b7617f0e5957ceb4b5ff` pasó; esto no sustituye pruebas acústicas en un dispositivo físico.
+- **Publicación:** versión incrementada porque `v2.5.105` ya es inmutable en GitHub. El paquete de esta versión debe generarse desde el commit que incluye este cambio y pasar la verificación del ZIP, daemon, librería DSP y datasets antes de publicarse.
+- **Límite honesto:** no se afirma superioridad audible ni activación real en el teléfono sin pruebas en dispositivo.
+
+---
+
 # CHANGELOG — v2.5.104 (395) — Reencarnación AntiDolby + SAFMUS
 
 - **AntiDolby unificado:** un único CRNN compartido entre el controlador y el pipeline; se elimina el clasificador duplicado y el sondeo de un buffer que nunca recibía audio.
