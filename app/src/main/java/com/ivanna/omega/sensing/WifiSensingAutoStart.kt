@@ -149,12 +149,19 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        content()
+    // FIX (panel blanco que tapaba la app): esta franja vive FUERA del tema oscuro de OmegaApp, así que
+    // MaterialTheme.colorScheme.surface era el blanco por defecto, con texto negro, y además se dibujaba
+    // ENCIMA del contenido (tapaba la barra inferior y parte del scroll). Ahora ocupa su propio espacio
+    // debajo del contenido (el contenido se encoge en vez de quedar tapado), usa colores oscuros
+    // explícitos y el gráfico queda plegado por defecto.
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         if (optedIn || active) Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
-            tonalElevation = 5.dp
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF0B1220),
+            contentColor = Color(0xFFDDE6F0),
+            tonalElevation = 0.dp
         ) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 Text(
@@ -166,7 +173,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                 Text(signalSummary, style = MaterialTheme.typography.bodySmall)
                 // Visualización real del sondeo: cada barra representa una red observada y su RSSI.
                 // No presenta RSSI como CSI ni dibuja una reconstrucción espacial ficticia.
-                Canvas(
+                if (expanded) Canvas(
                     modifier = Modifier.fillMaxWidth().height(76.dp)
                 ) {
                     val left = 8f
@@ -210,7 +217,7 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                         )
                     }
                 }
-                if (networkRows.isNotEmpty()) {
+                if (expanded) if (networkRows.isNotEmpty()) {
                     Text(
                         networkRows.take(5).joinToString("   ·   ") {
                             "${it.ssid.ifBlank { "<red oculta>" }} ${it.rssiDbm} dBm"
@@ -225,6 +232,9 @@ fun WifiSensingAutoStart(content: @Composable () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
+                    androidx.compose.material3.TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) "Ocultar gráfico" else "Ver gráfico")
+                    }
                     if (active) {
                         OutlinedButton(onClick = {
                             userStopped = true

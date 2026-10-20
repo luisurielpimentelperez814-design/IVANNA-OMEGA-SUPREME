@@ -1,3 +1,10 @@
+# CHANGELOG — v2.5.95 (386) — Franja Wi-Fi oscura, plegable y sin tapar la app
+
+- **Panel blanco:** la franja «FotoHolo Wi-Fi» se dibujaba fuera del tema oscuro (fondo blanco, texto negro) y ENCIMA del contenido, tapando la barra inferior y estorbando el scroll. Ahora ocupa su propio espacio bajo el contenido (la app se encoge en vez de quedar tapada), usa colores oscuros explícitos y el gráfico queda plegado («Ver gráfico»).
+- **No verificado aquí:** compilación y prueba en teléfono (lo cubre el CI del APK).
+
+---
+
 # CHANGELOG — v2.5.94 (385) — SAFMUS 10D unknown RIR status fails closed
 
 - **SAFMUS / 10D:** the reverberant-field axis is only marked APPLIED when local RIR tail telemetry is explicitly healthy (`0`) and measured-RIR readbacks agree.
