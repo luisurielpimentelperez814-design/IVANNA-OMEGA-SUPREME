@@ -100,7 +100,13 @@ object AudioRouteManager {
      */
     fun refreshRoute() {
         val am = audioManager ?: return
-        applyRoute(detectOutputRoute(am), force = true)
+        applyRoute(detectOutputRoute(am))
+    }
+
+    /** Re-apply only the SAFMUS-adjusted DSP profile; do not reset route histories. */
+    fun refreshResourceBudgetProfile() {
+        val route = currentRoute
+        if (route != OutputRoute.UNKNOWN) applyProfileFor(route)
     }
 
     fun detectOutputRoute(am: AudioManager): OutputRoute {
@@ -207,16 +213,7 @@ object AudioRouteManager {
                 RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
         }
 
-    private fun applyRoute(route: OutputRoute, force: Boolean = false) {
-        if (route == currentRoute && !force) return
-        val previousRoute = currentRoute
-        currentRoute = route
-        appContextRef?.let { ctx ->
-            runCatching { AudioPipeline.syncHardwareSampleRate(ctx) }
-            Thread({
-                runCatching { BluetoothAudioProfiler.refresh(ctx) }
-            }, "BtAudioProfilerRefresh").start()
-        }
+    private fun applyProfileFor(route: OutputRoute) {
         val baseProfile = profileFor(route)
         val load = when (SafmusHardwareCoordinator.lastSnapshot?.budget) {
             SafmusHardwareCoordinator.Budget.CONSERVATIVE -> SafmusAdapterPolicy.Load.CONSERVATIVE
@@ -226,15 +223,22 @@ object AudioRouteManager {
         val p = SafmusAdapterPolicy.optimizeRouteProfile(baseProfile, load)
         Log.i(TAG, "Ruta de salida: $route SAFMUS=$load -> perfil DSP aplicado")
         AudioEngine.nativeSetRouteProfileStatic(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
-        // (implementado vía AudioEngine.nativeSetRouteProfileJni -> control_set_route_profile)
-
-        // FIX (unificación de rutas): el mismo perfil también se manda a
-        // Ruta B (módulo Magisk / omega_daemon), que antes nunca se
-        // enteraba de la ruta de salida activa — Spotify/YouTube sonaban
-        // sin compensación de BT SBC/AAC ni de rolloff de graves en AUX.
         com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
             p.bassBoostDb, p.dialogBoostDb, p.widenerMult
         )
+    }
+
+    private fun applyRoute(route: OutputRoute) {
+        if (route == currentRoute) return
+        val previousRoute = currentRoute
+        currentRoute = route
+        appContextRef?.let { ctx ->
+            runCatching { AudioPipeline.syncHardwareSampleRate(ctx) }
+            Thread({
+                runCatching { BluetoothAudioProfiler.refresh(ctx) }
+            }, "BtAudioProfilerRefresh").start()
+        }
+        applyProfileFor(route)
         // §0.1: Activar inmediatamente las etapas exigidas por el perfil de ruta
         // ANTES del primer bloque de audio (y en cada cambio de salida física).
         appContextRef?.let { ctx ->
