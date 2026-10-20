@@ -68,9 +68,9 @@ object CinematicEngineHost {
      * AntiDolby must not inject cinematic reverb, delay or sub-harmonics.
      * Feed audio to the CRNN asynchronously and return the original buffer.
      */
-    fun processBlock(buf: FloatArray, count: Int = buf.size): FloatArray {
+    fun processBlock(buf: FloatArray, count: Int = buf.size, channels: Int = 2): FloatArray {
         val eng = engine
-        if (active && eng != null) eng.observeBlock(buf, count)
+        if (active && eng != null) eng.observeBlock(buf, count, channels)
         return buf
     }
 }
