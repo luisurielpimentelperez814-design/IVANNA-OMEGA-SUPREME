@@ -101,6 +101,8 @@ ivanna_add_test(test_wasserstein_latent_flow)
 ivanna_add_test(test_topological_feedback_operator)
 # Bounded Berry-phase LUT and fixed-size complex FIR primitives.
 ivanna_add_test(test_gauge_field_engine)
+# Second-order phase/frequency tracking PLL (userspace; not a DAC clock driver).
+ivanna_add_test(test_g_pll_core)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
