@@ -64,24 +64,24 @@ bool CommandServer::_jsonFloatArray(const char* j, const char* key, float* out, 
 // números finitos. El parser tolerante existente se conserva para otros comandos.
 static bool _jsonFloatArrayExact(const char* j, const char* key, float* out, int expectedN) noexcept {
     if (!j || !key || !out || expectedN <= 0) return false;
-    char search[128]; snprintf(search, sizeof(search), "\\"%s\\"", key);
+    char search[128]; snprintf(search, sizeof(search), "\"%s\"", key);
     const char* p = strstr(j, search); if (!p) return false;
     p += strlen(search); while (*p && *p != '[') p++; if (*p != '[') return false; p++;
     int n = 0;
     while (n < expectedN) {
-        while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r') ++p;
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
         if (*p == ']') break;
         char* end = nullptr;
         const float v = strtof(p, &end);
         if (end == p || !std::isfinite(v)) return false;
         out[n++] = v;
         p = end;
-        while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r') ++p;
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
         if (*p == ']') break;
         if (*p != ',') return false;
         ++p;
     }
-    while (*p == ' ' || *p == '\\t' || *p == '\\n' || *p == '\\r') ++p;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
     return *p == ']' && n == expectedN;
 }
 const char* CommandServer::_jsonAction(const char* j, char* buf, int bufSz) {
