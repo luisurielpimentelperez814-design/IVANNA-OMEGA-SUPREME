@@ -101,3 +101,12 @@ The following are research objectives, not claims of current implementation:
 - quantify latency, CPU cost, robustness, and perceptual benefit with reproducible baselines.
 
 The guiding standard is simple: every claimed mathematical property must have stated assumptions, every production behavior must have a test, and every claimed audible improvement must have a reproducible measurement or listening result.
+
+
+## 9. Bounded adaptive feedback geometry (implemented control-path component)
+
+The production control path now has a fixed-size, allocation-free 7-D residual-feedback operator. It maintains an exponential moving average of per-coordinate residual energy, derives bounded diagonal metric scales in [0.5, 2.0], estimates residual anisotropy, and tightens the trust radius from 0.10 toward 0.025 as anisotropy increases. Non-finite observations are rejected without mutating the last valid state. The operator is called by the SAF-Room optimizer before latent transport; its trust radius also bounds the subsequent natural-gradient step.
+
+This is an engineering feedback heuristic, not a computed Ricci curvature, not a proven Fisher estimator, and not evidence of system consciousness or environmental sensing. It adapts only from the optimizer's current target residual. A future acoustic-feedback loop must feed it measured/calibrated room or output features before claims of environment learning are justified. It does not run in the real-time audio callback and does not change the 128-tap convolution implementation.
+
+Verification target: `test_topological_feedback_operator`, plus existing SAF-Room and geometry tests. Passing host tests would establish bounded numerical behavior only; Android build and device/audio measurements remain separate gates.
