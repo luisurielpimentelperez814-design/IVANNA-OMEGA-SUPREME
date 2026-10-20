@@ -356,7 +356,7 @@ class AudioPipeline {
 
         // Ruta B/captura externa: alimentar el mismo CRNN AntiDolby que usa Ruta A.
         // El host sólo observa/clasifica y devuelve el audio intacto.
-        if (CinematicEngineHost.isActive) CinematicEngineHost.processBlock(mono, n)
+        if (CinematicEngineHost.isActive) CinematicEngineHost.processBlock(mono, n, channels = 1)
 
         // Publicar en el bus compartido para que EngineStatusCard salga
         // de STANDBY: el default de shared trae rms=0/peak=0/clips=0.
