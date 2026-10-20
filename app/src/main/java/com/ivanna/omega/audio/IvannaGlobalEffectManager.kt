@@ -44,6 +44,7 @@ import android.media.audiofx.Virtualizer
 import android.os.Build
 import android.util.Log
 import java.util.UUID
+import com.ivanna.omega.safmus.SafmusUniversalKernel
 import java.util.concurrent.ConcurrentHashMap
 
 data class IvannaEffectProfile(
@@ -473,9 +474,36 @@ class IvannaGlobalEffectManager(
     }
 
     // ── Aplica un perfil a todas las sesiones activas ─────────────────────────
+    /**
+     * SAFMUS valida los límites antes de enviar el perfil a los AudioEffects existentes.
+     * No crea una ruta DSP nueva: normaliza la propuesta y conserva el dueño actual de la sesión.
+     */
+    private fun validateProfileWithSafmus(profile: IvannaEffectProfile): IvannaEffectProfile {
+        val eq = IntArray(10) { i -> profile.eqBands.getOrElse(i) { 0 }.coerceIn(-1500, 1500) }
+        val threshold = SafmusUniversalKernel.sanitizeControlValue(
+            profile.compThresholdDb, -60f, 0f
+        ) ?: -18f
+        val ratio = SafmusUniversalKernel.sanitizeControlValue(
+            profile.compRatio, 1f, 20f
+        ) ?: 2.2f
+        val decay = profile.reverbDecayTimeMs.coerceIn(100, 20_000)
+        return profile.copy(
+            eqBands = eq,
+            bassStrength = profile.bassStrength.toInt().coerceIn(0, 1000).toShort(),
+            virtualizerStrength = profile.virtualizerStrength.toInt().coerceIn(0, 1000).toShort(),
+            loudnessGainMb = profile.loudnessGainMb.coerceIn(0, 1000),
+            compThresholdDb = threshold,
+            compRatio = ratio,
+            reverbRoomLevelMb = profile.reverbRoomLevelMb.coerceIn(-9000, 1000),
+            reverbDecayTimeMs = decay,
+            reverbReflectionsLevelMb = profile.reverbReflectionsLevelMb.coerceIn(-9000, 1000)
+        )
+    }
+
     fun applyProfile(profile: IvannaEffectProfile) {
-        activeProfile = profile
-        activeSessions.keys.forEach { applyProfileToSession(it, profile) }
+        val approved = validateProfileWithSafmus(profile)
+        activeProfile = approved
+        activeSessions.keys.forEach { applyProfileToSession(it, approved) }
     }
 
     /**
