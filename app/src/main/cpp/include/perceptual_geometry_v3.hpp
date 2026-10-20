@@ -1,8 +1,8 @@
 #pragma once
 
-// SAFMUS / IVANNA research prototype v3.
+// SAFMUS / IVANNA production geometry v3.
 // Bounded natural-gradient direction for a supplied Fisher-information metric.
-// This is opt-in research code; it is not wired into the production audio path.
+// Wired into SaFRoomOptimizer; downstream audio-process publication uses JNI/daemon IPC.
 // No Android/JNI dependencies. C++20, fixed 7-D state, no heap allocation.
 
 #include <algorithm>
