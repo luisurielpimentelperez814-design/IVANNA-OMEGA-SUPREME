@@ -103,7 +103,7 @@ require("app/src/main/cpp/jni/ivanna_omega_jni.cpp", "conv->setSampleRate(sessio
 require("magisk_module/core/safmus_environment_optimizer.sh",
         "environment_profile.env", "resource_budget=$budget", "actuation=observation_only",
         "Camera/media device nodes", "Room acoustics need a user-authorized in-app measurement",
-        'TMP="$PROFILE.tmp.$"', 'RTMP="$REPORT.tmp.$"', 'CTMP="$CAPABILITIES.tmp.$"',
+        'TMP="$PROFILE.tmp.$$"', 'RTMP="$REPORT.tmp.$$"', 'CTMP="$CAPABILITIES.tmp.$$"',
         "cpu_frequency_policies", "gpu_nodes", "display_peak_refresh_setting", "sensor_nodes", "battery_nodes")
 require("magisk_module/service.sh", "safmus_environment_optimizer.sh",
         "SAFMUS: map whole-device resource conditions", '"$SAFMUS_ENV"')
