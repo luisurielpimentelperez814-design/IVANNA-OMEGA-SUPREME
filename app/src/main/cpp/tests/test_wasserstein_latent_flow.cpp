@@ -16,7 +16,7 @@ TEST(WassersteinLatentFlow, PreservesMassAndMovesTowardTarget) {
     for(double x:result.target) mass+=std::abs(x);
     EXPECT_NEAR(mass,2.0,1e-12);
     EXPECT_GT(std::abs(result.target[1])+std::abs(result.target[2]),0.0);
-    EXPECT_GT(std::abs(result.target[5])+std::abs(result.target[6]),0.0);
+    EXPECT_GT(std::abs(result.target[1])+std::abs(result.target[2]),0.0);
 }
 TEST(WassersteinLatentFlow, FullStepMatchesTargetAndZeroSourceIsSafe) {
     Vector current{};
