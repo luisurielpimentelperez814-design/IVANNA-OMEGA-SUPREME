@@ -227,8 +227,8 @@ tasks.named("preBuild") { dependsOn("validateUnifiedVersion") }
 configurations.all {
     resolutionStrategy {
         force(
-            "org.jetbrains.kotlin:kotlin-stdlib:2.4.20",
-            "org.jetbrains.kotlin:kotlin-stdlib-common:2.4.20",
+            "org.jetbrains.kotlin:kotlin-stdlib:2.4.21",
+            "org.jetbrains.kotlin:kotlin-stdlib-common:2.4.21",
             "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",
             "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0",
             "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0",
