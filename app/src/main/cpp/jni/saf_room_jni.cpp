@@ -14,6 +14,8 @@
 
 #include "saf_room_optimizer.hpp"
 #include <jni.h>
+#include <android/log.h>
+#include <atomic>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/un.h>
@@ -86,7 +88,13 @@ Java_com_ivanna_omega_saf_SaFRoomBridge_nativeSafrStep(JNIEnv*, jclass) {
     // Keep local calibration/visualization state in sync, then publish to the
     // daemon so the actual audioserver DSP/HRTF path receives this update.
     ivanna_saf_apply_latent(q);
-    (void)publishSafLatentToAudioProcess(q); // non-root/in-process remains functional if daemon is absent
+    if (!publishSafLatentToAudioProcess(q)) {
+        static std::atomic<bool> warned{false};
+        if (!warned.exchange(true, std::memory_order_relaxed)) {
+            __android_log_print(ANDROID_LOG_WARN, "SAF-Room",
+                "Wasserstein/Fisher latent update stayed app-local: SET_SAF_STATE was not acknowledged by the audio daemon");
+        }
+    }
     return alpha;
 }
 
