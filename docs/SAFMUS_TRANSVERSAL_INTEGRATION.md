@@ -40,3 +40,38 @@ Each slider, toggle, preset, environment, calibration action, HRTF/HRIR/IHR1 sel
 - The Kotlin `gateRir` policy is still not fed measured per-block DSP timing. The native RIR convolver enforces its deterministic 512-frame algorithmic-tail budget from the session sample rate, but that is not a measurement of callback CPU time. The app-process/local-route degradation flag is now exposed to the 10D scene snapshot and prevents the reverberant-field axis from being reported as applied when the delayed tail was omitted. The daemon's independent RIR convolver still needs its own status/read-back channel; app-process status must not be treated as daemon telemetry.
 - Acoustic/perceptual validation on supported devices, measured output SPL/headroom, and end-to-end read-back for every individual non-slider toggle/setter still require device-level evidence. UI presence or a successful IPC send is not proof of effective DSP application.
 - No learned SAFMUS model, calibrated room model, or measured HRTF provenance is created by these guards. They enforce safe integration and truthful status, not perceptual superiority by themselves.
+
+## New capability acceptance gates — Surround and augmented reality
+
+These gates extend the shared SAFMUS contract to the open implementation work. They are requirements for merge/release, not a claim that the PRs are already part of `main`.
+
+### IVANNA X SURROUND (PR #87)
+
+- Reuse the existing Android audio-effect/DSP route; never activate a second competing route.
+- SAFMUS must validate finite values and profile-specific bounds before EQ, bass, virtualizer, gain, compressor, or reverb changes are applied.
+- Keep artificial reverb disabled for the external Genezy Surround profile unless a measured/explicitly validated configuration proves it safe; avoid stacking an unverified room response.
+- Distinguish command/IPC success from native effect activation and read-back. Report unsupported effects and partial application honestly.
+- Acceptance evidence: JVM/native tests for invalid values, route conflict, unavailable effects, safe fallback, and profile switching; Android build on the exact merged SHA; level-matched A/B listening test before any superiority claim.
+
+### FotoHolo / ARCore capture
+
+- SAFMUS validates each coordinate as finite and within the declared capture domain before it reaches the exported cloud; apply voxel reduction and output caps deterministically.
+- Preserve provenance: ARCore depth samples, estimated visual points, pose/tracking state, and inferred/unknown data must remain distinguishable. Never label estimated geometry as measured acoustics.
+- Capture quality is a gate for export integrity, not a claim of architectural accuracy. Invalid data must be rejected; weak but structurally valid captures may be exported only with a degraded-quality flag.
+- Export metadata must record optimizer version/parameters, input/output/rejected/reduced/truncated counts, tracking/pose quality, and the explicit fact that acoustic calibration is not ready without real acoustic measurements.
+- Acceptance evidence: deterministic JVM tests for non-finite/out-of-domain coordinates, voxel boundaries, cap/truncation counts, missing poses, degraded capture, metadata/PLY consistency, and preservation of `acousticCalibrationReady=false`; ARCore device validation remains mandatory.
+
+### 10D plan — integration order and exit criteria
+
+1. **Route arbitration:** prove that exactly one route owns DSP and SAFMUS abstains on conflict/stale telemetry.
+2. **Control plane:** trace each visible control through sanitation, bounded dispatch, acknowledgement/read-back, UI state, and rollback.
+3. **Spatial path:** verify pose azimuth/elevation/distance propagation, HRIR selection by spherical angular distance, and ABI-compatible native snapshots.
+4. **RIR/BRIR:** verify source provenance, sample-rate compatibility, deterministic latency fallback, and separate app-process versus daemon status.
+5. **Room calibration:** permit correction only with actual measurements and an identified playback chain.
+6. **Evolution:** require finite fitness, stable bounded candidates, headroom, latency evidence, and rollback.
+7. **AR capture:** validate geometry/provenance and deterministic cloud optimization without converting geometry estimates into acoustic measurements.
+8. **Surround profile:** apply bounded settings to the existing route and confirm effect availability/read-back.
+9. **Regression/CI:** run the transversal wiring audit, JVM tests, native CTest, Android build, and APK integrity checks on the exact candidate SHA.
+10. **Release/device validation:** publish only artifacts traceable to the green SHA; separately document device tests and level-matched listening results.
+
+A step is not complete merely because its UI exists, a command was sent, a PR was opened, or a build started. Mark it complete only when its specified evidence is attached to the exact candidate commit.
