@@ -3315,13 +3315,26 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
     JNIEnv* env, jobject, jfloatArray jx, jfloatArray jy, jfloatArray jz) {
+    // Reject malformed layouts before either shared-memory publication or IPC.
+    // Publishing NaN/Inf to the seqlock first would poison the live DSP snapshot
+    // even if the daemon later rejected the JSON payload.
     if (!jx || !jy || !jz) return;
-    jsize len = env->GetArrayLength(jx);
-    if (len < 7) return;
+    if (env->GetArrayLength(jx) != 7 ||
+        env->GetArrayLength(jy) != 7 ||
+        env->GetArrayLength(jz) != 7) return;
     jfloat x[7], y[7], z[7];
     env->GetFloatArrayRegion(jx, 0, 7, x);
     env->GetFloatArrayRegion(jy, 0, 7, y);
     env->GetFloatArrayRegion(jz, 0, 7, z);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return;
+    }
+    for (int i = 0; i < 7; ++i) {
+        if (!std::isfinite(x[i]) || !std::isfinite(y[i]) || !std::isfinite(z[i]) ||
+            std::fabs(x[i]) > 3.5f || std::fabs(y[i]) > 3.5f ||
+            std::fabs(z[i]) > 7.0f) return;
+    }
 
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
