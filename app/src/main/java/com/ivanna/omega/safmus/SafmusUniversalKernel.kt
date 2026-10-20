@@ -28,6 +28,53 @@ object SafmusUniversalKernel {
 
     data class Gate(val allowed: Boolean, val reason: String)
 
+    /** Hardware classes are capabilities, not permission to mutate a device by themselves. */
+    enum class HardwareResource { CAMERA, MICROPHONE, AUDIO_OUTPUT }
+
+    /**
+     * Preflight evidence for a bounded optimization of an already-owned hardware session.
+     * A missing permission, stale route, unsupported setting, unsafe budget or unavailable
+     * rollback must fail closed. This policy deliberately contains no Android/HAL calls.
+     */
+    data class HardwareOptimizationEvidence(
+        val capabilityDetected: Boolean,
+        val permissionGranted: Boolean,
+        val owningSessionConfirmed: Boolean,
+        val telemetryFresh: Boolean,
+        val configurationSupported: Boolean,
+        val resourceBudgetValid: Boolean,
+        val rollbackAvailable: Boolean
+    )
+
+    fun gateHardwareOptimization(
+        resource: HardwareResource,
+        evidence: HardwareOptimizationEvidence
+    ): Gate = when {
+        !evidence.capabilityDetected ->
+            Gate(false, "${resource.name}: capacidad no detectada")
+        !evidence.permissionGranted ->
+            Gate(false, "${resource.name}: permiso ausente o revocado")
+        !evidence.owningSessionConfirmed ->
+            Gate(false, "${resource.name}: sesión propietaria no confirmada")
+        !evidence.telemetryFresh ->
+            Gate(false, "${resource.name}: telemetría obsoleta")
+        !evidence.configurationSupported ->
+            Gate(false, "${resource.name}: configuración no soportada por el dispositivo")
+        !evidence.resourceBudgetValid ->
+            Gate(false, "${resource.name}: presupuesto térmico/memoria/latencia inválido")
+        !evidence.rollbackAvailable ->
+            Gate(false, "${resource.name}: no existe reversión segura")
+        else -> Gate(true, "${resource.name}: precondiciones SAFMUS satisfechas")
+    }
+
+    /** Postflight: a proposal is not applied until effective read-back matches. */
+    fun confirmHardwareOptimization(preflight: Gate, effectiveReadbackMatches: Boolean): Gate = when {
+        !preflight.allowed -> preflight
+        !effectiveReadbackMatches -> Gate(false, "Read-back efectivo no coincide; revertir al estado seguro")
+        else -> Gate(true, "Optimización confirmada por read-back efectivo")
+    }
+
+
     /** Reject non-finite control values and clamp valid input to the widget's declared range. */
     fun sanitizeControlValue(value: Float, min: Float, max: Float): Float? {
         if (!value.isFinite() || !min.isFinite() || !max.isFinite() || min > max) return null
