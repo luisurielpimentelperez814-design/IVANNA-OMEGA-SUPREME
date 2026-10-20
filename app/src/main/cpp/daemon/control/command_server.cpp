@@ -66,7 +66,13 @@ static bool _jsonFloatArrayExact(const char* j, const char* key, float* out, int
     if (!j || !key || !out || expectedN <= 0) return false;
     char search[128]; snprintf(search, sizeof(search), "\"%s\"", key);
     const char* p = strstr(j, search); if (!p) return false;
-    p += strlen(search); while (*p && *p != '[') p++; if (*p != '[') return false; p++;
+    p += strlen(search);
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
+    if (*p != ':') return false;
+    ++p;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
+    if (*p != '[') return false;
+    ++p;
     int n = 0;
     while (n < expectedN) {
         while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
