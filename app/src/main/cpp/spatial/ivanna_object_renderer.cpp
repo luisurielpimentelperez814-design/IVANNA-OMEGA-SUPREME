@@ -25,14 +25,16 @@ void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
         hrtfConvolvers_[i].init(static_cast<uint32_t>(sampleRate));
     }
 
-    // [FIX-WHISTLE] Azimut base por speaker a partir de su posición X/Y.
-    // atan2(y,x) dado que el anillo ecuatorial vive en el plano X-Y; los
-    // polos (x pequeño/0, y=0) caen naturalmente en azimut ~0 (frente),
-    // consistente con que HRTFConvolver no modela elevación.
+    // [MAJESTY-3D FIX] Preservar el azimut esférico completo.
+    // atan2(y,x) entrega [-180, 180]. Limitarlo a [-90, 90] colapsaba
+    // todos los altavoces virtuales traseros hacia los laterales, destruyendo
+    // la escena 360° y haciendo que el seguimiento de cabeza perdiera el
+    // hemisferio posterior. Los polos siguen teniendo azimut 0; la elevación
+    // se gestiona por la ruta espacial correspondiente.
     for (int i = 0; i < kNumVirtualSpeakers; ++i) {
         const auto& sp = kVirtualSpeakers[i];
-        float az = std::atan2(sp.y, sp.x) * 180.f / static_cast<float>(M_PI);
-        baseAzimuthDeg_[i] = std::clamp(az, -90.f, 90.f);
+        const float az = std::atan2(sp.y, sp.x) * 180.f / static_cast<float>(M_PI);
+        baseAzimuthDeg_[i] = std::clamp(az, -180.f, 180.f);
         hrtfConvolvers_[i].set_position(baseAzimuthDeg_[i], kHrtfAggressiveness);
     }
 
