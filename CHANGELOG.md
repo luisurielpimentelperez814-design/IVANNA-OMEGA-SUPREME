@@ -1,10 +1,12 @@
-# CHANGELOG — Sin publicar — Corrección de deriva en el reproductor propio
+# CHANGELOG — v2.5.111 (402) — Telemetría visible del reloj de audio y servo acotado
 
-- Cableado el estimador al camino real AudioTrack.write() → AudioTrack.getTimestamp() → StereoAudioResampler.setClockCorrectionPpm() de IvannaBridgePlayer.
-- La medición usa pares de posición de frame y nanoTime de la misma llamada; exige ventanas de 500 ms, tres observaciones válidas, corrección máxima ±500 ppm y slew máximo 25 ppm por actualización.
-- Ante timestamps ausentes/regresivos, saltos o tasas imposibles, la corrección vuelve a unity. El remuestreador conserva historial entre bloques y passthrough transparente cuando no hay corrección.
-- Añadidas pruebas JVM para el bloqueo, los límites, el reset y el remuestreador.
-- Alcance: corrige la cadencia del reproductor propio. No modifica el HAL propietario de Qualcomm, no corrige otras apps y no afirma disciplinar el oscilador físico del DAC.
+- El reproductor propio publica al estado compartido las mediciones válidas de `AudioTrack.getTimestamp()` y el estado de bloqueo del estimador; el panel de profiler muestra frecuencia, deriva y corrección del remuestreador.
+- El servo requiere tres ventanas válidas, limita la corrección a ±500 ppm y el slew a 25 ppm por actualización. Cuando el timestamp falla, retrocede, la tasa es imposible o se pierde el bloqueo, el remuestreador vuelve a corrección cero.
+- Las pruebas JVM verifican bloqueo, medición de tasa, límites, reset y transparencia del passthrough sin corrección.
+- El módulo y la app quedan versionados como `2.5.111` / `versionCode 402`, con `update.json` apuntando al ZIP canónico de esta versión.
+- Límite explícito: estas métricas pertenecen al `AudioTrack` de IvannaBridgePlayer; no prueban lectura del reloj físico del DAC, activación de `pal_get_timestamp` desde la app, ni control del HAL de Qualcomm ni de la salida de otras aplicaciones.
+
+---
 
 ---
 
