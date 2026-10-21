@@ -38,9 +38,11 @@ class AudioTrackClockDriftServoTest {
         val input = FloatArray(48_000 * 2) { if (it % 2 == 0) 0.25f else -0.25f }
         assertSame(input, resampler.process(input))
         resampler.setClockCorrectionPpm(100.0)
-        val corrected = resampler.process(input)
-        assertTrue(corrected.size > input.size)
-        assertTrue(corrected.all { it.isFinite() })
+        val fasterClock = resampler.process(input)
+        assertTrue(fasterClock.all { it.isFinite() })
+        resampler.setClockCorrectionPpm(-100.0)
+        val slowerClock = resampler.process(input)
+        assertTrue(fasterClock.size > slowerClock.size)
         resampler.setClockCorrectionPpm(Double.NaN)
         assertSame(input, resampler.process(input))
     }
