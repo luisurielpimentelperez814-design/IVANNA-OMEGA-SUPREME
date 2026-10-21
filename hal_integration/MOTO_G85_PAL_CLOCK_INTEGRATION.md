@@ -120,3 +120,16 @@ The latest disassembly adds the following call-chain evidence:
 ### Current timestamp conclusion
 
 The call chain is now clearer at the stream/session-dispatch level, but the actual implementation and `pal_session_time` ABI remain unresolved. Do not assume the output fields, ordering, units, monotonic-clock domain, or that frames and timestamp represent the same hardware snapshot. Next, resolve the indirect call at `0x19d740` against the stream/session vtable and inspect only the matching concrete `getTimestamp` implementation and its output writes. Keep the target callback unbound until a paired frame/timestamp sample is verified.
+
+## Mixer-parameter lookup disassembly (2026-10-21)
+
+The latest device disassembly adds the following bounded observations:
+
+- The exported/thunk symbol `SessionAlsaUtils::setMixerParameter` at `0x2ec8e0` branches to `0x2579e8`.
+- At `0x2579e8`, the routine receives four register arguments, calls `ResourceManager::getInstance()`, loads a global table/vector, and compares a 32-bit value from each entry with the second argument. The loop advances by `0x48` bytes per entry. This is evidence of an ID-to-entry lookup, not evidence of the ID's semantic meaning.
+- A nearby disassembly block at `0x258264` calls `mixer_get_ctl_by_name`, followed by `mixer_ctl_set_enum_by_string` at `0x258270`. The enclosing demangled label is a large/inaccurate symbol range; do not assume this nearby enum-write block is the ASRC actuator or that it belongs to the same semantic operation without verifying the control-flow and call sites.
+- Strings such as `setMixerParameter failed`, `Invalid mixer control`, `RAT_RENDER`, and `set devicePPMFC to match codec configuration for SCO` identify error/reporting and configuration paths, but do not reveal a verified variable-ratio control name, ID, payload ABI, or ratio units.
+
+### Integration decision
+
+No device-specific `ApplyExistingAsrcRatio` callback is added from this evidence. The generic IVANNA controller must remain unbound to an unverified mixer/DSP parameter. The missing requirements are still (a) a verified paired presented-frame/hardware-time query for this firmware and (b) a verified, existing variable-ratio ASRC actuator with known units and acceptance/error semantics. The public Android legacy HAL contract documents paired frame count and `CLOCK_MONOTONIC` timestamp semantics for `get_presentation_position`, but that does not establish that Motorola's proprietary PAL stream exposes or uses that legacy callback internally.
