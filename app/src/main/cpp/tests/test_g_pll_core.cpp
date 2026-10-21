@@ -71,3 +71,33 @@ TEST(GeometricPll, CorrectionRespectsConfiguredFrequencyLimit) {
                   maxPullHz + 1e-9);
     }
 }
+
+TEST(GeometricPll, PpmConfigurationBoundsClockPull) {
+    constexpr double pi = 3.14159265358979323846;
+    constexpr double dt = 0.001;
+    constexpr double nominalHz = 48000.0;
+    constexpr double maxPpm = 50.0;
+    const double maxPullHz = nominalHz * maxPpm * 1.0e-6;
+    GeometricPll pll(nominalHz);
+    ASSERT_TRUE(pll.configurePpm(nominalHz, 3.0, 1.0, maxPpm));
+
+    double reference = 0.0;
+    ASSERT_TRUE(pll.update(reference, dt).valid);
+    ivanna::gfe::PllStatus state;
+    for (int i = 0; i < 5000; ++i) {
+        reference = std::remainder(reference + 2.0 * pi * nominalHz * 1.000010 * dt,
+                                   2.0 * pi);
+        state = pll.update(reference, dt);
+        ASSERT_TRUE(state.valid);
+        EXPECT_LE(std::abs(state.frequencyRadiansPerSecond / (2.0 * pi) - nominalHz),
+                  maxPullHz + 1.0e-8);
+    }
+}
+
+TEST(GeometricPll, PpmConfigurationRejectsUnsafeLimits) {
+    GeometricPll pll(48000.0);
+    EXPECT_FALSE(pll.configurePpm(48000.0, 3.0, 1.0, 0.0));
+    EXPECT_FALSE(pll.configurePpm(48000.0, 3.0, 1.0, 1001.0));
+    EXPECT_FALSE(pll.configurePpm(48000.0, 48000.0, 1.0, 50.0));
+    EXPECT_FALSE(pll.update(0.0, 0.001).valid);
+}
