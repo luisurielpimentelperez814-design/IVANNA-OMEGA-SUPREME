@@ -75,6 +75,15 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
     private var lastPoseSampleNs = 0L
     private var lastUiStatusMs = 0L
     @Volatile private var lastTrackingState = "Esperando cámara"
+    // FIX (vista en blanco sin aviso): session.update() puede fallar en CADA frame (cámara ocupada por
+    // otra app, aún no entregó el primer frame, HAL caída) y antes el catch solo actualizaba statusView
+    // cuando captureEnabled era true — antes de pulsar "Iniciar captura" el error quedaba invisible: la
+    // pantalla se veía gris/negra sin ninguna pista. Ahora el error SIEMPRE se muestra, y si pasan >1.5 s
+    // sin un solo frame real tras resume() se avisa aunque no haya excepción (cámara entregando pero la
+    // textura externa nunca se vincula, p. ej.).
+    @Volatile private var framesRendered = 0L
+    private var resumedAtNs = 0L
+    private var lastErrorUiMs = 0L
     private val quadVertices = floatBuffer(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
     private val cameraTexCoords = floatBuffer(FloatArray(8))
 
@@ -164,7 +173,10 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
                 statusView.text = "Permiso concedido. Preparando ARCore…"
                 ensureSession()
-                try { session?.resume(); glView.onResume() } catch (e: Exception) {
+                try {
+                    session?.resume(); glView.onResume()
+                    armStuckPreviewCheck()
+                } catch (e: Exception) {
                     statusView.text = arErrorMessage(e)
                 }
             } else {
@@ -181,10 +193,18 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             try {
                 session?.resume()
                 glView.onResume()
+                armStuckPreviewCheck()
             } catch (e: Exception) {
                 statusView.text = arErrorMessage(e)
             }
         }
+    }
+
+    /** Reinicia el contador de fotogramas y programa el diagnóstico de "pantalla en blanco" 1.6 s después. */
+    private fun armStuckPreviewCheck() {
+        framesRendered = 0L
+        resumedAtNs = SystemClock.elapsedRealtimeNanos()
+        statusView.postDelayed({ checkStuckPreview() }, 1_600L)
     }
 
     private fun ensureSession() {
@@ -230,6 +250,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
     }
 
     override fun onPause() {
+        resumedAtNs = 0L   // invalida cualquier checkStuckPreview() ya encolado con postDelayed
         glView.onPause()
         try { session?.pause() } catch (_: Exception) {}
         super.onPause()
@@ -440,6 +461,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             }
             val frame = current.update()
             drawCameraBackground(frame)
+            framesRendered++
             val camera = frame.camera
             lastTrackingState = camera.trackingState.name
             if (captureEnabled.get() && camera.trackingState == TrackingState.TRACKING) {
@@ -464,9 +486,30 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 }
             }
         } catch (e: Exception) {
-            runOnUiThread {
-                if (captureEnabled.get()) statusView.text = "Seguimiento temporalmente interrumpido: ${e.message ?: e.javaClass.simpleName}"
+            // Antes solo se mostraba durante la captura (captureEnabled); un fallo ANTES de pulsar
+            // "Iniciar captura" quedaba totalmente invisible (pantalla en blanco sin ninguna pista).
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastErrorUiMs > 500L) {
+                lastErrorUiMs = nowMs
+                val msg = e.message ?: e.javaClass.simpleName
+                runOnUiThread {
+                    statusView.text = if (captureEnabled.get())
+                        "Seguimiento temporalmente interrumpido: $msg"
+                    else
+                        "Cámara sin imagen: $msg\nCierra otras apps que usen la cámara y vuelve a intentar."
+                }
             }
+        }
+    }
+
+    /** Diagnóstico de "pantalla en blanco silenciosa": ARCore entrega frames sin lanzar excepción pero
+     *  la escena nunca se dibuja (p. ej. la textura externa nunca llega a vincularse a un frame real). */
+    private fun checkStuckPreview() {
+        val startedNs = resumedAtNs
+        if (startedNs == 0L || framesRendered > 0L) return
+        if (SystemClock.elapsedRealtimeNanos() - startedNs < 1_500_000_000L) return
+        if (!captureEnabled.get()) runOnUiThread {
+            statusView.text = "La cámara no entrega imagen (0 fotogramas en 1.5 s). Reabre la pantalla o reinicia la app."
         }
     }
 

@@ -1107,6 +1107,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private fun publishHaasTelemetry() {
             if ((++telemetryTick and 15) != 0) return
             // ~cada 2 s: telemetria REAL del reinyector diferencial (medida, no constante).
+            // ~cada 2 s: DONDE se va el tiempo del bloque (media por etapa) para poder atacar la que domina.
+            if ((telemetryTick and 255) == 0) {
+                val g = budgetGuard
+                val st = AudioThreadBudgetGuard.BudgetStage.values()
+                val per = BLOCK_FRAMES * 1_000_000f / SAMPLE_RATE                     // periodo del bloque en us
+                Log.i(TAG, "Etapas (us, media): " + st.joinToString(" ") { "%s=%d".format(it.name.lowercase(), g.getStageAvgNs(it) / 1000L) } +
+                    " | DSP %.0f %% de %.0f us | vuelta completa %.0f %%".format(g.dspLoadPercent, per, loopLoad.load * 100f))
+            }
             if ((telemetryTick and 255) == 0 && DSPBridge.reinjectTelemetry(reinjectTel)) {
                 val t = reinjectTel
                 Log.i(TAG, "Reinject: L=%.1f ms dspLag=%.2f smp conf=%.2f coh[%.2f %.2f %.2f] g[%.2f %.2f %.2f] riesgoPeine=%.3f inmersion=%.2f techo=%.2f"

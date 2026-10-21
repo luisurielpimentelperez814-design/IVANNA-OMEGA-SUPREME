@@ -57,6 +57,10 @@ class AudioThreadBudgetGuard {
     @PublishedApi
     internal val stageTimesNs = LongArray(BudgetStage.values().size)
 
+    /** Media móvil (1/8) del coste de cada etapa: el último bloque solo es demasiado ruidoso para diagnosticar. */
+    @PublishedApi
+    internal val stageAvgNs = LongArray(BudgetStage.values().size)
+
     /**
      * Inicia el cronómetro del bloque de audio.
      */
@@ -92,7 +96,9 @@ class AudioThreadBudgetGuard {
             action()
         } finally {
             val t1 = System.nanoTime()
-            stageTimesNs[stage.ordinal] = t1 - t0
+            val dt = t1 - t0
+            stageTimesNs[stage.ordinal] = dt
+            stageAvgNs[stage.ordinal] += (dt - stageAvgNs[stage.ordinal]) shr 3
         }
     }
 
@@ -115,6 +121,9 @@ class AudioThreadBudgetGuard {
         return stageTimesNs[stage.ordinal]
     }
 
+    /** Coste medio (ns) de la etapa: qué etapa domina el «DSP xx %» de la telemetría. */
+    fun getStageAvgNs(stage: BudgetStage): Long = stageAvgNs[stage.ordinal]
+
     fun reset() {
         totalBlockTimeNs = 0L
         dspLoadPercent = 0f
@@ -122,5 +131,6 @@ class AudioThreadBudgetGuard {
         budgetBypasses = 0
         isDegradingActive = false
         stageTimesNs.fill(0L)
+        stageAvgNs.fill(0L)
     }
 }

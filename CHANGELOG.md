@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.109 (400) — ARCore: la vista en blanco ya avisa (fallo silencioso corregido)
+
+1. **Bug real encontrado desde la captura reportada (pantalla ARCore en gris/negro liso sin ningún aviso):** `session.update()` puede fallar en CADA frame (cámara ocupada por otra app, HAL caído, primer frame aún no entregado) y el catch de `onDrawFrame` solo actualizaba `statusView` cuando `captureEnabled` era true — es decir, SOLO durante una captura ya iniciada. Antes de pulsar "Iniciar captura" el fallo quedaba totalmente invisible: la pantalla se veía plana (un solo color sólido en toda el área, consistente con que el shader nunca recibe un frame real) y el texto seguía diciendo "ARCore listo" indefinidamente.
+2. **`RoomArCaptureActivity.kt`:** el mensaje de error ahora se muestra siempre, con redacción distinta si se está capturando o no. Se añade un diagnóstico adicional (`checkStuckPreview`) para el caso sin excepción: si pasan 1.5 s tras `resume()` sin un solo frame renderizado, se avisa explícitamente en vez de dejar la vista muda.
+3. **`chore(release)`:** v2.5.108 ya está publicado e inmutable (el pipeline de release lo rechazó con ese motivo exacto); se sube a 2.5.109 (400) para poder publicar este fix y arrastrar los commits pendientes de PR #88 (tests del seam PAL, aún sin binding real).
+
+**No verificado aquí:** el motivo de fondo por el que `session.update()` fallaba en el Moto G85 del reporte (cámara en uso, timing del primer frame, u otra causa) — solo se corrige que el fallo deje de ser silencioso. Verificar en el teléfono: abrir «Captura espacial», y si sigue en blanco, leer el mensaje nuevo en pantalla.
+
 # CHANGELOG — Sin publicar — Tests del seam PAL de Qualcomm (PR #88)
 
 - Added `test_qualcomm_pal_clock_integration` (10 host tests, fake PAL query + fake ASRC, ASan/UBSan clean): input validation of the paired sample, fail-closed to unity ratio, lock/reset/ASRC-rejection behavior, and optional shared-memory publishing. Mutation-checked.
