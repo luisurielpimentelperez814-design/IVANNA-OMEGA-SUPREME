@@ -542,6 +542,1026 @@ jobs:
             [ "$EXP" = "$GOT" ] || { echo "ERROR: zip con $GOT/$EXP archivos de $d (dataset incompleto)"; exit 1; }
             echo "dataset $d: $GOT/$EXP en el zip"
           done
+          # Contrato del producto: no basta con que el árbol y el ZIP coincidan;
+          # el paquete distribuido debe contener el dataset completo conocido.
+          SOFA_ZIP=$(unzip -Z1 "$ZIPNAME" | grep -Ec '^system/etc/ivanna_omega/sofa/.*[.]sofa
+          # Extracción + validación del daemon DENTRO del zip
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "64-bit" || { echo "ERROR: daemon del zip no es 64-bit"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon del zip no es ARM64"; exit 1; }
+          H_ZIP=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_SRC=$(sha256sum ivanna_daemon    | awk '{print $1}')
+          echo "zip_daemon_sha256=$H_ZIP"
+          echo "src_daemon_sha256=$H_SRC"
+          [ "$H_ZIP" = "$H_SRC" ] || { echo "ERROR FATAL: hash daemon zip != hash daemon compilado"; exit 1; }
+          echo "INTEGRITY OK — compilación → zip: hash idéntico"
+          ls -lh "$ZIPNAME"
+
+      # ── VERIFICACIÓN + EMPAQUETADO DEL APK ─────────────────────────────
+      # FIX: los pasos "Verify APK integrity before upload" y
+      # "Package APK deterministically" aparecían DOS veces. El segundo
+      # intento de `zip -T ivanna-apk-package.zip *` incluía el propio
+      # .zip en sí mismo → APK bundle corrupto, no descomprimible.
+      # También: `sha256sum -c apk_sha256.txt` fallaba porque en ese
+      # punto apk_sha256.txt tenía la ruta de Gradle (app/build/…), no
+      # el nombre canónico ivanna-omega-supreme-SHA.apk.
+      # Solución: un único bloque ordenado con hash canónico desde el inicio.
+
+      - name: Verify and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Localizar el APK producido por Gradle — debe existir, tamaño >0
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          [ -n "$APK" ] || { echo "ERROR: Gradle no produjo ningún APK"; exit 1; }
+          [ -s "$APK" ] || { echo "ERROR: APK existe pero está vacío"; exit 1; }
+
+          echo "APK origen: $APK  ($(du -h "$APK" | cut -f1))"
+          file "$APK"
+
+          # Validación ZIP — todo APK es un ZIP; debe contener AndroidManifest.xml
+          unzip -t "$APK"
+          unzip -l "$APK" | grep -q "AndroidManifest.xml" \
+            || { echo "ERROR: APK sin AndroidManifest.xml — corrupto"; exit 1; }
+
+          # Renombrar al nombre canónico versionado por SHA
+          APK_FINAL="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$APK" "./$APK_FINAL"
+
+          # Hash del archivo canónico (este es el que viaja como artefacto)
+          sha256sum "./$APK_FINAL" | tee apk_sha256.txt
+          echo "APK_ARTIFACT_NAME=$APK_FINAL" >> "$GITHUB_ENV"
+
+          # Verificación cruzada inmediata — sha256sum -c lee el nombre del propio txt
+          sha256sum -c apk_sha256.txt
+
+          echo "✓ APK verificado: $APK_FINAL"
+
+      - name: Prune old workflow artifacts to free storage quota
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | .id' 2>/dev/null | head -n 60 | while read -r aid; do
+              [ -n "$aid" ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${aid}" 2>/dev/null || true
+            done
+
+      - name: Stage build bundle to draft GitHub Release (quota-independent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          NOTES="Transient build staging for commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          if ! gh release view "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "[staging] ${GITHUB_SHA}" \
+              --draft \
+              --notes "$NOTES"
+          fi
+          gh release upload "$STAGE_TAG" \
+            "ivanna-magisk-module-arm64-${GITHUB_SHA}.zip" \
+            "ivanna-omega-supreme-${GITHUB_SHA}.apk" \
+            ivanna_daemon \
+            libomega_effect_arm64.so \
+            daemon_sha256.txt \
+            apk_sha256.txt \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          echo "✓ Bundle staged en draft release $STAGE_TAG"
+
+  # ── JOB DE VERIFICACIÓN: descarga y valida artefactos publicados ──────
+  verify-release:
+    name: Verify published artifact (download → extract → validate)
+    runs-on: ubuntu-22.04
+    needs: [build-apk]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download staged bundle from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Validate downloaded zip end-to-end
+        run: |
+          set -euo pipefail
+          ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$ZIPNAME"        || { echo "ERROR: zip no publicado"; exit 1; }
+          test -f ivanna_daemon     || { echo "ERROR: daemon suelto no publicado"; exit 1; }
+          test -f daemon_sha256.txt || { echo "ERROR: manifiesto de hash ausente"; exit 1; }
+
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
+          test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
+          unzip -t "$APK_NAME"     || { echo "ERROR: APK publicado no pasa unzip -t"; exit 1; }
+          unzip -l "$APK_NAME" | grep -q "AndroidManifest.xml" || { echo "ERROR: APK publicado sin AndroidManifest.xml"; exit 1; }
+          test -f apk_sha256.txt   || { echo "ERROR: manifiesto de hash del APK ausente"; exit 1; }
+          H_APK_PUBLISHED=$(sha256sum "$APK_NAME" | awk '{print $1}')
+          H_APK_MANIFEST=$(awk '{print $1}' apk_sha256.txt)
+          [ "$H_APK_PUBLISHED" = "$H_APK_MANIFEST" ] || { echo "ERROR FATAL: hash APK publicado != manifiesto apk_sha256.txt"; exit 1; }
+          echo "APK OK: $APK_NAME ($(du -h "$APK_NAME" | cut -f1))"
+
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          test -s extracted_daemon || { echo "ERROR: daemon vacío dentro del zip"; exit 1; }
+
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "ELF"               || { echo "ERROR: no es ELF"; exit 1; }
+          echo "$FOUT" | grep -q "64-bit"            || { echo "ERROR: ARM32 o no-64 detectado"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64"   || { echo "ERROR: no es AArch64"; exit 1; }
+
+          readelf -h extracted_daemon | grep -q "AArch64" || { echo "ERROR: readelf no confirma AArch64"; exit 1; }
+          readelf -h extracted_daemon | grep -qE "Type:.*DYN" || { echo "ERROR: no es PIE"; exit 1; }
+
+          H_EXTRACT=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_PUBLISHED=$(sha256sum ivanna_daemon   | awk '{print $1}')
+          H_RECORDED=$(awk '{print $1}' daemon_sha256.txt)
+
+          echo "extracted=$H_EXTRACT"
+          echo "published=$H_PUBLISHED"
+          echo "recorded =$H_RECORDED"
+
+          [ "$H_EXTRACT" = "$H_PUBLISHED" ] || { echo "ERROR: daemon del zip != daemon publicado"; exit 1; }
+          [ "$H_EXTRACT" = "$H_RECORDED"  ] || { echo "ERROR: daemon del zip != hash registrado en BUILD"; exit 1; }
+
+          N_IHR1=$(unzip -l "$ZIPNAME" | grep -c "hrtf/.*\.ihr1" || true)
+          echo "ihr1_en_zip=$N_IHR1"
+          [ "$N_IHR1" -ge 12 ] || { echo "ERROR: zip con $N_IHR1 IHR1 (mínimo 12)"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "hrtf/hrtf_index.json" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
+          unzip -p "$ZIPNAME" system/etc/ivanna_omega/hrtf/kemar.ihr1 > /tmp/kemar_check.ihr1
+          MAGIC=$(head -c4 /tmp/kemar_check.ihr1)
+          [ "$MAGIC" = "IHR1" ] || { echo "ERROR: kemar.ihr1 corrupto en zip (magic=$MAGIC)"; exit 1; }
+
+          unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
+          grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
+          grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
+
+          echo "════════════════════════════════════════════════════════"
+          echo " VERIFY-RELEASE OK"
+          echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
+          echo " hash idéntico: compilación → zip → artefacto → módulo"
+          echo "════════════════════════════════════════════════════════"
+
+      - name: Generate OEM stability report
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate_oem_report.sh
+          .github/scripts/generate_oem_report.sh
+
+      - name: Run OEM certification gate
+        if: always()
+        run: |
+          chmod +x .github/scripts/oem_certification_gate.sh
+          .github/scripts/oem_certification_gate.sh
+
+      - name: Collect OEM performance telemetry
+        if: always()
+        run: |
+          chmod +x tools/telemetry/collect_oem_metrics.sh
+          tools/telemetry/collect_oem_metrics.sh
+
+      - name: Store OEM metrics history
+        if: always()
+        run: |
+          chmod +x .github/scripts/store_metrics_history.sh
+          .github/scripts/store_metrics_history.sh
+
+      - name: Generate OEM dashboard
+        if: always()
+        run: |
+          python3 tools/dashboard/generate_dashboard.py
+
+      - name: Compare OEM performance regression
+        if: always()
+        run: |
+          python3 tools/dashboard/compare_history.py
+
+      - name: Run OEM performance quality gate
+        if: always()
+        run: |
+          python3 tools/dashboard/oem_quality_gate.py
+
+      - name: Run IVANNA IAEL Audio Certification
+        if: always()
+        run: |
+          python3 tools/iael/iael_audio_certification.py
+
+  # ── PUBLICAR RELEASE ────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release (asset que Magisk update.json espera)
+    runs-on: ubuntu-22.04
+    needs: [verify-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: omega-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download verified bundle from draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Derivar versión desde module.prop (fuente única de verdad)
+        id: ver
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          [ -n "$VERSION" ] || { echo "ERROR: module.prop sin campo version="; exit 1; }
+          UPDATE_JSON_VERSION=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['version'])")
+          if [ "$VERSION" != "$UPDATE_JSON_VERSION" ]; then
+            echo "ERROR: module.prop dice $VERSION pero update.json dice $UPDATE_JSON_VERSION — desincronizados de nuevo."
+            echo "Actualiza magisk_module/update.json (version/versionCode/zipUrl) para que coincida con module.prop."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versión detectada: $VERSION"
+
+      - name: Rename module zip al nombre canónico que espera update.json
+        run: |
+          set -euo pipefail
+          SRC="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$SRC" || { echo "ERROR: module zip no encontrado en el artifact"; exit 1; }
+          cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+          ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+
+      - name: Generar flyer promocional dinámico de la versión
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          pip install Pillow matplotlib
+          python3 tools/promo/generate_release_flyer.py "${{ steps.ver.outputs.version }}"
+
+      - name: Crear o actualizar el Release (sin enmascarar fallos)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trap 'echo "::error title=publish-release::línea $LINENO falló: ${BASH_COMMAND:0:300}"' ERR
+          TAG="${{ steps.ver.outputs.version }}"
+          ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          FLYER_TAG="docs/release_media/ivanna_promo_flyer_${TAG}.png"
+          FLYER_CANONICAL="docs/release_media/ivanna_promo_flyer.png"
+          NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          STAGE_TAG="staging-${GITHUB_SHA}"
+
+          EXTRA_ASSETS=()
+          [ -f "$FLYER_TAG" ] && EXTRA_ASSETS+=("$FLYER_TAG")
+          [ -f "$FLYER_CANONICAL" ] && EXTRA_ASSETS+=("$FLYER_CANONICAL")
+
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" "${EXTRA_ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "IVANNA OMEGA SUPREME $TAG" \
+              --notes "$NOTES"
+          else
+            # Los releases publicados son INMUTABLES (GitHub): no admiten subir/borrar assets.
+            # Re-publicar la misma versión nunca puede funcionar; hay que subir la versión
+            # (module.prop + update.json + version.properties). No es un fallo del build:
+            # se avisa y se conserva el draft staging-* con el bundle verificado.
+            IMMUTABLE=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.immutable // false')
+            if [ "$IMMUTABLE" = "true" ]; then
+              if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$APK_NAME"; then
+                echo "Release $TAG (inmutable) ya contiene este build ${GITHUB_SHA}."
+                exit 0
+              else
+                echo "::error title=publish-release::El release $TAG es inmutable y no contiene el build ${GITHUB_SHA}. Incrementa module.prop, update.json y version.properties; bundle verificado conservado en el draft ${STAGE_TAG}."
+                exit 1
+              fi
+            fi
+            # Quitar APKs de commits anteriores: el release solo debe exponer el build actual.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+              | grep -E '^ivanna-omega-supreme-[0-9a-f]{40}\.apk$' | grep -v -F "$APK_NAME" \
+              | while read -r old; do gh release delete-asset "$TAG" "$old" --repo "$GITHUB_REPOSITORY" --yes; done || true
+            # Sin '|| true': si la subida falla, el job DEBE fallar (antes quedaban assets viejos con notas nuevas).
+            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
+          fi
+
+          # Verificación posterior: lo publicado debe tener el mismo tamaño que lo local.
+          for f in "$ZIP_NAME" "$APK_NAME"; do
+            REMOTE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq ".assets[] | select(.name==\"$f\") | .size")
+            LOCAL=$(stat -c%s "$f")
+            [ "$REMOTE" = "$LOCAL" ] || { echo "::error title=publish-release::$f en release=$REMOTE bytes, local=$LOCAL — artefacto desactualizado"; exit 1; }
+          done
+          echo "✓ Assets del release $TAG verificados contra el build ${GITHUB_SHA}"
+
+          # Limpiar draft temporal de staging
+          gh release delete "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          # Barrer drafts staging-* huérfanos de >6 h (no toca builds de otras ramas en curso; cada uno retiene ~110 MB).
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,createdAt \
+            --jq '.[] | select(.isDraft and (.tagName|startswith("staging-")) and ((.createdAt|fromdateiso8601) < (now-21600))) | .tagName' \
+            | while read -r t; do gh release delete "$t" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true; done
+          echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
+
+      - name: Difundir lanzamiento en redes sociales y webhooks
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SOCIAL_BROADCAST_WEBHOOK_URL: ${{ secrets.SOCIAL_BROADCAST_WEBHOOK_URL }}
+        run: |
+          python3 tools/promo/broadcast_release.py
+
+ || true)
+          RIR_ZIP=$(unzip -Z1 "$ZIPNAME" | grep -Ec '^system/etc/ivanna_omega/rir/rir_[0-9]{4}[.]wav
+          # Extracción + validación del daemon DENTRO del zip
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "64-bit" || { echo "ERROR: daemon del zip no es 64-bit"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon del zip no es ARM64"; exit 1; }
+          H_ZIP=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_SRC=$(sha256sum ivanna_daemon    | awk '{print $1}')
+          echo "zip_daemon_sha256=$H_ZIP"
+          echo "src_daemon_sha256=$H_SRC"
+          [ "$H_ZIP" = "$H_SRC" ] || { echo "ERROR FATAL: hash daemon zip != hash daemon compilado"; exit 1; }
+          echo "INTEGRITY OK — compilación → zip: hash idéntico"
+          ls -lh "$ZIPNAME"
+
+      # ── VERIFICACIÓN + EMPAQUETADO DEL APK ─────────────────────────────
+      # FIX: los pasos "Verify APK integrity before upload" y
+      # "Package APK deterministically" aparecían DOS veces. El segundo
+      # intento de `zip -T ivanna-apk-package.zip *` incluía el propio
+      # .zip en sí mismo → APK bundle corrupto, no descomprimible.
+      # También: `sha256sum -c apk_sha256.txt` fallaba porque en ese
+      # punto apk_sha256.txt tenía la ruta de Gradle (app/build/…), no
+      # el nombre canónico ivanna-omega-supreme-SHA.apk.
+      # Solución: un único bloque ordenado con hash canónico desde el inicio.
+
+      - name: Verify and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Localizar el APK producido por Gradle — debe existir, tamaño >0
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          [ -n "$APK" ] || { echo "ERROR: Gradle no produjo ningún APK"; exit 1; }
+          [ -s "$APK" ] || { echo "ERROR: APK existe pero está vacío"; exit 1; }
+
+          echo "APK origen: $APK  ($(du -h "$APK" | cut -f1))"
+          file "$APK"
+
+          # Validación ZIP — todo APK es un ZIP; debe contener AndroidManifest.xml
+          unzip -t "$APK"
+          unzip -l "$APK" | grep -q "AndroidManifest.xml" \
+            || { echo "ERROR: APK sin AndroidManifest.xml — corrupto"; exit 1; }
+
+          # Renombrar al nombre canónico versionado por SHA
+          APK_FINAL="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$APK" "./$APK_FINAL"
+
+          # Hash del archivo canónico (este es el que viaja como artefacto)
+          sha256sum "./$APK_FINAL" | tee apk_sha256.txt
+          echo "APK_ARTIFACT_NAME=$APK_FINAL" >> "$GITHUB_ENV"
+
+          # Verificación cruzada inmediata — sha256sum -c lee el nombre del propio txt
+          sha256sum -c apk_sha256.txt
+
+          echo "✓ APK verificado: $APK_FINAL"
+
+      - name: Prune old workflow artifacts to free storage quota
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | .id' 2>/dev/null | head -n 60 | while read -r aid; do
+              [ -n "$aid" ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${aid}" 2>/dev/null || true
+            done
+
+      - name: Stage build bundle to draft GitHub Release (quota-independent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          NOTES="Transient build staging for commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          if ! gh release view "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "[staging] ${GITHUB_SHA}" \
+              --draft \
+              --notes "$NOTES"
+          fi
+          gh release upload "$STAGE_TAG" \
+            "ivanna-magisk-module-arm64-${GITHUB_SHA}.zip" \
+            "ivanna-omega-supreme-${GITHUB_SHA}.apk" \
+            ivanna_daemon \
+            libomega_effect_arm64.so \
+            daemon_sha256.txt \
+            apk_sha256.txt \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          echo "✓ Bundle staged en draft release $STAGE_TAG"
+
+  # ── JOB DE VERIFICACIÓN: descarga y valida artefactos publicados ──────
+  verify-release:
+    name: Verify published artifact (download → extract → validate)
+    runs-on: ubuntu-22.04
+    needs: [build-apk]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download staged bundle from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Validate downloaded zip end-to-end
+        run: |
+          set -euo pipefail
+          ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$ZIPNAME"        || { echo "ERROR: zip no publicado"; exit 1; }
+          test -f ivanna_daemon     || { echo "ERROR: daemon suelto no publicado"; exit 1; }
+          test -f daemon_sha256.txt || { echo "ERROR: manifiesto de hash ausente"; exit 1; }
+
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
+          test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
+          unzip -t "$APK_NAME"     || { echo "ERROR: APK publicado no pasa unzip -t"; exit 1; }
+          unzip -l "$APK_NAME" | grep -q "AndroidManifest.xml" || { echo "ERROR: APK publicado sin AndroidManifest.xml"; exit 1; }
+          test -f apk_sha256.txt   || { echo "ERROR: manifiesto de hash del APK ausente"; exit 1; }
+          H_APK_PUBLISHED=$(sha256sum "$APK_NAME" | awk '{print $1}')
+          H_APK_MANIFEST=$(awk '{print $1}' apk_sha256.txt)
+          [ "$H_APK_PUBLISHED" = "$H_APK_MANIFEST" ] || { echo "ERROR FATAL: hash APK publicado != manifiesto apk_sha256.txt"; exit 1; }
+          echo "APK OK: $APK_NAME ($(du -h "$APK_NAME" | cut -f1))"
+
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          test -s extracted_daemon || { echo "ERROR: daemon vacío dentro del zip"; exit 1; }
+
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "ELF"               || { echo "ERROR: no es ELF"; exit 1; }
+          echo "$FOUT" | grep -q "64-bit"            || { echo "ERROR: ARM32 o no-64 detectado"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64"   || { echo "ERROR: no es AArch64"; exit 1; }
+
+          readelf -h extracted_daemon | grep -q "AArch64" || { echo "ERROR: readelf no confirma AArch64"; exit 1; }
+          readelf -h extracted_daemon | grep -qE "Type:.*DYN" || { echo "ERROR: no es PIE"; exit 1; }
+
+          H_EXTRACT=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_PUBLISHED=$(sha256sum ivanna_daemon   | awk '{print $1}')
+          H_RECORDED=$(awk '{print $1}' daemon_sha256.txt)
+
+          echo "extracted=$H_EXTRACT"
+          echo "published=$H_PUBLISHED"
+          echo "recorded =$H_RECORDED"
+
+          [ "$H_EXTRACT" = "$H_PUBLISHED" ] || { echo "ERROR: daemon del zip != daemon publicado"; exit 1; }
+          [ "$H_EXTRACT" = "$H_RECORDED"  ] || { echo "ERROR: daemon del zip != hash registrado en BUILD"; exit 1; }
+
+          N_IHR1=$(unzip -l "$ZIPNAME" | grep -c "hrtf/.*\.ihr1" || true)
+          echo "ihr1_en_zip=$N_IHR1"
+          [ "$N_IHR1" -ge 12 ] || { echo "ERROR: zip con $N_IHR1 IHR1 (mínimo 12)"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "hrtf/hrtf_index.json" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
+          unzip -p "$ZIPNAME" system/etc/ivanna_omega/hrtf/kemar.ihr1 > /tmp/kemar_check.ihr1
+          MAGIC=$(head -c4 /tmp/kemar_check.ihr1)
+          [ "$MAGIC" = "IHR1" ] || { echo "ERROR: kemar.ihr1 corrupto en zip (magic=$MAGIC)"; exit 1; }
+
+          unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
+          grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
+          grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
+
+          echo "════════════════════════════════════════════════════════"
+          echo " VERIFY-RELEASE OK"
+          echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
+          echo " hash idéntico: compilación → zip → artefacto → módulo"
+          echo "════════════════════════════════════════════════════════"
+
+      - name: Generate OEM stability report
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate_oem_report.sh
+          .github/scripts/generate_oem_report.sh
+
+      - name: Run OEM certification gate
+        if: always()
+        run: |
+          chmod +x .github/scripts/oem_certification_gate.sh
+          .github/scripts/oem_certification_gate.sh
+
+      - name: Collect OEM performance telemetry
+        if: always()
+        run: |
+          chmod +x tools/telemetry/collect_oem_metrics.sh
+          tools/telemetry/collect_oem_metrics.sh
+
+      - name: Store OEM metrics history
+        if: always()
+        run: |
+          chmod +x .github/scripts/store_metrics_history.sh
+          .github/scripts/store_metrics_history.sh
+
+      - name: Generate OEM dashboard
+        if: always()
+        run: |
+          python3 tools/dashboard/generate_dashboard.py
+
+      - name: Compare OEM performance regression
+        if: always()
+        run: |
+          python3 tools/dashboard/compare_history.py
+
+      - name: Run OEM performance quality gate
+        if: always()
+        run: |
+          python3 tools/dashboard/oem_quality_gate.py
+
+      - name: Run IVANNA IAEL Audio Certification
+        if: always()
+        run: |
+          python3 tools/iael/iael_audio_certification.py
+
+  # ── PUBLICAR RELEASE ────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release (asset que Magisk update.json espera)
+    runs-on: ubuntu-22.04
+    needs: [verify-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: omega-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download verified bundle from draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Derivar versión desde module.prop (fuente única de verdad)
+        id: ver
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          [ -n "$VERSION" ] || { echo "ERROR: module.prop sin campo version="; exit 1; }
+          UPDATE_JSON_VERSION=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['version'])")
+          if [ "$VERSION" != "$UPDATE_JSON_VERSION" ]; then
+            echo "ERROR: module.prop dice $VERSION pero update.json dice $UPDATE_JSON_VERSION — desincronizados de nuevo."
+            echo "Actualiza magisk_module/update.json (version/versionCode/zipUrl) para que coincida con module.prop."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versión detectada: $VERSION"
+
+      - name: Rename module zip al nombre canónico que espera update.json
+        run: |
+          set -euo pipefail
+          SRC="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$SRC" || { echo "ERROR: module zip no encontrado en el artifact"; exit 1; }
+          cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+          ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+
+      - name: Generar flyer promocional dinámico de la versión
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          pip install Pillow matplotlib
+          python3 tools/promo/generate_release_flyer.py "${{ steps.ver.outputs.version }}"
+
+      - name: Crear o actualizar el Release (sin enmascarar fallos)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trap 'echo "::error title=publish-release::línea $LINENO falló: ${BASH_COMMAND:0:300}"' ERR
+          TAG="${{ steps.ver.outputs.version }}"
+          ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          FLYER_TAG="docs/release_media/ivanna_promo_flyer_${TAG}.png"
+          FLYER_CANONICAL="docs/release_media/ivanna_promo_flyer.png"
+          NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          STAGE_TAG="staging-${GITHUB_SHA}"
+
+          EXTRA_ASSETS=()
+          [ -f "$FLYER_TAG" ] && EXTRA_ASSETS+=("$FLYER_TAG")
+          [ -f "$FLYER_CANONICAL" ] && EXTRA_ASSETS+=("$FLYER_CANONICAL")
+
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" "${EXTRA_ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "IVANNA OMEGA SUPREME $TAG" \
+              --notes "$NOTES"
+          else
+            # Los releases publicados son INMUTABLES (GitHub): no admiten subir/borrar assets.
+            # Re-publicar la misma versión nunca puede funcionar; hay que subir la versión
+            # (module.prop + update.json + version.properties). No es un fallo del build:
+            # se avisa y se conserva el draft staging-* con el bundle verificado.
+            IMMUTABLE=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.immutable // false')
+            if [ "$IMMUTABLE" = "true" ]; then
+              if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$APK_NAME"; then
+                echo "Release $TAG (inmutable) ya contiene este build ${GITHUB_SHA}."
+                exit 0
+              else
+                echo "::error title=publish-release::El release $TAG es inmutable y no contiene el build ${GITHUB_SHA}. Incrementa module.prop, update.json y version.properties; bundle verificado conservado en el draft ${STAGE_TAG}."
+                exit 1
+              fi
+            fi
+            # Quitar APKs de commits anteriores: el release solo debe exponer el build actual.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+              | grep -E '^ivanna-omega-supreme-[0-9a-f]{40}\.apk$' | grep -v -F "$APK_NAME" \
+              | while read -r old; do gh release delete-asset "$TAG" "$old" --repo "$GITHUB_REPOSITORY" --yes; done || true
+            # Sin '|| true': si la subida falla, el job DEBE fallar (antes quedaban assets viejos con notas nuevas).
+            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
+          fi
+
+          # Verificación posterior: lo publicado debe tener el mismo tamaño que lo local.
+          for f in "$ZIP_NAME" "$APK_NAME"; do
+            REMOTE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq ".assets[] | select(.name==\"$f\") | .size")
+            LOCAL=$(stat -c%s "$f")
+            [ "$REMOTE" = "$LOCAL" ] || { echo "::error title=publish-release::$f en release=$REMOTE bytes, local=$LOCAL — artefacto desactualizado"; exit 1; }
+          done
+          echo "✓ Assets del release $TAG verificados contra el build ${GITHUB_SHA}"
+
+          # Limpiar draft temporal de staging
+          gh release delete "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          # Barrer drafts staging-* huérfanos de >6 h (no toca builds de otras ramas en curso; cada uno retiene ~110 MB).
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,createdAt \
+            --jq '.[] | select(.isDraft and (.tagName|startswith("staging-")) and ((.createdAt|fromdateiso8601) < (now-21600))) | .tagName' \
+            | while read -r t; do gh release delete "$t" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true; done
+          echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
+
+      - name: Difundir lanzamiento en redes sociales y webhooks
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SOCIAL_BROADCAST_WEBHOOK_URL: ${{ secrets.SOCIAL_BROADCAST_WEBHOOK_URL }}
+        run: |
+          python3 tools/promo/broadcast_release.py
+
+ || true)
+          HRTF_ZIP=$(unzip -Z1 "$ZIPNAME" | grep -Ec '^system/etc/ivanna_omega/hrtf/[^/]+[.]ihr1
+          # Extracción + validación del daemon DENTRO del zip
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "64-bit" || { echo "ERROR: daemon del zip no es 64-bit"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: daemon del zip no es ARM64"; exit 1; }
+          H_ZIP=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_SRC=$(sha256sum ivanna_daemon    | awk '{print $1}')
+          echo "zip_daemon_sha256=$H_ZIP"
+          echo "src_daemon_sha256=$H_SRC"
+          [ "$H_ZIP" = "$H_SRC" ] || { echo "ERROR FATAL: hash daemon zip != hash daemon compilado"; exit 1; }
+          echo "INTEGRITY OK — compilación → zip: hash idéntico"
+          ls -lh "$ZIPNAME"
+
+      # ── VERIFICACIÓN + EMPAQUETADO DEL APK ─────────────────────────────
+      # FIX: los pasos "Verify APK integrity before upload" y
+      # "Package APK deterministically" aparecían DOS veces. El segundo
+      # intento de `zip -T ivanna-apk-package.zip *` incluía el propio
+      # .zip en sí mismo → APK bundle corrupto, no descomprimible.
+      # También: `sha256sum -c apk_sha256.txt` fallaba porque en ese
+      # punto apk_sha256.txt tenía la ruta de Gradle (app/build/…), no
+      # el nombre canónico ivanna-omega-supreme-SHA.apk.
+      # Solución: un único bloque ordenado con hash canónico desde el inicio.
+
+      - name: Verify and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Localizar el APK producido por Gradle — debe existir, tamaño >0
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -n 1)
+          [ -n "$APK" ] || { echo "ERROR: Gradle no produjo ningún APK"; exit 1; }
+          [ -s "$APK" ] || { echo "ERROR: APK existe pero está vacío"; exit 1; }
+
+          echo "APK origen: $APK  ($(du -h "$APK" | cut -f1))"
+          file "$APK"
+
+          # Validación ZIP — todo APK es un ZIP; debe contener AndroidManifest.xml
+          unzip -t "$APK"
+          unzip -l "$APK" | grep -q "AndroidManifest.xml" \
+            || { echo "ERROR: APK sin AndroidManifest.xml — corrupto"; exit 1; }
+
+          # Renombrar al nombre canónico versionado por SHA
+          APK_FINAL="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          cp "$APK" "./$APK_FINAL"
+
+          # Hash del archivo canónico (este es el que viaja como artefacto)
+          sha256sum "./$APK_FINAL" | tee apk_sha256.txt
+          echo "APK_ARTIFACT_NAME=$APK_FINAL" >> "$GITHUB_ENV"
+
+          # Verificación cruzada inmediata — sha256sum -c lee el nombre del propio txt
+          sha256sum -c apk_sha256.txt
+
+          echo "✓ APK verificado: $APK_FINAL"
+
+      - name: Prune old workflow artifacts to free storage quota
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | .id' 2>/dev/null | head -n 60 | while read -r aid; do
+              [ -n "$aid" ] && gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${aid}" 2>/dev/null || true
+            done
+
+      - name: Stage build bundle to draft GitHub Release (quota-independent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          NOTES="Transient build staging for commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          if ! gh release view "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$STAGE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "[staging] ${GITHUB_SHA}" \
+              --draft \
+              --notes "$NOTES"
+          fi
+          gh release upload "$STAGE_TAG" \
+            "ivanna-magisk-module-arm64-${GITHUB_SHA}.zip" \
+            "ivanna-omega-supreme-${GITHUB_SHA}.apk" \
+            ivanna_daemon \
+            libomega_effect_arm64.so \
+            daemon_sha256.txt \
+            apk_sha256.txt \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          echo "✓ Bundle staged en draft release $STAGE_TAG"
+
+  # ── JOB DE VERIFICACIÓN: descarga y valida artefactos publicados ──────
+  verify-release:
+    name: Verify published artifact (download → extract → validate)
+    runs-on: ubuntu-22.04
+    needs: [build-apk]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download staged bundle from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Validate downloaded zip end-to-end
+        run: |
+          set -euo pipefail
+          ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$ZIPNAME"        || { echo "ERROR: zip no publicado"; exit 1; }
+          test -f ivanna_daemon     || { echo "ERROR: daemon suelto no publicado"; exit 1; }
+          test -f daemon_sha256.txt || { echo "ERROR: manifiesto de hash ausente"; exit 1; }
+
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
+          test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
+          unzip -t "$APK_NAME"     || { echo "ERROR: APK publicado no pasa unzip -t"; exit 1; }
+          unzip -l "$APK_NAME" | grep -q "AndroidManifest.xml" || { echo "ERROR: APK publicado sin AndroidManifest.xml"; exit 1; }
+          test -f apk_sha256.txt   || { echo "ERROR: manifiesto de hash del APK ausente"; exit 1; }
+          H_APK_PUBLISHED=$(sha256sum "$APK_NAME" | awk '{print $1}')
+          H_APK_MANIFEST=$(awk '{print $1}' apk_sha256.txt)
+          [ "$H_APK_PUBLISHED" = "$H_APK_MANIFEST" ] || { echo "ERROR FATAL: hash APK publicado != manifiesto apk_sha256.txt"; exit 1; }
+          echo "APK OK: $APK_NAME ($(du -h "$APK_NAME" | cut -f1))"
+
+          rm -f extracted_daemon
+          unzip -p "$ZIPNAME" system/bin/ivanna_daemon > extracted_daemon
+          test -s extracted_daemon || { echo "ERROR: daemon vacío dentro del zip"; exit 1; }
+
+          FOUT="$(file extracted_daemon)"
+          echo "$FOUT"
+          echo "$FOUT" | grep -q "ELF"               || { echo "ERROR: no es ELF"; exit 1; }
+          echo "$FOUT" | grep -q "64-bit"            || { echo "ERROR: ARM32 o no-64 detectado"; exit 1; }
+          echo "$FOUT" | grep -qiE "aarch64|arm64"   || { echo "ERROR: no es AArch64"; exit 1; }
+
+          readelf -h extracted_daemon | grep -q "AArch64" || { echo "ERROR: readelf no confirma AArch64"; exit 1; }
+          readelf -h extracted_daemon | grep -qE "Type:.*DYN" || { echo "ERROR: no es PIE"; exit 1; }
+
+          H_EXTRACT=$(sha256sum extracted_daemon | awk '{print $1}')
+          H_PUBLISHED=$(sha256sum ivanna_daemon   | awk '{print $1}')
+          H_RECORDED=$(awk '{print $1}' daemon_sha256.txt)
+
+          echo "extracted=$H_EXTRACT"
+          echo "published=$H_PUBLISHED"
+          echo "recorded =$H_RECORDED"
+
+          [ "$H_EXTRACT" = "$H_PUBLISHED" ] || { echo "ERROR: daemon del zip != daemon publicado"; exit 1; }
+          [ "$H_EXTRACT" = "$H_RECORDED"  ] || { echo "ERROR: daemon del zip != hash registrado en BUILD"; exit 1; }
+
+          N_IHR1=$(unzip -l "$ZIPNAME" | grep -c "hrtf/.*\.ihr1" || true)
+          echo "ihr1_en_zip=$N_IHR1"
+          [ "$N_IHR1" -ge 12 ] || { echo "ERROR: zip con $N_IHR1 IHR1 (mínimo 12)"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "hrtf/hrtf_index.json" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
+          unzip -p "$ZIPNAME" system/etc/ivanna_omega/hrtf/kemar.ihr1 > /tmp/kemar_check.ihr1
+          MAGIC=$(head -c4 /tmp/kemar_check.ihr1)
+          [ "$MAGIC" = "IHR1" ] || { echo "ERROR: kemar.ihr1 corrupto en zip (magic=$MAGIC)"; exit 1; }
+
+          unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
+          grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
+          grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
+
+          echo "════════════════════════════════════════════════════════"
+          echo " VERIFY-RELEASE OK"
+          echo " Único daemon válido: ELF 64-bit LSB AArch64 PIE"
+          echo " hash idéntico: compilación → zip → artefacto → módulo"
+          echo "════════════════════════════════════════════════════════"
+
+      - name: Generate OEM stability report
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate_oem_report.sh
+          .github/scripts/generate_oem_report.sh
+
+      - name: Run OEM certification gate
+        if: always()
+        run: |
+          chmod +x .github/scripts/oem_certification_gate.sh
+          .github/scripts/oem_certification_gate.sh
+
+      - name: Collect OEM performance telemetry
+        if: always()
+        run: |
+          chmod +x tools/telemetry/collect_oem_metrics.sh
+          tools/telemetry/collect_oem_metrics.sh
+
+      - name: Store OEM metrics history
+        if: always()
+        run: |
+          chmod +x .github/scripts/store_metrics_history.sh
+          .github/scripts/store_metrics_history.sh
+
+      - name: Generate OEM dashboard
+        if: always()
+        run: |
+          python3 tools/dashboard/generate_dashboard.py
+
+      - name: Compare OEM performance regression
+        if: always()
+        run: |
+          python3 tools/dashboard/compare_history.py
+
+      - name: Run OEM performance quality gate
+        if: always()
+        run: |
+          python3 tools/dashboard/oem_quality_gate.py
+
+      - name: Run IVANNA IAEL Audio Certification
+        if: always()
+        run: |
+          python3 tools/iael/iael_audio_certification.py
+
+  # ── PUBLICAR RELEASE ────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release (asset que Magisk update.json espera)
+    runs-on: ubuntu-22.04
+    needs: [verify-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: omega-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download verified bundle from draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGE_TAG="staging-${GITHUB_SHA}"
+          gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Derivar versión desde module.prop (fuente única de verdad)
+        id: ver
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
+          [ -n "$VERSION" ] || { echo "ERROR: module.prop sin campo version="; exit 1; }
+          UPDATE_JSON_VERSION=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['version'])")
+          if [ "$VERSION" != "$UPDATE_JSON_VERSION" ]; then
+            echo "ERROR: module.prop dice $VERSION pero update.json dice $UPDATE_JSON_VERSION — desincronizados de nuevo."
+            echo "Actualiza magisk_module/update.json (version/versionCode/zipUrl) para que coincida con module.prop."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versión detectada: $VERSION"
+
+      - name: Rename module zip al nombre canónico que espera update.json
+        run: |
+          set -euo pipefail
+          SRC="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"
+          test -f "$SRC" || { echo "ERROR: module zip no encontrado en el artifact"; exit 1; }
+          cp "$SRC" "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+          ls -lh "ivanna_omega_supreme_${{ steps.ver.outputs.version }}.zip"
+
+      - name: Generar flyer promocional dinámico de la versión
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          pip install Pillow matplotlib
+          python3 tools/promo/generate_release_flyer.py "${{ steps.ver.outputs.version }}"
+
+      - name: Crear o actualizar el Release (sin enmascarar fallos)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          trap 'echo "::error title=publish-release::línea $LINENO falló: ${BASH_COMMAND:0:300}"' ERR
+          TAG="${{ steps.ver.outputs.version }}"
+          ZIP_NAME="ivanna_omega_supreme_${TAG}.zip"
+          APK_NAME="ivanna-omega-supreme-${GITHUB_SHA}.apk"
+          FLYER_TAG="docs/release_media/ivanna_promo_flyer_${TAG}.png"
+          FLYER_CANONICAL="docs/release_media/ivanna_promo_flyer.png"
+          NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
+          STAGE_TAG="staging-${GITHUB_SHA}"
+
+          EXTRA_ASSETS=()
+          [ -f "$FLYER_TAG" ] && EXTRA_ASSETS+=("$FLYER_TAG")
+          [ -f "$FLYER_CANONICAL" ] && EXTRA_ASSETS+=("$FLYER_CANONICAL")
+
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" "$ZIP_NAME" "$APK_NAME" "${EXTRA_ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "IVANNA OMEGA SUPREME $TAG" \
+              --notes "$NOTES"
+          else
+            # Los releases publicados son INMUTABLES (GitHub): no admiten subir/borrar assets.
+            # Re-publicar la misma versión nunca puede funcionar; hay que subir la versión
+            # (module.prop + update.json + version.properties). No es un fallo del build:
+            # se avisa y se conserva el draft staging-* con el bundle verificado.
+            IMMUTABLE=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.immutable // false')
+            if [ "$IMMUTABLE" = "true" ]; then
+              if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$APK_NAME"; then
+                echo "Release $TAG (inmutable) ya contiene este build ${GITHUB_SHA}."
+                exit 0
+              else
+                echo "::error title=publish-release::El release $TAG es inmutable y no contiene el build ${GITHUB_SHA}. Incrementa module.prop, update.json y version.properties; bundle verificado conservado en el draft ${STAGE_TAG}."
+                exit 1
+              fi
+            fi
+            # Quitar APKs de commits anteriores: el release solo debe exponer el build actual.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+              | grep -E '^ivanna-omega-supreme-[0-9a-f]{40}\.apk$' | grep -v -F "$APK_NAME" \
+              | while read -r old; do gh release delete-asset "$TAG" "$old" --repo "$GITHUB_REPOSITORY" --yes; done || true
+            # Sin '|| true': si la subida falla, el job DEBE fallar (antes quedaban assets viejos con notas nuevas).
+            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
+          fi
+
+          # Verificación posterior: lo publicado debe tener el mismo tamaño que lo local.
+          for f in "$ZIP_NAME" "$APK_NAME"; do
+            REMOTE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq ".assets[] | select(.name==\"$f\") | .size")
+            LOCAL=$(stat -c%s "$f")
+            [ "$REMOTE" = "$LOCAL" ] || { echo "::error title=publish-release::$f en release=$REMOTE bytes, local=$LOCAL — artefacto desactualizado"; exit 1; }
+          done
+          echo "✓ Assets del release $TAG verificados contra el build ${GITHUB_SHA}"
+
+          # Limpiar draft temporal de staging
+          gh release delete "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          # Barrer drafts staging-* huérfanos de >6 h (no toca builds de otras ramas en curso; cada uno retiene ~110 MB).
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft,createdAt \
+            --jq '.[] | select(.isDraft and (.tagName|startswith("staging-")) and ((.createdAt|fromdateiso8601) < (now-21600))) | .tagName' \
+            | while read -r t; do gh release delete "$t" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true; done
+          echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
+
+      - name: Difundir lanzamiento en redes sociales y webhooks
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SOCIAL_BROADCAST_WEBHOOK_URL: ${{ secrets.SOCIAL_BROADCAST_WEBHOOK_URL }}
+        run: |
+          python3 tools/promo/broadcast_release.py
+
+ || true)
+          echo "ZIP dataset counts: SOFA=$SOFA_ZIP/239 RIR=$RIR_ZIP/200 HRTF=$HRTF_ZIP/12"
+          [ "$SOFA_ZIP" -eq 239 ] || { echo "ERROR: ZIP Magisk debe llevar 239 SOFA, lleva $SOFA_ZIP"; exit 1; }
+          [ "$RIR_ZIP" -eq 200 ] || { echo "ERROR: ZIP Magisk debe llevar 200 RIR WAV, lleva $RIR_ZIP"; exit 1; }
+          [ "$HRTF_ZIP" -eq 12 ] || { echo "ERROR: ZIP Magisk debe llevar 12 IHR1, lleva $HRTF_ZIP"; exit 1; }
           unzip -Z1 "$ZIPNAME" | grep -q "^system/etc/ivanna_omega/rir/metadata.csv$" || { echo "ERROR: zip sin rir/metadata.csv"; exit 1; }
           unzip -Z1 "$ZIPNAME" | grep -q "^system/etc/ivanna_omega/hrtf/hrtf_index.json$" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
           unzip -Z1 "$ZIPNAME" | grep -q "^saf/SAF_model.json$" || { echo "ERROR: zip sin saf/SAF_model.json"; exit 1; }
