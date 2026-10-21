@@ -113,3 +113,36 @@ llvm-objdump -d --no-show-raw-insn --start-address=0x256ea4 --stop-address=0x257
 ```
 
 Until the actual body is available, do not infer timestamp units, combine low/high words, assign `pal_session_time` field offsets, or claim this path changes PLL/ASRC rate.
+
+## Latest disassembly checkpoint — 2026-10-21 (stream-built mixer name)
+
+The latest Termux capture now includes the start of the body at 0x256894 and a second range starting at 0x256ea4. The code is still presented under the misleading demangled label `std::__1::vector<std::pair<int,int>>::__vallocate`; do not treat that label as reliable ownership of the instructions.
+
+### Confirmed from instructions shown
+
+- At 0x256894, the routine takes four incoming arguments in x0–x3, saves them as x23=x0, x24=x1, w22=w2, x21=x3. It initializes local C++ stream/string objects and obtains a ResourceManager instance. This is consistent with constructing a mixer-control name dynamically, but the exact API-level function identity still needs confirmation from call sites.
+- The loop at 0x2569c4–0x256a9c iterates entries from a global collection, compares an entry's first 32-bit word with the incoming w22, and on a match reads a string at entry offset +4. That string is appended to a C++ stream.
+- The code then appends literal fragments referenced from .rodata at 0x800c8c and 0x88048e, materializes the stream string, and passes the resulting C string as the second argument to mixer_get_ctl_by_name at 0x256b04. Therefore the mixer control name is built from a mapped string plus fixed fragments; it is not a hardcoded direct literal at the call site.
+- The shown 0x256ea4–0x2570ac range repeats a similar loop over the global collection, this time comparing entries against w22, then calls SessionAlsaUtils::setStreamMetadataType(mixer*, int, char const*) at 0x256fd0. This suggests adjacent PAL utility logic involving stream metadata, but exact function boundaries must be reconstructed from branch/call flow rather than the STL label.
+- The visible code is incomplete at 0x256b10, so return-value handling after mixer_get_ctl_by_name, the subsequent payload call/write, and final output structure stores are not present in this pasted excerpt.
+
+### Still unproven
+
+The shown portion does not identify the final constructed control name, the meaning of mixer array bytes, the output offsets within pal_session_time, timestamp units, or the physical clock domain. The timestamp_lsw/msw strings alone do not prove these semantics.
+
+### Next targeted extraction
+
+Run these focused commands and paste the output, preserving both sections:
+
+```sh
+SO="$HOME/storage/downloads/IVANNA_BLAIR_DUMP/libar-pal.so"
+
+# Finish the name construction, mixer read/write, and output stores
+llvm-objdump -d --no-show-raw-insn --start-address=0x256af0 --stop-address=0x256e10 "$SO" 2>/dev/null
+
+# Inspect the string fragments used to construct the mixer-control name
+llvm-objdump -s --start-address=0x800c70 --stop-address=0x800cb0 "$SO" 2>/dev/null
+llvm-objdump -s --start-address=0x880470 --stop-address=0x8804b0 "$SO" 2>/dev/null
+```
+
+Also inspect direct callers of 0x256894 to establish the true signature and function boundary. Avoid guessing a control name or writing any mixer array based only on this evidence.
