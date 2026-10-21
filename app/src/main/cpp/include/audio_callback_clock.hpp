@@ -29,8 +29,7 @@ public:
             initialized_ = true;
             startNs_ = monotonicNs;
             lastNs_ = monotonicNs;
-            totalFrames_ = frameCount;
-            windowFrames_ = frameCount;
+                windowFrames_ = frameCount;
             return {};
         }
         if (monotonicNs <= lastNs_ || monotonicNs < startNs_) {
@@ -39,7 +38,6 @@ public:
         }
 
         lastNs_ = monotonicNs;
-        totalFrames_ += frameCount;
         windowFrames_ += frameCount;
         const uint64_t elapsed = monotonicNs - startNs_;
         // Ignore short windows: scheduling jitter dominates sub-100ms estimates.
@@ -58,7 +56,7 @@ public:
 
     void reset() noexcept {
         initialized_ = false;
-        startNs_ = lastNs_ = totalFrames_ = windowFrames_ = 0;
+        startNs_ = lastNs_ = windowFrames_ = 0;
     }
 
 private:
@@ -66,7 +64,6 @@ private:
     bool initialized_ = false;
     uint64_t startNs_ = 0;
     uint64_t lastNs_ = 0;
-    uint64_t totalFrames_ = 0;
     uint64_t windowFrames_ = 0;
 };
 
