@@ -195,6 +195,56 @@ struct AsyncEngine {
 
 AsyncEngine g_engine;
 
+// Stateful linear ASRC on the USB PCM ingress. Input rate is explicitly
+// 48 kHz until the Kotlin pipeline supplies its actual negotiated source rate.
+// Phase is retained across JNI blocks to avoid block-boundary discontinuities.
+class UsbIngressAsrc {
+public:
+    void configure(int inputRate, int outputRate, int channels) noexcept {
+        inputRate_ = inputRate > 0 ? inputRate : 48000;
+        outputRate_ = outputRate > 0 ? outputRate : 48000;
+        channels_ = channels > 0 && channels <= kMaxChannels ? channels : 2;
+        step_ = static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
+        phase_ = 0.0;
+        havePrevious_ = false;
+        for (int c = 0; c < kMaxChannels; ++c) previous_[c] = 0.0f;
+    }
+
+    int process(const float* input, int inputFrames, int32_t* output, int capacityFrames) noexcept {
+        if (!input || !output || inputFrames <= 0 || capacityFrames <= 0) return 0;
+        int produced = 0;
+        // The sample at phase=0 refers to the first sample of this block.
+        // One previous frame bridges block boundaries for interpolation.
+        while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
+            const int i0 = static_cast<int>(phase_);
+            const int i1 = (i0 + 1 < inputFrames) ? i0 + 1 : i0;
+            const float frac = static_cast<float>(phase_ - i0);
+            for (int ch = 0; ch < channels_; ++ch) {
+                const float a = (i0 == 0 && havePrevious_) ? previous_[ch] : input[i0 * channels_ + ch];
+                const float b = input[i1 * channels_ + ch];
+                float sample = a + (b - a) * frac;
+                if (!(sample == sample)) sample = 0.0f;
+                if (sample > 1.0f) sample = 1.0f;
+                if (sample < -1.0f) sample = -1.0f;
+                output[produced * channels_ + ch] = static_cast<int32_t>(sample * 2147483392.0f);
+            }
+            ++produced;
+            phase_ += step_;
+        }
+        phase_ -= static_cast<double>(inputFrames);
+        for (int ch = 0; ch < channels_; ++ch) previous_[ch] = input[(inputFrames - 1) * channels_ + ch];
+        havePrevious_ = true;
+        return produced;
+    }
+private:
+    int inputRate_ = 48000, outputRate_ = 48000, channels_ = 2;
+    double step_ = 1.0, phase_ = 0.0;
+    float previous_[kMaxChannels]{};
+    bool havePrevious_ = false;
+};
+
+UsbIngressAsrc g_usbAsrc;
+
 inline int64_t now_ns() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -624,6 +674,9 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStartAsyncEngine(JNIEnv* /*
     }
     g_engine.bytesPerFrame = g_engine.channels * g_engine.bytesPerSample;
     g_engine.ring.configure(g_engine.channels);
+    // Current app pipeline contract emits 48 kHz PCM. Keep this explicit in
+    // telemetry; callers must update the source rate if that contract changes.
+    g_usbAsrc.configure(48000, g_engine.sampleRate, g_engine.channels);
     g_engine.hasAudioData.store(false, std::memory_order_release);
     g_engine.stopRequested.store(false, std::memory_order_release);
     g_engine.submitted.store(0, std::memory_order_relaxed);
@@ -741,23 +794,27 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
     jfloat* src = env->GetFloatArrayElements(samples, nullptr);
     if (!src) return 0;
 
-    // Conversión float→S32_LE con clamp duro; escala 2^31-1 para no envolver
-    // el signo en +1.0 exacto (bug clásico de conversión a entero).
-    static thread_local int32_t scratch[4096 * kMaxChannels];
+    // ASRC real en la ruta USB: float PCM del pipeline -> interpolador
+    // continuo -> S32_LE -> anillo que consume el motor URB del DAC.
+    // El buffer de salida admite hasta 2x frames para tasas comunes <=96kHz
+    // desde 48kHz; para ratios mayores se procesan subbloques.
+    static thread_local float inputScratch[4096 * kMaxChannels];
+    static thread_local int32_t outputScratch[8192 * kMaxChannels];
     int written = 0;
     int remaining = frames;
     int offset = 0;
     while (remaining > 0) {
-        int chunk = remaining > 4096 ? 4096 : remaining;
+        const int chunk = remaining > 4096 ? 4096 : remaining;
         for (int i = 0; i < chunk * ch; ++i) {
             float s = src[offset * ch + i];
-            if (!(s == s)) s = 0.0f;                  // NaN
-            if (s >  1.0f) s =  1.0f;
+            if (!(s == s)) s = 0.0f;
+            if (s > 1.0f) s = 1.0f;
             if (s < -1.0f) s = -1.0f;
-            scratch[i] = (int32_t)(s * 2147483392.0f);
+            inputScratch[i] = s;
         }
-        written += g_engine.ring.writeFrames(scratch, chunk);
-        offset    += chunk;
+        const int outFrames = g_usbAsrc.process(inputScratch, chunk, outputScratch, 8192);
+        if (outFrames > 0) written += g_engine.ring.writeFrames(outputScratch, outFrames);
+        offset += chunk;
         remaining -= chunk;
     }
     if (written > 0) {
