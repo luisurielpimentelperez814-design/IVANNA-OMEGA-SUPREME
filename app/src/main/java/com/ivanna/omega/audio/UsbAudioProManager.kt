@@ -585,6 +585,7 @@ class UsbAudioProManager private constructor(context: Context) {
                 maxPacketSize = ep.maxPacketSize,
                 interval      = ep.interval.coerceAtLeast(1),
                 sampleRate    = negotiatedSampleRate,
+                sourceSampleRate = AudioPipeline.SAMPLE_RATE,
                 channels      = CHANNELS,
                 bitDepth      = BIT_DEPTH,
                 // Sentinelas (-1 / 0) si el DAC no expone feedback: el lado
@@ -790,7 +791,7 @@ class UsbAudioProManager private constructor(context: Context) {
     // Motor asíncrono REAL (URBs isócronos usbfs) — cableado de punta a punta
     private external fun nativeConfigureEndpoint(
         epAddress: Int, maxPacketSize: Int, interval: Int,
-        sampleRate: Int, channels: Int, bitDepth: Int,
+        sampleRate: Int, sourceSampleRate: Int, channels: Int, bitDepth: Int,
         feedbackEpAddress: Int, feedbackMaxPacketSize: Int, feedbackInterval: Int
     )
     private external fun nativeWriteFrames(samples: FloatArray, frames: Int): Int
