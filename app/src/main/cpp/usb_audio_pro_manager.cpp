@@ -243,10 +243,12 @@ public:
 
         int produced = 0;
         while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
-            const int base = static_cast<int>(phase_);
-            double frac = phase_ - static_cast<double>(base);
+            int base = static_cast<int>(phase_);
+            const double frac = phase_ - static_cast<double>(base);
             int phaseIndex = static_cast<int>(frac * kPhases + 0.5);
-            if (phaseIndex >= kPhases) phaseIndex = 0, frac = 0.0;
+            // Rounded phase 1.0 belongs to the next source frame, not phase 0
+            // of the current frame; advancing base prevents a one-step glitch.
+            if (phaseIndex >= kPhases) { ++base; phaseIndex = 0; }
             const float* coeff = kernel_[phaseIndex];
             for (int ch = 0; ch < channels_; ++ch) {
                 double sum = 0.0;
