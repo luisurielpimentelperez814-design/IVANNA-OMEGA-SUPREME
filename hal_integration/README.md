@@ -24,22 +24,28 @@ include paths. Include `ivanna_audio_clock_reporter.hpp` in the output-stream
 implementation. Keep one reporter per physical output stream (or one per
 underlying output clock), not one per client track.
 
-At stream open/configuration, outside the real-time write loop:
+Store one reporter as a member of the HAL's long-lived output-stream object,
+so its mapping remains alive. Use one writer for the shared output-clock path;
+do not let independent streams truncate or race on the same snapshot.
 
 ```cpp
-ivanna::audio::HalOutputClockReporter ivannaClock;
-const bool ivannaClockReady = ivannaClock.start();
+struct vendor_output_stream {
+    // ... existing HAL members ...
+    ivanna::audio::HalOutputClockReporter ivannaClock;
+    bool ivannaClockReady = false;
+};
+
+// In the stream-open/configuration path, outside the real-time write callback:
+out->ivannaClockReady = out->ivannaClock.start();
 ```
 
-At a non-blocking telemetry point in the HAL's existing position-reporting path,
-only after the underlying driver query succeeds:
+In the HAL's existing presentation-position implementation, after the underlying
+driver/PCM query has successfully filled the matching frame count and timestamp:
 
 ```cpp
-uint64_t frames = 0;
-timespec timestamp{};
-const int status = stream->get_presentation_position(stream, &frames, &timestamp);
-if (status == 0 && ivannaClockReady) {
-    ivannaClock.report(frames, timestamp, configuredSampleRateHz);
+// frames and timestamp have just been filled by the underlying driver query.
+if (status == 0 && out->ivannaClockReady) {
+    out->ivannaClock.report(frames, timestamp, configuredSampleRateHz);
 }
 ```
 
