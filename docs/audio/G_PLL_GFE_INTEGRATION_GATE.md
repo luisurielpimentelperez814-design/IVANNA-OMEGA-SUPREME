@@ -26,6 +26,12 @@ Status: **not enabled in the production AudioFlinger callback**.
 
 Until the PCM owner and measurements exist, keep the PLL disconnected from the live audio path. A software phase estimator cannot physically discipline a DAC clock by itself.
 
+## HAL-fed hardware clock estimator scaffold added
+
+`include/audio_hardware_clock.hpp` now implements `HardwareClockTracker`, which estimates output sample rate and drift from paired driver-reported presented-frame positions and hardware-correlated timestamps. Its native tests are registered as `test_audio_hardware_clock`.
+
+**Important boundary:** this estimator is created but is not yet connected to a live hardware source. Repository search found no implementation of `get_presentation_position`, `audio_hw_device::out_write`, `AAudioStream_getTimestamp`, or `snd_pcm_status_get_audio_htstamp`. Therefore no caller can honestly supply these samples from this repository today. The HAL/PCM owner must call the tracker (or publish the same validated snapshot to the effect) using its actual API before the PLL can be enabled. Callback monotonic timestamps must not be passed as hardware timestamps.
+
 ## Software callback clock added
 
 The AudioFlinger callback now feeds a per-effect `CallbackClockMonitor` using the callback's frame count and `CLOCK_MONOTONIC` observations. The monitor publishes observed callback cadence and drift through the existing 64-byte effect beacon, and `readEffectCallbackClockStatus()` exposes that diagnostic to the app.
