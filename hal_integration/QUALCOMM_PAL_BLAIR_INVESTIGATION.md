@@ -26,6 +26,30 @@ These hashes and Build IDs identify the copied files. Offsets are ELF virtual/fi
 - `PayloadBuilder::payloadTimestamp(...)` appears at `0x2340bc` and requests a 48-byte vector. The code writes metadata into a buffer, but the 48-byte vector is not proof that the timestamp structure itself is 48 bytes or that this payload changes a clock.
 - The supplied mixer XML excerpt contains route mux settings such as `RX_MACRO RX0 MUX = ZERO`; it does not demonstrate a writable PLL or variable-ratio ASRC control.
 
+## Bluetooth Slimbus clock-source selector traced (2026-10-21)
+
+The additional `libar-pal.so` disassembly connects the previously listed clock symbols:
+
+```text
+Bluetooth::configureSlimbusClockSrc()        @ 0x1fa150
+  -> read ResourceManager Bluetooth clock-source map
+  -> use fallback value 1 when no mapping is available
+  -> Device::configureDeviceClockSrc("BT SLIMBUS CLK SRC", value)
+       @ call site near 0x1fa1dc
+       -> mixer_get_ctl_by_name(mixer, "BT SLIMBUS CLK SRC")
+       -> mixer_ctl_set_value(control, index=0, value)
+          Device::configureDeviceClockSrc body @ 0x1f0c9c
+
+ResourceManager::getBtSlimClockSrc(unsigned)             @ 0x2ed074
+ResourceManager::updateBtSlimClockSrcMap(unsigned,unsigned) @ 0x2ecc40
+```
+
+`updateBtSlimClockSrcMap` is a trampoline into `std::map::operator[]`: it stores a key/value mapping and is not itself a hardware clock write. The device clock helper receives its mixer-control name and integer value as arguments, looks up the named control, then attempts to write integer value at mixer index zero. The provided `mixer_paths_blair_qrd.xml` does not contain `BT SLIMBUS CLK SRC`, so the binary evidence establishes PAL's attempted selector path, not that the named control exists or that the write reaches hardware on this build.
+
+**Interpretation:** this is a Bluetooth Slimbus *clock-source selector* path, not a demonstrated PLL frequency-control or ASRC ratio-control path. Do not connect IVANNA's ppm/ratio servo to this selector. The selector's accepted values and hardware effect are not established by the current XML or disassembly.
+
+The AGM branch at `SessionAgm::setParameters` (`0x251e04`) for `param_size == 0x24` reads a leading 32-bit word from the payload, advances the pointer by four bytes, and forwards the remaining bytes plus that word to `agm_session_set_params(session_id, payload, first_word)`. This confirms a parameter transport path only; the observed branch does not identify the parameter as ASRC or clock control. Custom payload buffers in `Session`/`Device` are staging buffers until a downstream send call is established.
+
 ## Engineering conclusion
 
 The evidence supports a timestamp-query path and identifies the next function to inspect: `SessionAlsaUtils::getTimestamp` at `0x2ec890`. The output provided so far does not include the body at that address, so it does not yet identify the exact mixer control ID, array schema, or units used by the utility.
