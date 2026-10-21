@@ -69,3 +69,15 @@ Do not hook or modify a timestamp function as a substitute for rate control. Do 
 ## Relation to IVANNA
 
 The repository's HAL output-rate servo can estimate drift and bound correction, but it must only be connected to a callback that demonstrably changes a real ASRC ratio. The generic legacy HAL adapter is not a binary patch for the proprietary Qualcomm HAL. G-PLL/GFE are not considered connected to the device clock by this evidence alone.
+
+
+## Timestamp dispatch follow-up (2026-10-21)
+
+The latest Termux excerpts refine, but do not close, the PAL timestamp investigation:
+
+- `Stream::getTimestamp(pal_session_time*)` at `0x19d6c0` validates its output pointer and stream/session state, locks a mutex, then invokes a session method indirectly through the function pointer at object offset `+0xc0` (`blr x8` at `0x19d740`). The concrete virtual target is not yet resolved.
+- A caller at `0x190a4c` invokes `Stream::getTimestamp`, confirming at least one consumer of the stream timestamp API; it does not reveal the structure fields or their units.
+- `SessionAlsaPcm::getTimestamp` calls the `SessionAlsaUtils::getTimestamp` symbol reported at `0x2ec890`. That address is a branch thunk to `0x256894`, so disassembling only the symbol address shows a veneer rather than the body. The inspected target range starts with a large stack frame and container/object setup and includes `ResourceManager::getInstance()` plus collection iteration. Because the demangled enclosing label is a generic STL `vector::__vallocate` label, it must not be treated as reliable function ownership. No verified timestamp-field writes or timestamp clock source have yet been identified in the shown range.
+- `clock_gettime` references found around `0x21057c`, `0x210704`, and `0x2107e4` belong to `SpeakerProtection` code in the supplied excerpt. They are not evidence that PAL playback timestamps use those calls.
+
+**Updated conclusion:** PAL's stream-to-session timestamp dispatch is evidenced; the concrete implementation, `pal_session_time` layout, units, monotonic domain, and same-snapshot pairing of frames with time are still unverified. Resolve the virtual target from `Stream`'s session/vtable data and trace writes to the output structure before implementing the target query callback. Do not infer hardware-clock behavior from unrelated `clock_gettime` sites or from the branch thunk alone.
