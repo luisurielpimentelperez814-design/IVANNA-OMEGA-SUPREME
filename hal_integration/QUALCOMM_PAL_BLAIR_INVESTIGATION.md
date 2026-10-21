@@ -92,3 +92,24 @@ Do not hook or modify a timestamp function as a substitute for rate control. Do 
 ## Relation to IVANNA
 
 The repository's HAL output-rate servo can estimate drift and bound correction, but it must only be connected to a callback that demonstrably changes a real ASRC ratio. The generic legacy HAL adapter is not a binary patch for the proprietary Qualcomm HAL. G-PLL/GFE are not considered connected to the device clock by this evidence alone.
+
+
+## Timestamp investigation checkpoint — 2026-10-21 (latest Termux output)
+
+The latest output confirms the exact thunk destinations and adds one complete caller path, but the disassembly body of `0x256894` was not included in the pasted output. Therefore this checkpoint records confirmed call mechanics and strings only; it does not claim the timestamp decoder is solved.
+
+- `SessionAlsaUtils::getTimestamp(mixer*, vector<int> const&, unsigned int, pal_session_time*)` at `0x2ec890` is a one-instruction AArch64 branch to `0x256894`. The demangled destination label refers to `std::__1::vector<std::pair<int,int>>::__vallocate`, but this is unreliable symbol ownership for the thunk target; use the branch destination and instruction flow, not that label, to identify the body.
+- `SessionAlsaUtils::getModuleInstanceId(mixer*, int, char const*, int, unsigned int*)` at `0x2ec8a0` branches to `0x256ea4`. Its role in the timestamp operation must be determined from the body/call sites, not assumed from adjacency.
+- `SessionAlsaCompress::getTimestamp(pal_session_time*)` at `0x2667b4` loads `mixer` from object offset `+0x48`, passes the vector at `this+0x150`, passes the unsigned ID at `this+0xc8`, and passes the caller's output pointer unchanged as the fourth argument to `SessionAlsaUtils::getTimestamp`. It preserves the returned status in `w19`, optionally logs failure, and returns that status. This confirms delegation; it does not show how output fields are populated.
+- `strings -a -t x` exposes relevant text at offsets `0x6e9d9` (`timestamp_lsw = %u, timestamp_msw = %u`), `0x74d90` (`Failed to get session timestamp status %d`), `0x7fd8d` (`timestamp tv_sec overflown %lu`), plus `0x7de93` (`Failed to get read position`). These strings are compatible with low/high 32-bit timestamp words being logged somewhere in the library, but without instruction references tied to the function body they do not establish that those words are used by this exact path, their order, units, or output-structure offsets.
+- The current pasted result includes the string list and the thunk stubs, but not the requested instruction ranges `0x256894–0x256ea4` and `0x256ea4–0x2570b0`. The function body and the writes to `pal_session_time` therefore remain unverified.
+
+**Next precise extraction:** rerun only these ranges and ensure the output includes sections 1 and 2, not only the string section:
+
+```sh
+SO="$HOME/storage/downloads/IVANNA_BLAIR_DUMP/libar-pal.so"
+llvm-objdump -d --no-show-raw-insn --start-address=0x256894 --stop-address=0x256ea4 "$SO" 2>/dev/null
+llvm-objdump -d --no-show-raw-insn --start-address=0x256ea4 --stop-address=0x2570b0 "$SO" 2>/dev/null
+```
+
+Until the actual body is available, do not infer timestamp units, combine low/high words, assign `pal_session_time` field offsets, or claim this path changes PLL/ASRC rate.
