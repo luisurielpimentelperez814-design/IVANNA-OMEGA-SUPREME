@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.112
-versionCode=403
+version=v2.5.113
+versionCode=404
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.112: app and effect clock telemetry visible; bounded AudioTrack resampler correction; DAC clock unverified
+description=v2.5.113: release version increment to permit immutable GitHub release publication; ASRC integration work in progress
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
