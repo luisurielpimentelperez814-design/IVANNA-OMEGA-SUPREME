@@ -95,7 +95,7 @@ TEST(HalOutputStreamClockControl, QueryFailureResetsAndCommandsUnity) {
     hal.sample = {14402, 1300000000ull, 48000}; ASSERT_TRUE(control.controlTick());
     ASSERT_TRUE(control.correctionEnabled());
     hal.queryOk = false;
-    EXPECT_FALSE(control.controlTick());
+    EXPECT_TRUE(control.controlTick()); // invalid sample safely commands unity
     EXPECT_FALSE(control.correctionEnabled());
     EXPECT_TRUE(control.hasKnownAppliedRatio());
     EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
