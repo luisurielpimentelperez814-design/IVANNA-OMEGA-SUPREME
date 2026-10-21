@@ -1,0 +1,5 @@
+# Product integration template: merge into the target device's init configuration.
+# Confirm the service UID/GID and SELinux policy for the actual HAL before use.
+on post-fs-data
+    mkdir /data/vendor/ivanna_audio 0770 audioserver audio
+    restorecon_recursive /data/vendor/ivanna_audio
