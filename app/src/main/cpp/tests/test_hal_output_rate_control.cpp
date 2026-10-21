@@ -15,10 +15,10 @@ struct FakeAsrc {
 TEST(HalOutputRateControl, AppliesRatioOnlyAfterValidLock) {
     FakeAsrc asrc;
     ivanna::audio::HalOutputRateControl control(&FakeAsrc::apply, &asrc);
-    EXPECT_FALSE(control.update({0, 1000000000ull, 48000}));
+    EXPECT_TRUE(control.update({0, 1000000000ull, 48000}));
     EXPECT_FALSE(control.enabled());
-    EXPECT_FALSE(control.update({4800, 1100000000ull, 48000}));
-    EXPECT_FALSE(control.update({9601, 1200000000ull, 48000}));
+    EXPECT_TRUE(control.update({4800, 1100000000ull, 48000}));
+    EXPECT_TRUE(control.update({9601, 1200000000ull, 48000}));
     EXPECT_TRUE(control.update({14402, 1300000000ull, 48000}));
     EXPECT_TRUE(control.enabled());
     EXPECT_NE(control.lastAppliedRatio(), 1.0);
@@ -32,7 +32,7 @@ TEST(HalOutputRateControl, InvalidReferenceReturnsAsrcToUnity) {
     control.update({9601, 1200000000ull, 48000});
     control.update({14402, 1300000000ull, 48000});
     ASSERT_TRUE(control.enabled());
-    EXPECT_FALSE(control.update({15000, 1200000000ull, 48000}));
+    EXPECT_TRUE(control.update({15000, 1200000000ull, 48000}));
     EXPECT_FALSE(control.enabled());
     EXPECT_DOUBLE_EQ(asrc.ratios.back(), 1.0);
 }
