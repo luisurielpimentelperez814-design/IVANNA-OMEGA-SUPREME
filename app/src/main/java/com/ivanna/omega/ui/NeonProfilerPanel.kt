@@ -200,6 +200,17 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 )
             }
         }
+        GlassCard(
+            "MOTOR PREDICTIVO · LPC", AuroraCyan,
+            "Observador de solo lectura sobre la salida del reproductor; no modifica el audio"
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiveRow("Modelo", if (metrics.predictiveValid) "fiable" else "sin modelo fiable")
+                LiveRow("Confianza", if (metrics.predictiveValid) "%.0f %%".format(metrics.predictiveConfidence * 100f) else "—")
+                LiveRow("Ganancia de predicción", if (metrics.predictiveValid) "%.1f dB".format(metrics.predictiveGainDb) else "—")
+                LiveRow("Transitorio", if (metrics.predictiveValid && metrics.predictiveTransient) "detectado" else "—")
+            }
+        }
     }
 }
 

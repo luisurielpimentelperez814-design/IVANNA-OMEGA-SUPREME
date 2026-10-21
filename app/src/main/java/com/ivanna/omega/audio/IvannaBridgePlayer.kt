@@ -206,6 +206,9 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         }
     }
 
+    // Solo lo tocan el decode loop y pollOmegaMetrics(), que corre dentro del mismo bucle.
+    @Volatile private var predictiveAnalyzer: PredictiveAudioAnalyzer? = null
+
     private fun pollOmegaMetrics() {
         try {
             val pipelineState = IvannaUnifiedPipeline.state.value
@@ -237,7 +240,14 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 } else 0f
             } catch (_: Throwable) { 0f }
 
+            val predictive = predictiveAnalyzer?.snapshot() ?: PredictiveSnapshot()
+            OmegaMetrics.updateSharedPredictive(predictive.valid, predictive.confidence, predictive.predictionGainDb, predictive.transient)
+
             _omegaMetrics.value = OmegaMetrics(
+                predictiveValid      = predictive.valid,
+                predictiveConfidence = predictive.confidence,
+                predictiveGainDb     = predictive.predictionGainDb,
+                predictiveTransient  = predictive.transient,
                 rmsLevel         = pipelineState.rms,
                 peakLevel        = pipelineState.peak,
                 clipCount        = clipCount,
@@ -533,6 +543,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             val outputTimestamp = AudioTimestamp()
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
             DSPBridge.init(sampleRate)
+            val predictive = PredictiveAudioAnalyzer(sampleRate)
+            predictiveAnalyzer = predictive
 
             val npeSampleRateMismatch = IvannaNpeEngine.isReady && IvannaNpeEngine.sampleRate != sampleRate
             if (npeSampleRateMismatch) {
@@ -635,6 +647,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 if (pendingSeekUs >= 0L) {
                     seekTargetUs = -1L
                     sawInputEOS = false
+                    predictive.reset()
                     extractor.seekTo(pendingSeekUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                     // codec.flush() sólo es legal en estado Executing (nuestro
                     // RUNNING). Guard + log del estado previo — sin guard,
@@ -741,6 +754,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                     }
                                 }
                             }
+                            predictive.feed(chunk, chunkFrames)   // observador: no modifica `chunk`
                             val outputChunk = resampler.process(chunk)
                             val writtenSamples = track.write(
                                 outputChunk, 0, outputChunk.size, AudioTrack.WRITE_BLOCKING
@@ -784,6 +798,9 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             Log.e(TAG, "Error en decode loop", t)
             state = State.ERROR
         } finally {
+            predictiveAnalyzer?.close()
+            predictiveAnalyzer = null
+            OmegaMetrics.updateSharedPredictive(false, 0f, 0f, false)
             // Cierre SIEMPRE bajo mutex y sólo si el estado lo permite:
             // codec.stop() es ilegal fuera de Executing → nuestro RUNNING.
             codecMutex.withLock {

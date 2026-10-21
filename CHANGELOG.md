@@ -1,4 +1,13 @@
-# CHANGELOG — Sin publicar — ASRC: cobertura adicional del contrato de reloj
+# CHANGELOG — v2.5.115 (406) — Escáner AR legible y motor predictivo cableado
+
+- Escáner AR: la actividad nunca llamaba a `Session.setDisplayGeometry()`, requisito de ARCore, por lo que la imagen de cámara salía estirada/rotada al aceptar el permiso. Ahora se aplica en el hilo GL al cambiar la superficie o la rotación. El texto de estado tiene fondo semitransparente y ya no se duplica `resume()` tras conceder el permiso.
+- Motor predictivo (Módulo 1): estaba compilado pero sin llamador. Se añade el puente JNI `ivanna_predictive_jni.cpp` y `PredictiveAudioAnalyzer`; el reproductor propio lo alimenta como observador de SOLO LECTURA (no modifica el audio), se reinicia tras un seek y el profiler muestra modelo fiable, confianza, ganancia de predicción y transitorios.
+- No validado en dispositivo: el escáner y la telemetría predictiva requieren prueba en el Moto G85. El motor se probó en host con señales sintéticas.
+- Se descartó un resampler C++ propio (ASRC) por duplicar el `StereoAudioResampler` + `AudioTrackClockDriftServo` ya cableados en el reproductor.
+
+---
+
+# CHANGELOG — v2.5.114 y previas — ASRC: cobertura adicional del contrato de reloj
 
 - Añadida prueba host del controlador HAL a tasas nominales de 44.1, 48, 88.2, 96, 176.4, 192, 352.8, 384 y 768 kHz, con ratio acotado.
 - Añadida regresión para timestamp ausente/regresivo y frecuencia fuera de rango; el contrato debe volver a razón unitaria y desactivar la corrección.

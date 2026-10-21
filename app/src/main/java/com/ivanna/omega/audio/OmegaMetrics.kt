@@ -35,7 +35,12 @@ data class OmegaMetrics(
     var activeCodec: String = "—",
     var budgetBypasses: Int = 0,
     var antiPopEvents: Int = 0,
-    var resyncCount: Int = 0
+    var resyncCount: Int = 0,
+    // Motor predictivo (observador de solo lectura): válido solo cuando hay modelo fiable.
+    var predictiveValid: Boolean = false,
+    var predictiveConfidence: Float = 0f,
+    var predictiveGainDb: Float = 0f,
+    var predictiveTransient: Boolean = false
 ) {
     companion object {
         // FIX (audit): puente global observable.
@@ -51,6 +56,17 @@ data class OmegaMetrics(
         fun updateSampleRate(sr: Int) {
             if (sr <= 0) return
             _shared.value = _shared.value.copy(sampleRate = sr)
+        }
+
+        /** Telemetría del motor predictivo; `valid=false` fuerza confianza/ganancia a 0 (sin dato). */
+        fun updateSharedPredictive(valid: Boolean, confidence: Float, gainDb: Float, transient: Boolean) {
+            val ok = valid && confidence.isFinite() && gainDb.isFinite()
+            _shared.value = _shared.value.copy(
+                predictiveValid = ok,
+                predictiveConfidence = if (ok) confidence.coerceIn(0f, 1f) else 0f,
+                predictiveGainDb = if (ok) gainDb else 0f,
+                predictiveTransient = ok && transient
+            )
         }
 
         fun updateSharedYamnet(category: String, confidence: Float) {

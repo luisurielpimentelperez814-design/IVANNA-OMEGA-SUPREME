@@ -55,6 +55,12 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
     private lateinit var finishButton: Button
     private lateinit var exportButton: Button
     private var installRequested = false
+    // ARCore exige setDisplayGeometry(rotación, ancho, alto) antes de update(); sin ello la imagen de
+    // cámara sale estirada/rotada (aspecto "horrible" justo tras conceder el permiso). Se aplica en el
+    // hilo GL cuando cambia la superficie o la rotación de pantalla.
+    @Volatile private var viewportWidth = 0
+    @Volatile private var viewportHeight = 0
+    @Volatile private var viewportChanged = true
     @Volatile private var sessionConfiguredDepth = false
     private var lastSnapshot: CaptureSnapshot? = null
     private var pendingExport: CaptureSnapshot? = null
@@ -127,10 +133,11 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             setPadding(0, dp(6), 0, dp(8))
         }
         statusView = TextView(this).apply {
-            text = "Apunta lentamente a paredes, esquinas y suelo. La profundidad depende del dispositivo."
+            text = "Esperando permiso de cámara…"
             setTextColor(Color.WHITE)
             textSize = 12f
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setBackgroundColor(Color.argb(170, 3, 8, 18))   // legible sobre cualquier imagen de cámara
+            setPadding(dp(10), dp(8), dp(10), dp(8))
         }
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
@@ -171,14 +178,9 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CAMERA) {
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                // onResume() se ejecuta justo después de este callback y es quien crea/reanuda la sesión;
+                // hacerlo aquí también duplicaba resume() y glView.onResume().
                 statusView.text = "Permiso concedido. Preparando ARCore…"
-                ensureSession()
-                try {
-                    session?.resume(); glView.onResume()
-                    armStuckPreviewCheck()
-                } catch (e: Exception) {
-                    statusView.text = arErrorMessage(e)
-                }
             } else {
                 statusView.text = "Permiso de cámara denegado. Actívalo en Ajustes para escanear."
                 startButton.isEnabled = false
@@ -202,6 +204,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
 
     /** Reinicia el contador de fotogramas y programa el diagnóstico de "pantalla en blanco" 1.6 s después. */
     private fun armStuckPreviewCheck() {
+        viewportChanged = true
         framesRendered = 0L
         resumedAtNs = SystemClock.elapsedRealtimeNanos()
         statusView.postDelayed({ checkStuckPreview() }, 1_600L)
@@ -449,6 +452,14 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
+        viewportWidth = width
+        viewportHeight = height
+        viewportChanged = true
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        viewportChanged = true
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -458,6 +469,12 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             if (textureSession !== current) {
                 current.setCameraTextureNames(intArrayOf(cameraTextureId))
                 textureSession = current
+            }
+            if (viewportChanged && viewportWidth > 0 && viewportHeight > 0) {
+                @Suppress("DEPRECATION")
+                val rotation = windowManager.defaultDisplay.rotation
+                current.setDisplayGeometry(rotation, viewportWidth, viewportHeight)
+                viewportChanged = false
             }
             val frame = current.update()
             drawCameraBackground(frame)

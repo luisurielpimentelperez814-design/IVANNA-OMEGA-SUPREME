@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.114
-versionCode=405
+version=v2.5.115
+versionCode=406
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.113: release v2.5.114: publish verified USB ASRC build
+description=v2.5.115: scanner AR display geometry fix, predictive engine wired to player
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
