@@ -4,7 +4,8 @@ This directory contains the reusable HAL-side hook. It is not a replacement for 
 
 ## Integration files
 
-- `ivanna_hal_output_stream.hpp`: calls the target HAL's presentation-position query and sends the paired sample to the bounded servo.
+- `ivanna_hal_output_stream.hpp`: generic HAL hook for presentation-position queries and the bounded servo.
+- `ivanna_legacy_audio_hal_adapter.hpp`: concrete adapter for Android's legacy `audio_stream_out::get_presentation_position` API; it still requires the target HAL's real ASRC callback.
 - `ivanna_audio_clock_reporter.hpp`: optional diagnostic snapshot publisher.
 - `sepolicy/` and `init.ivanna_audio_clock.rc`: product-specific templates only; adapt to the target policy and init layout.
 
@@ -45,7 +46,23 @@ static bool applyExistingAsrcRatio(void* context, double ratio) noexcept {
 
 The example names are placeholders, not vendor API names. Implement them against the actual HAL source and its existing ASRC.
 
-## 2. Call at a control cadence
+## 2. Legacy C HAL: use the concrete adapter
+
+For a HAL that exposes `<hardware/audio.h>` and `audio_stream_out::get_presentation_position`, include `ivanna_legacy_audio_hal_adapter.hpp`. Construct one adapter for the lifetime of the output stream, pass the actual stream pointer, the active nominal sample rate, and a callback that commands the ASRC already used by that stream:
+
+```cpp
+ivanna::audio::LegacyAudioHalClockAdapter clockAdapter(
+    &streamOut,
+    outputSampleRateHz,
+    &applyExistingAsrcRatio, // must command the real converter
+    asrcContext);
+```
+
+Call `clockAdapter.controlTick()` from the HAL's serialized low-rate control task, and `clockAdapter.reset()` on standby, reopen, route change, or discontinuity. The adapter reads the paired frame/timestamp result from `get_presentation_position`; it does not guess timestamps. This header is intentionally not included in the app/host build because Android vendor HAL headers are not available there.
+
+This is the concrete integration code for the legacy HAL API, not a binary patch to a proprietary vendor module. Qualcomm PAL or HIDL/AIDL implementations must use the generic hook and their own real presentation-position and ASRC APIs.
+
+## 3. Call at a control cadence
 
 Create the controller during stream construction, after the ASRC exists:
 
@@ -58,14 +75,14 @@ Call `clockControl.controlTick()` from a low-rate control task (approximately 10
 
 If the presentation-position query fails, the controller resets and attempts to command unity ratio. If the ASRC rejects a command, the controller marks the applied ratio unknown and disables correction. Verify the ASRC's actual applied ratio in target logs/telemetry.
 
-## 3. Platform API mapping
+## 4. Platform API mapping
 
 - Legacy C HAL: use the implementation's successful `audio_stream_out::get_presentation_position` result, where the returned frame count and `CLOCK_MONOTONIC` timestamp belong to the same query.
 - HIDL/AIDL HAL: use the stream implementation's corresponding presentation-position method and preserve the timestamp domain and frame-counter semantics.
 - Do not substitute callback entry time, wall-clock time, or a separately sampled timestamp.
 - If the HAL has no variable-ratio ASRC, the callback cannot be implemented honestly by changing a field. Integrate and validate a real ASRC in the output data path first; do not stack another resampler without analyzing the existing chain.
 
-## 4. Validation gates
+## 5. Validation gates
 
 1. Build the actual target vendor HAL against the device's Android branch.
 2. Run host tests for lock gating, correction bounds, slew, query failure, and ASRC rejection.
