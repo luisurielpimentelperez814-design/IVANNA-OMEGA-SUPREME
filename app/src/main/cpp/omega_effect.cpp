@@ -35,6 +35,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <new>
 #include <atomic>
 #include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
 #include "include/SafetyLimiter.h"  // FIX distorsion: limiter de Ruta A reusado en Ruta B
@@ -1517,7 +1518,7 @@ static int32_t omega_process(effect_handle_t self,
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
             rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;
             rawM.volterra_active  = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1.0f : 0.0f;
-            if (ctx->callbackClock) {\n            delete ctx->callbackClock;\n            ctx->callbackClock = nullptr;\n        }\n        if (ctx->adaptive) {
+if (ctx->adaptive) {
                 ctx->adaptive->rawMetrics.publish(
                     ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
                 ivanna::experimental::AdaptiveState adSt{};
@@ -2157,6 +2158,10 @@ static int32_t omega_release_effect(effect_handle_t handle) {
             ctx->enabled = false;
         }
             
+        if (ctx->callbackClock) {
+            delete ctx->callbackClock;
+            ctx->callbackClock = nullptr;
+        }
         if (ctx->adaptive) {
             ctx->adaptive->stop();
             delete ctx->adaptive;
