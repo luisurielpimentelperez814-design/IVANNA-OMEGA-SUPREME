@@ -19,6 +19,9 @@ class AudioTrackClockDriftServoTest {
         assertTrue(servo.correctionPpm > 0.0)
         assertTrue(servo.correctionPpm <= 75.0)
         assertTrue(servo.correctionPpm <= 500.0)
+        assertTrue(servo.isLocked)
+        assertEquals(48_002.0, servo.measuredRateHz, 0.01)
+        assertTrue(servo.measuredDriftPpm > 0.0)
     }
 
     @Test fun timestampRegressionResetsAndFailsClosedToUnity() {
@@ -30,6 +33,8 @@ class AudioTrackClockDriftServoTest {
         assertTrue(servo.correctionPpm > 0.0)
         assertEquals(0.0, servo.observe(1L, 3_500_000_000L), 0.0)
         assertEquals(0.0, servo.correctionPpm, 0.0)
+        assertTrue(!servo.isLocked)
+        assertEquals(0.0, servo.measuredRateHz, 0.0)
     }
 
     @Test fun resamplerUsesCorrectionAndUnityPassThroughStaysBitTransparent() {
