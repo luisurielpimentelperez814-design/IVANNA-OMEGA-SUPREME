@@ -1,4 +1,5 @@
 #include "include/audio_hardware_clock_bridge.hpp"
+#include "include/audio_hardware_clock_hal_adapter.hpp"
 
 #include <gtest/gtest.h>
 #include <cstdio>
@@ -26,6 +27,26 @@ TEST(HardwareClockBridge, PublishesAndReadsDriverSnapshot) {
     EXPECT_EQ(received.presentedFrames, sent.presentedFrames);
     EXPECT_EQ(received.hardwareTimestampNs, sent.hardwareTimestampNs);
     EXPECT_EQ(received.nominalSampleRateHz, sent.nominalSampleRateHz);
+    reader.close();
+    publisher.close();
+    std::remove(path.c_str());
+}
+
+TEST(HardwareClockBridge, HalAdapterConvertsAssociatedTimespec) {
+    const std::string path = testPath();
+    std::remove(path.c_str());
+    ivanna::audio::HardwareClockPublisher publisher;
+    ASSERT_TRUE(publisher.open(path.c_str()));
+    ASSERT_TRUE(ivanna::audio::publishHalPresentationPosition(
+        publisher, 48000, 2, 500000000, 48000));
+    ivanna::audio::HardwareClockReader reader;
+    ASSERT_TRUE(reader.open(path.c_str()));
+    ivanna::audio::HardwareClockSample sample;
+    ASSERT_TRUE(reader.read(sample));
+    EXPECT_EQ(sample.hardwareTimestampNs, 2500000000ull);
+    EXPECT_EQ(sample.presentedFrames, 48000ull);
+    EXPECT_FALSE(ivanna::audio::publishHalPresentationPosition(
+        publisher, 49000, 2, 1000000000, 48000));
     reader.close();
     publisher.close();
     std::remove(path.c_str());
