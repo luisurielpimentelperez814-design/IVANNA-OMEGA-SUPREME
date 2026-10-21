@@ -16,7 +16,7 @@ namespace ivanna::audio {
 // presentation timestamp and the matching presented-frame position.
 // Never publish CLOCK_MONOTONIC sampled at effect callback entry.
 inline constexpr const char* kHardwareClockSnapshotPath =
-        "/data/local/tmp/ivanna_hw_clock_snapshot";
+        "/data/vendor/ivanna_audio/clock_snapshot";
 inline constexpr uint32_t kHardwareClockSnapshotMagic = 0x49564843u; // "IVHC"
 inline constexpr size_t kHardwareClockSnapshotBytes = 64;
 
@@ -44,9 +44,9 @@ public:
 
     bool open(const char* path = kHardwareClockSnapshotPath) noexcept {
         if (snapshot_) return true;
-        const int fd = ::open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
+        const int fd = ::open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0660);
         if (fd < 0) return false;
-        (void)::fchmod(fd, 0666);
+        (void)::fchmod(fd, 0660);
         if (::ftruncate(fd, kHardwareClockSnapshotBytes) < 0) {
             ::close(fd);
             return false;
