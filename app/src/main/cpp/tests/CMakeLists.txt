@@ -107,6 +107,7 @@ ivanna_add_test(test_g_pll_core)
 ivanna_add_test(test_audio_callback_clock)
 # Estimator fed only by real HAL/driver presentation timestamps and frame positions.
 ivanna_add_test(test_audio_hardware_clock)
+ivanna_add_test(test_audio_hardware_clock_bridge)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
