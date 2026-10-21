@@ -22,7 +22,8 @@
 #include "supreme/SnnNmfHoaUpmixer.hpp"
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
-#include "include/omega_effect_beacon.h"   // senal real "el efecto procesa" para la app (Ruta A/B)
+#include "include/omega_effect_beacon.h"   // señal real "el efecto procesa" para la app (Ruta A/B)
+#include "include/audio_callback_clock.hpp" // reloj de cadencia software; nunca referencia de fase DAC
 #include "supreme/SupremeTransitionEnvelope.hpp"
 #include "supreme/SupremeAcousticStabilityGuard.hpp"
 #include "include/omega_wave_stages.hpp"
@@ -300,6 +301,7 @@ struct omega_effect_context_t {
     ivanna::experimental::AdaptiveDecisionEngine* adaptive;
     uint64_t lastAdaptiveSeq;
     ivanna::rt::RtBandMeter bandMeter;
+    ivanna::audio::CallbackClockMonitor* callbackClock; // solo diagnóstico de cadencia del callback
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -935,6 +937,16 @@ static int32_t omega_process(effect_handle_t self,
 
     struct timespec cpuT0;
     clock_gettime(CLOCK_MONOTONIC, &cpuT0);
+    if (ctx->callbackClock && ctx->lastConfiguredSr >= 8000u && ctx->lastConfiguredSr <= 768000u) {
+        const uint64_t nowNs = static_cast<uint64_t>(cpuT0.tv_sec) * 1000000000ull +
+                               static_cast<uint64_t>(cpuT0.tv_nsec);
+        const auto clockStatus = ctx->callbackClock->observe(
+            nowNs, static_cast<uint64_t>(frames), ctx->lastConfiguredSr);
+        if (clockStatus.valid) {
+            ivanna::effectBeacon().onClockEstimate(clockStatus.observedSampleRateHz,
+                                                   clockStatus.driftPpm);
+        }
+    }
 
     // AUDIT FIX (control plane reconnect): drena a lo más UN snapshot nuevo
     // por callback. readLatest() es lock-free (seqlock en SHM), no bloquea,
@@ -1505,7 +1517,7 @@ static int32_t omega_process(effect_handle_t self,
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
             rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;
             rawM.volterra_active  = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1.0f : 0.0f;
-            if (ctx->adaptive) {
+            if (ctx->callbackClock) {\n            delete ctx->callbackClock;\n            ctx->callbackClock = nullptr;\n        }\n        if (ctx->adaptive) {
                 ctx->adaptive->rawMetrics.publish(
                     ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
                 ivanna::experimental::AdaptiveState adSt{};
@@ -2070,6 +2082,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
     ctx->bandMeter.prepare(48000.0f);
+    ctx->callbackClock = new (std::nothrow) ivanna::audio::CallbackClockMonitor();
     ctx->masterBypassEnv.configure(48000.0f, 8.0f, 18.0f, 35.0f);
     ctx->masterBypassEnv.setImmediate(ctx->enabled ? 1.0f : 0.0f);  // deshabilitado => ya en seco; ENABLE sube con rampa de ataque
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
