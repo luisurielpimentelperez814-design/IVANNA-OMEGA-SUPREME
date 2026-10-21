@@ -61,16 +61,18 @@ fi
 ui_print "- Deploying RIR dataset (200 measured rooms)..."
 RIR_SRC="$MODPATH/system/etc/ivanna_omega/rir"
 RIR_DEST="$SAF_DIR/rir"
-if [ -d "$RIR_SRC" ] && [ -f "$RIR_SRC/metadata.csv" ]; then
-    mkdir -p "$RIR_DEST"
-    run_low_priority cp -f "$RIR_SRC"/*.wav "$RIR_DEST/" 2>/dev/null
-    run_low_priority cp -f "$RIR_SRC/metadata.csv" "$RIR_DEST/metadata.csv"
-    set_perm_recursive "$RIR_DEST" root root 0755 0644
-    RIR_COUNT=$(ls "$RIR_DEST"/*.wav 2>/dev/null | wc -l)
-    ui_print "  ✓ RIR dataset → $RIR_DEST (${RIR_COUNT} salas)"
-else
-    ui_print "  ! RIR dataset not found in module — room simulation usará síntesis algorítmica"
+if [ ! -d "$RIR_SRC" ] || [ ! -f "$RIR_SRC/metadata.csv" ]; then
+    abort "ERROR: RIR incompleto en el módulo: falta $RIR_SRC/metadata.csv. No se instalará un módulo que anuncie MAJESTY 3D sin datos."
 fi
+RIR_SOURCE_COUNT=$(find "$RIR_SRC" -maxdepth 1 -type f -name 'rir_*.wav' | wc -l)
+[ "$RIR_SOURCE_COUNT" -eq 200 ] || abort "ERROR: el módulo contiene $RIR_SOURCE_COUNT/200 WAV RIR; paquete incompleto."
+mkdir -p "$RIR_DEST"
+run_low_priority cp -f "$RIR_SRC"/rir_*.wav "$RIR_DEST/"
+run_low_priority cp -f "$RIR_SRC/metadata.csv" "$RIR_DEST/metadata.csv"
+RIR_COUNT=$(find "$RIR_DEST" -maxdepth 1 -type f -name 'rir_*.wav' | wc -l)
+[ "$RIR_COUNT" -eq 200 ] && [ -s "$RIR_DEST/metadata.csv" ] || abort "ERROR: despliegue RIR incompleto ($RIR_COUNT/200 WAV)."
+set_perm_recursive "$RIR_DEST" root root 0755 0644
+ui_print "  ✓ RIR verificado: $RIR_COUNT/200 WAV + metadata.csv → $RIR_DEST"
 
 # ── DSP libraries ─────────────────────────────────────────────────────────────
 # ── HRTF IHR1 datasets (12 sujetos, 512 taps @ 48kHz) ─────────────────────────
@@ -114,16 +116,19 @@ fi
 ui_print "- Deploying SOFA dataset (FreeField + HpIR + ARI headphones)..."
 SOFA_SRC="$MODPATH/system/etc/ivanna_omega/sofa"
 SOFA_DEST="$SAF_DIR/sofa"
-if [ -d "$SOFA_SRC" ] && find "$SOFA_SRC" -name '*.sofa' | grep -q .; then
-    mkdir -p "$SOFA_DEST"
-    run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_DEST/" 2>/dev/null
-    set_perm_recursive "$SOFA_DEST" root root 0755 0644
-    SOFA_COUNT=$(find "$SOFA_DEST" -name '*.sofa' 2>/dev/null | wc -l)
-    ARI_COUNT=$(find "$SOFA_DEST/ari" -name '*.sofa' 2>/dev/null | wc -l)
-    ui_print "  ✓ SOFA → $SOFA_DEST ($SOFA_COUNT archivos AES69, $ARI_COUNT HpIR ARI)"
-else
-    ui_print "  ! SOFA dataset no encontrado en $SOFA_SRC — HRTF usará solo datasets IHR1"
+if [ ! -d "$SOFA_SRC" ]; then
+    abort "ERROR: no existe $SOFA_SRC dentro del ZIP Magisk; SOFA no se puede desplegar."
 fi
+SOFA_SOURCE_COUNT=$(find "$SOFA_SRC" -type f -name '*.sofa' | wc -l)
+[ "$SOFA_SOURCE_COUNT" -eq 239 ] || abort "ERROR: SOFA en el módulo: $SOFA_SOURCE_COUNT/239 archivos esperados; paquete incompleto."
+mkdir -p "$SOFA_DEST"
+run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_DEST/"
+SOFA_COUNT=$(find "$SOFA_DEST" -type f -name '*.sofa' | wc -l)
+ARI_COUNT=$(find "$SOFA_DEST/ari" -type f -name '*.sofa' 2>/dev/null | wc -l)
+[ "$SOFA_COUNT" -eq 239 ] || abort "ERROR: despliegue SOFA incompleto ($SOFA_COUNT/239)."
+[ "$ARI_COUNT" -eq 200 ] || abort "ERROR: HpIR ARI incompleto ($ARI_COUNT/200)."
+set_perm_recursive "$SOFA_DEST" root root 0755 0644
+ui_print "  ✓ SOFA verificado: $SOFA_COUNT/239 archivos, ARI $ARI_COUNT/200 → $SOFA_DEST"
 
 # ── Fusión dinámica de audio_effects.xml ──────────────────────────────────────
 ui_print "- Configurando audio_effects.xml..."
