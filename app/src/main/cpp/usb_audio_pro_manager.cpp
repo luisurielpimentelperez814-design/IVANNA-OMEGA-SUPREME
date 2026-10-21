@@ -201,6 +201,12 @@ AsyncEngine g_engine;
 // This is a lightweight linear interpolator, not a high-rejection FIR filter.
 class UsbIngressAsrc {
 public:
+    // Causal polyphase windowed-sinc ASRC. A 32-tap Blackman-windowed
+    // low-pass filter suppresses images/aliasing; phase LUT avoids trig in
+    // the audio callback. History and fractional phase persist across blocks.
+    static constexpr int kTaps = 32;
+    static constexpr int kPhases = 256;
+
     void configure(int inputRate, int outputRate, int channels) noexcept {
         inputRate_ = inputRate > 0 ? inputRate : 48000;
         outputRate_ = outputRate > 0 ? outputRate : 48000;
@@ -209,22 +215,21 @@ public:
         step_ = nominalStep_;
         phase_ = 0.0;
         correction_ = 0.0;
-        havePrevious_ = false;
-        for (int c = 0; c < kMaxChannels; ++c) previous_[c] = 0.0f;
+        historyCount_ = 0;
+        for (int c = 0; c < kMaxChannels; ++c)
+            for (int k = 0; k < kTaps; ++k) history_[c][k] = 0.0f;
+        buildKernel();
     }
 
     int maxInputFrames(int outputCapacityFrames) const noexcept {
         if (outputCapacityFrames <= 1 || step_ <= 0.0) return 1;
-        const int bound = static_cast<int>((outputCapacityFrames - 1) * step_);
+        const int bound = static_cast<int>((outputCapacityFrames - 1) * step_) + 1;
         return bound > 0 ? bound : 1;
     }
 
     int process(const float* input, int inputFrames, int32_t* output,
                 int capacityFrames, int ringFillFrames, int ringCapacityFrames) noexcept {
         if (!input || !output || inputFrames <= 0 || capacityFrames <= 0) return 0;
-        // Slow PI-like occupancy servo. Full ring => consume input faster and
-        // generate fewer frames; empty ring => generate slightly more. Clamp
-        // to +/-1000 ppm so this corrects clock drift, not nominal SR mismatch.
         if (ringCapacityFrames > 0) {
             const double target = static_cast<double>(ringCapacityFrames) * 0.5;
             const double error = (static_cast<double>(ringFillFrames) - target) / target;
@@ -234,36 +239,101 @@ public:
             if (correction_ < -0.001) correction_ = -0.001;
             step_ = nominalStep_ * (1.0 + correction_);
         }
+
         int produced = 0;
         while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
-            const int i0 = static_cast<int>(phase_);
-            const int i1 = (i0 + 1 < inputFrames) ? i0 + 1 : i0;
-            const float frac = static_cast<float>(phase_ - i0);
+            const int base = static_cast<int>(phase_);
+            double frac = phase_ - static_cast<double>(base);
+            int phaseIndex = static_cast<int>(frac * kPhases + 0.5);
+            if (phaseIndex >= kPhases) phaseIndex = 0, frac = 0.0;
+            const float* coeff = kernel_[phaseIndex];
             for (int ch = 0; ch < channels_; ++ch) {
-                const float a = (i0 == 0 && havePrevious_ && phase_ > 0.0)
-                    ? previous_[ch] : input[i0 * channels_ + ch];
-                const float b = input[i1 * channels_ + ch];
-                float sample = a + (b - a) * frac;
+                double sum = 0.0;
+                for (int k = 0; k < kTaps; ++k) {
+                    const int idx = base - k;
+                    float x = 0.0f;
+                    if (idx >= 0) {
+                        x = input[idx * channels_ + ch];
+                    } else {
+                        const int histIndex = historyCount_ + idx;
+                        if (histIndex >= 0 && histIndex < historyCount_)
+                            x = history_[ch][histIndex];
+                    }
+                    sum += static_cast<double>(x) * coeff[k];
+                }
+                float sample = static_cast<float>(sum);
                 if (!(sample == sample)) sample = 0.0f;
                 if (sample > 1.0f) sample = 1.0f;
                 if (sample < -1.0f) sample = -1.0f;
-                output[produced * channels_ + ch] = static_cast<int32_t>(sample * 2147483392.0f);
+                output[produced * channels_ + ch] =
+                    static_cast<int32_t>(sample * 2147483392.0f);
             }
             ++produced;
             phase_ += step_;
         }
         phase_ -= static_cast<double>(inputFrames);
-        for (int ch = 0; ch < channels_; ++ch) previous_[ch] = input[(inputFrames - 1) * channels_ + ch];
-        havePrevious_ = true;
+        saveHistory(input, inputFrames);
         return produced;
     }
+
 private:
+    static double sinc(double x) noexcept {
+        if (x > -1.0e-12 && x < 1.0e-12) return 1.0;
+        const double pix = 3.14159265358979323846 * x;
+        return std::sin(pix) / pix;
+    }
+
+    void buildKernel() noexcept {
+        // For downsampling, cutoff is below output/input Nyquist; for
+        // upsampling, cutoff stays below input Nyquist to suppress images.
+        const double ratio = static_cast<double>(outputRate_) / inputRate_;
+        const double cutoff = 0.94 * (ratio < 1.0 ? ratio : 1.0);
+        constexpr double center = (kTaps - 1) * 0.5;
+        for (int p = 0; p < kPhases; ++p) {
+            const double frac = static_cast<double>(p) / kPhases;
+            double sum = 0.0;
+            for (int k = 0; k < kTaps; ++k) {
+                const double d = static_cast<double>(k) + frac - center;
+                const double norm = d / (center + 0.5);
+                const double window = (std::abs(norm) >= 1.0) ? 0.0 :
+                    0.42 + 0.5 * std::cos(3.14159265358979323846 * norm) +
+                    0.08 * std::cos(2.0 * 3.14159265358979323846 * norm);
+                const double c = cutoff * sinc(cutoff * d) * window;
+                kernel_[p][k] = static_cast<float>(c);
+                sum += c;
+            }
+            if (std::abs(sum) > 1.0e-12)
+                for (int k = 0; k < kTaps; ++k)
+                    kernel_[p][k] = static_cast<float>(kernel_[p][k] / sum);
+        }
+    }
+
+    void saveHistory(const float* input, int frames) noexcept {
+        if (frames >= kTaps) {
+            for (int ch = 0; ch < channels_; ++ch)
+                for (int k = 0; k < kTaps; ++k)
+                    history_[ch][k] = input[(frames - kTaps + k) * channels_ + ch];
+            historyCount_ = kTaps;
+            return;
+        }
+        const int keep = historyCount_ < kTaps - frames ? historyCount_ : kTaps - frames;
+        for (int ch = 0; ch < channels_; ++ch) {
+            float temp[kTaps]{};
+            const int oldStart = historyCount_ - keep;
+            for (int i = 0; i < keep; ++i) temp[i] = history_[ch][oldStart + i];
+            for (int i = 0; i < frames; ++i) temp[keep + i] = input[i * channels_ + ch];
+            for (int i = 0; i < keep + frames; ++i) history_[ch][i] = temp[i];
+            for (int i = keep + frames; i < kTaps; ++i) history_[ch][i] = 0.0f;
+        }
+        historyCount_ = keep + frames;
+    }
+
     int inputRate_ = 48000, outputRate_ = 48000, channels_ = 2;
     double nominalStep_ = 1.0, step_ = 1.0, phase_ = 0.0, correction_ = 0.0;
-    float previous_[kMaxChannels]{};
-    bool havePrevious_ = false;
+    float history_[kMaxChannels][kTaps]{};
+    int historyCount_ = 0;
+    float kernel_[kPhases][kTaps]{};
 };
-
 UsbIngressAsrc g_usbAsrc;
 
 inline int64_t now_ns() {
