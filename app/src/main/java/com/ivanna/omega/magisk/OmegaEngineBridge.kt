@@ -7,15 +7,12 @@ import org.json.JSONArray
 import com.ivanna.omega.safmus.SafmusUniversalKernel
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
 object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
     private const val SOCKET_PRIMARY = "omega_daemon_socket"
     private const val MIN_PROTO_VERSION = 3   // exigido en el handshake HELLO al conectar
-    private const val TCP_FALLBACK_PORT = 12121   // mismo que --tcp-port en service.sh
     private const val CONNECT_TIMEOUT = 2000
     @Volatile var isConnected = false; private set
     // Versión REAL del módulo reportada por el daemon en el handshake HELLO
@@ -56,22 +53,15 @@ object OmegaEngineBridge {
             }
         }, "omega-socket-keepalive").apply { isDaemon = true }.start()
     }
-    // Canal persistente abstracto: funciona igual sobre LocalSocket (Unix
-    // abstracto) o Socket (TCP loopback 127.0.0.1) — la app elige la primera
-    // vía que conecte. Así el daemon sigue alcanzable aunque SELinux o la
-    // ROM bloqueen el socket abstracto (el TCP fallback lo abre el daemon
-    // con --tcp-port 12121, loopback solamente).
+    // Canal de control autenticado: solo socket UNIX abstracto.
+    // El daemon rechaza TCP por diseño; no anunciar un fallback que nunca puede
+    // completar el contrato de seguridad.
     private interface Channel {
         val output: OutputStream
         val input: InputStream
         fun close()
     }
     private class UnixChannel(val s: LocalSocket) : Channel {
-        override val output get() = s.outputStream
-        override val input  get() = s.inputStream
-        override fun close() = s.close()
-    }
-    private class TcpChannel(val s: Socket) : Channel {
         override val output get() = s.outputStream
         override val input  get() = s.inputStream
         override fun close() = s.close()
@@ -85,26 +75,21 @@ object OmegaEngineBridge {
         return isConnected
     }
     private fun probeSocket(): Boolean {
-        // Sonda Unix primero; si falla (SELinux/ROM bloquea el abstracto),
-        // probar el fallback TCP loopback que el daemon abre con --tcp-port.
-        val unixOk = runCatching {
-            val sock = LocalSocket()
-            sock.connect(LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT))
-            sock.soTimeout = CONNECT_TIMEOUT
-            sock.close()
-            true
-        }.getOrDefault(false)
-        if (unixOk) { isConnected = true; return true }
-        val tcpOk = runCatching {
-            val s = Socket()
-            s.connect(InetSocketAddress("127.0.0.1", TCP_FALLBACK_PORT), CONNECT_TIMEOUT)
-            s.soTimeout = CONNECT_TIMEOUT
-            s.close()
-            true
-        }.getOrDefault(false)
-        isConnected = tcpOk
-        if (tcpOk) Log.i(TAG, "Daemon alcanzable via TCP loopback fallback (Unix socket bloqueado)")
-        return tcpOk
+        // Un connect() exitoso solo prueba que el kernel aceptó el socket;
+        // no prueba autorización SO_PEERCRED ni compatibilidad de protocolo.
+        // Exigir respuesta HELLO real antes de anunciar CONECTADO.
+        val ex = exchange(JSONObject().apply { put("action", "HELLO") })
+        val reply = ex.reply?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val proto = reply?.optInt("proto", -1) ?: -1
+        val ok = ex.reached && proto >= MIN_PROTO_VERSION
+        if (ok) {
+            val live = reply?.optString("moduleVersion", "") ?: ""
+            if (live.isNotBlank()) liveModuleVersion = live
+        } else {
+            Log.w(TAG, "Probe HELLO no validado: reached=${ex.reached} proto=$proto; conexión rechazada o protocolo incompatible")
+        }
+        isConnected = ok
+        return ok
     }
     @Synchronized
     private fun ensureSocket(): Channel? {
@@ -119,19 +104,6 @@ object OmegaEngineBridge {
             UnixChannel(sock)
         }.getOrNull()
         if (unix != null) { persistentChannel = unix; isConnected = true; return unix }
-        // Vía 2: TCP loopback 127.0.0.1:12121 (fallback del daemon).
-        val tcp = runCatching {
-            val s = Socket()
-            s.connect(InetSocketAddress("127.0.0.1", TCP_FALLBACK_PORT), CONNECT_TIMEOUT)
-            s.soTimeout = CONNECT_TIMEOUT
-            s.tcpNoDelay = true
-            TcpChannel(s)
-        }.getOrNull()
-        if (tcp != null) {
-            persistentChannel = tcp; isConnected = true
-            Log.i(TAG, "Conectado al daemon por TCP fallback (Unix no disponible)")
-            return tcp
-        }
         isConnected = false
         return null
     }
@@ -366,15 +338,7 @@ object OmegaEngineBridge {
             sock.connect(LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT))
             sock.soTimeout = 3000
             UnixChannel(sock)
-        }.getOrElse {
-            runCatching {
-                val s = Socket()
-                s.connect(InetSocketAddress("127.0.0.1", TCP_FALLBACK_PORT), 3000)
-                s.soTimeout = 3000
-                s.tcpNoDelay = true
-                TcpChannel(s)
-            }.getOrNull()
-        } ?: return Exchange(false, null)
+        }.getOrNull() ?: return Exchange(false, null)
         try {
             channel.output.write(payload.toString().toByteArray(Charsets.UTF_8))
             channel.output.flush()
