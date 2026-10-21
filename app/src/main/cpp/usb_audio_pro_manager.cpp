@@ -210,6 +210,14 @@ public:
         for (int c = 0; c < kMaxChannels; ++c) previous_[c] = 0.0f;
     }
 
+    // Bound each input chunk so even 384 kHz output from a 44.1 kHz
+    // source fits the fixed output scratch buffer without losing phase.
+    int maxInputFrames(int outputCapacityFrames) const noexcept {
+        if (outputCapacityFrames <= 1 || step_ <= 0.0) return 1;
+        const int bound = static_cast<int>((outputCapacityFrames - 1) * step_);
+        return bound > 0 ? bound : 1;
+    }
+
     int process(const float* input, int inputFrames, int32_t* output, int capacityFrames) noexcept {
         if (!input || !output || inputFrames <= 0 || capacityFrames <= 0) return 0;
         int produced = 0;
@@ -220,7 +228,8 @@ public:
             const int i1 = (i0 + 1 < inputFrames) ? i0 + 1 : i0;
             const float frac = static_cast<float>(phase_ - i0);
             for (int ch = 0; ch < channels_; ++ch) {
-                const float a = (i0 == 0 && havePrevious_) ? previous_[ch] : input[i0 * channels_ + ch];
+                const float a = (i0 == 0 && havePrevious_ && phase_ > 0.0)
+                    ? previous_[ch] : input[i0 * channels_ + ch];
                 const float b = input[i1 * channels_ + ch];
                 float sample = a + (b - a) * frac;
                 if (!(sample == sample)) sample = 0.0f;
@@ -674,9 +683,8 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStartAsyncEngine(JNIEnv* /*
     }
     g_engine.bytesPerFrame = g_engine.channels * g_engine.bytesPerSample;
     g_engine.ring.configure(g_engine.channels);
-    // Current app pipeline contract emits 48 kHz PCM. Keep this explicit in
-    // telemetry; callers must update the source rate if that contract changes.
-    g_usbAsrc.configure(48000, g_engine.sampleRate, g_engine.channels);
+    // ASRC is configured by nativeConfigureEndpoint with the actual pipeline
+    // source rate and the negotiated USB endpoint rate.
     g_engine.hasAudioData.store(false, std::memory_order_release);
     g_engine.stopRequested.store(false, std::memory_order_release);
     g_engine.submitted.store(0, std::memory_order_relaxed);
@@ -726,7 +734,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
         JNIEnv* /*env*/, jobject /*thiz*/,
         jint epAddress, jint maxPacketSize, jint interval,
-        jint sampleRate, jint channels, jint bitDepth,
+        jint sampleRate, jint sourceSampleRate, jint channels, jint bitDepth,
         jint feedbackEpAddress, jint feedbackMaxPacketSize, jint feedbackInterval) {
     if (epAddress > 0)     g_engine.epAddress     = epAddress;
     if (maxPacketSize > 0) g_engine.maxPacketSize = maxPacketSize;
@@ -738,6 +746,7 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
     g_engine.bytesPerSample = bytes;
     g_engine.bytesPerFrame = g_engine.channels * bytes;
     g_engine.ring.configure(g_engine.channels);
+    g_usbAsrc.configure(sourceSampleRate, g_engine.sampleRate, g_engine.channels);
     g_engine.hasAudioData.store(false, std::memory_order_release);
 
     // Feedback UAC (isoc IN). Sentinela feedbackEpAddress<=0 (Kotlin lo
@@ -804,7 +813,9 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
     int remaining = frames;
     int offset = 0;
     while (remaining > 0) {
-        const int chunk = remaining > 4096 ? 4096 : remaining;
+        const int safeInputFrames = g_usbAsrc.maxInputFrames(8192);
+        const int chunkLimit = safeInputFrames < 4096 ? safeInputFrames : 4096;
+        const int chunk = remaining > chunkLimit ? chunkLimit : remaining;
         for (int i = 0; i < chunk * ch; ++i) {
             float s = src[offset * ch + i];
             if (!(s == s)) s = 0.0f;
