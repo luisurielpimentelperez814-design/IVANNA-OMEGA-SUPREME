@@ -15,6 +15,7 @@ std::atomic<bool> g_engine_running{false};
 
 #include <atomic>
 #include <cstring>
+#include <cmath>
 #include <cstdlib>
 #include <cerrno>
 #include <ctime>
@@ -194,6 +195,149 @@ struct AsyncEngine {
 };
 
 AsyncEngine g_engine;
+
+// Stateful, occupancy-controlled asynchronous sample-rate converter for
+// the direct USB PCM path. It matches nominal pipeline/DAC rates and applies
+// a bounded, smoothed correction from the SPSC ring fill to track clock drift.
+// This is a lightweight linear interpolator, not a high-rejection FIR filter.
+class UsbIngressAsrc {
+public:
+    // Causal polyphase windowed-sinc ASRC. A 32-tap Blackman-windowed
+    // low-pass filter suppresses images/aliasing; phase LUT avoids trig in
+    // the audio callback. History and fractional phase persist across blocks.
+    static constexpr int kTaps = 32;
+    static constexpr int kPhases = 256;
+
+    void configure(int inputRate, int outputRate, int channels) noexcept {
+        inputRate_ = inputRate > 0 ? inputRate : 48000;
+        outputRate_ = outputRate > 0 ? outputRate : 48000;
+        channels_ = channels > 0 && channels <= kMaxChannels ? channels : 2;
+        nominalStep_ = static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
+        step_ = nominalStep_;
+        phase_ = 0.0;
+        correction_ = 0.0;
+        historyCount_ = 0;
+        for (int c = 0; c < kMaxChannels; ++c)
+            for (int k = 0; k < kTaps; ++k) history_[c][k] = 0.0f;
+        buildKernel();
+    }
+
+    int maxInputFrames(int outputCapacityFrames) const noexcept {
+        if (outputCapacityFrames <= 1 || step_ <= 0.0) return 1;
+        const int bound = static_cast<int>((outputCapacityFrames - 1) * step_) + 1;
+        return bound > 0 ? bound : 1;
+    }
+
+    int process(const float* input, int inputFrames, int32_t* output,
+                int capacityFrames, int ringFillFrames, int ringCapacityFrames) noexcept {
+        if (!input || !output || inputFrames <= 0 || capacityFrames <= 0) return 0;
+        if (ringCapacityFrames > 0) {
+            const double target = static_cast<double>(ringCapacityFrames) * 0.5;
+            const double error = (static_cast<double>(ringFillFrames) - target) / target;
+            const double desired = error * 0.001;
+            correction_ += (desired - correction_) * 0.002;
+            if (correction_ > 0.001) correction_ = 0.001;
+            if (correction_ < -0.001) correction_ = -0.001;
+            step_ = nominalStep_ * (1.0 + correction_);
+        }
+
+        int produced = 0;
+        while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
+            int base = static_cast<int>(phase_);
+            const double frac = phase_ - static_cast<double>(base);
+            int phaseIndex = static_cast<int>(frac * kPhases + 0.5);
+            // Rounded phase 1.0 belongs to the next source frame, not phase 0
+            // of the current frame; advancing base prevents a one-step glitch.
+            if (phaseIndex >= kPhases) { ++base; phaseIndex = 0; }
+            const float* coeff = kernel_[phaseIndex];
+            for (int ch = 0; ch < channels_; ++ch) {
+                double sum = 0.0;
+                for (int k = 0; k < kTaps; ++k) {
+                    const int idx = base - k;
+                    float x = 0.0f;
+                    if (idx >= 0) {
+                        x = input[idx * channels_ + ch];
+                    } else {
+                        const int histIndex = historyCount_ + idx;
+                        if (histIndex >= 0 && histIndex < historyCount_)
+                            x = history_[ch][histIndex];
+                    }
+                    sum += static_cast<double>(x) * coeff[k];
+                }
+                float sample = static_cast<float>(sum);
+                if (!(sample == sample)) sample = 0.0f;
+                if (sample > 1.0f) sample = 1.0f;
+                if (sample < -1.0f) sample = -1.0f;
+                output[produced * channels_ + ch] =
+                    static_cast<int32_t>(sample * 2147483392.0f);
+            }
+            ++produced;
+            phase_ += step_;
+        }
+        phase_ -= static_cast<double>(inputFrames);
+        saveHistory(input, inputFrames);
+        return produced;
+    }
+
+private:
+    static double sinc(double x) noexcept {
+        if (x > -1.0e-12 && x < 1.0e-12) return 1.0;
+        const double pix = 3.14159265358979323846 * x;
+        return std::sin(pix) / pix;
+    }
+
+    void buildKernel() noexcept {
+        // For downsampling, cutoff is below output/input Nyquist; for
+        // upsampling, cutoff stays below input Nyquist to suppress images.
+        const double ratio = static_cast<double>(outputRate_) / inputRate_;
+        const double cutoff = 0.94 * (ratio < 1.0 ? ratio : 1.0);
+        constexpr double center = (kTaps - 1) * 0.5;
+        for (int p = 0; p < kPhases; ++p) {
+            const double frac = static_cast<double>(p) / kPhases;
+            double sum = 0.0;
+            for (int k = 0; k < kTaps; ++k) {
+                const double d = static_cast<double>(k) + frac - center;
+                const double norm = d / (center + 0.5);
+                const double window = (std::abs(norm) >= 1.0) ? 0.0 :
+                    0.42 + 0.5 * std::cos(3.14159265358979323846 * norm) +
+                    0.08 * std::cos(2.0 * 3.14159265358979323846 * norm);
+                const double c = cutoff * sinc(cutoff * d) * window;
+                kernel_[p][k] = static_cast<float>(c);
+                sum += c;
+            }
+            if (std::abs(sum) > 1.0e-12)
+                for (int k = 0; k < kTaps; ++k)
+                    kernel_[p][k] = static_cast<float>(kernel_[p][k] / sum);
+        }
+    }
+
+    void saveHistory(const float* input, int frames) noexcept {
+        if (frames >= kTaps) {
+            for (int ch = 0; ch < channels_; ++ch)
+                for (int k = 0; k < kTaps; ++k)
+                    history_[ch][k] = input[(frames - kTaps + k) * channels_ + ch];
+            historyCount_ = kTaps;
+            return;
+        }
+        const int keep = historyCount_ < kTaps - frames ? historyCount_ : kTaps - frames;
+        for (int ch = 0; ch < channels_; ++ch) {
+            float temp[kTaps]{};
+            const int oldStart = historyCount_ - keep;
+            for (int i = 0; i < keep; ++i) temp[i] = history_[ch][oldStart + i];
+            for (int i = 0; i < frames; ++i) temp[keep + i] = input[i * channels_ + ch];
+            for (int i = 0; i < keep + frames; ++i) history_[ch][i] = temp[i];
+            for (int i = keep + frames; i < kTaps; ++i) history_[ch][i] = 0.0f;
+        }
+        historyCount_ = keep + frames;
+    }
+
+    int inputRate_ = 48000, outputRate_ = 48000, channels_ = 2;
+    double nominalStep_ = 1.0, step_ = 1.0, phase_ = 0.0, correction_ = 0.0;
+    float history_[kMaxChannels][kTaps]{};
+    int historyCount_ = 0;
+    float kernel_[kPhases][kTaps]{};
+};
+UsbIngressAsrc g_usbAsrc;
 
 inline int64_t now_ns() {
     struct timespec ts;
@@ -624,6 +768,8 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeStartAsyncEngine(JNIEnv* /*
     }
     g_engine.bytesPerFrame = g_engine.channels * g_engine.bytesPerSample;
     g_engine.ring.configure(g_engine.channels);
+    // ASRC is configured by nativeConfigureEndpoint with the actual pipeline
+    // source rate and the negotiated USB endpoint rate.
     g_engine.hasAudioData.store(false, std::memory_order_release);
     g_engine.stopRequested.store(false, std::memory_order_release);
     g_engine.submitted.store(0, std::memory_order_relaxed);
@@ -673,7 +819,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
         JNIEnv* /*env*/, jobject /*thiz*/,
         jint epAddress, jint maxPacketSize, jint interval,
-        jint sampleRate, jint channels, jint bitDepth,
+        jint sampleRate, jint sourceSampleRate, jint channels, jint bitDepth,
         jint feedbackEpAddress, jint feedbackMaxPacketSize, jint feedbackInterval) {
     if (epAddress > 0)     g_engine.epAddress     = epAddress;
     if (maxPacketSize > 0) g_engine.maxPacketSize = maxPacketSize;
@@ -685,6 +831,7 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
     g_engine.bytesPerSample = bytes;
     g_engine.bytesPerFrame = g_engine.channels * bytes;
     g_engine.ring.configure(g_engine.channels);
+    g_usbAsrc.configure(sourceSampleRate, g_engine.sampleRate, g_engine.channels);
     g_engine.hasAudioData.store(false, std::memory_order_release);
 
     // Feedback UAC (isoc IN). Sentinela feedbackEpAddress<=0 (Kotlin lo
@@ -741,23 +888,31 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
     jfloat* src = env->GetFloatArrayElements(samples, nullptr);
     if (!src) return 0;
 
-    // Conversión float→S32_LE con clamp duro; escala 2^31-1 para no envolver
-    // el signo en +1.0 exacto (bug clásico de conversión a entero).
-    static thread_local int32_t scratch[4096 * kMaxChannels];
+    // ASRC FIR polifásico antialias en la ruta USB: float PCM del pipeline
+    // -> sinc con ventana Blackman y fase continua -> S32_LE -> anillo URB.
+    // El buffer de salida admite hasta 2x frames para tasas comunes <=96kHz
+    // desde 48kHz; para ratios mayores se procesan subbloques.
+    static thread_local float inputScratch[4096 * kMaxChannels];
+    static thread_local int32_t outputScratch[8192 * kMaxChannels];
     int written = 0;
     int remaining = frames;
     int offset = 0;
     while (remaining > 0) {
-        int chunk = remaining > 4096 ? 4096 : remaining;
+        const int safeInputFrames = g_usbAsrc.maxInputFrames(8192);
+        const int chunkLimit = safeInputFrames < 4096 ? safeInputFrames : 4096;
+        const int chunk = remaining > chunkLimit ? chunkLimit : remaining;
         for (int i = 0; i < chunk * ch; ++i) {
             float s = src[offset * ch + i];
-            if (!(s == s)) s = 0.0f;                  // NaN
-            if (s >  1.0f) s =  1.0f;
+            if (!(s == s)) s = 0.0f;
+            if (s > 1.0f) s = 1.0f;
             if (s < -1.0f) s = -1.0f;
-            scratch[i] = (int32_t)(s * 2147483392.0f);
+            inputScratch[i] = s;
         }
-        written += g_engine.ring.writeFrames(scratch, chunk);
-        offset    += chunk;
+        const int outFrames = g_usbAsrc.process(
+            inputScratch, chunk, outputScratch, 8192,
+            g_engine.ring.framesAvailable(), kRingFrames - 1);
+        if (outFrames > 0) written += g_engine.ring.writeFrames(outputScratch, outFrames);
+        offset += chunk;
         remaining -= chunk;
     }
     if (written > 0) {
