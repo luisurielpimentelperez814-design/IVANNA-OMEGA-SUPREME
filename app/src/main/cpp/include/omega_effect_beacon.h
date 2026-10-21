@@ -47,7 +47,6 @@ struct alignas(8) EffectBeacon {
 };
 static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 64 B");
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "se requieren atómicos de 64 bit lock-free");
-static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 64 B");
 
 struct EffectHeadPoseAck {
     uint64_t generation = 0;
