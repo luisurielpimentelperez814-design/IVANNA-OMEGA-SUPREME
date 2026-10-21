@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.107 (398) — HAL hardware-clock reporter validation
+
+- **HAL reporter probado:** el helper acepta un path de snapshot configurable para pruebas y publica el contador de frames junto con el `timespec` asociado; una prueba nativa verifica el round-trip y rechaza timestamps inválidos.
+- **Release gate honesto:** la publicación puede validar compilación y empaquetado del software, pero no certifica una conexión física al reloj del DAC.
+- **Límite de hardware:** el call-site del productor sigue pendiente de integrar en la HAL real del dispositivo y de compilarse con su política SELinux; hasta entonces la telemetría hardware permanece inválida y el G-PLL sigue desconectado de la corrección de fase.
+- **Versión incrementada:** se usa v2.5.107 (398) para no intentar reemplazar el release previo inmutable. El artefacto solo será válido si CI pasa para este SHA y verifica los hashes del APK y del módulo.
+
+---
+
 # CHANGELOG — v2.5.106 (397) — SAFMUS feedback + release integrity
 
 - **SAF-Room:** integra el flujo latente Wasserstein con el paso de gradiente natural acotado y la retroalimentación topológica suavizada; la actualización conserva límites y validaciones de estado.

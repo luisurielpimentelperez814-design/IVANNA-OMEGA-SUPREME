@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.106
-versionCode=397
+version=v2.5.107
+versionCode=398
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.106: SAFMUS natural-gradient bounded feedback, Wasserstein latent flow and JNI-to-daemon integration; verified build provenance required
+description=v2.5.107: SAFMUS feedback integration and HAL hardware-clock reporter validation; G-PLL stays gated until device HAL is connected and measured
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

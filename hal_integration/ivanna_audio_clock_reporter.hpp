@@ -15,7 +15,9 @@ public:
     HalOutputClockReporter& operator=(const HalOutputClockReporter&) = delete;
 
     // Call during HAL stream initialization, not from a hard/real-time callback.
-    bool start() noexcept { return publisher_.open(); }
+    bool start(const char* path = kHardwareClockSnapshotPath) noexcept {
+        return publisher_.open(path);
+    }
 
     // Call after a successful get_presentation_position() result. Frames and
     // timespec must be from the same successful driver query. It performs only
