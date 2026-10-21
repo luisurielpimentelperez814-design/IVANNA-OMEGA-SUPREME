@@ -146,3 +146,78 @@ llvm-objdump -s --start-address=0x880470 --stop-address=0x8804b0 "$SO" 2>/dev/nu
 ```
 
 Also inspect direct callers of 0x256894 to establish the true signature and function boundary. Avoid guessing a control name or writing any mixer array based only on this evidence.
+
+
+## Checkpoint — Android 15 malmo_g / Blair MFC and timestamp ABI (2026-10-21)
+
+This checkpoint records the latest public-header/source transcriptions supplied during the investigation. These are **source-side claims to compare against the exact device binary**, not yet independent confirmation that every public mirror matches the installed vendor build.
+
+### Target identity to verify against the actual device
+
+The supplied target description is Moto G85 5G, model XT2427-3, product/device label `malmo_g` / `malmo`, Qualcomm platform Blair / SM6375, Android 15 SDK 35, kernel 6.1.128 GKI. The existing dump fingerprint and ELF Build IDs are recorded in the scope table above. Device labels and public product pages do not establish binary equivalence; retain the exact build fingerprint and hashes when comparing artifacts.
+
+### Public PAL timestamp structure claimed for the Android 14/15 mirror
+
+The supplied header transcription describes:
+
+```cpp
+struct pal_time_us {
+    uint32_t value_lsw;
+    uint32_t value_msw;
+};
+
+struct pal_session_time {
+    struct pal_time_us session_time;   // offset 0
+    struct pal_time_us absolute_time;  // offset 8
+    struct pal_time_us timestamp;      // offset 16
+}; // expected sizeof = 24
+```
+
+This is consistent with the six low/high-word labels observed in strings, but strings alone do not establish field offsets or units. The public-header interpretation says the members represent time in microseconds; whether `session_time` is converted or reinterpreted by this Blair binary remains unverified. Do not treat `session_time` as a frame counter without direct code or matching ABI evidence.
+
+### Public MFC builder transcription
+
+The supplied `PayloadBuilder.cpp` mirror describes a 20-byte payload of five consecutive 32-bit fields:
+
+| Offset | Field | Public builder value/source |
+|---:|---|---|
+| 0 | `sample_rate` | `mi->sample_rate` |
+| 4 | `bits_per_sample` | `mi->bit_width` |
+| 8 | `q_factor` | constant 15 |
+| 12 | `data_format` | `DATA_FORMAT_PCM` |
+| 16 | `num_channels` | `mi->channels` |
+
+This gives a concrete expected layout, but the actual stores in the installed `libar-pal.so` have not yet been shown. The `q_factor=15` statement describes the public builder's assignment; it does not prove runtime values on this build or exclude a separate ASRC control elsewhere.
+
+### APM parameter header versus payload and packet sizes
+
+The supplied public kernel transcription defines an `apm_module_param_data` header with four `uint32_t` fields: `module_instance_id`, `param_id`, `param_size`, and `error_code`, for a 16-byte header. If the complete buffer consists of that header followed by the 20-byte MFC payload, the header-plus-payload size is 36 bytes. In that layout, `param_size` is 20, not 36. The complete GPR packet may have additional transport framing, so 36 bytes should be described only as header + payload, not automatically as the entire on-wire packet.
+
+The supplied API signature for `agm_session_set_params` is `(session_id, payload_size, payload)`; under that model, module instance ID and parameter ID are encoded in the buffer rather than passed as separate function arguments. Confirm the precise target headers and the actual call argument registers in the Blair binary before relying on this signature or packet interpretation. The public identifiers cited are `MODULE_ID_MFC = 0x00010202` and `PARAM_ID_MFC_OUTPUT_MEDIA_FORMAT = 0x00010204`; do not interchange module and parameter identifiers.
+
+### What remains to be verified in the installed binary
+
+1. Inspect the MFC constructor body around the previously identified `PayloadBuilder::payloadMFCConfig` address (`0x229690`) and follow its stores to verify the five offsets, payload length, and the call that consumes it.
+2. Inspect `SessionAlsaUtils::getTimestamp` body at the thunk destination `0x256894`, not just the exported thunk at `0x2ec890`. Follow the mixer array read and output stores to establish the actual `pal_session_time` offsets and whether values are passed through or converted.
+3. Distinguish the size passed to the PAL/AGM helper, the APM `param_size`, the header-plus-payload buffer length, and any GPR transport length. Do not infer one from a log emitted at another layer.
+4. Capture runtime logs or instrument a safe test build while opening/reproducing 44.1 kHz and 48 kHz content. Compare the actual MFC fields. A constant `q_factor` would show only that this builder supplies a constant in those cases; it would not prove there is no ASRC in COPP or another DSP module.
+5. Do not modify the IVANNA timestamp ABI, write guessed mixer arrays, or change sample rate on a live stream until the installed binary's structure layout and the actual rate-control interface are established.
+
+### Suggested read-only commands on the captured dump
+
+```sh
+SO="$HOME/storage/downloads/IVANNA_BLAIR_DUMP/libar-pal.so"
+
+# Disassemble the known constructor body; inspect stores and downstream calls
+llvm-objdump -d --demangle --no-show-raw-insn \
+  --start-address=0x229690 --stop-address=0x229a50 "$SO" 2>/dev/null
+
+# Inspect the known timestamp utility body (the exported address is a thunk)
+llvm-objdump -d --demangle --no-show-raw-insn \
+  --start-address=0x256894 --stop-address=0x256e10 "$SO" 2>/dev/null
+
+# Locate symbols/thunks without relying on grep over disassembly labels
+llvm-nm -D -C "$SO" 2>/dev/null | grep -E 'payloadMFCConfig|getTimestamp|agm_session_set_params'
+```
+
+**Status:** public-source layout hypothesis documented; device-binary stores, runtime values, timestamp units, and a live ASRC ratio-control endpoint remain unverified.
