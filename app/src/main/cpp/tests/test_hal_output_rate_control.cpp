@@ -1,4 +1,5 @@
 #include "include/hal_output_rate_control.hpp"
+#include "../../../../../hal_integration/ivanna_hal_output_stream.hpp"
 #include <gtest/gtest.h>
 #include <vector>
 
@@ -54,5 +55,50 @@ TEST(HalOutputRateControl, AsrcRejectionFailsClosedAndMarksRatioUnknown) {
     EXPECT_FALSE(control.update({14402, 1300000000ull, 48000}));
     EXPECT_FALSE(control.enabled());
     EXPECT_FALSE(control.hasKnownAppliedRatio());
+}
+} // namespace
+
+namespace {
+struct FakeHal {
+    ivanna::audio::HardwareClockSample sample{0, 1000000000ull, 48000};
+    bool queryOk = true;
+    FakeAsrc asrc;
+    static bool query(void* p, ivanna::audio::HardwareClockSample* out) noexcept {
+        auto* self = static_cast<FakeHal*>(p);
+        if (!self->queryOk || !out) return false;
+        *out = self->sample;
+        return true;
+    }
+};
+TEST(HalOutputStreamClockControl, QueriesRealSampleAndAppliesThroughAsrcCallback) {
+    FakeHal hal;
+    ivanna::audio::HalOutputStreamClockControl control(
+        &FakeHal::query, &FakeAsrc::apply, &hal);
+    EXPECT_TRUE(control.controlTick());
+    hal.sample = {4800, 1100000000ull, 48000};
+    EXPECT_TRUE(control.controlTick());
+    hal.sample = {9601, 1200000000ull, 48000};
+    EXPECT_TRUE(control.controlTick());
+    hal.sample = {14402, 1300000000ull, 48000};
+    EXPECT_TRUE(control.controlTick());
+    EXPECT_TRUE(control.correctionEnabled());
+    EXPECT_TRUE(control.hasKnownAppliedRatio());
+    EXPECT_NE(control.lastAppliedRatio(), 1.0);
+}
+TEST(HalOutputStreamClockControl, QueryFailureResetsAndCommandsUnity) {
+    FakeHal hal;
+    ivanna::audio::HalOutputStreamClockControl control(
+        &FakeHal::query, &FakeAsrc::apply, &hal);
+    ASSERT_TRUE(control.controlTick());
+    hal.sample = {4800, 1100000000ull, 48000}; ASSERT_TRUE(control.controlTick());
+    hal.sample = {9601, 1200000000ull, 48000}; ASSERT_TRUE(control.controlTick());
+    hal.sample = {14402, 1300000000ull, 48000}; ASSERT_TRUE(control.controlTick());
+    ASSERT_TRUE(control.correctionEnabled());
+    hal.queryOk = false;
+    EXPECT_FALSE(control.controlTick());
+    EXPECT_FALSE(control.correctionEnabled());
+    EXPECT_TRUE(control.hasKnownAppliedRatio());
+    EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
+    EXPECT_DOUBLE_EQ(hal.asrc.ratios.back(), 1.0);
 }
 } // namespace

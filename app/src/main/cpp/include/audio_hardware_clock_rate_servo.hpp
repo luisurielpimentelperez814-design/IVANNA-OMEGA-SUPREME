@@ -15,7 +15,7 @@ public:
     Output observe(const HardwareClockStatus& status) noexcept {
         if (!status.valid || !std::isfinite(status.driftPpm) ||
             !std::isfinite(status.measuredSampleRateHz) || status.measuredSampleRateHz<=0.0 ||
-            std::abs(status.driftPpm)>5000.0) { reset(); return {}; }
+            std::abs(status.driftPpm)>=5000.0) { reset(); return {}; }
         if (validSamples_<kLockSamples) ++validSamples_;
         const double target=std::clamp(status.driftPpm,-kMaxCorrectionPpm,kMaxCorrectionPpm);
         const double filtered=correctionPpm_+0.2*(target-correctionPpm_);
