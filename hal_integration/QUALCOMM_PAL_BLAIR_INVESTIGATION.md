@@ -50,27 +50,6 @@ ResourceManager::updateBtSlimClockSrcMap(unsigned,unsigned) @ 0x2ecc40
 
 The AGM branch at `SessionAgm::setParameters` (`0x251e04`) for `param_size == 0x24` reads a leading 32-bit word from the payload, advances the pointer by four bytes, and forwards the remaining bytes plus that word to `agm_session_set_params(session_id, payload, first_word)`. This confirms a parameter transport path only; the observed branch does not identify the parameter as ASRC or clock control. Custom payload buffers in `Session`/`Device` are staging buffers until a downstream send call is established.
 
-## Engineering conclusion
-
-The evidence supports a timestamp-query path and identifies the next function to inspect: `SessionAlsaUtils::getTimestamp` at `0x2ec890`. The output provided so far does not include the body at that address, so it does not yet identify the exact mixer control ID, array schema, or units used by the utility.
-
-This evidence does **not** prove that the timestamp path controls sample-clock frequency, that a PLL control is exposed through ALSA mixer, or that the timestamp structure has a particular ABI/layout.
-
-Do not hook or modify a timestamp function as a substitute for rate control. Do not write guessed arrays to mixer controls. First identify and validate an existing variable-ratio ASRC/rate-control interface and its units, bounds, synchronization, and lifecycle.
-
-## Next verification steps
-
-1. Disassemble the actual function body at `0x2ec890`, with surrounding callers and callees. Follow its PLT calls and string/control-name references to determine which mixer controls and payload schema it reads.
-2. Inspect the complete `ipc_pal_get_timestamp` callback construction and corroborate the ABI against matching PAL headers or additional call sites. The current excerpts do not prove the structure layout.
-3. Trace `PayloadBuilder::payloadTimestamp` callers and its downstream consumers to determine what the 48-byte payload represents.
-4. Locate the actual ASRC implementation and a documented/verified ratio-change API. A timestamp-query control is not automatically a rate-control endpoint.
-5. Validate on a device build with instrumentation: measured ratio, drift, underruns/xruns, route changes, standby/reopen, and rollback. Host tests alone do not validate the physical DAC clock.
-
-## Relation to IVANNA
-
-The repository's HAL output-rate servo can estimate drift and bound correction, but it must only be connected to a callback that demonstrably changes a real ASRC ratio. The generic legacy HAL adapter is not a binary patch for the proprietary Qualcomm HAL. G-PLL/GFE are not considered connected to the device clock by this evidence alone.
-
-
 ## Timestamp dispatch follow-up (2026-10-21)
 
 The latest Termux excerpts refine, but do not close, the PAL timestamp investigation:
@@ -80,4 +59,36 @@ The latest Termux excerpts refine, but do not close, the PAL timestamp investiga
 - `SessionAlsaPcm::getTimestamp` calls the `SessionAlsaUtils::getTimestamp` symbol reported at `0x2ec890`. That address is a branch thunk to `0x256894`, so disassembling only the symbol address shows a veneer rather than the body. The inspected target range starts with a large stack frame and container/object setup and includes `ResourceManager::getInstance()` plus collection iteration. Because the demangled enclosing label is a generic STL `vector::__vallocate` label, it must not be treated as reliable function ownership. No verified timestamp-field writes or timestamp clock source have yet been identified in the shown range.
 - `clock_gettime` references found around `0x21057c`, `0x210704`, and `0x2107e4` belong to `SpeakerProtection` code in the supplied excerpt. They are not evidence that PAL playback timestamps use those calls.
 
-**Updated conclusion:** PAL's stream-to-session timestamp dispatch is evidenced; the concrete implementation, `pal_session_time` layout, units, monotonic domain, and same-snapshot pairing of frames with time are still unverified. Resolve the virtual target from `Stream`'s session/vtable data and trace writes to the output structure before implementing the target query callback. Do not infer hardware-clock behavior from unrelated `clock_gettime` sites or from the branch thunk alone.
+## Mixer/payload follow-up from Termux (2026-10-21)
+
+The next disassembly range (`0x256a80–0x257240`) provides additional concrete mixer activity, but the enclosing function label remains unreliable and the control's semantics are not yet identified:
+
+- At `0x256b04`, code calls `mixer_get_ctl_by_name` with a name assembled through a C++ string/stream sequence. The exact resulting control name has not yet been recovered from this excerpt.
+- At `0x256b38`, code calls `PayloadBuilder::payloadTimestamp`; at `0x256b58`, it passes the generated buffer and size to `mixer_ctl_set_array`. This proves that this path constructs a timestamp-named payload and attempts to write an array to a mixer control. It does **not** prove the payload is a playback-time result or an ASRC/clock command.
+- At `0x256d50`, a path calls `mixer_ctl_get_array` with the previously looked-up control and a buffer/size derived from local state. Further down, `0x257110` calls `mixer_ctl_get_array` with a size of `0x400` (1024). The provided excerpt does not establish that either read belongs to the same logical operation as the timestamp payload call, nor how returned bytes are interpreted or copied to `pal_session_time`.
+- The grep also found `mixer_ctl_set_array` calls at `0x255fac`, `0x2561cc`, `0x256670`, and `0x2567c8`. These are multiple array-write sites in the same broad address region; they must be analyzed separately rather than treated as one timestamp transaction.
+- Relevant string offsets include `0x74d90` (“Failed to get session timestamp status %d”), `0x7de93` (“Failed to get read position”), `0x6e9d9` (timestamp low/high-word logging), `0x7fd8d` (timestamp `tv_sec` overflow), and `0x1e142` (`pal_stream_get_mmap_position`). These strings indicate related timestamp/position functionality exists in the binary, but do not map the fields of `pal_session_time` or prove that playback frame position and time are sampled atomically.
+- The requested standalone disassembly of `SessionAlsaCompress::getTimestamp` did not produce usable output in this capture because the shell redirection was mistyped as `/dev/nul`; rerun with `/dev/null` if that path is needed.
+
+**Current interpretation:** mixer control lookup, array writes, and array reads are confirmed in the inspected code. The control name, array schema, return-buffer meaning, and final stores into `pal_session_time` are still unknown. The next useful trace is to recover the dynamically constructed mixer-control string and follow the success branch after `mixer_ctl_get_array` at `0x256d50` through the point where output fields are written. Separately disassemble the `0x257110` read path and `SessionAlsaCompress::getTimestamp`; do not assume they are the same control or timestamp source.
+
+## Engineering conclusion
+
+The evidence supports a timestamp-query path and identifies the next function to inspect: `SessionAlsaUtils::getTimestamp` at `0x2ec890`. The output provided so far does not identify the exact mixer control ID, array schema, or units used by the utility.
+
+This evidence does **not** prove that the timestamp path controls sample-clock frequency, that a PLL control is exposed through ALSA mixer, or that the timestamp structure has a particular ABI/layout.
+
+Do not hook or modify a timestamp function as a substitute for rate control. Do not write guessed arrays to mixer controls. First identify and validate an existing variable-ratio ASRC/rate-control interface and its units, bounds, synchronization, and lifecycle.
+
+## Next verification steps
+
+1. Disassemble the actual function body at `0x2ec890`, with surrounding callers and callees. Follow its PLT calls and string/control-name references to determine which mixer controls and payload schema it reads.
+2. Recover the mixer-control name built near `0x256b04`; trace the `mixer_ctl_get_array` success paths at `0x256d50` and `0x257110`, including stores to the output structure.
+3. Inspect the complete `ipc_pal_get_timestamp` callback construction and corroborate the ABI against matching PAL headers or additional call sites. The current excerpts do not prove the structure layout.
+4. Trace `PayloadBuilder::payloadTimestamp` callers and downstream consumers to determine what the 48-byte payload represents.
+5. Locate the actual ASRC implementation and a documented/verified ratio-change API. A timestamp-query control is not automatically a rate-control endpoint.
+6. Validate on a device build with instrumentation: measured ratio, drift, underruns/xruns, route changes, standby/reopen, and rollback. Host tests alone do not validate the physical DAC clock.
+
+## Relation to IVANNA
+
+The repository's HAL output-rate servo can estimate drift and bound correction, but it must only be connected to a callback that demonstrably changes a real ASRC ratio. The generic legacy HAL adapter is not a binary patch for the proprietary Qualcomm HAL. G-PLL/GFE are not considered connected to the device clock by this evidence alone.
