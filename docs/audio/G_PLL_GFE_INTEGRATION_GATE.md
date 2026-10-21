@@ -25,3 +25,9 @@ Status: **not enabled in the production AudioFlinger callback**.
 - CI: configure, compile, and run the native suite successfully.
 
 Until the PCM owner and measurements exist, keep the PLL disconnected from the live audio path. A software phase estimator cannot physically discipline a DAC clock by itself.
+
+## Software callback clock added
+
+The AudioFlinger callback now feeds a per-effect `CallbackClockMonitor` using the callback's frame count and `CLOCK_MONOTONIC` observations. The monitor publishes observed callback cadence and drift through the existing 64-byte effect beacon, and `readEffectCallbackClockStatus()` exposes that diagnostic to the app.
+
+This closes a **software callback-clock telemetry** path only. It does not measure the DAC oscillator, HAL hardware pointer, or the DAC's audio timestamp, and it is intentionally not fed into the geometric PLL as a phase reference. Multiple effect sessions can share the beacon, so this global diagnostic is not a per-device hardware clock. The PLL remains gated until the actual PCM/HAL owner supplies hardware-correlated frame/timestamp snapshots.
