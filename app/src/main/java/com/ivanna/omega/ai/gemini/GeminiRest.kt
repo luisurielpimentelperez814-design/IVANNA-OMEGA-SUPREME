@@ -82,7 +82,7 @@ object GeminiRest {
             e.reason == "API_KEY_INVALID" || "api key not valid" in m || e.http == 400 && "key" in m ->
                 "Google no reconoce la clave (copia incompleta o con caracteres extra)"
             e.http == 429 || e.status == "RESOURCE_EXHAUSTED" ->
-                "cuota o límite de peticiones agotado; espera unos minutos"
+                "cuota de tu clave de Gemini agotada (límite del plan gratuito o facturación sin activar); espera unos minutos o usa otra clave/plan"
             "location is not supported" in m || "user location" in m ->
                 "Gemini no está disponible para la región/red actual"
             e.http == 401 || e.reason == "ACCESS_TOKEN_TYPE_UNSUPPORTED" ->
@@ -93,7 +93,9 @@ object GeminiRest {
                 "el modelo solicitado no existe para esta clave"
             else -> "respuesta inesperada de Google"
         }
-        val detail = e.message.ifBlank { e.status }.take(160)
+        // En 429 el texto de Google es inglés genérico con una URL: no aporta nada accionable.
+        val quota = e.http == 429 || e.status == "RESOURCE_EXHAUSTED"
+        val detail = if (quota) "" else e.message.ifBlank { e.status }.take(160)
         return "HTTP ${e.http}: $cause" + if (detail.isNotBlank()) " — Google dice: «$detail»" else ""
     }
 

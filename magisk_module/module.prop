@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.115
-versionCode=406
+version=v2.5.116
+versionCode=407
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.115: scanner AR display geometry fix, predictive engine wired to player
+description=v2.5.116: clear Gemini quota message, stop auto-create on quota error
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

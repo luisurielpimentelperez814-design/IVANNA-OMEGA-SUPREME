@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.116 (407) — Mensaje claro de cuota Gemini
+
+- Un HTTP 429 de Gemini mostraba el texto crudo de Google (inglés y URL). Ahora indica en español que la cuota de la clave se agotó y qué hacer.
+- Al agotarse la cuota se desactiva la creación automática de entornos, que solo seguiría gastando peticiones fallidas.
+- Límite: no se puede arreglar la cuota en sí; depende del plan de la clave de Gemini del usuario.
+
+---
+
 # CHANGELOG — v2.5.115 (406) — Escáner AR legible y motor predictivo cableado
 
 - Escáner AR: la actividad nunca llamaba a `Session.setDisplayGeometry()`, requisito de ARCore, por lo que la imagen de cámara salía estirada/rotada al aceptar el permiso. Ahora se aplica en el hilo GL al cambiar la superficie o la rotación. El texto de estado tiene fondo semitransparente y ya no se duplica `resume()` tras conceder el permiso.

@@ -178,7 +178,11 @@ export function FotoHolo3DGenerator({ params, onParamChange }: FotoHolo3DGenerat
       setPlaceImageMime(data.mimeType!);
       setPlaceRenderMessage((data.note||'Imagen generada.')+' Modelo: '+(data.model||'IA')+'. Tamaño solicitado: '+(data.requestedSize||'4K')+'.');
     }catch(error){
-      setPlaceRenderMessage(error instanceof Error?error.message:'Error desconocido al generar la imagen.');
+      const msg=error instanceof Error?error.message:'Error desconocido al generar la imagen.';
+      // Cuota agotada: la creación automática solo seguiría gastando peticiones fallidas.
+      const quota=/HTTP 429|cuota/i.test(msg);
+      if(quota)setAutoPlace(false);
+      setPlaceRenderMessage(quota?msg+' · Creación automática desactivada; vuelve a activarla cuando se renueve la cuota.':msg);
     }finally{setPlaceRenderBusy(false);}
   };
   const exportPlaceImage=()=>{
