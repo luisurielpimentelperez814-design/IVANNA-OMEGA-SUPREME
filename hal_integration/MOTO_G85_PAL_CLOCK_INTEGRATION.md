@@ -152,3 +152,16 @@ References:
 **Next verification on target:** inspect the real playback graph/configuration and available module/parameter metadata for `MODULE_ID_DYNAMIC_RESAMPLER` (and the matching firmware module implementation), then trace the target's runtime set-param path and confirm the active graph instance ID, payload ABI, supported update behavior, and returned status. Do not send guessed APM/GPR commands or change `PARAM_ID_DYNAMIC_RESAMPLER_OUT_CFG` every servo tick: that would change nominal format, not prove drift correction. Until target presence and runtime semantics are verified, keep `ApplyExistingAsrcRatio` unbound and correction disabled.
 
 This narrows the next search to a concrete Qualcomm candidate, but it does not yet justify claiming a real hardware connection.
+## Concrete PAL timestamp observer added from public mirror (2026-10-21)
+
+Added `hal_integration/ivanna_pal_timestamp_observer.hpp`. It uses the public `pal_get_timestamp(pal_stream_handle_t *, pal_session_time *)` signature and decodes the documented `pal_time_us` high/low words into 64-bit microsecond fields: `session_time`, `absolute_time`, and `timestamp`. It is diagnostic-only and must be included only in a vendor HAL target that already owns a valid PAL stream handle and has PAL headers/linkage.
+
+Public mirror evidence:
+- `inc/PalApi.h` declares `pal_get_timestamp`.
+- `inc/PalDefs.h` documents each `pal_time_us` as a 64-bit microsecond value and `pal_session_time` as three such values.
+- In the public `SessionAgm` implementation, `getTimestamp()` is a no-op returning 0; the public `SessionAlsaPcm` path implements timestamp retrieval. Therefore even a valid API call is path-dependent, and success must be checked on the target.
+- Public `SessionAlsaUtils::setMixerParameter` accepts a generic payload, but that generic transport does not define a variable-ratio ASRC command.
+
+Why the new observer does NOT drive the servo: the public PAL timestamp structure contains no presented frame counter, and its fields are not documented as a paired `CLOCK_MONOTONIC` presentation timestamp. Converting PAL microseconds into a fake frame/time pair would invent a clock relationship and risk unstable correction. The observer therefore cannot enable correction and is deliberately separate from `QualcommPalClockIntegration`.
+
+Remaining device-specific blockers are unchanged: (1) a paired frame-position and clock-domain timestamp source for the actual Motorola output path, and (2) a verified live variable-ratio ASRC actuator with units, accepted range, stream scope and error semantics. Do not mark the hardware integration complete until both are confirmed on the Moto G85 and exercised with playback tests.
