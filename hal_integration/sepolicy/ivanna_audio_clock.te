@@ -1,0 +1,12 @@
+# Merge into the target device vendor/product policy and adjust domains to the
+# actual service labels reported by 'ps -AZ'. Do not ship without policy build.
+type ivanna_audio_clock_data_file, file_type, data_file_type;
+
+# The producer runs in the target audio HAL domain. Replace hal_audio_default if
+# the product uses a different AIDL/HIDL HAL domain.
+allow hal_audio_default ivanna_audio_clock_data_file:dir { add_name create getattr open search write };
+allow hal_audio_default ivanna_audio_clock_data_file:file { create getattr map open read setattr write };
+
+# AudioFlinger loads the effect library and consumes the shared snapshot.
+allow audioserver ivanna_audio_clock_data_file:dir { getattr open search };
+allow audioserver ivanna_audio_clock_data_file:file { getattr map open read };
