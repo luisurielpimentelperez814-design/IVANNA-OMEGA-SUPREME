@@ -23,6 +23,26 @@ A further `llvm-objdump` excerpt shows this instruction sequence:
 
 This strengthens the conclusion that a timestamp payload is serialized and sent to a mixer control. The excerpt's enclosing demangled label is `std::__1::vector<...>::__vallocate`, which is suspicious for this call sequence; verify the function boundary/call-site attribution before treating that label as the owning PAL method. Either way, this is not evidence of a variable-ratio ASRC command: no ratio argument or verified ASRC parameter ID is shown.
 
+## Bluetooth Slimbus clock-source path confirmed (2026-10-21)
+
+The additional Blair disassembly now connects the clock-selector symbols into one concrete path:
+
+- `Bluetooth::configureSlimbusClockSrc()` at `0x1fa150` reads the Bluetooth Slimbus clock-source mapping. If no mapping is available, the observed fallback is integer `1`.
+- It calls `Device::configureDeviceClockSrc("BT SLIMBUS CLK SRC", value)` (call site reported near `0x1fa1dc`).
+- `Device::configureDeviceClockSrc(const char*, unsigned)` at `0x1f0c9c` passes the supplied name to `mixer_get_ctl_by_name()` and writes the supplied integer with `mixer_ctl_set_value(control, 0, value)`.
+- `ResourceManager::getBtSlimClockSrc(unsigned)` is reported at `0x2ed074`; `ResourceManager::updateBtSlimClockSrcMap(unsigned,unsigned)` at `0x2ecc40` delegates to `std::map::operator[]`. This is key/value storage for the selector; it does not itself program a frequency or ratio.
+- The supplied `mixer_paths_blair_qrd.xml` has no entry named `BT SLIMBUS CLK SRC`. Therefore PAL attempts to look up a named mixer control, but the provided XML does not establish that the control exists or that the write succeeds on this build.
+
+This closes the **clock-source selection** path at the PAL code level. It does **not** close the IVANNA drift-correction path: the selector's integer is not shown to be an ASRC ratio, and there is no evidence that changing this selector continuously adjusts the output sample rate. Keep this path separate from `ApplyExistingAsrcRatio`; do not feed servo ratios into `BT SLIMBUS CLK SRC`.
+
+The body of `Device::configureDeviceClockSrc` confirms the mixer lookup/write mechanics, including an index-zero write. Its error handling can return `-EINVAL` for a null name/invalid mixer context and `-ENOENT` when the named control is not found (one logging-dependent missing-control branch returns success, so a zero status alone must not be treated as proof that the control was applied). A successful call also does not prove the selected value's hardware meaning without the matching control definition/driver behavior.
+
+## AGM and MFC boundary
+
+`SessionAgm::setParameters(Stream*, int, unsigned int, void*)` at `0x251e04` has a branch for `param_size == 0x24` that reads a 32-bit word from the payload, advances the pointer by four bytes, and calls `agm_session_set_params(session_id, remaining_payload, first_word)`. This confirms an AGM parameter transport path, but the observed branch alone does not identify the parameter ID as a clock or ASRC command.
+
+Likewise, `Session::updateCustomPayload` and `Device::updateCustomPayload` store staged payload bytes in object-owned buffers; staging is not itself proof that the DSP accepted a command. The MFC output-media-format payload discussed below configures media format; do not repurpose it as a live fractional-ratio actuator without a distinct, verified parameter contract.
+
 ## Integration seam added
 
 `ivanna_qualcomm_pal_clock_integration.hpp` connects the existing IVANNA components:
