@@ -2107,9 +2107,10 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->callbackClock = new (std::nothrow) ivanna::audio::CallbackClockMonitor();
     ctx->hardwareClockReader = new (std::nothrow) ivanna::audio::HardwareClockReader();
     ctx->hardwareClockTracker = new (std::nothrow) ivanna::audio::HardwareClockTracker();
-    if (ctx->hardwareClockReader && !ctx->hardwareClockReader->open()) {
-        delete ctx->hardwareClockReader;
-        ctx->hardwareClockReader = nullptr; // HAL bridge unavailable: remain diagnostic-only
+    if (ctx->hardwareClockReader) {
+        // Keep the reader object if the HAL file does not exist yet. SET_CONFIG
+        // retries mapping off the realtime path after the HAL has opened its stream.
+        (void)ctx->hardwareClockReader->open();
     }
     ctx->masterBypassEnv.configure(48000.0f, 8.0f, 18.0f, 35.0f);
     ctx->masterBypassEnv.setImmediate(ctx->enabled ? 1.0f : 0.0f);  // deshabilitado => ya en seco; ENABLE sube con rampa de ataque
