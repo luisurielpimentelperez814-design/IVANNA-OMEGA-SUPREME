@@ -4,6 +4,7 @@
 // The caller must supply values returned together by the HAL/driver presentation
 // position API. This helper does not query or fabricate a hardware timestamp.
 #include "audio_hardware_clock_hal_adapter.hpp"
+#include <time.h>
 
 namespace ivanna::audio {
 
