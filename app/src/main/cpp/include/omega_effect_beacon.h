@@ -81,6 +81,42 @@ inline bool readEffectHeadPoseAck(EffectHeadPoseAck& out,
 }
 
 
+struct EffectCallbackClockStatus {
+    bool valid = false;
+    double observedSampleRateHz = 0.0;
+    int32_t driftPpm = 0;
+};
+
+// Lector de baja frecuencia para diagnóstico. Estos datos describen la cadencia
+// del callback AudioFlinger y NO deben usarse como fase/reloj físico del DAC.
+inline bool readEffectCallbackClockStatus(
+        EffectCallbackClockStatus& out,
+        const char* path = OMEGA_EFFECT_BEACON_PATH) noexcept {
+    const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    struct stat st{};
+    if (::fstat(fd, &st) < 0 || static_cast<size_t>(st.st_size) < OMEGA_EFFECT_BEACON_SIZE) {
+        ::close(fd);
+        return false;
+    }
+    void* addr = ::mmap(nullptr, OMEGA_EFFECT_BEACON_SIZE, PROT_READ, MAP_SHARED, fd, 0);
+    ::close(fd);
+    if (addr == MAP_FAILED) return false;
+    const auto* b = static_cast<const EffectBeacon*>(addr);
+    bool ok = b->magic.load(std::memory_order_acquire) == OMEGA_EFFECT_BEACON_MAGIC;
+    if (ok) {
+        const uint32_t rateMilli = b->callback_rate_millihz.load(std::memory_order_relaxed);
+        const int32_t drift = b->callback_drift_ppm.load(std::memory_order_acquire);
+        if (rateMilli >= 8000000u && rateMilli <= 768000000u) {
+            out.observedSampleRateHz = static_cast<double>(rateMilli) / 1000.0;
+            out.driftPpm = drift;
+            out.valid = true;
+        }
+    }
+    ::munmap(addr, OMEGA_EFFECT_BEACON_SIZE);
+    return ok && out.valid;
+}
+
 // Estado visible a la app. Unavailable obliga al llamador a NO cambiar su comportamiento.
 enum class EffectBeaconState : int {
     Unavailable = -1,  // sin archivo / sin permiso / formato inválido
