@@ -13,6 +13,14 @@
 
 #define IVR_TAG "ObjectRenderer"
 
+namespace {
+// Keep azimuth on the full circle; clamping loses the rear hemisphere.
+inline float wrapAzimuthDeg(float degrees) noexcept {
+    if (!std::isfinite(degrees)) return 0.0f;
+    return std::remainder(degrees, 360.0f);
+}
+} // namespace
+
 namespace ivanna::spatial {
 
 void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
@@ -34,7 +42,7 @@ void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
     for (int i = 0; i < kNumVirtualSpeakers; ++i) {
         const auto& sp = kVirtualSpeakers[i];
         const float az = std::atan2(sp.y, sp.x) * 180.f / static_cast<float>(M_PI);
-        baseAzimuthDeg_[i] = std::clamp(az, -180.f, 180.f);
+        baseAzimuthDeg_[i] = wrapAzimuthDeg(az);
         hrtfConvolvers_[i].set_position(baseAzimuthDeg_[i], kHrtfAggressiveness);
     }
 
@@ -134,7 +142,7 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
     if (haveHeadPose) {
         const float yawDeg = pose.orientation.yawDegrees();
         for (int s = 0; s < kNumVirtualSpeakers; ++s) {
-            const float az = std::clamp(baseAzimuthDeg_[s] - yawDeg, -90.f, 90.f);
+            const float az = wrapAzimuthDeg(baseAzimuthDeg_[s] - yawDeg);
             hrtfConvolvers_[s].set_position(az, kHrtfAggressiveness);
         }
     }
