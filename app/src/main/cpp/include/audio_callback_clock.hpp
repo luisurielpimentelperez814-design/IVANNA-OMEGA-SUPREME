@@ -29,7 +29,7 @@ public:
             initialized_ = true;
             startNs_ = monotonicNs;
             lastNs_ = monotonicNs;
-                windowFrames_ = frameCount;
+                windowFrames_ = 0;
             return {};
         }
         if (monotonicNs <= lastNs_ || monotonicNs < startNs_) {
