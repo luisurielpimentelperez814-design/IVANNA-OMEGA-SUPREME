@@ -4,7 +4,9 @@ Status: **not enabled in the production AudioFlinger callback**.
 
 ## Verified repository boundary
 
-`omega_effect.cpp` implements an AudioFlinger effect callback and receives PCM buffers. The repository search performed for this change found no `snd_pcm_t` owner, `snd_pcm_status_get_audio_htstamp`, `audio_htstamp`, or `AAudioStream_getTimestamp` integration. An AudioFlinger effect buffer is not itself an ALSA PCM handle. Calling ALSA status APIs from this callback without the actual PCM owner would fabricate a clock source and is prohibited.
+`omega_effect.cpp` implements an AudioFlinger effect callback and receives PCM buffers. Android already defines `audio_stream_out::get_presentation_position()` (legacy HAL) and the framework wrapper `StreamOutHalInterface::getPresentationPosition()`; they return a presented-frame count with its associated timestamp. References: https://source.android.com/reference/hal/structaudio__stream__out and https://android.googlesource.com/platform/frameworks/av/+/master/media/libaudiohal/include/media/audiohal/StreamHalInterface.h.
+
+The IVANNA repository does not include the target device's `audio.primary.<device>.so` or AIDL/HIDL audio HAL implementation. An AudioFlinger effect buffer is not itself an ALSA PCM handle. Calling ALSA status APIs from this callback without the actual PCM owner would fabricate a clock source and is prohibited.
 
 ## Safe implementation sequence
 
@@ -26,22 +28,27 @@ Status: **not enabled in the production AudioFlinger callback**.
 
 Until the PCM owner and measurements exist, keep the PLL disconnected from the live audio path. A software phase estimator cannot physically discipline a DAC clock by itself.
 
-## HAL-fed hardware clock estimator scaffold added
+## HAL-fed hardware clock estimator and producer integration added
 
-`include/audio_hardware_clock.hpp` now implements `HardwareClockTracker`, which estimates output sample rate and drift from paired driver-reported presented-frame positions and hardware-correlated timestamps. Its native tests are registered as `test_audio_hardware_clock`.
+`include/audio_hardware_clock.hpp` implements `HardwareClockTracker`, which estimates output sample rate and drift from paired driver-reported presented-frame positions and associated timestamps. Its native tests are registered as `test_audio_hardware_clock`.
 
-**Important boundary:** this estimator is created but is not yet connected to a live hardware source. Repository search found no implementation of `get_presentation_position`, `audio_hw_device::out_write`, `AAudioStream_getTimestamp`, or `snd_pcm_status_get_audio_htstamp`. Therefore no caller can honestly supply these samples from this repository today. The HAL/PCM owner must call the tracker (or publish the same validated snapshot to the effect) using its actual API before the PLL can be enabled. Callback monotonic timestamps must not be passed as hardware timestamps.
+The HAL integration package now includes `hal_integration/ivanna_audio_clock_reporter.hpp`, a reusable reporter to be embedded in the target HAL's long-lived output-stream object, plus init/SELinux integration templates. See `hal_integration/README.md` for the exact call site and constraints.
+
+**Important boundary:** the generic producer helper and effect-side consumer are implemented, but the target device's HAL source is not part of this repository, so the vendor call site is not yet patched. The target HAL must call the reporter with the actual driver-returned frame/timestamp pair. Callback-entry timestamps must never be passed as hardware timestamps.
 
 ## Hardware clock IPC and effect consumer added
 
 The repository now contains:
+- `hal_integration/ivanna_audio_clock_reporter.hpp`: helper intended to be embedded in the target HAL's output-stream object.
+- `hal_integration/README.md`: HAL call-site instructions, data-path and validation gates.
+- `hal_integration/init.ivanna_audio_clock.rc` and `hal_integration/sepolicy/`: product integration templates; they must be adapted and merged into the target device build.
 - `include/audio_hardware_clock_bridge.hpp`: shared-memory publisher/reader between a HAL/PCM output owner and the effect callback.
 - `include/audio_hardware_clock_hal_adapter.hpp`: adapter for a successful `get_presentation_position()`-style call, passing the driver-returned frame counter and its associated timestamp.
 - `include/audio_hardware_clock.hpp`: bounded rate/drift estimator.
 - `omega_effect.cpp`: maps the snapshot outside the callback, reads it in the callback without syscalls, and publishes validated hardware-rate/drift telemetry to the effect beacon.
 - `tests/test_audio_hardware_clock_bridge.cpp`: IPC and adapter tests registered in native CMake.
 
-**Remaining integration boundary:** this repository still does not include the device's `audio.primary.<device>.so` source or any implementation of `audio_stream_out::get_presentation_position()`, `AAudioStream_getTimestamp()`, or ALSA hardware status. Consequently, no in-repository component currently calls `HardwareClockPublisher::publish()` with real driver data. The effect-side consumer is wired, but the physical producer must be added to the target device's actual HAL/PCM owner and must be permitted to access `/data/local/tmp/ivanna_hw_clock_snapshot` under SELinux. Until that call site is integrated and measured on-device, hardware telemetry remains invalid and the G-PLL must remain disconnected from PCM/phase control. Do not synthesize producer samples from the callback clock.
+**Remaining integration boundary:** this repository still does not include the device's `audio.primary.<device>.so` source or any implementation of `audio_stream_out::get_presentation_position()`, `AAudioStream_getTimestamp()`, or ALSA hardware status. Consequently, no in-repository component currently calls `HardwareClockPublisher::publish()` with real driver data. The effect-side consumer is wired, but the physical producer must be added to the target device's actual HAL/PCM owner and must be permitted to access `/data/vendor/ivanna_audio/clock_snapshot` under SELinux. Until that call site is integrated and measured on-device, hardware telemetry remains invalid and the G-PLL must remain disconnected from PCM/phase control. Do not synthesize producer samples from the callback clock.
 
 ## Software callback clock added
 
