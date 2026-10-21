@@ -103,6 +103,8 @@ ivanna_add_test(test_topological_feedback_operator)
 ivanna_add_test(test_gauge_field_engine)
 # Second-order phase/frequency tracking PLL (userspace; not a DAC clock driver).
 ivanna_add_test(test_g_pll_core)
+# Monotonic software clock monitor for callback cadence (diagnostic only, not DAC phase).
+ivanna_add_test(test_audio_callback_clock)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
