@@ -105,6 +105,8 @@ ivanna_add_test(test_gauge_field_engine)
 ivanna_add_test(test_g_pll_core)
 # Monotonic software clock monitor for callback cadence (diagnostic only, not DAC phase).
 ivanna_add_test(test_audio_callback_clock)
+# Estimator fed only by real HAL/driver presentation timestamps and frame positions.
+ivanna_add_test(test_audio_hardware_clock)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
