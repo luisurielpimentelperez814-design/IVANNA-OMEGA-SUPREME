@@ -118,9 +118,9 @@ private:
         return m_nominalOmega + correction;
     }
     PllStatus status(bool valid) const noexcept {
-        // Report the same bounded correction used by the phase predictor.
-        return {valid && m_initialized, m_phase,
-                estimatedOmega() / kPllTwoPi, m_lastError};
+        // The field is explicitly radians/second; do not convert it to Hz here.
+        // Callers/tests that need Hz can divide this value by 2*pi.
+        return {valid && m_initialized, m_phase, estimatedOmega(), m_lastError};
     }
 
     double m_nominalOmega = 0.0, m_kp = 0.0, m_ki = 0.0;
