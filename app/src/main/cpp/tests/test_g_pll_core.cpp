@@ -36,3 +36,38 @@ TEST(GeometricPll, TracksSmallFrequencyOffsetWithoutUnboundedCorrection) {
     }
     EXPECT_LT(std::abs(state.phaseErrorRadians), 0.2);
 }
+
+TEST(GeometricPll, ZeroDriftRemainsBoundedForFiveSeconds) {
+    constexpr double pi = 3.14159265358979323846;
+    constexpr double dt = 0.001;
+    GeometricPll pll(1000.0, 3.0, 1.0, 0.05);
+    double reference = 0.0;
+    ASSERT_TRUE(pll.update(reference, dt).valid);
+    ivanna::gfe::PllStatus state;
+    for (int i = 0; i < 5000; ++i) {
+        reference = std::remainder(reference + 2.0 * pi * 1000.0 * dt, 2.0 * pi);
+        state = pll.update(reference, dt);
+        ASSERT_TRUE(state.valid);
+        EXPECT_LE(std::abs(state.frequencyRadiansPerSecond / (2.0 * pi) - 1000.0), 0.051);
+        EXPECT_TRUE(std::isfinite(state.phaseRadians));
+        EXPECT_TRUE(std::isfinite(state.phaseErrorRadians));
+    }
+    EXPECT_LT(std::abs(state.phaseErrorRadians), 0.05);
+}
+
+TEST(GeometricPll, CorrectionRespectsConfiguredFrequencyLimit) {
+    constexpr double pi = 3.14159265358979323846;
+    constexpr double dt = 0.001;
+    constexpr double maxPullHz = 0.05;
+    GeometricPll pll(1000.0, 3.0, 1.0, maxPullHz);
+    double reference = 0.0;
+    ASSERT_TRUE(pll.update(reference, dt).valid);
+    ivanna::gfe::PllStatus state;
+    for (int i = 0; i < 1000; ++i) {
+        reference = std::remainder(reference + 2.0 * pi * 1001.0 * dt, 2.0 * pi);
+        state = pll.update(reference, dt);
+        ASSERT_TRUE(state.valid);
+        EXPECT_LE(std::abs(state.frequencyRadiansPerSecond / (2.0 * pi) - 1000.0),
+                  maxPullHz + 1e-9);
+    }
+}
