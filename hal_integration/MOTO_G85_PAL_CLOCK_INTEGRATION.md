@@ -13,6 +13,16 @@ The device dump identifies these paths:
 
 These facts establish a timestamp/driver IPC path, not a variable-ratio ASRC actuator. The `pal_get_timestamp` thunk and `ipc_pal_get_timestamp` are not, by themselves, a proof of a paired frame-position/timestamp sample or a frequency correction.
 
+## Follow-up disassembly evidence (2026-10-20)
+
+A further `llvm-objdump` excerpt shows this instruction sequence:
+
+- call `PayloadBuilder::payloadTimestamp(...)`
+- load the resulting buffer and byte count
+- call `mixer_ctl_set_array(...)`
+
+This strengthens the conclusion that a timestamp payload is serialized and sent to a mixer control. The excerpt's enclosing demangled label is `std::__1::vector<...>::__vallocate`, which is suspicious for this call sequence; verify the function boundary/call-site attribution before treating that label as the owning PAL method. Either way, this is not evidence of a variable-ratio ASRC command: no ratio argument or verified ASRC parameter ID is shown.
+
 ## Integration seam added
 
 `ivanna_qualcomm_pal_clock_integration.hpp` connects the existing IVANNA components:
