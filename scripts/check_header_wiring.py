@@ -7,7 +7,9 @@ Verifica que todo archivo `.h` / `.hpp` de producción bajo `app/src/main/cpp/`
 una unidad de traducción (`.cpp` / `.c`) compilada en `CMakeLists.txt` o
 `daemon/CMakeLists.txt`.
 
-Falla (exit 1) si algún header de producción está huérfano.
+Falla (exit 1) si algún header de runtime está huérfano. Los headers
+de primitives probadas de forma aislada o adaptadores externos se enumeran
+explícitamente abajo: no se deben confundir con código ya cableado al APK.
 """
 
 from __future__ import annotations
@@ -20,6 +22,22 @@ ROOT = Path(__file__).resolve().parent.parent
 CPP_ROOT = ROOT / "app" / "src" / "main" / "cpp"
 MAIN_CMAKE = CPP_ROOT / "CMakeLists.txt"
 DAEMON_CMAKE = CPP_ROOT / "daemon" / "CMakeLists.txt"
+
+# Interfaces deliberadamente fuera de las unidades de traducción de la app:
+# - el adaptador legacy depende de headers del vendor Android y solo se compila
+#   dentro del árbol del HAL objetivo;
+# - los adaptadores de control HAL se consumen desde hal_integration/ (build
+#   externo al APK);
+# - G-PLL/GFE son primitivas cubiertas por tests dedicados, pero no se deben
+#   presentar como activas en la ruta PCM de la app hasta que exista un caller
+#   de runtime válido para fase/estado analítico.
+STANDALONE_HEADERS = {
+    "include/audio_hardware_clock_hal_adapter.hpp",
+    "include/audio_hardware_clock_rate_servo.hpp",
+    "include/g_pll_core.hpp",
+    "include/gauge_field_engine.hpp",
+    "include/hal_output_rate_control.hpp",
+}
 
 INCLUDE_DIRS = [
     CPP_ROOT,
@@ -86,6 +104,8 @@ def main() -> int:
         rel = p.resolve().relative_to(CPP_ROOT.resolve())
         if rel.parts[0] in {"tests", "legacy_no_build"}:
             continue
+        if rel.as_posix() in STANDALONE_HEADERS:
+            continue
         all_headers.add(p.resolve())
 
     compiled_tus = get_compiled_sources()
@@ -120,8 +140,11 @@ def main() -> int:
     orphans = sorted(all_headers - reached_headers)
 
     print("=== [0.2] CHECK HEADER WIRING REPORT ===")
-    print(f"Total production headers (.h/.hpp) : {len(all_headers)}")
+    print(f"Runtime headers checked (.h/.hpp)  : {len(all_headers)}")
     print(f"Reached from compiled CMake TUs    : {len(reached_headers)}")
+    print(f"Standalone/test/HAL headers scoped out: {len(STANDALONE_HEADERS)}")
+    for name in sorted(STANDALONE_HEADERS):
+        print(f"  - {name}")
     print(f"Orphan headers                     : {len(orphans)}")
     print()
 
