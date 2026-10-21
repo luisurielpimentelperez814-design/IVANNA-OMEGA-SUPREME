@@ -47,6 +47,24 @@ public:
         return true;
     }
 
+    // Convenience configuration for clock-drift tracking. The limit is expressed
+    // as parts per million of the nominal frequency, not an absolute Hz value.
+    // A 50 ppm limit matches the software estimator's conservative drift budget.
+    bool configurePpm(double nominalFrequencyHz, double naturalFrequencyHz,
+                      double damping = 1.0, double maxCorrectionPpm = 50.0) noexcept {
+        if (!finitePositive(nominalFrequencyHz) || !finitePositive(maxCorrectionPpm) ||
+            maxCorrectionPpm > 1000.0) {
+            m_configured = false;
+            return false;
+        }
+        const double maxCorrectionHz = nominalFrequencyHz * maxCorrectionPpm * 1.0e-6;
+        if (!finitePositive(maxCorrectionHz)) {
+            m_configured = false;
+            return false;
+        }
+        return configure(nominalFrequencyHz, naturalFrequencyHz, damping, maxCorrectionHz);
+    }
+
     void reset(double initialPhaseRadians = 0.0) noexcept {
         m_phase = std::isfinite(initialPhaseRadians) ? wrap(initialPhaseRadians) : 0.0;
         m_integral = 0.0;
