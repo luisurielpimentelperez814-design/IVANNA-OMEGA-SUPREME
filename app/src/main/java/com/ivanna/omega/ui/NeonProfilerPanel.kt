@@ -14,6 +14,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivanna.omega.audio.AudioClockTelemetry
+import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.ui.theme.*
@@ -39,6 +41,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
     var appCpuPct   by remember { mutableStateOf<Float?>(null) }
     var nativeHeap  by remember { mutableLongStateOf(0L) }
     var javaHeap    by remember { mutableLongStateOf(0L) }
+    var effectClockTelemetry by remember { mutableStateOf(AudioClockTelemetry()) }
 
     // Todo lo de abajo es medición real: nada de cifras fijas ni modelos estimados.
     val cpuFeatures = remember { readCpuFeatures() }
@@ -55,6 +58,9 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                     runCatching { IvannaNativeLib.nativeMeasureRoundTripLatencyUs() }.getOrDefault(0L)
                 }
                 latencyUs = us
+            }
+            effectClockTelemetry = withContext(Dispatchers.IO) {
+                AudioEngine.getClockTelemetryStatic()
             }
             val cpu = android.os.Process.getElapsedCpuTime()
             val wall = android.os.SystemClock.elapsedRealtime()
@@ -138,6 +144,32 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 LiveRow("Eventos anti-pop", if (metrics.dspActive) metrics.antiPopEvents.toString() else "—")
                 LiveRow("Resincronizaciones", if (metrics.dspActive) metrics.resyncCount.toString() else "—")
                 LiveRow("Códec / ruta", if (metrics.activeCodec != "—") "${metrics.activeCodec} · ${metrics.audioRoute}" else metrics.audioRoute)
+            }
+        }
+
+        GlassCard(
+            "BEACON DEL EFECTO GLOBAL", AuroraCyan,
+            "Callback = cadencia software; hardware = válido solo con productor PCM correlacionado"
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiveRow("Callback", if (effectClockTelemetry.callbackValid) "disponible" else "no disponible")
+                LiveRow(
+                    "Cadencia callback",
+                    if (effectClockTelemetry.callbackValid) "%.2f Hz".format(effectClockTelemetry.callbackRateHz) else "—"
+                )
+                LiveRow(
+                    "Deriva callback",
+                    if (effectClockTelemetry.callbackValid) "%+.1f ppm".format(effectClockTelemetry.callbackDriftPpm) else "—"
+                )
+                LiveRow("Reloj hardware", if (effectClockTelemetry.hardwareClockValid) "medición correlacionada disponible" else "sin productor validado")
+                LiveRow(
+                    "Tasa hardware",
+                    if (effectClockTelemetry.hardwareClockValid) "%.2f Hz".format(effectClockTelemetry.hardwareRateHz) else "—"
+                )
+                LiveRow(
+                    "Deriva hardware",
+                    if (effectClockTelemetry.hardwareClockValid) "%+.1f ppm".format(effectClockTelemetry.hardwareDriftPpm) else "—"
+                )
             }
         }
 
