@@ -1,3 +1,8 @@
+# CHANGELOG — Sin publicar — Tests del seam PAL de Qualcomm (PR #88)
+
+- Added `test_qualcomm_pal_clock_integration` (10 host tests, fake PAL query + fake ASRC, ASan/UBSan clean): input validation of the paired sample, fail-closed to unity ratio, lock/reset/ASRC-rejection behavior, and optional shared-memory publishing. Mutation-checked.
+- Documented exactly what is and is not verified. The target Moto G85 callbacks (paired PAL frame/timestamp query, variable-ratio ASRC command) remain intentionally unbound; no on-device validation has been done.
+
 # CHANGELOG — v2.5.108 (399) — bounded HAL output-rate servo
 
 - Added HardwareClockRateServo: converts valid hardware clock drift estimates into a variable-rate ASRC command, requires three valid samples, clamps to ±500 ppm, limits slew to 25 ppm/update, and returns unity ratio when unlocked or invalid.

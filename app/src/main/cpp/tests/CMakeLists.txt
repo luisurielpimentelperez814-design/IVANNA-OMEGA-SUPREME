@@ -109,6 +109,9 @@ ivanna_add_test(test_audio_callback_clock)
 ivanna_add_test(test_audio_hardware_clock)
 ivanna_add_test(test_audio_hardware_clock_bridge)
 ivanna_add_test(test_hal_output_rate_control)
+# Seam PAL de Qualcomm (hal_integration/): lógica verificada con callbacks falsos;
+# NO cubre el HAL real del Moto G85 (callbacks de destino aún sin conectar).
+ivanna_add_test(test_qualcomm_pal_clock_integration)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios

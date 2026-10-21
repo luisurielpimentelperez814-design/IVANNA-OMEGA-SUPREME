@@ -42,6 +42,18 @@ This strengthens the conclusion that a timestamp payload is serialized and sent 
 
 ## Build and validation gate
 
+### Host test status (what is and is not verified)
+
+`app/src/main/cpp/tests/test_qualcomm_pal_clock_integration.cpp` (10 tests, clean under ASan+UBSan) exercises the seam with a **fake** PAL query and a **fake** ASRC. Verified in host only:
+
+- a missing query callback, a missing hardware timestamp, or a sample rate outside 8–768 kHz is rejected, and such samples can only ever drive the ASRC back to the unity ratio (1.0), never to a correcting ratio;
+- three valid paired samples lock the servo and command the ASRC; a later query failure, ASRC rejection, or `reset()` drops correction (fail-closed, ratio marked unknown on rejection);
+- the optional shared-memory reporter publishes exactly the sample the controller used, never publishes an invalid one, and its absence or failure does not disable local control.
+
+Mutation-checked: removing the timestamp check, widening the rate bound, or publishing before validation each makes a test fail.
+
+**Not verified:** the real Motorola/Qualcomm HAL, any real ASRC, the `pal_session_time` layout, or any on-device behavior. The two target callbacks remain unbound.
+
 This header is a target-HAL integration seam, not a binary patch to the proprietary Motorola/Qualcomm HAL. Compile it in the target HAL build with the same Android toolchain, then test with a fake query/ASRC callback before wiring real hardware. On-device validation must record queried frames/timestamps, commanded ratio, converter acceptance, underruns, and route transitions. Do not claim hardware PLL/DAC oscillator discipline: this servo can compensate stream cadence through an existing ASRC, not directly retune the physical oscillator.
 
 
