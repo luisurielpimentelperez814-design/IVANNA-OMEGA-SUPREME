@@ -6,6 +6,9 @@
          SAFMUS never opens the camera or prompts for access automatically. -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
+    <!-- ARCore (captura espacial): "optional" = la app se instala y funciona en
+         teléfonos sin ARCore; solo la pantalla de captura se degrada con aviso. -->
+    <uses-feature android:name="android.hardware.camera.ar" android:required="false"/>
 
     <!-- Audio permissions -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
@@ -57,6 +60,12 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.IvannaOmega"
 >
+        <!-- FIX (ARCore): sin este meta-data, ArCoreApk.requestInstall() y Session()
+             lanzan «Application manifest must contain meta-data com.google.ar.core»
+             y la pantalla CAPTURA ESPACIAL queda inutilizable (botones deshabilitados).
+             Lo exige el SDK en el manifiesto de la APP, no basta con la dependencia.
+             scripts/check_arcore_manifest.py impide que vuelva a faltar. -->
+        <meta-data android:name="com.google.ar.core" android:value="optional"/>
         <!-- FIX (APK corrupto): extractNativeLibs=false instruye al package manager
              a mapear las .so directamente desde el APK sin extraerlas a disco.
              Requiere que las .so estén sin comprimir en el APK (useLegacyPackaging=false

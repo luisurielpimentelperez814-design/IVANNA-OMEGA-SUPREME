@@ -36,6 +36,9 @@ add_library(ivanna_dsp_under_test STATIC
   # este archivo (flanco Tests host). Enganchado por el dueño del flanco:
   # medidores reales (LUFS BS.1770-4 con gates, SNR estadístico, LRA) bajo CI.
   ${CMAKE_CURRENT_SOURCE_DIR}/../ivannalab/ivannalab.cpp
+  # Módulo 1 (Fase Cero): pronosticador LPC 5–10 ms con validación en lazo
+  # cerrado. Medido en host con señales sintéticas (test_predictive_audio_engine).
+  ${CMAKE_CURRENT_SOURCE_DIR}/../predictive_audio_engine.cpp
   #   ${CMAKE_CURRENT_SOURCE_DIR}/../IvannaAudioClassifier.cpp
   #   ${CMAKE_CURRENT_SOURCE_DIR}/../IvannaFusionCore.cpp
   #   ${CMAKE_CURRENT_SOURCE_DIR}/../EvolutionaryEQ.cpp
@@ -109,15 +112,17 @@ ivanna_add_test(test_audio_callback_clock)
 ivanna_add_test(test_audio_hardware_clock)
 ivanna_add_test(test_audio_hardware_clock_bridge)
 ivanna_add_test(test_hal_output_rate_control)
-# Seam PAL de Qualcomm (hal_integration/): lógica verificada con callbacks falsos;
-# NO cubre el HAL real del Moto G85 (callbacks de destino aún sin conectar).
-ivanna_add_test(test_qualcomm_pal_clock_integration)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
 # tests por exigencia del encargo (NO mezclado dentro del upmixer).
 # Header-only, sin estado compartido: no entra a ivanna_dsp_under_test.
 ivanna_add_test(test_transient_detector)
+
+# Módulo 1 (Fase Cero): PredictiveAudioEngine. Prueba lo que SÍ puede hacer
+# (pronóstico de señal predecible, onset por residuo, cuantización entera) y lo
+# que NO (ruido → confidence 0, el motor no finge acertar).
+ivanna_add_test(test_predictive_audio_engine)
 
 # FIX (gap encontrado en auditoría de Fase 3): test_adaptive_engine.cpp
 # existía desde el merge de feature/safetylimiter pero no estaba
@@ -1345,3 +1350,5 @@ gtest_discover_tests(test_autonomous_acoustic_transaction)
 
 # Control-plane peer authentication: reject untrusted app UIDs before command/SHM handling.
 ivanna_add_test(test_daemon_peer_auth)
+# PAL integration test registration
+ivanna_add_test(test_qualcomm_pal_clock_integration)

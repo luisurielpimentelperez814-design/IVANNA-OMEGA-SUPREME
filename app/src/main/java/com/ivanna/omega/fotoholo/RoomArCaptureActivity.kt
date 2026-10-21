@@ -165,7 +165,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 statusView.text = "Permiso concedido. Preparando ARCore…"
                 ensureSession()
                 try { session?.resume(); glView.onResume() } catch (e: Exception) {
-                    statusView.text = "No se pudo iniciar ARCore: ${e.message ?: e.javaClass.simpleName}"
+                    statusView.text = arErrorMessage(e)
                 }
             } else {
                 statusView.text = "Permiso de cámara denegado. Actívalo en Ajustes para escanear."
@@ -182,7 +182,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 session?.resume()
                 glView.onResume()
             } catch (e: Exception) {
-                statusView.text = "No se pudo iniciar ARCore: ${e.message ?: e.javaClass.simpleName}"
+                statusView.text = arErrorMessage(e)
             }
         }
     }
@@ -213,15 +213,20 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             }
             startButton.isEnabled = true
         } catch (e: Exception) {
-            statusView.text = when (e) {
-                is com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException -> "Este dispositivo no es compatible con ARCore."
-                is com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException -> "Falta Google Play Services for AR."
-                is com.google.ar.core.exceptions.UnavailableApkTooOldException -> "Actualiza Google Play Services for AR."
-                is com.google.ar.core.exceptions.UnavailableSdkTooOldException -> "La versión de ARCore necesita actualizarse."
-                else -> "ARCore no disponible: ${e.message ?: e.javaClass.simpleName}"
-            }
+            statusView.text = arErrorMessage(e)
             startButton.isEnabled = false
         }
+    }
+
+    /** Mensaje accionable para cada fallo conocido de ARCore (nunca el texto crudo del SDK salvo desconocidos). */
+    private fun arErrorMessage(e: Exception): String = when (e) {
+        is com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException -> "Este dispositivo no es compatible con ARCore."
+        is com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException -> "Falta Google Play Services for AR."
+        is com.google.ar.core.exceptions.UnavailableApkTooOldException -> "Actualiza Google Play Services for AR."
+        is com.google.ar.core.exceptions.UnavailableSdkTooOldException -> "La versión de ARCore necesita actualizarse."
+        is com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException -> "Rechazaste instalar Google Play Services for AR. Instálalo para escanear."
+        is com.google.ar.core.exceptions.CameraNotAvailableException -> "La cámara está en uso por otra app. Ciérrala y vuelve a abrir."
+        else -> "ARCore no disponible: ${e.message ?: e.javaClass.simpleName}"
     }
 
     override fun onPause() {
@@ -285,7 +290,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         } else {
             "Captura lista · ${snapshot.points.size} puntos · profundidad ${snapshot.depthPointCount} · ${snapshot.poses.size} poses\n" +
                 "Extensión observada aprox.: ${"%.2f".format(Locale.US, b[3] - b[0])} × ${"%.2f".format(Locale.US, b[4] - b[1])} × ${"%.2f".format(Locale.US, b[5] - b[2])} m. No es plano certificado.\n" +
-                "SAFMUS · ${safmusAssessment.quality}: ${safmusAssessment.reason}\\n" +
+                "SAFMUS · ${safmusAssessment.quality}: ${safmusAssessment.reason}\n" +
                 "Optimización de nube: -${snapshot.optimizationRejectedCount} inválidos, -${snapshot.optimizationReducedCount} redundantes, ${snapshot.points.size} puntos finales"
         }
     }
