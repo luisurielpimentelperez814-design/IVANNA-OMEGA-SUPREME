@@ -1,12 +1,11 @@
-# CHANGELOG — v2.5.111 (402) — Telemetría visible del reloj de audio y servo acotado
+# CHANGELOG — v2.5.112 (403) — Telemetría visible del reloj de audio y servo acotado
 
-- El reproductor propio publica al estado compartido las mediciones válidas de `AudioTrack.getTimestamp()` y el estado de bloqueo del estimador; el panel de profiler muestra frecuencia, deriva y corrección del remuestreador.
-- El servo requiere tres ventanas válidas, limita la corrección a ±500 ppm y el slew a 25 ppm por actualización. Cuando el timestamp falla, retrocede, la tasa es imposible o se pierde el bloqueo, el remuestreador vuelve a corrección cero.
-- Las pruebas JVM verifican bloqueo, medición de tasa, límites, reset y transparencia del passthrough sin corrección.
-- El módulo y la app quedan versionados como `2.5.111` / `versionCode 402`, con `update.json` apuntando al ZIP canónico de esta versión.
-- Límite explícito: estas métricas pertenecen al `AudioTrack` de IvannaBridgePlayer; no prueban lectura del reloj físico del DAC, activación de `pal_get_timestamp` desde la app, ni control del HAL de Qualcomm ni de la salida de otras aplicaciones.
-
----
+- El reproductor propio publica mediciones válidas de `AudioTrack.getTimestamp()` y el estado de bloqueo del estimador; el profiler muestra frecuencia, deriva y corrección del remuestreador.
+- El profiler consulta el beacon JNI del efecto global y separa la cadencia de callback software de la telemetría hardware. Los campos hardware permanecen «no disponible» sin un productor PCM correlacionado real.
+- El servo exige tres ventanas válidas, limita la corrección a ±500 ppm y el slew a 25 ppm por actualización. Ante timestamp inválido o regresivo, tasa imposible o pérdida de bloqueo, vuelve a corrección cero.
+- Las pruebas JVM verifican bloqueo, tasa medida, límites, reset y passthrough transparente sin corrección.
+- La app y el módulo Magisk quedan sincronizados en `2.5.112` / `versionCode 403`; `update.json` apunta al ZIP canónico de esta versión.
+- Límite explícito: no se afirma acceso desde la app a `pal_get_timestamp`, control del HAL Qualcomm, disciplina del oscilador físico del DAC ni corrección de audio de otras aplicaciones. El build y la prueba en el Moto G85 aún deben confirmarse.
 
 ---
 
