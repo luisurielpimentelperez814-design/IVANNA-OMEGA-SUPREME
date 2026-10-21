@@ -40,6 +40,8 @@ struct alignas(8) EffectBeacon {
     std::atomic<uint64_t> head_pose_generation;
     std::atomic<uint32_t> head_yaw_bits;
     std::atomic<uint32_t> head_pitch_bits;
+    std::atomic<uint32_t> callback_rate_millihz; // cadencia observada, NO reloj DAC
+    std::atomic<int32_t> callback_drift_ppm;     // diagnóstico del callback
 };
 static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 64 B");
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "se requieren atómicos de 64 bit lock-free");
@@ -158,6 +160,8 @@ public:
         b->head_pose_generation.store(0ull, std::memory_order_relaxed);
         b->head_yaw_bits.store(0u, std::memory_order_relaxed);
         b->head_pitch_bits.store(0u, std::memory_order_relaxed);
+        b->callback_rate_millihz.store(0u, std::memory_order_relaxed);
+        b->callback_drift_ppm.store(0, std::memory_order_relaxed);
         b->magic.store(OMEGA_EFFECT_BEACON_MAGIC, std::memory_order_release);
         m_beacon.store(b, std::memory_order_release);
         return true;
@@ -188,6 +192,17 @@ public:
         b->head_pitch_bits.store(pitchBits, std::memory_order_relaxed);
         b->head_pose_generation.store(generation, std::memory_order_release);
     }
+    // RT-safe: publica diagnóstico de cadencia de callback, no reloj físico del DAC.
+    void onClockEstimate(double rateHz, double driftPpm) noexcept {
+        EffectBeacon* b = m_beacon.load(std::memory_order_acquire);
+        if (!b || !std::isfinite(rateHz) || !std::isfinite(driftPpm) ||
+            rateHz < 8000.0 || rateHz > 768000.0 || std::abs(driftPpm) > 1000000.0) return;
+        const double milli = rateHz * 1000.0;
+        if (milli > static_cast<double>(UINT32_MAX)) return;
+        b->callback_rate_millihz.store(static_cast<uint32_t>(milli), std::memory_order_relaxed);
+        b->callback_drift_ppm.store(static_cast<int32_t>(driftPpm), std::memory_order_release);
+    }
+
     // RT-safe: un bloque pasó por TODO el DSP.
     void onBlock(uint32_t frames) noexcept {
         EffectBeacon* b = m_beacon.load(std::memory_order_acquire);
