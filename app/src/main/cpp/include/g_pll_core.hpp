@@ -91,8 +91,13 @@ private:
         return y <= -kPllPi ? y + kPllTwoPi : y;
     }
     PllStatus status(bool valid) const noexcept {
+        // Report the same bounded correction actually applied by update().
+        // Previously telemetry could claim a frequency pull beyond the configured
+        // limit even though the phase accumulator itself was clamped.
+        const double correction = std::clamp(m_kp * m_lastError + m_ki * m_integral,
+                                             -m_maxCorrectionOmega, m_maxCorrectionOmega);
         return {valid && m_initialized, m_phase,
-                (m_nominalOmega + m_kp * m_lastError + m_ki * m_integral) / kPllTwoPi, m_lastError};
+                (m_nominalOmega + correction) / kPllTwoPi, m_lastError};
     }
 
     double m_nominalOmega = 0.0, m_kp = 0.0, m_ki = 0.0;
