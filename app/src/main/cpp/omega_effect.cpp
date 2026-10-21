@@ -1572,16 +1572,6 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                              uint32_t cmdSize, void *pCmdData,
                              uint32_t *replySize, void *pReplyData) {
     omega_effect_context_t *ctx = reinterpret_cast<omega_effect_context_t *>(self);
-    // Commands run outside the real-time process callback. Retry mapping here so
-    // an effect created before the HAL stream does not permanently miss its publisher.
-    if (ctx && !ctx->hardwareClockReader) {
-        auto* reader = new (std::nothrow) ivanna::audio::HardwareClockReader();
-        if (reader && reader->open()) ctx->hardwareClockReader = reader;
-        else delete reader;
-    }
-    if (ctx && !ctx->hardwareClockTracker) {
-        ctx->hardwareClockTracker = new (std::nothrow) ivanna::audio::HardwareClockTracker();
-    }
     switch (cmdCode) {
         case EFFECT_CMD_INIT:
             if (ctx) {
