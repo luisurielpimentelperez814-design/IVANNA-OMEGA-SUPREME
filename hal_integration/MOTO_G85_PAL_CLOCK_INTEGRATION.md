@@ -133,3 +133,22 @@ The latest device disassembly adds the following bounded observations:
 ### Integration decision
 
 No device-specific `ApplyExistingAsrcRatio` callback is added from this evidence. The generic IVANNA controller must remain unbound to an unverified mixer/DSP parameter. The missing requirements are still (a) a verified paired presented-frame/hardware-time query for this firmware and (b) a verified, existing variable-ratio ASRC actuator with known units and acceptance/error semantics. The public Android legacy HAL contract documents paired frame count and `CLOCK_MONOTONIC` timestamp semantics for `get_presentation_position`, but that does not establish that Motorola's proprietary PAL stream exposes or uses that legacy callback internally.
+## Public AudioReach Engine lead: Dynamic Resampler / RAT (2026-10-21)
+
+A deeper public-source search found a more relevant lead in Qualcomm's open AudioReach Engine, distinct from the unrelated PAL `ASR` (speech-recognition) parameter:
+
+- `MODULE_ID_DYNAMIC_RESAMPLER = 0x07001016`.
+- `PARAM_ID_DYNAMIC_RESAMPLER_CONFIG = 0x08001025`; payload fields are `use_hw_rs`, `dynamic_mode`, and `delay_type`. The public header describes dynamic resampling as a software-resampler mode; hardware resampler selection is a separate flag.
+- `PARAM_ID_DYNAMIC_RESAMPLER_OUT_CFG = 0x08001034` carries a nominal output sampling rate. The public header marks both parameters as Calibration/RTC-capable.
+- The AudioReach Engine also contains hardware-resampler driver extensions with a “force fractional” mode and drift-mode concepts. That is evidence the public engine has resampling machinery that can account for input/output clock drift in some supported configurations.
+
+References:
+- Dynamic Resampler API: https://github.com/Audioreach/audioreach-engine/blob/master/modules/processing/resamplers/dynamic_resampler/api/dynamic_resampler_api.h
+- Hardware resampler extension: https://github.com/Audioreach/audioreach-engine/blob/master/modules/processing/resamplers/dynamic_resampler/inc/rs_driver_ext.h
+- Rate Adapted Timer module API: https://github.com/Audioreach/audioreach-engine/blob/master/fwk/spf/modules/rat/api/rate_adapted_timer_api.h
+
+**What this does and does not establish:** this is a credible module/API lead, not yet a valid Moto G85 actuator. The public Dynamic Resampler API exposes mode and output-rate configuration, not a documented per-tick fractional ratio payload. The force-fractional definitions belong to a lower-level driver extension and do not establish that an app/HAL can call it, that the relevant module is loaded in the `malmo` playback graph, or that this firmware supports runtime updates while a stream is active. The public engine's ARM resampler library path is not proof that this DSP module/ABI is present in the phone's proprietary `blair` firmware.
+
+**Next verification on target:** inspect the real playback graph/configuration and available module/parameter metadata for `MODULE_ID_DYNAMIC_RESAMPLER` (and the matching firmware module implementation), then trace the target's runtime set-param path and confirm the active graph instance ID, payload ABI, supported update behavior, and returned status. Do not send guessed APM/GPR commands or change `PARAM_ID_DYNAMIC_RESAMPLER_OUT_CFG` every servo tick: that would change nominal format, not prove drift correction. Until target presence and runtime semantics are verified, keep `ApplyExistingAsrcRatio` unbound and correction disabled.
+
+This narrows the next search to a concrete Qualcomm candidate, but it does not yet justify claiming a real hardware connection.
