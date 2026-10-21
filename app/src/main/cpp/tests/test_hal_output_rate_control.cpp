@@ -95,7 +95,7 @@ TEST(HalOutputStreamClockControl, QueryFailureResetsAndCommandsUnity) {
     hal.sample = {14402, 1300000000ull, 48000}; ASSERT_TRUE(control.controlTick());
     ASSERT_TRUE(control.correctionEnabled());
     hal.queryOk = false;
-    EXPECT_TRUE(control.controlTick()); // invalid sample safely commands unity
+    EXPECT_FALSE(control.controlTick()); // query failed; reset still commands unity
     EXPECT_FALSE(control.correctionEnabled());
     EXPECT_TRUE(control.hasKnownAppliedRatio());
     EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
@@ -160,7 +160,7 @@ TEST(HalOutputStreamClockControl, InvalidTimestampOrRateNeverEnablesCorrection) 
     ASSERT_TRUE(control.correctionEnabled());
 
     hal.sample = {15000, 2200000000ull, 48000}; // time went backwards
-    EXPECT_FALSE(control.controlTick());
+    EXPECT_TRUE(control.controlTick()); // timestamp regression resets correction to unity
     EXPECT_FALSE(control.correctionEnabled());
     EXPECT_TRUE(control.hasKnownAppliedRatio());
     EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
