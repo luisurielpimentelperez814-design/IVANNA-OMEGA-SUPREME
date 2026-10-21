@@ -1,6 +1,7 @@
 # CHANGELOG — Sin publicar — Tests del seam PAL de Qualcomm (PR #88)
 
 - Added `test_qualcomm_pal_clock_integration` (10 host tests, fake PAL query + fake ASRC, ASan/UBSan clean): input validation of the paired sample, fail-closed to unity ratio, lock/reset/ASRC-rejection behavior, and optional shared-memory publishing. Mutation-checked.
+- Added `hal_integration/tools/probe_moto_g85_pal.sh`: read-only on-device probe (symbols, strings, graph/mixer config, AudioFlinger state) that produces the evidence needed to bind the real PAL timestamp query and ASRC actuator. Host-tested with synthetic libraries; not yet run on the phone.
 - Documented exactly what is and is not verified. The target Moto G85 callbacks (paired PAL frame/timestamp query, variable-ratio ASRC command) remain intentionally unbound; no on-device validation has been done.
 
 # CHANGELOG — v2.5.108 (399) — bounded HAL output-rate servo

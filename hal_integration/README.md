@@ -8,6 +8,7 @@ This directory contains the reusable HAL-side hook. It is not a replacement for 
 - `ivanna_legacy_audio_hal_adapter.hpp`: concrete adapter for Android's legacy `audio_stream_out::get_presentation_position` API; it still requires the target HAL's real ASRC callback.
 - `ivanna_audio_clock_reporter.hpp`: optional diagnostic snapshot publisher.
 - `ivanna_qualcomm_pal_clock_integration.hpp`: Qualcomm PAL seam (paired-sample validation + optional shared-memory publishing on top of `HalOutputStreamClockControl`). Both device-specific callbacks are intentionally unbound; see `MOTO_G85_PAL_CLOCK_INTEGRATION.md`. Host-tested with fake callbacks (`test_qualcomm_pal_clock_integration`); not validated against the real Moto G85 HAL.
+- `tools/probe_moto_g85_pal.sh`: read-only on-device probe that gathers the PAL/ASRC evidence the Qualcomm seam still needs (see `MOTO_G85_PAL_CLOCK_INTEGRATION.md`).
 - `sepolicy/` and `init.ivanna_audio_clock.rc`: product-specific templates only; adapt to the target policy and init layout.
 
 Add `app/src/main/cpp/include` to the target HAL module's include paths. Compile the target HAL against the same C++ standard and NDK/platform toolchain used by that HAL.

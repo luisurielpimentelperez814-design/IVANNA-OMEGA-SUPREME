@@ -40,6 +40,18 @@ This strengthens the conclusion that a timestamp payload is serialized and sent 
 - Instantiate the integration object in the real, long-lived target output stream; open the optional reporter during stream setup; schedule ticks on the stream's serialized control thread; reset/stop it before teardown.
 - The current dump does not establish the ASRC control API, its ratio units, or whether a paired PAL frame/timestamp query exists. Until those are verified from the actual call sites/parameter definitions, do not enable the correction callback on the phone.
 
+## How to obtain the missing device evidence (read-only probe)
+
+`hal_integration/tools/probe_moto_g85_pal.sh` collects, from the real phone, exactly the facts this seam still needs. It only reads: it lists PAL/HAL libraries, dynamic symbols and strings that mention timestamps or ASRC/slip/rate-adapter modules, matching graph/mixer config files, mixer control names, and the AudioFlinger output-thread state. It does not write to the system, change mixers, or open streams.
+
+```sh
+# Termux, with root (optional: pkg install binutils for symbols/strings)
+su -c "sh /path/to/probe_moto_g85_pal.sh"
+# -> /sdcard/Download/ivanna_pal_probe_<date>/report.txt  (+ .tar.gz)
+```
+
+The report ends with an automatic reading. Host-tested in the sandbox with synthetic libraries (candidates found / nothing found / timestamp but no ASRC); its output on the real Moto G85 has **not** been collected yet. Evidence from the probe is a lead, not proof: the ASRC module must still be confirmed in the playback graph, with its parameter ID, payload and ratio units, before the correction callback is enabled.
+
 ## Build and validation gate
 
 ### Host test status (what is and is not verified)
