@@ -529,6 +529,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
 
             val resampler = StereoAudioResampler(TARGET_SAMPLE_RATE)
             resampler.setInputSampleRate(inputSampleRate)
+            val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
+            val outputTimestamp = AudioTimestamp()
             DSPBridge.init(sampleRate)
 
             val npeSampleRateMismatch = IvannaNpeEngine.isReady && IvannaNpeEngine.sampleRate != sampleRate
@@ -739,7 +741,23 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                 }
                             }
                             val outputChunk = resampler.process(chunk)
-                            track.write(outputChunk, 0, outputChunk.size, AudioTrack.WRITE_BLOCKING)
+                            val writtenSamples = track.write(
+                                outputChunk, 0, outputChunk.size, AudioTrack.WRITE_BLOCKING
+                            )
+                            // Pares reales del reproductor propio; si la consulta falla,
+                            // se vuelve a razón unidad en vez de inferir una corrección.
+                            if (writtenSamples > 0) {
+                                if (track.getTimestamp(outputTimestamp)) {
+                                    val correctionPpm = clockDriftServo.observe(
+                                        outputTimestamp.framePosition,
+                                        outputTimestamp.nanoTime
+                                    )
+                                    resampler.setClockCorrectionPpm(correctionPpm)
+                                } else {
+                                    clockDriftServo.reset()
+                                    resampler.setClockCorrectionPpm(0.0)
+                                }
+                            }
                             offset += chunkFrames
                         }
                     }

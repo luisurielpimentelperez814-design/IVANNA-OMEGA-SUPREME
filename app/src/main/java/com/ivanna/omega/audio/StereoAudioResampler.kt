@@ -38,15 +38,46 @@ class StereoAudioResampler(
     private var histR = FloatArray(TAPS)
     private var pos = TAPS.toDouble()
 
+    private var clockCorrectionPpm = 0.0
+
     fun setInputSampleRate(rate: Int) {
         if (rate <= 0) return
         if (rate != inputRate) {
             inputRate = rate
-            step = rate.toDouble() / targetRate.toDouble()
-            table = buildTable(if (step > 1.0) 1.0 / step else 1.0)
+            clockCorrectionPpm = 0.0
+            val nominalStep = rate.toDouble() / targetRate.toDouble()
+            step = nominalStep
+            table = buildTable(if (nominalStep > 1.0) 1.0 / nominalStep else 1.0)
             histL.fill(0f); histR.fill(0f)
             pos = TAPS.toDouble()
         }
+    }
+
+    /** Bounded ppm correction from paired output frame-position/timestamp samples. */
+    fun setClockCorrectionPpm(ppm: Double) {
+        clockCorrectionPpm = if (ppm.isFinite()) ppm.coerceIn(-500.0, 500.0) else 0.0
+        step = inputRate.toDouble() / targetRate.toDouble() /
+            (1.0 + clockCorrectionPpm * 1.0e-6)
+    }
+
+    // Keep the filter history current while unity-rate output is bit-transparent.
+    private fun rememberPassThrough(input: FloatArray) {
+        val frames = input.size / 2
+        if (frames >= TAPS) {
+            val start = (frames - TAPS) * 2
+            for (i in 0 until TAPS) {
+                histL[i] = input[start + i * 2]
+                histR[i] = input[start + i * 2 + 1]
+            }
+        } else if (frames > 0) {
+            System.arraycopy(histL, frames, histL, 0, TAPS - frames)
+            System.arraycopy(histR, frames, histR, 0, TAPS - frames)
+            for (i in 0 until frames) {
+                histL[TAPS - frames + i] = input[i * 2]
+                histR[TAPS - frames + i] = input[i * 2 + 1]
+            }
+        }
+        pos = TAPS.toDouble()
     }
 
     private fun buildTable(cutoffScale: Double): FloatArray {
@@ -72,7 +103,10 @@ class StereoAudioResampler(
     }
 
     fun process(input: FloatArray): FloatArray {
-        if (inputRate == targetRate) return input
+        if (inputRate == targetRate && clockCorrectionPpm == 0.0) {
+            rememberPassThrough(input)
+            return input
+        }
         val n = input.size / 2
         if (n == 0) return FloatArray(0)
 

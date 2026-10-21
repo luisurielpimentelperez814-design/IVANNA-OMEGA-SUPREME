@@ -1,3 +1,13 @@
+# CHANGELOG — Sin publicar — Corrección de deriva en el reproductor propio
+
+- Cableado el estimador al camino real AudioTrack.write() → AudioTrack.getTimestamp() → StereoAudioResampler.setClockCorrectionPpm() de IvannaBridgePlayer.
+- La medición usa pares de posición de frame y nanoTime de la misma llamada; exige ventanas de 500 ms, tres observaciones válidas, corrección máxima ±500 ppm y slew máximo 25 ppm por actualización.
+- Ante timestamps ausentes/regresivos, saltos o tasas imposibles, la corrección vuelve a unity. El remuestreador conserva historial entre bloques y passthrough transparente cuando no hay corrección.
+- Añadidas pruebas JVM para el bloqueo, los límites, el reset y el remuestreador.
+- Alcance: corrige la cadencia del reproductor propio. No modifica el HAL propietario de Qualcomm, no corrige otras apps y no afirma disciplinar el oscilador físico del DAC.
+
+---
+
 # CHANGELOG — v2.5.110 (401) — SAFMUS: metadatos espaciales consistentes
 
 - SAFMUS ahora rechaza capturas AR con contadores negativos, duración negativa o un número final de puntos mayor que las muestras de profundidad/visuales declaradas. Esto evita etiquetar metadatos imposibles como geometría revisable.
