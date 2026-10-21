@@ -23,11 +23,11 @@ TEST(GeometricPll, InitializesToWrappedReferencePhase) {
 
 TEST(GeometricPll, TracksSmallFrequencyOffsetWithoutUnboundedCorrection) {
     GeometricPll pll(1000.0, 10.0, 1.0, 20.0);
-    constexpr double dt = 0.001;
+    constexpr double dt = 0.0001;
     double reference = 0.0;
     ASSERT_TRUE(pll.update(reference, dt).valid);
     ivanna::gfe::PllStatus state;
-    for (int i = 0; i < 5000; ++i) {
+    for (int i = 0; i < 50000; ++i) {
         reference = std::remainder(reference + 2.0 * 3.14159265358979323846 * 1001.0 * dt,
                                    2.0 * 3.14159265358979323846);
         state = pll.update(reference, dt);
@@ -63,7 +63,7 @@ TEST(GeometricPll, CorrectionRespectsConfiguredFrequencyLimit) {
     double reference = 0.0;
     ASSERT_TRUE(pll.update(reference, dt).valid);
     ivanna::gfe::PllStatus state;
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < 10000; ++i) {
         reference = std::remainder(reference + 2.0 * pi * 1001.0 * dt, 2.0 * pi);
         state = pll.update(reference, dt);
         ASSERT_TRUE(state.valid);
@@ -74,7 +74,7 @@ TEST(GeometricPll, CorrectionRespectsConfiguredFrequencyLimit) {
 
 TEST(GeometricPll, PpmConfigurationBoundsClockPull) {
     constexpr double pi = 3.14159265358979323846;
-    constexpr double dt = 0.001;
+    constexpr double dt = 0.00001;
     constexpr double nominalHz = 48000.0;
     constexpr double maxPpm = 50.0;
     const double maxPullHz = nominalHz * maxPpm * 1.0e-6;
