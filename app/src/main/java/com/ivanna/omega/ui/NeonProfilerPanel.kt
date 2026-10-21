@@ -140,6 +140,34 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 LiveRow("Códec / ruta", if (metrics.activeCodec != "—") "${metrics.activeCodec} · ${metrics.audioRoute}" else metrics.audioRoute)
             }
         }
+
+        GlassCard(
+            "RELOJ DE AUDIO · AUDIOTrack", AuroraCyan,
+            "Medición del AudioTrack propio; no equivale al reloj físico del DAC"
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiveRow(
+                    "Estado",
+                    when {
+                        !metrics.clockTimestampAvailable -> "timestamp no disponible"
+                        metrics.clockServoLocked -> "seguimiento estable"
+                        else -> "adquiriendo muestras"
+                    }
+                )
+                LiveRow(
+                    "Frecuencia medida",
+                    if (metrics.clockServoLocked) "%.2f Hz".format(metrics.clockMeasuredRateHz) else "—"
+                )
+                LiveRow(
+                    "Deriva medida",
+                    if (metrics.clockServoLocked) "%+.1f ppm".format(metrics.clockMeasuredDriftPpm) else "—"
+                )
+                LiveRow(
+                    "Corrección del remuestreador",
+                    if (metrics.clockServoLocked) "%+.1f ppm".format(metrics.clockCorrectionPpm) else "0.0 ppm (seguro)"
+                )
+            }
+        }
     }
 }
 
