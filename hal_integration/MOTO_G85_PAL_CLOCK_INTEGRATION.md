@@ -179,3 +179,19 @@ The uploaded `ivanna_hal_followup_20261021_061252.tar.gz` contains a disassembly
 
 The output field offsets are now better supported than in the prior checkpoint, but the frame/time pairing and live variable-ratio ASRC actuator remain unverified. Keep the device-specific `QueryPairedSample` and `ApplyExistingAsrcRatio` callbacks unbound and the clock-correction servo disabled until the mixer-name lookup/callers and active playback graph are traced, and an actual variable-ratio control with payload ABI, units, update semantics and return status is confirmed. The uploaded probe also did not identify a confirmed actuator. No guessed mixer writes or DSP parameter IDs are permitted.
 
+
+## ASRC integration status checkpoint (2026-10-21)
+
+The host test suite now also exercises the existing rate-control contract at nominal rates of 44.1, 48, 88.2, 96, 176.4, 192, 352.8, 384 and 768 kHz. These tests validate software bounds and callback sequencing with a fake converter; they do **not** prove that the Motorola HAL or a connected USB DAC accepts a ratio change.
+
+The Android application path in `AudioPipeline.kt` currently creates `AudioRecord` and `AudioTrack` at the same `SAMPLE_RATE`. Its direct USB path is an optional separate URB bypass. Neither path, by itself, supplies the hardware presentation-frame/timestamp pair and verified variable-ratio converter callback required by `HalOutputStreamClockControl`. Inserting a nominal-rate converter at ratio 1.0 would not fix physical clock drift, and changing only a software variable would not change the DAC clock.
+
+Acceptance criteria for declaring the physical ASRC feature complete remain:
+1. identify the active output-stream implementation for the installed build;
+2. obtain a paired, validated presentation-frame counter and hardware-correlated timestamp from that stream;
+3. identify the actual variable-ratio ASRC already in the output path, including units, limits and error handling;
+4. bind both callbacks in the long-lived output-stream owner and schedule control outside the hard real-time write path;
+5. run the native CI tests and build the APK and Magisk module from the same commit;
+6. on-device playback-test internal output and USB-C DAC separately, checking applied-ratio telemetry, underruns and audio stability.
+
+Until those steps are completed, this branch is an integration/test improvement, not a claim of completed device-level clock correction.

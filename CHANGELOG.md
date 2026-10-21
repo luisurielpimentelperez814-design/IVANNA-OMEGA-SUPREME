@@ -1,3 +1,12 @@
+# CHANGELOG — Sin publicar — ASRC: cobertura adicional del contrato de reloj
+
+- Añadida prueba host del controlador HAL a tasas nominales de 44.1, 48, 88.2, 96, 176.4, 192, 352.8, 384 y 768 kHz, con ratio acotado.
+- Añadida regresión para timestamp ausente/regresivo y frecuencia fuera de rango; el contrato debe volver a razón unitaria y desactivar la corrección.
+- Esto solo prueba el controlador con callbacks simulados. No demuestra que el HAL Qualcomm o un DAC USB-C real acepten una razón variable.
+- No se publica como release de audio funcional: la integración física del HAL sigue pendiente de identificar y validar en el dispositivo.
+
+---
+
 # CHANGELOG — v2.5.112 (403) — Telemetría visible del reloj de audio y servo acotado
 
 - El reproductor propio publica mediciones válidas de `AudioTrack.getTimestamp()` y el estado de bloqueo del estimador; el profiler muestra frecuencia, deriva y corrección del remuestreador.
