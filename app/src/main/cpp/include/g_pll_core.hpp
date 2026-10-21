@@ -22,7 +22,7 @@ public:
     // naturalFrequencyHz controls loop bandwidth; damping=1 is critically damped
     // for the linearized continuous-time model. maxCorrection bounds frequency pull.
     explicit GeometricPll(double nominalFrequencyHz,
-                          double naturalFrequencyHz = 10.0,
+                          double naturalFrequencyHz = 3.0,
                           double damping = 1.0,
                           double maxCorrectionHz = 100.0) noexcept {
         configure(nominalFrequencyHz, naturalFrequencyHz, damping, maxCorrectionHz);
