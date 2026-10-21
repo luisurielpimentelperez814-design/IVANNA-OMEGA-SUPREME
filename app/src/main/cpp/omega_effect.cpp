@@ -1589,6 +1589,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
         case EFFECT_CMD_SET_CONFIG:
             if (pCmdData && cmdSize == sizeof(effect_config_t)) {
                 ctx->config = *reinterpret_cast<effect_config_t *>(pCmdData);
+                // HAL may create the shared snapshot after effect construction.
+                // Retry mapping on this control-plane command, never in the RT callback.
+                if (ctx->hardwareClockReader) {
+                    (void)ctx->hardwareClockReader->open();
+                }
                 uint32_t sr = ctx->config.outputCfg.samplingRate;
                 if (sr == 0) sr = ctx->config.inputCfg.samplingRate;
                 if (sr == 0) sr = 48000;
