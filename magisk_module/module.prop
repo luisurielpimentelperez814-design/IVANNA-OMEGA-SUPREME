@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.107
-versionCode=398
+version=v2.5.108
+versionCode=399
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.107: SAFMUS feedback integration and HAL hardware-clock reporter validation; G-PLL stays gated until device HAL is connected and measured
+description=v2.5.108: bounded HAL output-rate servo primitive; target HAL/ASRC integration remains device-specific
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

@@ -1,98 +1,27 @@
 # IVANNA hardware clock: Android HAL integration
 
-## Findings
+## Control path
+This package now has two distinct stages:
+1. HardwareClockTracker estimates output-clock drift from paired presentation-frame and hardware-correlated timestamp samples.
+2. HardwareClockRateServo turns valid estimates into an input-frames-per-output-frame command for the HAL's existing asynchronous sample-rate converter (ASRC). It requires three valid observations, clamps correction to ±500 ppm, limits slew to 25 ppm per update, smooths the estimate, and fails closed on invalid or implausible observations.
 
-Android already defines the required output-clock API. The legacy HAL interface
-`audio_stream_out::get_presentation_position(const audio_stream_out*, uint64_t*,
-timespec*)` returns the presented-frame count and the associated
-`CLOCK_MONOTONIC` timestamp. Android's framework HAL wrapper also exposes
-`StreamOutHalInterface::getPresentationPosition()`. References:
+The servo is intentionally not inserted into omega_process(): AudioFlinger insert effects do not own the physical output queue and cannot reliably control the DAC's output cadence. Instantiate beside the HAL output stream and apply its ratio to that stream's existing ASRC. Do not add a second resampler if the HAL already has a variable-ratio converter; adapt its control interface.
 
-- https://source.android.com/reference/hal/structaudio__stream__out
+## Android clock source
+Android defines the required output-clock API. Legacy audio_stream_out::get_presentation_position returns the presented-frame count and associated CLOCK_MONOTONIC timestamp. Android's framework HAL wrapper also exposes StreamOutHalInterface::getPresentationPosition().
+- https://source.android.com/reference/hal/structaudio_stream_out
 - https://android.googlesource.com/platform/frameworks/av/+/master/media/libaudiohal/include/media/audiohal/StreamHalInterface.h
 
-This repository does not contain the device vendor's `audio.primary.*` HAL
-implementation, nor an AIDL audio HAL service implementation. Therefore a
-device-specific call site cannot be patched automatically here. The producer
-helper and the effect-side reader/estimator are now present; the HAL call site
-must be added to the actual device source tree.
-
 ## Producer call site
+The repository does not contain the device vendor's audio.primary HAL implementation or AIDL service source. In the target HAL source tree, keep one HalOutputClockReporter and one HardwareClockRateServo as members of the long-lived output stream (one publisher per underlying output clock). Open the reporter during stream setup, not on the write path.
 
-Add `app/src/main/cpp/include` and this directory to the vendor HAL target's
-include paths. Include `ivanna_audio_clock_reporter.hpp` in the output-stream
-implementation. Keep one reporter per physical output stream (or one per
-underlying output clock), not one per client track.
-
-Store one reporter as a member of the HAL's long-lived output-stream object,
-so its mapping remains alive. Use one writer for the shared output-clock path;
-do not let independent streams truncate or race on the same snapshot.
-
-```cpp
-struct vendor_output_stream {
-    // ... existing HAL members ...
-    ivanna::audio::HalOutputClockReporter ivannaClock;
-    bool ivannaClockReady = false;
-};
-
-// In the stream-open/configuration path, outside the real-time write callback:
-out->ivannaClockReady = out->ivannaClock.start();
-```
-
-In the HAL's existing presentation-position implementation, after the underlying
-driver/PCM query has successfully filled the matching frame count and timestamp:
-
-```cpp
-// frames and timestamp have just been filled by the underlying driver query.
-if (status == 0 && out->ivannaClockReady) {
-    out->ivannaClock.report(frames, timestamp, configuredSampleRateHz);
-}
-```
-
-The snippet is a template: adapt names to the actual HAL implementation. Do not
-call the function pointer recursively from inside its own implementation. If
-you are implementing `get_presentation_position` itself, report only after the
-underlying ALSA/driver position query returns its matching frame/timestamp pair.
-For AIDL HALs, call the reporter with the frames and timestamp returned by that
-stream's `getPresentationPosition()` implementation. Do not use a timestamp
-sampled independently from the frame counter.
-
-The effect callback maps the shared snapshot outside audio processing and reads
-it with bounded atomic loads. The reader does not open files or call the kernel
-inside the callback. Hardware telemetry remains invalid until a real producer
-publishes at least two monotonic samples.
+In the HAL's existing presentation-position implementation, after the underlying driver query has returned a matching frame count and timestamp, publish that pair. Do not call the HAL's own function pointer recursively. At the HAL control cadence, feed HardwareClockTracker::observe() with fresh samples and pass valid estimates to HardwareClockRateServo::observe(). Apply output.inputFramesPerOutputFrame to the HAL's existing ASRC only when output.enabled is true; otherwise use unity ratio. A rate command is not proof that samples were resampled—instrument the ASRC's applied ratio and test resulting output.
 
 ## Data path and access control
+Shared snapshot path: /data/vendor/ivanna_audio/clock_snapshot. The target product must create the directory, assign ownership usable by both the HAL and AudioFlinger, label it with matching SELinux type, and merge/adapt templates in sepolicy/. Never disable SELinux. Use one writer per physical output clock; opening a publisher truncates the snapshot.
 
-The shared snapshot defaults to:
-
-`/data/vendor/ivanna_audio/clock_snapshot`
-
-The bridge uses mode 0660, not world-writable permissions. The target product
-must create the directory at boot, assign ownership that both the HAL producer
-and AudioFlinger effect can use, label the file with the new SELinux type, and
-merge the policy templates in `sepolicy/`. Android product policy differs by
-device; verify the actual HAL service domain and effect-loading domain before
-shipping. Do not disable SELinux or use permissive mode as a workaround.
-
-Templates in this directory:
-- `init.ivanna_audio_clock.rc`
-- `sepolicy/ivanna_audio_clock.te`
-- `sepolicy/file_contexts`
-
-These are integration templates, not a claim that the current phone's vendor
-policy already permits access.
-
-## Safety gates
-
-- Never use the effect callback's `CLOCK_MONOTONIC` observation as the hardware
-  frame timestamp.
-- Never enable PLL phase correction from the clock estimator until two or more
-  valid HAL samples are observed and hardware tests confirm the timestamp domain.
-- This monitor estimates output clock rate; it does not modify sample rate,
-  PCM, or GFE phase by itself.
-- Verify lock-free 64-bit atomics for the target ABI and validate the shared
-  mapping on the target device.
-- Run native tests, build the actual vendor HAL, verify SELinux denials/logs,
-  then measure drift while routing speaker, wired headset, USB and Bluetooth
-  separately. Bluetooth/external routes may report a different observable clock.
+## Acceptance gates
+- Host tests cover lock gating, bounded correction, slew, and fail-closed behavior.
+- Build and test the actual target vendor HAL and confirm its ASRC consumes the ratio.
+- Verify applied ratio, underruns and output drift on speaker, wired, USB, Bluetooth separately.
+- Until the device HAL call-site and ASRC are integrated and measured, this is a ready-to-integrate control primitive, not a claim the phone DAC is already being controlled.
