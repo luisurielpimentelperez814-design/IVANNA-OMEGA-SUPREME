@@ -531,6 +531,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             resampler.setInputSampleRate(inputSampleRate)
             val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
             val outputTimestamp = AudioTimestamp()
+            OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
             DSPBridge.init(sampleRate)
 
             val npeSampleRateMismatch = IvannaNpeEngine.isReady && IvannaNpeEngine.sampleRate != sampleRate
@@ -753,9 +754,17 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                         outputTimestamp.nanoTime
                                     )
                                     resampler.setClockCorrectionPpm(correctionPpm)
+                                    OmegaMetrics.updateClockServoTelemetry(
+                                        timestampAvailable = true,
+                                        locked = clockDriftServo.isLocked,
+                                        measuredRateHz = clockDriftServo.measuredRateHz,
+                                        measuredDriftPpm = clockDriftServo.measuredDriftPpm,
+                                        correctionPpm = correctionPpm
+                                    )
                                 } else {
                                     clockDriftServo.reset()
                                     resampler.setClockCorrectionPpm(0.0)
+                                    OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
                                 }
                             }
                             offset += chunkFrames
