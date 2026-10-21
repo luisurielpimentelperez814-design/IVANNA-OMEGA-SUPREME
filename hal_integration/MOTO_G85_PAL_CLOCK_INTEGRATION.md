@@ -165,3 +165,17 @@ Public mirror evidence:
 Why the new observer does NOT drive the servo: the public PAL timestamp structure contains no presented frame counter, and its fields are not documented as a paired `CLOCK_MONOTONIC` presentation timestamp. Converting PAL microseconds into a fake frame/time pair would invent a clock relationship and risk unstable correction. The observer therefore cannot enable correction and is deliberately separate from `QualcommPalClockIntegration`.
 
 Remaining device-specific blockers are unchanged: (1) a paired frame-position and clock-domain timestamp source for the actual Motorola output path, and (2) a verified live variable-ratio ASRC actuator with units, accepted range, stream scope and error semantics. Do not mark the hardware integration complete until both are confirmed on the Moto G85 and exercised with playback tests.
+
+## New device dump evidence — PAL timestamp mixer payload (2026-10-21, follow-up archive)
+
+The uploaded `ivanna_hal_followup_20261021_061252.tar.gz` contains a disassembly of the installed `libar-pal.so` (SHA-256 `0a2eef24718b89a6379938f93b5bc8f693078c7225db0a75cf7753560d23fdeb`). This adds a concrete result beyond the earlier probe:
+
+- The code at `0x256b04` calls `mixer_get_ctl_by_name`; at `0x256b38` it calls `PayloadBuilder::payloadTimestamp`; at `0x256b58` it writes the payload with `mixer_ctl_set_array`; and at `0x256d50` it reads it back with `mixer_ctl_get_array`.
+- After a successful read, the code copies six consecutive 32-bit words from payload offsets `0x10, 0x14, 0x18, 0x1c, 0x20, 0x24` into the caller-provided output at offsets `0x00, 0x04, 0x08, 0x0c, 0x10, 0x14`. This establishes the six-word output layout for this concrete helper path; it is consistent with a 24-byte `pal_session_time` object, but does not independently establish field semantics, units or clock domain.
+- The control name is constructed dynamically using a mapped table entry plus literal fragments before `mixer_get_ctl_by_name`. The follow-up archive's attempted `llvm-objdump -s` ranges did not overlap the relevant sections, so the final control name is still **not recovered**. Do not infer it from the demangled STL label.
+- The payload path proves that PAL obtains a timestamp-like six-word structure through a mixer-control array. It does **not** show a presented frame counter, a paired frame-position/`CLOCK_MONOTONIC` sample, or an ASRC ratio write. The call to `mixer_ctl_set_array` here is for the timestamp payload; it must not be misidentified as an ASRC actuator.
+
+### Updated decision
+
+The output field offsets are now better supported than in the prior checkpoint, but the frame/time pairing and live variable-ratio ASRC actuator remain unverified. Keep the device-specific `QueryPairedSample` and `ApplyExistingAsrcRatio` callbacks unbound and the clock-correction servo disabled until the mixer-name lookup/callers and active playback graph are traced, and an actual variable-ratio control with payload ABI, units, update semantics and return status is confirmed. The uploaded probe also did not identify a confirmed actuator. No guessed mixer writes or DSP parameter IDs are permitted.
+
