@@ -135,7 +135,11 @@ object AudioRouteManager {
         // con respuesta limpia y compensación coherente.
         OutputRoute.WIRED_AUX,
         OutputRoute.USB -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 1.0f)
-        OutputRoute.SPEAKER, OutputRoute.UNKNOWN -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0f, widenerMult = 1.0f)
+        // Altavoz integrado: no forzar graves (evita excursion/limitacion en
+        // transductores pequeños); realce moderado de presencia y anchura
+        // conservadora para conservar inteligibilidad sin empujar el clipping.
+        OutputRoute.SPEAKER -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 1.5f, widenerMult = 0.85f)
+        OutputRoute.UNKNOWN -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0f, widenerMult = 1.0f)
     }
 
     // Umbral de bitrate bajo (kbps) por debajo del cual SBC degrada
