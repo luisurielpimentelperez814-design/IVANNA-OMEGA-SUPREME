@@ -7,6 +7,20 @@ import com.ivanna.omega.core.NativeLibraryLoader
 import kotlinx.coroutines.*
 
 /**
+ * Clock telemetry read from the native effect beacon.
+ * callbackRateHz/driftPpm describe software callback cadence, not DAC clock.
+ * hardwareClockValid is true only when real HAL/PCM timestamps are published.
+ */
+data class AudioClockTelemetry(
+    val callbackValid: Boolean = false,
+    val callbackRateHz: Float = 0f,
+    val callbackDriftPpm: Float = 0f,
+    val hardwareClockValid: Boolean = false,
+    val hardwareRateHz: Float = 0f,
+    val hardwareDriftPpm: Float = 0f
+)
+
+/**
  * AudioEngine v1.5 — Motor de audio DSP.
  */
 class AudioEngine {
@@ -68,6 +82,31 @@ class AudioEngine {
 
         @JvmStatic private external fun nativeSetHrtfWetDryJni(wet: Float)
         @JvmStatic private external fun nativeFlushHrtfHistoryJni()
+
+        /**
+         * Low-frequency diagnostics for the clock path. Does not alter audio.
+         * Invalid/missing beacon data is reported as unavailable, never guessed.
+         */
+        fun getClockTelemetryStatic(): AudioClockTelemetry {
+            if (!libLoaded) return AudioClockTelemetry()
+            return runCatching {
+                val v = nativeGetClockTelemetryJni() ?: return@runCatching AudioClockTelemetry()
+                if (v.size < 6) return@runCatching AudioClockTelemetry()
+                AudioClockTelemetry(
+                    callbackValid = v[0] >= 0.5f,
+                    callbackRateHz = v[1],
+                    callbackDriftPpm = v[2],
+                    hardwareClockValid = v[3] >= 0.5f,
+                    hardwareRateHz = v[4],
+                    hardwareDriftPpm = v[5]
+                )
+            }.getOrElse {
+                Log.w(TAG, "Clock telemetry unavailable: $it")
+                AudioClockTelemetry()
+            }
+        }
+
+        @JvmStatic private external fun nativeGetClockTelemetryJni(): FloatArray?
     }
 
     private var audioRecord: AudioRecord? = null
