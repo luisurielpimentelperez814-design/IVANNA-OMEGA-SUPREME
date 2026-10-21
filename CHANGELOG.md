@@ -1,3 +1,9 @@
+# CHANGELOG — Sin publicar — Tests del seam PAL de Qualcomm (PR #88)
+
+- Added `test_qualcomm_pal_clock_integration` (10 host tests, fake PAL query + fake ASRC, ASan/UBSan clean): input validation of the paired sample, fail-closed to unity ratio, lock/reset/ASRC-rejection behavior, and optional shared-memory publishing. Mutation-checked.
+- Added `hal_integration/tools/probe_moto_g85_pal.sh`: read-only on-device probe (symbols, strings, graph/mixer config, AudioFlinger state) that produces the evidence needed to bind the real PAL timestamp query and ASRC actuator. Host-tested with synthetic libraries; not yet run on the phone.
+- Documented exactly what is and is not verified. The target Moto G85 callbacks (paired PAL frame/timestamp query, variable-ratio ASRC command) remain intentionally unbound; no on-device validation has been done.
+
 # CHANGELOG — Sin publicar — Módulo 1 (Fase Cero): pronosticador LPC de 5–10 ms
 1. **Qué es:** `predictive_audio_engine.{hpp,cpp}` — extrapola los próximos 5–10 ms de forma de onda con predicción lineal de Burg (orden ≤ 32) y recursión en punto fijo entero (coef. int32 Q dinámico, datos Q8, acumulador int64). **Solo análisis:** no modifica el audio.
 2. **Validación en lazo cerrado:** cada pronóstico se compara con las muestras reales que llegan; `confidence = 1 − NMSE_lejano`. En ruido o sin señal el motor reporta `valid=false` en vez de aparentar acierto. Onset por residuo de predicción (sin lookahead).

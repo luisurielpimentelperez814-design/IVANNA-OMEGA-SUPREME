@@ -26,9 +26,55 @@ These hashes and Build IDs identify the copied files. Offsets are ELF virtual/fi
 - `PayloadBuilder::payloadTimestamp(...)` appears at `0x2340bc` and requests a 48-byte vector. The code writes metadata into a buffer, but the 48-byte vector is not proof that the timestamp structure itself is 48 bytes or that this payload changes a clock.
 - The supplied mixer XML excerpt contains route mux settings such as `RX_MACRO RX0 MUX = ZERO`; it does not demonstrate a writable PLL or variable-ratio ASRC control.
 
+## Bluetooth Slimbus clock-source selector traced (2026-10-21)
+
+The additional `libar-pal.so` disassembly connects the previously listed clock symbols:
+
+```text
+Bluetooth::configureSlimbusClockSrc()        @ 0x1fa150
+  -> read ResourceManager Bluetooth clock-source map
+  -> use fallback value 1 when no mapping is available
+  -> Device::configureDeviceClockSrc("BT SLIMBUS CLK SRC", value)
+       @ call site near 0x1fa1dc
+       -> mixer_get_ctl_by_name(mixer, "BT SLIMBUS CLK SRC")
+       -> mixer_ctl_set_value(control, index=0, value)
+          Device::configureDeviceClockSrc body @ 0x1f0c9c
+
+ResourceManager::getBtSlimClockSrc(unsigned)             @ 0x2ed074
+ResourceManager::updateBtSlimClockSrcMap(unsigned,unsigned) @ 0x2ecc40
+```
+
+`updateBtSlimClockSrcMap` is a trampoline into `std::map::operator[]`: it stores a key/value mapping and is not itself a hardware clock write. The device clock helper receives its mixer-control name and integer value as arguments, looks up the named control, then attempts to write integer value at mixer index zero. The provided `mixer_paths_blair_qrd.xml` does not contain `BT SLIMBUS CLK SRC`, so the binary evidence establishes PAL's attempted selector path, not that the named control exists or that the write reaches hardware on this build.
+
+**Interpretation:** this is a Bluetooth Slimbus *clock-source selector* path, not a demonstrated PLL frequency-control or ASRC ratio-control path. Do not connect IVANNA's ppm/ratio servo to this selector. The selector's accepted values and hardware effect are not established by the current XML or disassembly.
+
+The AGM branch at `SessionAgm::setParameters` (`0x251e04`) for `param_size == 0x24` reads a leading 32-bit word from the payload, advances the pointer by four bytes, and forwards the remaining bytes plus that word to `agm_session_set_params(session_id, payload, first_word)`. This confirms a parameter transport path only; the observed branch does not identify the parameter as ASRC or clock control. Custom payload buffers in `Session`/`Device` are staging buffers until a downstream send call is established.
+
+## Timestamp dispatch follow-up (2026-10-21)
+
+The latest Termux excerpts refine, but do not close, the PAL timestamp investigation:
+
+- `Stream::getTimestamp(pal_session_time*)` at `0x19d6c0` validates its output pointer and stream/session state, locks a mutex, then invokes a session method indirectly through the function pointer at object offset `+0xc0` (`blr x8` at `0x19d740`). The concrete virtual target is not yet resolved.
+- A caller at `0x190a4c` invokes `Stream::getTimestamp`, confirming at least one consumer of the stream timestamp API; it does not reveal the structure fields or their units.
+- `SessionAlsaPcm::getTimestamp` calls the `SessionAlsaUtils::getTimestamp` symbol reported at `0x2ec890`. That address is a branch thunk to `0x256894`, so disassembling only the symbol address shows a veneer rather than the body. The inspected target range starts with a large stack frame and container/object setup and includes `ResourceManager::getInstance()` plus collection iteration. Because the demangled enclosing label is a generic STL `vector::__vallocate` label, it must not be treated as reliable function ownership. No verified timestamp-field writes or timestamp clock source have yet been identified in the shown range.
+- `clock_gettime` references found around `0x21057c`, `0x210704`, and `0x2107e4` belong to `SpeakerProtection` code in the supplied excerpt. They are not evidence that PAL playback timestamps use those calls.
+
+## Mixer/payload follow-up from Termux (2026-10-21)
+
+The next disassembly range (`0x256a80–0x257240`) provides additional concrete mixer activity, but the enclosing function label remains unreliable and the control's semantics are not yet identified:
+
+- At `0x256b04`, code calls `mixer_get_ctl_by_name` with a name assembled through a C++ string/stream sequence. The exact resulting control name has not yet been recovered from this excerpt.
+- At `0x256b38`, code calls `PayloadBuilder::payloadTimestamp`; at `0x256b58`, it passes the generated buffer and size to `mixer_ctl_set_array`. This proves that this path constructs a timestamp-named payload and attempts to write an array to a mixer control. It does **not** prove the payload is a playback-time result or an ASRC/clock command.
+- At `0x256d50`, a path calls `mixer_ctl_get_array` with the previously looked-up control and a buffer/size derived from local state. Further down, `0x257110` calls `mixer_ctl_get_array` with a size of `0x400` (1024). The provided excerpt does not establish that either read belongs to the same logical operation as the timestamp payload call, nor how returned bytes are interpreted or copied to `pal_session_time`.
+- The grep also found `mixer_ctl_set_array` calls at `0x255fac`, `0x2561cc`, `0x256670`, and `0x2567c8`. These are multiple array-write sites in the same broad address region; they must be analyzed separately rather than treated as one timestamp transaction.
+- Relevant string offsets include `0x74d90` (“Failed to get session timestamp status %d”), `0x7de93` (“Failed to get read position”), `0x6e9d9` (timestamp low/high-word logging), `0x7fd8d` (timestamp `tv_sec` overflow), and `0x1e142` (`pal_stream_get_mmap_position`). These strings indicate related timestamp/position functionality exists in the binary, but do not map the fields of `pal_session_time` or prove that playback frame position and time are sampled atomically.
+- The requested standalone disassembly of `SessionAlsaCompress::getTimestamp` did not produce usable output in this capture because the shell redirection was mistyped as `/dev/nul`; rerun with `/dev/null` if that path is needed.
+
+**Current interpretation:** mixer control lookup, array writes, and array reads are confirmed in the inspected code. The control name, array schema, return-buffer meaning, and final stores into `pal_session_time` are still unknown. The next useful trace is to recover the dynamically constructed mixer-control string and follow the success branch after `mixer_ctl_get_array` at `0x256d50` through the point where output fields are written. Separately disassemble the `0x257110` read path and `SessionAlsaCompress::getTimestamp`; do not assume they are the same control or timestamp source.
+
 ## Engineering conclusion
 
-The evidence supports a timestamp-query path and identifies the next function to inspect: `SessionAlsaUtils::getTimestamp` at `0x2ec890`. The output provided so far does not include the body at that address, so it does not yet identify the exact mixer control ID, array schema, or units used by the utility.
+The evidence supports a timestamp-query path and identifies the next function to inspect: `SessionAlsaUtils::getTimestamp` at `0x2ec890`. The output provided so far does not identify the exact mixer control ID, array schema, or units used by the utility.
 
 This evidence does **not** prove that the timestamp path controls sample-clock frequency, that a PLL control is exposed through ALSA mixer, or that the timestamp structure has a particular ABI/layout.
 
@@ -37,11 +83,141 @@ Do not hook or modify a timestamp function as a substitute for rate control. Do 
 ## Next verification steps
 
 1. Disassemble the actual function body at `0x2ec890`, with surrounding callers and callees. Follow its PLT calls and string/control-name references to determine which mixer controls and payload schema it reads.
-2. Inspect the complete `ipc_pal_get_timestamp` callback construction and corroborate the ABI against matching PAL headers or additional call sites. The current excerpts do not prove the structure layout.
-3. Trace `PayloadBuilder::payloadTimestamp` callers and its downstream consumers to determine what the 48-byte payload represents.
-4. Locate the actual ASRC implementation and a documented/verified ratio-change API. A timestamp-query control is not automatically a rate-control endpoint.
-5. Validate on a device build with instrumentation: measured ratio, drift, underruns/xruns, route changes, standby/reopen, and rollback. Host tests alone do not validate the physical DAC clock.
+2. Recover the mixer-control name built near `0x256b04`; trace the `mixer_ctl_get_array` success paths at `0x256d50` and `0x257110`, including stores to the output structure.
+3. Inspect the complete `ipc_pal_get_timestamp` callback construction and corroborate the ABI against matching PAL headers or additional call sites. The current excerpts do not prove the structure layout.
+4. Trace `PayloadBuilder::payloadTimestamp` callers and downstream consumers to determine what the 48-byte payload represents.
+5. Locate the actual ASRC implementation and a documented/verified ratio-change API. A timestamp-query control is not automatically a rate-control endpoint.
+6. Validate on a device build with instrumentation: measured ratio, drift, underruns/xruns, route changes, standby/reopen, and rollback. Host tests alone do not validate the physical DAC clock.
 
 ## Relation to IVANNA
 
 The repository's HAL output-rate servo can estimate drift and bound correction, but it must only be connected to a callback that demonstrably changes a real ASRC ratio. The generic legacy HAL adapter is not a binary patch for the proprietary Qualcomm HAL. G-PLL/GFE are not considered connected to the device clock by this evidence alone.
+
+
+## Timestamp investigation checkpoint — 2026-10-21 (latest Termux output)
+
+The latest output confirms the exact thunk destinations and adds one complete caller path, but the disassembly body of `0x256894` was not included in the pasted output. Therefore this checkpoint records confirmed call mechanics and strings only; it does not claim the timestamp decoder is solved.
+
+- `SessionAlsaUtils::getTimestamp(mixer*, vector<int> const&, unsigned int, pal_session_time*)` at `0x2ec890` is a one-instruction AArch64 branch to `0x256894`. The demangled destination label refers to `std::__1::vector<std::pair<int,int>>::__vallocate`, but this is unreliable symbol ownership for the thunk target; use the branch destination and instruction flow, not that label, to identify the body.
+- `SessionAlsaUtils::getModuleInstanceId(mixer*, int, char const*, int, unsigned int*)` at `0x2ec8a0` branches to `0x256ea4`. Its role in the timestamp operation must be determined from the body/call sites, not assumed from adjacency.
+- `SessionAlsaCompress::getTimestamp(pal_session_time*)` at `0x2667b4` loads `mixer` from object offset `+0x48`, passes the vector at `this+0x150`, passes the unsigned ID at `this+0xc8`, and passes the caller's output pointer unchanged as the fourth argument to `SessionAlsaUtils::getTimestamp`. It preserves the returned status in `w19`, optionally logs failure, and returns that status. This confirms delegation; it does not show how output fields are populated.
+- `strings -a -t x` exposes relevant text at offsets `0x6e9d9` (`timestamp_lsw = %u, timestamp_msw = %u`), `0x74d90` (`Failed to get session timestamp status %d`), `0x7fd8d` (`timestamp tv_sec overflown %lu`), plus `0x7de93` (`Failed to get read position`). These strings are compatible with low/high 32-bit timestamp words being logged somewhere in the library, but without instruction references tied to the function body they do not establish that those words are used by this exact path, their order, units, or output-structure offsets.
+- The current pasted result includes the string list and the thunk stubs, but not the requested instruction ranges `0x256894–0x256ea4` and `0x256ea4–0x2570b0`. The function body and the writes to `pal_session_time` therefore remain unverified.
+
+**Next precise extraction:** rerun only these ranges and ensure the output includes sections 1 and 2, not only the string section:
+
+```sh
+SO="$HOME/storage/downloads/IVANNA_BLAIR_DUMP/libar-pal.so"
+llvm-objdump -d --no-show-raw-insn --start-address=0x256894 --stop-address=0x256ea4 "$SO" 2>/dev/null
+llvm-objdump -d --no-show-raw-insn --start-address=0x256ea4 --stop-address=0x2570b0 "$SO" 2>/dev/null
+```
+
+Until the actual body is available, do not infer timestamp units, combine low/high words, assign `pal_session_time` field offsets, or claim this path changes PLL/ASRC rate.
+
+## Latest disassembly checkpoint — 2026-10-21 (stream-built mixer name)
+
+The latest Termux capture now includes the start of the body at 0x256894 and a second range starting at 0x256ea4. The code is still presented under the misleading demangled label `std::__1::vector<std::pair<int,int>>::__vallocate`; do not treat that label as reliable ownership of the instructions.
+
+### Confirmed from instructions shown
+
+- At 0x256894, the routine takes four incoming arguments in x0–x3, saves them as x23=x0, x24=x1, w22=w2, x21=x3. It initializes local C++ stream/string objects and obtains a ResourceManager instance. This is consistent with constructing a mixer-control name dynamically, but the exact API-level function identity still needs confirmation from call sites.
+- The loop at 0x2569c4–0x256a9c iterates entries from a global collection, compares an entry's first 32-bit word with the incoming w22, and on a match reads a string at entry offset +4. That string is appended to a C++ stream.
+- The code then appends literal fragments referenced from .rodata at 0x800c8c and 0x88048e, materializes the stream string, and passes the resulting C string as the second argument to mixer_get_ctl_by_name at 0x256b04. Therefore the mixer control name is built from a mapped string plus fixed fragments; it is not a hardcoded direct literal at the call site.
+- The shown 0x256ea4–0x2570ac range repeats a similar loop over the global collection, this time comparing entries against w22, then calls SessionAlsaUtils::setStreamMetadataType(mixer*, int, char const*) at 0x256fd0. This suggests adjacent PAL utility logic involving stream metadata, but exact function boundaries must be reconstructed from branch/call flow rather than the STL label.
+- The visible code is incomplete at 0x256b10, so return-value handling after mixer_get_ctl_by_name, the subsequent payload call/write, and final output structure stores are not present in this pasted excerpt.
+
+### Still unproven
+
+The shown portion does not identify the final constructed control name, the meaning of mixer array bytes, the output offsets within pal_session_time, timestamp units, or the physical clock domain. The timestamp_lsw/msw strings alone do not prove these semantics.
+
+### Next targeted extraction
+
+Run these focused commands and paste the output, preserving both sections:
+
+```sh
+SO="$HOME/storage/downloads/IVANNA_BLAIR_DUMP/libar-pal.so"
+
+# Finish the name construction, mixer read/write, and output stores
+llvm-objdump -d --no-show-raw-insn --start-address=0x256af0 --stop-address=0x256e10 "$SO" 2>/dev/null
+
+# Inspect the string fragments used to construct the mixer-control name
+llvm-objdump -s --start-address=0x800c70 --stop-address=0x800cb0 "$SO" 2>/dev/null
+llvm-objdump -s --start-address=0x880470 --stop-address=0x8804b0 "$SO" 2>/dev/null
+```
+
+Also inspect direct callers of 0x256894 to establish the true signature and function boundary. Avoid guessing a control name or writing any mixer array based only on this evidence.
+
+
+## Checkpoint — Android 15 malmo_g / Blair MFC and timestamp ABI (2026-10-21)
+
+This checkpoint records the latest public-header/source transcriptions supplied during the investigation. These are **source-side claims to compare against the exact device binary**, not yet independent confirmation that every public mirror matches the installed vendor build.
+
+### Target identity to verify against the actual device
+
+The supplied target description is Moto G85 5G, model XT2427-3, product/device label `malmo_g` / `malmo`, Qualcomm platform Blair / SM6375, Android 15 SDK 35, kernel 6.1.128 GKI. The existing dump fingerprint and ELF Build IDs are recorded in the scope table above. Device labels and public product pages do not establish binary equivalence; retain the exact build fingerprint and hashes when comparing artifacts.
+
+### Public PAL timestamp structure claimed for the Android 14/15 mirror
+
+The supplied header transcription describes:
+
+```cpp
+struct pal_time_us {
+    uint32_t value_lsw;
+    uint32_t value_msw;
+};
+
+struct pal_session_time {
+    struct pal_time_us session_time;   // offset 0
+    struct pal_time_us absolute_time;  // offset 8
+    struct pal_time_us timestamp;      // offset 16
+}; // expected sizeof = 24
+```
+
+This is consistent with the six low/high-word labels observed in strings, but strings alone do not establish field offsets or units. The public-header interpretation says the members represent time in microseconds; whether `session_time` is converted or reinterpreted by this Blair binary remains unverified. Do not treat `session_time` as a frame counter without direct code or matching ABI evidence.
+
+### Public MFC builder transcription
+
+The supplied `PayloadBuilder.cpp` mirror describes a 20-byte payload of five consecutive 32-bit fields:
+
+| Offset | Field | Public builder value/source |
+|---:|---|---|
+| 0 | `sample_rate` | `mi->sample_rate` |
+| 4 | `bits_per_sample` | `mi->bit_width` |
+| 8 | `q_factor` | constant 15 |
+| 12 | `data_format` | `DATA_FORMAT_PCM` |
+| 16 | `num_channels` | `mi->channels` |
+
+This gives a concrete expected layout, but the actual stores in the installed `libar-pal.so` have not yet been shown. The `q_factor=15` statement describes the public builder's assignment; it does not prove runtime values on this build or exclude a separate ASRC control elsewhere.
+
+### APM parameter header versus payload and packet sizes
+
+The supplied public kernel transcription defines an `apm_module_param_data` header with four `uint32_t` fields: `module_instance_id`, `param_id`, `param_size`, and `error_code`, for a 16-byte header. If the complete buffer consists of that header followed by the 20-byte MFC payload, the header-plus-payload size is 36 bytes. In that layout, `param_size` is 20, not 36. The complete GPR packet may have additional transport framing, so 36 bytes should be described only as header + payload, not automatically as the entire on-wire packet.
+
+The supplied API signature for `agm_session_set_params` is `(session_id, payload_size, payload)`; under that model, module instance ID and parameter ID are encoded in the buffer rather than passed as separate function arguments. Confirm the precise target headers and the actual call argument registers in the Blair binary before relying on this signature or packet interpretation. The public identifiers cited are `MODULE_ID_MFC = 0x00010202` and `PARAM_ID_MFC_OUTPUT_MEDIA_FORMAT = 0x00010204`; do not interchange module and parameter identifiers.
+
+### What remains to be verified in the installed binary
+
+1. Inspect the MFC constructor body around the previously identified `PayloadBuilder::payloadMFCConfig` address (`0x229690`) and follow its stores to verify the five offsets, payload length, and the call that consumes it.
+2. Inspect `SessionAlsaUtils::getTimestamp` body at the thunk destination `0x256894`, not just the exported thunk at `0x2ec890`. Follow the mixer array read and output stores to establish the actual `pal_session_time` offsets and whether values are passed through or converted.
+3. Distinguish the size passed to the PAL/AGM helper, the APM `param_size`, the header-plus-payload buffer length, and any GPR transport length. Do not infer one from a log emitted at another layer.
+4. Capture runtime logs or instrument a safe test build while opening/reproducing 44.1 kHz and 48 kHz content. Compare the actual MFC fields. A constant `q_factor` would show only that this builder supplies a constant in those cases; it would not prove there is no ASRC in COPP or another DSP module.
+5. Do not modify the IVANNA timestamp ABI, write guessed mixer arrays, or change sample rate on a live stream until the installed binary's structure layout and the actual rate-control interface are established.
+
+### Suggested read-only commands on the captured dump
+
+```sh
+SO="$HOME/storage/downloads/IVANNA_BLAIR_DUMP/libar-pal.so"
+
+# Disassemble the known constructor body; inspect stores and downstream calls
+llvm-objdump -d --demangle --no-show-raw-insn \
+  --start-address=0x229690 --stop-address=0x229a50 "$SO" 2>/dev/null
+
+# Inspect the known timestamp utility body (the exported address is a thunk)
+llvm-objdump -d --demangle --no-show-raw-insn \
+  --start-address=0x256894 --stop-address=0x256e10 "$SO" 2>/dev/null
+
+# Locate symbols/thunks without relying on grep over disassembly labels
+llvm-nm -D -C "$SO" 2>/dev/null | grep -E 'payloadMFCConfig|getTimestamp|agm_session_set_params'
+```
+
+**Status:** public-source layout hypothesis documented; device-binary stores, runtime values, timestamp units, and a live ASRC ratio-control endpoint remain unverified.

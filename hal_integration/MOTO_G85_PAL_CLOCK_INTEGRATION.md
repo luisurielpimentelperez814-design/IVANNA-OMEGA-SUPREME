@@ -1,0 +1,122 @@
+# Moto G85 / Blair Qualcomm PAL clock integration
+
+## What the extracted binaries establish
+
+The device dump identifies these paths:
+
+- `audio.primary.blair.so` imports `pal_get_timestamp`.
+- `libpalclient.so` exposes a `pal_get_timestamp` thunk.
+- `vendor.qti.hardware.pal@1.0-impl.so` contains `ipc_pal_get_timestamp` at the reported offset `0x1b5fc`.
+- `libar-pal.so` contains `SessionAlsaPcm::getTimestamp` at the reported offset `0x24adc4`.
+- `PayloadBuilder::payloadTimestamp` at the reported offset `0x2340bc` writes a 48-byte payload using `mixer_ctl_set_array`.
+- The supplied `mixer_paths_blair_qrd.xml` has no explicit PLL/ASRC rate-adjustment control.
+
+These facts establish a timestamp/driver IPC path, not a variable-ratio ASRC actuator. The `pal_get_timestamp` thunk and `ipc_pal_get_timestamp` are not, by themselves, a proof of a paired frame-position/timestamp sample or a frequency correction.
+
+## Follow-up disassembly evidence (2026-10-20)
+
+A further `llvm-objdump` excerpt shows this instruction sequence:
+
+- call `PayloadBuilder::payloadTimestamp(...)`
+- load the resulting buffer and byte count
+- call `mixer_ctl_set_array(...)`
+
+This strengthens the conclusion that a timestamp payload is serialized and sent to a mixer control. The excerpt's enclosing demangled label is `std::__1::vector<...>::__vallocate`, which is suspicious for this call sequence; verify the function boundary/call-site attribution before treating that label as the owning PAL method. Either way, this is not evidence of a variable-ratio ASRC command: no ratio argument or verified ASRC parameter ID is shown.
+
+## Bluetooth Slimbus clock-source path confirmed (2026-10-21)
+
+The additional Blair disassembly now connects the clock-selector symbols into one concrete path:
+
+- `Bluetooth::configureSlimbusClockSrc()` at `0x1fa150` reads the Bluetooth Slimbus clock-source mapping. If no mapping is available, the observed fallback is integer `1`.
+- It calls `Device::configureDeviceClockSrc("BT SLIMBUS CLK SRC", value)` (call site reported near `0x1fa1dc`).
+- `Device::configureDeviceClockSrc(const char*, unsigned)` at `0x1f0c9c` passes the supplied name to `mixer_get_ctl_by_name()` and writes the supplied integer with `mixer_ctl_set_value(control, 0, value)`.
+- `ResourceManager::getBtSlimClockSrc(unsigned)` is reported at `0x2ed074`; `ResourceManager::updateBtSlimClockSrcMap(unsigned,unsigned)` at `0x2ecc40` delegates to `std::map::operator[]`. This is key/value storage for the selector; it does not itself program a frequency or ratio.
+- The supplied `mixer_paths_blair_qrd.xml` has no entry named `BT SLIMBUS CLK SRC`. Therefore PAL attempts to look up a named mixer control, but the provided XML does not establish that the control exists or that the write succeeds on this build.
+
+This closes the **clock-source selection** path at the PAL code level. It does **not** close the IVANNA drift-correction path: the selector's integer is not shown to be an ASRC ratio, and there is no evidence that changing this selector continuously adjusts the output sample rate. Keep this path separate from `ApplyExistingAsrcRatio`; do not feed servo ratios into `BT SLIMBUS CLK SRC`.
+
+The body of `Device::configureDeviceClockSrc` confirms the mixer lookup/write mechanics, including an index-zero write. Its error handling can return `-EINVAL` for a null name/invalid mixer context and `-ENOENT` when the named control is not found (one logging-dependent missing-control branch returns success, so a zero status alone must not be treated as proof that the control was applied). A successful call also does not prove the selected value's hardware meaning without the matching control definition/driver behavior.
+
+## AGM and MFC boundary
+
+`SessionAgm::setParameters(Stream*, int, unsigned int, void*)` at `0x251e04` has a branch for `param_size == 0x24` that reads a 32-bit word from the payload, advances the pointer by four bytes, and calls `agm_session_set_params(session_id, remaining_payload, first_word)`. This confirms an AGM parameter transport path, but the observed branch alone does not identify the parameter ID as a clock or ASRC command.
+
+Likewise, `Session::updateCustomPayload` and `Device::updateCustomPayload` store staged payload bytes in object-owned buffers; staging is not itself proof that the DSP accepted a command. The MFC output-media-format payload discussed below configures media format; do not repurpose it as a live fractional-ratio actuator without a distinct, verified parameter contract.
+
+## Integration seam added
+
+`ivanna_qualcomm_pal_clock_integration.hpp` connects the existing IVANNA components:
+
+1. A device-specific query callback supplies a validated `HardwareClockSample`.
+2. `HalOutputStreamClockControl` feeds the sample to the existing tracker and bounded rate servo.
+3. A device-specific ASRC callback must apply the requested input-frames/output-frame ratio to the converter already in the output path and report whether it accepted the command.
+4. An optional `HardwareClockPublisher` publishes the same paired sample to the existing shared-memory bridge for the effect-side reader.
+5. The owner calls `controlTick()` from a serialized 10–20 Hz control task and `reset()` on standby, reopen, route changes, or discontinuities.
+
+## Required target bindings (do not fake these)
+
+- Implement `QueryPairedSample` from a source that gives the *matching* presented-frame counter and hardware-correlated monotonic timestamp. Do not decode the private `pal_session_time` structure by guessing its field offsets. The supplied evidence says it is 32 bytes but does not provide a verified field map. If PAL returns only a timestamp, pair it with the corresponding frame count from the same driver snapshot/query path; do not combine unrelated reads.
+- Implement `ApplyExistingAsrcRatio` against the actual variable-ratio converter. Do not map this to `BT SLIMBUS CLK SRC`, `mixer_ctl_set_array`, or an unverified `pal_set_param` ID. A clock-source selector is not an ASRC ratio control, and a timestamp payload is not proof of a rate-adjustment command.
+- Instantiate the integration object in the real, long-lived target output stream; open the optional reporter during stream setup; schedule ticks on the stream's serialized control thread; reset/stop it before teardown.
+- The current dump does not establish the ASRC control API, its ratio units, or whether a paired PAL frame/timestamp query exists. Until those are verified from the actual call sites/parameter definitions, do not enable the correction callback on the phone.
+
+## How to obtain the missing device evidence (read-only probe)
+
+`hal_integration/tools/probe_moto_g85_pal.sh` collects, from the real phone, exactly the facts this seam still needs. It only reads: it lists PAL/HAL libraries, dynamic symbols and strings that mention timestamps or ASRC/slip/rate-adapter modules, matching graph/mixer config files, mixer control names, and the AudioFlinger output-thread state. It does not write to the system, change mixers, or open streams.
+
+```sh
+# Termux, with root (optional: pkg install binutils for symbols/strings)
+su -c "sh /path/to/probe_moto_g85_pal.sh"
+# -> /sdcard/Download/ivanna_pal_probe_<date>/report.txt  (+ .tar.gz)
+```
+
+The report ends with an automatic reading. Host-tested in the sandbox with synthetic libraries (candidates found / nothing found / timestamp but no ASRC); its output on the real Moto G85 has **not** been collected yet. Evidence from the probe is a lead, not proof: the ASRC module must still be confirmed in the playback graph, with its parameter ID, payload and ratio units, before the correction callback is enabled.
+
+## Build and validation gate
+
+### Host test status (what is and is not verified)
+
+`app/src/main/cpp/tests/test_qualcomm_pal_clock_integration.cpp` (10 tests, clean under ASan+UBSan) exercises the seam with a **fake** PAL query and a **fake** ASRC. Verified in host only:
+
+- a missing query callback, a missing hardware timestamp, or a sample rate outside 8–768 kHz is rejected, and such samples can only ever drive the ASRC back to the unity ratio (1.0), never to a correcting ratio;
+- three valid paired samples lock the servo and command the ASRC; a later query failure, ASRC rejection, or `reset()` drops correction (fail-closed, ratio marked unknown on rejection);
+- the optional shared-memory reporter publishes exactly the sample the controller used, never publishes an invalid one, and its absence or failure does not disable local control.
+
+Mutation-checked: removing the timestamp check, widening the rate bound, or publishing before validation each makes a test fail.
+
+**Not verified:** the real Motorola/Qualcomm HAL, any real ASRC, the `pal_session_time` layout, or any on-device behavior. The two target callbacks remain unbound.
+
+This header is a target-HAL integration seam, not a binary patch to the proprietary Motorola/Qualcomm HAL. Compile it in the target HAL build with the same Android toolchain, then test with a fake query/ASRC callback before wiring real hardware. On-device validation must record queried frames/timestamps, commanded ratio, converter acceptance, underruns, and route transitions. Do not claim hardware PLL/DAC oscillator discipline: this servo can compensate stream cadence through an existing ASRC, not directly retune the physical oscillator.
+
+
+## Public PAL API cross-check (2026-10-20)
+
+A public AudioReach PAL code search found a use of `PAL_PARAM_ID_ASR_CONFIG` passed to `pal_stream_set_param()`, with a payload typed `pal_asr_config`. This is **ASR** (automatic speech recognition) configuration, not evidence of an **ASRC** (asynchronous sample-rate converter) ratio actuator; do not reuse that parameter ID for clock correction. The public search did not identify a verified variable-ratio control API applicable to the Moto G85/Blair build.
+
+The next decisive evidence must come from the target audio graph/configuration or its matching headers: identify the converter module actually present in the playback graph, its documented parameter ID/payload and ratio units, and the call site that applies it. Then verify that the graph supports runtime ratio updates while streaming. Until those items are grounded, the PAL callback remains intentionally unbound and hardware correction remains disabled.
+
+
+## MFC evidence supplied from Blair dump and public ABI cross-check (2026-10-21)
+
+The device investigation reports `MODULE_ID_MFC = 0x00010202`, `PARAM_ID_MFC_OUTPUT_MEDIA_FORMAT = 0x00010204`, and a five-field `payloadMFCConfig` containing sample rate, bit width, q factor, data format, and channel count. Treat these as **device-dump hypotheses pending exact call-site validation**, not as a runtime ASRC ratio API.
+
+A public AudioReach PAL implementation defines `PARAM_ID_MFC_OUTPUT_MEDIA_FORMAT` as `0x08001024` and its documented payload as sampling rate, bit width, channel count, and channel map. That ABI differs from the five-int payload and ID reported for Blair. This may reflect a different PAL/AGM generation or an incorrect symbol/ID mapping; do not send either payload until the target binary's `payloadMFCConfig` call path, parameter header construction, and payload size establish the exact contract. Reference: https://github.com/AudioReach/audioreach-pal/blob/e5f86df5e1d1be4ce3e49f22735306ee5e146f8b/session/SessionAR/src/PayloadBuilder.cpp
+
+MFC is a media-format converter and may contain resampling functionality, but `PARAM_ID_MFC_OUTPUT_MEDIA_FORMAT` configures output media format; public definitions do not establish a continuously adjustable fractional ratio, update cadence, or safe live-update semantics. The controller must not feed servo corrections by repeatedly changing the nominal media format. First verify the exact Blair payload and whether MFC exposes a separate runtime ratio/drift control or another documented actuator. If no such control exists, use a purpose-built software ASRC in IVANNA's audio path rather than pretending the media-format parameter is a PLL knob.
+
+The paired-time hypothesis is also recorded: `pal_session_time` reportedly contains `timestamp` and `frames` in one call, while AGM internal session time additionally exposes QTIMER/absolute time. Confirm field order and units against the target's actual ABI before compiling the callback; do not infer structure layout solely from log strings.
+
+
+## Timestamp call-chain findings (2026-10-21, latest Termux excerpts)
+
+The latest disassembly adds the following call-chain evidence:
+
+- `Stream::getTimestamp(pal_session_time*)` is at `0x19d6c0`. It rejects a null output pointer, checks a state/availability field, locks a mutex, then dispatches through a function pointer loaded from the session object (`ldr x8, [x20, #0xc0]`; `blr x8` at `0x19d740`). This confirms the stream layer delegates timestamp retrieval to its active session implementation; the virtual target has not yet been resolved.
+- A call site at `0x190a4c` invokes `Stream::getTimestamp` with an output pointer. The excerpt does not identify the caller's higher-level consumer or establish timestamp units.
+- `SessionAlsaPcm::getTimestamp` at `0x24adc4` was previously observed forwarding to `SessionAlsaUtils::getTimestamp(mixer*, vector<int> const&, unsigned int, pal_session_time*)` via a PLT entry.
+- The symbol entry at `0x2ec890` is a branch thunk to `0x256894`, not a readable function body at the symbol address. Disassembly at `0x256894` begins with a large stack frame and object/container initialization; the visible range includes `ResourceManager::getInstance()` and a loop over a stored collection, but does not yet show a verified timestamp source, output-field writes, or a `clock_gettime` call. The surrounding demangled label `std::__1::vector<...>::__vallocate` is not a reliable owning-function attribution for this code. Function boundaries and the branch-thunk target must be resolved before assigning semantics.
+- The broad symbol grep found `clock_gettime` call sites around `0x21057c`, `0x210704` and `0x2107e4` in `SpeakerProtection` methods. These are unrelated call sites in the shown disassembly and must not be claimed as the PAL playback timestamp source.
+
+### Current timestamp conclusion
+
+The call chain is now clearer at the stream/session-dispatch level, but the actual implementation and `pal_session_time` ABI remain unresolved. Do not assume the output fields, ordering, units, monotonic-clock domain, or that frames and timestamp represent the same hardware snapshot. Next, resolve the indirect call at `0x19d740` against the stream/session vtable and inspect only the matching concrete `getTimestamp` implementation and its output writes. Keep the target callback unbound until a paired frame/timestamp sample is verified.

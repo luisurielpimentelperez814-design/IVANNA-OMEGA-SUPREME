@@ -1350,3 +1350,5 @@ gtest_discover_tests(test_autonomous_acoustic_transaction)
 
 # Control-plane peer authentication: reject untrusted app UIDs before command/SHM handling.
 ivanna_add_test(test_daemon_peer_auth)
+# PAL integration test registration
+ivanna_add_test(test_qualcomm_pal_clock_integration)
