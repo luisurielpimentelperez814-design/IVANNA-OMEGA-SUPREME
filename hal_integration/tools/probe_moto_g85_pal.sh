@@ -56,11 +56,15 @@ done
 
 hdr "2. Símbolos dinámicos relacionados con timestamp / ASRC (readelf/nm)"
 for f in $LIBS; do
-  if have readelf; then SYMS="$(readelf -Ws --dyn-syms "$f" 2>/dev/null | awk '{print $NF}')"
-  elif have nm;    then SYMS="$(nm -D "$f" 2>/dev/null | awk '{print $NF}')"
-  else SYMS=""; fi
-  [ -n "$SYMS" ] || continue
-  HIT="$(printf '%s\n' "$SYMS" | grep -i -E "$KW_TS|$KW_ASRC" | sort -u)"
+  # Filtra en streaming: no acumular la tabla completa de símbolos en una variable
+  # (Android /system/bin/printf puede fallar con "Argument list too long").
+  if have readelf; then
+    HIT="$(readelf -Ws --dyn-syms "$f" 2>/dev/null | awk '{print $NF}' | grep -i -E "$KW_TS|$KW_ASRC" | sort -u)"
+  elif have nm; then
+    HIT="$(nm -D "$f" 2>/dev/null | awk '{print $NF}' | grep -i -E "$KW_TS|$KW_ASRC" | sort -u)"
+  else
+    HIT=""
+  fi
   [ -n "$HIT" ] || continue
   say ""; say "--- $f"
   printf '%s\n' "$HIT" >> "$R"
