@@ -24,6 +24,8 @@
 #include "supreme/ShmPipelineArbitrator.hpp"
 #include "include/omega_effect_beacon.h"   // señal real "el efecto procesa" para la app (Ruta A/B)
 #include "include/audio_callback_clock.hpp" // reloj de cadencia software; nunca referencia de fase DAC
+#include "include/audio_hardware_clock.hpp" // estimador de frecuencia desde posiciones reales del driver
+#include "include/audio_hardware_clock_bridge.hpp" // IPC HAL -> callback; productor del HAL real
 #include "supreme/SupremeTransitionEnvelope.hpp"
 #include "supreme/SupremeAcousticStabilityGuard.hpp"
 #include "include/omega_wave_stages.hpp"
@@ -303,6 +305,8 @@ struct omega_effect_context_t {
     uint64_t lastAdaptiveSeq;
     ivanna::rt::RtBandMeter bandMeter;
     ivanna::audio::CallbackClockMonitor* callbackClock; // solo diagnóstico de cadencia del callback
+    ivanna::audio::HardwareClockReader* hardwareClockReader; // snapshot publicado por HAL/PCM
+    ivanna::audio::HardwareClockTracker* hardwareClockTracker; // estima frecuencia física; no altera PCM
 };
 
 // AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
@@ -2084,6 +2088,12 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->enabled = false;
     ctx->bandMeter.prepare(48000.0f);
     ctx->callbackClock = new (std::nothrow) ivanna::audio::CallbackClockMonitor();
+    ctx->hardwareClockReader = new (std::nothrow) ivanna::audio::HardwareClockReader();
+    ctx->hardwareClockTracker = new (std::nothrow) ivanna::audio::HardwareClockTracker();
+    if (ctx->hardwareClockReader && !ctx->hardwareClockReader->open()) {
+        delete ctx->hardwareClockReader;
+        ctx->hardwareClockReader = nullptr; // HAL bridge unavailable: remain diagnostic-only
+    }
     ctx->masterBypassEnv.configure(48000.0f, 8.0f, 18.0f, 35.0f);
     ctx->masterBypassEnv.setImmediate(ctx->enabled ? 1.0f : 0.0f);  // deshabilitado => ya en seco; ENABLE sube con rampa de ataque
     ctx->fusionCore = nullptr;   // AUDIT FIX: init explícito (per-instance DSP)
@@ -2158,9 +2168,29 @@ static int32_t omega_release_effect(effect_handle_t handle) {
             ctx->enabled = false;
         }
             
-        if (ctx->callbackClock) {
+        // Consume only a snapshot supplied by the actual HAL/PCM owner. No clock_gettime
+    // fallback is allowed here: absent hardware samples leave this path invalid.
+    if (ctx->hardwareClockReader && ctx->hardwareClockTracker) {
+        ivanna::audio::HardwareClockSample hwSample{};
+        if (ctx->hardwareClockReader->read(hwSample)) {
+            const auto hwStatus = ctx->hardwareClockTracker->observe(hwSample);
+            if (hwStatus.valid) {
+                ivanna::effectBeacon().onHardwareClockEstimate(
+                    hwStatus.measuredSampleRateHz, hwStatus.driftPpm);
+            }
+        }
+    }
+    if (ctx->callbackClock) {
             delete ctx->callbackClock;
             ctx->callbackClock = nullptr;
+        }
+        if (ctx->hardwareClockReader) {
+            delete ctx->hardwareClockReader;
+            ctx->hardwareClockReader = nullptr;
+        }
+        if (ctx->hardwareClockTracker) {
+            delete ctx->hardwareClockTracker;
+            ctx->hardwareClockTracker = nullptr;
         }
         if (ctx->adaptive) {
             ctx->adaptive->stop();
