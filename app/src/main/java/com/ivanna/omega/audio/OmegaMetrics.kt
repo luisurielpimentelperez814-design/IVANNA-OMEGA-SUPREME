@@ -16,6 +16,12 @@ data class OmegaMetrics(
     // el default con el fallback real; MainActivity actualiza el valor
     // efectivo si el hardware reporta otro.
     var sampleRate: Int = 48000,
+    // Reloj del reproductor propio: solo válido cuando AudioTrack entrega timestamps fiables.
+    var clockTimestampAvailable: Boolean = false,
+    var clockServoLocked: Boolean = false,
+    var clockMeasuredRateHz: Float = 0f,
+    var clockMeasuredDriftPpm: Float = 0f,
+    var clockCorrectionPpm: Float = 0f,
     var yamnetCategory: String = "—",
     var yamnetConfidence: Float = 0f,
     var dspActive: Boolean = false,
@@ -92,6 +98,27 @@ data class OmegaMetrics(
                 budgetBypasses      = budgetBypasses      ?: cur.budgetBypasses,
                 antiPopEvents       = antiPopEvents       ?: cur.antiPopEvents,
                 resyncCount         = resyncCount         ?: cur.resyncCount
+            )
+        }
+
+        /** Publica solo mediciones del AudioTrack propio; no representa el reloj físico del DAC. */
+        fun updateClockServoTelemetry(
+            timestampAvailable: Boolean,
+            locked: Boolean,
+            measuredRateHz: Double,
+            measuredDriftPpm: Double,
+            correctionPpm: Double
+        ) {
+            val valid = timestampAvailable && locked && measuredRateHz.isFinite() &&
+                measuredRateHz in 8_000.0..768_000.0 && measuredDriftPpm.isFinite() &&
+                correctionPpm.isFinite()
+            val cur = _shared.value
+            _shared.value = cur.copy(
+                clockTimestampAvailable = timestampAvailable,
+                clockServoLocked = valid,
+                clockMeasuredRateHz = if (valid) measuredRateHz.toFloat() else 0f,
+                clockMeasuredDriftPpm = if (valid) measuredDriftPpm.toFloat() else 0f,
+                clockCorrectionPpm = if (valid) correctionPpm.toFloat().coerceIn(-500f, 500f) else 0f
             )
         }
 
