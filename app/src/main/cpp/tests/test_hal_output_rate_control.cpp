@@ -130,3 +130,36 @@ TEST(HalOutputStreamClockControl, SupportsCommonInternalAndUsbDacRates) {
         EXPECT_LT(control.lastAppliedRatio(), 1.0005) << "rate=" << rate;
     }
 }
+
+
+TEST(HalOutputStreamClockControl, InvalidTimestampOrRateNeverEnablesCorrection) {
+    FakeHal hal;
+    ivanna::audio::HalOutputStreamClockControl control(
+        &FakeHal::query, &hal, &FakeAsrc::apply, &hal.asrc);
+
+    hal.sample = {0, 0, 48000};
+    EXPECT_FALSE(control.controlTick());
+    EXPECT_FALSE(control.correctionEnabled());
+
+    hal.sample = {0, 1000000000ull, 7000};
+    EXPECT_FALSE(control.controlTick());
+    EXPECT_FALSE(control.correctionEnabled());
+
+    // A valid sequence acquires lock, but a timestamp discontinuity must
+    // reset the servo instead of leaving a stale correction active.
+    hal.sample = {0, 2000000000ull, 48000};
+    ASSERT_TRUE(control.controlTick());
+    hal.sample = {4800, 2100000000ull, 48000};
+    ASSERT_TRUE(control.controlTick());
+    hal.sample = {9601, 2200000000ull, 48000};
+    ASSERT_TRUE(control.controlTick());
+    hal.sample = {14402, 2300000000ull, 48000};
+    ASSERT_TRUE(control.controlTick());
+    ASSERT_TRUE(control.correctionEnabled());
+
+    hal.sample = {15000, 2200000000ull, 48000}; // time went backwards
+    EXPECT_FALSE(control.controlTick());
+    EXPECT_FALSE(control.correctionEnabled());
+    EXPECT_TRUE(control.hasKnownAppliedRatio());
+    EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
+}
