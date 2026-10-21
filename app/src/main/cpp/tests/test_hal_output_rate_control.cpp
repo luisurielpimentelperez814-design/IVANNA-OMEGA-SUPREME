@@ -138,11 +138,13 @@ TEST(HalOutputStreamClockControl, InvalidTimestampOrRateNeverEnablesCorrection) 
         &FakeHal::query, &hal, &FakeAsrc::apply, &hal.asrc);
 
     hal.sample = {0, 0, 48000};
-    EXPECT_FALSE(control.controlTick());
+    EXPECT_TRUE(control.controlTick()); // query succeeded; invalid sample falls back to unity
     EXPECT_FALSE(control.correctionEnabled());
+    EXPECT_TRUE(control.hasKnownAppliedRatio());
+    EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
 
     hal.sample = {0, 1000000000ull, 7000};
-    EXPECT_FALSE(control.controlTick());
+    EXPECT_TRUE(control.controlTick());
     EXPECT_FALSE(control.correctionEnabled());
 
     // A valid sequence acquires lock, but a timestamp discontinuity must
