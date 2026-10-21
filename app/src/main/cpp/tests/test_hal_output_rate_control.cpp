@@ -73,7 +73,7 @@ struct FakeHal {
 TEST(HalOutputStreamClockControl, QueriesRealSampleAndAppliesThroughAsrcCallback) {
     FakeHal hal;
     ivanna::audio::HalOutputStreamClockControl control(
-        &FakeHal::query, &FakeAsrc::apply, &hal);
+        &FakeHal::query, &hal, &FakeAsrc::apply, &hal.asrc);
     EXPECT_TRUE(control.controlTick());
     hal.sample = {4800, 1100000000ull, 48000};
     EXPECT_TRUE(control.controlTick());

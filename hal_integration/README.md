@@ -51,7 +51,7 @@ Create the controller during stream construction, after the ASRC exists:
 
 ```cpp
 ivanna::audio::HalOutputStreamClockControl clockControl(
-    &queryPresentationPosition, &applyExistingAsrcRatio, this);
+    &queryPresentationPosition, this, &applyExistingAsrcRatio, this);
 ```
 
 Call `clockControl.controlTick()` from a low-rate control task (approximately 10–20 Hz) that is serialized with stream lifecycle and ASRC configuration. Do not call it from the hard real-time render/write path. Call `clockControl.reset()` on standby, stream reopen, route/device change, or timestamp discontinuity. The ASRC callback must be thread-safe or dispatched to the HAL's existing control thread.

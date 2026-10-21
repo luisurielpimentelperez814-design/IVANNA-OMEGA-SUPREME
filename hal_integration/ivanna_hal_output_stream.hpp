@@ -14,9 +14,11 @@ public:
     using ApplyRatio = HalOutputRateControl::ApplyRatio;
 
     HalOutputStreamClockControl(QueryPresentationPosition query,
+                                void* queryContext,
                                 ApplyRatio applyRatio,
-                                void* context) noexcept
-        : query_(query), context_(context), rateControl_(applyRatio, context) {}
+                                void* asrcContext) noexcept
+        : query_(query), queryContext_(queryContext),
+          rateControl_(applyRatio, asrcContext) {}
 
     HalOutputStreamClockControl(const HalOutputStreamClockControl&) = delete;
     HalOutputStreamClockControl& operator=(const HalOutputStreamClockControl&) = delete;
@@ -30,7 +32,7 @@ public:
             return false;
         }
         HardwareClockSample sample{};
-        if (!query_(context_, &sample)) {
+        if (!query_(queryContext_, &sample)) {
             rateControl_.reset();
             return false;
         }
@@ -50,7 +52,7 @@ public:
 
 private:
     QueryPresentationPosition query_ = nullptr;
-    void* context_ = nullptr;
+    void* queryContext_ = nullptr;
     HalOutputRateControl rateControl_;
 };
 
