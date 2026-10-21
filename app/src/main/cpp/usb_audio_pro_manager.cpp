@@ -15,6 +15,7 @@ std::atomic<bool> g_engine_running{false};
 
 #include <atomic>
 #include <cstring>
+#include <cmath>
 #include <cstdlib>
 #include <cerrno>
 #include <ctime>
@@ -885,8 +886,8 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
     jfloat* src = env->GetFloatArrayElements(samples, nullptr);
     if (!src) return 0;
 
-    // ASRC real en la ruta USB: float PCM del pipeline -> interpolador
-    // continuo -> S32_LE -> anillo que consume el motor URB del DAC.
+    // ASRC FIR polifásico antialias en la ruta USB: float PCM del pipeline
+    // -> sinc con ventana Blackman y fase continua -> S32_LE -> anillo URB.
     // El buffer de salida admite hasta 2x frames para tasas comunes <=96kHz
     // desde 48kHz; para ratios mayores se procesan subbloques.
     static thread_local float inputScratch[4096 * kMaxChannels];
