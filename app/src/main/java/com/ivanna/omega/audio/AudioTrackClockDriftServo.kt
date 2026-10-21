@@ -22,6 +22,11 @@ internal class AudioTrackClockDriftServo(private val nominalSampleRateHz: Int) {
     private var validSamples = 0
     var correctionPpm: Double = 0.0
         private set
+    var measuredRateHz: Double = 0.0
+        private set
+    var measuredDriftPpm: Double = 0.0
+        private set
+    val isLocked: Boolean get() = validSamples >= LOCK_SAMPLES
 
     fun observe(framePosition: Long, timestampNs: Long): Double {
         if (nominalSampleRateHz !in 8_000..768_000 ||
@@ -68,6 +73,8 @@ internal class AudioTrackClockDriftServo(private val nominalSampleRateHz: Int) {
             seed(framePosition, timestampNs)
             return 0.0
         }
+        measuredRateHz = measuredRate
+        measuredDriftPpm = driftPpm
 
         if (validSamples < LOCK_SAMPLES) {
             validSamples++
@@ -86,6 +93,8 @@ internal class AudioTrackClockDriftServo(private val nominalSampleRateHz: Int) {
         previousTimestampNs = 0L
         validSamples = 0
         correctionPpm = 0.0
+        measuredRateHz = 0.0
+        measuredDriftPpm = 0.0
     }
 
     private fun seed(framePosition: Long, timestampNs: Long) {
