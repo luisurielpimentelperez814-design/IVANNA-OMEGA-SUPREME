@@ -195,34 +195,46 @@ struct AsyncEngine {
 
 AsyncEngine g_engine;
 
-// Stateful linear ASRC on the USB PCM ingress. Input rate is explicitly
-// 48 kHz until the Kotlin pipeline supplies its actual negotiated source rate.
-// Phase is retained across JNI blocks to avoid block-boundary discontinuities.
+// Stateful, occupancy-controlled asynchronous sample-rate converter for
+// the direct USB PCM path. It matches nominal pipeline/DAC rates and applies
+// a bounded, smoothed correction from the SPSC ring fill to track clock drift.
+// This is a lightweight linear interpolator, not a high-rejection FIR filter.
 class UsbIngressAsrc {
 public:
     void configure(int inputRate, int outputRate, int channels) noexcept {
         inputRate_ = inputRate > 0 ? inputRate : 48000;
         outputRate_ = outputRate > 0 ? outputRate : 48000;
         channels_ = channels > 0 && channels <= kMaxChannels ? channels : 2;
-        step_ = static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
+        nominalStep_ = static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
+        step_ = nominalStep_;
         phase_ = 0.0;
+        correction_ = 0.0;
         havePrevious_ = false;
         for (int c = 0; c < kMaxChannels; ++c) previous_[c] = 0.0f;
     }
 
-    // Bound each input chunk so even 384 kHz output from a 44.1 kHz
-    // source fits the fixed output scratch buffer without losing phase.
     int maxInputFrames(int outputCapacityFrames) const noexcept {
         if (outputCapacityFrames <= 1 || step_ <= 0.0) return 1;
         const int bound = static_cast<int>((outputCapacityFrames - 1) * step_);
         return bound > 0 ? bound : 1;
     }
 
-    int process(const float* input, int inputFrames, int32_t* output, int capacityFrames) noexcept {
+    int process(const float* input, int inputFrames, int32_t* output,
+                int capacityFrames, int ringFillFrames, int ringCapacityFrames) noexcept {
         if (!input || !output || inputFrames <= 0 || capacityFrames <= 0) return 0;
+        // Slow PI-like occupancy servo. Full ring => consume input faster and
+        // generate fewer frames; empty ring => generate slightly more. Clamp
+        // to +/-1000 ppm so this corrects clock drift, not nominal SR mismatch.
+        if (ringCapacityFrames > 0) {
+            const double target = static_cast<double>(ringCapacityFrames) * 0.5;
+            const double error = (static_cast<double>(ringFillFrames) - target) / target;
+            const double desired = error * 0.001;
+            correction_ += (desired - correction_) * 0.002;
+            if (correction_ > 0.001) correction_ = 0.001;
+            if (correction_ < -0.001) correction_ = -0.001;
+            step_ = nominalStep_ * (1.0 + correction_);
+        }
         int produced = 0;
-        // The sample at phase=0 refers to the first sample of this block.
-        // One previous frame bridges block boundaries for interpolation.
         while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
             const int i0 = static_cast<int>(phase_);
             const int i1 = (i0 + 1 < inputFrames) ? i0 + 1 : i0;
@@ -247,7 +259,7 @@ public:
     }
 private:
     int inputRate_ = 48000, outputRate_ = 48000, channels_ = 2;
-    double step_ = 1.0, phase_ = 0.0;
+    double nominalStep_ = 1.0, step_ = 1.0, phase_ = 0.0, correction_ = 0.0;
     float previous_[kMaxChannels]{};
     bool havePrevious_ = false;
 };
@@ -823,7 +835,9 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
             if (s < -1.0f) s = -1.0f;
             inputScratch[i] = s;
         }
-        const int outFrames = g_usbAsrc.process(inputScratch, chunk, outputScratch, 8192);
+        const int outFrames = g_usbAsrc.process(
+            inputScratch, chunk, outputScratch, 8192,
+            g_engine.ring.framesAvailable(), kRingFrames - 1);
         if (outFrames > 0) written += g_engine.ring.writeFrames(outputScratch, outFrames);
         offset += chunk;
         remaining -= chunk;
