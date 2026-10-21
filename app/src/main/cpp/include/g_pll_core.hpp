@@ -87,14 +87,18 @@ public:
             return status(true);
         }
 
-        const double error = wrap(reference - m_phase);
+        // Predict the oscillator forward before comparing it with the new sample.
+        // Comparing against the previous phase mistakes the expected phase advance
+        // (nominalOmega * dt) for a phase error and drives the loop to its clamp.
+        const double predictedPhase = wrap(m_phase + estimatedOmega() * dtSeconds);
+        const double error = wrap(reference - predictedPhase);
         // Integrator anti-windup by clamping the integral's frequency contribution.
         const double integralLimit = m_maxCorrectionOmega / m_ki;
         m_integral = std::clamp(m_integral + error * dtSeconds,
                                 -integralLimit, integralLimit);
         const double correction = std::clamp(m_kp * error + m_ki * m_integral,
                                              -m_maxCorrectionOmega, m_maxCorrectionOmega);
-        m_phase = wrap(m_phase + (m_nominalOmega + correction) * dtSeconds);
+        m_phase = wrap(predictedPhase + correction * dtSeconds);
         m_lastError = error;
         return status(true);
     }
@@ -108,14 +112,15 @@ private:
         double y = std::remainder(x, kPllTwoPi);
         return y <= -kPllPi ? y + kPllTwoPi : y;
     }
-    PllStatus status(bool valid) const noexcept {
-        // Report the same bounded correction actually applied by update().
-        // Previously telemetry could claim a frequency pull beyond the configured
-        // limit even though the phase accumulator itself was clamped.
+    double estimatedOmega() const noexcept {
         const double correction = std::clamp(m_kp * m_lastError + m_ki * m_integral,
                                              -m_maxCorrectionOmega, m_maxCorrectionOmega);
+        return m_nominalOmega + correction;
+    }
+    PllStatus status(bool valid) const noexcept {
+        // Report the same bounded correction used by the phase predictor.
         return {valid && m_initialized, m_phase,
-                (m_nominalOmega + correction) / kPllTwoPi, m_lastError};
+                estimatedOmega() / kPllTwoPi, m_lastError};
     }
 
     double m_nominalOmega = 0.0, m_kp = 0.0, m_ki = 0.0;

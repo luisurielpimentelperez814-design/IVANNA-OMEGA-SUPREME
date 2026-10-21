@@ -16,11 +16,19 @@ public:
         if (!status.valid || !std::isfinite(status.driftPpm) ||
             !std::isfinite(status.measuredSampleRateHz) || status.measuredSampleRateHz<=0.0 ||
             std::abs(status.driftPpm)>=5000.0) { reset(); return {}; }
-        if (validSamples_<kLockSamples) ++validSamples_;
+
+        // Gather a short run of valid observations before enabling correction.
+        // Keep the command at unity while acquiring lock so the initial transient
+        // cannot accumulate multiple slew steps before the output is enabled.
+        if (validSamples_ < kLockSamples) {
+            ++validSamples_;
+            if (validSamples_ < kLockSamples) return {};
+            locked_ = true;
+        }
+
         const double target=std::clamp(status.driftPpm,-kMaxCorrectionPpm,kMaxCorrectionPpm);
         const double filtered=correctionPpm_+0.2*(target-correctionPpm_);
         correctionPpm_+=std::clamp(filtered-correctionPpm_,-kMaxSlewPpmPerUpdate,kMaxSlewPpmPerUpdate);
-        locked_=validSamples_>=kLockSamples;
         return output();
     }
     Output current() const noexcept { return output(); }
