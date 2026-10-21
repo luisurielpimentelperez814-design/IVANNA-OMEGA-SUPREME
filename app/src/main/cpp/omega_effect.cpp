@@ -940,6 +940,18 @@ static int32_t omega_process(effect_handle_t self,
         return 0;
     }
 
+    // Consume only a snapshot supplied by the actual HAL/PCM owner. No clock_gettime
+    // fallback is used as a hardware reference.
+    if (ctx->hardwareClockReader && ctx->hardwareClockTracker) {
+        ivanna::audio::HardwareClockSample hwSample{};
+        if (ctx->hardwareClockReader->read(hwSample)) {
+            const auto hwStatus = ctx->hardwareClockTracker->observe(hwSample);
+            if (hwStatus.valid) {
+                ivanna::effectBeacon().onHardwareClockEstimate(
+                    hwStatus.measuredSampleRateHz, hwStatus.driftPpm);
+            }
+        }
+    }
     struct timespec cpuT0;
     clock_gettime(CLOCK_MONOTONIC, &cpuT0);
     if (ctx->callbackClock && ctx->lastConfiguredSr >= 8000u && ctx->lastConfiguredSr <= 768000u) {
@@ -2168,19 +2180,7 @@ static int32_t omega_release_effect(effect_handle_t handle) {
             ctx->enabled = false;
         }
             
-        // Consume only a snapshot supplied by the actual HAL/PCM owner. No clock_gettime
-    // fallback is allowed here: absent hardware samples leave this path invalid.
-    if (ctx->hardwareClockReader && ctx->hardwareClockTracker) {
-        ivanna::audio::HardwareClockSample hwSample{};
-        if (ctx->hardwareClockReader->read(hwSample)) {
-            const auto hwStatus = ctx->hardwareClockTracker->observe(hwSample);
-            if (hwStatus.valid) {
-                ivanna::effectBeacon().onHardwareClockEstimate(
-                    hwStatus.measuredSampleRateHz, hwStatus.driftPpm);
-            }
-        }
-    }
-    if (ctx->callbackClock) {
+        if (ctx->callbackClock) {
             delete ctx->callbackClock;
             ctx->callbackClock = nullptr;
         }
