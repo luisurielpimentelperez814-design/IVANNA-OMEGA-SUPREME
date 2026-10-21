@@ -15,6 +15,7 @@
 #include <android/log.h>
 #include <cmath>
 #include <algorithm>
+#include "../include/omega_effect_beacon.h"
 
 #define LOG_TAG "IVANNA-Stub"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -190,6 +191,33 @@ JNIEXPORT void JNICALL Java_com_ivanna_omega_audio_AudioEngine_nativeFlushHrtfHi
 ) {
     ivanna_flush_hrtf_history();
     LOGI("HRTF history flushed via JNI");
+}
+
+/*
+ * Clock telemetry for the app UI.
+ * Return layout: [callbackValid, callbackRateHz, callbackDriftPpm,
+ *                 hardwareValid, hardwareRateHz, hardwareDriftPpm].
+ * Callback cadence is software scheduling telemetry; hardware values are
+ * valid only when a real HAL/PCM producer publishes hardware-correlated data.
+ */
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetClockTelemetryJni(
+    JNIEnv* env, jclass /*clazz*/) {
+    ivanna::EffectCallbackClockStatus callback{};
+    ivanna::EffectHardwareClockStatus hardware{};
+    const bool callbackOk = ivanna::readEffectCallbackClockStatus(callback);
+    const bool hardwareOk = ivanna::readEffectHardwareClockStatus(hardware);
+    const jfloat values[6] = {
+        callbackOk && callback.valid ? 1.0f : 0.0f,
+        callbackOk && callback.valid ? static_cast<jfloat>(callback.observedSampleRateHz) : 0.0f,
+        callbackOk && callback.valid ? static_cast<jfloat>(callback.driftPpm) : 0.0f,
+        hardwareOk && hardware.valid ? 1.0f : 0.0f,
+        hardwareOk && hardware.valid ? static_cast<jfloat>(hardware.measuredSampleRateHz) : 0.0f,
+        hardwareOk && hardware.valid ? static_cast<jfloat>(hardware.driftPpm) : 0.0f
+    };
+    jfloatArray result = env->NewFloatArray(6);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 6, values);
+    return result;
 }
 
 } // extern "C"
