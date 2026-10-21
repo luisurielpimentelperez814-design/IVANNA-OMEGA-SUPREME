@@ -105,3 +105,18 @@ A public AudioReach PAL implementation defines `PARAM_ID_MFC_OUTPUT_MEDIA_FORMAT
 MFC is a media-format converter and may contain resampling functionality, but `PARAM_ID_MFC_OUTPUT_MEDIA_FORMAT` configures output media format; public definitions do not establish a continuously adjustable fractional ratio, update cadence, or safe live-update semantics. The controller must not feed servo corrections by repeatedly changing the nominal media format. First verify the exact Blair payload and whether MFC exposes a separate runtime ratio/drift control or another documented actuator. If no such control exists, use a purpose-built software ASRC in IVANNA's audio path rather than pretending the media-format parameter is a PLL knob.
 
 The paired-time hypothesis is also recorded: `pal_session_time` reportedly contains `timestamp` and `frames` in one call, while AGM internal session time additionally exposes QTIMER/absolute time. Confirm field order and units against the target's actual ABI before compiling the callback; do not infer structure layout solely from log strings.
+
+
+## Timestamp call-chain findings (2026-10-21, latest Termux excerpts)
+
+The latest disassembly adds the following call-chain evidence:
+
+- `Stream::getTimestamp(pal_session_time*)` is at `0x19d6c0`. It rejects a null output pointer, checks a state/availability field, locks a mutex, then dispatches through a function pointer loaded from the session object (`ldr x8, [x20, #0xc0]`; `blr x8` at `0x19d740`). This confirms the stream layer delegates timestamp retrieval to its active session implementation; the virtual target has not yet been resolved.
+- A call site at `0x190a4c` invokes `Stream::getTimestamp` with an output pointer. The excerpt does not identify the caller's higher-level consumer or establish timestamp units.
+- `SessionAlsaPcm::getTimestamp` at `0x24adc4` was previously observed forwarding to `SessionAlsaUtils::getTimestamp(mixer*, vector<int> const&, unsigned int, pal_session_time*)` via a PLT entry.
+- The symbol entry at `0x2ec890` is a branch thunk to `0x256894`, not a readable function body at the symbol address. Disassembly at `0x256894` begins with a large stack frame and object/container initialization; the visible range includes `ResourceManager::getInstance()` and a loop over a stored collection, but does not yet show a verified timestamp source, output-field writes, or a `clock_gettime` call. The surrounding demangled label `std::__1::vector<...>::__vallocate` is not a reliable owning-function attribution for this code. Function boundaries and the branch-thunk target must be resolved before assigning semantics.
+- The broad symbol grep found `clock_gettime` call sites around `0x21057c`, `0x210704` and `0x2107e4` in `SpeakerProtection` methods. These are unrelated call sites in the shown disassembly and must not be claimed as the PAL playback timestamp source.
+
+### Current timestamp conclusion
+
+The call chain is now clearer at the stream/session-dispatch level, but the actual implementation and `pal_session_time` ABI remain unresolved. Do not assume the output fields, ordering, units, monotonic-clock domain, or that frames and timestamp represent the same hardware snapshot. Next, resolve the indirect call at `0x19d740` against the stream/session vtable and inspect only the matching concrete `getTimestamp` implementation and its output writes. Keep the target callback unbound until a paired frame/timestamp sample is verified.
