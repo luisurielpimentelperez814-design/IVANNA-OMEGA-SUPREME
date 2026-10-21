@@ -109,6 +109,16 @@ object SafmusUniversalKernel {
         if (pointCount <= 0) {
             return SpatialCaptureAssessment(false, "REJECTED_INCOMPLETE", "SAFMUS no permite exportar una nube vacía")
         }
+
+        // Rechaza metadatos imposibles antes de etiquetar una captura como revisable.
+        // El número final de puntos nunca puede exceder las muestras de origen registradas.
+        if (depthPointCount < 0 || sparsePointCount < 0 || poseCount < 0 || durationMs < 0L) {
+            return SpatialCaptureAssessment(false, "REJECTED_INVALID", "SAFMUS rechazó contadores o duración negativos")
+        }
+        val sourcePointCount = depthPointCount.toLong() + sparsePointCount.toLong()
+        if (sourcePointCount < pointCount.toLong()) {
+            return SpatialCaptureAssessment(false, "REJECTED_INVALID", "El conteo final supera las muestras de origen registradas")
+        }
         val enoughSamples = pointCount >= 100 && poseCount >= 3 && durationMs >= 3_000L
         val trackingOk = trackingState == "TRACKING"
         val depthBacked = depthPointCount > 0

@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.110 (401) — SAFMUS: metadatos espaciales consistentes
+
+- SAFMUS ahora rechaza capturas AR con contadores negativos, duración negativa o un número final de puntos mayor que las muestras de profundidad/visuales declaradas. Esto evita etiquetar metadatos imposibles como geometría revisable.
+- Añadida prueba JVM de regresión para contadores inconsistentes y negativos.
+- La versión del APK, el módulo Magisk y `update.json` quedan sincronizados en `2.5.110 (401)`; la captura AR continúa identificada como geometría estimada y nunca como calibración acústica.
+
+---
+
 # CHANGELOG — v2.5.109 (400) — ARCore: la vista en blanco ya avisa (fallo silencioso corregido)
 
 1. **Bug real encontrado desde la captura reportada (pantalla ARCore en gris/negro liso sin ningún aviso):** `session.update()` puede fallar en CADA frame (cámara ocupada por otra app, HAL caído, primer frame aún no entregado) y el catch de `onDrawFrame` solo actualizaba `statusView` cuando `captureEnabled` era true — es decir, SOLO durante una captura ya iniciada. Antes de pulsar "Iniciar captura" el fallo quedaba totalmente invisible: la pantalla se veía plana (un solo color sólido en toda el área, consistente con que el shader nunca recibe un frame real) y el texto seguía diciendo "ARCore listo" indefinidamente.

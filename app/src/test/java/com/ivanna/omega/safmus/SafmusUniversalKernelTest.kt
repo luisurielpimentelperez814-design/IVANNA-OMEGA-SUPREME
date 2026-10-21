@@ -63,6 +63,24 @@ class SafmusUniversalKernelTest {
     }
 
 
+    @Test fun spatialCaptureGateRejectsNegativeOrInconsistentMetadata() {
+        val inconsistent = SafmusUniversalKernel.assessSpatialCapture(
+            pointCount = 5, depthPointCount = 2, sparsePointCount = 2,
+            poseCount = 3, durationMs = 3_000L, trackingState = "TRACKING",
+            coordinatesFinite = true, posesFinite = true
+        )
+        assertFalse(inconsistent.exportAllowed)
+        assertTrue(inconsistent.quality == "REJECTED_INVALID")
+
+        val negative = SafmusUniversalKernel.assessSpatialCapture(
+            pointCount = 5, depthPointCount = 5, sparsePointCount = 0,
+            poseCount = -1, durationMs = -1L, trackingState = "TRACKING",
+            coordinatesFinite = true, posesFinite = true
+        )
+        assertFalse(negative.exportAllowed)
+        assertTrue(negative.quality == "REJECTED_INVALID")
+    }
+
     @Test fun hardwareOptimizationRequiresPermissionFreshnessBudgetAndRollback() {
         val resource = SafmusUniversalKernel.HardwareResource.CAMERA
         fun evidence(

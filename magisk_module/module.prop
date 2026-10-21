@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.109
-versionCode=400
+version=v2.5.110
+versionCode=401
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.108: bounded HAL output-rate servo primitive; target HAL/ASRC integration remains device-specific
+description=v2.5.110: SAFMUS rejects inconsistent spatial capture counters; AR geometry remains estimated, not acoustic calibration
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
