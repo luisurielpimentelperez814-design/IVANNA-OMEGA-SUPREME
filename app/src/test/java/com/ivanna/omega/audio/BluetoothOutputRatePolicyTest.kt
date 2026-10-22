@@ -24,4 +24,12 @@ class BluetoothOutputRatePolicyTest {
         assertEquals(false, BluetoothOutputRatePolicy.hasReliableDeviceAddress(""))
         assertEquals(false, BluetoothOutputRatePolicy.hasReliableDeviceAddress("   "))
     }
+    @Test fun codecLookupNeverBorrowsAnotherOrAnonymousDevice() {
+        assertEquals(true, BluetoothOutputRatePolicy.matchesSelectedDevice("AA:BB:CC:DD:EE:FF", "aa:bb:cc:dd:ee:ff"))
+        assertEquals(false, BluetoothOutputRatePolicy.matchesSelectedDevice(null, "AA:BB:CC:DD:EE:FF"))
+        assertEquals(false, BluetoothOutputRatePolicy.matchesSelectedDevice("   ", "AA:BB:CC:DD:EE:FF"))
+        assertEquals(false, BluetoothOutputRatePolicy.matchesSelectedDevice("AA:BB:CC:DD:EE:FF", null))
+        assertEquals(false, BluetoothOutputRatePolicy.matchesSelectedDevice("AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66"))
+    }
+
 }
