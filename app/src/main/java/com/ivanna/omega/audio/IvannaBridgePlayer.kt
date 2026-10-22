@@ -2,6 +2,8 @@ package com.ivanna.omega.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.AudioTimestamp
@@ -68,6 +70,28 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     // el proyecto). Ahora se solicita foco cooperativo al iniciar playback
     // y se PAUSA (no se destruye el track) en pérdida transitoria,
     // reanudando solo si el usuario no había pausado manualmente.
+    private data class OutputRoute(val sampleRate: Int, val preferredDevice: AudioDeviceInfo?)
+
+    /**
+     * Targets a connected USB DAC when Android exposes one. USB descriptors vary:
+     * use advertised rates when available; if capabilities are unknown, use 48 kHz
+     * rather than assuming every endpoint accepts 96 kHz. Built-in output retains 96 kHz.
+     */
+    private fun selectOutputRoute(): OutputRoute {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val usb = runCatching {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+            }
+        }.getOrNull()
+        if (usb == null) return OutputRoute(TARGET_SAMPLE_RATE, null)
+        val rates = usb.sampleRates
+        val advertised = rates.filter { it in 44_100..96_000 }.distinct().sortedDescending()
+        val rate = advertised.firstOrNull() ?: USB_FALLBACK_SAMPLE_RATE
+        Log.i(TAG, "USB audio output selected: ${usb.productName}; rate=${rate} Hz; advertised=${rates.contentToString()}")
+        return OutputRoute(rate, usb)
+    }
+
     private val focusManager by lazy {
         AudioCallbackManager(
             context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
@@ -124,6 +148,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         private const val TAG = "IVANNA.BridgePlayer"
         private const val TIMEOUT_US = 10_000L
         private const val TARGET_SAMPLE_RATE = 96_000
+        private const val USB_FALLBACK_SAMPLE_RATE = 48_000
         private const val MAX_CHUNK_FRAMES = 2048
 
         /** Última instancia activa — usada por PiLstmBridge para AGC seguro. */
@@ -533,11 +558,12 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             seekTargetUs = -1L
 
             val inputSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            val sampleRate = TARGET_SAMPLE_RATE
+            val outputRoute = selectOutputRoute()
+            val sampleRate = outputRoute.sampleRate
             val channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             val mime = format.getString(MediaFormat.KEY_MIME)!!
 
-            val resampler = StereoAudioResampler(TARGET_SAMPLE_RATE)
+            val resampler = StereoAudioResampler(sampleRate)
             resampler.setInputSampleRate(inputSampleRate)
             val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
             val outputTimestamp = AudioTimestamp()
@@ -578,6 +604,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 .setBufferSizeInBytes(minBuf * 4)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .setTransferMode(AudioTrack.MODE_STREAM)
+                .apply { outputRoute.preferredDevice?.let { setPreferredDevice(it) } }
                 .build()
             if (track.state != AudioTrack.STATE_INITIALIZED) {
                 Log.e(TAG, "AudioTrack no inicializó")
