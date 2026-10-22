@@ -38,3 +38,35 @@ TEST(PhysicalSceneReadback, NonFiniteCommandsDoNotPoisonStoredState) {
     EXPECT_TRUE(std::isfinite(scene.occlusionFactor()));
     EXPECT_TRUE(std::isfinite(scene.wallAbsorption()));
 }
+
+TEST(PhysicalSceneReadback, HigherWallAbsorptionDampsHighFrequencyMore) {
+    constexpr int kFrames = 8192;
+    constexpr double kPi = 3.14159265358979323846;
+    float dryL[kFrames]{};
+    float dryR[kFrames]{};
+    float treatedL[kFrames]{};
+    float treatedR[kFrames]{};
+
+    for (int i = 0; i < kFrames; ++i) {
+        const float sample = static_cast<float>(std::sin(2.0 * kPi * 0.35 * i));
+        dryL[i] = dryR[i] = sample;
+        treatedL[i] = treatedR[i] = sample;
+    }
+
+    ivanna::spatial::PhysicalSceneRenderer reference;
+    ivanna::spatial::PhysicalSceneRenderer treated;
+    reference.setWallAbsorption(0.25f);
+    treated.setWallAbsorption(0.95f);
+    reference.process(dryL, dryR, kFrames);
+    treated.process(treatedL, treatedR, kFrames);
+
+    double referencePower = 0.0;
+    double treatedPower = 0.0;
+    for (int i = 128; i < kFrames; ++i) {
+        referencePower += static_cast<double>(dryL[i]) * dryL[i];
+        treatedPower += static_cast<double>(treatedL[i]) * treatedL[i];
+    }
+    EXPECT_LT(treatedPower, referencePower * 0.50)
+        << "high wall absorption must cause additional high-frequency damping";
+}
+
