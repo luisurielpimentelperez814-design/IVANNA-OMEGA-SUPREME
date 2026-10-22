@@ -61,6 +61,11 @@ object BluetoothCodecDetector {
      * lanza, nunca bloquea más de [PROXY_TIMEOUT_MS].
      */
     fun detectActiveCodec(context: Context, preferredDeviceAddress: String? = null): CodecInfo {
+        // A null/blank address is ambiguous when multiple headsets are connected.
+        // Fail closed instead of borrowing the first device returned by Android.
+        if (!BluetoothOutputRatePolicy.hasReliableDeviceAddress(preferredDeviceAddress)) {
+            return CodecInfo(RealCodec.UNAVAILABLE, 0, 0)
+        }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -83,11 +88,8 @@ object BluetoothCodecDetector {
                     val a2dp = proxy as? BluetoothA2dp
                     proxyRef = a2dp
                     val connected = a2dp?.connectedDevices.orEmpty()
-                    val preferredAddress = preferredDeviceAddress?.takeIf { it.isNotBlank() }
-                    val device = if (preferredAddress == null) {
-                        connected.firstOrNull()
-                    } else {
-                        connected.firstOrNull { it.address.equals(preferredAddress, ignoreCase = true) }
+                    val device = connected.firstOrNull {
+                        BluetoothOutputRatePolicy.matchesSelectedDevice(preferredDeviceAddress, it.address)
                     }
                     if (a2dp != null && device != null) {
                         val status = runCatching {
