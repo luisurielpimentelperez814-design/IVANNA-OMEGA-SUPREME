@@ -7,7 +7,7 @@ import kotlin.math.sin
 
 /**
  * Remuestreador estéreo intercalado L/R de sinc enventanada (Blackman-Harris),
- * 32 taps, 256 fases con interpolación lineal entre fases.
+ * 64 taps, 1024 fases con interpolación lineal entre fases; ventana Blackman-Harris de cuatro términos.
  *
  * FIX (distorsión constante a cualquier volumen): la versión anterior repetía
  * la muestra más cercana (vecino más próximo). Con 44.1/48 → 96 kHz eso crea
@@ -17,15 +17,15 @@ import kotlin.math.sin
  * Ahora el filtro es de banda limitada y conserva posición fraccionaria e
  * historial entre llamadas: la salida es continua entre trozos.
  *
- * Latencia: HALF muestras de entrada (16). No es thread-safe: un hilo por instancia.
+ * Latencia de grupo aproximada: HALF muestras de entrada (32). No es thread-safe: un hilo por instancia.
  */
 class StereoAudioResampler(
     private val targetRate: Int = 96000
 ) {
     private companion object {
-        const val TAPS = 32
+        const val TAPS = 64
         const val HALF = TAPS / 2
-        const val PHASES = 256
+        const val PHASES = 1024
     }
 
     private var inputRate = 96000
