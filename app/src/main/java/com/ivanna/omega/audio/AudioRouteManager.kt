@@ -124,21 +124,26 @@ object AudioRouteManager {
     }
 
     fun detectOutputRoute(am: AudioManager): OutputRoute {
-        val outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        return when {
-            outputs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET } ->
-                OutputRoute.BLUETOOTH
-            outputs.any {
-                it.type == AudioDeviceInfo.TYPE_USB_HEADSET || it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
-            } -> OutputRoute.USB
-            outputs.any {
-                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_AUX_LINE
-            } -> OutputRoute.WIRED_AUX
-            outputs.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER } -> OutputRoute.SPEAKER
-            else -> OutputRoute.UNKNOWN
-        }
+        val outputs = runCatching { am.getDevices(AudioManager.GET_DEVICES_OUTPUTS) }
+            .getOrNull().orEmpty()
+        return OutputRoutePolicy.select(
+            usbConnected = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                    it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+            },
+            bluetoothConnected = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+            },
+            wiredConnected = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_AUX_LINE
+            },
+            speakerConnected = outputs.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+        )
     }
 
     fun profileFor(route: OutputRoute): RouteProfile = when (route) {
