@@ -47,6 +47,16 @@ TEST(UsbAsrcPhase, DefersRoundedPhaseThatWouldReadPastBlockEnd) {
     EXPECT_EQ(phaseIndex, 0);
 }
 
+TEST(UsbAsrcPhase, DefersExtremeFinitePhaseBeforeIntegerConversion) {
+    int base = -1;
+    int phaseIndex = -1;
+    const auto disposition = ivanna::audio::normalizeUsbAsrcPhase(
+        std::numeric_limits<double>::max(), 64, 1024, base, phaseIndex);
+    EXPECT_EQ(disposition, ivanna::audio::UsbAsrcPhaseDisposition::DeferToNextBlock);
+    EXPECT_EQ(base, 64);
+    EXPECT_EQ(phaseIndex, 0);
+}
+
 TEST(UsbAsrcPhase, RejectsInvalidPhaseWithoutProducingAnIndex) {
     int base = -1;
     int phaseIndex = -1;
