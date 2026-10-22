@@ -788,7 +788,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             // Árbitro de Ruta Única: si el daemon system-wide está activo o DSPBridge
                             // nativo ya ejecutó la cadena maestra (Volterra C++, 5 Ejes, Spatial C++ y
                             // SafetyLimiter), no apilar procesadores duplicados sobre el mismo bloque.
-                            if (!systemWideActive && !nativeDspHandled) {
+                            if (!nativeDspHandled) {
                                 if (IvannaNpeEngine.isReady && !npeSampleRateMismatch) {
                                     try { IvannaNpeEngine.processInterleavedStereo(chunk, chunkFrames) } catch (e: Exception) { android.util.Log.e("IVANNA_DSP", "Crash NPE evitado: ${e.message}") }
                                 }
