@@ -643,7 +643,10 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             resampler.setInputSampleRate(inputSampleRate)
             playbackSpatialEngine.configureSampleRate(sampleRate)
             playbackSpatialEngine.reset()
+            // Rate estimator remains diagnostic; the closed-loop correction is
+            // driven by actual AudioTrack queue phase (submitted - consumed frames).
             val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
+            val bufferPll = AudioTrackBufferPll(sampleRate)
             val outputTimestamp = AudioTimestamp()
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
             DSPBridge.init(sampleRate)
@@ -741,6 +744,9 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             val bufferInfo = MediaCodec.BufferInfo()
             var sawInputEOS = false
             var sawOutputEOS = false
+            // AudioTrack.write(float[]) reports float samples, so divide by
+            // two to count accepted interleaved stereo frames cumulatively.
+            var submittedFrames = 0L
 
             val spatialInL = FloatArray(MAX_CHUNK_FRAMES)
             val spatialInR = FloatArray(MAX_CHUNK_FRAMES)
@@ -874,24 +880,34 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             val writtenSamples = track.write(
                                 chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING
                             )
-                            // Pares reales del reproductor propio; si la consulta falla,
-                            // se vuelve a razón unidad en vez de inferir una corrección.
+                            // Closed-loop software PLL: estimate queue phase from frames
+                            // accepted by this AudioTrack minus its timestamped consumed frames.
+                            // No Bluetooth/DAC/vendor-HAL clock writes are attempted.
                             if (writtenSamples > 0) {
+                                submittedFrames += (writtenSamples / 2).toLong()
                                 if (track.getTimestamp(outputTimestamp)) {
-                                    val correctionPpm = clockDriftServo.observe(
+                                    // Frequency estimate is retained as diagnostics only.
+                                    clockDriftServo.observe(
                                         outputTimestamp.framePosition,
                                         outputTimestamp.nanoTime
+                                    )
+                                    val correctionPpm = bufferPll.observe(
+                                        submittedFrames = submittedFrames,
+                                        consumedFrames = outputTimestamp.framePosition,
+                                        bufferCapacityFrames = track.bufferSizeInFrames,
+                                        timestampNs = outputTimestamp.nanoTime
                                     )
                                     resampler.setClockCorrectionPpm(correctionPpm)
                                     OmegaMetrics.updateClockServoTelemetry(
                                         timestampAvailable = true,
-                                        locked = clockDriftServo.isLocked,
+                                        locked = bufferPll.isLocked,
                                         measuredRateHz = clockDriftServo.measuredRateHz,
                                         measuredDriftPpm = clockDriftServo.measuredDriftPpm,
                                         correctionPpm = correctionPpm
                                     )
                                 } else {
                                     clockDriftServo.reset()
+                                    bufferPll.reset()
                                     resampler.setClockCorrectionPpm(0.0)
                                     OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
                                 }
