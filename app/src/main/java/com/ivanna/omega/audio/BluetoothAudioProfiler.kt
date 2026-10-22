@@ -11,6 +11,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * BluetoothAudioProfiler — perfilado magistral de la ruta Bluetooth.
@@ -86,6 +87,7 @@ object BluetoothAudioProfiler {
 
     // Caché por dirección MAC — el perfil solo cambia con la ruta.
     private val profileCache = ConcurrentHashMap<String, PerfProfile>()
+    private val profileGeneration = AtomicLong(0L)
     @Volatile private var activeProfile: PerfProfile? = null
 
     /** Perfil activo en este instante (caché — seguro desde cualquier hilo). */
@@ -97,7 +99,8 @@ object BluetoothAudioProfiler {
      * hilo de audio. Devuelve el perfil resuelto (WIRED/NONE si no hay BT).
      */
     @SuppressLint("MissingPermission")   // BLUETOOTH_CONNECT en manifest (API 31+)
-    fun refresh(context: Context, preferredDeviceAddress: String? = null): PerfProfile {
+    fun refresh(context: Context, preferredDeviceAddress: String? = null, expectedGeneration: Long? = null): PerfProfile {
+        val generation = expectedGeneration ?: profileGeneration.get()
         val am = context.applicationContext
             .getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         val devices = try {
@@ -114,7 +117,7 @@ object BluetoothAudioProfiler {
                 it.type == AudioDeviceInfo.TYPE_USB_HEADSET
             }
             val profile = if (wired) PerfProfile.WIRED else PerfProfile.NONE
-            activeProfile = profile
+            if (generation == profileGeneration.get()) activeProfile = profile
             return profile
         }
 
@@ -125,14 +128,14 @@ object BluetoothAudioProfiler {
         }
         if (btDevice == null) {
             val profile = unknownProfile()
-            activeProfile = profile
+            if (generation == profileGeneration.get()) activeProfile = profile
             Log.w(TAG, "A2DP presente pero identidad seleccionada ausente/ambigua; perfil Bluetooth conservador")
             return profile
         }
 
         val mac = btDevice.address.trim()
         profileCache[mac]?.let {
-            activeProfile = it
+            if (generation == profileGeneration.get()) activeProfile = it
             Log.i(TAG, "Perfil BT en caché: ${it.codec.label} @ $mac")
             return it
         }
@@ -154,8 +157,8 @@ object BluetoothAudioProfiler {
                 transparent   = codec.ordinal >= Codec.APTX_HD.ordinal,
             )
         }
-        if (codec != Codec.UNKNOWN) profileCache[mac] = profile
-        activeProfile = profile
+        if (generation == profileGeneration.get() && codec != Codec.UNKNOWN) profileCache[mac] = profile
+        if (generation == profileGeneration.get()) activeProfile = profile
         Log.i(TAG, "Perfil BT resuelto: $name → ${codec.label} " +
               "(banda=${profile.bandLimitHz} Hz, latencia=${profile.latencyMs} ms, " +
               "armónico≤${profile.harmonicCeil}, wet≤${profile.spatialWetMax})")
@@ -173,9 +176,11 @@ object BluetoothAudioProfiler {
     )
 
     /** Invalida la caché (llamar al desconectar BT o cambiar de dispositivo). */
-    fun invalidate(address: String? = null) {
+    fun invalidate(address: String? = null): Long {
+        val generation = profileGeneration.incrementAndGet()
         if (address == null) profileCache.clear() else profileCache.remove(address)
         activeProfile = null
+        return generation
     }
 
     // ── Resolución del códec A2DP activo ─────────────────────────────────────
