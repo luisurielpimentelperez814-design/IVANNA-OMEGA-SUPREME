@@ -11,6 +11,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import com.ivanna.omega.ai.PerceptualState
 import com.ivanna.omega.ai.PerceptualStateListener
@@ -747,6 +748,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // AudioTrack.write(float[]) reports float samples, so divide by
             // two to count accepted interleaved stereo frames cumulatively.
             var submittedFrames = 0L
+            var lastClockPollNs = 0L
 
             val spatialInL = FloatArray(MAX_CHUNK_FRAMES)
             val spatialInR = FloatArray(MAX_CHUNK_FRAMES)
@@ -885,31 +887,36 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             // No Bluetooth/DAC/vendor-HAL clock writes are attempted.
                             if (writtenSamples > 0) {
                                 submittedFrames += (writtenSamples / 2).toLong()
-                                if (track.getTimestamp(outputTimestamp)) {
-                                    // Frequency estimate is retained as diagnostics only.
-                                    clockDriftServo.observe(
-                                        outputTimestamp.framePosition,
-                                        outputTimestamp.nanoTime
-                                    )
-                                    val correctionPpm = bufferPll.observe(
-                                        submittedFrames = submittedFrames,
-                                        consumedFrames = outputTimestamp.framePosition,
-                                        bufferCapacityFrames = track.bufferSizeInFrames,
-                                        timestampNs = outputTimestamp.nanoTime
-                                    )
-                                    resampler.setClockCorrectionPpm(correctionPpm)
-                                    OmegaMetrics.updateClockServoTelemetry(
-                                        timestampAvailable = true,
-                                        locked = bufferPll.isLocked,
-                                        measuredRateHz = clockDriftServo.measuredRateHz,
-                                        measuredDriftPpm = clockDriftServo.measuredDriftPpm,
-                                        correctionPpm = correctionPpm
-                                    )
-                                } else {
-                                    clockDriftServo.reset()
-                                    bufferPll.reset()
-                                    resampler.setClockCorrectionPpm(0.0)
-                                    OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
+                                // Timestamp polling is throttled off the per-chunk hot path.
+                                val nowNs = SystemClock.elapsedRealtimeNanos()
+                                if (lastClockPollNs == 0L || nowNs - lastClockPollNs >= 250_000_000L) {
+                                    lastClockPollNs = nowNs
+                                    if (track.getTimestamp(outputTimestamp)) {
+                                        // Frequency estimate is diagnostic; the buffer PI drives ASRC.
+                                        clockDriftServo.observe(
+                                            outputTimestamp.framePosition,
+                                            outputTimestamp.nanoTime
+                                        )
+                                        val correctionPpm = bufferPll.observe(
+                                            submittedFrames = submittedFrames,
+                                            consumedFrames = outputTimestamp.framePosition,
+                                            bufferCapacityFrames = track.bufferSizeInFrames,
+                                            timestampNs = outputTimestamp.nanoTime
+                                        )
+                                        resampler.setClockCorrectionPpm(correctionPpm)
+                                        OmegaMetrics.updateClockServoTelemetry(
+                                            timestampAvailable = true,
+                                            locked = bufferPll.isLocked,
+                                            measuredRateHz = clockDriftServo.measuredRateHz,
+                                            measuredDriftPpm = clockDriftServo.measuredDriftPpm,
+                                            correctionPpm = correctionPpm
+                                        )
+                                    } else {
+                                        clockDriftServo.reset()
+                                        bufferPll.reset()
+                                        resampler.setClockCorrectionPpm(0.0)
+                                        OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
+                                    }
                                 }
                             }
                         }
