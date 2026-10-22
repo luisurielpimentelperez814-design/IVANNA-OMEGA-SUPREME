@@ -373,9 +373,16 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     var onQueueAdvance: ((Uri) -> Unit)? = null
 
     fun playQueue(uris: List<Uri>, startIndex: Int = 0) {
-        queue.clear(); queue.addAll(uris)
+        queue.clear()
+        queue.addAll(uris)
+        if (queue.isEmpty()) {
+            queueIndex = -1
+            stop()
+            onQueueAdvance?.invoke(Uri.EMPTY)
+            return
+        }
         queueIndex = startIndex.coerceIn(0, queue.lastIndex)
-        if (queue.isNotEmpty()) play(queue[queueIndex])
+        play(queue[queueIndex])
     }
 
     private fun advanceQueueIfAny() {
