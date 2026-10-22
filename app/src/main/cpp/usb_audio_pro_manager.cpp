@@ -28,6 +28,7 @@ std::atomic<bool> g_engine_running{false};
 #include <linux/usbdevice_fs.h>
 #include <linux/usb/ch9.h>
 #include "include/usb_asrc_kernel.hpp"
+#include "include/usb_asrc_clock_servo.hpp"
 
 // ════════════════════════════════════════════════════════════════════════════
 // MOTOR ASÍNCRONO USB AUDIO PRO — IMPLEMENTACIÓN REAL
@@ -182,7 +183,7 @@ struct AsyncEngine {
 
     // Feedback UAC (isoc IN). hasFeedback=false => comportamiento identico
     // al motor original (fpp fijo, sin corrector) — ver nativeConfigureEndpoint.
-    bool     hasFeedback      = false;
+    std::atomic<bool> hasFeedback{false};
     int      feedbackEp       = 0;
     int      feedbackMps      = 0;
     int      feedbackInterval = 1;
@@ -217,7 +218,7 @@ public:
         nominalStep_ = static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
         step_ = nominalStep_;
         phase_ = 0.0;
-        correction_ = 0.0;
+        servo_.reset();
         historyCount_ = 0;
         for (int c = 0; c < kMaxChannels; ++c)
             for (int k = 0; k < kTaps; ++k) history_[c][k] = 0.0f;
@@ -233,15 +234,8 @@ public:
     int process(const float* input, int inputFrames, int32_t* output,
                 int capacityFrames, int ringFillFrames, int ringCapacityFrames) noexcept {
         if (!input || !output || inputFrames <= 0 || capacityFrames <= 0) return 0;
-        if (ringCapacityFrames > 0) {
-            const double target = static_cast<double>(ringCapacityFrames) * 0.5;
-            const double error = (static_cast<double>(ringFillFrames) - target) / target;
-            const double desired = error * 0.001;
-            correction_ += (desired - correction_) * 0.002;
-            if (correction_ > 0.001) correction_ = 0.001;
-            if (correction_ < -0.001) correction_ = -0.001;
-            step_ = nominalStep_ * (1.0 + correction_);
-        }
+        const double correction = servo_.update(ringFillFrames, ringCapacityFrames);
+        step_ = nominalStep_ * (1.0 + correction);
 
         int produced = 0;
         while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
@@ -312,7 +306,8 @@ private:
     }
 
     int inputRate_ = 48000, outputRate_ = 48000, channels_ = 2;
-    double nominalStep_ = 1.0, step_ = 1.0, phase_ = 0.0, correction_ = 0.0;
+    double nominalStep_ = 1.0, step_ = 1.0, phase_ = 0.0;
+    ivanna::audio::UsbAsrcClockServo servo_;
     float history_[kMaxChannels][kTaps]{};
     int historyCount_ = 0;
     float kernel_[kPhases][kTaps]{};
@@ -428,7 +423,7 @@ void handleFeedbackCompletion(AsyncEngine& e, UrbSlot& slot, unsigned int actual
 // endpoint fisicamente admite (maxPacketSize) para no pedir un paquete que
 // USBDEVFS_SUBMITURB rechazaria.
 int nextPacketFrames(AsyncEngine& e, int fppBase) {
-    if (!e.hasFeedback) return fppBase;
+    if (!e.hasFeedback.load(std::memory_order_acquire)) return fppBase;
 
     constexpr int kMidpoint = kRingFrames / 2;
     const int avail = e.ring.framesAvailable();
@@ -549,14 +544,14 @@ bool runIsoEngine(AsyncEngine& e) {
     // Feedback UAC: degrada con log propio si no hay memoria — el audio
     // sigue por la ruta de tasa fija, nunca se aborta el motor por esto.
     bool feedbackReady = false;
-    if (e.hasFeedback) {
+    if (e.hasFeedback.load(std::memory_order_acquire)) {
         if (allocFeedbackSlots(e)) {
             feedbackReady = true;
             for (int i = 0; i < kFeedbackUrbDepth; ++i) submitFeedbackRead(e, e.feedbackSlots[i]);
         } else {
             LOGE("motor ISO: sin memoria para URBs de feedback — sigue solo con fpp fijo");
             freeFeedbackSlots(e);
-            e.hasFeedback = false;
+            e.hasFeedback.store(false, std::memory_order_release);
         }
     }
 
@@ -817,7 +812,7 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
     // Feedback UAC (isoc IN). Sentinela feedbackEpAddress<=0 (Kotlin lo
     // envia como -1 si el DAC no expone el endpoint) => hasFeedback=false y
     // el motor se comporta exactamente igual que antes de este cambio.
-    g_engine.hasFeedback      = feedbackEpAddress > 0 && feedbackMaxPacketSize > 0;
+    g_engine.hasFeedback.store(feedbackEpAddress > 0 && feedbackMaxPacketSize > 0, std::memory_order_release);
     g_engine.feedbackEp       = feedbackEpAddress;
     g_engine.feedbackMps      = feedbackMaxPacketSize;
     g_engine.feedbackInterval = feedbackInterval > 0 ? feedbackInterval : 1;
@@ -829,7 +824,7 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
          "feedback=%s(ep=0x%02x mps=%d)",
          g_engine.epAddress, g_engine.maxPacketSize, g_engine.interval,
          g_engine.sampleRate, g_engine.channels, g_engine.bytesPerFrame,
-         g_engine.hasFeedback ? "SI" : "no",
+         g_engine.hasFeedback.load(std::memory_order_acquire) ? "SI" : "no",
          (unsigned)g_engine.feedbackEp, g_engine.feedbackMps);
 }
 
@@ -843,7 +838,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_ivanna_omega_audio_UsbAudioProManager_nativeGetFeedbackInfo(
         JNIEnv* env, jobject /*thiz*/) {
     jint info[4];
-    info[0] = g_engine.hasFeedback ? 1 : 0;
+    info[0] = g_engine.hasFeedback.load(std::memory_order_acquire) ? 1 : 0;
     info[1] = (jint)g_engine.feedbackPacketsRx.load(std::memory_order_relaxed);
     info[2] = (jint)g_engine.lastFeedbackRaw.load(std::memory_order_relaxed);
     info[3] = g_engine.feedbackEp;
@@ -888,9 +883,18 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
             if (s < -1.0f) s = -1.0f;
             inputScratch[i] = s;
         }
+        // There must be only one active ring-occupancy controller. If a
+        // USB feedback endpoint is configured, nextPacketFrames() already
+        // adjusts the consumer's packet frame count from ring occupancy; do
+        // not run a second, opposing ASRC occupancy loop on the producer.
+        // If feedback becomes unavailable, the zero-capacity input resets the
+        // ASRC servo and the fallback occupancy controller takes over.
+        const bool packetServoActive = g_engine.hasFeedback.load(std::memory_order_acquire);
+        const int ringFillForAsrc = packetServoActive ? 0 : g_engine.ring.framesAvailable();
+        const int ringCapacityForAsrc = packetServoActive ? 0 : kRingFrames - 1;
         const int outFrames = g_usbAsrc.process(
             inputScratch, chunk, outputScratch, 8192,
-            g_engine.ring.framesAvailable(), kRingFrames - 1);
+            ringFillForAsrc, ringCapacityForAsrc);
         if (outFrames > 0) written += g_engine.ring.writeFrames(outputScratch, outFrames);
         offset += chunk;
         remaining -= chunk;
