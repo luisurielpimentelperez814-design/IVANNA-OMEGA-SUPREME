@@ -84,7 +84,8 @@ class StereoAudioResampler(
     private fun buildTable(cutoffScale: Double): FloatArray {
         // fc is normalized to Nyquist in this sinc convention; 0.97 leaves a small transition band.
         // cutoffScale tracks target/input ratio when downsampling (e.g. 0.5 at 96 kHz -> 48 kHz).
-        val fc = 0.97 * cutoffScale
+        // This sinc uses cycles/sample: Nyquist is 0.5, so leave a 3% transition band below it.
+        val fc = 0.485 * cutoffScale
         val t = FloatArray((PHASES + 1) * TAPS)
         for (p in 0..PHASES) {
             val frac = p.toDouble() / PHASES
