@@ -1362,4 +1362,15 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_usb_asrc_cutoff)
 
+# Full-circle MAJESTY 3D azimuth: preserve rear hemisphere and wrap head yaw.
+add_executable(test_azimuth_math test_azimuth_math.cpp)
+target_link_libraries(test_azimuth_math PRIVATE GTest::gtest_main)
+target_include_directories(test_azimuth_math PRIVATE ../include)
+target_compile_options(test_azimuth_math PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_azimuth_math PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_azimuth_math PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_azimuth_math)
+
 ivanna_add_test(test_qualcomm_pal_clock_integration)
