@@ -53,6 +53,9 @@ object MediaSessionManager {
             override fun onSkipToNext() {
                 player.skipToNext()
             }
+            override fun onSkipToPrevious() {
+                player.skipToPrevious()
+            }
             override fun onSeekTo(pos: Long) { player.seekTo(pos) }
         })
         sess.isActive = true
@@ -89,6 +92,7 @@ object MediaSessionManager {
                         PlaybackStateCompat.ACTION_PAUSE        or
                         PlaybackStateCompat.ACTION_STOP         or
                         PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
                         PlaybackStateCompat.ACTION_SEEK_TO
                     )
                     .setState(stateCode, pos, 1f)
