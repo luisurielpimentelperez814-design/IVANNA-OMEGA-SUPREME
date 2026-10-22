@@ -148,6 +148,19 @@ class StereoAudioResamplerTest {
         assertTrue("chunk boundary caused phase/discontinuity error: $maxError", maxError < 1.0e-4)
     }
 
+    @Test fun nonFiniteInputSamplesDoNotPoisonFilterHistory() {
+        val resampler = StereoAudioResampler(96_000)
+        resampler.setInputSampleRate(44_100)
+        val input = FloatArray(4096) { i -> if (i % 2 == 0) 0.2f else -0.2f }
+        input[128] = Float.NaN
+        input[513] = Float.POSITIVE_INFINITY
+        input[1024] = Float.NEGATIVE_INFINITY
+        val output = resampler.process(input)
+        assertTrue("output must remain finite after corrupt input samples", output.all { it.isFinite() })
+        val nextBlock = resampler.process(FloatArray(4096) { 0.1f })
+        assertTrue("bad samples must not poison retained FIR history", nextBlock.all { it.isFinite() })
+    }
+
     @Test fun clockCorrectionIsFiniteAndBounded() {
         val resampler = StereoAudioResampler(96_000)
         resampler.setInputSampleRate(44_100)
