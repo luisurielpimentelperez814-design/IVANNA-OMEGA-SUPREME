@@ -189,7 +189,7 @@ jobs:
           sed -i '/aapt2FromMavenOverride/d' gradle.properties 2>/dev/null || true
 
       # ── COMPILACIÓN DEL DAEMON (obligatoria, desde fuente) ────────────
-      - name: Compile ivanna_daemon from source (NDK r26, arm64-v8a)
+      - name: Compile ivanna_daemon from source (NDK r27d, C++26, arm64-v8a)
         run: |
           set -euo pipefail
           NDK="$ANDROID_NDK_HOME"
