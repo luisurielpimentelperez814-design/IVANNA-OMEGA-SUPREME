@@ -1324,6 +1324,17 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_spatial_width_readback PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_spatial_width_readback)
+ 
+# RP-88 spatial angle command read-back: bounded native command, not acoustic measurement.
+add_executable(test_spatial_angle_readback test_spatial_angle_readback.cpp)
+target_link_libraries(test_spatial_angle_readback PRIVATE GTest::gtest_main)
+target_include_directories(test_spatial_angle_readback PRIVATE .. ../include ../spatial ../supreme host_stubs)
+target_compile_options(test_spatial_angle_readback PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_spatial_angle_readback PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_spatial_angle_readback PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_spatial_angle_readback)
 
 add_executable(test_physical_scene_readback test_physical_scene_readback.cpp)
 target_link_libraries(test_physical_scene_readback PRIVATE GTest::gtest_main)
