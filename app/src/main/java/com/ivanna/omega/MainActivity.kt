@@ -1178,9 +1178,15 @@ fun DashboardScreen(
     var queueIdx    by remember { mutableStateOf(-1) }
     LaunchedEffect(player) {
         player.onQueueAdvance = { nextUri ->
-            currentUri = nextUri
-            val idx = queue.indexOf(nextUri)
-            if (idx >= 0) queueIdx = idx
+            if (nextUri == Uri.EMPTY) {
+                currentUri = null
+                queue = emptyList()
+                queueIdx = -1
+            } else {
+                currentUri = nextUri
+                val idx = queue.indexOf(nextUri)
+                if (idx >= 0) queueIdx = idx
+            }
         }
         while (true) { playerState = player.state; delay(100L) }
     }
