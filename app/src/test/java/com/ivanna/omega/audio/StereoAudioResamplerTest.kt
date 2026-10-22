@@ -60,6 +60,30 @@ class StereoAudioResamplerTest {
         assertTrue("18 kHz alias was not sufficiently attenuated: rms=$rms", rms < 0.08)
     }
 
+    @Test fun upsamplingPreservesHighAudioBandBelowInputNyquist() {
+        val inputRate = 48_000
+        val targetRate = 96_000
+        val frequency = 18_000.0
+        val frames = 24_000
+        val resampler = StereoAudioResampler(targetRate)
+        resampler.setInputSampleRate(inputRate)
+        val input = FloatArray(frames * 2)
+        for (i in 0 until frames) {
+            val sample = sin(2.0 * PI * frequency * i / inputRate).toFloat()
+            input[i * 2] = sample
+            input[i * 2 + 1] = sample
+        }
+        val output = resampler.process(input)
+        var power = 0.0
+        var count = 0
+        for (i in 2_000 until output.size step 2) {
+            power += output[i].toDouble() * output[i].toDouble()
+            count++
+        }
+        val rms = sqrt(power / count)
+        assertTrue("18 kHz passband was attenuated during upsampling: rms=$rms", rms in 0.55..0.75)
+    }
+
     @Test fun clockCorrectionIsFiniteAndBounded() {
         val resampler = StereoAudioResampler(96_000)
         resampler.setInputSampleRate(44_100)
