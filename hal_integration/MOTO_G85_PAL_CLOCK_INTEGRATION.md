@@ -212,3 +212,17 @@ Observed on the actual device:
 The device confirms that the expected PAL/AGM stack and timestamp interfaces exist. It does **not** confirm (a) a paired presentation-frame/hardware-time sample in the active output path or (b) a runtime variable-ratio ASRC actuator with documented payload, units, limits and acceptance status. The PAL callbacks therefore remain unbound and hardware correction remains disabled. Do not route the servo into `BT SLIMBUS CLK SRC`, timestamp mixer payloads, or nominal media-format parameters.
 
 The read-only probe was extended on `main` to capture additional AudioPolicy/AudioFlinger route context, audio-related properties, ALSA device listings, relevant resource-manager module/parameter lines, and a broader sample of mixer control names. Re-run the updated script and upload the new archive; it improves evidence collection but does not itself connect the HAL.
+
+## Expanded on-device probe — archive `IVANNA_PAL_PROBE_20261022_121437.tar.gz`
+
+The expanded archive now includes section 7 (AudioPolicy and active AudioFlinger summary). The captured playback route at probe time was **Bluetooth A2DP**, not the phone speaker or a USB DAC:
+
+- AudioPolicy lists primary output at 48 kHz; BT A2DP output profiles are 48 kHz, while BT SCO profiles are 8/16 kHz.
+- AudioFlinger `AudioOut_D` is `AUDIO_DEVICE_OUT_BLUETOOTH_A2DP`, 48 kHz PCM16, HAL frame count 192. Its captured FastMixer counters show 27 underruns and 103 overruns; the timestamp estimator reports `localSR(48002.1, ...)`.
+- A second active mixer output (`AudioOut_15`) also reports Bluetooth A2DP at 48 kHz with HAL frame count 1,920. This is a snapshot, not proof that all app output routes use the same path.
+- The string `set devicePPMFC to match codec configuration for SCO` and `RAT_RENDER` are candidate clues in proprietary libraries. The SCO clue is call-audio-specific by name; neither string proves a variable-ratio ASRC control for A2DP music playback.
+- The mixer-name filter still yields no verified ASRC/ppm actuator. Resource-manager XML search matches are mostly generic policy or unrelated occurrences; the captured excerpts do not identify a live dynamic-resampler instance or its writable parameter contract.
+
+### Next controlled test
+
+The next probe should be captured while music is playing through the **phone speaker** (then separately through USB-C DAC if available), with Bluetooth disconnected for the speaker capture. Compare the `Output devices` field and active output threads across captures. That isolates route-specific evidence; it still will not authorize a ratio write unless a real actuator and payload contract are identified. The PAL clock callbacks remain unbound.
