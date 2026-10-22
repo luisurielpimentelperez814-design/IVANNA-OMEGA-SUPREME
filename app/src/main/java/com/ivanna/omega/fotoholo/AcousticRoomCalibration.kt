@@ -86,12 +86,15 @@ object AcousticRoomCalibrationModel {
         val ratio = maxOf(widthM, depthM) / minOf(widthM, depthM)
         val widthCommand = ratio.coerceIn(0.75, 1.5).toFloat()
         val angle = ((azimuthDeg + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-        // Woodworth spherical-head approximation, bounded to a physically plausible maximum.
+        // RP-88's native spatial command accepts only ±90°. Keep the reported
+        // command aligned with the value the native setter/read-back can apply.
+        val angleCommand = angle.coerceIn(-90.0, 90.0)
+        // Woodworth spherical-head approximation uses the normalized azimuth, not the clamped DSP command.
         val theta = abs(angle) * PI / 180.0
         val itdUs = (0.0875 / 343.0 * (theta + kotlin.math.sin(theta)) * 1_000_000.0).coerceIn(0.0, 700.0)
         return AcousticRoomCalibration(
             widthM, heightM, depthM, volume, area, alpha, equivalentAbsorption,
-            sabine, eyring, schroeder, ratio, widthCommand, angle.toFloat(), itdUs, material.label
+            sabine, eyring, schroeder, ratio, widthCommand, angleCommand.toFloat(), itdUs, material.label
         )
     }
 }
