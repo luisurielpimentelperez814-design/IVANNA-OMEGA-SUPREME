@@ -82,7 +82,8 @@ class StereoAudioResampler(
     }
 
     private fun buildTable(cutoffScale: Double): FloatArray {
-        val fc = 0.97 * cutoffScale
+        // Normalized cycles/sample: Nyquist is 0.5. During downsampling the cutoff must track target/input rate.
+        val fc = 0.485 * cutoffScale
         val t = FloatArray((PHASES + 1) * TAPS)
         for (p in 0..PHASES) {
             val frac = p.toDouble() / PHASES
