@@ -42,6 +42,8 @@ import javax.microedition.khronos.opengles.GL10
 import org.json.JSONArray
 import org.json.JSONObject
 import com.ivanna.omega.safmus.SafmusUniversalKernel
+import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.NativeBridge
 
 /**
  * Escáner espacial ARCore. Los puntos y las dimensiones son estimaciones visuales,
@@ -54,6 +56,12 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
     private lateinit var startButton: Button
     private lateinit var finishButton: Button
     private lateinit var exportButton: Button
+    private lateinit var lockRp88Button: Button
+    private lateinit var materialButton: Button
+    private var selectedMaterialIndex = 1
+    private var latestCalibration: AcousticRoomCalibration? = null
+    private var latestCalibrationApplied = false
+    private var latestSpatialWidthReadback = Float.NaN
     private var installRequested = false
     // ARCore exige setDisplayGeometry(rotación, ancho, alto) antes de update(); sin ello la imagen de
     // cámara sale estirada/rotada (aspecto "horrible" justo tras conceder el permiso). Se aplica en el
@@ -154,17 +162,38 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, 0)
         }
+        val calibrationControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, 0)
+        }
         startButton = Button(this).apply { text = "Iniciar captura"; setOnClickListener { beginCapture() } }
         finishButton = Button(this).apply { text = "Finalizar"; isEnabled = false; setOnClickListener { finishCapture() } }
         exportButton = Button(this).apply { text = "Exportar ZIP"; isEnabled = false; setOnClickListener { requestExport() } }
+        materialButton = Button(this).apply {
+            text = "Material: ${AcousticRoomCalibrationModel.materials[selectedMaterialIndex].label}"
+            setOnClickListener {
+                selectedMaterialIndex = (selectedMaterialIndex + 1) % AcousticRoomCalibrationModel.materials.size
+                text = "Material: ${AcousticRoomCalibrationModel.materials[selectedMaterialIndex].label}"
+                latestCalibration = lastSnapshot?.let { estimateCalibration(it) }
+            }
+        }
+        lockRp88Button = Button(this).apply {
+            text = "LOCK RP-88"
+            isEnabled = false
+            setOnClickListener { lockRp88Calibration() }
+        }
         controls.addView(startButton, LinearLayout.LayoutParams(0, dp(52), 1f))
         controls.addView(finishButton, LinearLayout.LayoutParams(0, dp(52), 1f))
         controls.addView(exportButton, LinearLayout.LayoutParams(0, dp(52), 1f))
+        calibrationControls.addView(materialButton, LinearLayout.LayoutParams(0, dp(48), 1.1f))
+        calibrationControls.addView(lockRp88Button, LinearLayout.LayoutParams(0, dp(48), 1f))
         root.addView(title)
         root.addView(cameraFrame, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(controls)
+        root.addView(calibrationControls)
         root.addView(TextView(this).apply {
-            text = "El archivo contiene una nube de puntos estimada. No equivale a una malla completa ni mide RT60/RIR."
+            text = "SAF/RP-88: Sabine/Eyring son estimaciones geométricas; LOCK envía parámetros al motor nativo si está disponible. No mide RIR/RT60 real."
             setTextColor(Color.rgb(180, 194, 214))
             textSize = 10f
             setPadding(dp(4), dp(8), dp(4), 0)
@@ -308,6 +337,9 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         startButton.isEnabled = session != null
         finishButton.isEnabled = false
         exportButton.isEnabled = snapshot.points.isNotEmpty()
+        latestCalibration = estimateCalibration(snapshot)
+        lockRp88Button.isEnabled = latestCalibration != null && snapshot.points.isNotEmpty()
+        latestCalibrationApplied = false
         val b = bounds(snapshot.points)
         statusView.text = if (snapshot.points.isEmpty()) {
             "Captura vacía: apunta a superficies con textura y buena luz, y vuelve a intentar."
@@ -315,7 +347,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             "Captura lista · ${snapshot.points.size} puntos · profundidad ${snapshot.depthPointCount} · ${snapshot.poses.size} poses\n" +
                 "Extensión observada aprox.: ${"%.2f".format(Locale.US, b[3] - b[0])} × ${"%.2f".format(Locale.US, b[4] - b[1])} × ${"%.2f".format(Locale.US, b[5] - b[2])} m. No es plano certificado.\n" +
                 "SAFMUS · ${safmusAssessment.quality}: ${safmusAssessment.reason}\n" +
-                "Optimización de nube: -${snapshot.optimizationRejectedCount} inválidos, -${snapshot.optimizationReducedCount} redundantes, ${snapshot.points.size} puntos finales"
+                "Optimización de nube: -${snapshot.optimizationRejectedCount} inválidos, -${snapshot.optimizationReducedCount} redundantes, ${snapshot.points.size} puntos finales\n" +
+                (latestCalibration?.let { "RT60 estimado Eyring ${"%.2f".format(Locale.US, it.eyringRt60Seconds)} s · V ${"%.1f".format(Locale.US, it.volumeM3)} m³ · material ${it.materialPreset}" } ?: "Geometría insuficiente para estimar acústica")
         }
     }
 
@@ -358,6 +391,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         ZipOutputStream(output).use { zip ->
             zip.putNextEntry(ZipEntry("point_cloud.ply")); zip.write(plyBytes(snapshot.points)); zip.closeEntry()
             zip.putNextEntry(ZipEntry("room_capture.json")); zip.write(metadataBytes(snapshot)); zip.closeEntry()
+            zip.putNextEntry(ZipEntry("rp88_calibration.json")); zip.write(calibrationJson(snapshot).toString(2).toByteArray(Charsets.UTF_8)); zip.closeEntry()
         }
     }
 
@@ -393,6 +427,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 put("evidenceKind", assessment.evidenceKind)
                 put("acousticCalibrationReady", assessment.acousticCalibrationReady)
             })
+            .put("rp88AcousticCalibration", calibrationJson(snapshot))
             .put("coordinateSystem", "ARCore world coordinates; scale is an estimate from visual-inertial tracking")
             .put("boundsMeters", JSONObject()
                 .put("minX", b[0]).put("minY", b[1]).put("minZ", b[2])
@@ -401,7 +436,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .put("limitations", JSONArray()
                 .put("Observed point-cloud bounds are not a certified room measurement.")
                 .put("This capture is not a closed mesh or a photorealistic reconstruction.")
-                .put("No RT60, impulse response (RIR), or acoustic calibration is measured.")
+                .put("RT60 and Schroeder frequency in rp88AcousticCalibration are geometry/material-prior estimates, not measured values.")
+                .put("No impulse response (RIR) or acoustic sweep has been measured.")
                 .put("Surface texture, lighting, motion and device depth support affect quality."))
             .put("cameraPoses", JSONArray().apply {
                 snapshot.poses.forEach { p ->
@@ -410,6 +446,84 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 }
             })
         return json.toString(2).toByteArray(Charsets.UTF_8)
+    }
+
+    private fun estimateCalibration(snapshot: CaptureSnapshot): AcousticRoomCalibration? {
+        if (snapshot.points.isEmpty()) return null
+        val b = bounds(snapshot.points)
+        val yawDeg = snapshot.poses.lastOrNull()?.let { p ->
+            val siny = 2.0 * (p.qw.toDouble() * p.qy + p.qx.toDouble() * p.qz)
+            val cosy = 1.0 - 2.0 * (p.qy.toDouble() * p.qy + p.qz.toDouble() * p.qz)
+            Math.toDegrees(kotlin.math.atan2(siny, cosy))
+        } ?: 0.0
+        return AcousticRoomCalibrationModel.estimate(
+            widthM = (b[3] - b[0]).toDouble(),
+            heightM = (b[4] - b[1]).toDouble(),
+            depthM = (b[5] - b[2]).toDouble(),
+            material = AcousticRoomCalibrationModel.materials[selectedMaterialIndex],
+            azimuthDeg = yawDeg
+        )
+    }
+
+    private fun calibrationJson(snapshot: CaptureSnapshot): JSONObject {
+        val estimate = estimateCalibration(snapshot)
+        val result = estimate?.toJson() ?: JSONObject()
+            .put("evidenceKind", "INSUFFICIENT_GEOMETRY")
+            .put("measuredRirAvailable", false)
+            .put("reason", "AR point-cloud bounds are empty or outside the supported physical range.")
+        result.put("rp88LockRequested", latestCalibrationApplied)
+            .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded)
+            .put("spatialWidthReadback", if (latestSpatialWidthReadback.isFinite()) latestSpatialWidthReadback.toDouble() else JSONObject.NULL)
+            .put("commandValues", JSONObject()
+                .put("realityIntensity", 0.88)
+                .put("antiDolbyIntensity", 0.88)
+                .put("spatialWidth", estimate?.spatialWidth ?: JSONObject.NULL)
+                .put("spatialAngleDeg", estimate?.spatialAngleDeg ?: JSONObject.NULL))
+        return result
+    }
+
+    private fun lockRp88Calibration() {
+        val snapshot = lastSnapshot
+        val calibration = snapshot?.let { estimateCalibration(it) }
+        if (snapshot == null || calibration == null) {
+            statusView.text = "LOCK RP-88 rechazado: geometría insuficiente o no física. Captura más superficies."
+            return
+        }
+        var applied = false
+        var readback = Float.NaN
+        try {
+            if (IvannaNativeLib.isLoaded && NativeBridge.isLoaded) {
+                NativeBridge.safeSetRealityIntensity(0.88f)
+                IvannaNativeLib.nativeSetAntiDolbyIntensity(0.88f)
+                IvannaNativeLib.nativeSetSpatialWidthDirect(calibration.spatialWidth)
+                IvannaNativeLib.nativeSetSpatialAngleRad(Math.toRadians(calibration.spatialAngleDeg.toDouble()).toFloat())
+                NativeBridge.safeSetPhysicalSceneParams(
+                    occlusionFactor = 0.0f,
+                    wallAbsorption = calibration.absorptionCoefficient.toFloat()
+                )
+                readback = IvannaNativeLib.nativeGetSpatialWidthDirect()
+                applied = readback.isFinite() && kotlin.math.abs(readback - calibration.spatialWidth) <= 0.15f
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("IVANNA.RP88", "Native acoustic calibration command failed", t)
+            applied = false
+        }
+        latestCalibration = calibration
+        latestCalibrationApplied = applied
+        latestSpatialWidthReadback = readback
+        getSharedPreferences("ivanna_rp88_acoustic_calibration", MODE_PRIVATE).edit()
+            .putString("calibration_json", calibration.toJson().toString())
+            .putBoolean("lock_requested", true)
+            .putBoolean("native_apply_confirmed", applied)
+            .putFloat("spatial_width_readback", if (readback.isFinite()) readback else -1f)
+            .putLong("updated_at_ms", System.currentTimeMillis())
+            .apply()
+        statusView.text = if (applied) {
+            "RP-88 LOCK · comandos nativos enviados y ancho leído de vuelta (${String.format(Locale.US, "%.2f", readback)}). RT60/RIR siguen siendo estimaciones; no es calibración acústica medida."
+        } else {
+            "RP-88: estimación guardada, pero el motor nativo no confirmó el ancho solicitado. No se declara LOCK efectivo. Exporta rp88_calibration.json para inspección."
+        }
+        exportButton.isEnabled = snapshot.points.isNotEmpty()
     }
 
     private fun assessSafmus(snapshot: CaptureSnapshot): SafmusUniversalKernel.SpatialCaptureAssessment =
