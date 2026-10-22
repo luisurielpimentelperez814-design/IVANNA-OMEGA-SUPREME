@@ -26,10 +26,22 @@ class AcousticRoomCalibrationModelTest {
         val negative = AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = -135.0)!!
         assertEquals(90.0f, positive.spatialAngleDeg, 0.0001f)
         assertEquals(-90.0f, negative.spatialAngleDeg, 0.0001f)
-        assertTrue(positive.itdMicroseconds in 0.0..700.0)
-        assertTrue(negative.itdMicroseconds in 0.0..700.0)
-        assertEquals(700.0, positive.itdMicroseconds, 0.0001)
-        assertEquals(700.0, negative.itdMicroseconds, 0.0001)
+        assertTrue(positive.itdMicroseconds > 0.0)
+        assertTrue(negative.itdMicroseconds < 0.0)
+        assertEquals(positive.itdMicroseconds, -negative.itdMicroseconds, 0.0001)
+        assertTrue("rearward azimuth should not exceed side-on ITD", positive.itdMicroseconds < 500.0)
+        val rear = AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = 180.0)!!
+        assertEquals(0.0, rear.itdMicroseconds, 0.0001)
+    }
+
+    @Test fun interauralDelayPreservesDirectionAndIsZeroAtFront() {
+        val left = AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = -45.0)!!
+        val front = AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = 0.0)!!
+        val right = AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = 45.0)!!
+        assertTrue(left.itdMicroseconds < 0.0)
+        assertEquals(0.0, front.itdMicroseconds, 0.0001)
+        assertTrue(right.itdMicroseconds > 0.0)
+        assertEquals(right.itdMicroseconds, -left.itdMicroseconds, 0.0001)
     }
 
     @Test fun rejectsNonPhysicalOrUnboundedDimensions() {
