@@ -114,7 +114,14 @@ public:
         ::close(fd);
         if (memory == MAP_FAILED) return false;
         snapshot_ = static_cast<const HardwareClockSnapshot*>(memory);
-        return snapshot_->magic.load(std::memory_order_acquire) == kHardwareClockSnapshotMagic;
+        if (snapshot_->magic.load(std::memory_order_acquire) != kHardwareClockSnapshotMagic) {
+            // Do not retain a mapped-but-invalid snapshot: callers must be able to
+            // retry after the HAL publisher initializes the shared-memory contract.
+            ::munmap(const_cast<HardwareClockSnapshot*>(snapshot_), kHardwareClockSnapshotBytes);
+            snapshot_ = nullptr;
+            return false;
+        }
+        return true;
     }
 
     bool read(HardwareClockSample& out) const noexcept {
