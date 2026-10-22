@@ -13,17 +13,17 @@ Todo el texto usa solo lo que el repositorio puede demostrar (código, CI, datas
 
 ## Publicación por plataforma
 **X / Mastodon / Bluesky (ES)**
-> Hice un motor de audio para Android desde cero en C++20: sonido 3D con HRTF real, sin chasquidos al cambiar volumen, con root o sin root (DAC USB). Producto propietario con pruebas automáticas en cada cambio. 🎧 github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME #Android #Audio #DSP #Magisk
+> Hice un motor de audio para Android desde cero en C++26: sonido 3D con HRTF real, sin chasquidos al cambiar volumen, con root o sin root (DAC USB). Producto propietario con pruebas automáticas en cada cambio. 🎧 github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME #Android #Audio #DSP #Magisk
 
 **X (EN)**
-> I built an Android audio engine from scratch in C++20: real-HRTF 3D sound, no clicks on volume/track changes, rooted (Magisk) or non-root (USB DAC). Automated tests on every commit. 🎧 github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME #Android #DSP
+> I built an Android audio engine from scratch in C++26: real-HRTF 3D sound, no clicks on volume/track changes, rooted (Magisk) or non-root (USB DAC). Automated tests on every commit. 🎧 github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME #Android #DSP
 
 **Reddit** — r/androidapps, r/Magisk, r/audiophile, r/cpp, r/androiddev (lee las reglas de cada uno sobre autopromoción; publica en uno por día)
 > **Título:** Show: motor de audio para Android (HRTF 3D, sin root o con Magisk) — busco gente que lo pruebe
-> Llevo meses construyéndolo. Qué hace: audio espacial 3D usando datasets HRTF/SOFA, procesado sin chasquidos al cambiar volumen o pista, y dos rutas: con root (módulo Magisk) y sin root (salida USB DAC). Está en C++20 con NEON ARM64 y la CI corre pruebas en cada cambio. Es un proyecto en desarrollo: busco testers y críticas honestas. Repo: …
+> Llevo meses construyéndolo. Qué hace: audio espacial 3D usando datasets HRTF/SOFA, procesado sin chasquidos al cambiar volumen o pista, y dos rutas: con root (módulo Magisk) y sin root (salida USB DAC). Está en C++26 con NEON ARM64 y la CI corre pruebas en cada cambio. Es un proyecto en desarrollo: busco testers y críticas honestas. Repo: …
 
 **Hacker News**
-> **Show HN: Android audio DSP engine in C++20 (HRTF spatial audio, Magisk + non-root)**
+> **Show HN: Android audio DSP engine in C++26 (HRTF spatial audio, Magisk + non-root)**
 > Primer comentario: explica qué problema resuelves (chasquidos al cambiar volumen/pista, desfase en streaming), qué está hecho y qué falta. Sé específico y humilde; HN castiga el exceso de adjetivos.
 
 **XDA Forums (Android Apps / Magisk Modules)** — hilo con: qué es, instalación (módulo + APK), capturas, cómo reportar bugs, changelog.
