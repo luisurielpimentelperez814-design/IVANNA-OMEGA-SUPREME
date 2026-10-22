@@ -4,7 +4,7 @@ Status: SAFMUS Plan 10D software release v2.5.123 is published. The follow-up in
 
 ## Implemented in this branch
 - The owned `IvannaBridgePlayer` route selector gives a connected USB DAC priority; otherwise it selects A2DP/BLE and targets the selected Android output device.
-- For A2DP, codec lookup requires a nonblank selected-output address and exact address match (case-insensitive). The detector itself now fails closed when callers omit that identity; it never substitutes the first connected headset. Recognized rates (44.1/48/88.2/96 kHz) are preferred; unknown/ambiguous rates fall back to 48 kHz.
+- For A2DP, codec lookup requires a nonblank output address and exact address match (case-insensitive). Because `AudioManager.getDevices()` enumerates connected endpoints rather than identifying the active system route, the global route manager queries codec metadata only when exactly one A2DP endpoint is present; multiple endpoints or missing identity use the conservative profile. The detector itself fails closed when callers omit identity; it never substitutes the first connected headset. Recognized rates (44.1/48/88.2/96 kHz) are preferred; unknown/ambiguous rates fall back to 48 kHz.
 - Source PCM is converted to the selected output clock before DSP/HRTF, so rate-dependent kernels process at the rate for which they are configured.
 - The playback spatial fallback has isolated delay/history state from system-wide capture and scales ITD/crossfeed delay lines to the selected sample rate.
 - The existing 64-tap/1024-phase FIR resampler and bounded AudioTrack timestamp servo remain app-owned. Timestamp failure resets correction to unity.
@@ -17,7 +17,7 @@ Status: SAFMUS Plan 10D software release v2.5.123 is published. The follow-up in
 - CI and synthetic tests do not replace listening tests, negotiated-codec verification, underrun/click/channel checks, and long-duration drift measurements on physical A2DP devices.
 
 ## Release gates
-1. Android build and JVM tests pass on the exact PR head, including null/blank/mismatched/matched-address codec-selection cases.
+1. Android build and JVM tests pass on the exact PR head, including null/blank/mismatched/matched-address and multiple-connected-A2DP cases.
 2. Verify the selected A2DP device, actual codec and sample rate in device logs.
 3. Test SBC/AAC and a high-bitrate codec where hardware supports them; check for underruns, clicks, channel swaps and sample-rate churn.
 4. Exercise Bluetooth ↔ USB-C ↔ speaker route changes and ensure stale codec lookups are discarded.
