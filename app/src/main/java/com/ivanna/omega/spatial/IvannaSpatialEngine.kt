@@ -94,6 +94,9 @@ class IvannaSpatialEngine private constructor() {
     }
 
     @Volatile private var sampleRate = 44100
+    internal val configuredSampleRateHz: Int get() = sampleRate
+    internal val itdDelayCapacitySamples: Int get() = maxItdSamples
+    internal val crossfeedDelayCapacitySamples: Int get() = crossfeedDelaySamples
     private val maxBlockSize = 4096
     @Volatile private var maxItdSamples = (0.0015f * sampleRate).toInt()
     @Volatile private var crossfeedDelaySamples = (0.001f * sampleRate).toInt().coerceAtLeast(1)
