@@ -135,7 +135,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             setPadding(dp(12), dp(10), dp(12), dp(12))
         }
         val title = TextView(this).apply {
-            text = "CAPTURA ESPACIAL · ARCORE"
+            text = "AR & ESCÁNER RP-88 · 6-DoF"
             setTextColor(Color.rgb(111, 243, 255))
             textSize = 16f
             gravity = Gravity.CENTER_VERTICAL
