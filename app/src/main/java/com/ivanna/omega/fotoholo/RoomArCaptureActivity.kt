@@ -61,6 +61,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
     private var selectedMaterialIndex = 1
     private var latestCalibration: AcousticRoomCalibration? = null
     private var latestCalibrationApplied = false
+    private var latestCalibrationLockRequested = false
     private var latestSpatialWidthReadback = Float.NaN
     private var installRequested = false
     // ARCore exige setDisplayGeometry(rotación, ancho, alto) antes de update(); sin ello la imagen de
@@ -176,6 +177,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 selectedMaterialIndex = (selectedMaterialIndex + 1) % AcousticRoomCalibrationModel.materials.size
                 text = "Material: ${AcousticRoomCalibrationModel.materials[selectedMaterialIndex].label}"
                 latestCalibration = lastSnapshot?.let { estimateCalibration(it) }
+                latestCalibrationApplied = false
+                latestCalibrationLockRequested = false
             }
         }
         lockRp88Button = Button(this).apply {
@@ -340,6 +343,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         latestCalibration = estimateCalibration(snapshot)
         lockRp88Button.isEnabled = latestCalibration != null && snapshot.points.isNotEmpty()
         latestCalibrationApplied = false
+        latestCalibrationLockRequested = false
         val b = bounds(snapshot.points)
         statusView.text = if (snapshot.points.isEmpty()) {
             "Captura vacía: apunta a superficies con textura y buena luz, y vuelve a intentar."
@@ -471,7 +475,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .put("evidenceKind", "INSUFFICIENT_GEOMETRY")
             .put("measuredRirAvailable", false)
             .put("reason", "AR point-cloud bounds are empty or outside the supported physical range.")
-        result.put("rp88LockRequested", latestCalibrationApplied)
+        result.put("rp88LockRequested", latestCalibrationLockRequested)
+            .put("rp88LockApplied", latestCalibrationApplied)
             .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded)
             .put("spatialWidthReadback", if (latestSpatialWidthReadback.isFinite()) latestSpatialWidthReadback.toDouble() else JSONObject.NULL)
             .put("commandValues", JSONObject()
@@ -489,6 +494,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             statusView.text = "LOCK RP-88 rechazado: geometría insuficiente o no física. Captura más superficies."
             return
         }
+        latestCalibrationLockRequested = true
         var applied = false
         var readback = Float.NaN
         try {
