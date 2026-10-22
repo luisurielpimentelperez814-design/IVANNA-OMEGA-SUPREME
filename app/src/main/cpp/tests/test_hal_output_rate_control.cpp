@@ -1,4 +1,5 @@
 #include "include/hal_output_rate_control.hpp"
+#include "include/usb_asrc_cutoff.hpp"
 #include "../../../../../hal_integration/ivanna_hal_output_stream.hpp"
 #include <gtest/gtest.h>
 #include <vector>
@@ -164,4 +165,22 @@ TEST(HalOutputStreamClockControl, InvalidTimestampOrRateNeverEnablesCorrection) 
     EXPECT_FALSE(control.correctionEnabled());
     EXPECT_TRUE(control.hasKnownAppliedRatio());
     EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
+}
+
+TEST(UsbAsrcCutoff, UsesNyquistNormalizedCutoffAndProtectsNyquist) {
+    EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 48000), 0.94, 1e-12);
+    EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNyquistNormalized(96000, 48000), 0.47, 1e-12);
+    EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 96000), 0.94, 1e-12);
+    EXPECT_LT(ivanna::audio::usbAsrcCutoffNyquistNormalized(96000, 48000), 0.5);
+    EXPECT_LT(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 48000), 1.0);
+}
+
+TEST(UsbAsrcCutoff, RejectsInvalidRatesAndIsMonotonicForDownsampling) {
+    EXPECT_DOUBLE_EQ(ivanna::audio::usbAsrcCutoffNyquistNormalized(0, 48000), 0.0);
+    EXPECT_DOUBLE_EQ(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 0), 0.0);
+    EXPECT_DOUBLE_EQ(ivanna::audio::usbAsrcCutoffNyquistNormalized(-1, 48000), 0.0);
+    const double cutoff96to48 = ivanna::audio::usbAsrcCutoffNyquistNormalized(96000, 48000);
+    const double cutoff192to48 = ivanna::audio::usbAsrcCutoffNyquistNormalized(192000, 48000);
+    EXPECT_GT(cutoff96to48, cutoff192to48);
+    EXPECT_GT(cutoff192to48, 0.0);
 }

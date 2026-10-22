@@ -1,3 +1,10 @@
+# CHANGELOG — Sin publicar — Contrato de cutoff ASRC USB
+
+- Se extrae la fórmula de cutoff de `UsbIngressAsrc` a una función pura testeable. La convención existente es Nyquist-normalizada: `0.94 * min(outputRate/inputRate, 1)`; en el kernel `cutoff * sinc(cutoff * d)`, Nyquist equivale a 1.0 (0.5 ciclos/muestra). No cambia el comportamiento DSP de producción.
+- Se agregan pruebas CTest para tasas iguales, downsampling, upsampling y tasas inválidas. Queda pendiente confirmar CI y medir respuesta/aliasing con un DAC USB físico.
+
+---
+
 # CHANGELOG — v2.5.119 (410) — Normalización FIR y respuesta de banda pasante
 
 - Corregida la normalización del cutoff del FIR: `fc = 0.97 * cutoffScale` en la convención sinc usada por el resampler; el factor de reducción sigue siendo targetRate/inputRate. Evita duplicar la reducción y recortar indebidamente la banda alta al convertir 96 kHz → 48 kHz.

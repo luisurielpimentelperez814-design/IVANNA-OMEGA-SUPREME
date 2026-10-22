@@ -1351,4 +1351,15 @@ gtest_discover_tests(test_autonomous_acoustic_transaction)
 # Control-plane peer authentication: reject untrusted app UIDs before command/SHM handling.
 ivanna_add_test(test_daemon_peer_auth)
 # PAL integration test registration
+# USB ASRC cutoff contract (kernel cutoff is normalized to Nyquist).
+add_executable(test_usb_asrc_cutoff test_usb_asrc_cutoff.cpp)
+target_link_libraries(test_usb_asrc_cutoff PRIVATE GTest::gtest_main)
+target_include_directories(test_usb_asrc_cutoff PRIVATE ../include)
+target_compile_options(test_usb_asrc_cutoff PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_usb_asrc_cutoff PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_usb_asrc_cutoff PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_usb_asrc_cutoff)
+
 ivanna_add_test(test_qualcomm_pal_clock_integration)
