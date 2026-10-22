@@ -109,7 +109,14 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 runCatching { BluetoothCodecDetector.detectActiveCodec(context, bluetooth.address) }.getOrNull()
             } else null
             val codecRate = codec?.sampleRateHz ?: 0
-            val rate = BluetoothOutputRatePolicy.select(codecRate)
+            val candidateRate = BluetoothOutputRatePolicy.select(codecRate)
+            val candidateBuffer = AudioTrack.getMinBufferSize(
+                candidateRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
+            )
+            val rate = if (candidateBuffer > 0) candidateRate else BluetoothOutputRatePolicy.FALLBACK_RATE_HZ
+            if (rate != candidateRate) {
+                Log.w(TAG, "Bluetooth track rate ${candidateRate}Hz unsupported by AudioTrack; falling back to ${rate}Hz")
+            }
             Log.i(TAG, "Bluetooth output selected: ${bluetooth.productName}; " +
                 "codec=${codec?.codec ?: "BLE/unknown"}; negotiatedRate=${codecRate}Hz; trackRate=${rate}Hz")
             return OutputRoute(rate, bluetooth)
@@ -633,7 +640,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 .build()
             outputRoute.preferredDevice?.let { preferred ->
                 if (!track.setPreferredDevice(preferred)) {
-                    Log.w(TAG, "Android rechazó la ruta preferida USB ${preferred.productName}; se conserva la ruta elegida por AudioPolicy")
+                    Log.w(TAG, "Android rechazó la ruta preferida ${preferred.productName}; se conserva la ruta elegida por AudioPolicy")
                 }
             }
             if (track.state != AudioTrack.STATE_INITIALIZED) {
