@@ -20,6 +20,14 @@ TEST(UsbAsrcCutoff, UpsamplingDoesNotRaiseCutoffAboveInputNyquist) {
     EXPECT_LT(cutoff, 0.5);
 }
 
+TEST(UsbAsrcCutoff, NormalizedSincArgumentUsesTwiceCyclesPerSample) {
+    EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNormalized(48000, 48000), 0.94, 1e-12);
+    EXPECT_LT(ivanna::audio::usbAsrcCutoffNormalized(48000, 48000), 1.0);
+    EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNormalized(96000, 48000), 0.47, 1e-12);
+    EXPECT_LT(ivanna::audio::usbAsrcCutoffNormalized(96000, 48000), 0.5);
+    EXPECT_DOUBLE_EQ(ivanna::audio::usbAsrcCutoffNormalized(0, 48000), 0.0);
+}
+
 TEST(UsbAsrcCutoff, InvalidRatesFailClosed) {
     EXPECT_DOUBLE_EQ(ivanna::audio::usbAsrcCutoffCyclesPerSample(0, 48000), 0.0);
     EXPECT_DOUBLE_EQ(ivanna::audio::usbAsrcCutoffCyclesPerSample(48000, -1), 0.0);
