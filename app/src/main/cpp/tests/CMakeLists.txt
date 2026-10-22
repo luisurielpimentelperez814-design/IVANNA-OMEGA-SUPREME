@@ -1325,6 +1325,16 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_spatial_width_readback)
 
+add_executable(test_physical_scene_readback test_physical_scene_readback.cpp)
+target_link_libraries(test_physical_scene_readback PRIVATE GTest::gtest_main)
+target_include_directories(test_physical_scene_readback PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_physical_scene_readback PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_physical_scene_readback PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_physical_scene_readback PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_physical_scene_readback)
+
 
 # ── IVANNA autonomous acoustic transaction and 3D geometry renderer ──
 add_executable(test_scene_geometry_renderer test_scene_geometry_renderer.cpp)

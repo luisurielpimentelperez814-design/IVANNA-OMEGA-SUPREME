@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <algorithm>
+#include <atomic>
 
 namespace ivanna::spatial {
 
@@ -24,18 +25,22 @@ public:
     }
 
     void reset() noexcept {
-        occlusionFactor_ = 0.0f;
-        wallAbsorption_ = 0.25f;
+        occlusionFactor_.store(0.0f, std::memory_order_relaxed);
+        wallAbsorption_.store(0.25f, std::memory_order_relaxed);
         filterStateL_ = 0.0f;
         filterStateR_ = 0.0f;
     }
 
     void setOcclusion(float occ) noexcept {
-        occlusionFactor_ = std::clamp(occ, 0.0f, 1.0f);
+        if (std::isfinite(occ)) {
+            occlusionFactor_.store(std::clamp(occ, 0.0f, 1.0f), std::memory_order_release);
+        }
     }
 
     void setWallAbsorption(float abs) noexcept {
-        wallAbsorption_ = std::clamp(abs, 0.05f, 0.95f);
+        if (std::isfinite(abs)) {
+            wallAbsorption_.store(std::clamp(abs, 0.05f, 0.95f), std::memory_order_release);
+        }
     }
 
     /**
@@ -47,8 +52,13 @@ public:
 
         // Transmission loss & lowpass cutoff based on occlusion
         // When occluded: high frequencies drop sharply, direct level drops
-        const float directGain = 1.0f - 0.75f * occlusionFactor_;
-        const float alpha = std::clamp(1.0f - 0.85f * occlusionFactor_, 0.05f, 1.0f);
+        const float occlusion = occlusionFactor_.load(std::memory_order_relaxed);
+        const float absorption = wallAbsorption_.load(std::memory_order_relaxed);
+        const float directGain = 1.0f - 0.75f * occlusion;
+        // Default absorption (0.25) stays transparent without occlusion. This is a
+        // perceptual one-pole approximation, not a measured room impulse response.
+        const float materialDamping = 0.30f * std::max(0.0f, absorption - 0.25f) / 0.70f;
+        const float alpha = std::clamp(1.0f - 0.85f * occlusion - materialDamping, 0.05f, 1.0f);
 
         float sL = filterStateL_;
         float sR = filterStateR_;
@@ -68,9 +78,13 @@ public:
         filterStateR_ = sR;
     }
 
+    // Command-state read-back only; these are not acoustic measurements.
+    float occlusionFactor() const noexcept { return occlusionFactor_.load(std::memory_order_acquire); }
+    float wallAbsorption() const noexcept { return wallAbsorption_.load(std::memory_order_acquire); }
+
 private:
-    float occlusionFactor_{0.0f};
-    float wallAbsorption_{0.25f};
+    std::atomic<float> occlusionFactor_{0.0f};
+    std::atomic<float> wallAbsorption_{0.25f};
     float filterStateL_{0.0f};
     float filterStateR_{0.0f};
 };
