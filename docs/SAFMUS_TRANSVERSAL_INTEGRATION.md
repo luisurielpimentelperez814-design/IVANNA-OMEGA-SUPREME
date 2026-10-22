@@ -181,3 +181,11 @@ The coordinator feeds the shared resource budget into `ThermalGovernor.setExtern
 - **Sensors / haptics:** capability is inventoried without continuously activating sensors or triggering vibration.
 
 The runtime budget is a bounded supervisory signal, not a universal hardware overclock. Device-specific actuators must be added only where the OEM API or an explicitly supported module control exists, with read-back, rollback, permission and thermal checks. The wiring checker now enforces the application → coordinator → existing DSP governor path.
+
+### Bluetooth route implementation note — 2026-10-22
+
+- The active output endpoint is detected separately from codec evidence. A2DP codec lookup runs on a worker, not in the device-route callback; a conservative bounded profile is applied immediately.
+- The async result is accepted only while the same route generation remains active. Disconnect, route change, or manager shutdown invalidates stale results.
+- Codec-to-profile mapping is a deterministic transport heuristic and is not a headphone frequency-response measurement. A real headphone correction profile requires a measured/identified endpoint response; no perceptual gain is claimed from codec identity alone.
+- JVM tests cover the codec mapping, unknown/unavailable fallback and invalid bitrate values. Android CI plus a physical A/B test on the target phone and actual Bluetooth endpoint remain required before claiming audible improvement.
+- The separate app-owned IvannaBridgePlayer may choose the negotiated A2DP sample rate when Android exposes it. This does not control Spotify/YouTube, the remote Bluetooth clock, or the Qualcomm vendor HAL; the system-wide path remains governed by Android/OEM routing and the existing route arbitration.
