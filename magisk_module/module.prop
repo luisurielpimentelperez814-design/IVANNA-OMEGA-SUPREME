@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.122
-versionCode=413
+version=v2.5.123
+versionCode=414
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.122: SAFMUS Plan 10D Bluetooth app-owned output-rate path
+description=v2.5.123: SAFMUS Plan 10D selected-device codec guard
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
