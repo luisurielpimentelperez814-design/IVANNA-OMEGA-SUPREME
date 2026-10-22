@@ -148,6 +148,15 @@ class StereoAudioResamplerTest {
         assertTrue("chunk boundary caused phase/discontinuity error: $maxError", maxError < 1.0e-4)
     }
 
+    @Test fun unityRatePassThroughFallsBackWhenSamplesAreNonFinite() {
+        val resampler = StereoAudioResampler(48_000)
+        resampler.setInputSampleRate(48_000)
+        val input = FloatArray(2048) { 0.1f }
+        input[100] = Float.NaN
+        val output = resampler.process(input)
+        assertTrue("unity-rate fallback must sanitize non-finite samples", output.all { it.isFinite() })
+    }
+
     @Test fun nonFiniteInputSamplesDoNotPoisonFilterHistory() {
         val resampler = StereoAudioResampler(96_000)
         resampler.setInputSampleRate(44_100)
