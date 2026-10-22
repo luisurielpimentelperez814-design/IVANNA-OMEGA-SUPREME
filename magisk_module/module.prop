@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.121
-versionCode=412
+version=v2.5.122
+versionCode=413
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.121: bounded USB ASRC clock servo, race-safe feedback and C++26 validation
+description=v2.5.122: SAFMUS Plan 10D Bluetooth app-owned output-rate path
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

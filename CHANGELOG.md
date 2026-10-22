@@ -1,8 +1,9 @@
-# Cambios sin publicar — SAFMUS Plan 10D: salida Bluetooth propia
+# CHANGELOG — v2.5.122 (413) — SAFMUS Plan 10D: salida Bluetooth propia
 
 - El reproductor propio selecciona la tasa A2DP anunciada por el códec activo cuando está disponible, con fallback a 48 kHz y prioridad de DAC USB-C.
 - El PCM se remuestrea antes del DSP/HRTF a la tasa real seleccionada; el fallback espacial mantiene historial aislado y retardos ITD/crossfeed escalados por tasa.
 - Se añade selección de códec vinculada al dispositivo, pruebas JVM y criterios de aceptación Plan 10D.
+- Se conserva el servo de reloj local acotado y el control seguro de cambios de ruta.
 - **Alcance:** no modifica Spotify/YouTube ni certifica el HAL Qualcomm, el reloj remoto Bluetooth o un DAC físico. Build/CI y validación física siguen siendo gates obligatorios.
 
 ---
