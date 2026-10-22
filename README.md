@@ -1,138 +1,171 @@
 <div align="center">
 
-<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME — motor de audio para Android" width="100%" />
+<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME — audio digital y herramientas espaciales para Android" width="100%" />
 
 # IVANNA OMEGA SUPREME
 
-### Audio digital, calibración acústica y herramientas espaciales para Android
+### Audio digital · herramientas espaciales · medición y verificación
 
-**Producto propietario en desarrollo. El acceso público a este repositorio no concede una licencia para reutilizar el código propio.**
+<p>
+  <a href="LEAME.md">Guía en español sencillo</a> ·
+  <a href="docs/ENGINEERING.md">Ficha de ingeniería</a> ·
+  <a href="CHANGELOG.md">Registro de cambios</a> ·
+  <a href="docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md">Aceptación Moto G85</a>
+</p>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
-[![Versión de código](https://img.shields.io/badge/versión-según%20version.properties-64748b.svg)](version.properties)
-[![Android](https://img.shields.io/badge/plataforma-Android%20%7C%20ARM64-3ddc84.svg)](app/)
-[![C++26](https://img.shields.io/badge/motor-C%2B%2B26-00599C.svg)](app/src/main/cpp/)
+[![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
+[![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
+[![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
+[![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
+[![Versión](https://img.shields.io/badge/versión-2.5.126-64748b)](version.properties)
 
-[LÉAME para público general](LEAME.md) · [Documentación técnica](docs/ENGINEERING.md) · [Cambios recientes](CHANGELOG.md) · [Versiones y paquetes](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) · [Reportar un problema](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues)
+**Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
 </div>
 
 ---
 
-## En pocas palabras
+## En una mirada
 
-IVANNA OMEGA SUPREME es un proyecto para Android que combina una aplicación de control en Kotlin, un motor de procesamiento digital de audio escrito en C++ y herramientas para medir y visualizar aspectos de un entorno de escucha. Su objetivo es que los ajustes de audio puedan analizarse, probarse y —cuando hay mediciones suficientes— verificarse en lugar de depender únicamente de impresiones o de valores supuestos.
+IVANNA OMEGA SUPREME combina una aplicación Android en Kotlin, componentes nativos de procesamiento de audio en C++, herramientas de medición acústica y módulos de visualización espacial. El propósito es construir rutas de procesamiento y calibración que se puedan inspeccionar y probar, sin convertir una intención de diseño en una promesa de resultado.
 
-El repositorio contiene código de producción, módulos experimentales, pruebas automatizadas y documentación de los límites conocidos. **La presencia de una clase, modelo, dataset o pantalla no significa por sí sola que esa función esté conectada al sonido en tiempo real ni validada en un teléfono.** En este README distinguimos lo implementado, lo que necesita validación y lo que aún no está terminado.
+<table>
+<tr>
+<td width="33%" valign="top">
 
-## Qué incluye
+### 🎚️ Audio
 
-<details>
-<summary><strong>Captura espacial con cámara AR (experimental)</strong></summary>
+Reproducción y procesamiento desde la aplicación, resampling y un control software de cola de AudioTrack en la ruta propia del reproductor.
 
-La actividad **Captura espacial AR** usa ARCore para seguir el movimiento del teléfono y recopilar puntos 3D. Cuando el dispositivo admite la API de profundidad, toma muestras de profundidad y las proyecta al espacio; si no, conserva puntos dispersos de seguimiento. Al finalizar, permite exportar un ZIP con una nube de puntos PLY y metadatos JSON (poses, seguimiento, modo de profundidad y límites espaciales estimados).
+</td>
+<td width="33%" valign="top">
 
-**Límites:** no es una malla cerrada ni una medición certificada de las dimensiones de la habitación. Las superficies sin textura, el vidrio, la oscuridad, el movimiento rápido y los dispositivos sin profundidad reducen la calidad. La captura no mide RT60/RIR; la conexión acústica debe calibrarse por separado. ARCore requiere un dispositivo compatible y permiso de cámara.
+### 📐 Medición
 
-</details>
+Herramientas para reproducir tonos de prueba, registrar la respuesta del micrófono y comparar una medición antes y después de un ajuste.
 
-<details open>
-<summary><strong>Motor de audio y aplicación Android</strong></summary>
+</td>
+<td width="33%" valign="top">
 
-- Aplicación Android con interfaz Kotlin/Jetpack Compose.
-- Motor nativo C++26 conectado mediante JNI y compilación dirigida a ARM64.
-- Herramientas de procesamiento espacial y recursos acústicos, incluidos datos en formato SOFA.
-- Controles y telemetría que deben distinguir los parámetros solicitados de los valores realmente confirmados por el motor.
-- Rutas de integración que contemplan dispositivos con root/Magisk y escenarios sin root; la disponibilidad real depende del dispositivo, permisos, ruta de salida y configuración.
+### 🧭 Espacio
 
-</details>
+Renderizador geométrico y una ruta de captura AR experimental que puede recopilar puntos espaciales y exportar datos.
 
-<details open>
-<summary><strong>Medición de sala y calibración verificada</strong></summary>
+</td>
+</tr>
+</table>
 
-El módulo `RoomMeasurement` reproduce y graba una secuencia de prueba usando el micrófono y la salida del teléfono. Emplea 27 tonos distribuidos aproximadamente entre 25 Hz y 12,7 kHz para estimar niveles, ruido y retardo. La corrección se diseña a partir de puntos considerados fiables, con un alcance tonal más conservador que el rango completo de la secuencia.
+> **Regla de lectura:** que un módulo, modelo, dataset, control o contrato esté presente en el repositorio no demuestra por sí solo que esté conectado al audio activo, que funcione en todos los dispositivos ni que haya sido validado físicamente.
 
-El flujo `runVerified` compara una medición inicial con otra posterior a la corrección. Si la medición falla, es poco fiable o no alcanza la mejora mínima definida por el código (0,25 dB en la métrica interna), vuelve a aplicar el estado anterior y registra la decisión. El historial se limita a los 50 registros más recientes.
+## Mapa visual de la arquitectura
 
-**Límites:** el micrófono integrado de un teléfono no es un instrumento calibrado; la posición del teléfono, el volumen, el ruido, la sala y la salida utilizada afectan los resultados. Esta métrica interna no demuestra por sí sola una mejora perceptible para todas las personas ni sustituye una medición acústica de laboratorio.
+<img src="docs/release_media/architecture-map.svg" alt="Diagrama de arquitectura de IVANNA OMEGA SUPREME, sus módulos Android, audio, medición, AR y la integración HAL/PAL pendiente de validar" width="100%" />
 
-</details>
+El diagrama representa las relaciones generales del código. En particular, el bloque HAL/PAL es un punto de integración documentado: no es evidencia de que exista control físico del reloj o del ASRC del proveedor en el Moto G85.
 
-<details open>
-<summary><strong>Renderizador geométrico 3D</strong></summary>
+## Componentes y estado real
 
-El módulo nativo `SceneGeometryRenderer` dibuja una representación geométrica de la sala, la posición del oyente y las fuentes definidas en `RoomGeometryConfig`. Puede generar una imagen PPM de hasta 3840 × 2160 píxeles; el tamaño de la imagen y las dimensiones de sala están acotados para limitar el consumo de memoria. La vista previa Android reduce la imagen para mostrarla con un uso de memoria más moderado, mientras conserva el archivo renderizado en el almacenamiento privado de la aplicación.
+<table>
+<thead><tr><th>Área</th><th>Qué contiene el proyecto</th><th>Estado y límites</th></tr></thead>
+<tbody>
+<tr>
+<td><strong>Aplicación Android</strong></td>
+<td>Interfaz Kotlin/Jetpack Compose, servicios y puentes hacia componentes nativos.</td>
+<td>Código presente; la funcionalidad concreta debe evaluarse por ruta y por versión.</td>
+</tr>
+<tr>
+<td><strong>Motor DSP nativo</strong></td>
+<td>Código C++ y enlace JNI para las funciones nativas que llaman desde la app.</td>
+<td>La existencia del motor no prueba que cada etapa experimental participe en toda reproducción.</td>
+</tr>
+<tr>
+<td><strong>PLL software de AudioTrack</strong></td>
+<td><code>AudioTrackBufferPll</code> estima la ocupación de la cola del reproductor de la app y ajusta el resampler dentro de límites de software.</td>
+<td>Implementación a nivel de código. No controla el reloj físico del DAC, Bluetooth ni el HAL global; necesita pruebas de reproducción reales para evaluar estabilidad, clics, latencia y underruns.</td>
+</tr>
+<tr>
+<td><strong>Medición y corrección de sala</strong></td>
+<td>Secuencia de tonos, captura de micrófono, comparación antes/después y lógica de restauración cuando el resultado no cumple el criterio interno.</td>
+<td>El micrófono del teléfono no es un instrumento calibrado. La métrica interna no equivale a una mejora audible universal ni a una certificación acústica.</td>
+</tr>
+<tr>
+<td><strong>FotoHolo / captura AR</strong></td>
+<td>Actividad de captura con ARCore, seguimiento espacial, puntos 3D y flujo de exportación.</td>
+<td>Experimental. No debe confundirse una nube de puntos con una malla completa, un plano certificado ni una medición RT60/RIR. Requiere probar permisos, seguimiento, pausa/reanudación y exportación en el equipo.</td>
+</tr>
+<tr>
+<td><strong>Renderizador geométrico</strong></td>
+<td><code>SceneGeometryRenderer</code> genera imágenes a partir de una configuración geométrica; el código contempla hasta 3840 × 2160 píxeles.</td>
+<td>Renderiza la geometría configurada. No es por sí solo una reconstrucción automática de la habitación ni una simulación acústica validada.</td>
+</tr>
+<tr>
+<td><strong>SAFMUS / ACSR / HAL-PAL</strong></td>
+<td>Hay lógica, adaptadores o contratos de integración en distintas partes del repositorio.</td>
+<td>La documentación de integración no demuestra una unión de extremo a extremo con el hardware del fabricante. No afirmamos un actuador PAL/ASRC operativo ni control físico de reloj en el Moto G85 sin lectura de retorno y pruebas.</td>
+</tr>
+<tr>
+<td><strong>Wi-Fi / CSI</strong></td>
+<td>Políticas conservadoras para tratar observaciones de radio como indicios de contexto.</td>
+<td>Las API Wi-Fi comunes no equivalen a CSI. La disponibilidad depende de hardware y proveedor compatibles; no se afirma reconstrucción anatómica ni compatibilidad universal.</td>
+</tr>
+</tbody>
+</table>
 
-**Qué significa y qué no:** es un renderizador geométrico real, pero la salida actual representa la configuración geométrica proporcionada. No debe interpretarse como un escaneo automático de una habitación, una reconstrucción física obtenida de CSI Wi-Fi ni una simulación acústica validada.
+## Flujos que importan
 
-</details>
+### Medición: medir, decidir y verificar
 
-<details open>
-<summary><strong>Wi-Fi como indicio de contexto</strong></summary>
+```mermaid
+flowchart LR
+    A["Medición inicial"] --> B["Diseñar corrección"]
+    B --> C["Aplicar ajuste"]
+    C --> D["Medición posterior"]
+    D --> E{"¿Datos válidos y criterio cumplido?"}
+    E -->|Sí| F["Aceptar y registrar"]
+    E -->|No| G["Restaurar estado anterior"]
+    G --> H["Registrar motivo"]
+```
 
-La política de adaptación separa las observaciones de radio de las decisiones del procesador de audio: una variación Wi-Fi puede solicitar una nueva medición acústica, pero no autoriza directamente un cambio de DSP. Las API Wi-Fi estándar y Wi-Fi RTT no equivalen a CSI real.
+Este flujo describe la lógica implementada en la ruta de medición. La fiabilidad depende de la señal, el ruido, la posición, el volumen, la salida y las características del micrófono. La reversión de un ajuste no sustituye las pruebas de seguridad de todas las rutas de audio.
 
-La adquisición CSI depende de un proveedor compatible y de hardware y permisos específicos. **No se afirma compatibilidad CSI universal, detección fiable de ocupación en cualquier dispositivo ni reconstrucción anatómica.** La privacidad y el consentimiento deben mantenerse como condiciones explícitas para las funciones de sensado.
-
-</details>
-
-## Cómo encajan las piezas
+### Reproducción: alcance del PLL software
 
 ```mermaid
 flowchart TD
-    UI["Aplicación Android<br/>Kotlin / Compose"] --> JNI["Puente JNI"]
-    JNI --> DSP["Motor nativo<br/>C++26 / DSP"]
-    UI --> MEASURE["Medición de sala<br/>captura + tonos"]
-    MEASURE --> ANALYSIS["Análisis de señal<br/>niveles, ruido y retardo"]
-    ANALYSIS --> VERIFY["Verificación antes/después"]
-    VERIFY -->|mejora suficiente| APPLY["Aceptar corrección"]
-    VERIFY -->|fallo o mejora insuficiente| ROLLBACK["Restaurar estado anterior"]
-    VERIFY --> AUDIT["Registro acotado de decisiones"]
-    UI --> GEOMETRY["Configuración geométrica"]
-    GEOMETRY --> RENDER["Renderizador nativo<br/>PPM hasta 4K"]
-    WIFI["Indicios Wi-Fi disponibles"] --> POLICY["Política conservadora"]
-    POLICY -->|solo solicita| MEASURE
+    A["Audio de la app"] --> B["AudioTrack"]
+    B --> C["Timestamp / estimación de cola"]
+    C --> D["AudioTrackBufferPll"]
+    D --> E["Corrección limitada en ppm"]
+    E --> F["StereoAudioResampler"]
+    F --> B
+    H["Datos inválidos o desalineados"] -.-> I["Reset a corrección neutra"]
+    I -.-> D
 ```
 
-El diagrama describe el diseño de los componentes presentes; no implica que toda función avanzada esté disponible en cualquier dispositivo o que cada ruta se haya probado físicamente.
+El PLL trabaja sobre el resampler del reproductor propio de IVANNA. No puede inferir ni escribir automáticamente el reloj físico de un DAC, una ruta Bluetooth o un módulo HAL. El funcionamiento auditivo y la estabilidad deben comprobarse en el teléfono con cada salida que se quiera declarar compatible.
 
-## Estado de implementación y verificación
+## FotoHolo y visualización 3D
 
-| Área | Qué podemos afirmar | Qué falta comprobar |
-|---|---|---|
-| Código del proyecto | Los módulos descritos están presentes en el repositorio. | Revisar cada ruta de ejecución y sus dependencias en la versión que se vaya a distribuir. |
-| Renderizador geométrico | Existe un renderizador nativo con límites de dimensiones y memoria, además de una vista previa Android. | Rendimiento, consumo y visualización en distintos dispositivos reales. |
-| Medición y reversión | El código implementa medición inicial, aplicación, segunda medición, criterio de aceptación, restauración y registro. | Pruebas físicas repetidas con distintos teléfonos, salas y salidas de audio. |
-| Wi-Fi/CSI | Hay detección conservadora de capacidades y una política que no cambia DSP directamente. | Proveedor CSI real y compatible, adquisición fiable e integración completa con hardware concreto. |
-| APK y módulo Magisk | La CI contiene pasos para compilar y comprobar artefactos. | La entrega debe corresponder al último commit, superar CI y las pruebas y verificarse por hash e instalación. |
-| Calidad audible | El código y las pruebas pueden verificar comportamientos técnicos concretos. | Cualquier afirmación de mejora audible requiere pruebas A/B controladas y, cuando corresponda, medición independiente. |
+- **Captura AR:** usa las capacidades que ARCore y el dispositivo expongan; la disponibilidad de profundidad no es universal.
+- **Nube de puntos:** es una representación parcial de las observaciones de captura, no una reconstrucción cerrada de toda la habitación.
+- **Renderizado 3D:** la imagen se deriva de la geometría configurada en el módulo; la resolución de salida no garantiza realismo fotorrealista.
+- **Acústica:** la geometría visual no es una medición de respuesta al impulso, reverberación ni absorción de materiales.
 
-### Estado de la compilación
+## Privacidad y claves de API
 
-El estado actualizado se muestra en el distintivo **CI** de la parte superior y en [GitHub Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions). No se fija en el README un número de pruebas aprobadas ni una promesa de compilación exitosa: esos datos deben venir de una ejecución real y del commit correspondiente.
+El procesamiento local que no requiere servicios externos debe poder operar sin una clave de Google. Una clave solo es necesaria para una función opcional cuando esa función invoque realmente un servicio externo que la exija. No se debe interpretar la presencia de una interfaz o configuración de proveedor como prueba de que la integración remota esté activa.
 
-Los paquetes de [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) pueden incluir borradores o artefactos de commits anteriores. Antes de instalar un APK o ZIP, comprueba su SHA/commit de origen y que sea la versión que quieres probar. Un archivo existente no prueba que proceda del último código.
+La cámara y el micrófono deben solicitarse cuando una función los necesita. Antes de compartir diagnósticos, elimina credenciales, tokens, datos personales y grabaciones privadas.
 
-## Empezar
+## Compilar y ejecutar comprobaciones
 
 ### Requisitos
 
-- Android Studio y JDK 17 para el proyecto Android.
-- Android SDK 35 y NDK 27.2.12479018, según la configuración del proyecto.
-- CMake 3.30.3 y Gradle Wrapper del repositorio.
-- Node.js 22 y npm para compilar el paquete web FotoHolo integrado.
-- Un entorno Linux compatible con los comandos de CI para reproducir la suite nativa completa.
+Consulta las versiones exactas configuradas por el proyecto y por CI. La configuración actual utiliza Android SDK, NDK, CMake, Gradle Wrapper y Node.js para los componentes correspondientes. La reproducción completa de CI puede requerir Linux y dependencias adicionales.
 
-### Compilar y probar
+### Pruebas nativas en host
 
-Clona el repositorio:
-
-```bash
-git clone https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME.git
-cd IVANNA-OMEGA-SUPREME
-```
-
-Ejecuta las pruebas nativas en el host:
+Desde la raíz del repositorio:
 
 ```bash
 cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
@@ -140,54 +173,52 @@ cmake --build build-tests -j4
 ctest --test-dir build-tests --output-on-failure
 ```
 
-Ejecuta las comprobaciones estáticas disponibles:
+### Puertas estáticas
 
 ```bash
-for s in scripts/check_*.py; do python3 "$s" || exit 1; done
+for s in scripts/check_*.py; do
+  python3 "$s" || exit 1
+done
 ```
 
-Para reproducir la compilación Android, consulta el flujo de CI y usa el Gradle Wrapper del repositorio. La CI también prepara el paquete web FotoHolo antes de incorporarlo a los assets. **No se debe declarar una compilación válida hasta que los comandos terminen con código cero y se inspeccionen los artefactos resultantes.**
+Estos comandos no sustituyen la compilación Android, las pruebas instrumentadas ni la validación del teléfono. Para reproducir exactamente la entrega, revisa [el flujo de GitHub Actions](.github/workflows/build.yml).
 
-## Cómo revisar una entrega
+## Estado de CI, versiones y pruebas físicas
 
-Antes de distribuir una nueva versión, comprueba:
+- [Ver ejecuciones de CI](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
+- [Ver versiones publicadas](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases)
+- [Ver código de la versión indicada](version.properties)
+- [Plan de aceptación para Moto G85 / Android 15](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md)
 
-1. El SHA exacto de `main` que se está compilando.
-2. El resultado de CI y de CTest para ese mismo SHA.
-3. Que el APK y el ZIP Magisk se hayan generado en esa ejecución, no copiado de una compilación anterior.
-4. La arquitectura de los binarios nativos, los hashes SHA-256 y el contenido del ZIP.
-5. La instalación, el arranque, los permisos y las funciones clave en un dispositivo compatible.
-6. El funcionamiento de la reversión ante mediciones fallidas o resultados insuficientes.
-7. Los límites y errores visibles para el usuario, sin telemetría inventada.
+El distintivo CI refleja el estado del flujo configurado en GitHub; no es una certificación acústica ni demuestra que se haya probado el teléfono. Antes de considerar una versión lista, verifica que la compilación, los tests, el APK y el ZIP Magisk procedan del mismo commit, inspecciona sus hashes y prueba la instalación en el dispositivo de destino.
 
-Consulta [`docs/ENGINEERING.md`](docs/ENGINEERING.md) para el resumen técnico y [`CHANGELOG.md`](CHANGELOG.md) para el historial de cambios. El changelog contiene anotaciones históricas: cuando una nota y una prueba reciente discrepen, prevalecen el código actual y los resultados reproducibles de la ejecución pertinente.
+### Lista de aceptación en hardware
 
-## Privacidad y seguridad
-
-- Solicita solo los permisos necesarios y explica por qué se requieren.
-- Las mediciones de sala necesitan acceso al micrófono y deben ser iniciadas de forma consciente por la persona usuaria.
-- No conviertas RSSI, Wi-Fi RTT o datos incompletos en afirmaciones de CSI o reconstrucción espacial.
-- No afirmes identificación biométrica ni reconstrucción anatómica.
-- La restauración automática de una corrección de audio no sustituye límites de seguridad del sistema, pruebas de permisos ni validación de todos los modos de fallo.
-- Revisa las licencias de datasets, modelos y dependencias antes de redistribuirlos; consulta `NOTICE` y `THIRD_PARTY_NOTICES.md`.
+- [ ] Instalar APK y módulo generados desde el mismo commit aprobado.
+- [ ] Probar la salida integrada, USB-C DAC/adaptador y Bluetooth por separado cuando estén disponibles.
+- [ ] Confirmar que el reproductor propio avanza, que la corrección permanece dentro de sus límites y que no aparecen clics, cambios de tono o underruns anómalos.
+- [ ] Abrir FotoHolo, confirmar cámara en vivo, seguimiento, pausa/reanudación y exportación.
+- [ ] Registrar el modelo, versión Android, ruta, SHA del commit, hashes de artefactos y resultados.
+- [ ] No declarar HAL/PAL conectado sin identificar el callback real, unidades del parámetro, actuador, lectura de retorno y prueba en hardware.
 
 ## Contribuir y reportar problemas
 
-Las contribuciones útiles incluyen informes reproducibles, pruebas de regresión, documentación de dispositivos y mejoras que mantengan la separación entre medición, decisión y aplicación.
+Los informes más útiles incluyen el commit o versión probados, modelo de dispositivo, versión de Android, ruta de audio, pasos para reproducir y registros depurados de datos personales.
 
-Al abrir un issue, indica si puedes:
+- [Abrir un issue](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues)
+- [Revisar cambios](CHANGELOG.md)
+- [Consultar documentación de ingeniería](docs/ENGINEERING.md)
 
-- reproducirlo en el último commit o en una versión publicada;
-- compartir modelo de dispositivo, versión Android, ruta de audio y pasos de reproducción;
-- adjuntar logs sin datos personales ni grabaciones privadas;
-- distinguir un resultado medido de una impresión subjetiva.
+## Licencia y propiedad intelectual
 
-[Crear un issue](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) · [Consultar cambios](CHANGELOG.md) · [Ver código](app/src/main/cpp/)
+IVANNA OMEGA SUPREME se presenta como un producto propietario. La visibilidad pública del repositorio no concede por sí sola permiso para reutilizar el código propio. Los componentes, bibliotecas, modelos y datasets de terceros conservan sus licencias y avisos; revisa los archivos de licencia y avisos antes de redistribuir. Las concesiones expresas aplicables a versiones anteriores siguen rigiendo esas versiones según sus términos.
 
-## Propiedad intelectual y licenciamiento
+---
 
-© 2026 Luis Uriel Pimentel Pérez (GORE TNS). **IVANNA OMEGA SUPREME es un producto propietario y comercial. Todos los derechos sobre el código propio quedan reservados.** No se concede por este README una licencia para copiar, modificar, redistribuir ni explotar comercialmente el código propio. Para adquirir o negociar una licencia comercial, contacta al titular.
+<div align="center">
 
-Esta declaración no modifica las licencias de bibliotecas, herramientas, modelos, datasets ni otros materiales de terceros; deben respetarse sus avisos y términos por separado. Las versiones anteriores que se hayan distribuido expresamente bajo Apache-2.0 y las copias cubiertas por esa concesión siguen sujetas a los términos aplicables a esas versiones.
+**Construir con rigor. Medir cuando sea posible. Declarar solo lo que la evidencia respalda.**
 
-La aspiración de este proyecto es que cada afirmación importante pueda rastrearse hasta código, pruebas o mediciones. **No se promete superioridad sonora universal, latencia cero ni compatibilidad universal: se documentan mecanismos, resultados verificables y trabajo pendiente.**
+<sub>La arquitectura y las funciones evolucionan; el código, las pruebas reproducibles y la validación física tienen prioridad sobre cualquier etiqueta de marketing.</sub>
+
+</div>
