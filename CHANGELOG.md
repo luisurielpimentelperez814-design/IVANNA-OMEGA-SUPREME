@@ -1,16 +1,16 @@
-# CHANGELOG — Sin publicar — Toolchain nativa C++26
-
-- Se configura `CMAKE_CXX_STANDARD=26` para el motor Android, el daemon Magisk y los tests host, con CMake 3.28.0 y Android NDK r27d (27.2.12479018). CI antepone el CMake del SDK al `PATH` para que el daemon independiente no use el CMake antiguo del runner.
-- Se actualizan Gradle, CMake y CI en conjunto para evitar que un estándar declarado no coincida con el compilador real.
-- No se declara el cambio listo para release hasta que CI demuestre compilación nativa, APK y tests; C++26 no se considera validado solo por modificar los archivos de configuración.
-
----
-
 # CHANGELOG — Sin publicar — MAJESTY 3D azimut esférico 360°
 
 - `ObjectRenderer` conserva el hemisferio trasero: deja de recortar los azimuts a ±90° y envuelve la orientación relativa a la cabeza a [-180°, 180°].
 - Añade una función pura de envoltura angular y pruebas host para fuentes traseras, giros completos y valores no finitos.
 - No cambia el contrato de HRTF medido ni afirma calibración acústica física; queda sujeto a CI.
+
+---
+
+# CHANGELOG — Sin publicar — Toolchain nativa C++26
+
+- Se configura `CMAKE_CXX_STANDARD=26` para el motor Android, el daemon Magisk y los tests host, con CMake 3.28.0 y Android NDK r27d (27.2.12479018). CI antepone el CMake del SDK al `PATH` para que el daemon independiente no use el CMake antiguo del runner.
+- Se actualizan Gradle, CMake y CI en conjunto para evitar que un estándar declarado no coincida con el compilador real.
+- No se declara el cambio listo para release hasta que CI demuestre compilación nativa, APK y tests; C++26 no se considera validado solo por modificar los archivos de configuración.
 
 ---
 
