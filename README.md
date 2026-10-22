@@ -84,6 +84,26 @@ El diagrama representa las relaciones generales del código. En particular, el b
 <td>Implementación a nivel de código. No controla el reloj físico del DAC, Bluetooth ni el HAL global; necesita pruebas de reproducción reales para evaluar estabilidad, clics, latencia y underruns.</td>
 </tr>
 <tr>
+<td><strong>Cadena de reproducción del reproductor propio</strong></td>
+<td><code>IvannaBridgePlayer</code> decodifica, procesa y escribe en <code>AudioTrack</code>. Si el DSP nativo (<code>DSPBridge</code>) está cargado, ejecuta la cadena maestra y la ruta Kotlin no apila procesadores duplicados; si no, se usan NPE, Volterra, modo concierto y motor espacial según sus interruptores.</td>
+<td>Aplica solo al audio que reproduce IVANNA. No procesa el audio de otras apps ni de todo el sistema por sí mismo. Qué etapas se oyen y con qué efecto debe comprobarse con escucha y registros en el Moto G85.</td>
+</tr>
+<tr>
+<td><strong>Motor predictivo (Módulo 1)</strong></td>
+<td><code>predictive_audio_engine</code> analiza el audio en C++ y publica confianza, ganancia estimada y transitorios por JNI hacia la interfaz y las métricas.</td>
+<td>Es un <strong>observador</strong>: el reproductor le entrega el bloque ya procesado y no lo modifica. Hoy produce telemetría, no cambia la señal de salida. La ventana de predicción de 5–10 ms es un objetivo de diseño sin medición en dispositivo registrada.</td>
+</tr>
+<tr>
+<td><strong>HRTF / SOFA / SAF</strong></td>
+<td>Cargadores y convolucionador HRTF, bases PCA y paquetes de datos. La puerta <code>check_datasets_deploy.py</code> verifica que los 239 <code>.sofa</code>, 12 HRTF y 200 RIR del APK coincidan con los del módulo Magisk y que los archivos HDF5 estén íntegros.</td>
+<td>La integridad y la coherencia de los archivos están comprobadas de forma automática. Que la espacialización binaural resulte audible, correcta y cómoda en el teléfono no está demostrado por esa puerta y requiere escucha controlada. Una HRTF genérica no equivale a la HRTF personal de cada oyente.</td>
+</tr>
+<tr>
+<td><strong>Anti-Dolby / clasificador de contenido</strong></td>
+<td>Modelo <code>anti_dolby_crnn.tflite</code> que clasifica el contenido en voz, música, bajos y silencio, y lógica nativa que usa esa clasificación.</td>
+<td>Es un clasificador de contenido, no un modelo entrenado de política acústica universal. Las decisiones de orquestación son deterministas y acotadas. No se afirma un desprocesamiento verificado frente a ningún códec concreto sin mediciones con material de referencia.</td>
+</tr>
+<tr>
 <td><strong>Medición y corrección de sala</strong></td>
 <td>Secuencia de tonos, captura de micrófono, comparación antes/después y lógica de restauración cuando el resultado no cumple el criterio interno.</td>
 <td>El micrófono del teléfono no es un instrumento calibrado. La métrica interna no equivale a una mejora audible universal ni a una certificación acústica.</td>

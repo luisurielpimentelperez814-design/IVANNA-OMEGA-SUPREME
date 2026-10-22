@@ -64,6 +64,10 @@ El mapa muestra las relaciones generales del código. El bloque HAL/PAL represen
 |---|---|---|
 | Aplicación Android y motor nativo | Hay código Kotlin, C++ y puentes entre componentes. | Probar las rutas concretas en la versión que se distribuya. |
 | PLL software de reproducción | Implementado en la ruta del reproductor propio para ajustar el resampler con límites definidos. | Pruebas físicas de estabilidad, clics, tono, latencia y underruns. |
+| Cadena de reproducción propia | El reproductor decodifica, procesa y escribe en `AudioTrack`; si el DSP nativo está cargado, él ejecuta la cadena maestra y no se apilan procesadores duplicados. | Escucha controlada y registros en el Moto G85. Solo afecta al audio que reproduce IVANNA, no al de otras apps. |
+| Motor predictivo (Módulo 1) | Analiza el audio en C++ y publica confianza y transitorios hacia la interfaz y las métricas. | Es un observador: hoy produce telemetría y **no cambia el sonido**. La ventana de 5–10 ms es un objetivo de diseño sin medición en teléfono. |
+| HRTF / SOFA / SAF | Los archivos del APK y del módulo Magisk coinciden y están íntegros (verificado automáticamente). | Escucha controlada para confirmar que la espacialización binaural se oye bien; una HRTF genérica no es la de cada persona. |
+| Anti-Dolby (clasificador) | Un modelo clasifica el contenido en voz, música, bajos y silencio, y la lógica nativa lo usa. | No es un modelo de política acústica universal; hacen falta mediciones con material de referencia para afirmar un resultado concreto. |
 | Medición de sala | Hay flujo de tonos, captura, comparación y lógica de restauración. | Mediciones repetidas con equipo, salas y salidas diferentes. |
 | Captura AR | Hay actividad de captura y exportación basada en ARCore. | Confirmar cámara, seguimiento, ciclo de vida y exportación en cada equipo objetivo. |
 | Renderizador geométrico | Dibuja una geometría configurada y admite imágenes de hasta 3840 × 2160 píxeles. | Verificar rendimiento y recordar que no es un escaneo automático ni una simulación acústica validada. |
