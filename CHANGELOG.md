@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — FIR ASRC USB: validación espectral del kernel de producción
+
+- Se comparte el generador de coeficientes FIR de 64 taps/1024 fases entre la ruta USB de producción y las pruebas host; se conserva la convención cutoff normalizada a Nyquist, sin cambiar la respuesta DSP.
+- Se añaden regresiones de banda pasante, rechazo de alias y suma/finitez de coeficientes en las 1024 fases para conversiones 48→24 kHz, 96→48 kHz y 44.1→96 kHz.
+- La aceptación requiere CI verde. Las pruebas numéricas no equivalen a mediciones eléctricas/acústicas con un DAC USB físico.
+
+---
+
 # CHANGELOG — Sin publicar — MAJESTY 3D azimut esférico 360°
 
 - `ObjectRenderer` conserva el hemisferio trasero: deja de recortar los azimuts a ±90° y envuelve la orientación relativa a la cabeza a [-180°, 180°].
