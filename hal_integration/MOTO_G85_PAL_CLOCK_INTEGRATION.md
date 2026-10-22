@@ -226,3 +226,16 @@ The expanded archive now includes section 7 (AudioPolicy and active AudioFlinger
 ### Next controlled test
 
 The next probe should be captured while music is playing through the **phone speaker** (then separately through USB-C DAC if available), with Bluetooth disconnected for the speaker capture. Compare the `Output devices` field and active output threads across captures. That isolates route-specific evidence; it still will not authorize a ratio write unless a real actuator and payload contract are identified. The PAL clock callbacks remain unbound.
+
+## Architecture clarification: the installed ELF daemon is not the HAL
+
+Inspection of the repository's actual sources on 2026-10-22 clarifies an important distinction:
+
+- `app/src/main/cpp/daemon/ivanna_daemon.cpp` initializes the shared-memory state, starts the command server and publishes control/health state. `daemon/control/command_server.cpp` accepts commands over the IVANNA UNIX socket and updates `OmegaDspState` / shared snapshots.
+- `magisk_module/service.sh` starts `system/bin/ivanna_daemon` as a Magisk service and checks whether the daemon socket is bound. This proves the ELF is deployed as a privileged control-plane process; it does not make it the Android audio HAL or grant it ownership of Qualcomm PAL's active playback stream.
+- `OmegaEngineBridge.kt` performs the app-to-daemon HELLO/socket protocol. That is a control/telemetry path, distinct from the Android AudioEffect/JNI path that processes audio in the audio server, and distinct again from PAL/AGM inside the vendor HAL/DSP.
+- `ivanna_qualcomm_pal_clock_integration.hpp` is an integration seam. Its `QueryPairedSample` and `ApplyExistingAsrcRatio` callbacks are deliberately supplied by a target stream owner; repository source inspected here does not bind those callbacks into `audio.primary.blair.so` or into the running ELF daemon.
+
+### Updated investigation direction
+
+Do not assume the phone exposes a user-visible mixer control named ASRC, or that the daemon must write one. First trace which actual layer IVANNA owns and can control: (1) app-owned `AudioTrack` software ASRC, (2) globally attached `omega_effect` DSP processing, or (3) a vendor-HAL/DSP path that requires a ROM-specific target integration. Use live daemon status/logs and the app/effect route evidence to establish which path is active. Only pursue PAL hardware-clock correction if the relevant target stream source and its documented rate-adjustment interface are available. A privileged ELF process alone does not provide that interface.
