@@ -6,14 +6,6 @@
 
 ---
 
-# CHANGELOG — Sin publicar — Toolchain nativa C++26
-
-- Se configura `CMAKE_CXX_STANDARD=26` para el motor Android, el daemon Magisk y los tests host, con CMake 3.28.0 y Android NDK r27d (27.2.12479018). CI antepone el CMake del SDK al `PATH` para que el daemon independiente no use el CMake antiguo del runner.
-- Se actualizan Gradle, CMake y CI en conjunto para evitar que un estándar declarado no coincida con el compilador real.
-- No se declara el cambio listo para release hasta que CI demuestre compilación nativa, APK y tests; C++26 no se considera validado solo por modificar los archivos de configuración.
-
----
-
 # CHANGELOG — Sin publicar — Read-back nativo RP-88
 
 - Se exponen getters JNI para la intensidad de realidad y Anti-Dolby y se guardan sus valores leídos tras aplicar LOCK, junto con el ancho espacial, en el JSON exportado y las preferencias locales.
@@ -26,6 +18,14 @@
 
 - Se extrae la fórmula de cutoff de `UsbIngressAsrc` a una función pura testeable. La convención existente es Nyquist-normalizada: `0.94 * min(outputRate/inputRate, 1)`; en el kernel `cutoff * sinc(cutoff * d)`, Nyquist equivale a 1.0 (0.5 ciclos/muestra). No cambia el comportamiento DSP de producción.
 - Se agregan pruebas CTest para tasas iguales, downsampling, upsampling y tasas inválidas. Queda pendiente confirmar CI y medir respuesta/aliasing con un DAC USB físico.
+
+---
+
+# CHANGELOG — Sin publicar — Toolchain nativa C++26
+
+- Se configura `CMAKE_CXX_STANDARD=26` para el motor Android, el daemon Magisk y los tests host, con CMake 3.28.0 y Android NDK r27d (27.2.12479018). CI antepone el CMake del SDK al `PATH` para que el daemon independiente no use el CMake antiguo del runner.
+- Se actualizan Gradle, CMake y CI en conjunto para evitar que un estándar declarado no coincida con el compilador real.
+- No se declara el cambio listo para release hasta que CI demuestre compilación nativa, APK y tests; C++26 no se considera validado solo por modificar los archivos de configuración.
 
 ---
 
