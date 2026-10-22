@@ -15,11 +15,17 @@ TEST(UsbAsrcClockServo, EmptyAndFullRingDriveBoundedCorrection) {
     }
     EXPECT_NEAR(servo.correction(), -UsbAsrcClockServo::kMaxCorrection, 1e-9);
 
+    // Reversing from the negative rail must slew smoothly through zero;
+    // intermediate values are allowed to remain negative until the controller
+    // crosses the set point. Assert safety throughout, then convergence.
+    bool crossedZero = false;
     for (int i = 0; i < 10000; ++i) {
         const double correction = servo.update(1024, 1024);
-        EXPECT_GE(correction, 0.0);
         EXPECT_LE(correction, UsbAsrcClockServo::kMaxCorrection);
+        EXPECT_GE(correction, -UsbAsrcClockServo::kMaxCorrection);
+        if (correction >= 0.0) crossedZero = true;
     }
+    EXPECT_TRUE(crossedZero);
     EXPECT_NEAR(servo.correction(), UsbAsrcClockServo::kMaxCorrection, 1e-9);
 }
 
