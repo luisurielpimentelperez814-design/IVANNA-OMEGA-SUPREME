@@ -63,6 +63,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
     private var latestCalibrationApplied = false
     private var latestCalibrationLockRequested = false
     private var latestSpatialWidthReadback = Float.NaN
+    private var latestSpatialAngleReadback = Float.NaN
     private var latestRealityIntensityReadback = Float.NaN
     private var latestAntiDolbyIntensityReadback = Float.NaN
     private var latestOcclusionReadback = Float.NaN
@@ -495,13 +496,15 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         result.put("rp88LockRequested", latestCalibrationLockRequested)
             .put("spatialWidthReadbackConfirmed", latestCalibrationApplied)
             .put("rp88LockFullyConfirmed", false)
-            .put("fullLockConfirmationUnavailable", "Spatial angle and measured acoustic response still have no native read-back; physical-scene read-back confirms stored command state only.")
+            .put("fullLockConfirmationUnavailable", "Spatial angle read-back confirms the finite clamped command only; measured acoustic response/RIR is unavailable, so a full physical lock is not claimed.")
             .put("physicalSceneReadbackConfirmed", latestPhysicalSceneReadbackConfirmed)
             .put("physicalSceneOcclusionReadback", if (latestOcclusionReadback.isFinite()) latestOcclusionReadback.toDouble() else JSONObject.NULL)
             .put("physicalSceneWallAbsorptionReadback", if (latestWallAbsorptionReadback.isFinite()) latestWallAbsorptionReadback.toDouble() else JSONObject.NULL)
             .put("physicalSceneWallAbsorptionReadbackConfirmed", estimate != null && latestWallAbsorptionReadback.isFinite() && kotlin.math.abs(latestWallAbsorptionReadback - estimate.absorptionCoefficient.toFloat()) <= 0.02f)
             .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded && NativeBridge.isLoaded)
             .put("spatialWidthReadback", if (latestSpatialWidthReadback.isFinite()) latestSpatialWidthReadback.toDouble() else JSONObject.NULL)
+            .put("spatialAngleCommandReadbackRad", if (latestSpatialAngleReadback.isFinite()) latestSpatialAngleReadback.toDouble() else JSONObject.NULL)
+            .put("spatialAngleCommandReadbackConfirmed", estimate != null && latestSpatialAngleReadback.isFinite() && kotlin.math.abs(latestSpatialAngleReadback - Math.toRadians(estimate.spatialAngleDeg).toFloat()) <= 0.02f)
             .put("realityIntensityCommandReadback", if (latestRealityIntensityReadback.isFinite()) latestRealityIntensityReadback.toDouble() else JSONObject.NULL)
             .put("antiDolbyCommandReadback", if (latestAntiDolbyIntensityReadback.isFinite()) latestAntiDolbyIntensityReadback.toDouble() else JSONObject.NULL)
             .put("realityIntensityCommandReadbackConfirmed", latestRealityIntensityReadback.isFinite() && kotlin.math.abs(latestRealityIntensityReadback - 0.88f) <= 0.02f)
@@ -524,6 +527,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         latestCalibrationLockRequested = true
         var applied = false
         var readback = Float.NaN
+        var angleReadback = Float.NaN
         var realityReadback = Float.NaN
         var antiDolbyReadback = Float.NaN
         var occlusionReadback = Float.NaN
@@ -539,6 +543,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                     wallAbsorption = calibration.absorptionCoefficient.toFloat()
                 )
                 readback = IvannaNativeLib.nativeGetSpatialWidthDirect()
+                angleReadback = IvannaNativeLib.nativeGetSpatialAngleRad()
                 realityReadback = NativeBridge.safeGetRealityIntensity()
                 antiDolbyReadback = IvannaNativeLib.nativeGetAntiDolbyIntensity()
                 NativeBridge.safeGetPhysicalSceneSnapshot()?.let { scene ->
@@ -556,6 +561,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         latestCalibration = calibration
         latestCalibrationApplied = applied
         latestSpatialWidthReadback = readback
+        latestSpatialAngleReadback = angleReadback
         latestRealityIntensityReadback = realityReadback
         latestAntiDolbyIntensityReadback = antiDolbyReadback
         latestOcclusionReadback = occlusionReadback
@@ -569,6 +575,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .putBoolean("spatial_width_readback_confirmed", applied)
             .putBoolean("rp88_lock_fully_confirmed", false)
             .putFloat("spatial_width_readback", if (readback.isFinite()) readback else -1f)
+            .putFloat("spatial_angle_command_readback_rad", if (angleReadback.isFinite()) angleReadback else -999f)
+            .putBoolean("spatial_angle_command_readback_confirmed", angleReadback.isFinite() && kotlin.math.abs(angleReadback - Math.toRadians(calibration.spatialAngleDeg).toFloat()) <= 0.02f)
             .putFloat("reality_intensity_command_readback", if (realityReadback.isFinite()) realityReadback else -1f)
             .putFloat("anti_dolby_command_readback", if (antiDolbyReadback.isFinite()) antiDolbyReadback else -1f)
             .putFloat("physical_scene_occlusion_readback", if (occlusionReadback.isFinite()) occlusionReadback else -1f)
