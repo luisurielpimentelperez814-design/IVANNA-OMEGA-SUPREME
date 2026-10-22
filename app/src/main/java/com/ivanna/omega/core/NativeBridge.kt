@@ -298,8 +298,6 @@ object NativeBridge {
     @JvmStatic external fun setPhysicalSceneParams(occlusionFactor: Float, wallAbsorption: Float)
     /** [occlusion, wall absorption] as stored by native DSP; not a room measurement. */
     @JvmStatic external fun getPhysicalSceneSnapshot(): FloatArray?
-    /** [occlusion, wall absorption] as stored by native DSP; not a room measurement. */
-    @JvmStatic external fun getPhysicalSceneSnapshot(): FloatArray?
     @JvmStatic external fun setHearingAdaptationParams(
         earTipSeal: Float,
         listeningSplDb: Float,
