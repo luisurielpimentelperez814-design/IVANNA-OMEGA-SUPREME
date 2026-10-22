@@ -291,7 +291,11 @@ private:
     void buildKernel() noexcept {
         // For downsampling, cutoff is below output/input Nyquist; for
         // upsampling, cutoff stays below input Nyquist to suppress images.
-        const double cutoff = ivanna::audio::usbAsrcCutoffCyclesPerSample(inputRate_, outputRate_);
+        // The helper returns cycles/sample (Nyquist = 0.5). The normalized
+        // sinc kernel uses sin(pi*x)/(pi*x), so its argument and gain must
+        // use 2*fc; otherwise the passband is accidentally halved.
+        const double cutoffCycles = ivanna::audio::usbAsrcCutoffCyclesPerSample(inputRate_, outputRate_);
+        const double cutoffNormalized = 2.0 * cutoffCycles;
         constexpr double center = (kTaps - 1) * 0.5;
         for (int p = 0; p < kPhases; ++p) {
             const double frac = static_cast<double>(p) / kPhases;
@@ -303,7 +307,7 @@ private:
                     0.35875 + 0.48829 * std::cos(3.14159265358979323846 * norm) +
                     0.14128 * std::cos(2.0 * 3.14159265358979323846 * norm) +
                     0.01168 * std::cos(3.0 * 3.14159265358979323846 * norm);
-                const double c = cutoff * sinc(cutoff * d) * window;
+                const double c = cutoffNormalized * sinc(cutoffNormalized * d) * window;
                 kernel_[p][k] = static_cast<float>(c);
                 sum += c;
             }
