@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Acta de inserción del reloj HAL/ASRC
+
+- Añadida `docs/ACTA_INSERCION_RELOJ_HAL_ASRC.md` con contrato de seguridad, límites de servo y puertas de aceptación.
+- Estado declarado explícitamente: las primitivas C++ y pruebas host no demuestran el control físico del HAL. El seam PAL debe enlazarse a una consulta real de frame/timestamp y al actuador ASRC existente; no se adivinan APIs propietarias.
+- No se incrementa la versión de release ni se afirma validación en dispositivo en este cambio documental.
+
+---
+
 # CHANGELOG — v2.5.116 (407) — Mensaje claro de cuota Gemini
 
 - Un HTTP 429 de Gemini mostraba el texto crudo de Google (inglés y URL). Ahora indica en español que la cuota de la clave se agotó y qué hacer.
