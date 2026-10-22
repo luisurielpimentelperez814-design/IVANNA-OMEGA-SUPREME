@@ -27,6 +27,7 @@ std::atomic<bool> g_engine_running{false};
 #include <sys/resource.h>
 #include <linux/usbdevice_fs.h>
 #include <linux/usb/ch9.h>
+#include "include/usb_asrc_cutoff.hpp"
 
 // ════════════════════════════════════════════════════════════════════════════
 // MOTOR ASÍNCRONO USB AUDIO PRO — IMPLEMENTACIÓN REAL
@@ -290,13 +291,7 @@ private:
     void buildKernel() noexcept {
         // For downsampling, cutoff is below output/input Nyquist; for
         // upsampling, cutoff stays below input Nyquist to suppress images.
-        const double ratio = static_cast<double>(outputRate_) / inputRate_;
-        // sinc() below is normalized as sin(pi*x)/(pi*x), so cutoff is in
-        // cycles/sample (Nyquist = 0.5), not a 0..1 Nyquist-normalized value.
-        // Keep a 6% transition band below the lower Nyquist for both
-        // downsampling and upsampling: 48 kHz -> 48 kHz uses 0.47 cycles/sample,
-        // 96 kHz -> 48 kHz uses 0.235 cycles/sample.
-        const double cutoff = 0.47 * (ratio < 1.0 ? ratio : 1.0);
+        const double cutoff = ivanna::audio::usbAsrcCutoffCyclesPerSample(inputRate_, outputRate_);
         constexpr double center = (kTaps - 1) * 0.5;
         for (int p = 0; p < kPhases; ++p) {
             const double frac = static_cast<double>(p) / kPhases;
