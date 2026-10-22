@@ -519,6 +519,7 @@ jobs:
       - name: Package Magisk module + verify zip integrity
         run: |
           set -euo pipefail
+          sh -n magisk_module/customize.sh || { echo "ERROR: customize.sh syntax invalid"; exit 1; }
           test -f magisk_module/sepolicy.rule || { echo "ERROR: falta sepolicy.rule"; exit 1; }
           if grep -vE '^[[:space:]]*#|^[[:space:]]*$' magisk_module/sepolicy.rule | grep -qE '^[[:space:]]*(type|attribute|typeattribute|allowxperm|neverallow|require)[[:space:]]'; then
             echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
