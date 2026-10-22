@@ -1,7 +1,6 @@
 package com.ivanna.omega.fotoholo
 
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.sqrt
 
@@ -89,8 +88,15 @@ object AcousticRoomCalibrationModel {
         // RP-88 native command range is ±90°; keep the reported command in sync.
         val angleCommand = angle.coerceIn(-90.0, 90.0)
         // ITD uses the normalized physical azimuth, not the clamped DSP command.
-        val theta = abs(angle) * PI / 180.0
-        val itdUs = (0.0875 / 343.0 * (theta + kotlin.math.sin(theta)) * 1_000_000.0).coerceIn(0.0, 700.0)
+        // Preserve sign: positive and negative azimuths represent opposite interaural delays.
+        val theta = kotlin.math.abs(angle) * PI / 180.0
+        val itdMagnitudeUs = (0.0875 / 343.0 * (theta + kotlin.math.sin(theta)) * 1_000_000.0)
+            .coerceIn(0.0, 700.0)
+        val itdUs = when {
+            angle < 0.0 -> -itdMagnitudeUs
+            angle > 0.0 -> itdMagnitudeUs
+            else -> 0.0
+        }
         return AcousticRoomCalibration(
             widthM, heightM, depthM, volume, area, alpha, equivalentAbsorption,
             sabine, eyring, schroeder, ratio, widthCommand, angleCommand.toFloat(), itdUs, material.label
