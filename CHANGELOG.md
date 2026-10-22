@@ -1,6 +1,6 @@
 # CHANGELOG — Sin publicar — Toolchain nativa C++26
 
-- Se configura el motor Android, el daemon Magisk y los tests host con `CMAKE_CXX_STANDARD=26`, CMake 3.28.0 y Android NDK r27d (27.2.12479018).
+- Se configura el motor Android, el daemon Magisk y los tests host con `CMAKE_CXX_STANDARD=26`, CMake 3.30.3 y Android NDK r27d (27.2.12479018).
 - CI fija Clang 18 en las pruebas host para evitar el compilador GCC 11 del runner, que no acepta el dialecto C++26; el daemon independiente usa el CMake instalado por el SDK.
 - No se declara listo para release hasta que CI demuestre compilación nativa, APK y pruebas completas.
 
