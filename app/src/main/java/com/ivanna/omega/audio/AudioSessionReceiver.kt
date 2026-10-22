@@ -72,8 +72,12 @@ class AudioSessionReceiver : BroadcastReceiver() {
 
         // El reproductor propio de IVANNA ya ejecuta DSPBridge + su cadena espacial
         // antes de escribir en AudioTrack. No adjuntar omega_effect ni los efectos
-        // globales a esa misma sesión: produciría doble procesamiento. Las sesiones
-        // de otras apps (Spotify/YouTube, etc.) siguen pasando por el manager global.
+        // globales a esa misma sesión: produciría doble procesamiento. Si Android/OEM
+        // omite el paquete, no podemos demostrar que sea de terceros: fail-closed.
+        if (packageName.isNullOrBlank()) {
+            Log.w(TAG, "Sesión ignorada: el broadcast no incluye packageName (id=$sessionId)")
+            return
+        }
         if (packageName == context.packageName) {
             Log.v(TAG, "Sesión propia de IVANNA excluida del manager global: id=$sessionId")
             return
