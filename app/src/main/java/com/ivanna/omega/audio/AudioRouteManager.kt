@@ -253,28 +253,44 @@ object AudioRouteManager {
         )
     }
 
+    private fun refreshBluetoothLatencyProfileAsync(context: Context) {
+        BluetoothAudioProfiler.invalidate()
+        Thread({
+            // AudioManager enumera endpoints conectados, no garantiza cuál está activo.
+            // Solo perfilar cuando hay una única dirección A2DP inequívoca.
+            val selectedAddress = runCatching {
+                val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                val addresses = manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    ?.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+                    ?.map { it.address }
+                    .orEmpty()
+                BluetoothOutputRatePolicy.selectUnambiguousAddress(addresses)
+            }.getOrNull()
+            runCatching { BluetoothAudioProfiler.refresh(context, selectedAddress) }
+        }, "BtAudioProfilerRefresh").start()
+    }
+
     private fun applyRoute(route: OutputRoute) {
-        if (route == currentRoute) return
+        if (route == currentRoute) {
+            // El endpoint Bluetooth puede cambiar sin que cambie la categoría BLUETOOTH.
+            // Invalida el resultado anterior y actualiza ambos perfiles sin bloquear el callback.
+            if (route == OutputRoute.BLUETOOTH) {
+                val generation = routeGeneration.incrementAndGet()
+                applyProfileFor(route, BluetoothRouteProfilePolicy.fallback())
+                appContextRef?.let { ctx ->
+                    refreshBluetoothLatencyProfileAsync(ctx)
+                    refreshBluetoothCodecProfileAsync(ctx, generation)
+                }
+            }
+            return
+        }
         val previousRoute = currentRoute
         val generation = routeGeneration.incrementAndGet()
         currentRoute = route
         appContextRef?.let { ctx ->
             runCatching { AudioPipeline.syncHardwareSampleRate(ctx) }
             if (route == OutputRoute.BLUETOOTH) {
-                BluetoothAudioProfiler.invalidate()
-                Thread({
-                    // AudioManager enumerates connected endpoints, not the active sink.
-                    // Only profile A2DP when a single endpoint has a reliable address.
-                    val selectedAddress = runCatching {
-                        val manager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                        val addresses = manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-                            ?.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
-                            ?.map { it.address }
-                            .orEmpty()
-                        BluetoothOutputRatePolicy.selectUnambiguousAddress(addresses)
-                    }.getOrNull()
-                    runCatching { BluetoothAudioProfiler.refresh(ctx, selectedAddress) }
-                }, "BtAudioProfilerRefresh").start()
+                refreshBluetoothLatencyProfileAsync(ctx)
             } else {
                 // Never retain an A2DP codec/latency profile while USB, AUX or speaker owns output.
                 BluetoothAudioProfiler.invalidate()
