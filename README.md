@@ -119,7 +119,7 @@ Los paquetes de [Releases](https://github.com/luisurielpimentelperez814-design/I
 
 - Android Studio y JDK 17 para el proyecto Android.
 - Android SDK 35 y NDK 27.2.12479018, según la configuración del proyecto.
-- CMake 3.28.0 y Gradle Wrapper del repositorio.
+- CMake 3.30.3 y Gradle Wrapper del repositorio.
 - Node.js 22 y npm para compilar el paquete web FotoHolo integrado.
 - Un entorno Linux compatible con los comandos de CI para reproducir la suite nativa completa.
 
