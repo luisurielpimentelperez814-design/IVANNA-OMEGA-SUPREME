@@ -55,4 +55,19 @@ class AudioTrackClockDriftServoTest {
         resampler.setClockCorrectionPpm(Double.NaN)
         assertSame(input, resampler.process(input))
     }
+    @Test fun roomCalibrationUsesBoundedEstimatesAndRejectsImpossibleBounds() {
+        val valid = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = 45.0)!!
+        assertEquals(52.0, valid.volumeM3, 0.0001)
+        assertTrue(valid.sabineRt60Seconds in 0.05..20.0)
+        assertTrue(valid.eyringRt60Seconds in 0.05..20.0)
+        assertTrue(valid.schroederHz.isFinite() && valid.schroederHz > 0.0)
+        assertTrue(valid.spatialWidth in 0.75f..1.5f)
+        assertEquals(45.0f, valid.spatialAngleDeg, 0.0001f)
+        assertTrue(!valid.measuredRirAvailable)
+        assertEquals(null, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(0.0, 2.6, 4.0))
+        val hard = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.materials[0])!!
+        val treated = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.materials[2])!!
+        assertTrue(treated.sabineRt60Seconds < hard.sabineRt60Seconds)
+    }
+
 }
