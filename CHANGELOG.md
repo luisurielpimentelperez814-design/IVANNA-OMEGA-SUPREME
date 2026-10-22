@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Read-back nativo de escena física RP-88
+
+- Se expone por JNI el estado almacenado de oclusión y absorción de pared del `PhysicalSceneRenderer` y se reporta en `rp88_calibration.json` junto con su confirmación contra los valores solicitados.
+- Los setters nativos ignoran controles no finitos para impedir que NaN/Inf contaminen el estado persistente de la escena.
+- El read-back confirma parámetros de control DSP, no una medición acústica; el bloqueo RP-88 completo sigue sin declararse porque faltan read-back del ángulo y respuesta/RIR medidos.
+
+---
+
 # CHANGELOG — Sin publicar — MAJESTY 3D azimut esférico 360°
 
 - `ObjectRenderer` conserva el hemisferio trasero: deja de recortar los azimuts a ±90° y envuelve la orientación relativa a la cabeza a [-180°, 180°].
