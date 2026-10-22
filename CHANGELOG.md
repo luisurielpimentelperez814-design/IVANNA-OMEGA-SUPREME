@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.123 (414) — SAFMUS Bluetooth: coincidencia estricta del dispositivo
+
+- El reproductor propio consulta el códec A2DP solo si Android expone una dirección estable y no vacía para la salida seleccionada; nunca toma el códec del primer auricular conectado por defecto.
+- Si la dirección no está disponible o la tasa negociada no es fiable, usa el fallback seguro de 48 kHz y conserva el procesamiento de la ruta propia.
+- Se añaden pruebas JVM para direcciones válidas, nulas y en blanco; se actualiza el contrato de aceptación SAFMUS para separar estado de software de validación física.
+- **Alcance:** no habilita control del reloj remoto Bluetooth ni integración del HAL Qualcomm; la validación física A2DP/USB sigue siendo obligatoria.
+
+---
+
 # CHANGELOG — v2.5.122 (413) — SAFMUS Plan 10D: salida Bluetooth propia
 
 - El reproductor propio selecciona la tasa A2DP anunciada por el códec activo cuando está disponible, con fallback a 48 kHz y prioridad de DAC USB-C.
