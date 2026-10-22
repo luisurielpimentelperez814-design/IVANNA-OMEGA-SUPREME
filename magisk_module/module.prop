@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.119
-versionCode=410
+version=v2.5.120
+versionCode=411
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.119: FIR cutoff normalization fix and passband regression coverage
+description=v2.5.120: RP-88 signed ITD, C++26 and USB FIR validation
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
