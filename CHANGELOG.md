@@ -1,3 +1,10 @@
+# CHANGELOG — Sin publicar — Contrato documental C++26
+
+- Actualiza la ficha de ingeniería, la guía de contribución y la matriz de cableado para que describan el estándar C++26 ya compilado en Android, daemon y host.
+- No cambia código ni versión publicada; queda sujeto a CI.
+
+---
+
 # CHANGELOG — Sin publicar — Toolchain nativa C++26
 
 - Se configura el motor Android, el daemon Magisk y los tests host con `CMAKE_CXX_STANDARD=26`, CMake 3.30.3 y Android NDK r27d (27.2.12479018).
