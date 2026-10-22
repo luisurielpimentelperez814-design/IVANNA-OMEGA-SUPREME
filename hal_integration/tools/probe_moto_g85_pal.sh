@@ -147,7 +147,7 @@ for f in /vendor/etc/audio/sku_blair/resourcemanager_blair_qrd.xml \
   H="$(grep -n -i -E 'dynamic.?resampler|resampler|mfc|rat.?render|module.?id|param.?id|graph|device.?pp.?m|drift|rate.?adapt|asrc|slip' "$f" 2>/dev/null | head -100)"
   [ -n "$H" ] || continue
   say "### $f"
-  printf '%s\\n' "$H" >> "$R"
+  printf '%s\n' "$H" >> "$R"
 done
 
 say "--- Nombres de controles tinymix (muestra; no se escribe ningún valor)"
