@@ -1,7 +1,7 @@
 # CHANGELOG — Sin publicar — Despliegue estricto SAF/SOFA/RIR/HRTF
 
 - El instalador Magisk rechaza SAF ausente/corrupto y lo activa solo tras copia temporal y comparación byte a byte; SOFA (239, incl. 200 ARI), RIR (200 WAV + metadata) y HRTF (12 IHR1 con índice SHA-256) se validan antes de activar el despliegue.
-- El workflow de empaquetado verifica los conteos esperados en el árbol fuente y que el ZIP conserve todos los archivos. Los gates de host pasan, pero el build Android/ZIP de esta rama sigue pendiente de CI; no se declara release validado ni se cambia la versión publicada.
+- El workflow de empaquetado verifica los conteos esperados en el árbol fuente y que el ZIP conserve todos los archivos. La publicación queda condicionada a CI verde y a validar el APK/ZIP final; no se cambia la versión publicada en esta rama.
 
 ---
 
