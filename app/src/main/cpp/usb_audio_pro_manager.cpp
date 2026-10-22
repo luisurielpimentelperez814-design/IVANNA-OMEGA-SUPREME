@@ -245,12 +245,16 @@ public:
 
         int produced = 0;
         while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
-            int base = static_cast<int>(phase_);
-            const double frac = phase_ - static_cast<double>(base);
-            int phaseIndex = static_cast<int>(frac * kPhases + 0.5);
-            // Rounded phase 1.0 belongs to the next source frame, not phase 0
-            // of the current frame; advancing base prevents a one-step glitch.
-            if (phaseIndex >= kPhases) { ++base; phaseIndex = 0; }
+            int base = 0;
+            int phaseIndex = 0;
+            const auto phaseDisposition = ivanna::audio::normalizeUsbAsrcPhase(
+                phase_, inputFrames, kPhases, base, phaseIndex);
+            if (phaseDisposition != ivanna::audio::UsbAsrcPhaseDisposition::Ready) {
+                // The rounded phase belongs to the next block (or the phase is
+                // invalid). Defer one output rather than reading past inputFrames.
+                phase_ = static_cast<double>(inputFrames);
+                break;
+            }
             const float* coeff = kernel_[phaseIndex];
             for (int ch = 0; ch < channels_; ++ch) {
                 double sum = 0.0;
