@@ -189,10 +189,9 @@ object AudioRouteManager {
      */
     private fun refreshBluetoothCodecProfileAsync(context: Context, generation: Long) {
         Thread({
-            // Match the codec query to the A2DP output selected from Android's device list.
-            // Missing/ambiguous address means no codec inference; the detector fails closed.
             // getDevices() lists connected endpoints, not the active system route.
-            // Only one A2DP candidate is unambiguous here; multiple headsets must use fallback.
+            // Only one A2DP candidate allows a codec query; multiple headsets must use fallback.
+            // Missing/ambiguous identity must not borrow codec OR vendor-bitrate metadata.
             val a2dpAddresses = runCatching {
                 val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
                 manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -218,6 +217,9 @@ object AudioRouteManager {
             ) {
                 Log.i(TAG, "BT codec resolved asynchronously: ${info.codec} @ ${info.sampleRateHz}Hz/${info.bitsPerSample}bit")
                 BluetoothRouteProfilePolicy.forCodec(info.codec)
+            } else if (selectedAddress == null) {
+                // A vendor-global bitrate cannot safely identify which of multiple headsets it describes.
+                BluetoothRouteProfilePolicy.fallback()
             } else {
                 fallbackBluetoothProfile()
             }
