@@ -70,6 +70,15 @@ class AudioSessionReceiver : BroadcastReceiver() {
             return
         }
 
+        // El reproductor propio de IVANNA ya ejecuta DSPBridge + su cadena espacial
+        // antes de escribir en AudioTrack. No adjuntar omega_effect ni los efectos
+        // globales a esa misma sesión: produciría doble procesamiento. Las sesiones
+        // de otras apps (Spotify/YouTube, etc.) siguen pasando por el manager global.
+        if (packageName == context.packageName) {
+            Log.v(TAG, "Sesión propia de IVANNA excluida del manager global: id=$sessionId")
+            return
+        }
+
         when (intent.action) {
             AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION -> {
                 Log.i(TAG, "Nueva sesion de audio: id=$sessionId pkg=$packageName")
