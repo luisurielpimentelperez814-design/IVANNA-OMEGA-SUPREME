@@ -296,6 +296,8 @@ object NativeBridge {
     // ── EJES ESPACIALES 3, 5, 6: RoomProjection, PhysicalScene, HearingAdaptation ──
     @JvmStatic external fun setRoomProjectionParams(inversionGain: Float, projectionWet: Float)
     @JvmStatic external fun setPhysicalSceneParams(occlusionFactor: Float, wallAbsorption: Float)
+    /** [occlusion, wall absorption] as stored by native DSP; not a room measurement. */
+    @JvmStatic external fun getPhysicalSceneSnapshot(): FloatArray?
     @JvmStatic external fun setHearingAdaptationParams(
         earTipSeal: Float,
         listeningSplDb: Float,
@@ -311,6 +313,10 @@ object NativeBridge {
     fun safeSetPhysicalSceneParams(occlusionFactor: Float = 0.0f, wallAbsorption: Float = 0.30f) {
         if (isLoaded) runCatching { setPhysicalSceneParams(occlusionFactor, wallAbsorption) }
     }
+    fun safeGetPhysicalSceneSnapshot(): FloatArray? =
+        if (isLoaded) runCatching { getPhysicalSceneSnapshot() }.getOrNull()
+            ?.takeIf { it.size >= 2 && it[0].isFinite() && it[1].isFinite() }
+        else null
     fun safeSetHearingAdaptationParams(
         earTipSeal: Float = 1.0f,
         listeningSplDb: Float = 75.0f,
