@@ -17,4 +17,11 @@ class BluetoothOutputRatePolicyTest {
         assertEquals(48_000, BluetoothOutputRatePolicy.select(176_400))
         assertEquals(48_000, BluetoothOutputRatePolicy.select(-1))
     }
+
+    @Test fun codecLookupRequiresAnUnambiguousSelectedDeviceAddress() {
+        assertEquals(true, BluetoothOutputRatePolicy.hasReliableDeviceAddress("AA:BB:CC:DD:EE:FF"))
+        assertEquals(false, BluetoothOutputRatePolicy.hasReliableDeviceAddress(null))
+        assertEquals(false, BluetoothOutputRatePolicy.hasReliableDeviceAddress(""))
+        assertEquals(false, BluetoothOutputRatePolicy.hasReliableDeviceAddress("   "))
+    }
 }
