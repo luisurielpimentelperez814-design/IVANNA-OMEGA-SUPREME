@@ -291,7 +291,7 @@ private:
     void buildKernel() noexcept {
         // For downsampling, cutoff is below output/input Nyquist; for
         // upsampling, cutoff stays below input Nyquist to suppress images.
-        const double cutoff = ivanna::audio::usbAsrcCutoffCyclesPerSample(inputRate_, outputRate_);
+        const double cutoff = ivanna::audio::usbAsrcCutoffNyquistNormalized(inputRate_, outputRate_);
         constexpr double center = (kTaps - 1) * 0.5;
         for (int p = 0; p < kPhases; ++p) {
             const double frac = static_cast<double>(p) / kPhases;
