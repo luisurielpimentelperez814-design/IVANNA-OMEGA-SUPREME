@@ -8,11 +8,11 @@
 
 ---
 
-# CHANGELOG — Sin publicar — Acta de inserción del reloj HAL/ASRC
+## HAL/ASRC — Contrato de integración y límites de validación
 
 - Añadidos `docs/adr/0002-hal-audio-hardware-clock-asrc.md` y `docs/ACTA_INSERCION_RELOJ_HAL_ASRC.md` con contrato de seguridad, límites de servo y puertas de aceptación.
 - Estado declarado explícitamente: las primitivas C++ y pruebas host no demuestran el control físico del HAL. El seam PAL debe enlazarse a una consulta real de frame/timestamp y al actuador ASRC existente; no se adivinan APIs propietarias.
-- No se incrementa la versión de release ni se afirma validación en dispositivo en este cambio documental.
+- La versión `v2.5.117` corresponde a los cambios FIR/AR de esta rama; esta documentación no certifica control físico del HAL ni validación en dispositivo.
 
 ---
 
