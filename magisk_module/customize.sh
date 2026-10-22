@@ -36,7 +36,7 @@ verify_tree_equal() {
     VERIFY_DST="$2"
     [ -d "$VERIFY_SRC" ] && [ -d "$VERIFY_DST" ] || return 1
     for VERIFY_FILE in $(find "$VERIFY_SRC" -type f); do
-        VERIFY_REL="${VERIFY_FILE#"$VERIFY_SRC"/}"
+        VERIFY_REL=${VERIFY_FILE#"$VERIFY_SRC"/}
         [ -f "$VERIFY_DST/$VERIFY_REL" ] && cmp -s "$VERIFY_FILE" "$VERIFY_DST/$VERIFY_REL" || return 1
     done
     [ "$(find "$VERIFY_SRC" -type f | wc -l | tr -d '[:space:]')" = "$(find "$VERIFY_DST" -type f | wc -l | tr -d '[:space:]')" ]
