@@ -108,6 +108,46 @@ class StereoAudioResamplerTest {
         assertTrue("18 kHz passband was attenuated during 96→48 kHz downsampling: rms=$rms", rms in 0.30..0.40)
     }
 
+    @Test fun chunkedProcessingPreservesPhaseAndOutputAgainstSingleBlock() {
+        val inputRate = 44_100
+        val targetRate = 96_000
+        val frames = 8_192
+        val input = FloatArray(frames * 2)
+        for (i in 0 until frames) {
+            val sample = (0.7 * sin(2.0 * PI * 997.0 * i / inputRate)).toFloat()
+            input[2 * i] = sample
+            input[2 * i + 1] = sample
+        }
+
+        val oneBlock = StereoAudioResampler(targetRate).apply {
+            setInputSampleRate(inputRate)
+        }.process(input)
+
+        val chunkedResampler = StereoAudioResampler(targetRate).apply {
+            setInputSampleRate(inputRate)
+        }
+        val chunks = ArrayList<FloatArray>()
+        var offset = 0
+        while (offset < frames) {
+            val count = minOf(257, frames - offset)
+            chunks += chunkedResampler.process(input.copyOfRange(offset * 2, (offset + count) * 2))
+            offset += count
+        }
+        val chunked = FloatArray(chunks.sumOf { it.size })
+        var write = 0
+        for (chunk in chunks) {
+            chunk.copyInto(chunked, write)
+            write += chunk.size
+        }
+
+        assertEquals("output frame count changed across chunk boundaries", oneBlock.size, chunked.size)
+        var maxError = 0.0
+        for (i in oneBlock.indices) {
+            maxError = maxOf(maxError, abs(oneBlock[i].toDouble() - chunked[i].toDouble()))
+        }
+        assertTrue("chunk boundary caused phase/discontinuity error: $maxError", maxError < 1.0e-4)
+    }
+
     @Test fun clockCorrectionIsFiniteAndBounded() {
         val resampler = StereoAudioResampler(96_000)
         resampler.setInputSampleRate(44_100)
