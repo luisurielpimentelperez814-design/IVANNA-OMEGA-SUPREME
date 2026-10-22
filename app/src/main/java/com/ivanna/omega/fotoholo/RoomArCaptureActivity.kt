@@ -186,7 +186,6 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 latestCalibrationApplied = false
                 latestCalibrationLockRequested = false
                 latestSpatialWidthReadback = Float.NaN
-        latestSpatialAngleReadback = Float.NaN
                 latestSpatialAngleReadback = Float.NaN
                 latestRealityIntensityReadback = Float.NaN
                 latestAntiDolbyIntensityReadback = Float.NaN
