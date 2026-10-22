@@ -191,10 +191,12 @@ object AudioRouteManager {
                 manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                     ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
             }.getOrNull()
-            val info = if (selectedA2dp == null) {
+            val selectedAddress = selectedA2dp?.address?.takeIf { it.isNotBlank() }
+            val info = if (selectedAddress == null) {
+                // Without a reliable address, do not borrow another connected headset's codec.
                 BluetoothCodecDetector.CodecInfo(BluetoothCodecDetector.RealCodec.UNAVAILABLE, 0, 0)
             } else runCatching {
-                BluetoothCodecDetector.detectActiveCodec(context, selectedA2dp.address)
+                BluetoothCodecDetector.detectActiveCodec(context, selectedAddress)
             }.getOrElse {
                     Log.w(TAG, "BT codec lookup failed; keeping conservative route profile", it)
                     BluetoothCodecDetector.CodecInfo(
