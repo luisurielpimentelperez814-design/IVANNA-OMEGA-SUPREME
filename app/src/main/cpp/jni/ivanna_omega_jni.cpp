@@ -3394,6 +3394,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAntiDolbyIntensity(
     }
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAntiDolbyIntensity(JNIEnv*, jobject) {
+    // Read-back of the command sent to the DSP wet path; this is not measured output audio.
+    return g_nho_wet_spatial.load(std::memory_order_relaxed);
+}
+
 static std::atomic<float> g_spsc_ring_factor{1.0f};
 
 JNIEXPORT void JNICALL
