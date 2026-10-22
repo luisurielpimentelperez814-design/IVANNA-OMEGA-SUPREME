@@ -9,6 +9,9 @@ class IvannaSpatialEngine private constructor() {
     companion object {
         val shared: IvannaSpatialEngine = IvannaSpatialEngine()
 
+        /** Isolated delay/history state for an app-owned playback stream. */
+        internal fun createIsolated(): IvannaSpatialEngine = IvannaSpatialEngine()
+
         @Volatile var enabled: Boolean = true
         val reducedComplexity: Boolean
             get() = shared.reducedComplexity
