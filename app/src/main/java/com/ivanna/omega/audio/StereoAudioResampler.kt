@@ -114,7 +114,8 @@ class StereoAudioResampler(
     }
 
     fun process(input: FloatArray): FloatArray {
-        if (inputRate == targetRate && clockCorrectionPpm == 0.0) {
+        if (inputRate == targetRate && clockCorrectionPpm == 0.0 &&
+            input.all { it.isFinite() }) {
             rememberPassThrough(input)
             return input
         }
