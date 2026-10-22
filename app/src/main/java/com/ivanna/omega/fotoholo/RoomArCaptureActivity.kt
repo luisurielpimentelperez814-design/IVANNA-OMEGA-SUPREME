@@ -476,7 +476,9 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .put("measuredRirAvailable", false)
             .put("reason", "AR point-cloud bounds are empty or outside the supported physical range.")
         result.put("rp88LockRequested", latestCalibrationLockRequested)
-            .put("rp88LockApplied", latestCalibrationApplied)
+            .put("spatialWidthReadbackConfirmed", latestCalibrationApplied)
+            .put("rp88LockFullyConfirmed", false)
+            .put("fullLockConfirmationUnavailable", "Native read-back for reality intensity, Anti-Dolby intensity and physical-scene absorption is not exposed.")
             .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded)
             .put("spatialWidthReadback", if (latestSpatialWidthReadback.isFinite()) latestSpatialWidthReadback.toDouble() else JSONObject.NULL)
             .put("commandValues", JSONObject()
@@ -520,12 +522,13 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         getSharedPreferences("ivanna_rp88_acoustic_calibration", MODE_PRIVATE).edit()
             .putString("calibration_json", calibration.toJson().toString())
             .putBoolean("lock_requested", true)
-            .putBoolean("native_apply_confirmed", applied)
+            .putBoolean("spatial_width_readback_confirmed", applied)
+            .putBoolean("rp88_lock_fully_confirmed", false)
             .putFloat("spatial_width_readback", if (readback.isFinite()) readback else -1f)
             .putLong("updated_at_ms", System.currentTimeMillis())
             .apply()
         statusView.text = if (applied) {
-            "RP-88 LOCK · comandos nativos enviados y ancho leído de vuelta (${String.format(Locale.US, "%.2f", readback)}). RT60/RIR siguen siendo estimaciones; no es calibración acústica medida."
+            "RP-88 PARCIAL · ancho espacial leído de vuelta (${String.format(Locale.US, "%.2f", readback)}); intensidad/absorción no tienen read-back. RT60/RIR son estimaciones, no mediciones."
         } else {
             "RP-88: estimación guardada, pero el motor nativo no confirmó el ancho solicitado. No se declara LOCK efectivo. Exporta rp88_calibration.json para inspección."
         }
