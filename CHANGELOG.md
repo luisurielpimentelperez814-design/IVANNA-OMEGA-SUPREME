@@ -1,3 +1,10 @@
+# CHANGELOG — Sin publicar — Despliegue estricto SAF/SOFA/RIR/HRTF
+
+- El instalador Magisk rechaza SAF ausente/corrupto y lo activa solo tras copia temporal y comparación byte a byte; SOFA (239, incl. 200 ARI), RIR (200 WAV + metadata) y HRTF (12 IHR1 con índice SHA-256) se validan antes de activar el despliegue.
+- El workflow de empaquetado verifica los conteos esperados en el árbol fuente y que el ZIP conserve todos los archivos. Los gates de host pasan, pero el build Android/ZIP de esta rama sigue pendiente de CI; no se declara release validado ni se cambia la versión publicada.
+
+---
+
 # CHANGELOG — Sin publicar — Read-back nativo RP-88
 
 - Se exponen getters JNI para la intensidad de realidad y Anti-Dolby y se guardan sus valores leídos tras aplicar LOCK, junto con el ancho espacial, en el JSON exportado y las preferencias locales.
