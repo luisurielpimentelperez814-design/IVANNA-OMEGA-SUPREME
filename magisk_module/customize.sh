@@ -72,8 +72,8 @@ run_low_priority cp -f "$RIR_SRC"/rir_*.wav "$RIR_STAGE/" || abort "ERROR: fall�
 run_low_priority cp -f "$RIR_SRC/metadata.csv" "$RIR_STAGE/metadata.csv" || abort "ERROR: falló la copia de metadata RIR"
 RIR_STAGE_COUNT=$(find "$RIR_STAGE" -maxdepth 1 -type f -name 'rir_*.wav' | wc -l | tr -d '[:space:]')
 [ "$RIR_STAGE_COUNT" -eq 200 ] && [ -s "$RIR_STAGE/metadata.csv" ] || abort "ERROR: validación del despliegue RIR falló ($RIR_STAGE_COUNT/200)"
-set_perm_recursive "$RIR_STAGE" root root 0755 0644
-rm -rf "$RIR_DEST"
+set_perm_recursive "$RIR_STAGE" root root 0755 0644 || abort "ERROR: no se pudieron fijar permisos RIR"
+rm -rf "$RIR_DEST" || abort "ERROR: no se pudo sustituir el dataset RIR anterior"
 mv "$RIR_STAGE" "$RIR_DEST" || abort "ERROR: no se pudo activar el dataset RIR validado"
 ui_print "  ✓ RIR validado y desplegado: $RIR_DEST ($RIR_STAGE_COUNT/200 salas)"
 # ── DSP libraries ─────────────────────────────────────────────────────────────
@@ -110,8 +110,8 @@ for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1
 done
 cd "$MODPATH" || abort "ERROR: no se pudo volver al módulo tras validar HRTF"
 [ "$HRTF_OK" -eq 1 ] || abort "ERROR: validación SHA-256 HRTF falló; se cancela la instalación"
-set_perm_recursive "$HRTF_STAGE" root root 0755 0644
-rm -rf "$HRTF_DST"
+set_perm_recursive "$HRTF_STAGE" root root 0755 0644 || abort "ERROR: no se pudieron fijar permisos HRTF"
+rm -rf "$HRTF_DST" || abort "ERROR: no se pudo sustituir el dataset HRTF anterior"
 mv "$HRTF_STAGE" "$HRTF_DST" || abort "ERROR: no se pudo activar el dataset HRTF validado"
 ui_print "  ✓ HRTF validado y desplegado: $HRTF_DST ($HRTF_STAGE_COUNT/12 sujetos)"
 # ── SOFA dataset deployment ───────────────────────────────────────────────────
@@ -138,8 +138,8 @@ run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_STAGE/" || abort "ERROR: falló la 
 SOFA_STAGE_COUNT=$(find "$SOFA_STAGE" -type f -name '*.sofa' | wc -l | tr -d '[:space:]')
 SOFA_ARI_STAGE_COUNT=$(find "$SOFA_STAGE/ari" -type f -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
 [ "$SOFA_STAGE_COUNT" -eq 239 ] && [ "$SOFA_ARI_STAGE_COUNT" -eq 200 ] || abort "ERROR: despliegue SOFA incompleto (total=$SOFA_STAGE_COUNT/239, ARI=$SOFA_ARI_STAGE_COUNT/200)"
-set_perm_recursive "$SOFA_STAGE" root root 0755 0644
-rm -rf "$SOFA_DEST"
+set_perm_recursive "$SOFA_STAGE" root root 0755 0644 || abort "ERROR: no se pudieron fijar permisos SOFA"
+rm -rf "$SOFA_DEST" || abort "ERROR: no se pudo sustituir el dataset SOFA anterior"
 mv "$SOFA_STAGE" "$SOFA_DEST" || abort "ERROR: no se pudo activar el dataset SOFA validado"
 ui_print "  ✓ SOFA validado y desplegado: $SOFA_DEST ($SOFA_STAGE_COUNT total, $SOFA_ARI_STAGE_COUNT ARI)"
 # ── Fusión dinámica de audio_effects.xml ──────────────────────────────────────
