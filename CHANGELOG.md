@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Read-back nativo de escena física RP-88
+
+- Expone el read-back JNI de los parámetros de oclusión y absorción guardados por el DSP y los exporta en el informe de calibración.
+- Rechaza valores NaN/Inf y publica los controles de escena con atómicos para evitar carreras entre JNI y el callback de audio.
+- El read-back confirma estado de comando DSP, no una medición acústica; RP-88 no se marca como bloqueo físico completo sin RIR/respuesta medida.
+
+---
+
 # CHANGELOG — Sin publicar — Toolchain nativa C++26
 
 - Se configura el motor Android, el daemon Magisk y los tests host con `CMAKE_CXX_STANDARD=26`, CMake 3.30.3 y Android NDK r27d (27.2.12479018).
