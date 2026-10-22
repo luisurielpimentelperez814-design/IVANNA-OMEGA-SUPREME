@@ -31,11 +31,11 @@ public:
     }
 
     void setOcclusion(float occ) noexcept {
-        occlusionFactor_ = std::clamp(occ, 0.0f, 1.0f);
+        if (std::isfinite(occ)) occlusionFactor_ = std::clamp(occ, 0.0f, 1.0f);
     }
 
     void setWallAbsorption(float abs) noexcept {
-        wallAbsorption_ = std::clamp(abs, 0.05f, 0.95f);
+        if (std::isfinite(abs)) wallAbsorption_ = std::clamp(abs, 0.05f, 0.95f);
     }
 
     // Command-state read-back. These values confirm stored DSP parameters, not acoustic measurements.
