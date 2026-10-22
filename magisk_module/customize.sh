@@ -30,18 +30,52 @@ run_low_priority() {
     fi
 }
 
-# ── SAF model deployment ──────────────────────────────────────────────────────
-SAF_DIR="/data/adb/ivanna_omega"
-ui_print "- Deploying Φ_SAF^∞ SAF_model.json..."
-mkdir -p "$SAF_DIR"
+# Verify every staged file byte-for-byte and reject unexpected/missing files.
+verify_tree_equal() {
+    VERIFY_SRC="$1"
+    VERIFY_DST="$2"
+    [ -d "$VERIFY_SRC" ] && [ -d "$VERIFY_DST" ] || return 1
+    for VERIFY_FILE in $(find "$VERIFY_SRC" -type f); do
+        VERIFY_REL=${VERIFY_FILE#"$VERIFY_SRC"/}
+        [ -f "$VERIFY_DST/$VERIFY_REL" ] && cmp -s "$VERIFY_FILE" "$VERIFY_DST/$VERIFY_REL" || return 1
+    done
+    [ "$(find "$VERIFY_SRC" -type f | wc -l | tr -d '[:space:]')" = "$(find "$VERIFY_DST" -type f | wc -l | tr -d '[:space:]')" ]
+}
 
-if [ -f "$MODPATH/saf/SAF_model.json" ]; then
-    run_low_priority cp -f "$MODPATH/saf/SAF_model.json" "$SAF_DIR/SAF_model.json"
-    set_perm "$SAF_DIR/SAF_model.json" root root 0644
-    ui_print "  ✓ SAF_model.json → $SAF_DIR (214 subjects, K=7)"
-else
-    ui_print "  ! SAF_model.json not found in module — app will use baked constants"
-fi
+# Replace a validated dataset transactionally; restore the old directory if activation fails.
+activate_staged_dir() {
+    ACT_STAGE="$1"
+    ACT_DEST="$2"
+    ACT_BACKUP="${ACT_DEST}.backup.$$"
+    rm -rf "$ACT_BACKUP" || return 1
+    if [ -e "$ACT_DEST" ]; then
+        mv "$ACT_DEST" "$ACT_BACKUP" || return 1
+    fi
+    if mv "$ACT_STAGE" "$ACT_DEST"; then
+        rm -rf "$ACT_BACKUP" 2>/dev/null || true
+        return 0
+    fi
+    if [ -e "$ACT_BACKUP" ]; then
+        mv "$ACT_BACKUP" "$ACT_DEST" || return 2
+    fi
+    return 1
+}
+
+# ── SAF model deployment (fail-closed, staged + byte-verified) ────────────────
+SAF_DIR="/data/adb/ivanna_omega"
+SAF_SRC="$MODPATH/saf/SAF_model.json"
+SAF_DEST="$SAF_DIR/SAF_model.json"
+SAF_STAGE="$SAF_DIR/.SAF_model.json.$$"
+ui_print "- Deploying Φ_SAF^∞ SAF_model.json..."
+[ -s "$SAF_SRC" ] || abort "ERROR: falta SAF_model.json válido en el módulo: $SAF_SRC"
+mkdir -p "$SAF_DIR" || abort "ERROR: no se pudo crear $SAF_DIR"
+rm -f "$SAF_STAGE"
+run_low_priority cp -f "$SAF_SRC" "$SAF_STAGE" || abort "ERROR: no se pudo copiar SAF_model.json"
+[ -s "$SAF_STAGE" ] && cmp -s "$SAF_SRC" "$SAF_STAGE" || abort "ERROR: SAF_model.json copiado incompleto o distinto al original"
+set_perm "$SAF_STAGE" root root 0644 || abort "ERROR: no se pudieron fijar permisos de SAF_model.json"
+mv -f "$SAF_STAGE" "$SAF_DEST" || abort "ERROR: no se pudo activar SAF_model.json validado"
+cmp -s "$SAF_SRC" "$SAF_DEST" || abort "ERROR: SAF_model.json final no coincide byte a byte"
+ui_print "  ✓ SAF_model.json validado e instalado (214 subjects, K=7) → $SAF_DEST"
 
 # ── HRTF dataset deployment ───────────────────────────────────────────────────
 # NOTA (auditoría 2026-08-26): el bloque que desplegaba hrtf_dataset.ihr1 era
@@ -61,46 +95,59 @@ fi
 ui_print "- Deploying RIR dataset (200 measured rooms)..."
 RIR_SRC="$MODPATH/system/etc/ivanna_omega/rir"
 RIR_DEST="$SAF_DIR/rir"
-if [ -d "$RIR_SRC" ] && [ -f "$RIR_SRC/metadata.csv" ]; then
-    mkdir -p "$RIR_DEST"
-    run_low_priority cp -f "$RIR_SRC"/*.wav "$RIR_DEST/" 2>/dev/null
-    run_low_priority cp -f "$RIR_SRC/metadata.csv" "$RIR_DEST/metadata.csv"
-    set_perm_recursive "$RIR_DEST" root root 0755 0644
-    RIR_COUNT=$(ls "$RIR_DEST"/*.wav 2>/dev/null | wc -l)
-    ui_print "  ✓ RIR dataset → $RIR_DEST (${RIR_COUNT} salas)"
-else
-    ui_print "  ! RIR dataset not found in module — room simulation usará síntesis algorítmica"
-fi
-
+[ -d "$RIR_SRC" ] || abort "ERROR: falta el dataset RIR del módulo: $RIR_SRC"
+[ -f "$RIR_SRC/metadata.csv" ] || abort "ERROR: falta RIR metadata.csv"
+RIR_SOURCE_COUNT=$(find "$RIR_SRC" -maxdepth 1 -type f -name 'rir_*.wav' | wc -l | tr -d '[:space:]')
+[ "$RIR_SOURCE_COUNT" -eq 200 ] || abort "ERROR: RIR del módulo incompleto: $RIR_SOURCE_COUNT/200 WAV"
+RIR_STAGE="$SAF_DIR/.rir-stage.$$"
+rm -rf "$RIR_STAGE"
+mkdir -p "$RIR_STAGE" || abort "ERROR: no se pudo preparar el despliegue RIR"
+run_low_priority cp -f "$RIR_SRC"/rir_*.wav "$RIR_STAGE/" || abort "ERROR: falló la copia de WAV RIR"
+run_low_priority cp -f "$RIR_SRC/metadata.csv" "$RIR_STAGE/metadata.csv" || abort "ERROR: falló la copia de metadata RIR"
+RIR_STAGE_COUNT=$(find "$RIR_STAGE" -maxdepth 1 -type f -name 'rir_*.wav' | wc -l | tr -d '[:space:]')
+[ "$RIR_STAGE_COUNT" -eq 200 ] && [ -s "$RIR_STAGE/metadata.csv" ] || abort "ERROR: validación del despliegue RIR falló ($RIR_STAGE_COUNT/200)"
+verify_tree_equal "$RIR_SRC" "$RIR_STAGE" || abort "ERROR: RIR staged difiere byte a byte del original"
+set_perm_recursive "$RIR_STAGE" root root 0755 0644 || abort "ERROR: no se pudieron fijar permisos RIR"
+activate_staged_dir "$RIR_STAGE" "$RIR_DEST" || abort "ERROR: no se pudo activar RIR; se restauró el dataset previo si existía"
+ui_print "  ✓ RIR validado y desplegado: $RIR_DEST ($RIR_STAGE_COUNT/200 salas)"
 # ── DSP libraries ─────────────────────────────────────────────────────────────
 # ── HRTF IHR1 datasets (12 sujetos, 512 taps @ 48kHz) ─────────────────────────
 HRTF_SRC="$MODPATH/system/etc/ivanna_omega/hrtf"
 HRTF_DST="/data/adb/ivanna_omega/hrtf"
-if [ -d "$HRTF_SRC" ] && [ -f "$HRTF_SRC/hrtf_index.json" ]; then
-    ui_print "- Deploying HRTF datasets (IHR1, 12 subjects)..."
-    mkdir -p "$HRTF_DST"
-    run_low_priority cp -f "$HRTF_SRC"/*.ihr1 "$HRTF_SRC/hrtf_index.json" "$HRTF_DST/" 2>/dev/null
-    # Validación por hash contra el índice — rollback si alguno no coincide
-    HRTF_OK=1
-    cd "$HRTF_DST" || { ui_print "  ! no se pudo entrar a $HRTF_DST — se descarta HRTF"; HRTF_OK=0; }
-    for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1/'); do
-        EXPECTED=$(grep -A6 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
-        if [ -n "$EXPECTED" ] && [ -f "$F" ]; then
-            ACTUAL=$(run_low_priority sha256sum "$F" 2>/dev/null | awk '{print $1}')
-            [ "$ACTUAL" = "$EXPECTED" ] || { ui_print "  ! hash mismatch en $F — rollback"; HRTF_OK=0; break; }
-        fi
-    done
-    if [ "$HRTF_OK" = "1" ]; then
-        set_perm_recursive "$HRTF_DST" root root 0755 0644
-        ui_print "  ✓ HRTF: $(ls *.ihr1 | wc -l) sujetos IHR1 verificados → $HRTF_DST"
-    else
-        rm -rf "$HRTF_DST"
-        ui_print "  ! HRTF rollback completo — se usará HRTF sintético (fallback seguro)"
+[ -d "$HRTF_SRC" ] || abort "ERROR: falta el directorio HRTF del módulo"
+[ -f "$HRTF_SRC/hrtf_index.json" ] || abort "ERROR: falta hrtf_index.json"
+HRTF_SOURCE_COUNT=$(find "$HRTF_SRC" -maxdepth 1 -type f -name '*.ihr1' | wc -l | tr -d '[:space:]')
+HRTF_INDEX_COUNT=$(grep -o '"file": *"[^"]*"' "$HRTF_SRC/hrtf_index.json" | wc -l | tr -d '[:space:]')
+[ "$HRTF_SOURCE_COUNT" -eq 12 ] && [ "$HRTF_INDEX_COUNT" -eq 12 ] || abort "ERROR: HRTF/índice incompleto (IHR1=$HRTF_SOURCE_COUNT/12, índice=$HRTF_INDEX_COUNT/12)"
+ui_print "- Deploying HRTF datasets (IHR1, 12 subjects)..."
+HRTF_STAGE="$SAF_DIR/.hrtf-stage.$$"
+rm -rf "$HRTF_STAGE"
+mkdir -p "$HRTF_STAGE" || abort "ERROR: no se pudo preparar el despliegue HRTF"
+run_low_priority cp -f "$HRTF_SRC"/*.ihr1 "$HRTF_SRC/hrtf_index.json" "$HRTF_STAGE/" || abort "ERROR: falló la copia de HRTF"
+HRTF_STAGE_COUNT=$(find "$HRTF_STAGE" -maxdepth 1 -type f -name '*.ihr1' | wc -l | tr -d '[:space:]')
+[ "$HRTF_STAGE_COUNT" -eq 12 ] || abort "ERROR: HRTF copiado incompleto ($HRTF_STAGE_COUNT/12)"
+HRTF_OK=1
+cd "$HRTF_STAGE" || abort "ERROR: no se pudo validar el staging HRTF"
+for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1/'); do
+    EXPECTED=$(grep -A6 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    if [ -z "$EXPECTED" ] || [ ! -s "$F" ]; then
+        ui_print "  ! HRTF inválido o ausente en índice: $F"
+        HRTF_OK=0
+        break
     fi
-    cd "$MODPATH" || abort "! no se pudo volver a $MODPATH tras desplegar HRTF"
-fi
-
-
+    ACTUAL=$(run_low_priority sha256sum "$F" 2>/dev/null | awk '{print $1}')
+    if [ "$ACTUAL" != "$EXPECTED" ]; then
+        ui_print "  ! hash HRTF mismatch en $F"
+        HRTF_OK=0
+        break
+    fi
+done
+cd "$MODPATH" || abort "ERROR: no se pudo volver al módulo tras validar HRTF"
+[ "$HRTF_OK" -eq 1 ] || abort "ERROR: validación SHA-256 HRTF falló; se cancela la instalación"
+verify_tree_equal "$HRTF_SRC" "$HRTF_STAGE" || abort "ERROR: HRTF staged difiere byte a byte del original"
+set_perm_recursive "$HRTF_STAGE" root root 0755 0644 || abort "ERROR: no se pudieron fijar permisos HRTF"
+activate_staged_dir "$HRTF_STAGE" "$HRTF_DST" || abort "ERROR: no se pudo activar HRTF; se restauró el dataset previo si existía"
+ui_print "  ✓ HRTF validado y desplegado: $HRTF_DST ($HRTF_STAGE_COUNT/12 sujetos)"
 # ── SOFA dataset deployment ───────────────────────────────────────────────────
 # FIX (v2.3.0): los archivos SOFA viven en system/etc/ivanna_omega/sofa/ como
 # overlay del sistema pero audioserver (proceso separado de la app) no siempre
@@ -114,17 +161,21 @@ fi
 ui_print "- Deploying SOFA dataset (FreeField + HpIR + ARI headphones)..."
 SOFA_SRC="$MODPATH/system/etc/ivanna_omega/sofa"
 SOFA_DEST="$SAF_DIR/sofa"
-if [ -d "$SOFA_SRC" ] && find "$SOFA_SRC" -name '*.sofa' | grep -q .; then
-    mkdir -p "$SOFA_DEST"
-    run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_DEST/" 2>/dev/null
-    set_perm_recursive "$SOFA_DEST" root root 0755 0644
-    SOFA_COUNT=$(find "$SOFA_DEST" -name '*.sofa' 2>/dev/null | wc -l)
-    ARI_COUNT=$(find "$SOFA_DEST/ari" -name '*.sofa' 2>/dev/null | wc -l)
-    ui_print "  ✓ SOFA → $SOFA_DEST ($SOFA_COUNT archivos AES69, $ARI_COUNT HpIR ARI)"
-else
-    ui_print "  ! SOFA dataset no encontrado en $SOFA_SRC — HRTF usará solo datasets IHR1"
-fi
-
+[ -d "$SOFA_SRC" ] || abort "ERROR: falta el dataset SOFA del módulo"
+SOFA_SOURCE_COUNT=$(find "$SOFA_SRC" -type f -name '*.sofa' | wc -l | tr -d '[:space:]')
+SOFA_ARI_SOURCE_COUNT=$(find "$SOFA_SRC/ari" -type f -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
+[ "$SOFA_SOURCE_COUNT" -eq 239 ] && [ "$SOFA_ARI_SOURCE_COUNT" -eq 200 ] || abort "ERROR: SOFA incompleto (total=$SOFA_SOURCE_COUNT/239, ARI=$SOFA_ARI_SOURCE_COUNT/200)"
+SOFA_STAGE="$SAF_DIR/.sofa-stage.$$"
+rm -rf "$SOFA_STAGE"
+mkdir -p "$SOFA_STAGE" || abort "ERROR: no se pudo preparar el despliegue SOFA"
+run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_STAGE/" || abort "ERROR: falló la copia SOFA"
+SOFA_STAGE_COUNT=$(find "$SOFA_STAGE" -type f -name '*.sofa' | wc -l | tr -d '[:space:]')
+SOFA_ARI_STAGE_COUNT=$(find "$SOFA_STAGE/ari" -type f -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
+[ "$SOFA_STAGE_COUNT" -eq 239 ] && [ "$SOFA_ARI_STAGE_COUNT" -eq 200 ] || abort "ERROR: despliegue SOFA incompleto (total=$SOFA_STAGE_COUNT/239, ARI=$SOFA_ARI_STAGE_COUNT/200)"
+verify_tree_equal "$SOFA_SRC" "$SOFA_STAGE" || abort "ERROR: SOFA staged difiere byte a byte del original"
+set_perm_recursive "$SOFA_STAGE" root root 0755 0644 || abort "ERROR: no se pudieron fijar permisos SOFA"
+activate_staged_dir "$SOFA_STAGE" "$SOFA_DEST" || abort "ERROR: no se pudo activar SOFA; se restauró el dataset previo si existía"
+ui_print "  ✓ SOFA validado y desplegado: $SOFA_DEST ($SOFA_STAGE_COUNT total, $SOFA_ARI_STAGE_COUNT ARI)"
 # ── Fusión dinámica de audio_effects.xml ──────────────────────────────────────
 ui_print "- Configurando audio_effects.xml..."
 TARGET_XML="$MODPATH/system/vendor/etc/audio_effects.xml"
