@@ -52,13 +52,19 @@ class AudioEngine {
         @JvmStatic
         private external fun nativeSetAntiDolbyScoresJni(speech: Float, music: Float, bass: Float)
 
-        fun nativeSetRouteProfileStatic(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float) {
-            if (!libLoaded) return
+        /**
+         * Returns true only when the app-process JNI setter was dispatched without an exception.
+         * This is NOT a DSP read-back and must not be reported as confirmed application.
+         */
+        fun nativeSetRouteProfileStatic(bassBoostDb: Float, dialogBoostDb: Float, widenerMult: Float): Boolean {
+            if (!libLoaded) return false
             val b = if (bassBoostDb.isFinite()) bassBoostDb.coerceIn(-18f, 18f) else 0f
             val d = if (dialogBoostDb.isFinite()) dialogBoostDb.coerceIn(-18f, 18f) else 0f
             val w = if (widenerMult.isFinite()) widenerMult.coerceIn(0f, 3f) else 1f
-            runCatching { nativeSetRouteProfileJni(b, d, w) }
-                .onFailure { Log.w(TAG, "nativeSetRouteProfileStatic: $it") }
+            return runCatching {
+                nativeSetRouteProfileJni(b, d, w)
+                true
+            }.onFailure { Log.w(TAG, "nativeSetRouteProfileStatic: $it") }.getOrDefault(false)
         }
 
         @JvmStatic

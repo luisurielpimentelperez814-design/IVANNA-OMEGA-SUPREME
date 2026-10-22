@@ -36,7 +36,9 @@ object AudioRouteManager {
 
     private var audioManager: AudioManager? = null
     private var deviceCallback: AudioDeviceCallback? = null
-    private var currentRoute: OutputRoute = OutputRoute.UNKNOWN
+    @Volatile private var currentRoute: OutputRoute = OutputRoute.UNKNOWN
+    // Invalidates asynchronous codec lookups when the output route changes.
+    private val routeGeneration = AtomicLong(0L)
     // Application context (no la Activity) para BluetoothCodecDetector —
     // se guarda una sola vez en start(), nunca una referencia de Activity,
     // para no filtrar memoria en este singleton de vida larga.
@@ -77,6 +79,10 @@ object AudioRouteManager {
 
     @Synchronized
     fun stop() {
+        // Invalidate any outstanding codec lookup before releasing route ownership.
+        routeGeneration.incrementAndGet()
+        currentRoute = OutputRoute.UNKNOWN
+        BluetoothAudioProfiler.invalidate()
         // Un restore HRTF diferido no debe dispararse tras detener el manager.
         pendingHrtfRestore?.let { mainHandler.removeCallbacks(it) }
         pendingHrtfRestore = null
@@ -106,31 +112,45 @@ object AudioRouteManager {
     /** Re-apply only the SAFMUS-adjusted DSP profile; do not reset route histories. */
     fun refreshResourceBudgetProfile() {
         val route = currentRoute
-        if (route != OutputRoute.UNKNOWN) applyProfileFor(route)
+        if (route == OutputRoute.UNKNOWN) return
+        if (route == OutputRoute.BLUETOOTH) {
+            // Never block the caller on A2DP proxy acquisition or vendor parameters.
+            applyProfileFor(route, BluetoothRouteProfilePolicy.fallback())
+            val generation = routeGeneration.incrementAndGet()
+            appContextRef?.let { refreshBluetoothCodecProfileAsync(it, generation) }
+        } else {
+            applyProfileFor(route)
+        }
     }
 
     fun detectOutputRoute(am: AudioManager): OutputRoute {
-        val outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        return when {
-            outputs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET } ->
-                OutputRoute.BLUETOOTH
-            outputs.any {
-                it.type == AudioDeviceInfo.TYPE_USB_HEADSET || it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
-            } -> OutputRoute.USB
-            outputs.any {
-                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_AUX_LINE
-            } -> OutputRoute.WIRED_AUX
-            outputs.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER } -> OutputRoute.SPEAKER
-            else -> OutputRoute.UNKNOWN
-        }
+        val outputs = runCatching { am.getDevices(AudioManager.GET_DEVICES_OUTPUTS) }
+            .getOrNull().orEmpty()
+        return OutputRoutePolicy.select(
+            usbConnected = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                    it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+            },
+            bluetoothConnected = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+            },
+            wiredConnected = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_AUX_LINE
+            },
+            speakerConnected = outputs.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+        )
     }
 
     fun profileFor(route: OutputRoute): RouteProfile = when (route) {
         // SBC/AAC pierden presencia 2-4kHz y el estéreo se degrada al
         // recodificar; se compensa diálogo y se reduce ancho.
-        OutputRoute.BLUETOOTH -> btProfile()
+        // Public profile query must stay non-blocking; async lookup refines this fallback.
+        OutputRoute.BLUETOOTH -> BluetoothRouteProfilePolicy.fallback()
         // AUX cableado y USB-C DAC: mismo path unificado de línea/audífonos
         // con respuesta limpia y compensación coherente.
         OutputRoute.WIRED_AUX,
@@ -159,90 +179,93 @@ object AudioRouteManager {
         }
     }
 
-    private fun btProfile(): RouteProfile {
-        // Señal primaria: códec A2DP real vía API pública (BluetoothA2dp.
-        // getCodecStatus) — reemplaza el heurístico de bitrate como fuente
-        // de verdad principal. Cada códec tiene un perfil propio basado en
-        // su calidad real documentada, no un umbral binario.
-        appContextRef?.let { context ->
-            val info = BluetoothCodecDetector.detectActiveCodec(context)
-            if (info.codec != BluetoothCodecDetector.RealCodec.UNAVAILABLE &&
-                info.codec != BluetoothCodecDetector.RealCodec.UNKNOWN) {
-                Log.i(TAG, "Códec BT real detectado: ${info.codec} @ ${info.sampleRateHz}Hz/${info.bitsPerSample}bit")
-                return profileForRealCodec(info)
-            }
-        }
-        // Fallback: sin permiso runtime, sin adapter, o códec no resuelto —
-        // se conserva el heurístico de bitrate como red de seguridad (no se
-        // borra: sigue siendo mejor que no compensar nada en absoluto).
-        val bitrate = currentBtBitrateKbps()
-        return if (bitrate != null && bitrate < BT_LOW_BITRATE_KBPS) {
-            Log.i(TAG, "BT bitrate bajo detectado: ${bitrate}kbps -> perfil low-bitrate (fallback)")
-            RouteProfile(bassBoostDb = 0f, dialogBoostDb = 4.5f, widenerMult = 0.5f)
-        } else {
-            RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
-        }
-    }
+    /** Conservative profile used until the real A2DP codec is resolved off-thread. */
+    private fun fallbackBluetoothProfile(): RouteProfile =
+        BluetoothRouteProfilePolicy.fallback(currentBtBitrateKbps())
 
     /**
-     * Perfil por códec real — basado en las características de calidad
-     * documentadas de cada códec A2DP, no en un umbral de bitrate genérico:
-     *   SBC: baseline obligatorio, artefactos de banda 2-4kHz conocidos y
-     *        estéreo que se degrada al recodificar — máxima compensación.
-     *   AAC: mejor que SBC en teoría, pero la calidad del encoder de
-     *        Android varía fuerte por fabricante (problema de plataforma
-     *        documentado, no del códec) — compensación moderada.
-     *   aptX: 352kbps fijo, sin los artefactos de banda de SBC — ligera.
-     *   aptX HD / Adaptive: 576-660kbps, cercano a transparente — mínima.
-     *   LDAC: hasta 990kbps, el más transparente disponible en Android —
-     *        sin compensación de diálogo/graves, igual que USB con DAC.
-     *   Opus: eficiente y limpio (API 33+) — ligera, similar a aptX.
+     * A2DP proxy acquisition is asynchronous and may wait up to the detector timeout.
+     * Resolve it on a worker, then publish only if this is still the active route generation.
      */
-    private fun profileForRealCodec(info: BluetoothCodecDetector.CodecInfo): RouteProfile =
-        when (info.codec) {
-            BluetoothCodecDetector.RealCodec.SBC ->
-                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 4.5f, widenerMult = 0.5f)
-            BluetoothCodecDetector.RealCodec.AAC ->
-                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.0f, widenerMult = 0.7f)
-            BluetoothCodecDetector.RealCodec.APTX ->
-                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 1.5f, widenerMult = 0.85f)
-            BluetoothCodecDetector.RealCodec.APTX_HD,
-            BluetoothCodecDetector.RealCodec.APTX_ADAPTIVE ->
-                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 0.95f)
-            BluetoothCodecDetector.RealCodec.LDAC ->
-                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0f, widenerMult = 1.0f)
-            BluetoothCodecDetector.RealCodec.OPUS ->
-                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 1.0f, widenerMult = 0.9f)
-            else ->
-                RouteProfile(bassBoostDb = 0f, dialogBoostDb = 3.5f, widenerMult = 0.65f)
-        }
+    private fun refreshBluetoothCodecProfileAsync(context: Context, generation: Long) {
+        Thread({
+            // Match the codec query to the A2DP output selected from Android's device list.
+            // If Android hides the address, the detector safely falls back to its default lookup.
+            val selectedA2dp = runCatching {
+                val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+            }.getOrNull()
+            val selectedAddress = selectedA2dp?.address?.takeIf { it.isNotBlank() }
+            val info = if (selectedAddress == null) {
+                // Without a reliable address, do not borrow another connected headset's codec.
+                BluetoothCodecDetector.CodecInfo(BluetoothCodecDetector.RealCodec.UNAVAILABLE, 0, 0)
+            } else runCatching {
+                BluetoothCodecDetector.detectActiveCodec(context, selectedAddress)
+            }.getOrElse {
+                    Log.w(TAG, "BT codec lookup failed; keeping conservative route profile", it)
+                    BluetoothCodecDetector.CodecInfo(
+                        BluetoothCodecDetector.RealCodec.UNAVAILABLE, 0, 0
+                    )
+                }
+            val profile = if (
+                info.codec != BluetoothCodecDetector.RealCodec.UNAVAILABLE &&
+                info.codec != BluetoothCodecDetector.RealCodec.UNKNOWN
+            ) {
+                Log.i(TAG, "BT codec resolved asynchronously: ${info.codec} @ ${info.sampleRateHz}Hz/${info.bitsPerSample}bit")
+                BluetoothRouteProfilePolicy.forCodec(info.codec)
+            } else {
+                fallbackBluetoothProfile()
+            }
+            if (routeGeneration.get() == generation && currentRoute == OutputRoute.BLUETOOTH) {
+                applyProfileFor(OutputRoute.BLUETOOTH, profile)
+            } else {
+                Log.d(TAG, "Discarding stale BT codec result for route generation $generation")
+            }
+        }, "BtCodecProfileRefresh").start()
+    }
 
-    private fun applyProfileFor(route: OutputRoute) {
-        val baseProfile = profileFor(route)
+    private fun applyProfileFor(route: OutputRoute, profileOverride: RouteProfile? = null) {
+        val baseProfile = profileOverride ?: profileFor(route)
         val load = when (SafmusHardwareCoordinator.lastSnapshot?.budget) {
             SafmusHardwareCoordinator.Budget.CONSERVATIVE -> SafmusAdapterPolicy.Load.CONSERVATIVE
             SafmusHardwareCoordinator.Budget.SAFE -> SafmusAdapterPolicy.Load.SAFE
             else -> SafmusAdapterPolicy.Load.NORMAL
         }
         val p = SafmusAdapterPolicy.optimizeRouteProfile(baseProfile, load)
-        Log.i(TAG, "Ruta de salida: $route SAFMUS=$load -> perfil DSP aplicado")
-        AudioEngine.nativeSetRouteProfileStatic(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
-        com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
+        val localDispatched = AudioEngine.nativeSetRouteProfileStatic(
             p.bassBoostDb, p.dialogBoostDb, p.widenerMult
+        )
+        val daemonSendResult = com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
+            p.bassBoostDb, p.dialogBoostDb, p.widenerMult
+        )
+        Log.i(
+            TAG,
+            "Ruta de salida: $route SAFMUS=$load -> perfil solicitado; " +
+                "localDispatched=$localDispatched daemonSendResult=$daemonSendResult; " +
+                "IPC no equivale a ACK/read-back DSP; aplicación no confirmada"
         )
     }
 
     private fun applyRoute(route: OutputRoute) {
         if (route == currentRoute) return
         val previousRoute = currentRoute
+        val generation = routeGeneration.incrementAndGet()
         currentRoute = route
         appContextRef?.let { ctx ->
             runCatching { AudioPipeline.syncHardwareSampleRate(ctx) }
+            if (route == OutputRoute.BLUETOOTH) BluetoothAudioProfiler.invalidate()
             Thread({
                 runCatching { BluetoothAudioProfiler.refresh(ctx) }
             }, "BtAudioProfilerRefresh").start()
         }
-        applyProfileFor(route)
+        if (route == OutputRoute.BLUETOOTH) {
+            // Apply immediately with a bounded fallback; do not block the device callback.
+            applyProfileFor(route, BluetoothRouteProfilePolicy.fallback())
+            appContextRef?.let { refreshBluetoothCodecProfileAsync(it, generation) }
+        } else {
+            applyProfileFor(route)
+        }
         // §0.1: Activar inmediatamente las etapas exigidas por el perfil de ruta
         // ANTES del primer bloque de audio (y en cada cambio de salida física).
         appContextRef?.let { ctx ->
