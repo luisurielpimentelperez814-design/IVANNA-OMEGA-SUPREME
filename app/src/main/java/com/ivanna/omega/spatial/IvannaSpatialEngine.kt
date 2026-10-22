@@ -9,6 +9,9 @@ class IvannaSpatialEngine private constructor() {
     companion object {
         val shared: IvannaSpatialEngine = IvannaSpatialEngine()
 
+        /** Separate delay/history state for Ivanna-owned playback streams. */
+        internal fun createIsolated(): IvannaSpatialEngine = IvannaSpatialEngine()
+
         @Volatile var enabled: Boolean = true
         val reducedComplexity: Boolean
             get() = shared.reducedComplexity
@@ -93,10 +96,13 @@ class IvannaSpatialEngine private constructor() {
             shared.attachHeadTracker(tracker)
     }
 
-    private val sampleRate = 44100
+    @Volatile private var sampleRate = 44100
     private val maxBlockSize = 4096
-    private val maxItdSamples = (0.0015f * sampleRate).toInt()
-    private val crossfeedDelaySamples = 44
+    @Volatile private var maxItdSamples = (0.0015f * sampleRate).toInt()
+    @Volatile private var crossfeedDelaySamples = (0.001f * sampleRate).toInt().coerceAtLeast(1)
+    internal val configuredSampleRateHz: Int get() = sampleRate
+    internal val itdDelayCapacitySamples: Int get() = maxItdSamples
+    internal val crossfeedDelayCapacitySamples: Int get() = crossfeedDelaySamples
     private val earlyReflectionTimes = intArrayOf(7, 13, 17, 23)
     private val earlyReflectionGains = floatArrayOf(0.3f, 0.2f, 0.15f, 0.1f)
 
@@ -131,6 +137,20 @@ class IvannaSpatialEngine private constructor() {
     }
 
     fun init(modelPath: String? = null) { reset() }
+
+    /** Recalculate time-domain delay lines for the selected output sample clock. */
+    @Synchronized
+    fun configureSampleRate(rateHz: Int) {
+        if (rateHz !in 8_000..192_000 || rateHz == sampleRate) return
+        sampleRate = rateHz
+        maxItdSamples = (0.0015f * rateHz).toInt().coerceAtLeast(1)
+        crossfeedDelaySamples = (0.001f * rateHz).toInt().coerceAtLeast(1)
+        delayedL = FloatArray(maxItdSamples)
+        delayedR = FloatArray(maxItdSamples)
+        crossfeedBufferL = FloatArray(crossfeedDelaySamples)
+        crossfeedBufferR = FloatArray(crossfeedDelaySamples)
+        reset()
+    }
 
     fun reset() {
         delayedL.fill(0f); delayedR.fill(0f)

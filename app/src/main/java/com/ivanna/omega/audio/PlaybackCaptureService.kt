@@ -675,6 +675,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 audioRecord?.release(); audioRecord = null
                 return false
             }
+            // This shared fallback processes captured app audio at SAMPLE_RATE (48 kHz).
+            // Keep its time-domain spatial delays on the same clock; BridgePlayer has an isolated engine.
+            com.ivanna.omega.spatial.IvannaSpatialEngine.shared.configureSampleRate(SAMPLE_RATE)
+            com.ivanna.omega.spatial.IvannaSpatialEngine.shared.reset()
             adaptiveLatency.configure(SAMPLE_RATE, targetTrackBuf)
             // COLCHON DE SALIDA: pista nueva => contador a 0 (antes arrastraba el de la sesion anterior y
             // medía una latencia falsa enorme). Se pre-llena con silencio (señal neutra en la via diferencial)

@@ -1,3 +1,12 @@
+# Cambios sin publicar — SAFMUS Plan 10D: salida Bluetooth propia
+
+- El reproductor propio selecciona la tasa A2DP anunciada por el códec activo cuando está disponible, con fallback a 48 kHz y prioridad de DAC USB-C.
+- El PCM se remuestrea antes del DSP/HRTF a la tasa real seleccionada; el fallback espacial mantiene historial aislado y retardos ITD/crossfeed escalados por tasa.
+- Se añade selección de códec vinculada al dispositivo, pruebas JVM y criterios de aceptación Plan 10D.
+- **Alcance:** no modifica Spotify/YouTube ni certifica el HAL Qualcomm, el reloj remoto Bluetooth o un DAC físico. Build/CI y validación física siguen siendo gates obligatorios.
+
+---
+
 # CHANGELOG — v2.5.121 (412) — USB ASRC con servo de reloj acotado
 
 - Integra el servo de ocupación del ring en el ASRC USB de producción: corrección suavizada y limitada a ±1000 ppm; capacidad inválida vuelve a tasa nominal.
