@@ -7,6 +7,7 @@
 #include <algorithm>
 #include "SofaSafRirMasterKnowledge.hpp"
 #include "../include/audio_thread_priority.h"
+#include "../include/azimuth_math.hpp"
 #include <android/log.h>
 #include <mutex>
 #include <cmath>
@@ -32,7 +33,7 @@ void ObjectRenderer::init(float sampleRate, int blockSize) noexcept {
     for (int i = 0; i < kNumVirtualSpeakers; ++i) {
         const auto& sp = kVirtualSpeakers[i];
         float az = std::atan2(sp.y, sp.x) * 180.f / static_cast<float>(M_PI);
-        baseAzimuthDeg_[i] = std::clamp(az, -90.f, 90.f);
+        baseAzimuthDeg_[i] = wrapAzimuthDegrees(az);
         hrtfConvolvers_[i].set_position(baseAzimuthDeg_[i], kHrtfAggressiveness);
     }
 
@@ -132,7 +133,7 @@ void ObjectRenderer::renderBlock(const float* objectsIn, int numObjects,
     if (haveHeadPose) {
         const float yawDeg = pose.orientation.yawDegrees();
         for (int s = 0; s < kNumVirtualSpeakers; ++s) {
-            const float az = std::clamp(baseAzimuthDeg_[s] - yawDeg, -90.f, 90.f);
+            const float az = wrapAzimuthDegrees(baseAzimuthDeg_[s] - yawDeg);
             hrtfConvolvers_[s].set_position(az, kHrtfAggressiveness);
         }
     }
