@@ -21,6 +21,17 @@ class AcousticRoomCalibrationModelTest {
         assertEquals(false, result.measuredRirAvailable)
     }
 
+    @Test fun spatialAngleCommandMatchesNativeNinetyDegreeLimit() {
+        val positive = AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = 135.0)!!
+        val negative = AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = -135.0)!!
+        assertEquals(90.0f, positive.spatialAngleDeg, 0.0001f)
+        assertEquals(-90.0f, negative.spatialAngleDeg, 0.0001f)
+        assertTrue(positive.itdMicroseconds in 0.0..700.0)
+        assertTrue(negative.itdMicroseconds in 0.0..700.0)
+        assertEquals(700.0, positive.itdMicroseconds, 0.0001)
+        assertEquals(700.0, negative.itdMicroseconds, 0.0001)
+    }
+
     @Test fun rejectsNonPhysicalOrUnboundedDimensions() {
         assertNull(AcousticRoomCalibrationModel.estimate(0.0, 2.5, 4.0))
         assertNull(AcousticRoomCalibrationModel.estimate(40.0, 2.5, 4.0))
