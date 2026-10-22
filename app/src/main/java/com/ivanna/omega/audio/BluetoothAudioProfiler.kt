@@ -11,6 +11,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * BluetoothAudioProfiler — perfilado magistral de la ruta Bluetooth.
@@ -86,6 +87,7 @@ object BluetoothAudioProfiler {
 
     // Caché por dirección MAC — el perfil solo cambia con la ruta.
     private val profileCache = ConcurrentHashMap<String, PerfProfile>()
+    private val profileGeneration = AtomicLong(0L)
     @Volatile private var activeProfile: PerfProfile? = null
 
     /** Perfil activo en este instante (caché — seguro desde cualquier hilo). */
@@ -97,16 +99,17 @@ object BluetoothAudioProfiler {
      * hilo de audio. Devuelve el perfil resuelto (WIRED/NONE si no hay BT).
      */
     @SuppressLint("MissingPermission")   // BLUETOOTH_CONNECT en manifest (API 31+)
-    fun refresh(context: Context): PerfProfile {
+    fun refresh(context: Context, preferredDeviceAddress: String? = null, expectedGeneration: Long? = null): PerfProfile {
+        val generation = expectedGeneration ?: profileGeneration.get()
         val am = context.applicationContext
             .getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         val devices = try {
             am?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         } catch (t: Throwable) { null } ?: emptyArray()
 
-        val btDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
-        if (btDevice == null) {
-            // No hay BT activo: perfil alámbrico si hay auricular/USB, NONE si no.
+        val a2dpDevices = devices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+        if (a2dpDevices.isEmpty()) {
+            // No hay A2DP: perfil alámbrico si hay auricular/USB, NONE si no.
             val wired = devices.any {
                 it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                 it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
@@ -114,13 +117,25 @@ object BluetoothAudioProfiler {
                 it.type == AudioDeviceInfo.TYPE_USB_HEADSET
             }
             val profile = if (wired) PerfProfile.WIRED else PerfProfile.NONE
-            activeProfile = profile
+            if (generation == profileGeneration.get()) activeProfile = profile
             return profile
         }
 
-        val mac = try { btDevice.address } catch (t: Throwable) { null } ?: "unknown"
+        // AudioManager enumera endpoints conectados, no garantiza cuál está activo.
+        // No se debe tomar firstOrNull(): exige identidad no vacía y coincidencia exacta.
+        val btDevice = a2dpDevices.singleOrNull()?.takeIf {
+            BluetoothOutputRatePolicy.matchesSelectedDevice(preferredDeviceAddress, it.address)
+        }
+        if (btDevice == null) {
+            val profile = unknownProfile()
+            if (generation == profileGeneration.get()) activeProfile = profile
+            Log.w(TAG, "A2DP presente pero identidad seleccionada ausente/ambigua; perfil Bluetooth conservador")
+            return profile
+        }
+
+        val mac = btDevice.address.trim()
         profileCache[mac]?.let {
-            activeProfile = it
+            if (generation == profileGeneration.get()) activeProfile = it
             Log.i(TAG, "Perfil BT en caché: ${it.codec.label} @ $mac")
             return it
         }
@@ -129,27 +144,43 @@ object BluetoothAudioProfiler {
         val codec = resolveCodec(context, btDevice)
         val name = try { btDevice.productName?.toString() } catch (t: Throwable) { null }
             ?: codec.label
-        val profile = PerfProfile(
-            codec         = codec,
-            deviceName    = name,
-            bandLimitHz   = codec.bandLimitHz,
-            latencyMs     = codec.latencyMs,
-            harmonicCeil  = codec.harmonicCeil,
-            spatialWetMax = codec.spatialWetMax,
-            transparent   = codec.ordinal >= Codec.APTX_HD.ordinal,
-        )
-        profileCache[mac] = profile
-        activeProfile = profile
+        val profile = if (codec == Codec.UNKNOWN) {
+            unknownProfile(name)
+        } else {
+            PerfProfile(
+                codec         = codec,
+                deviceName    = name,
+                bandLimitHz   = codec.bandLimitHz,
+                latencyMs     = codec.latencyMs,
+                harmonicCeil  = codec.harmonicCeil,
+                spatialWetMax = codec.spatialWetMax,
+                transparent   = codec.ordinal >= Codec.APTX_HD.ordinal,
+            )
+        }
+        if (generation == profileGeneration.get() && codec != Codec.UNKNOWN) profileCache[mac] = profile
+        if (generation == profileGeneration.get()) activeProfile = profile
         Log.i(TAG, "Perfil BT resuelto: $name → ${codec.label} " +
               "(banda=${profile.bandLimitHz} Hz, latencia=${profile.latencyMs} ms, " +
               "armónico≤${profile.harmonicCeil}, wet≤${profile.spatialWetMax})")
         return profile
     }
 
+    private fun unknownProfile(deviceName: String = "Bluetooth (codec unavailable)") = PerfProfile(
+        codec = Codec.UNKNOWN,
+        deviceName = deviceName,
+        bandLimitHz = Codec.UNKNOWN.bandLimitHz,
+        latencyMs = Codec.UNKNOWN.latencyMs,
+        harmonicCeil = Codec.UNKNOWN.harmonicCeil,
+        spatialWetMax = Codec.UNKNOWN.spatialWetMax,
+        transparent = false,
+    )
+
     /** Invalida la caché (llamar al desconectar BT o cambiar de dispositivo). */
-    fun invalidate(address: String? = null) {
+    fun invalidate(address: String? = null): Long {
+        val generation = profileGeneration.incrementAndGet()
         if (address == null) profileCache.clear() else profileCache.remove(address)
         activeProfile = null
+        return generation
     }
 
     // ── Resolución del códec A2DP activo ─────────────────────────────────────
@@ -158,38 +189,41 @@ object BluetoothAudioProfiler {
     private fun resolveCodec(context: Context, device: AudioDeviceInfo): Codec {
         // Ruta 1 (API 33+): BluetoothA2dp proxy → codecConfig.
         if (Build.VERSION.SDK_INT >= 33) {
-            resolveCodecApi33(context)?.let { return it }
+            resolveCodecApi33(context, device)?.let { return it }
         }
-        // Ruta 2 (API 31-32): reflexión sobre BluetoothA2dp (nombres OEM).
-        resolveCodecReflection(context)?.let { return it }
-        // Ruta 3 (fallback): nombre del dispositivo como heurística débil.
-        return codecFromName(device.productName?.toString() ?: "")
+        // La API de codec es parcialmente oculta en algunos OEM; si se usa reflexión,
+        // se exige la misma dirección del dispositivo seleccionado.
+        resolveCodecReflection(context, device)?.let { return it }
+        // El nombre comercial describe capacidades posibles, no el códec negociado.
+        return Codec.UNKNOWN
     }
 
     @SuppressLint("MissingPermission")
-    private fun resolveCodecApi33(context: Context): Codec? {
+    private fun resolveCodecApi33(context: Context, selectedDevice: AudioDeviceInfo): Codec? {
         return runCatching {
             val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter = bm?.adapter ?: return null
             var result: Codec? = null
+            var proxyRef: BluetoothA2dp? = null
             val latch = java.util.concurrent.CountDownLatch(1)
             adapter.getProfileProxy(context, object : android.bluetooth.BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, proxy: android.bluetooth.BluetoothProfile?) {
                     if (profile == BluetoothProfile.A2DP && proxy is BluetoothA2dp) {
+                        proxyRef = proxy
                         result = runCatching {
-                            // API 33+: isCodecConfigurable / codec status
-                            val dev = proxy.connectedDevices?.firstOrNull()
-                            if (dev != null) codecFromProxyMethod(proxy, dev)
-                            else null
+                            val address = selectedDevice.address
+                            val dev = proxy.connectedDevices?.firstOrNull {
+                                runCatching { it.address.equals(address, ignoreCase = true) }.getOrDefault(false)
+                            }
+                            if (dev != null) codecFromProxyMethod(proxy, dev) else null
                         }.getOrNull()
                     }
                     latch.countDown()
                 }
                 override fun onServiceDisconnected(profile: Int) { latch.countDown() }
             }, BluetoothProfile.A2DP)
-            // getProfileProxy es asíncrono — esperamos con timeout corto
-            // (hilo de control, no de audio; 300 ms es holgado).
             latch.await(300, java.util.concurrent.TimeUnit.MILLISECONDS)
+            runCatching { proxyRef?.let { adapter.closeProfileProxy(BluetoothProfile.A2DP, it) } }
             result
         }.getOrNull()
     }
@@ -210,7 +244,7 @@ object BluetoothAudioProfiler {
     }
 
     @SuppressLint("MissingPermission")
-    private fun resolveCodecReflection(context: Context): Codec? {
+    private fun resolveCodecReflection(context: Context, selectedDevice: AudioDeviceInfo): Codec? {
         return runCatching {
             val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter = bm?.adapter ?: return null
@@ -220,7 +254,10 @@ object BluetoothAudioProfiler {
                 override fun onServiceConnected(profile: Int, proxy: android.bluetooth.BluetoothProfile?) {
                     if (profile == BluetoothProfile.A2DP && proxy is BluetoothA2dp) {
                         result = runCatching {
-                            val dev = proxy.connectedDevices?.firstOrNull() ?: return@runCatching null
+                            val dev = proxy.connectedDevices?.firstOrNull {
+                                runCatching { it.address.equals(selectedDevice.address, ignoreCase = true) }
+                                    .getOrDefault(false)
+                            } ?: return@runCatching null
                             codecFromProxyMethod(proxy, dev)
                         }.getOrNull()
                         adapter.closeProfileProxy(BluetoothProfile.A2DP, proxy)
