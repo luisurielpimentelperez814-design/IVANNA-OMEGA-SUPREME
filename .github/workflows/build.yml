@@ -762,7 +762,7 @@ jobs:
     name: Publish GitHub Release (asset que Magisk update.json espera)
     runs-on: ubuntu-22.04
     needs: [verify-release]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(github.event.head_commit.message, 'release:') || contains(github.event.head_commit.message, '— v'))) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     concurrency:
       group: omega-release-${{ github.ref }}
       cancel-in-progress: false
