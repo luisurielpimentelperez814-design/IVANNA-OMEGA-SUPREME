@@ -60,7 +60,7 @@ object BluetoothCodecDetector {
      * si no hay proxy A2DP disponible, o si el timeout expira — nunca
      * lanza, nunca bloquea más de [PROXY_TIMEOUT_MS].
      */
-    fun detectActiveCodec(context: Context): CodecInfo {
+    fun detectActiveCodec(context: Context, preferredDeviceAddress: String? = null): CodecInfo {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -82,7 +82,14 @@ object BluetoothCodecDetector {
                 try {
                     val a2dp = proxy as? BluetoothA2dp
                     proxyRef = a2dp
-                    val device = a2dp?.connectedDevices?.firstOrNull()
+                    val connected = a2dp?.connectedDevices.orEmpty()
+                    val preferredAddress = preferredDeviceAddress?.takeIf { it.isNotBlank() }
+                    val device = if (preferredAddress == null) {
+                        connected.firstOrNull()
+                    } else {
+                        // Never apply another connected headset's codec profile to this output.
+                        connected.firstOrNull { it.address.equals(preferredAddress, ignoreCase = true) }
+                    }
                     if (a2dp != null && device != null) {
                         val status = runCatching {
                             val method = a2dp.javaClass.getMethod(
