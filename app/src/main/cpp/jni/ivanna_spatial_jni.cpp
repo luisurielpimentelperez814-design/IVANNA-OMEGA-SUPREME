@@ -926,6 +926,21 @@ Java_com_ivanna_omega_core_NativeBridge_setPhysicalSceneParams(
     scene.setWallAbsorption(wallAbsorption);
 }
 
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getPhysicalSceneSnapshot(JNIEnv* env, jclass) {
+    const auto& scene = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().physicalScene();
+    const jfloat values[2] = {scene.occlusionFactor(), scene.wallAbsorption()};
+    jfloatArray result = env->NewFloatArray(2);
+    if (result == nullptr) return nullptr;
+    env->SetFloatArrayRegion(result, 0, 2, values);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(result);
+        return nullptr;
+    }
+    return result;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_NativeBridge_setHearingAdaptationParams(
     JNIEnv*, jclass, jfloat earTipSeal, jfloat listeningSplDb,
