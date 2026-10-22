@@ -294,8 +294,7 @@ private:
         // The helper returns cycles/sample (Nyquist = 0.5). The normalized
         // sinc kernel uses sin(pi*x)/(pi*x), so its argument and gain must
         // use 2*fc; otherwise the passband is accidentally halved.
-        const double cutoffCycles = ivanna::audio::usbAsrcCutoffCyclesPerSample(inputRate_, outputRate_);
-        const double cutoffNormalized = 2.0 * cutoffCycles;
+        const double cutoffNormalized = ivanna::audio::usbAsrcCutoffNormalized(inputRate_, outputRate_);
         constexpr double center = (kTaps - 1) * 0.5;
         for (int p = 0; p < kPhases; ++p) {
             const double frac = static_cast<double>(p) / kPhases;
