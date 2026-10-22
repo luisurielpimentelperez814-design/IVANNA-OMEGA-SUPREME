@@ -1,6 +1,6 @@
 # SAFMUS Plan 10D — Bluetooth acceptance gates
 
-Status: SAFMUS Plan 10D software release v2.5.123 is published. The follow-up in review closes ambiguous codec lookup when the caller has no selected-device address. Android build, JVM tests, host CTest/ASan+UBSan and release-artifact verification passed on the published main SHA; physical A2DP/USB acceptance remains open and this is not a hardware certification.
+Status: v2.5.124 is the published software release. v2.5.125 is prepared in release PR #138 and is not published until exact-head CI and artifact verification pass. The selected-device route guard is merged; this follow-up binds Bluetooth latency profiling to the selected A2DP address, refreshes same-category endpoint changes, and rejects stale asynchronous results. Physical A2DP/USB acceptance remains open; this is not hardware certification.
 
 ## Implemented in this branch
 - The owned `IvannaBridgePlayer` route selector gives a connected USB DAC priority; otherwise it selects A2DP/BLE and targets the selected Android output device.
@@ -8,6 +8,7 @@ Status: SAFMUS Plan 10D software release v2.5.123 is published. The follow-up in
 - Source PCM is converted to the selected output clock before DSP/HRTF, so rate-dependent kernels process at the rate for which they are configured.
 - The playback spatial fallback has isolated delay/history state from system-wide capture and scales ITD/crossfeed delay lines to the selected sample rate.
 - The existing 64-tap/1024-phase FIR resampler and bounded AudioTrack timestamp servo remain app-owned. Timestamp failure resets correction to unity.
+- `BluetoothAudioProfiler` now requires the uniquely selected A2DP address and exact proxy-device match. It does not select the first connected headset or infer the negotiated codec from the product name; ambiguous identity uses a conservative profile, and stale profile refreshes are invalidated on route-generation changes.
 - JVM regression tests cover A2DP rate selection and spatial delay scaling.
 
 ## Explicit non-claims

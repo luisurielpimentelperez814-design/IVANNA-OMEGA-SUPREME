@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.125 (416) — SAFMUS Plan 10D: identidad estricta de códec y latencia Bluetooth
+
+- El perfilador de latencia ya no toma el primer A2DP conectado: exige una dirección seleccionada no vacía, un único candidato A2DP inequívoco y coincidencia exacta en el proxy Bluetooth.
+- Se elimina la inferencia del códec negociado desde el nombre comercial del auricular; cuando la evidencia falta, el perfil queda conservador y no se cachea como si se hubiera medido.
+- Los cambios de auricular dentro de la misma categoría BLUETOOTH vuelven a invalidar/refrescar el perfil y los resultados asíncronos obsoletos no pueden sobrescribir la ruta nueva.
+- Validación de software en la cabeza de PR: CTest nativo 535/535; compilación Android y JVM 255/255; verificación del paquete APK/Magisk aprobada. La validación acústica física A2DP/USB continúa pendiente.
+- **Alcance:** no inserta ASRC en el HAL Qualcomm ni controla el oscilador remoto Bluetooth; tampoco habilita automáticamente el DSP propio para Spotify/YouTube u otras apps de terceros.
+
+---
+
 # CHANGELOG — v2.5.124 (415) — SAFMUS Plan 10D: identidad estricta de ruta Bluetooth
 
 - El detector A2DP falla de forma segura cuando no recibe una dirección de dispositivo seleccionada y solo acepta coincidencia exacta de dirección (sin distinguir mayúsculas/minúsculas).
