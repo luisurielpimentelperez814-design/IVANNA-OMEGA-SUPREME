@@ -1,4 +1,16 @@
-# En preparación — ASRC software propio (no publicado)
+# CHANGELOG — v2.5.125 (416) — PLL de búfer por software para ASRC
+
+- Se integra `AudioTrackBufferPll`, un lazo PI de software que estima el error de fase mediante frames estéreo aceptados por el `AudioTrack` frente a frames consumidos indicados por `AudioTimestamp`.
+- La salida del PI gobierna el ratio del `StereoAudioResampler` FIR existente: corrección acotada a ±500 ppm, variación máxima de 25 ppm por actualización e integral limitada. Ante timestamps o estimaciones de cola inválidos, el controlador vuelve a corrección cero.
+- Se conserva `AudioTrackClockDriftServo` como telemetría de tasa/deriva; el ajuste aplicado al ASRC proviene del error de ocupación estimado del búfer.
+- Se agregan pruebas JVM para la polaridad de corrección, límites de ppm, slew, bloqueo y fallo seguro.
+- **Alcance y límites:** solo controla la reproducción propia de IVANNA. No cambia el oscilador Bluetooth, el reloj físico del DAC ni el HAL/PAL Qualcomm, y no inserta este ASRC en Spotify/YouTube u otras aplicaciones. La validación acústica y de estabilidad en el Moto G85 físico sigue pendiente.
+
+---
+
+# Notas previas — optimización del ASRC FIR
+
+
 
 - Se reutilizan los buffers de trabajo del remuestreador estéreo entre bloques y se calcula una cota ajustada para el buffer de salida, reduciendo asignaciones/copia extra en la reproducción propia.
 - Se contienen muestras `NaN`/`Inf` a cero antes del FIR, incluida la ruta de tasa unitaria cuando no es posible el paso transparente.
