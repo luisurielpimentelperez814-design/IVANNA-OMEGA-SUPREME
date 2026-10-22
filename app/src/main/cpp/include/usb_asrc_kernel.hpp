@@ -6,6 +6,39 @@
 
 namespace ivanna::audio {
 
+enum class UsbAsrcPhaseDisposition {
+    Ready,
+    DeferToNextBlock,
+    Invalid
+};
+
+// Convert a fractional source position to the rounded polyphase LUT index.
+// Rounding the last fraction up can move base to inputFrames; that output must
+// be deferred to the next block instead of reading input[inputFrames].
+inline UsbAsrcPhaseDisposition normalizeUsbAsrcPhase(
+        double phase, int inputFrames, int phases,
+        int& base, int& phaseIndex) noexcept {
+    if (!std::isfinite(phase) || phase < 0.0 || inputFrames <= 0 || phases <= 0)
+        return UsbAsrcPhaseDisposition::Invalid;
+    // Guard before floating-to-integer conversion: an extreme but finite phase
+    // cannot be represented by int and must never trigger undefined behavior.
+    if (phase >= static_cast<double>(inputFrames)) {
+        base = inputFrames;
+        phaseIndex = 0;
+        return UsbAsrcPhaseDisposition::DeferToNextBlock;
+    }
+    base = static_cast<int>(phase);
+    const double frac = phase - static_cast<double>(base);
+    phaseIndex = static_cast<int>(frac * static_cast<double>(phases) + 0.5);
+    if (phaseIndex >= phases) {
+        ++base;
+        phaseIndex = 0;
+    }
+    return base >= inputFrames
+        ? UsbAsrcPhaseDisposition::DeferToNextBlock
+        : UsbAsrcPhaseDisposition::Ready;
+}
+
 // Build the exact polyphase FIR used by the USB ingress ASRC. Kept in a
 // host-testable header so spectral regressions exercise production coefficients.
 template <std::size_t Phases, std::size_t Taps>
