@@ -106,6 +106,11 @@ require("app/src/main/java/com/ivanna/omega/audio/BluetoothCodecDetector.kt",
         "connected.firstOrNull { it.address.equals(preferredAddress, ignoreCase = true) }")
 require("app/src/main/java/com/ivanna/omega/audio/BluetoothRouteProfilePolicy.kt",
         "fun fallback(", "fun forCodec(", "RealCodec.UNAVAILABLE")
+require("app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt", "OutputRoutePolicy.select(")
+require("app/src/main/java/com/ivanna/omega/audio/OutputRoutePolicy.kt",
+        "usbConnected -> OutputRoute.USB", "bluetoothConnected -> OutputRoute.BLUETOOTH")
+require("app/src/test/java/com/ivanna/omega/audio/OutputRoutePolicyTest.kt",
+        "usbDacWinsWhenBluetoothRemainsConnected", "wiredAndSpeakerFallbacksRemainDeterministic")
 require("app/src/test/java/com/ivanna/omega/audio/BluetoothRouteProfilePolicyTest.kt",
         "lossyAndHighFidelityCodecsReceiveDistinctBoundedProfiles",
         "unknownCodecDoesNotPretendCodecDetectionSucceeded",
