@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME" width="100%" />
+<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME — audio digital y herramientas espaciales para Android" width="100%" />
 
-# LÉAME — IVANNA OMEGA SUPREME
+# IVANNA OMEGA SUPREME
 
-### Una guía clara para entender qué hace el proyecto y qué falta por comprobar
+### Una guía visual y honesta para entender el proyecto
 
-[Volver al README técnico](README.md) · [Ver compilaciones](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) · [Ver versiones](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases)
+[README técnico](README.md) · [Arquitectura](docs/release_media/architecture-map.svg) · [Estado de compilación](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) · [Versiones](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases)
 
 </div>
 
@@ -14,92 +14,103 @@
 
 ## ¿Qué es?
 
-IVANNA OMEGA SUPREME es un proyecto de software para Android que trabaja con audio digital. Reúne una aplicación con controles, un motor de procesamiento de sonido y herramientas para medir y representar un espacio de escucha.
+IVANNA OMEGA SUPREME es un proyecto de software para Android que reúne una aplicación, componentes de procesamiento digital de audio y herramientas experimentales de medición y visualización espacial.
 
-La idea central es sencilla: **medir cuando sea posible, explicar qué se está haciendo y no dar por confirmado algo que no se ha comprobado.**
+La meta es construir un sistema que permita controlar el procesamiento, realizar mediciones cuando el dispositivo lo permite y verificar los resultados. El proyecto está en desarrollo: **tener código para una función no significa automáticamente que esté conectada, que funcione en cualquier teléfono o que ya haya superado una prueba física.**
 
-El proyecto está en desarrollo. Algunas funciones ya tienen código y pruebas automáticas; otras necesitan pruebas en teléfonos reales o hardware específico.
+## Las tres áreas principales
 
-## ¿Qué hace cada parte?
+<table>
+<tr>
+<td width="33%" valign="top">
 
-<details open>
-<summary><strong>1. Procesamiento de audio</strong></summary>
+### 🎚️ Audio
 
-La aplicación controla un motor nativo escrito en C++. Este motor contiene herramientas para procesar el audio y trabajar con sonido espacial. La disponibilidad de cada función depende de cómo esté conectado el dispositivo y de qué ruta de audio se utilice.
+La aplicación incluye una ruta de reproducción propia. En esa ruta, un PLL software puede ajustar el resampler a partir de una estimación de la cola de AudioTrack.
 
-</details>
+**Límite:** no controla directamente el reloj físico del DAC, Bluetooth ni el HAL global. Hace falta probar cada salida en el dispositivo.
 
-<details open>
-<summary><strong>2. Medición y ajuste de una sala</strong></summary>
+</td>
+<td width="33%" valign="top">
 
-El teléfono puede reproducir una secuencia de tonos y grabar la respuesta con su micrófono. Con esa información, el programa intenta estimar diferencias de nivel y diseñar una corrección.
+### 📏 Medición
 
-El sistema puede comparar una medición inicial con otra después del ajuste. Si la medición no es fiable o no cumple el criterio de mejora programado, el código restaura la configuración anterior y registra la decisión.
+El proyecto incluye herramientas que reproducen tonos de prueba, graban con el micrófono y comparan mediciones antes y después de un ajuste.
 
-**Importante:** el micrófono de un teléfono no es un instrumento de laboratorio. La ubicación del teléfono, el ruido, el volumen y los altavoces afectan el resultado. Una cifra calculada no garantiza que todas las personas perciban una mejora.
+**Límite:** el micrófono del teléfono no está calibrado como instrumento de laboratorio. Una métrica interna no garantiza una mejora audible universal.
 
-</details>
+</td>
+<td width="33%" valign="top">
 
-<details open>
-<summary><strong>3. Vista geométrica 3D</strong></summary>
+### 🧭 FotoHolo / 3D
 
-Existe un renderizador que dibuja una sala a partir de sus dimensiones y posiciones configuradas para el oyente y las fuentes de sonido. Puede producir una imagen de hasta 3840 × 2160 píxeles.
+Hay un renderizador geométrico y una ruta experimental de captura espacial con ARCore, seguimiento y exportación de puntos.
 
-Esta vista es una representación de la geometría introducida. **No es todavía un escaneo automático del cuarto ni prueba que el sistema haya reconstruido la sala mediante Wi-Fi.**
+**Límite:** una nube de puntos no es una malla completa ni una medición acústica de la habitación. La calidad depende del dispositivo y del entorno.
 
-</details>
+</td>
+</tr>
+</table>
 
-<details open>
-<summary><strong>4. Wi-Fi y contexto del entorno</strong></summary>
+## Cómo se relacionan las piezas
 
-El proyecto contiene una política conservadora que puede pedir una nueva medición acústica cuando cambian ciertos indicios del entorno. La información Wi-Fi, por sí sola, no puede autorizar directamente cambios en el procesamiento del audio.
+<img src="docs/release_media/architecture-map.svg" alt="Mapa visual de la arquitectura y los límites de integración" width="100%" />
 
-Las funciones avanzadas de CSI dependen de hardware y de un proveedor compatible. No se debe asumir que cualquier teléfono puede obtener esos datos.
+El mapa muestra las relaciones generales del código. El bloque HAL/PAL representa un punto de integración documentado, no una prueba de que el hardware de un teléfono esté controlado por IVANNA.
 
-</details>
+## Estado de las funciones
 
-## ¿Cómo sabemos si una nueva versión está lista?
+| Función | Estado que podemos describir | Qué falta para afirmar que está validada |
+|---|---|---|
+| Aplicación Android y motor nativo | Hay código Kotlin, C++ y puentes entre componentes. | Probar las rutas concretas en la versión que se distribuya. |
+| PLL software de reproducción | Implementado en la ruta del reproductor propio para ajustar el resampler con límites definidos. | Pruebas físicas de estabilidad, clics, tono, latencia y underruns. |
+| Medición de sala | Hay flujo de tonos, captura, comparación y lógica de restauración. | Mediciones repetidas con equipo, salas y salidas diferentes. |
+| Captura AR | Hay actividad de captura y exportación basada en ARCore. | Confirmar cámara, seguimiento, ciclo de vida y exportación en cada equipo objetivo. |
+| Renderizador geométrico | Dibuja una geometría configurada y admite imágenes de hasta 3840 × 2160 píxeles. | Verificar rendimiento y recordar que no es un escaneo automático ni una simulación acústica validada. |
+| SAFMUS / ACSR / HAL-PAL | Existen componentes y contratos de integración en el repositorio. | Demostrar la conexión con el proveedor y el hardware, con lectura de retorno y prueba real. |
+| Wi-Fi / CSI | Hay políticas conservadoras para tratar observaciones de radio como indicios. | Hardware/proveedor compatible y adquisición real; Wi-Fi común no equivale a CSI. |
 
-Un archivo APK o ZIP que aparece en una publicación no es prueba suficiente. Para considerar una entrega lista, se debe comprobar:
+## ¿Necesita una API key de Google?
 
-- [ ] La compilación corresponde al último commit que se quiere entregar.
+Las funciones locales que no llaman a servicios externos deben poder operar sin una clave de Google. Una clave solo es necesaria para una función opcional si esa función utiliza un servicio externo que la requiere. Que exista un campo de configuración no demuestra que el servicio esté conectado o activo.
+
+## ¿Cómo sé si una versión está lista?
+
+Consulta [GitHub Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y las [versiones publicadas](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases). Antes de instalar, comprueba:
+
+- [ ] La compilación corresponde al commit que se quiere probar.
 - [ ] Las pruebas automáticas terminan correctamente.
-- [ ] El APK y el módulo Magisk se generaron desde esa misma revisión.
-- [ ] Se verificaron arquitectura y hashes de los archivos.
-- [ ] Se instalaron y probaron en un dispositivo compatible.
-- [ ] Se comprobó la restauración de ajustes ante un resultado fallido.
-- [ ] Los límites y las funciones que todavía faltan están documentados.
+- [ ] APK y módulo Magisk proceden del mismo commit.
+- [ ] Se verificaron los hashes y el contenido de los artefactos.
+- [ ] Se instaló y probó en el teléfono objetivo.
+- [ ] Se anotaron los errores, límites y resultados reales.
 
-El estado más reciente de la compilación se consulta en [GitHub Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions). Las [versiones publicadas](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) pueden contener borradores o paquetes anteriores; revisa el commit de origen antes de instalar.
+Un CI verde no demuestra por sí solo calidad sonora ni compatibilidad física. Para el Moto G85 con Android 15, consulta el [plan de aceptación y sus pruebas pendientes](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md).
 
-## ¿Puedo probarlo?
+## Seguridad y privacidad
 
-Sí, si cuentas con un dispositivo compatible y entiendes que se trata de un proyecto en desarrollo. Consulta primero el [README técnico](README.md) y las instrucciones de compilación. No instales módulos que requieran root sin comprender sus efectos y sin contar con una forma de recuperar tu dispositivo.
-
-Si encuentras un error, abre un [reporte en GitHub](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) e incluye el modelo del teléfono, la versión de Android, los pasos para reproducir el problema y los registros relevantes. No publiques contraseñas, tokens, grabaciones privadas ni datos personales.
-
-## Qué no prometemos
-
-Para mantener una descripción fiable, este proyecto no afirma que:
-
-- mejore el sonido de forma universal en todos los teléfonos o audífonos;
-- consiga latencia cero en todas las rutas de audio;
-- funcione con cualquier proveedor o chipset CSI;
-- la vista geométrica sea una reconstrucción real de la habitación;
-- una compilación exitosa equivalga a una instalación probada;
-- todos los módulos del repositorio estén conectados a la ruta de audio activa.
-
-Estas funciones solo deben anunciarse como verificadas cuando exista evidencia apropiada: código conectado, pruebas reproducibles y, cuando corresponda, resultados obtenidos en hardware real.
+- Otorga permisos de cámara y micrófono solo a las funciones que los necesitan.
+- No compartas claves, tokens, datos personales ni grabaciones privadas en los informes.
+- No instales un módulo que requiera root sin comprender sus efectos y disponer de una forma de recuperación.
+- No confundas una medición del teléfono con una medición certificada.
+- Revisa las licencias de bibliotecas, modelos y datasets de terceros antes de redistribuir.
 
 ## Documentación y contacto
 
-- [README técnico](README.md) — arquitectura, compilación, pruebas y límites.
-- [Ficha de ingeniería](docs/ENGINEERING.md) — decisiones técnicas y cómo verificarlas.
-- [Registro de cambios](CHANGELOG.md) — historial de implementaciones y pendientes.
-- Documentación técnica del motor nativo; el acceso al repositorio no concede derechos de reutilización del código propio.
-- [Issues](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) — reportes y propuestas.
+- [README técnico](README.md) — arquitectura, pruebas, compilación y límites.
+- [Ficha de ingeniería](docs/ENGINEERING.md) — notas técnicas.
+- [Plan de aceptación Moto G85](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md) — pruebas físicas requeridas.
+- [Registro de cambios](CHANGELOG.md) — historial de versiones.
+- [Reportar un problema](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) — pasos reproducibles y logs depurados.
 
-**Autor:** Luis Uriel Pimentel Pérez (GORE TNS).  
-**Propiedad:** IVANNA OMEGA SUPREME es un producto propietario y comercial. Todos los derechos sobre el código propio quedan reservados; no se concede aquí permiso de reutilización. Los componentes de terceros conservan sus propias licencias y avisos.
+## Propiedad intelectual
 
-El objetivo es construir un sistema serio y auditable: cada función debe poder localizarse en el código, cada prueba debe poder repetirse y cada limitación debe explicarse con claridad.
+IVANNA OMEGA SUPREME se presenta como un producto propietario. El acceso público al repositorio no concede por sí solo permiso para reutilizar el código propio. Los componentes de terceros mantienen sus licencias y avisos; las concesiones expresas aplicables a versiones anteriores siguen sujetas a sus términos.
+
+<div align="center">
+
+**Ingeniería verificable antes que promesas.**
+
+<sub>El código, las pruebas reproducibles y la validación física prevalecen sobre cualquier afirmación de marketing.</sub>
+
+</div>
