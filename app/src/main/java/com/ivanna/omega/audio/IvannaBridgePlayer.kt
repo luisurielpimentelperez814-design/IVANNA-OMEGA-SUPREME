@@ -217,6 +217,9 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var job: Job? = null
     private var audioTrack: AudioTrack? = null
+    // Keep this player's spatial delay/history state independent from the 48 kHz
+    // PlaybackCaptureService; both may run concurrently at different sample rates.
+    private val playbackSpatialEngine = com.ivanna.omega.spatial.IvannaSpatialEngine.createIsolated()
     @Volatile private var voiceProtectionEnabled = true
 
     @Volatile private var pauseRequested = false
@@ -600,7 +603,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             resampler.setInputSampleRate(inputSampleRate)
             // Keep the Kotlin spatial fallback's ITD/crossfeed delays calibrated to the
             // selected sink rate too; native DSPBridge is initialized at this same rate.
-            com.ivanna.omega.spatial.IvannaSpatialEngine.shared.configureSampleRate(sampleRate)
+            playbackSpatialEngine.configureSampleRate(sampleRate)
             val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
             val outputTimestamp = AudioTimestamp()
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
@@ -821,11 +824,17 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                     com.ivanna.omega.dsp.ConcertMode.shared.process(chunk)
                                 }
                                 if (com.ivanna.omega.spatial.IvannaSpatialEngine.enabled) {
+                                    // Copy live controls, but never share delay lines with system capture.
+                                    val sharedSpatial = com.ivanna.omega.spatial.IvannaSpatialEngine.shared
+                                    playbackSpatialEngine.azimuthRad = sharedSpatial.azimuthRad
+                                    playbackSpatialEngine.elevationRad = sharedSpatial.elevationRad
+                                    playbackSpatialEngine.widthFactor = sharedSpatial.widthFactor
+                                    playbackSpatialEngine.distance = sharedSpatial.distance
                                     for (i in 0 until chunkFrames) {
                                         spatialInL[i] = chunk[i * 2]
                                         spatialInR[i] = chunk[i * 2 + 1]
                                     }
-                                    com.ivanna.omega.spatial.IvannaSpatialEngine.shared.processStereoInput(
+                                    playbackSpatialEngine.processStereoInput(
                                         spatialInL, spatialInR, spatialOutL, spatialOutR, chunkFrames
                                     )
                                     for (i in 0 until chunkFrames) {
