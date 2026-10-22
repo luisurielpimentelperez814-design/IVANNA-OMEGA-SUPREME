@@ -39,6 +39,13 @@ class StereoAudioResampler(
     private var histR = FloatArray(TAPS)
     private var pos = TAPS.toDouble()
 
+    // Reused per-instance workspaces: avoid allocating two channel buffers and
+    // a coefficient buffer for every decoder chunk. The instance remains
+    // single-threaded; output storage is still owned by the returned array.
+    private var workL = FloatArray(TAPS * 2)
+    private var workR = FloatArray(TAPS * 2)
+    private val coefficientScratch = FloatArray(TAPS)
+
     private var clockCorrectionPpm = 0.0
 
     fun setInputSampleRate(rate: Int) {
@@ -115,8 +122,13 @@ class StereoAudioResampler(
         if (n == 0) return FloatArray(0)
 
         val total = TAPS + n
-        val l = FloatArray(total)
-        val r = FloatArray(total)
+        if (workL.size < total) {
+            val capacity = maxOf(total, workL.size * 2)
+            workL = FloatArray(capacity)
+            workR = FloatArray(capacity)
+        }
+        val l = workL
+        val r = workR
         System.arraycopy(histL, 0, l, 0, TAPS)
         System.arraycopy(histR, 0, r, 0, TAPS)
         for (i in 0 until n) {
@@ -127,7 +139,7 @@ class StereoAudioResampler(
         val maxOut = (((total - HALF - pos) / step).toInt() + 2).coerceAtLeast(0)
         val out = FloatArray(maxOut * 2)
         var o = 0
-        val coef = FloatArray(TAPS)
+        val coef = coefficientScratch
         var p = pos
         while (true) {
             val ip = p.toInt()
