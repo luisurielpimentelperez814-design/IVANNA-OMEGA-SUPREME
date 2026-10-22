@@ -8,4 +8,7 @@ internal object BluetoothOutputRatePolicy {
         44_100, 48_000, 88_200, 96_000 -> codecRateHz
         else -> FALLBACK_RATE_HZ
     }
+
+    /** Codec metadata may only be borrowed from the selected output when its address is known. */
+    fun hasReliableDeviceAddress(address: String?): Boolean = !address.isNullOrBlank()
 }
