@@ -1,3 +1,10 @@
+# CHANGELOG — Sin publicar — Corrección del cutoff ASRC USB
+
+- Corregida la convención de frecuencia de corte en `UsbIngressAsrc`: su `sinc(x)=sin(πx)/(πx)` trabaja en ciclos por muestra, por lo que el cutoff debe quedar por debajo de 0.5 ciclos/muestra. La fórmula anterior usaba 0.94 como si fuese normalizada a Nyquist, elevando demasiado el cutoff y debilitando el antialias, especialmente al reducir tasa.
+- La nueva fórmula usa `0.47 * min(outputRate/inputRate, 1)`, conservando un margen de transición del 6% bajo el Nyquist menor. Pendiente de confirmar en CTest/Android CI y de medir respuesta en hardware USB DAC; no se declara validación física.
+
+---
+
 # CHANGELOG — v2.5.119 (410) — Normalización FIR y respuesta de banda pasante
 
 - Corregida la normalización del cutoff del FIR: `fc = 0.97 * cutoffScale` en la convención sinc usada por el resampler; el factor de reducción sigue siendo targetRate/inputRate. Evita duplicar la reducción y recortar indebidamente la banda alta al convertir 96 kHz → 48 kHz.
