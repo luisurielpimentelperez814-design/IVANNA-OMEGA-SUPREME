@@ -59,8 +59,13 @@ public:
         // Transmission loss & lowpass cutoff based on occlusion
         // When occluded: high frequencies drop sharply, direct level drops
         const float occlusion = occlusionFactor_.load(std::memory_order_relaxed);
+        const float absorption = wallAbsorption_.load(std::memory_order_relaxed);
         const float directGain = 1.0f - 0.75f * occlusion;
-        const float alpha = std::clamp(1.0f - 0.85f * occlusion, 0.05f, 1.0f);
+        // Keep the default material (0.25) transparent when there is no occlusion.
+        // Stronger wall absorption increasingly damps high frequencies in this one-pole
+        // approximation; it is a perceptual control, not a measured room impulse response.
+        const float materialDamping = 0.30f * std::max(0.0f, absorption - 0.25f) / 0.70f;
+        const float alpha = std::clamp(1.0f - 0.85f * occlusion - materialDamping, 0.05f, 1.0f);
 
         float sL = filterStateL_;
         float sR = filterStateR_;
