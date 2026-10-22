@@ -42,6 +42,13 @@ TEST(UsbAsrcSpectralResponse, PreservesHighAudioBandWhenDownsamplingByTwo) {
     EXPECT_LT(stopband, 0.02) << "36 kHz alias source response=" << stopband;
 }
 
+TEST(UsbAsrcSpectralResponse, Preserves18kHzBandFor44100To96000Upsampling) {
+    static float kernel[kPhases][kTaps];
+    ivanna::audio::buildUsbAsrcKernel(44100, 96000, kernel);
+    const double response = responseMagnitude(kernel, 18000.0 / 44100.0);
+    EXPECT_GT(response, 0.90) << "18 kHz passband response=" << response;
+}
+
 TEST(UsbAsrcSpectralResponse, InvalidRatesFailClosedToFiniteSilence) {
     static float kernel[kPhases][kTaps];
     for (int i = 0; i < kPhases; ++i)
