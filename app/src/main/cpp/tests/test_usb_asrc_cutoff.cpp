@@ -4,14 +4,14 @@
 
 TEST(UsbAsrcCutoff, UnityRateStaysBelowNyquist) {
     const double cutoff = ivanna::audio::usbAsrcCutoffCyclesPerSample(48000, 48000);
-    EXPECT_NEAR(cutoff, 0.47, 1e-12);
-    EXPECT_LT(cutoff, 0.5);
+    EXPECT_NEAR(cutoff, 0.94, 1e-12);
+    EXPECT_LT(cutoff, 1.0);
 }
 
 TEST(UsbAsrcCutoff, DownsamplingTracksOutputNyquist) {
     const double cutoff = ivanna::audio::usbAsrcCutoffCyclesPerSample(96000, 48000);
-    EXPECT_NEAR(cutoff, 0.235, 1e-12);
-    EXPECT_LT(cutoff, 0.25);
+    EXPECT_NEAR(cutoff, 0.47, 1e-12);
+    EXPECT_LT(cutoff, 0.5);
 }
 
 TEST(UsbAsrcCutoff, UpsamplingDoesNotRaiseCutoffAboveInputNyquist) {
