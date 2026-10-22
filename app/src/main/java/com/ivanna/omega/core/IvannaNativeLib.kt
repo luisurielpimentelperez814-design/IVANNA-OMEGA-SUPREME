@@ -154,6 +154,8 @@ object IvannaNativeLib {
     /** Ancho efectivo entregado al StereoWidener (base × escala térmica). Read-back, no medición de audio. */
     external fun nativeGetSpatialWidthDirect(): Float
     external fun nativeSetAntiDolbyIntensity(intensity: Float)
+    /** Current Anti-Dolby DSP command value; not an acoustic-output measurement. */
+    external fun nativeGetAntiDolbyIntensity(): Float
 
     // ═══ FASE 2: aplicación del ControlFrame desde el hilo de control ═══
     // Llama a control_apply_frame() en C++, que fusiona:
