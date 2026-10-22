@@ -317,10 +317,6 @@ object NativeBridge {
         if (isLoaded) runCatching { getPhysicalSceneSnapshot() }.getOrNull()
             ?.takeIf { it.size >= 2 && it[0].isFinite() && it[1].isFinite() }
         else null
-    fun safeGetPhysicalSceneSnapshot(): FloatArray? =
-        if (isLoaded) runCatching { getPhysicalSceneSnapshot() }.getOrNull()
-            ?.takeIf { it.size >= 2 && it[0].isFinite() && it[1].isFinite() }
-        else null
     fun safeSetHearingAdaptationParams(
         earTipSeal: Float = 1.0f,
         listeningSplDb: Float = 75.0f,
