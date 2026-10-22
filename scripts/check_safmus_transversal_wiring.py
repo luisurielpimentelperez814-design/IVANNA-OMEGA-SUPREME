@@ -94,6 +94,23 @@ require("app/src/main/java/com/ivanna/omega/magisk/OmegaEngineBridge.kt", "gateR
 require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "if (value.isFinite()) value else def")
 require("app/src/main/java/com/ivanna/omega/ui/SupremeAxesPrefs.kt", "internal fun sanitizeState(input: SupremeAxesState)", "val safeState = sanitizeState(s)", "safeSetWarpedLatticeBlDrive(safeState.warpedLatticeBlDrive)")
 require("app/src/main/java/com/ivanna/omega/audio/RoomMeasurement.kt", "gateRoomCorrection", "candidateFiniteAndStable = candidateSafe")
+
+# Bluetooth is a SAFMUS-supervised output route: codec lookup must be nonblocking,
+# bound to the selected A2DP endpoint, stale-safe, and covered by deterministic JVM tests.
+require("app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt",
+        "refreshBluetoothCodecProfileAsync", "routeGeneration.get() == generation",
+        "BluetoothCodecDetector.detectActiveCodec(context, selectedAddress)",
+        "BluetoothRouteProfilePolicy.fallback()")
+require("app/src/main/java/com/ivanna/omega/audio/BluetoothCodecDetector.kt",
+        "preferredDeviceAddress: String? = null",
+        "connected.firstOrNull { it.address.equals(preferredAddress, ignoreCase = true) }")
+require("app/src/main/java/com/ivanna/omega/audio/BluetoothRouteProfilePolicy.kt",
+        "fun fallback(", "fun forCodec(", "RealCodec.UNAVAILABLE")
+require("app/src/test/java/com/ivanna/omega/audio/BluetoothRouteProfilePolicyTest.kt",
+        "lossyAndHighFidelityCodecsReceiveDistinctBoundedProfiles",
+        "unknownCodecDoesNotPretendCodecDetectionSucceeded",
+        "vendorBitrateFallbackUsesOnlyPositiveReportedValues")
+
 require("app/src/main/cpp/spatial/RoomCorrectionEq.hpp", "safetyGain_", "std::clamp(left, -0.98f, 0.98f)")
 require("app/src/main/cpp/spatial/RirConvolver.hpp", "tailLatencyWithinBudgetFor", "tailLatencyBudgetExceeded_")
 require("app/src/main/cpp/spatial/RirConvolver.cpp", "if (tailOverBudget) irLen = MAX_IR")
