@@ -184,7 +184,15 @@ object AudioRouteManager {
      */
     private fun refreshBluetoothCodecProfileAsync(context: Context, generation: Long) {
         Thread({
-            val info = runCatching { BluetoothCodecDetector.detectActiveCodec(context) }
+            // Match the codec query to the A2DP output selected from Android's device list.
+            // If Android hides the address, the detector safely falls back to its default lookup.
+            val selectedAddress = runCatching {
+                val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+                    ?.address
+            }.getOrNull()
+            val info = runCatching { BluetoothCodecDetector.detectActiveCodec(context, selectedAddress) }
                 .getOrElse {
                     Log.w(TAG, "BT codec lookup failed; keeping conservative route profile", it)
                     BluetoothCodecDetector.CodecInfo(
