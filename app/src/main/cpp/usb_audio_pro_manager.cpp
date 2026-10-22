@@ -883,9 +883,18 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
             if (s < -1.0f) s = -1.0f;
             inputScratch[i] = s;
         }
+        // There must be only one active ring-occupancy controller. If a
+        // USB feedback endpoint is configured, nextPacketFrames() already
+        // adjusts the consumer's packet frame count from ring occupancy; do
+        // not run a second, opposing ASRC occupancy loop on the producer.
+        // If feedback becomes unavailable, the zero-capacity input resets the
+        // ASRC servo and the fallback occupancy controller takes over.
+        const bool packetServoActive = g_engine.hasFeedback;
+        const int ringFillForAsrc = packetServoActive ? 0 : g_engine.ring.framesAvailable();
+        const int ringCapacityForAsrc = packetServoActive ? 0 : kRingFrames - 1;
         const int outFrames = g_usbAsrc.process(
             inputScratch, chunk, outputScratch, 8192,
-            g_engine.ring.framesAvailable(), kRingFrames - 1);
+            ringFillForAsrc, ringCapacityForAsrc);
         if (outFrames > 0) written += g_engine.ring.writeFrames(outputScratch, outFrames);
         offset += chunk;
         remaining -= chunk;
