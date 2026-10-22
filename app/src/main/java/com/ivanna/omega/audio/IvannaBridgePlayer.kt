@@ -771,17 +771,14 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             offset += inputChunkFrames
                             if (chunkFrames <= 0) continue
                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
-                            // FIX (fase/eco con sliders al máximo): si el daemon system-wide está
-                            // conectado, el módulo YA procesa este mismo audioSessionId vía
-                            // omega_effect en AudioFlinger — procesar aquí además duplica la
-                            // cadena DSP (misma señal por dos rutas con latencias distintas →
-                            // eco/desfase, peor cuanto mayor el nivel). Con el daemon activo
-                            // el procesado local se omite; sin daemon (app standalone) corre
-                            // igual que antes. Los motores auxiliares (NPE/Volterra/Concert)
-                            // se saltan también: viven en la misma cadena local.
-                            val systemWideActive = com.ivanna.omega.magisk.OmegaEngineBridge.isConnected
-                            val nativeDspHandled = !systemWideActive && DSPBridge.isLoaded
-                            if (!systemWideActive) {
+                            // Ruta A (reproductor propio) y Ruta B (apps de terceros) son
+                            // mutuamente excluyentes: AudioSessionReceiver filtra el paquete
+                            // de IVANNA, por lo que esta sesión NO tiene omega_effect global.
+                            // La conexión del daemon solo acredita el plano de control/socket;
+                            // no prueba que AudioFlinger procese este AudioTrack. Mantener aquí
+                            // el DSP local evita audio sin procesar cuando el daemon está vivo.
+                            val nativeDspHandled = DSPBridge.isLoaded
+                            if (DSPBridge.isLoaded) {
                                 DSPBridge.process(chunk, chunkFrames)
                             }
                             if (com.ivanna.omega.core.IvannaNativeLib.isLoaded &&
