@@ -12,9 +12,9 @@ template <std::size_t Phases, std::size_t Taps>
 void buildUsbAsrcKernel(int inputRate, int outputRate,
                         float (&kernel)[Phases][Taps]) noexcept {
     constexpr double kPi = 3.14159265358979323846;
-    // cutoff is normalized to Nyquist (Nyquist = 1). The ideal low-pass
-    // impulse is cutoff * sinc(cutoff * d), where sinc(x)=sin(pi*x)/(pi*x);
-    // this is equivalent to 2*fc*sinc(2*fc*d) in cycles/sample.
+    // cutoff is normalized to Nyquist (1.0); actual cycles/sample cutoff is cutoff/2.
+    // The ideal impulse is cutoff*sinc(cutoff*d), equivalent to
+    // 2*f*sinc(2*f*d) with f=cutoff/2 and sinc(x)=sin(pi*x)/(pi*x).
     const double cutoff = usbAsrcCutoffNyquistNormalized(inputRate, outputRate);
     if (!(cutoff > 0.0) || !std::isfinite(cutoff)) {
         for (std::size_t p = 0; p < Phases; ++p)
