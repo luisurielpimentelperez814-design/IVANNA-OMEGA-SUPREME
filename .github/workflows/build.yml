@@ -175,6 +175,7 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_SDK_ROOT/platform-tools"            >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/cmake/${ANDROID_CMAKE_VERSION}/bin" >> "$GITHUB_PATH"
 
       - name: Generate local.properties
         run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
@@ -188,7 +189,7 @@ jobs:
           sed -i '/aapt2FromMavenOverride/d' gradle.properties 2>/dev/null || true
 
       # ── COMPILACIÓN DEL DAEMON (obligatoria, desde fuente) ────────────
-      - name: Compile ivanna_daemon from source (NDK r26, arm64-v8a)
+      - name: Compile ivanna_daemon from source (NDK r27d, C++26, arm64-v8a)
         run: |
           set -euo pipefail
           NDK="$ANDROID_NDK_HOME"
