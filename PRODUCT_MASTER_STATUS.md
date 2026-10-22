@@ -47,3 +47,12 @@ No usar «100 % listo», «cero brechas», «mejor sonido demostrado» ni «CI v
 - Se añadieron pruebas JVM para la entrada no finita tanto en conversión como en razón unidad. **Pendiente:** CI del commit actual y medición física en Moto G85.
 - Existe por separado `UsbIngressAsrc` nativo para la ruta USB. No se añadió un segundo motor C++ duplicado a la reproducción de la app.
 - **HAL/PAL de proveedor:** sigue sin demostrarse que el ASRC software de la app controle el actuador del HAL Motorola/Qualcomm. No se declara corrección del reloj físico del DAC ni procesamiento global hasta verificar el callback/actuador real y las mediciones del dispositivo.
+
+
+## ASRC software — endurecimiento de reproducción propia (2026-10-22, no publicado)
+
+- El cambio de rendimiento reutiliza los espacios de trabajo L/R y los coeficientes FIR entre bloques; el buffer de salida usa una cota calculada con el retardo causal del filtro para evitar la asignación y copia de dos muestras extra por bloque.
+- El ASRC sanitiza NaN/Inf antes de incorporarlos al historial FIR. En razón unidad solo conserva la vía bit-transparente si todas las muestras son finitas.
+- Pruebas JVM nuevas: entrada no finita en remuestreo y en razón unidad, salida finita y protección del historial del siguiente bloque.
+- **No se declara CI verde**: el conector disponible no devolvió checks/workflow de la rama principal para el commit documental consultado. Hay que confirmar el resultado en GitHub Actions del SHA más reciente.
+- **No se declara validación física**: falta medir latencia, respuesta de frecuencia/alias, underruns y consumo en el Moto G85. El ASRC app-owned sigue limitado al reproductor de IVANNA; no prueba control del reloj físico ni de apps de terceros.
