@@ -28,7 +28,8 @@ class StereoAudioResampler(
         const val PHASES = 1024
     }
 
-    private var inputRate = 96000
+    // Start at the output rate so setInputSampleRate(targetRate) is a correct no-op, while any other rate recalculates ratio and FIR cutoff.
+    private var inputRate = targetRate
     private var step = 1.0           // muestras de entrada por muestra de salida
     private var table = buildTable(1.0)
 
