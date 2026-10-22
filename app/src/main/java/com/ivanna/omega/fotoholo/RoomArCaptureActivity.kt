@@ -486,7 +486,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         result.put("rp88LockRequested", latestCalibrationLockRequested)
             .put("spatialWidthReadbackConfirmed", latestCalibrationApplied)
             .put("rp88LockFullyConfirmed", false)
-            .put("fullLockConfirmationUnavailable", "Physical-scene absorption and measured acoustic response still have no native read-back.")
+            .put("fullLockConfirmationUnavailable", "Spatial angle, physical-scene absorption, and measured acoustic response still have no native read-back.")
             .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded && NativeBridge.isLoaded)
             .put("spatialWidthReadback", if (latestSpatialWidthReadback.isFinite()) latestSpatialWidthReadback.toDouble() else JSONObject.NULL)
             .put("realityIntensityCommandReadback", if (latestRealityIntensityReadback.isFinite()) latestRealityIntensityReadback.toDouble() else JSONObject.NULL)
