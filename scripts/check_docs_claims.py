@@ -72,7 +72,7 @@ def generate_from_log(log_path: Path) -> int:
 
 def read_cmake_cxx_standard() -> str:
     if not MAIN_CMAKE.exists():
-        return "20"
+        return "26"
     txt = MAIN_CMAKE.read_text(encoding="utf-8", errors="replace")
     m = re.search(r'set\s*\(\s*CMAKE_CXX_STANDARD\s+(\d+)\s*\)', txt)
     return m.group(1) if m else "20"

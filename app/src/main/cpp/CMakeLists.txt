@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.22.1)
+cmake_minimum_required(VERSION 3.28.0)
 project(ivanna_omega_supreme)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── Compile flags ──────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ endif()
 add_compile_definitions(OMEGA_LIMITER_ENABLED=1)
 # Flags reales de compilación → nativeGetBuildFlags() (el perfilador de la UI las muestra tal cual).
 string(REPLACE ";" " " IVANNA_NATIVE_FLAGS_STR "${BASE_FLAGS}")
-add_compile_definitions(IVANNA_NATIVE_FLAGS="${IVANNA_NATIVE_FLAGS_STR} -std=c++20")
+add_compile_definitions(IVANNA_NATIVE_FLAGS="${IVANNA_NATIVE_FLAGS_STR} -std=c++26")
 
 # ────────────────────────────────────────────────────────────────────────────
 # Target: libivanna_omega.so (APK NDK library)

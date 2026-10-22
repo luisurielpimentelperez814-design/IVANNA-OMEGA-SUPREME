@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Toolchain nativa C++26
+
+- Se configura el motor Android, el daemon Magisk y los tests host con `CMAKE_CXX_STANDARD=26`, CMake 3.28.0 y Android NDK r27d (27.2.12479018).
+- CI fija Clang 18 en las pruebas host para evitar el compilador GCC 11 del runner, que no acepta el dialecto C++26; el daemon independiente usa el CMake instalado por el SDK.
+- No se declara listo para release hasta que CI demuestre compilación nativa, APK y pruebas completas.
+
+---
+
 # CHANGELOG — Sin publicar — MAJESTY 3D azimut esférico 360°
 
 - `ObjectRenderer` conserva el hemisferio trasero: deja de recortar los azimuts a ±90° y envuelve la orientación relativa a la cabeza a [-180°, 180°].

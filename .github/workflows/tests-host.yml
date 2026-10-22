@@ -67,6 +67,8 @@ jobs:
       matrix:
         san: ['', 'asan']
     env:
+      CC: clang-18
+      CXX: clang++-18
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: ${{ matrix.san }}
     steps:
@@ -141,6 +143,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      CC: clang-18
+      CXX: clang++-18
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: 'tsan'
     steps:

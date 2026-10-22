@@ -20,8 +20,8 @@ concurrency:
 env:
   ANDROID_COMPILE_SDK: "35"
   ANDROID_BUILD_TOOLS: "35.0.0"
-  ANDROID_NDK_VERSION: "26.1.10909125"
-  ANDROID_CMAKE_VERSION: "3.22.1"
+  ANDROID_NDK_VERSION: "27.2.12479018"
+  ANDROID_CMAKE_VERSION: "3.28.0"
   CMDLINE_TOOLS_VERSION: "11076708"
   GRADLE_VERSION: "8.9"
 
@@ -29,7 +29,10 @@ jobs:
 
   test-native-dsp:
     name: DSP Native Tests (host, CTest)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-18
+      CXX: clang++-18
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
@@ -172,6 +175,7 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_SDK_ROOT/platform-tools"            >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/cmake/${ANDROID_CMAKE_VERSION}/bin" >> "$GITHUB_PATH"
 
       - name: Generate local.properties
         run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
