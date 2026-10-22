@@ -2,6 +2,7 @@
 
 - Se expone por JNI el estado almacenado de oclusión y absorción de pared del `PhysicalSceneRenderer` y se reporta en `rp88_calibration.json` junto con su confirmación contra los valores solicitados.
 - Los setters nativos ignoran controles no finitos para impedir que NaN/Inf contaminen el estado persistente de la escena.
+- Los controles de oclusión/absorción se publican con `std::atomic<float>` para evitar carreras entre los setters JNI y el callback de audio; el DSP sigue sin bloquear ni asignar memoria.
 - El read-back confirma parámetros de control DSP, no una medición acústica; el bloqueo RP-88 completo sigue sin declararse porque faltan read-back del ángulo y respuesta/RIR medidos.
 
 ---
