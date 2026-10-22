@@ -946,6 +946,8 @@ static std::atomic<float> g_thermalSpatialScale{1.0f};   // 1 = sin recorte tér
 // mismo punto que lo escribe en g_pd, para que nativeGetSpatialWidthDirect devuelva el estado
 // efectivo del procesador y no una copia de lo que pidió la UI.
 static std::atomic<float> g_spatialAppliedWidth{1.32f};
+// Last finite, clamped spatial-angle command sent to PDEngine; command read-back, not acoustic measurement.
+static std::atomic<float> g_spatialAppliedAngleRad{0.0f};
 
 // Requiere g_dspProcessMutex tomado por el llamador (hilo de audio).
 static void recomputeCompressorLocked() {
@@ -2770,7 +2772,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialAngleRad(
     JNIEnv*, jobject, jfloat rad) {
-    g_pd.set_spatial_angle(rad * 57.29578f); // rad → deg
+    if (!std::isfinite(rad)) return;
+    // CueBasedSpatial accepts [-90°, 90°]; expose the exact clamped command.
+    const float appliedDeg = std::clamp(rad * 57.29578f, -90.0f, 90.0f);
+    g_pd.set_spatial_angle(appliedDeg);
+    g_spatialAppliedAngleRad.store(appliedDeg * 0.017453292519943295f, std::memory_order_release);
+}
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpatialAngleRad(JNIEnv*, jobject) {
+    return g_spatialAppliedAngleRad.load(std::memory_order_acquire);
 }
 
 // ── FASE 8 paso 4: binaural real ────────────────────────────────────────
