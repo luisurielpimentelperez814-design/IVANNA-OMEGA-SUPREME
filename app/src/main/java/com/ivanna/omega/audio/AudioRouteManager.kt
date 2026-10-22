@@ -253,8 +253,8 @@ object AudioRouteManager {
         )
     }
 
-    private fun refreshBluetoothLatencyProfileAsync(context: Context) {
-        BluetoothAudioProfiler.invalidate()
+    private fun refreshBluetoothLatencyProfileAsync(context: Context, expectedRouteGeneration: Long) {
+        val expectedProfileGeneration = BluetoothAudioProfiler.invalidate()
         Thread({
             // AudioManager enumera endpoints conectados, no garantiza cuál está activo.
             // Solo perfilar cuando hay una única dirección A2DP inequívoca.
@@ -266,7 +266,12 @@ object AudioRouteManager {
                     .orEmpty()
                 BluetoothOutputRatePolicy.selectUnambiguousAddress(addresses)
             }.getOrNull()
-            runCatching { BluetoothAudioProfiler.refresh(context, selectedAddress) }
+            if (routeGeneration.get() != expectedRouteGeneration || currentRoute != OutputRoute.BLUETOOTH) {
+                return@Thread
+            }
+            runCatching {
+                BluetoothAudioProfiler.refresh(context, selectedAddress, expectedProfileGeneration)
+            }
         }, "BtAudioProfilerRefresh").start()
     }
 
@@ -278,7 +283,7 @@ object AudioRouteManager {
                 val generation = routeGeneration.incrementAndGet()
                 applyProfileFor(route, BluetoothRouteProfilePolicy.fallback())
                 appContextRef?.let { ctx ->
-                    refreshBluetoothLatencyProfileAsync(ctx)
+                    refreshBluetoothLatencyProfileAsync(ctx, generation)
                     refreshBluetoothCodecProfileAsync(ctx, generation)
                 }
             }
@@ -290,7 +295,7 @@ object AudioRouteManager {
         appContextRef?.let { ctx ->
             runCatching { AudioPipeline.syncHardwareSampleRate(ctx) }
             if (route == OutputRoute.BLUETOOTH) {
-                refreshBluetoothLatencyProfileAsync(ctx)
+                refreshBluetoothLatencyProfileAsync(ctx, generation)
             } else {
                 // Never retain an A2DP codec/latency profile while USB, AUX or speaker owns output.
                 BluetoothAudioProfiler.invalidate()
