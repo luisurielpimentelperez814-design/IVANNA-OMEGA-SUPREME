@@ -1,7 +1,7 @@
-# CHANGELOG — Sin publicar — Corrección del cutoff ASRC USB
+# CHANGELOG — Sin publicar — Contrato de cutoff ASRC USB
 
-- Corregida la convención de frecuencia de corte en `UsbIngressAsrc`: su `sinc(x)=sin(πx)/(πx)` trabaja en ciclos por muestra, por lo que el cutoff debe quedar por debajo de 0.5 ciclos/muestra. La fórmula anterior usaba 0.94 como si fuese normalizada a Nyquist, elevando demasiado el cutoff y debilitando el antialias, especialmente al reducir tasa.
-- La nueva fórmula usa `0.47 * min(outputRate/inputRate, 1)`, conservando un margen de transición del 6% bajo el Nyquist menor. Pendiente de confirmar en CTest/Android CI y de medir respuesta en hardware USB DAC; no se declara validación física.
+- Se extrae la fórmula de cutoff de `UsbIngressAsrc` a una función pura testeable. La convención existente es Nyquist-normalizada: `0.94 * min(outputRate/inputRate, 1)`; en el kernel `cutoff * sinc(cutoff * d)`, Nyquist equivale a 1.0 (0.5 ciclos/muestra). No cambia el comportamiento DSP de producción.
+- Se agregan pruebas CTest para tasas iguales, downsampling, upsampling y tasas inválidas. Queda pendiente confirmar CI y medir respuesta/aliasing con un DAC USB físico.
 
 ---
 
