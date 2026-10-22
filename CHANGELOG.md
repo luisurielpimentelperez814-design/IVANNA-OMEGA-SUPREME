@@ -1,3 +1,12 @@
+# CHANGELOG — Sin publicar — Read-back nativo de escena física RP-88
+
+- Expone el read-back JNI de oclusión, absorción y ángulo espacial guardados por el DSP y los exporta en el informe de calibración.
+- Rechaza valores NaN/Inf y publica los controles de escena con atómicos para evitar carreras entre JNI y el callback de audio.
+- La confirmación es del estado de comando DSP, no una medición acústica; RP-88 no se declara bloqueo físico completo sin RIR/respuesta medida.
+- Añade una regresión host para límites, valores no finitos y amortiguación adicional de altas frecuencias por absorción.
+
+---
+
 # CHANGELOG — Sin publicar — ASRC USB espectral y FIR Kotlin
 
 - La ruta USB de producción y las pruebas host comparten el mismo generador polyphase FIR de 64 taps/1024 fases, para que las regresiones midan los coeficientes realmente usados por el motor.
