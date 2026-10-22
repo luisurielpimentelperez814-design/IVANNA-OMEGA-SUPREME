@@ -1,6 +1,7 @@
 # Cambios sin publicar — Bluetooth: selección de tasa A2DP en reproductor propio
 
 - `IvannaBridgePlayer` selecciona la tasa negociada reportada por el códec A2DP activo (44.1/48/88.2/96 kHz) y usa 48 kHz de forma conservadora si el dato no está disponible; USB conserva prioridad si hay un DAC conectado.
+- La consulta de códec se vincula a la dirección del dispositivo seleccionado; si no coincide con un dispositivo conectado, no se reutiliza el códec de otro auricular.
 - El `AudioTrackClockDriftServo` existente sigue corrigiendo el ASRC del reproductor propio con marcas temporales del `AudioTrack`; se añade cobertura JVM a la política de selección de tasa.
 - **Alcance explícito:** esto solo afecta reproducción gestionada por `IvannaBridgePlayer`. No controla el reloj remoto A2DP, no inserta ASRC en el HAL Qualcomm y no modifica automáticamente el audio de Spotify/YouTube u otras apps. La validación CI y una prueba física con dispositivos Bluetooth siguen pendientes.
 
