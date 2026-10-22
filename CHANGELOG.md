@@ -1,4 +1,11 @@
-# CHANGELOG — v2.5.125 (416) — PLL de búfer por software para ASRC
+# CHANGELOG — v2.5.126 (417) — integración y aceptación del Plan 10D
+
+- Se limita la consulta de timestamps del reproductor propio a una ventana mínima de 250 ms para evitar sondear AudioTrack en cada bloque PCM; los intervalos sin consulta no se interpretan como fallos.
+- Se amplía el contrato de CI para comprobar el cableado del PLL al remuestreador y la entrada del escáner AR desde FotoHolo y el manifiesto.
+- Se documenta el criterio de aceptación físico del Moto G85, diferenciando el código comprobable en CI de las pruebas que requieren el dispositivo.
+- **Límite explícito:** el escáner ARCore está declarado y accesible desde FotoHolo; la validación física de cámara/tracking/exportación sigue pendiente. El adaptador Camera2 necesita una sesión Camera2 realmente propiedad del caller y no debe conectarse a una sesión interna no expuesta por ARCore. La integración de reloj PAL/ASRC de hardware continúa deshabilitada hasta identificar y verificar el actuador real del firmware.
+
+---
 
 - Se integra `AudioTrackBufferPll`, un lazo PI de software que estima el error de fase mediante frames estéreo aceptados por el `AudioTrack` frente a frames consumidos indicados por `AudioTimestamp`.
 - La salida del PI gobierna el ratio del `StereoAudioResampler` FIR existente: corrección acotada a ±500 ppm, variación máxima de 25 ppm por actualización e integral limitada. Ante timestamps o estimaciones de cola inválidos, el controlador vuelve a corrección cero.
