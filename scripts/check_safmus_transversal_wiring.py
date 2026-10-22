@@ -105,6 +105,9 @@ require("app/src/main/java/com/ivanna/omega/audio/BluetoothCodecDetector.kt",
         "preferredDeviceAddress: String? = null",
         "if (!BluetoothOutputRatePolicy.hasReliableDeviceAddress(preferredDeviceAddress))",
         "BluetoothOutputRatePolicy.matchesSelectedDevice(preferredDeviceAddress, it.address)")
+require("app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt",
+        "BluetoothOutputRatePolicy.selectUnambiguousAddress(a2dpAddresses)",
+        "Missing/ambiguous address means no codec inference; the detector fails closed.")
 require("app/src/main/java/com/ivanna/omega/audio/BluetoothRouteProfilePolicy.kt",
         "fun fallback(", "fun forCodec(", "RealCodec.UNAVAILABLE")
 require("app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt", "OutputRoutePolicy.select(")
