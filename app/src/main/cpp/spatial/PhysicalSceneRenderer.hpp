@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <algorithm>
+#include <atomic>
 
 namespace ivanna::spatial {
 
@@ -24,23 +25,29 @@ public:
     }
 
     void reset() noexcept {
-        occlusionFactor_ = 0.0f;
-        wallAbsorption_ = 0.25f;
+        occlusionFactor_.store(0.0f, std::memory_order_relaxed);
+        wallAbsorption_.store(0.25f, std::memory_order_relaxed);
         filterStateL_ = 0.0f;
         filterStateR_ = 0.0f;
     }
 
+    // UI/JNI parameter writes can race the real-time audio callback. Publish finite,
+    // clamped controls atomically; never take a mutex or allocate on the audio thread.
     void setOcclusion(float occ) noexcept {
-        if (std::isfinite(occ)) occlusionFactor_ = std::clamp(occ, 0.0f, 1.0f);
+        if (std::isfinite(occ)) {
+            occlusionFactor_.store(std::clamp(occ, 0.0f, 1.0f), std::memory_order_release);
+        }
     }
 
     void setWallAbsorption(float abs) noexcept {
-        if (std::isfinite(abs)) wallAbsorption_ = std::clamp(abs, 0.05f, 0.95f);
+        if (std::isfinite(abs)) {
+            wallAbsorption_.store(std::clamp(abs, 0.05f, 0.95f), std::memory_order_release);
+        }
     }
 
     // Command-state read-back. These values confirm stored DSP parameters, not acoustic measurements.
-    float occlusionFactor() const noexcept { return occlusionFactor_; }
-    float wallAbsorption() const noexcept { return wallAbsorption_; }
+    float occlusionFactor() const noexcept { return occlusionFactor_.load(std::memory_order_acquire); }
+    float wallAbsorption() const noexcept { return wallAbsorption_.load(std::memory_order_acquire); }
 
     /**
      * @brief Apply occlusion and acoustic material absorption.
@@ -51,8 +58,9 @@ public:
 
         // Transmission loss & lowpass cutoff based on occlusion
         // When occluded: high frequencies drop sharply, direct level drops
-        const float directGain = 1.0f - 0.75f * occlusionFactor_;
-        const float alpha = std::clamp(1.0f - 0.85f * occlusionFactor_, 0.05f, 1.0f);
+        const float occlusion = occlusionFactor_.load(std::memory_order_relaxed);
+        const float directGain = 1.0f - 0.75f * occlusion;
+        const float alpha = std::clamp(1.0f - 0.85f * occlusion, 0.05f, 1.0f);
 
         float sL = filterStateL_;
         float sR = filterStateR_;
@@ -73,8 +81,8 @@ public:
     }
 
 private:
-    float occlusionFactor_{0.0f};
-    float wallAbsorption_{0.25f};
+    std::atomic<float> occlusionFactor_{0.0f};
+    std::atomic<float> wallAbsorption_{0.25f};
     float filterStateL_{0.0f};
     float filterStateR_{0.0f};
 };
