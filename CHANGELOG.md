@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Corrección de cutoff del FIR Kotlin
+
+- Corrige la normalización del sinc de `StereoAudioResampler`: el argumento `fc` se expresa en ciclos por muestra y Nyquist es 0.5, por lo que el corte pasa de `0.97` a `0.485` antes de aplicar el escalado de downsampling.
+- Evita un corte aproximadamente duplicado que debilitaba la atenuación de alias y podía afectar el paso de banda alto en conversión de frecuencia.
+- Requiere CI de Android/JVM en verde y validación espectral antes de considerarse listo para release; no declara verificado el DAC físico.
+
+---
+
 # CHANGELOG — Sin publicar — MAJESTY 3D azimut esférico 360°
 
 - `ObjectRenderer` conserva el hemisferio trasero: deja de recortar los azimuts a ±90° y envuelve la orientación relativa a la cabeza a [-180°, 180°].
