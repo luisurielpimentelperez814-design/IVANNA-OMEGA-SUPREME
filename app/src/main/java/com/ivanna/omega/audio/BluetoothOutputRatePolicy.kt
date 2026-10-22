@@ -16,4 +16,8 @@ internal object BluetoothOutputRatePolicy {
     fun matchesSelectedDevice(selectedAddress: String?, candidateAddress: String?): Boolean =
         hasReliableDeviceAddress(selectedAddress) && hasReliableDeviceAddress(candidateAddress) &&
             selectedAddress!!.trim().equals(candidateAddress!!.trim(), ignoreCase = true)
+
+    /** Connected-device enumeration is not an active-route API; accept only one unambiguous A2DP candidate. */
+    fun selectUnambiguousAddress(addresses: List<String?>): String? =
+        addresses.singleOrNull()?.takeIf { hasReliableDeviceAddress(it) }?.trim()
 }
