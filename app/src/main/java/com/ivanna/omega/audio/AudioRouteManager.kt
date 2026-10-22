@@ -233,10 +233,17 @@ object AudioRouteManager {
             else -> SafmusAdapterPolicy.Load.NORMAL
         }
         val p = SafmusAdapterPolicy.optimizeRouteProfile(baseProfile, load)
-        Log.i(TAG, "Ruta de salida: $route SAFMUS=$load -> perfil DSP solicitado; sin read-back, aplicación no confirmada")
-        AudioEngine.nativeSetRouteProfileStatic(p.bassBoostDb, p.dialogBoostDb, p.widenerMult)
-        com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
+        val localDispatched = AudioEngine.nativeSetRouteProfileStatic(
             p.bassBoostDb, p.dialogBoostDb, p.widenerMult
+        )
+        val daemonAcknowledged = com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
+            p.bassBoostDb, p.dialogBoostDb, p.widenerMult
+        )
+        Log.i(
+            TAG,
+            "Ruta de salida: $route SAFMUS=$load -> perfil solicitado; " +
+                "localDispatched=$localDispatched daemonAcknowledged=$daemonAcknowledged; " +
+                "DSP read-back no disponible, aplicación no confirmada"
         )
     }
 
