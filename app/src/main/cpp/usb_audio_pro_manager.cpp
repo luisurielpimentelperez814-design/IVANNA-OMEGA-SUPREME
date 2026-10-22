@@ -291,7 +291,12 @@ private:
         // For downsampling, cutoff is below output/input Nyquist; for
         // upsampling, cutoff stays below input Nyquist to suppress images.
         const double ratio = static_cast<double>(outputRate_) / inputRate_;
-        const double cutoff = 0.94 * (ratio < 1.0 ? ratio : 1.0);
+        // sinc() below is normalized as sin(pi*x)/(pi*x), so cutoff is in
+        // cycles/sample (Nyquist = 0.5), not a 0..1 Nyquist-normalized value.
+        // Keep a 6% transition band below the lower Nyquist for both
+        // downsampling and upsampling: 48 kHz -> 48 kHz uses 0.47 cycles/sample,
+        // 96 kHz -> 48 kHz uses 0.235 cycles/sample.
+        const double cutoff = 0.47 * (ratio < 1.0 ? ratio : 1.0);
         constexpr double center = (kTaps - 1) * 0.5;
         for (int p = 0; p < kPhases; ++p) {
             const double frac = static_cast<double>(p) / kPhases;
