@@ -132,8 +132,11 @@ class StereoAudioResampler(
         System.arraycopy(histL, 0, l, 0, TAPS)
         System.arraycopy(histR, 0, r, 0, TAPS)
         for (i in 0 until n) {
-            l[TAPS + i] = input[2 * i]
-            r[TAPS + i] = input[2 * i + 1]
+            val left = input[2 * i]
+            val right = input[2 * i + 1]
+            // A corrupt decoder/DSP sample must not poison the FIR history.
+            l[TAPS + i] = if (left.isFinite()) left else 0f
+            r[TAPS + i] = if (right.isFinite()) right else 0f
         }
 
         val maxOut = (((total - HALF - pos) / step).toInt() + 2).coerceAtLeast(0)
