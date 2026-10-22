@@ -1,3 +1,11 @@
+# Cambios sin publicar — Bluetooth: selección de tasa A2DP en reproductor propio
+
+- `IvannaBridgePlayer` selecciona la tasa negociada reportada por el códec A2DP activo (44.1/48/88.2/96 kHz) y usa 48 kHz de forma conservadora si el dato no está disponible; USB conserva prioridad si hay un DAC conectado.
+- El `AudioTrackClockDriftServo` existente sigue corrigiendo el ASRC del reproductor propio con marcas temporales del `AudioTrack`; se añade cobertura JVM a la política de selección de tasa.
+- **Alcance explícito:** esto solo afecta reproducción gestionada por `IvannaBridgePlayer`. No controla el reloj remoto A2DP, no inserta ASRC en el HAL Qualcomm y no modifica automáticamente el audio de Spotify/YouTube u otras apps. La validación CI y una prueba física con dispositivos Bluetooth siguen pendientes.
+
+---
+
 # CHANGELOG — v2.5.120 (411) — RP-88, ASRC USB y toolchain C++26
 
 - RP-88 conserva el signo del ITD estimado, aplica simetría izquierda/derecha y pliega ángulos traseros para que el retardo vuelva hacia cero a 180°. El comando espacial enviado al DSP permanece limitado a ±90°.
