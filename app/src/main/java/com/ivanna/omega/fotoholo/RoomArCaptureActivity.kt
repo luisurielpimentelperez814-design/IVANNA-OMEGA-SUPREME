@@ -500,7 +500,9 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .put("rp88LockFullyConfirmed", false)
             .put("fullLockConfirmationUnavailable", "Native angle and physical-scene values confirm stored commands only; measured acoustic response/RIR remains unavailable.")
             .put("spatialAngleReadback", if (latestSpatialAngleReadback.isFinite()) latestSpatialAngleReadback.toDouble() else JSONObject.NULL)
-            .put("spatialAngleReadbackConfirmed", latestSpatialAngleReadback.isFinite())
+            .put("spatialAngleReadbackUnit", "radians")
+            .put("spatialAngleReadbackConfirmed", estimate != null && latestSpatialAngleReadback.isFinite() &&
+                kotlin.math.abs(latestSpatialAngleReadback - Math.toRadians(estimate.spatialAngleDeg.toDouble().coerceIn(-90.0, 90.0)).toFloat()) <= 0.02f)
             .put("physicalSceneReadbackConfirmed", latestPhysicalSceneReadbackConfirmed)
             .put("occlusionReadback", if (latestOcclusionReadback.isFinite()) latestOcclusionReadback.toDouble() else JSONObject.NULL)
             .put("wallAbsorptionReadback", if (latestWallAbsorptionReadback.isFinite()) latestWallAbsorptionReadback.toDouble() else JSONObject.NULL)
@@ -578,6 +580,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .putFloat("reality_intensity_command_readback", if (realityReadback.isFinite()) realityReadback else -1f)
             .putFloat("anti_dolby_command_readback", if (antiDolbyReadback.isFinite()) antiDolbyReadback else -1f)
             .putFloat("spatial_angle_command_readback", if (angleReadback.isFinite()) angleReadback else -999f)
+            .putBoolean("spatial_angle_command_readback_confirmed", angleReadback.isFinite() &&
+                kotlin.math.abs(angleReadback - Math.toRadians(calibration.spatialAngleDeg.toDouble().coerceIn(-90.0, 90.0)).toFloat()) <= 0.02f)
             .putFloat("physical_scene_occlusion_readback", if (occlusionReadback.isFinite()) occlusionReadback else -1f)
             .putFloat("physical_scene_absorption_readback", if (absorptionReadback.isFinite()) absorptionReadback else -1f)
             .putBoolean("physical_scene_readback_confirmed", latestPhysicalSceneReadbackConfirmed)
@@ -586,7 +590,7 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .putLong("updated_at_ms", System.currentTimeMillis())
             .apply()
         statusView.text = if (applied) {
-            "RP-88 PARCIAL · ancho DSP=${String.format(Locale.US, "%.2f", readback)}, realidad DSP=${if (realityReadback.isFinite()) String.format(Locale.US, "%.2f", realityReadback) else "sin lectura"}, Anti-Dolby DSP=${if (antiDolbyReadback.isFinite()) String.format(Locale.US, "%.2f", antiDolbyReadback) else "sin lectura"}. Son valores de control, no medición acústica; absorción sin read-back y RT60/RIR estimados."
+            "RP-88 PARCIAL · ancho DSP=${String.format(Locale.US, "%.2f", readback)}, ángulo=${if (angleReadback.isFinite()) String.format(Locale.US, "%.1f°", Math.toDegrees(angleReadback.toDouble())) else "sin lectura"}, escena=${if (latestPhysicalSceneReadbackConfirmed) "confirmada por read-back" else "sin confirmación"}. Los read-backs son valores de control, no mediciones acústicas; RT60/RIR siguen estimados."
         } else {
             "RP-88: estimación guardada, pero el motor nativo no confirmó el ancho solicitado. No se declara LOCK efectivo. Exporta rp88_calibration.json para inspección."
         }
