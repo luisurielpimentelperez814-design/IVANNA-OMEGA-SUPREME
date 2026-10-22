@@ -1,3 +1,12 @@
+# En preparación — ASRC software propio (no publicado)
+
+- Se reutilizan los buffers de trabajo del remuestreador estéreo entre bloques y se calcula una cota ajustada para el buffer de salida, reduciendo asignaciones/copia extra en la reproducción propia.
+- Se contienen muestras `NaN`/`Inf` a cero antes del FIR, incluida la ruta de tasa unitaria cuando no es posible el paso transparente.
+- Se agregan pruebas JVM para verificar que una muestra no finita no contamine la salida ni el historial FIR.
+- **Estado:** cambios directos a `main`; CI y pruebas en el Moto G85 pendientes. No constituye una release publicada ni certifica el HAL/PAL de proveedor.
+
+---
+
 # CHANGELOG — v2.5.124 (415) — SAFMUS Plan 10D: identidad estricta de ruta Bluetooth
 
 - El detector A2DP falla de forma segura cuando no recibe una dirección de dispositivo seleccionada y solo acepta coincidencia exacta de dirección (sin distinguir mayúsculas/minúsculas).
