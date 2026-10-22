@@ -73,23 +73,49 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     private data class OutputRoute(val sampleRate: Int, val preferredDevice: AudioDeviceInfo?)
 
     /**
-     * Targets a connected USB DAC when Android exposes one. USB descriptors vary:
-     * use advertised rates when available; if capabilities are unknown, use 48 kHz
-     * rather than assuming every endpoint accepts 96 kHz. Built-in output retains 96 kHz.
+     * Selects an app-owned AudioTrack route before decoding starts.
+     *
+     * USB: honor advertised endpoint rates, falling back conservatively to 48 kHz.
+     * Bluetooth: prefer the active A2DP codec's negotiated sample rate; for BLE
+     * or unavailable codec metadata, use 48 kHz instead of sending 96 kHz into
+     * Android's Bluetooth mixer unnecessarily. The OS still owns A2DP encoding,
+     * packetization and remote-sink clock recovery; this is not a vendor-HAL hook.
+     * Built-in output retains 96 kHz.
      */
     private fun selectOutputRoute(): OutputRoute {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val usb = runCatching {
-            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
-                it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET
-            }
-        }.getOrNull()
-        if (usb == null) return OutputRoute(TARGET_SAMPLE_RATE, null)
-        val rates = usb.sampleRates
-        val advertised = rates.filter { it in 44_100..96_000 }.distinct().sortedDescending()
-        val rate = advertised.firstOrNull() ?: USB_FALLBACK_SAMPLE_RATE
-        Log.i(TAG, "USB audio output selected: ${usb.productName}; rate=${rate} Hz; advertised=${rates.contentToString()}")
-        return OutputRoute(rate, usb)
+        val outputs = runCatching {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        }.getOrNull().orEmpty()
+
+        val usb = outputs.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+        }
+        if (usb != null) {
+            val rates = usb.sampleRates
+            val advertised = rates.filter { it in 44_100..96_000 }.distinct().sortedDescending()
+            val rate = advertised.firstOrNull() ?: USB_FALLBACK_SAMPLE_RATE
+            Log.i(TAG, "USB audio output selected: ${usb.productName}; rate=${rate} Hz; advertised=${rates.contentToString()}")
+            return OutputRoute(rate, usb)
+        }
+
+        val bluetooth = outputs.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+        }
+        if (bluetooth != null) {
+            val codec = if (bluetooth.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+                runCatching { BluetoothCodecDetector.detectActiveCodec(context) }.getOrNull()
+            } else null
+            val codecRate = codec?.sampleRateHz ?: 0
+            val rate = BluetoothOutputRatePolicy.select(codecRate)
+            Log.i(TAG, "Bluetooth output selected: ${bluetooth.productName}; " +
+                "codec=${codec?.codec ?: "BLE/unknown"}; negotiatedRate=${codecRate}Hz; trackRate=${rate}Hz")
+            return OutputRoute(rate, bluetooth)
+        }
+
+        return OutputRoute(TARGET_SAMPLE_RATE, null)
     }
 
     private val focusManager by lazy {
