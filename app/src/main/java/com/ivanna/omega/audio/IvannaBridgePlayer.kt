@@ -378,6 +378,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         if (queue.isEmpty()) {
             queueIndex = -1
             stop()
+            // Notify the UI that the queue is cleared without inventing a track URI.
+            onQueueAdvance?.invoke(Uri.EMPTY)
             return
         }
         queueIndex = startIndex.coerceIn(0, queue.lastIndex)
