@@ -617,9 +617,10 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             if (nowMs - lastUiStatusMs > 650L) {
                 lastUiStatusMs = nowMs
                 val count = synchronized(pointsLock) { points.size }
+                val poseHud = poseHud(camera)
                 runOnUiThread {
                     if (captureEnabled.get()) statusView.text =
-                        "CAPTURANDO · seguimiento ${camera.trackingState.name} · puntos $count\nBarre despacio; evita giros bruscos y superficies sin textura."
+                        "CAPTURANDO · seguimiento ${camera.trackingState.name} · puntos $count\n6-DoF: $poseHud\nBarre despacio; evita giros bruscos y superficies sin textura."
                 }
             }
         } catch (e: Exception) {
@@ -648,6 +649,20 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         if (!captureEnabled.get()) runOnUiThread {
             statusView.text = "La cámara no entrega imagen (0 fotogramas en 1.5 s). Reabre la pantalla o reinicia la app."
         }
+    }
+
+    /** Live 6-DoF pose HUD; coordinates are ARCore world-frame estimates, not survey-grade measurements. */
+    private fun poseHud(camera: Camera): String {
+        val pose = camera.pose
+        val t = pose.translation
+        val q = pose.rotationQuaternion
+        val x = q[0].toDouble(); val y = q[1].toDouble()
+        val z = q[2].toDouble(); val w = q[3].toDouble()
+        val roll = Math.toDegrees(kotlin.math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y)))
+        val pitchArg = (2.0 * (w * y - z * x)).coerceIn(-1.0, 1.0)
+        val pitch = Math.toDegrees(kotlin.math.asin(pitchArg))
+        val yaw = Math.toDegrees(kotlin.math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+        return String.format(Locale.US, "x %.2f y %.2f z %.2f m · yaw %.0f° pitch %.0f° roll %.0f°", t[0], t[1], t[2], yaw, pitch, roll)
     }
 
     private fun collectPose(camera: Camera) {
