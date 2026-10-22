@@ -1,3 +1,10 @@
+# CHANGELOG — Sin publicar — Contrato angular RP-88
+
+- Limita el ángulo exportado por la calibración AR al rango nativo de ±90°, sin alterar el azimut normalizado usado para calcular ITD.
+- Añade pruebas Kotlin y C++ para saturación, límites y rechazo de comandos no finitos. El read-back confirma estado del comando DSP, no medición acústica.
+
+---
+
 # CHANGELOG — Sin publicar — Despliegue estricto SAF/SOFA/RIR/HRTF
 
 - El instalador Magisk rechaza datasets ausentes o incompletos, copia a staging, compara bytes y activa directorios con rollback si falla la sustitución.
