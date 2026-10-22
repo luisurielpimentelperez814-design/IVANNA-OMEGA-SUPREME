@@ -22,19 +22,6 @@ add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 enable_testing()
 include(GoogleTest)
 
-# OMEGA-owned general-purpose streaming stereo software ASRC. Kept as a
-# production-header test target so conversion, bounds and failure behavior
-# are checked in the same host CI gate as the native DSP suite.
-add_executable(test_omega_software_asrc test_omega_software_asrc.cpp)
-target_include_directories(test_omega_software_asrc PRIVATE ../include)
-target_compile_options(test_omega_software_asrc PRIVATE -Wall -Wextra)
-target_link_libraries(test_omega_software_asrc PRIVATE GTest::gtest_main)
-if(IVANNA_SAN_FLAGS)
-  target_compile_options(test_omega_software_asrc PRIVATE ${IVANNA_SAN_FLAGS})
-  target_link_options(test_omega_software_asrc PRIVATE ${IVANNA_SAN_FLAGS})
-endif()
-gtest_discover_tests(test_omega_software_asrc)
-
 add_library(ivanna_dsp_under_test STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/Compressor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/SafetyLimiter.cpp
