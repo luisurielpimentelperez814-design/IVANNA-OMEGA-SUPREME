@@ -921,9 +921,31 @@ Java_com_ivanna_omega_core_NativeBridge_setRoomProjectionParams(
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_NativeBridge_setPhysicalSceneParams(
     JNIEnv*, jclass, jfloat occlusionFactor, jfloat wallAbsorption) {
-    auto& scene = ivanna::spatial::IvannaAudioPipeline::getActiveInstance().physicalScene();
+    // Never write the fallback placeholder: a calibration command is only meaningful
+    // when the real playback pipeline has registered itself as active.
+    auto* pipe = ivanna::spatial::IvannaAudioPipeline::peekActiveInstance();
+    if (pipe == nullptr) return;
+    auto& scene = pipe->physicalScene();
     scene.setOcclusion(occlusionFactor);
     scene.setWallAbsorption(wallAbsorption);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getPhysicalSceneSnapshot(JNIEnv* env, jclass) {
+    // Fail closed instead of reporting the static fallback instance as live DSP state.
+    auto* pipe = ivanna::spatial::IvannaAudioPipeline::peekActiveInstance();
+    if (pipe == nullptr) return nullptr;
+    const auto& scene = pipe->physicalScene();
+    const jfloat values[2] = {scene.occlusionFactor(), scene.wallAbsorption()};
+    jfloatArray result = env->NewFloatArray(2);
+    if (result == nullptr) return nullptr;
+    env->SetFloatArrayRegion(result, 0, 2, values);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(result);
+        return nullptr;
+    }
+    return result;
 }
 
 extern "C" JNIEXPORT void JNICALL
