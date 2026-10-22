@@ -489,10 +489,10 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .put("fullLockConfirmationUnavailable", "Physical-scene absorption and measured acoustic response still have no native read-back.")
             .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded && NativeBridge.isLoaded)
             .put("spatialWidthReadback", if (latestSpatialWidthReadback.isFinite()) latestSpatialWidthReadback.toDouble() else JSONObject.NULL)
-            .put("realityIntensityReadback", if (latestRealityIntensityReadback.isFinite()) latestRealityIntensityReadback.toDouble() else JSONObject.NULL)
-            .put("antiDolbyIntensityReadback", if (latestAntiDolbyIntensityReadback.isFinite()) latestAntiDolbyIntensityReadback.toDouble() else JSONObject.NULL)
-            .put("realityIntensityReadbackConfirmed", latestRealityIntensityReadback.isFinite() && kotlin.math.abs(latestRealityIntensityReadback - 0.88f) <= 0.02f)
-            .put("antiDolbyIntensityReadbackConfirmed", latestAntiDolbyIntensityReadback.isFinite() && kotlin.math.abs(latestAntiDolbyIntensityReadback - 0.88f) <= 0.02f)
+            .put("realityIntensityCommandReadback", if (latestRealityIntensityReadback.isFinite()) latestRealityIntensityReadback.toDouble() else JSONObject.NULL)
+            .put("antiDolbyCommandReadback", if (latestAntiDolbyIntensityReadback.isFinite()) latestAntiDolbyIntensityReadback.toDouble() else JSONObject.NULL)
+            .put("realityIntensityCommandReadbackConfirmed", latestRealityIntensityReadback.isFinite() && kotlin.math.abs(latestRealityIntensityReadback - 0.88f) <= 0.02f)
+            .put("antiDolbyCommandReadbackConfirmed", latestAntiDolbyIntensityReadback.isFinite() && kotlin.math.abs(latestAntiDolbyIntensityReadback - 0.88f) <= 0.02f)
             .put("commandValues", JSONObject()
                 .put("realityIntensity", 0.88)
                 .put("antiDolbyIntensity", 0.88)
@@ -543,14 +543,14 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .putBoolean("spatial_width_readback_confirmed", applied)
             .putBoolean("rp88_lock_fully_confirmed", false)
             .putFloat("spatial_width_readback", if (readback.isFinite()) readback else -1f)
-            .putFloat("reality_intensity_readback", if (realityReadback.isFinite()) realityReadback else -1f)
-            .putFloat("anti_dolby_intensity_readback", if (antiDolbyReadback.isFinite()) antiDolbyReadback else -1f)
-            .putBoolean("reality_intensity_readback_confirmed", realityReadback.isFinite() && kotlin.math.abs(realityReadback - 0.88f) <= 0.02f)
-            .putBoolean("anti_dolby_intensity_readback_confirmed", antiDolbyReadback.isFinite() && kotlin.math.abs(antiDolbyReadback - 0.88f) <= 0.02f)
+            .putFloat("reality_intensity_command_readback", if (realityReadback.isFinite()) realityReadback else -1f)
+            .putFloat("anti_dolby_command_readback", if (antiDolbyReadback.isFinite()) antiDolbyReadback else -1f)
+            .putBoolean("reality_intensity_command_readback_confirmed", realityReadback.isFinite() && kotlin.math.abs(realityReadback - 0.88f) <= 0.02f)
+            .putBoolean("anti_dolby_command_readback_confirmed", antiDolbyReadback.isFinite() && kotlin.math.abs(antiDolbyReadback - 0.88f) <= 0.02f)
             .putLong("updated_at_ms", System.currentTimeMillis())
             .apply()
         statusView.text = if (applied) {
-            "RP-88 PARCIAL · ancho=${String.format(Locale.US, "%.2f", readback)}, realidad=${if (realityReadback.isFinite()) String.format(Locale.US, "%.2f", realityReadback) else "sin lectura"}, Anti-Dolby=${if (antiDolbyReadback.isFinite()) String.format(Locale.US, "%.2f", antiDolbyReadback) else "sin lectura"}. Absorción de escena sin read-back; RT60/RIR son estimaciones, no mediciones."
+            "RP-88 PARCIAL · ancho DSP=${String.format(Locale.US, "%.2f", readback)}, realidad DSP=${if (realityReadback.isFinite()) String.format(Locale.US, "%.2f", realityReadback) else "sin lectura"}, Anti-Dolby DSP=${if (antiDolbyReadback.isFinite()) String.format(Locale.US, "%.2f", antiDolbyReadback) else "sin lectura"}. Son valores de control, no medición acústica; absorción sin read-back y RT60/RIR estimados."
         } else {
             "RP-88: estimación guardada, pero el motor nativo no confirmó el ancho solicitado. No se declara LOCK efectivo. Exporta rp88_calibration.json para inspección."
         }
