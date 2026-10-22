@@ -1,6 +1,6 @@
 # CHANGELOG — Sin publicar — Contrato de toolchain C++26
 
-- Alinea la guía de contribución, el resumen de ingeniería y la matriz de cableado con el estándar C++26 que ya usa CMake en el motor nativo.
+- Alinea la guía de contribución, el resumen de ingeniería, la matriz de cableado, la ficha de cita, la página de proyecto y los textos de lanzamiento/promoción con C++26, que ya usa CMake en el motor nativo.
 - Cambio documental únicamente; no modifica versión publicada ni afirma compatibilidad de hardware no medida.
 
 ---
