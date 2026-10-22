@@ -675,6 +675,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 audioRecord?.release(); audioRecord = null
                 return false
             }
+            // PlaybackCaptureService always captures/renders at 48 kHz. Keep its shared
+            // spatial fallback's ITD/crossfeed rings on that clock; IvannaBridgePlayer
+            // owns a separate engine instance for its independently selected output rate.
+            com.ivanna.omega.spatial.IvannaSpatialEngine.shared.configureSampleRate(SAMPLE_RATE)
+            com.ivanna.omega.spatial.IvannaSpatialEngine.shared.reset()
             adaptiveLatency.configure(SAMPLE_RATE, targetTrackBuf)
             // COLCHON DE SALIDA: pista nueva => contador a 0 (antes arrastraba el de la sesion anterior y
             // medía una latencia falsa enorme). Se pre-llena con silencio (señal neutra en la via diferencial)
