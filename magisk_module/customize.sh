@@ -34,7 +34,7 @@ run_low_priority() {
 SAF_DIR="/data/adb/ivanna_omega"
 SAF_SRC="$MODPATH/saf/SAF_model.json"
 SAF_DEST="$SAF_DIR/SAF_model.json"
-SAF_STAGE="$SAF_DIR/.SAF_model.json.$"
+SAF_STAGE="$SAF_DIR/.SAF_model.json.$$"
 ui_print "- Deploying Φ_SAF^∞ SAF_model.json..."
 [ -s "$SAF_SRC" ] || abort "ERROR: falta SAF_model.json válido en el módulo: $SAF_SRC"
 mkdir -p "$SAF_DIR" || abort "ERROR: no se pudo crear $SAF_DIR"
