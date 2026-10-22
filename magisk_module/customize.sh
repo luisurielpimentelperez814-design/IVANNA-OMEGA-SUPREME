@@ -95,7 +95,7 @@ HRTF_STAGE_COUNT=$(find "$HRTF_STAGE" -maxdepth 1 -type f -name '*.ihr1' | wc -l
 HRTF_OK=1
 cd "$HRTF_STAGE" || abort "ERROR: no se pudo validar el staging HRTF"
 for F in $(grep -o '"file": *"[^"]*"' hrtf_index.json | sed 's/.*"\([^"]*\)"$/\1/'); do
-    EXPECTED=$(grep -A6 "\\"$F\\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    EXPECTED=$(grep -A6 "\"$F\"" hrtf_index.json | grep -o '"sha256": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
     if [ -z "$EXPECTED" ] || [ ! -s "$F" ]; then
         ui_print "  ! HRTF inválido o ausente en índice: $F"
         HRTF_OK=0
