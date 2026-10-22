@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Toolchain nativa C++26
+
+- Se configura `CMAKE_CXX_STANDARD=26` para el motor Android y los tests host, con CMake 3.28.0 y Android NDK r27d (27.2.12479018), que incluye Clang más reciente que el NDK r26 anterior.
+- Se actualizan Gradle, CMake y CI en conjunto para evitar que un estándar declarado no coincida con el compilador real.
+- No se declara el cambio listo para release hasta que CI demuestre compilación nativa, APK y tests; C++26 no se considera validado solo por modificar los archivos de configuración.
+
+---
+
 # CHANGELOG — Sin publicar — Read-back nativo RP-88
 
 - Se exponen getters JNI para la intensidad de realidad y Anti-Dolby y se guardan sus valores leídos tras aplicar LOCK, junto con el ancho espacial, en el JSON exportado y las preferencias locales.
