@@ -885,6 +885,11 @@ Java_com_ivanna_omega_core_NativeBridge_setRealityIntensity(JNIEnv*, jclass, jfl
     }
 }
 
+extern "C" JNIEXPORT jfloat JNICALL
+Java_com_ivanna_omega_core_NativeBridge_getRealityIntensity(JNIEnv*, jclass) {
+    return ivanna::reality::AcousticRealityOrchestrator::instance().getRealityIntensity();
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_NativeBridge_setPersonalAuditoryProfile(
     JNIEnv*, jclass, jfloat headRadiusM, jfloat pinnaDepthM,

@@ -63,6 +63,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
     private var latestCalibrationApplied = false
     private var latestCalibrationLockRequested = false
     private var latestSpatialWidthReadback = Float.NaN
+    private var latestRealityIntensityReadback = Float.NaN
+    private var latestAntiDolbyIntensityReadback = Float.NaN
     private var installRequested = false
     // ARCore exige setDisplayGeometry(rotación, ancho, alto) antes de update(); sin ello la imagen de
     // cámara sale estirada/rotada (aspecto "horrible" justo tras conceder el permiso). Se aplica en el
@@ -179,6 +181,9 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 latestCalibration = lastSnapshot?.let { estimateCalibration(it) }
                 latestCalibrationApplied = false
                 latestCalibrationLockRequested = false
+                latestSpatialWidthReadback = Float.NaN
+                latestRealityIntensityReadback = Float.NaN
+                latestAntiDolbyIntensityReadback = Float.NaN
             }
         }
         lockRp88Button = Button(this).apply {
@@ -344,6 +349,9 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         lockRp88Button.isEnabled = latestCalibration != null && snapshot.points.isNotEmpty()
         latestCalibrationApplied = false
         latestCalibrationLockRequested = false
+        latestSpatialWidthReadback = Float.NaN
+        latestRealityIntensityReadback = Float.NaN
+        latestAntiDolbyIntensityReadback = Float.NaN
         val b = bounds(snapshot.points)
         statusView.text = if (snapshot.points.isEmpty()) {
             "Captura vacía: apunta a superficies con textura y buena luz, y vuelve a intentar."
@@ -478,9 +486,13 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         result.put("rp88LockRequested", latestCalibrationLockRequested)
             .put("spatialWidthReadbackConfirmed", latestCalibrationApplied)
             .put("rp88LockFullyConfirmed", false)
-            .put("fullLockConfirmationUnavailable", "Native read-back for reality intensity, Anti-Dolby intensity and physical-scene absorption is not exposed.")
-            .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded)
+            .put("fullLockConfirmationUnavailable", "Spatial angle, physical-scene absorption, and measured acoustic response still have no native read-back.")
+            .put("nativeLibraryAvailable", IvannaNativeLib.isLoaded && NativeBridge.isLoaded)
             .put("spatialWidthReadback", if (latestSpatialWidthReadback.isFinite()) latestSpatialWidthReadback.toDouble() else JSONObject.NULL)
+            .put("realityIntensityCommandReadback", if (latestRealityIntensityReadback.isFinite()) latestRealityIntensityReadback.toDouble() else JSONObject.NULL)
+            .put("antiDolbyCommandReadback", if (latestAntiDolbyIntensityReadback.isFinite()) latestAntiDolbyIntensityReadback.toDouble() else JSONObject.NULL)
+            .put("realityIntensityCommandReadbackConfirmed", latestRealityIntensityReadback.isFinite() && kotlin.math.abs(latestRealityIntensityReadback - 0.88f) <= 0.02f)
+            .put("antiDolbyCommandReadbackConfirmed", latestAntiDolbyIntensityReadback.isFinite() && kotlin.math.abs(latestAntiDolbyIntensityReadback - 0.88f) <= 0.02f)
             .put("commandValues", JSONObject()
                 .put("realityIntensity", 0.88)
                 .put("antiDolbyIntensity", 0.88)
@@ -499,6 +511,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         latestCalibrationLockRequested = true
         var applied = false
         var readback = Float.NaN
+        var realityReadback = Float.NaN
+        var antiDolbyReadback = Float.NaN
         try {
             if (IvannaNativeLib.isLoaded && NativeBridge.isLoaded) {
                 NativeBridge.safeSetRealityIntensity(0.88f)
@@ -510,6 +524,8 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                     wallAbsorption = calibration.absorptionCoefficient.toFloat()
                 )
                 readback = IvannaNativeLib.nativeGetSpatialWidthDirect()
+                realityReadback = NativeBridge.safeGetRealityIntensity()
+                antiDolbyReadback = IvannaNativeLib.nativeGetAntiDolbyIntensity()
                 applied = readback.isFinite() && kotlin.math.abs(readback - calibration.spatialWidth) <= 0.15f
             }
         } catch (t: Throwable) {
@@ -519,16 +535,22 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         latestCalibration = calibration
         latestCalibrationApplied = applied
         latestSpatialWidthReadback = readback
+        latestRealityIntensityReadback = realityReadback
+        latestAntiDolbyIntensityReadback = antiDolbyReadback
         getSharedPreferences("ivanna_rp88_acoustic_calibration", MODE_PRIVATE).edit()
             .putString("calibration_json", calibration.toJson().toString())
             .putBoolean("lock_requested", true)
             .putBoolean("spatial_width_readback_confirmed", applied)
             .putBoolean("rp88_lock_fully_confirmed", false)
             .putFloat("spatial_width_readback", if (readback.isFinite()) readback else -1f)
+            .putFloat("reality_intensity_command_readback", if (realityReadback.isFinite()) realityReadback else -1f)
+            .putFloat("anti_dolby_command_readback", if (antiDolbyReadback.isFinite()) antiDolbyReadback else -1f)
+            .putBoolean("reality_intensity_command_readback_confirmed", realityReadback.isFinite() && kotlin.math.abs(realityReadback - 0.88f) <= 0.02f)
+            .putBoolean("anti_dolby_command_readback_confirmed", antiDolbyReadback.isFinite() && kotlin.math.abs(antiDolbyReadback - 0.88f) <= 0.02f)
             .putLong("updated_at_ms", System.currentTimeMillis())
             .apply()
         statusView.text = if (applied) {
-            "RP-88 PARCIAL · ancho espacial leído de vuelta (${String.format(Locale.US, "%.2f", readback)}); intensidad/absorción no tienen read-back. RT60/RIR son estimaciones, no mediciones."
+            "RP-88 PARCIAL · ancho DSP=${String.format(Locale.US, "%.2f", readback)}, realidad DSP=${if (realityReadback.isFinite()) String.format(Locale.US, "%.2f", realityReadback) else "sin lectura"}, Anti-Dolby DSP=${if (antiDolbyReadback.isFinite()) String.format(Locale.US, "%.2f", antiDolbyReadback) else "sin lectura"}. Son valores de control, no medición acústica; absorción sin read-back y RT60/RIR estimados."
         } else {
             "RP-88: estimación guardada, pero el motor nativo no confirmó el ancho solicitado. No se declara LOCK efectivo. Exporta rp88_calibration.json para inspección."
         }

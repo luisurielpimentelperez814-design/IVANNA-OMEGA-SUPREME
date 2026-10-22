@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Read-back nativo RP-88
+
+- Se exponen getters JNI para la intensidad de realidad y Anti-Dolby y se guardan sus valores leídos tras aplicar LOCK, junto con el ancho espacial, en el JSON exportado y las preferencias locales.
+- Las lecturas representan estado/comandos del motor DSP, no una medición de la salida acústica. El lock completo sigue desactivado hasta disponer de read-back de absorción de escena y medición acústica; no implica control físico del HAL/DAC.
+- Se invalidan lecturas anteriores cuando cambia el preset o se recalcula una captura para evitar exportar confirmaciones obsoletas. Pendiente build Android y validación de CI de esta rama.
+
+---
+
 # CHANGELOG — Sin publicar — Contrato de cutoff ASRC USB
 
 - Se extrae la fórmula de cutoff de `UsbIngressAsrc` a una función pura testeable. La convención existente es Nyquist-normalizada: `0.94 * min(outputRate/inputRate, 1)`; en el kernel `cutoff * sinc(cutoff * d)`, Nyquist equivale a 1.0 (0.5 ciclos/muestra). No cambia el comportamiento DSP de producción.
