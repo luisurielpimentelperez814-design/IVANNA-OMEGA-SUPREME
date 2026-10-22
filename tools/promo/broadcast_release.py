@@ -26,7 +26,7 @@ def get_release_info():
     
     message = (
         f"🚀 Nuevo Release Publicado: IVANNA OMEGA SUPREME {version}\n\n"
-        f"✦ Sistema Operativo de Supremacía Neuroacústica para Android (C++20 & ARM64 NEON).\n"
+        f"✦ Sistema Operativo de Supremacía Neuroacústica para Android (C++26 & ARM64 NEON).\n"
         f"✦ Sincronía A/V Cero-Desfase en Cine, Streaming y Música.\n"
         f"✦ Anti-Dolby CRNN nativo TFLite restaurado e íntegro.\n"
         f"✦ Doble ruta disponible: APK (sin root) y Módulo Magisk (root global).\n\n"

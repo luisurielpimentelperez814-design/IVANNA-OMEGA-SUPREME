@@ -60,7 +60,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 
 **Primer comentario (publícalo tú justo después):**
 
-> Hi HN — I'm the author. IVANNA is an proprietary commercial audio engine for Android (C++20 native DSP + Kotlin/Compose) with
+> Hi HN — I'm the author. IVANNA is an proprietary commercial audio engine for Android (C++26 native DSP + Kotlin/Compose) with
 > two routes: an in-app route that needs no root, and a Magisk module + root daemon that processes system audio.
 >
 > The idea I'd like feedback on: instead of a chain of independent effects, a coordinator compares the original

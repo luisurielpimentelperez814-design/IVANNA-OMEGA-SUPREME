@@ -1,3 +1,10 @@
+# CHANGELOG — Sin publicar — Contrato de toolchain C++26
+
+- Alinea la guía de contribución, el resumen de ingeniería, la matriz de cableado, la ficha de cita, la página de proyecto y los textos de lanzamiento/promoción con C++26, que ya usa CMake en el motor nativo.
+- Cambio documental únicamente; no modifica versión publicada ni afirma compatibilidad de hardware no medida.
+
+---
+
 # CHANGELOG — Sin publicar — Contrato angular RP-88
 
 - Limita el ángulo exportado por la calibración AR al rango nativo de ±90°, sin alterar el azimut normalizado usado para calcular ITD.

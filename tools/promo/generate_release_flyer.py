@@ -80,7 +80,7 @@ def generate_flyer(version, out_path):
     d.text((54, 244), "SUPREME", font=F(bold_path, 66), fill=(0, 238, 255), stroke_width=1, stroke_fill=(98, 72, 255, 70))
     
     # Subtítulo y propuesta de valor
-    d.text((58, 342), "MOTOR DE AUDIO C++20 · DSP TIEMPO REAL", font=F(bold_path, 26), fill=(120, 235, 255))
+    d.text((58, 342), "MOTOR DE AUDIO C++26 · DSP TIEMPO REAL", font=F(bold_path, 26), fill=(120, 235, 255))
     d.text((58, 386), "Sincronía A/V Cero-Desfase en Cine, Streaming y Música.", font=F(font_path, 24), fill=(210, 225, 244))
     
     # Disco acústico holográfico central
@@ -95,7 +95,7 @@ def generate_flyer(version, out_path):
     # Tarjetas de pilares técnicos
     card_y = 910
     cards = [
-        ("DSP C++20 NEON", "Baja latencia (<0.1ms)"),
+        ("DSP C++26 NEON", "Baja latencia (<0.1ms)"),
         ("RUTA A: APK", "Sin root para todos"),
         ("RUTA B: ROOT", "Módulo Magisk Global")
     ]
