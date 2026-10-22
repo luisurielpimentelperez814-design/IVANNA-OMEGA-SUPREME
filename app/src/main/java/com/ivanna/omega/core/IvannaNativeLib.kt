@@ -150,6 +150,8 @@ object IvannaNativeLib {
     // SÍ tiene setAttack()/setRelease() reales, solo faltaba la conexión JNI.
     external fun nativeSetCompressorParams(thresholdDb: Float, ratio: Float, attackMs: Float, releaseMs: Float)
     external fun nativeSetSpatialAngleRad(rad: Float)
+    /** Last finite, clamped spatial-angle command in radians; not an acoustic measurement. */
+    external fun nativeGetSpatialAngleRad(): Float
     external fun nativeSetSpatialWidthDirect(width: Float)
     /** Ancho efectivo entregado al StereoWidener (base × escala térmica). Read-back, no medición de audio. */
     external fun nativeGetSpatialWidthDirect(): Float
