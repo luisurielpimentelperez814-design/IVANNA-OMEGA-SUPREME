@@ -30,18 +30,21 @@ run_low_priority() {
     fi
 }
 
-# ── SAF model deployment ──────────────────────────────────────────────────────
+# ── SAF model deployment (fail-closed, staged + byte-verified) ────────────────
 SAF_DIR="/data/adb/ivanna_omega"
+SAF_SRC="$MODPATH/saf/SAF_model.json"
+SAF_DEST="$SAF_DIR/SAF_model.json"
+SAF_STAGE="$SAF_DIR/.SAF_model.json.$"
 ui_print "- Deploying Φ_SAF^∞ SAF_model.json..."
-mkdir -p "$SAF_DIR"
-
-if [ -f "$MODPATH/saf/SAF_model.json" ]; then
-    run_low_priority cp -f "$MODPATH/saf/SAF_model.json" "$SAF_DIR/SAF_model.json"
-    set_perm "$SAF_DIR/SAF_model.json" root root 0644
-    ui_print "  ✓ SAF_model.json → $SAF_DIR (214 subjects, K=7)"
-else
-    ui_print "  ! SAF_model.json not found in module — app will use baked constants"
-fi
+[ -s "$SAF_SRC" ] || abort "ERROR: falta SAF_model.json válido en el módulo: $SAF_SRC"
+mkdir -p "$SAF_DIR" || abort "ERROR: no se pudo crear $SAF_DIR"
+rm -f "$SAF_STAGE"
+run_low_priority cp -f "$SAF_SRC" "$SAF_STAGE" || abort "ERROR: no se pudo copiar SAF_model.json"
+[ -s "$SAF_STAGE" ] && cmp -s "$SAF_SRC" "$SAF_STAGE" || abort "ERROR: SAF_model.json copiado incompleto o distinto al original"
+set_perm "$SAF_STAGE" root root 0644 || abort "ERROR: no se pudieron fijar permisos de SAF_model.json"
+mv -f "$SAF_STAGE" "$SAF_DEST" || abort "ERROR: no se pudo activar SAF_model.json validado"
+cmp -s "$SAF_SRC" "$SAF_DEST" || abort "ERROR: SAF_model.json final no coincide byte a byte"
+ui_print "  ✓ SAF_model.json validado e instalado (214 subjects, K=7) → $SAF_DEST"
 
 # ── HRTF dataset deployment ───────────────────────────────────────────────────
 # NOTA (auditoría 2026-08-26): el bloque que desplegaba hrtf_dataset.ihr1 era
