@@ -519,6 +519,7 @@ jobs:
       - name: Package Magisk module + verify zip integrity
         run: |
           set -euo pipefail
+          sh -n magisk_module/customize.sh || { echo "ERROR: customize.sh syntax invalid"; exit 1; }
           test -f magisk_module/sepolicy.rule || { echo "ERROR: falta sepolicy.rule"; exit 1; }
           if grep -vE '^[[:space:]]*#|^[[:space:]]*$' magisk_module/sepolicy.rule | grep -qE '^[[:space:]]*(type|attribute|typeattribute|allowxperm|neverallow|require)[[:space:]]'; then
             echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
@@ -546,6 +547,15 @@ jobs:
             [ "$EXP" = "$GOT" ] || { echo "ERROR: zip con $GOT/$EXP archivos de $d (dataset incompleto)"; exit 1; }
             echo "dataset $d: $GOT/$EXP en el zip"
           done
+          # Enforce shipped dataset contract, not just source/ZIP parity.
+          SOFA_COUNT=$(find "$DS/sofa" -type f -name '*.sofa' | wc -l | tr -d '[:space:]')
+          ARI_COUNT=$(find "$DS/sofa/ari" -type f -name '*.sofa' | wc -l | tr -d '[:space:]')
+          RIR_COUNT=$(find "$DS/rir" -maxdepth 1 -type f -name 'rir_*.wav' | wc -l | tr -d '[:space:]')
+          HRTF_COUNT=$(find "$DS/hrtf" -maxdepth 1 -type f -name '*.ihr1' | wc -l | tr -d '[:space:]')
+          [ "$SOFA_COUNT" -eq 239 ] || { echo "ERROR: SOFA package must contain 239 files; found $SOFA_COUNT"; exit 1; }
+          [ "$ARI_COUNT" -eq 200 ] || { echo "ERROR: HpIR ARI package must contain 200 files; found $ARI_COUNT"; exit 1; }
+          [ "$RIR_COUNT" -eq 200 ] || { echo "ERROR: RIR package must contain 200 WAV files; found $RIR_COUNT"; exit 1; }
+          [ "$HRTF_COUNT" -eq 12 ] || { echo "ERROR: HRTF package must contain 12 IHR1 files; found $HRTF_COUNT"; exit 1; }
           unzip -Z1 "$ZIPNAME" | grep -q "^system/etc/ivanna_omega/rir/metadata.csv$" || { echo "ERROR: zip sin rir/metadata.csv"; exit 1; }
           unzip -Z1 "$ZIPNAME" | grep -q "^system/etc/ivanna_omega/hrtf/hrtf_index.json$" || { echo "ERROR: zip sin hrtf_index.json"; exit 1; }
           unzip -Z1 "$ZIPNAME" | grep -q "^saf/SAF_model.json$" || { echo "ERROR: zip sin saf/SAF_model.json"; exit 1; }

@@ -1,3 +1,11 @@
+# CHANGELOG — Sin publicar — Despliegue estricto SAF/SOFA/RIR/HRTF
+
+- El instalador Magisk rechaza datasets ausentes o incompletos, copia a staging, compara bytes y activa directorios con rollback si falla la sustitución.
+- SAF se copia y valida antes de activarse; RIR exige 200 WAV y metadata; HRTF exige 12 IHR1 con SHA-256 contra el índice; SOFA exige el conjunto completo y verifica la copia.
+- El empaquetado verifica además los conteos esperados del producto en el árbol fuente y el ZIP. No se cambia la versión publicada en esta rama.
+
+---
+
 # CHANGELOG — Sin publicar — Read-back nativo de escena física RP-88
 
 - Expone el read-back JNI de los parámetros de oclusión y absorción guardados por el DSP y los exporta en el informe de calibración.
