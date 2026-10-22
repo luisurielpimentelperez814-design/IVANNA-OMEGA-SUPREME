@@ -757,8 +757,16 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                         val totalFrames = stereo.size / 2
                         var offset = 0
                         while (offset < totalFrames) {
-                            val chunkFrames = minOf(MAX_CHUNK_FRAMES, totalFrames - offset)
-                            val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
+                            // Resample BEFORE the DSP/HRTF chain. MediaCodec PCM is still at
+                            // inputSampleRate here; DSPBridge and the spatial kernels were initialized
+                            // for the selected output rate. Processing first would skew filter cutoffs,
+                            // HRTF delays and room timing whenever source and sink rates differ.
+                            val inputChunkFrames = minOf(MAX_CHUNK_FRAMES, totalFrames - offset)
+                            val inputChunk = stereo.copyOfRange(offset * 2, (offset + inputChunkFrames) * 2)
+                            val chunk = resampler.process(inputChunk)
+                            val chunkFrames = chunk.size / 2
+                            offset += inputChunkFrames
+                            if (chunkFrames <= 0) continue
                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
                             // FIX (fase/eco con sliders al máximo): si el daemon system-wide está
                             // conectado, el módulo YA procesa este mismo audioSessionId vía
@@ -819,9 +827,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                 }
                             }
                             predictive.feed(chunk, chunkFrames)   // observador: no modifica `chunk`
-                            val outputChunk = resampler.process(chunk)
                             val writtenSamples = track.write(
-                                outputChunk, 0, outputChunk.size, AudioTrack.WRITE_BLOCKING
+                                chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING
                             )
                             // Pares reales del reproductor propio; si la consulta falla,
                             // se vuelve a razón unidad en vez de inferir una corrección.
@@ -845,7 +852,6 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                     OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
                                 }
                             }
-                            offset += chunkFrames
                         }
                     }
                     codec.releaseOutputBuffer(outIndex, false)
