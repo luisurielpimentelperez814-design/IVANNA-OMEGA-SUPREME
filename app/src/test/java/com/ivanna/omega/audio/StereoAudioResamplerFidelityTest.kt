@@ -27,6 +27,12 @@ class StereoAudioResamplerFidelityTest {
     }
 
     @Test
+    fun asynchronousUpsamplingPreserves18KhzBandFrom44100To96000() {
+        val passband = resampleTone(inputRate = 44_100, targetRate = 96_000, frequency = 18_000.0)
+        assertTrue("18 kHz upsample passband RMS too low: $passband", passband in 0.65..0.76)
+    }
+
+    @Test
     fun unityRateRemainsBitTransparent() {
         val input = FloatArray(4096) { i -> sin(i * 0.017).toFloat() }
         val resampler = StereoAudioResampler(48_000)
