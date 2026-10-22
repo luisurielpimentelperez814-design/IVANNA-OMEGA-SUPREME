@@ -87,7 +87,6 @@ object BluetoothCodecDetector {
                     val device = if (preferredAddress == null) {
                         connected.firstOrNull()
                     } else {
-                        // Never apply another connected headset's codec profile to this output.
                         connected.firstOrNull { it.address.equals(preferredAddress, ignoreCase = true) }
                     }
                     if (a2dp != null && device != null) {

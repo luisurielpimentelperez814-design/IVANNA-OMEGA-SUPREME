@@ -73,23 +73,48 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     private data class OutputRoute(val sampleRate: Int, val preferredDevice: AudioDeviceInfo?)
 
     /**
-     * Targets a connected USB DAC when Android exposes one. USB descriptors vary:
-     * use advertised rates when available; if capabilities are unknown, use 48 kHz
-     * rather than assuming every endpoint accepts 96 kHz. Built-in output retains 96 kHz.
+     * Chooses the app-owned AudioTrack output clock. USB keeps priority; A2DP uses
+     * the selected device's negotiated codec rate when Android exposes it. This
+     * does not control the remote sink clock or the Qualcomm vendor HAL.
      */
     private fun selectOutputRoute(): OutputRoute {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val usb = runCatching {
-            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
-                it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET
-            }
-        }.getOrNull()
-        if (usb == null) return OutputRoute(TARGET_SAMPLE_RATE, null)
-        val rates = usb.sampleRates
-        val advertised = rates.filter { it in 44_100..96_000 }.distinct().sortedDescending()
-        val rate = advertised.firstOrNull() ?: USB_FALLBACK_SAMPLE_RATE
-        Log.i(TAG, "USB audio output selected: ${usb.productName}; rate=${rate} Hz; advertised=${rates.contentToString()}")
-        return OutputRoute(rate, usb)
+        val outputs = runCatching {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        }.getOrNull().orEmpty()
+
+        val usb = outputs.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+        }
+        if (usb != null) {
+            val rates = usb.sampleRates
+            val advertised = rates.filter { it in 44_100..96_000 }.distinct().sortedDescending()
+            val rate = advertised.firstOrNull() ?: USB_FALLBACK_SAMPLE_RATE
+            Log.i(TAG, "USB audio output selected: ${usb.productName}; rate=${rate} Hz; advertised=${rates.contentToString()}")
+            return OutputRoute(rate, usb)
+        }
+
+        val bluetooth = outputs.firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+        }
+        if (bluetooth != null) {
+            val codec = if (bluetooth.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+                runCatching { BluetoothCodecDetector.detectActiveCodec(context, bluetooth.address) }.getOrNull()
+            } else null
+            val codecRate = codec?.sampleRateHz ?: 0
+            val candidateRate = BluetoothOutputRatePolicy.select(codecRate)
+            val candidateMinBuffer = AudioTrack.getMinBufferSize(
+                candidateRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
+            )
+            val rate = if (candidateMinBuffer > 0) candidateRate else BluetoothOutputRatePolicy.FALLBACK_RATE_HZ
+            Log.i(TAG, "Bluetooth output selected: ${bluetooth.productName}; codec=${codec?.codec ?: "BLE/unknown"}; negotiatedRate=${codecRate}Hz; trackRate=${rate}Hz")
+            return OutputRoute(rate, bluetooth)
+        }
+        return OutputRoute(TARGET_SAMPLE_RATE, null)
     }
 
     private val focusManager by lazy {
@@ -184,6 +209,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var job: Job? = null
     private var audioTrack: AudioTrack? = null
+    // Separate ITD/crossfeed history from the 48 kHz system-wide capture path.
+    private val playbackSpatialEngine = com.ivanna.omega.spatial.IvannaSpatialEngine.createIsolated()
     @Volatile private var voiceProtectionEnabled = true
 
     @Volatile private var pauseRequested = false
@@ -565,6 +592,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
 
             val resampler = StereoAudioResampler(sampleRate)
             resampler.setInputSampleRate(inputSampleRate)
+            playbackSpatialEngine.configureSampleRate(sampleRate)
+            playbackSpatialEngine.reset()
             val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
             val outputTimestamp = AudioTimestamp()
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
@@ -607,7 +636,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 .build()
             outputRoute.preferredDevice?.let { preferred ->
                 if (!track.setPreferredDevice(preferred)) {
-                    Log.w(TAG, "Android rechazó la ruta preferida USB ${preferred.productName}; se conserva la ruta elegida por AudioPolicy")
+                    Log.w(TAG, "Android rechazó la ruta preferida ${preferred.productName}; se conserva la ruta elegida por AudioPolicy")
                 }
             }
             if (track.state != AudioTrack.STATE_INITIALIZED) {
@@ -724,8 +753,18 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                         val totalFrames = stereo.size / 2
                         var offset = 0
                         while (offset < totalFrames) {
-                            val chunkFrames = minOf(MAX_CHUNK_FRAMES, totalFrames - offset)
-                            val chunk = stereo.copyOfRange(offset * 2, (offset + chunkFrames) * 2)
+                            // Convert source PCM to the selected output clock BEFORE DSP/HRTF.
+                            // Those kernels are initialized at sampleRate, not inputSampleRate.
+                            // Keep headroom so upsampling cannot overflow spatial scratch buffers.
+                            val maxInputChunkFrames = (
+                                (MAX_CHUNK_FRAMES - 64).toDouble() * inputSampleRate / sampleRate
+                            ).toInt().coerceAtLeast(1)
+                            val inputChunkFrames = minOf(maxInputChunkFrames, totalFrames - offset)
+                            val inputChunk = stereo.copyOfRange(offset * 2, (offset + inputChunkFrames) * 2)
+                            val chunk = resampler.process(inputChunk)
+                            val chunkFrames = chunk.size / 2
+                            offset += inputChunkFrames
+                            if (chunkFrames <= 0) continue
                             voiceProtection?.feed(chunk, chunkFrames, sampleRate)
                             // FIX (fase/eco con sliders al máximo): si el daemon system-wide está
                             // conectado, el módulo YA procesa este mismo audioSessionId vía
@@ -776,7 +815,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                         spatialInL[i] = chunk[i * 2]
                                         spatialInR[i] = chunk[i * 2 + 1]
                                     }
-                                    com.ivanna.omega.spatial.IvannaSpatialEngine.shared.processStereoInput(
+                                    playbackSpatialEngine.processStereoInput(
                                         spatialInL, spatialInR, spatialOutL, spatialOutR, chunkFrames
                                     )
                                     for (i in 0 until chunkFrames) {
@@ -786,9 +825,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                 }
                             }
                             predictive.feed(chunk, chunkFrames)   // observador: no modifica `chunk`
-                            val outputChunk = resampler.process(chunk)
                             val writtenSamples = track.write(
-                                outputChunk, 0, outputChunk.size, AudioTrack.WRITE_BLOCKING
+                                chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING
                             )
                             // Pares reales del reproductor propio; si la consulta falla,
                             // se vuelve a razón unidad en vez de inferir una corrección.
@@ -812,7 +850,6 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                     OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
                                 }
                             }
-                            offset += chunkFrames
                         }
                     }
                     codec.releaseOutputBuffer(outIndex, false)
