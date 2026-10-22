@@ -186,8 +186,12 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 latestCalibrationApplied = false
                 latestCalibrationLockRequested = false
                 latestSpatialWidthReadback = Float.NaN
+                latestSpatialAngleReadback = Float.NaN
                 latestRealityIntensityReadback = Float.NaN
                 latestAntiDolbyIntensityReadback = Float.NaN
+                latestOcclusionReadback = Float.NaN
+                latestWallAbsorptionReadback = Float.NaN
+                latestPhysicalSceneReadbackConfirmed = false
             }
         }
         lockRp88Button = Button(this).apply {
@@ -354,8 +358,12 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
         latestCalibrationApplied = false
         latestCalibrationLockRequested = false
         latestSpatialWidthReadback = Float.NaN
+        latestSpatialAngleReadback = Float.NaN
         latestRealityIntensityReadback = Float.NaN
         latestAntiDolbyIntensityReadback = Float.NaN
+        latestOcclusionReadback = Float.NaN
+        latestWallAbsorptionReadback = Float.NaN
+        latestPhysicalSceneReadbackConfirmed = false
         val b = bounds(snapshot.points)
         statusView.text = if (snapshot.points.isEmpty()) {
             "Captura vacía: apunta a superficies con textura y buena luz, y vuelve a intentar."
