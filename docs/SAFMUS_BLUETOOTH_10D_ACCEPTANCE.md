@@ -1,6 +1,6 @@
 # SAFMUS Plan 10D — Bluetooth acceptance gates
 
-Status: SAFMUS Plan 10D software release published in v2.5.123. This follow-up closes ambiguous codec lookup when the caller has no selected-device address; physical A2DP/USB acceptance remains open. Android build, 252 JVM tests, host CTest/ASan+UBSan and release-artifact verification passed on the published main SHA. Physical A2DP/USB acceptance remains open; this is not a hardware certification.
+Status: SAFMUS Plan 10D software release v2.5.123 is published. The follow-up in review closes ambiguous codec lookup when the caller has no selected-device address. Android build, JVM tests, host CTest/ASan+UBSan and release-artifact verification passed on the published main SHA; physical A2DP/USB acceptance remains open and this is not a hardware certification.
 
 ## Implemented in this branch
 - The owned `IvannaBridgePlayer` route selector gives a connected USB DAC priority; otherwise it selects A2DP/BLE and targets the selected Android output device.
