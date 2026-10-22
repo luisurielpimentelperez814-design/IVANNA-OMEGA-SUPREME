@@ -157,6 +157,27 @@ require("app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt",
 require("app/src/main/java/com/ivanna/omega/audio/ThermalGovernor.kt",
         "fun setExternalResourceBudget(level: Int)", "applyCombinedPolicy", "externalResourcePressure")
 
+
+# App-owned playback clock correction: keep the PI and ASRC connection explicit.
+require("app/src/main/java/com/ivanna/omega/audio/AudioTrackBufferPll.kt",
+        "MAX_CORRECTION_PPM = 500.0", "MAX_SLEW_PPM_PER_UPDATE = 25.0",
+        "integralErrorSeconds", "fun reset()")
+require("app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt",
+        "AudioTrackBufferPll(sampleRate)", "bufferPll.observe(",
+        "resampler.setClockCorrectionPpm(correctionPpm)",
+        "lastClockPollNs == 0L || nowNs - lastClockPollNs >= 250_000_000L")
+require("app/src/test/java/com/ivanna/omega/audio/AudioTrackBufferPllTest.kt",
+        "producerAheadReducesOutputRateWithBoundedSlew",
+        "consumerAheadIncreasesOutputRate", "invalidQueueAndTimestampFailClosed",
+        "outputCorrectionAlwaysStaysWithinFiveHundredPpm")
+
+# AR scanner entrypoint must remain reachable from FotoHolo and declared in manifest.
+require("app/src/main/java/com/ivanna/omega/ui/FotoHoloCard.kt",
+        "RoomArCaptureActivity::class.java", "ABRIR AR & ESCÁNER RP-88")
+require("app/src/main/AndroidManifest.xml", ".fotoholo.RoomArCaptureActivity")
+require("app/src/main/java/com/ivanna/omega/fotoholo/RoomArCaptureActivity.kt",
+        "class RoomArCaptureActivity", "beginCapture()", "finishCapture()", "requestExport()")
+
 if errors:
     print("SAFMUS transversal wiring audit FAILED:")
     for error in errors:
