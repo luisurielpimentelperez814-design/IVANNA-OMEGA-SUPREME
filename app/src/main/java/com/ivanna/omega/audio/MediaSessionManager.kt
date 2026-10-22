@@ -49,16 +49,9 @@ object MediaSessionManager {
             override fun onPlay()            { player.resume() }
             override fun onPause()           { player.pause() }
             override fun onStop()            { player.stop() }
-            // SKIP_TO_NEXT delegates to the queue advance mechanism already wired
-            // via IvannaBridgePlayer.onQueueAdvance in DashboardScreen.
-            override fun onSkipToNext()      {
-                IvannaBridgePlayer.activeInstance?.let { active ->
-                    // The queue is managed externally; trigger the next track
-                    // by stopping current — onQueueAdvance callback fires
-                    // internally on EOS. For an explicit skip, we use stop()
-                    // then let the caller re-trigger play on the next index.
-                    // No-op here to avoid double-advance; UI handles skip buttons.
-                }
+            // Same queue/callback used by natural EOS; works for watch and headset controls.
+            override fun onSkipToNext() {
+                player.skipToNext()
             }
             override fun onSeekTo(pos: Long) { player.seekTo(pos) }
         })
