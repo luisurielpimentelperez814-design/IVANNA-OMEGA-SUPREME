@@ -38,6 +38,10 @@ public:
         wallAbsorption_ = std::clamp(abs, 0.05f, 0.95f);
     }
 
+    // Command-state read-back. These values confirm stored DSP parameters, not acoustic measurements.
+    float occlusionFactor() const noexcept { return occlusionFactor_; }
+    float wallAbsorption() const noexcept { return wallAbsorption_; }
+
     /**
      * @brief Apply occlusion and acoustic material absorption.
      * Direct Form I lowpass filter with frequency-dependent wall transmission.
