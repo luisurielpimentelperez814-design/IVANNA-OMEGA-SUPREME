@@ -183,7 +183,7 @@ struct AsyncEngine {
 
     // Feedback UAC (isoc IN). hasFeedback=false => comportamiento identico
     // al motor original (fpp fijo, sin corrector) — ver nativeConfigureEndpoint.
-    bool     hasFeedback      = false;
+    std::atomic<bool> hasFeedback{false};
     int      feedbackEp       = 0;
     int      feedbackMps      = 0;
     int      feedbackInterval = 1;
@@ -423,7 +423,7 @@ void handleFeedbackCompletion(AsyncEngine& e, UrbSlot& slot, unsigned int actual
 // endpoint fisicamente admite (maxPacketSize) para no pedir un paquete que
 // USBDEVFS_SUBMITURB rechazaria.
 int nextPacketFrames(AsyncEngine& e, int fppBase) {
-    if (!e.hasFeedback) return fppBase;
+    if (!e.hasFeedback.load(std::memory_order_acquire)) return fppBase;
 
     constexpr int kMidpoint = kRingFrames / 2;
     const int avail = e.ring.framesAvailable();
@@ -544,14 +544,14 @@ bool runIsoEngine(AsyncEngine& e) {
     // Feedback UAC: degrada con log propio si no hay memoria — el audio
     // sigue por la ruta de tasa fija, nunca se aborta el motor por esto.
     bool feedbackReady = false;
-    if (e.hasFeedback) {
+    if (e.hasFeedback.load(std::memory_order_acquire)) {
         if (allocFeedbackSlots(e)) {
             feedbackReady = true;
             for (int i = 0; i < kFeedbackUrbDepth; ++i) submitFeedbackRead(e, e.feedbackSlots[i]);
         } else {
             LOGE("motor ISO: sin memoria para URBs de feedback — sigue solo con fpp fijo");
             freeFeedbackSlots(e);
-            e.hasFeedback = false;
+            e.hasFeedback.store(false, std::memory_order_release);
         }
     }
 
@@ -812,7 +812,7 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
     // Feedback UAC (isoc IN). Sentinela feedbackEpAddress<=0 (Kotlin lo
     // envia como -1 si el DAC no expone el endpoint) => hasFeedback=false y
     // el motor se comporta exactamente igual que antes de este cambio.
-    g_engine.hasFeedback      = feedbackEpAddress > 0 && feedbackMaxPacketSize > 0;
+    g_engine.hasFeedback.store(feedbackEpAddress > 0 && feedbackMaxPacketSize > 0, std::memory_order_release);
     g_engine.feedbackEp       = feedbackEpAddress;
     g_engine.feedbackMps      = feedbackMaxPacketSize;
     g_engine.feedbackInterval = feedbackInterval > 0 ? feedbackInterval : 1;
@@ -824,7 +824,7 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeConfigureEndpoint(
          "feedback=%s(ep=0x%02x mps=%d)",
          g_engine.epAddress, g_engine.maxPacketSize, g_engine.interval,
          g_engine.sampleRate, g_engine.channels, g_engine.bytesPerFrame,
-         g_engine.hasFeedback ? "SI" : "no",
+         g_engine.hasFeedback.load(std::memory_order_acquire) ? "SI" : "no",
          (unsigned)g_engine.feedbackEp, g_engine.feedbackMps);
 }
 
@@ -838,7 +838,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_ivanna_omega_audio_UsbAudioProManager_nativeGetFeedbackInfo(
         JNIEnv* env, jobject /*thiz*/) {
     jint info[4];
-    info[0] = g_engine.hasFeedback ? 1 : 0;
+    info[0] = g_engine.hasFeedback.load(std::memory_order_acquire) ? 1 : 0;
     info[1] = (jint)g_engine.feedbackPacketsRx.load(std::memory_order_relaxed);
     info[2] = (jint)g_engine.lastFeedbackRaw.load(std::memory_order_relaxed);
     info[3] = g_engine.feedbackEp;
@@ -889,7 +889,7 @@ Java_com_ivanna_omega_audio_UsbAudioProManager_nativeWriteFrames(
         // not run a second, opposing ASRC occupancy loop on the producer.
         // If feedback becomes unavailable, the zero-capacity input resets the
         // ASRC servo and the fallback occupancy controller takes over.
-        const bool packetServoActive = g_engine.hasFeedback;
+        const bool packetServoActive = g_engine.hasFeedback.load(std::memory_order_acquire);
         const int ringFillForAsrc = packetServoActive ? 0 : g_engine.ring.framesAvailable();
         const int ringCapacityForAsrc = packetServoActive ? 0 : kRingFrames - 1;
         const int outFrames = g_usbAsrc.process(
