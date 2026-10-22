@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.118 (409) — Corrección de inicialización FIR y regresiones
+
+- Corregido un defecto de inicialización en `StereoAudioResampler`: cuando el constructor recibía un objetivo distinto de 96 kHz, el valor inicial de `inputRate` podía coincidir con la tasa de entrada solicitada y omitir la configuración del paso y del cutoff. El caso 96 kHz → 48 kHz quedaba sin remuestreo antialias.
+- Añadidas pruebas JVM para transparencia a tasa unitaria, ganancia DC, rechazo de alias en downsampling, corrección de reloj acotada y límites de la estimación acústica RP-88.
+- El build anterior encontró el fallo en `AudioTrackClockDriftServoTest.highFidelityFirSuppressesAboveNyquistToneWhenDownsampling`; esta versión incluye la corrección y debe pasar el mismo gate antes de publicarse.
+- El FIR de 64 taps/1024 fases y la ruta USB DAC siguen necesitando medición de respuesta/aliasing y validación en hardware. No se declara validado el actuador Qualcomm PAL/HAL ni el reloj físico del DAC.
+- RP-88 continúa etiquetando RT60, Schroeder e ITD como estimaciones geométricas/materiales, no mediciones RIR.
+
+---
+
 # CHANGELOG — v2.5.117 (408) — FIR de mayor fidelidad y estimación acústica RP-88
 
 - `StereoAudioResampler`: banco polifásico FIR pasa de 32 taps/256 fases a 64 taps/1024 fases con interpolación de fase y ventana Blackman-Harris de cuatro términos. Se documenta la latencia de grupo aproximada de 32 muestras. El cambio necesita confirmación del build y mediciones de respuesta en frecuencia/aliasing antes de declararse certificado.
