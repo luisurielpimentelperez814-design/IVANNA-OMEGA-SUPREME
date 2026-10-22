@@ -1,6 +1,6 @@
 # Cómo contribuir a IVANNA OMEGA SUPREME
 
-¡Gracias por querer ayudar! Este proyecto es un motor de audio para Android (C++20 nativo + Kotlin/Compose) con
+¡Gracias por querer ayudar! Este proyecto es un motor de audio para Android (C++26 nativo + Kotlin/Compose) con
 una Ruta A (sin root, dentro de la app) y una Ruta B (con root, módulo Magisk + daemon). Lo que más falta es
 **validación en dispositivos reales**, así que una prueba bien documentada vale tanto como un parche.
 
