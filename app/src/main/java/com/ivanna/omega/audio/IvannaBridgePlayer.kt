@@ -604,8 +604,12 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 .setBufferSizeInBytes(minBuf * 4)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .setTransferMode(AudioTrack.MODE_STREAM)
-                .apply { outputRoute.preferredDevice?.let { setPreferredDevice(it) } }
                 .build()
+            outputRoute.preferredDevice?.let { preferred ->
+                if (!track.setPreferredDevice(preferred)) {
+                    Log.w(TAG, "Android rechazó la ruta preferida USB ${preferred.productName}; se conserva la ruta elegida por AudioPolicy")
+                }
+            }
             if (track.state != AudioTrack.STATE_INITIALIZED) {
                 Log.e(TAG, "AudioTrack no inicializó")
                 state = State.ERROR
