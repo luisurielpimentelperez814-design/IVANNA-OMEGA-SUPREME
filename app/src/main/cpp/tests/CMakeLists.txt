@@ -1362,4 +1362,15 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_usb_asrc_cutoff)
 
+# Exercise the exact production USB ASRC coefficients in the host test lane.
+add_executable(test_usb_asrc_spectral_response test_usb_asrc_spectral_response.cpp)
+target_link_libraries(test_usb_asrc_spectral_response PRIVATE GTest::gtest_main)
+target_include_directories(test_usb_asrc_spectral_response PRIVATE ../include)
+target_compile_options(test_usb_asrc_spectral_response PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_usb_asrc_spectral_response PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_usb_asrc_spectral_response PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_usb_asrc_spectral_response)
+
 ivanna_add_test(test_qualcomm_pal_clock_integration)
