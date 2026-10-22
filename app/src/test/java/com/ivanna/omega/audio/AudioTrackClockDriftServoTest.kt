@@ -64,7 +64,7 @@ class AudioTrackClockDriftServoTest {
         assertTrue(valid.spatialWidth in 0.75f..1.5f)
         assertEquals(45.0f, valid.spatialAngleDeg, 0.0001f)
         assertTrue(!valid.measuredRirAvailable)
-        assertEquals(null, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(0.0, 2.6, 4.0))
+        assertTrue(com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(0.0, 2.6, 4.0) == null)
         val hard = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.materials[0])!!
         val treated = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.materials[2])!!
         assertTrue(treated.sabineRt60Seconds < hard.sabineRt60Seconds)
