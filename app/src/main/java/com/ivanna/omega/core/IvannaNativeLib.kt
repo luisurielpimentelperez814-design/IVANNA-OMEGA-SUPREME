@@ -152,8 +152,6 @@ object IvannaNativeLib {
     external fun nativeSetSpatialAngleRad(rad: Float)
     /** Last finite, clamped spatial-angle command in radians; not an acoustic measurement. */
     external fun nativeGetSpatialAngleRad(): Float
-    /** Last finite, clamped spatial-angle command in radians; not an acoustic measurement. */
-    external fun nativeGetSpatialAngleRad(): Float
     external fun nativeSetSpatialWidthDirect(width: Float)
     /** Ancho efectivo entregado al StereoWidener (base × escala térmica). Read-back, no medición de audio. */
     external fun nativeGetSpatialWidthDirect(): Float
