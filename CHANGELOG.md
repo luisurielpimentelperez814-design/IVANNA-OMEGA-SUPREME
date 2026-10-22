@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.124 (415) — SAFMUS Plan 10D: identidad estricta de ruta Bluetooth
+
+- El detector A2DP falla de forma segura cuando no recibe una dirección de dispositivo seleccionada y solo acepta coincidencia exacta de dirección (sin distinguir mayúsculas/minúsculas).
+- El supervisor global consulta metadatos de códec solo si hay un único candidato A2DP conectado; con varios auriculares, identidad oculta o ausente, no toma el primer dispositivo ni usa el bitrate global del vendor como sustituto.
+- Se añaden pruebas de regresión para direcciones nulas/blancas, coincidencias, dispositivos distintos y listas A2DP ambiguas, además de reforzar la auditoría de integración SAFMUS.
+- **Alcance:** la corrección protege la selección de códec/ruta de la reproducción propia. No controla el oscilador remoto Bluetooth, no inserta ASRC en el HAL Qualcomm y no procesa automáticamente todas las apps de terceros. La aceptación física A2DP/USB sigue pendiente.
+
+---
+
 # CHANGELOG — v2.5.123 (414) — SAFMUS Bluetooth: coincidencia estricta del dispositivo
 
 - El reproductor propio consulta el códec A2DP solo si Android expone una dirección estable y no vacía para la salida seleccionada; nunca toma el códec del primer auricular conectado por defecto.
