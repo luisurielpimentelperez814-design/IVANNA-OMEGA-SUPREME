@@ -144,7 +144,8 @@ object AudioRouteManager {
     fun profileFor(route: OutputRoute): RouteProfile = when (route) {
         // SBC/AAC pierden presencia 2-4kHz y el estéreo se degrada al
         // recodificar; se compensa diálogo y se reduce ancho.
-        OutputRoute.BLUETOOTH -> fallbackBluetoothProfile()
+        // Public profile query must stay non-blocking; async lookup refines this fallback.
+        OutputRoute.BLUETOOTH -> BluetoothRouteProfilePolicy.fallback()
         // AUX cableado y USB-C DAC: mismo path unificado de línea/audífonos
         // con respuesta limpia y compensación coherente.
         OutputRoute.WIRED_AUX,
