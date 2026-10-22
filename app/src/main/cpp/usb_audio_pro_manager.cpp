@@ -199,14 +199,15 @@ AsyncEngine g_engine;
 // Stateful, occupancy-controlled asynchronous sample-rate converter for
 // the direct USB PCM path. It matches nominal pipeline/DAC rates and applies
 // a bounded, smoothed correction from the SPSC ring fill to track clock drift.
-// This is a lightweight linear interpolator, not a high-rejection FIR filter.
+// The polyphase FIR below performs the rate conversion and antialias filtering.
 class UsbIngressAsrc {
 public:
-    // Causal polyphase windowed-sinc ASRC. A 32-tap Blackman-windowed
-    // low-pass filter suppresses images/aliasing; phase LUT avoids trig in
-    // the audio callback. History and fractional phase persist across blocks.
-    static constexpr int kTaps = 32;
-    static constexpr int kPhases = 256;
+    // Causal 64-tap polyphase windowed-sinc ASRC. A four-term Blackman-Harris
+    // window and 1024 phase LUT improve stop-band rejection and fractional-phase
+    // resolution without trigonometry or allocation in the audio callback.
+    // History and fractional phase persist across blocks.
+    static constexpr int kTaps = 64;
+    static constexpr int kPhases = 1024;
 
     void configure(int inputRate, int outputRate, int channels) noexcept {
         inputRate_ = inputRate > 0 ? inputRate : 48000;
@@ -299,8 +300,9 @@ private:
                 const double d = static_cast<double>(k) + frac - center;
                 const double norm = d / (center + 0.5);
                 const double window = (std::abs(norm) >= 1.0) ? 0.0 :
-                    0.42 + 0.5 * std::cos(3.14159265358979323846 * norm) +
-                    0.08 * std::cos(2.0 * 3.14159265358979323846 * norm);
+                    0.35875 + 0.48829 * std::cos(3.14159265358979323846 * norm) +
+                    0.14128 * std::cos(2.0 * 3.14159265358979323846 * norm) +
+                    0.01168 * std::cos(3.0 * 3.14159265358979323846 * norm);
                 const double c = cutoff * sinc(cutoff * d) * window;
                 kernel_[p][k] = static_cast<float>(c);
                 sum += c;

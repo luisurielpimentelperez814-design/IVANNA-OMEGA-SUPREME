@@ -55,4 +55,41 @@ class AudioTrackClockDriftServoTest {
         resampler.setClockCorrectionPpm(Double.NaN)
         assertSame(input, resampler.process(input))
     }
+    @Test fun roomCalibrationUsesBoundedEstimatesAndRejectsImpossibleBounds() {
+        val valid = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, azimuthDeg = 45.0)!!
+        assertEquals(52.0, valid.volumeM3, 0.0001)
+        assertTrue(valid.sabineRt60Seconds in 0.05..20.0)
+        assertTrue(valid.eyringRt60Seconds in 0.05..20.0)
+        assertTrue(valid.schroederHz.isFinite() && valid.schroederHz > 0.0)
+        assertTrue(valid.spatialWidth in 0.75f..1.5f)
+        assertEquals(45.0f, valid.spatialAngleDeg, 0.0001f)
+        assertTrue(!valid.measuredRirAvailable)
+        assertTrue(com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(0.0, 2.6, 4.0) == null)
+        val hard = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.materials[0])!!
+        val treated = com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.estimate(5.0, 2.6, 4.0, com.ivanna.omega.fotoholo.AcousticRoomCalibrationModel.materials[2])!!
+        assertTrue(treated.sabineRt60Seconds < hard.sabineRt60Seconds)
+    }
+
+    @Test fun highFidelityFirSuppressesAboveNyquistToneWhenDownsampling() {
+        val resampler = StereoAudioResampler(48_000)
+        resampler.setInputSampleRate(96_000)
+        val frames = 96_000
+        val input = FloatArray(frames * 2)
+        for (i in 0 until frames) {
+            val sample = (0.5 * kotlin.math.sin(2.0 * Math.PI * 30_000.0 * i / 96_000.0)).toFloat()
+            input[2 * i] = sample
+            input[2 * i + 1] = sample
+        }
+        val output = resampler.process(input)
+        assertTrue(output.size > 0)
+        var energy = 0.0
+        var count = 0
+        for (i in 2_000 until output.size) {
+            energy += output[i].toDouble() * output[i].toDouble()
+            count++
+        }
+        val rms = kotlin.math.sqrt(energy / count)
+        assertTrue("30 kHz content must be attenuated before 48 kHz output, RMS=$rms", rms < 0.02)
+    }
+
 }

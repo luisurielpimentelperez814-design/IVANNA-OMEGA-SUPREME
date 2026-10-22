@@ -114,7 +114,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
         }
         Text("Vista paramétrica seleccionada: $selectedScene", color = Color(0xFF9AA4B2), fontSize = 11.sp)
         TextButton(onClick = { context.startActivity(Intent(context, RoomArCaptureActivity::class.java)) }) {
-            Text("CAPTURAR LUGAR CON CÁMARA AR", color = AuroraCyan)
+            Text("ABRIR AR & ESCÁNER RP-88 · CÁMARA 6-DoF", color = AuroraCyan)
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(enabled = !geminiBusy, onClick = {

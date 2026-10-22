@@ -1,3 +1,22 @@
+# CHANGELOG — v2.5.117 (408) — FIR de mayor fidelidad y estimación acústica RP-88
+
+- `StereoAudioResampler`: banco polifásico FIR pasa de 32 taps/256 fases a 64 taps/1024 fases con interpolación de fase y ventana Blackman-Harris de cuatro términos. Se documenta la latencia de grupo aproximada de 32 muestras. El cambio necesita confirmación del build y mediciones de respuesta en frecuencia/aliasing antes de declararse certificado.
+- Ruta USB nativa (`UsbIngressAsrc` en `usb_audio_pro_manager.cpp`): el FIR polifásico sube también de 32 taps/256 fases a 64 taps/1024 fases, con ventana Blackman-Harris de cuatro términos y fase persistente. La tabla se prepara en configuración, no en el callback; el build Android y la medición de respuesta/aliasing de esta ruta siguen siendo puertas obligatorias.
+- Escáner AR: añade estimación geométrica de volumen, superficie, RT60 Sabine/Eyring, frecuencia de Schroeder e ITD aproximado, con presets de absorción explícitos. Los valores se etiquetan como estimaciones basadas en nube de puntos; no son RIR ni RT60 medidos.
+- RP-88: botón LOCK envía intensidad de realidad 0.88, Anti-Dolby 0.88, ancho/ángulo espacial y coeficiente de absorción al puente nativo disponible; el read-back solo confirma el ancho espacial, no la totalidad de parámetros. La UI y JSON distinguen confirmación parcial de lock completo (que queda sin confirmar mientras falten read-backs nativos). Se persiste la calibración y se exporta `rp88_calibration.json` junto con PLY y metadatos.
+- Limitaciones: los límites de la nube AR no son una malla cerrada; el preset de absorción es una hipótesis del usuario. El lock de ancho no prueba RIR medida ni disciplina el reloj físico del DAC/HAL. La integración Qualcomm PAL y el actuador ASRC de hardware siguen pendientes de API real y validación en dispositivo.
+- Validación: CI se está ejecutando en la rama de trabajo. No marcar como release aprobado hasta que el build Android, los tests y los artefactos pasen.
+
+---
+
+## HAL/ASRC — Contrato de integración y límites de validación
+
+- Añadidos `docs/adr/0002-hal-audio-hardware-clock-asrc.md` y `docs/ACTA_INSERCION_RELOJ_HAL_ASRC.md` con contrato de seguridad, límites de servo y puertas de aceptación.
+- Estado declarado explícitamente: las primitivas C++ y pruebas host no demuestran el control físico del HAL. El seam PAL debe enlazarse a una consulta real de frame/timestamp y al actuador ASRC existente; no se adivinan APIs propietarias.
+- La versión `v2.5.117` corresponde a los cambios FIR/AR de esta rama; esta documentación no certifica control físico del HAL ni validación en dispositivo.
+
+---
+
 # CHANGELOG — v2.5.116 (407) — Mensaje claro de cuota Gemini
 
 - Un HTTP 429 de Gemini mostraba el texto crudo de Google (inglés y URL). Ahora indica en español que la cuota de la clave se agotó y qué hacer.
