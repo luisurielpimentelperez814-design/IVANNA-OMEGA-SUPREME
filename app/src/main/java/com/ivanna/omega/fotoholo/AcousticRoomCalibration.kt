@@ -87,9 +87,12 @@ object AcousticRoomCalibrationModel {
         val angle = ((azimuthDeg + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         // RP-88 native command range is ±90°; keep the reported command in sync.
         val angleCommand = angle.coerceIn(-90.0, 90.0)
-        // ITD uses the normalized physical azimuth, not the clamped DSP command.
-        // Preserve sign: positive and negative azimuths represent opposite interaural delays.
-        val theta = kotlin.math.abs(angle) * PI / 180.0
+        // ITD is a physical estimate, not the ±90° DSP command. Fold rear
+        // azimuths across the median plane: delay returns toward zero at 180°.
+        // This avoids the nonphysical 700 µs saturation at rear-facing angles.
+        val absAzimuth = kotlin.math.abs(angle)
+        val itdAngleDeg = minOf(absAzimuth, 180.0 - absAzimuth)
+        val theta = itdAngleDeg * PI / 180.0
         val itdMagnitudeUs = (0.0875 / 343.0 * (theta + kotlin.math.sin(theta)) * 1_000_000.0)
             .coerceIn(0.0, 700.0)
         val itdUs = when {
