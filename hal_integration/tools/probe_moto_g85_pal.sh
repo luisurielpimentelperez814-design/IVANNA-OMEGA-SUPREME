@@ -129,7 +129,7 @@ if have dumpsys; then
 fi
 
 say "--- Propiedades de audio relevantes"
-getprop 2>/dev/null | grep -i -E '\\[.*(audio|pal|agm|sound|sku|bluetooth).*\\]' | head -160 >> "$R"
+getprop 2>/dev/null | grep -i -E 'audio|pal|agm|sound|sku|bluetooth' | head -160 >> "$R"
 
 say "--- Dispositivos ALSA expuestos (si existen)"
 for f in /proc/asound/cards /proc/asound/pcm /proc/asound/devices; do
