@@ -102,7 +102,12 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
         }
         if (bluetooth != null) {
-            val codec = if (bluetooth.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+            // Never fall back to the first connected headset when Android does not expose
+            // a stable address for this output; that could apply another device's codec rate.
+            val codec = if (
+                bluetooth.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP &&
+                BluetoothOutputRatePolicy.hasReliableDeviceAddress(bluetooth.address)
+            ) {
                 runCatching { BluetoothCodecDetector.detectActiveCodec(context, bluetooth.address) }.getOrNull()
             } else null
             val codecRate = codec?.sampleRateHz ?: 0
