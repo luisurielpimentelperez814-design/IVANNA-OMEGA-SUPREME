@@ -1,4 +1,17 @@
-# CHANGELOG — v2.5.120 (411) — RP-88, ASRC USB y toolchain C++26
+# CHANGELOG — v2.5.121 (412) — USB ASRC con servo de reloj acotado
+
+- Integra el servo de ocupación del ring en el ASRC USB de producción: corrección suavizada y limitada a ±1000 ppm; capacidad inválida vuelve a tasa nominal.
+- Hace atómico el estado de disponibilidad del endpoint de feedback para evitar carreras entre el ciclo de vida del motor y el procesamiento de URB.
+- Añade pruebas nativas de convergencia, saturación, ocupación nominal y entradas inválidas; conserva FIR polifásico 64 taps/1024 fases.
+- Validación sintética/CI no sustituye mediciones con DAC USB físico. No se afirma integración PAL/HAL Qualcomm ni calidad acústica medida.
+
+---
+
+## Base de v2.5.120
+
+- RP-88 conserva el signo del ITD estimado, aplica simetría izquierda/derecha y pliega ángulos traseros para que el retardo vuelva hacia cero a 180°. El comando espacial enviado al DSP permanece limitado a ±90°.
+- Consolida las pruebas de FIR polifásico de 64 taps/1024 fases, rechazo de alias, banda pasante, ganancia DC, fases finitas y validación de la ruta USB; alinea los documentos y herramientas de promoción con C++26.
+- Límite explícito: los resultados FIR son sintéticos. No se certifica la integración física Qualcomm PAL/HAL, el reloj del DAC USB ni una respuesta/RIR acústica medida.
 
 - RP-88 conserva el signo del ITD estimado, aplica simetría izquierda/derecha y pliega ángulos traseros para que el retardo vuelva hacia cero a 180°. El comando espacial enviado al DSP permanece limitado a ±90°.
 - Consolida las pruebas de FIR polifásico de 64 taps/1024 fases, rechazo de alias, banda pasante, ganancia DC, fases finitas y validación de la ruta USB; alinea los documentos y herramientas de promoción con C++26.
