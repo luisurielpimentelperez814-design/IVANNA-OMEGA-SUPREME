@@ -243,6 +243,7 @@ object NativeBridge {
     @JvmStatic external fun setRealityReconstructionEnabled(enabled: Boolean)
     @JvmStatic external fun isRealityReconstructionEnabled(): Boolean
     @JvmStatic external fun setRealityIntensity(intensity: Float)
+    @JvmStatic external fun getRealityIntensity(): Float
     @JvmStatic external fun setPersonalAuditoryProfile(
         headRadiusM: Float,
         pinnaDepthM: Float,
@@ -261,6 +262,9 @@ object NativeBridge {
     fun safeSetRealityIntensity(intensity: Float) {
         if (isLoaded) runCatching { setRealityIntensity(intensity) }
     }
+    /** Returns the native DSP command read-back, NaN when the native getter is unavailable. */
+    fun safeGetRealityIntensity(): Float =
+        if (isLoaded) runCatching { getRealityIntensity() }.getOrDefault(Float.NaN) else Float.NaN
     fun safeSetPersonalAuditoryProfile(
         headRadiusM: Float = 0.0875f,
         pinnaDepthM: Float = 0.0185f,
