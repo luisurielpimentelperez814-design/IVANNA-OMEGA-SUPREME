@@ -23,10 +23,12 @@ TEST(UsbAsrcClockServo, EmptyAndFullRingDriveBoundedCorrection) {
     EXPECT_NEAR(servo.correction(), UsbAsrcClockServo::kMaxCorrection, 1e-9);
 }
 
-TEST(UsbAsrcClockServo, NominalHalfFullOccupancyConvergesToUnity) {
+TEST(UsbAsrcClockServo, NominalHalfFullOccupancyRecoversToUnity) {
     UsbAsrcClockServo servo;
-    for (int i = 0; i < 20000; ++i) servo.update(512, 1024);
-    EXPECT_NEAR(servo.correction(), 0.0, 1e-12);
+    for (int i = 0; i < 10000; ++i) servo.update(1024, 1024);
+    ASSERT_GT(servo.correction(), 0.0);
+    for (int i = 0; i < 10000; ++i) servo.update(512, 1024);
+    EXPECT_NEAR(servo.correction(), 0.0, 1e-9);
 }
 
 TEST(UsbAsrcClockServo, InvalidCapacityFailsClosedAndResetsCorrection) {
