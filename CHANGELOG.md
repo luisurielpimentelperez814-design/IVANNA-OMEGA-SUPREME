@@ -1,7 +1,7 @@
 # CHANGELOG — v2.5.119 (410) — Normalización FIR y respuesta de banda pasante
 
 - Corregida la normalización del cutoff del FIR: `fc = 0.97 * cutoffScale` en la convención sinc usada por el resampler; el factor de reducción sigue siendo targetRate/inputRate. Evita duplicar la reducción y recortar indebidamente la banda alta al convertir 96 kHz → 48 kHz.
-- Añadida regresión de banda pasante para un tono de 18 kHz durante downsampling 96→48 kHz, junto con la prueba de rechazo de alias por encima del Nyquist de salida. Se valida respuesta sintética, no la respuesta analógica de un DAC.
+- Añadida regresión de banda pasante para un tono de 18 kHz durante upsampling 48→96 kHz; se conserva la prueba de rechazo de alias de 30 kHz durante downsampling 96→48 kHz. Se valida respuesta sintética, no la respuesta analógica de un DAC.
 - `StereoAudioResampler` inicia su tasa de entrada en la tasa objetivo para que una llamada a `setInputSampleRate(96_000)` no omita la configuración cuando el destino es 48 kHz.
 - La publicación v2.5.119 queda condicionada a CI verde: CTest, build Android, pruebas JVM y verificación de APK/ZIP. No se declara certificada la integración física Qualcomm PAL/HAL ni el reloj del DAC USB.
 
