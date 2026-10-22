@@ -1,8 +1,8 @@
 # Estado maestro del producto — IVANNA OMEGA SUPREME
 
-**Última revisión:** 2026-10-18  
-**Versión declarada:** v2.5.74 · versionCode 365 (contrastado en `version.properties` y `magisk_module/module.prop`)  
-**Baseline auditado:** `main` en `953620d8b1c0b988b0ff240e0c980cf1ebb4fa49`  
+**Última revisión:** 2026-10-22  
+**Versión declarada en `version.properties`:** v2.5.124 · versionCode 415. La coherencia con el módulo y los artefactos del último commit debe confirmarse en CI.  
+**Snapshot remoto consultado:** `main` en `a4892db8c25e8c2d20e9b684c8f994307c453d50` (2026-10-22).  
 **Auditoría integral en caliente:** [AUDITORIA_INTEGRAL_2026-10-18.md](AUDITORIA_INTEGRAL_2026-10-18.md)
 
 ## Estado verificado
@@ -10,7 +10,7 @@
 | Área | Estado observado |
 |---|---|
 | Android | minSdk 28 · targetSdk 35 · JDK 17 · Kotlin/JNI · C++20 · NDK 26.1.10909125 |
-| Versión de APK y módulo | Metadatos alineados en v2.5.74 (365); esto no prueba por sí solo que el artefacto del último commit se haya construido |
+| Versión declarada | `version.properties` declara v2.5.124 (415); el artefacto validado del mismo commit no queda demostrado hasta finalizar CI |
 | CTest nativo | 412/412 tests pasaron en el workflow consultado del baseline |
 | Compilación Release del APK en baseline | Falló en `SaFEngine.kt`, `CsiFeatureExtractor.kt` y `WifiSensingAutoStart.kt` |
 | Puertas estáticas del baseline | Fallaron por wrappers JavaScript mal clasificados, un header de test bajo producción y una cifra documental obsoleta |
@@ -24,4 +24,16 @@
 ## Regla de estado
 
 No usar «100 % listo», «cero brechas», «mejor sonido demostrado» ni «CI verde» sin evidencia del mismo commit. El estado del artefacto debe provenir del workflow y sus hashes; la mejora de sonido requiere una prueba física controlada.
+
+
+
+## Sincronización remota — 2026-10-22
+
+- **Commit consultado en `main`:** `a4892db8c25e8c2d20e9b684c8f994307c453d50` — v2.5.124, versionCode 415; cambio de identidad estricta de ruta Bluetooth en el reproductor propio.
+- **CI del cambio más reciente:** el job nativo CTest terminó correctamente; el job de compilación/paquetización APK y binarios seguía en ejecución en la consulta. No declarar build verde ni release validada hasta que finalice y se inspeccionen los artefactos.
+- **PR #137 (BluetoothAudioProfiler):** abierto; CTest del commit de cabeza pasó, compilación Android en curso. La medición A2DP física sigue pendiente.
+- **PR #86 (captura espacial ARCore):** abierto. La implementación documenta nube de puntos estimada y exportación PLY/JSON; no equivale a malla cerrada, reconstrucción fotorrealista 4K ni calibración acústica.
+- **HAL/PAL y reloj:** `hal_integration/MOTO_G85_PAL_CLOCK_INTEGRATION.md` mantiene los callbacks de consulta de muestra hardware emparejada y aplicación ASRC real sin enlazar. El código de integración y las pruebas con dobles no prueban una conexión de hardware.
+- **Publicación:** la consulta de los cinco releases más recientes devolvió borradores de staging; no se confirmó un lanzamiento público correspondiente a v2.5.124.
+- **Política de entrega:** no activar corrección de deriva mediante IDs/controles no verificados; no declarar inferencia IA local completa, reconstrucción 3D fotorrealista ni mejora acústica medida sin evidencia específica.
 
