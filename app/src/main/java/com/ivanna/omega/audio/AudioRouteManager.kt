@@ -236,14 +236,14 @@ object AudioRouteManager {
         val localDispatched = AudioEngine.nativeSetRouteProfileStatic(
             p.bassBoostDb, p.dialogBoostDb, p.widenerMult
         )
-        val daemonAcknowledged = com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
+        val daemonSendResult = com.ivanna.omega.magisk.OmegaEngineBridge.setRouteProfile(
             p.bassBoostDb, p.dialogBoostDb, p.widenerMult
         )
         Log.i(
             TAG,
             "Ruta de salida: $route SAFMUS=$load -> perfil solicitado; " +
-                "localDispatched=$localDispatched daemonAcknowledged=$daemonAcknowledged; " +
-                "DSP read-back no disponible, aplicación no confirmada"
+                "localDispatched=$localDispatched daemonSendResult=$daemonSendResult; " +
+                "IPC no equivale a ACK/read-back DSP; aplicación no confirmada"
         )
     }
 
