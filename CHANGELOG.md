@@ -1,3 +1,10 @@
+# CHANGELOG — Sin publicar — Contrato angular RP-88
+
+- Limita explícitamente el ángulo que la calibración AR exporta como comando DSP al rango nativo de ±90°, manteniendo el cálculo de ITD basado en el azimut normalizado.
+- Añade pruebas de saturación de ángulo en Kotlin y C++ y conserva el criterio: read-back de comando no equivale a medición acústica ni confirma un LOCK físico completo.
+
+---
+
 # CHANGELOG — Sin publicar — Read-back nativo de escena física RP-88
 
 - Expone el read-back JNI de los parámetros de oclusión y absorción guardados por el DSP y los exporta en el informe de calibración.
