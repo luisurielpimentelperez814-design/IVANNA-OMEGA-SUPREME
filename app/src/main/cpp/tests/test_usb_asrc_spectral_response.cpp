@@ -42,6 +42,25 @@ TEST(UsbAsrcSpectralResponse, PreservesHighAudioBandWhenDownsamplingByTwo) {
     EXPECT_LT(stopband, 0.02) << "36 kHz alias source response=" << stopband;
 }
 
+TEST(UsbAsrcSpectralResponse, InvalidRatesFailClosedToFiniteSilence) {
+    static float kernel[kPhases][kTaps];
+    for (int i = 0; i < kPhases; ++i)
+        for (int j = 0; j < kTaps; ++j)
+            kernel[i][j] = 123.0f;
+
+    ivanna::audio::buildUsbAsrcKernel(0, 48000, kernel);
+    for (int i = 0; i < kPhases; ++i)
+        for (int j = 0; j < kTaps; ++j) {
+            ASSERT_TRUE(std::isfinite(kernel[i][j]));
+            EXPECT_FLOAT_EQ(kernel[i][j], 0.0f);
+        }
+
+    ivanna::audio::buildUsbAsrcKernel(48000, -1, kernel);
+    for (int i = 0; i < kPhases; ++i)
+        for (int j = 0; j < kTaps; ++j)
+            EXPECT_FLOAT_EQ(kernel[i][j], 0.0f);
+}
+
 TEST(UsbAsrcSpectralResponse, EveryPhaseHasFiniteCoefficientsAndUnityDcGain) {
     static float kernel[kPhases][kTaps];
     ivanna::audio::buildUsbAsrcKernel(44100, 96000, kernel);
