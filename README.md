@@ -11,7 +11,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
 [![Versión de código](https://img.shields.io/badge/versión-según%20version.properties-64748b.svg)](version.properties)
 [![Android](https://img.shields.io/badge/plataforma-Android%20%7C%20ARM64-3ddc84.svg)](app/)
-[![C++26](https://img.shields.io/badge/motor-C%2B%2B20-00599C.svg)](app/src/main/cpp/)
+[![C++26](https://img.shields.io/badge/motor-C%2B%2B26-00599C.svg)](app/src/main/cpp/)
 
 [LÉAME para público general](LEAME.md) · [Documentación técnica](docs/ENGINEERING.md) · [Cambios recientes](CHANGELOG.md) · [Versiones y paquetes](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) · [Reportar un problema](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues)
 
