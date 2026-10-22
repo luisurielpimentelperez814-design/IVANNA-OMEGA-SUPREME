@@ -7,7 +7,7 @@ import kotlin.math.sin
 
 class IvannaSpatialEngineSampleRateTest {
     @Test fun itdAndCrossfeedDelayScaleWithSelectedOutputClock() {
-        val engine = IvannaSpatialEngine.shared
+        val engine = IvannaSpatialEngine.createIsolated()
         try {
             engine.configureSampleRate(96_000)
             assertEquals(96_000, engine.configuredSampleRateHz)
