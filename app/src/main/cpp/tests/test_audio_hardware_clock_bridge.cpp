@@ -13,6 +13,36 @@ std::string testPath() {
     return "/tmp/ivanna_hw_clock_snapshot_test_" + std::to_string(::getpid());
 }
 
+TEST(HardwareClockBridge, InvalidSnapshotCanBeRetriedAfterPublisherInitializesIt) {
+    const std::string path = testPath();
+    std::remove(path.c_str());
+
+    // A correctly sized but uninitialized mapping must be rejected and unmapped.
+    std::FILE* file = std::fopen(path.c_str(), "wb");
+    ASSERT_NE(file, nullptr);
+    ASSERT_EQ(::ftruncate(::fileno(file), 64), 0);
+    std::fclose(file);
+
+    ivanna::audio::HardwareClockReader reader;
+    EXPECT_FALSE(reader.open(path.c_str()));
+
+    // The HAL/PCM owner can initialize the contract later; the same reader
+    // instance must be able to retry rather than treating the stale map as open.
+    ivanna::audio::HardwareClockPublisher publisher;
+    ASSERT_TRUE(publisher.open(path.c_str()));
+    ASSERT_TRUE(reader.open(path.c_str()));
+    ASSERT_TRUE(publisher.publish({480, 1000000000ull, 48000}));
+
+    ivanna::audio::HardwareClockSample sample;
+    ASSERT_TRUE(reader.read(sample));
+    EXPECT_EQ(sample.presentedFrames, 480ull);
+    EXPECT_EQ(sample.hardwareTimestampNs, 1000000000ull);
+
+    reader.close();
+    publisher.close();
+    std::remove(path.c_str());
+}
+
 TEST(HardwareClockBridge, PublishesAndReadsDriverSnapshot) {
     const std::string path = testPath();
     std::remove(path.c_str());
