@@ -409,6 +409,25 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         return true
     }
 
+    /** Previous-track action from the Android media session / compatible wearables. */
+    fun skipToPrevious(): Boolean {
+        if (queueIndex <= 0 || queueIndex > queue.lastIndex) {
+            // At the start of the queue, the conventional action restarts this track.
+            if (queueIndex == 0) {
+                seekTo(0L)
+                if (state == State.PAUSED) return true
+                return true
+            }
+            Log.i(TAG, "skipToPrevious ignored: no active queue item")
+            return false
+        }
+        queueIndex--
+        val previous = queue[queueIndex]
+        onQueueAdvance?.invoke(previous)
+        play(previous)
+        return true
+    }
+
     private val voiceProtection: VoiceProtectionController? by lazy {
         try {
             VoiceProtectionController(context).also { it.enabled = voiceProtectionEnabled }
