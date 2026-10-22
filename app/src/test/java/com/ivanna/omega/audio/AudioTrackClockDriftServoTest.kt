@@ -70,4 +70,26 @@ class AudioTrackClockDriftServoTest {
         assertTrue(treated.sabineRt60Seconds < hard.sabineRt60Seconds)
     }
 
+    @Test fun highFidelityFirSuppressesAboveNyquistToneWhenDownsampling() {
+        val resampler = StereoAudioResampler(48_000)
+        resampler.setInputSampleRate(96_000)
+        val frames = 96_000
+        val input = FloatArray(frames * 2)
+        for (i in 0 until frames) {
+            val sample = (0.5 * kotlin.math.sin(2.0 * Math.PI * 30_000.0 * i / 96_000.0)).toFloat()
+            input[2 * i] = sample
+            input[2 * i + 1] = sample
+        }
+        val output = resampler.process(input)
+        assertTrue(output.size > 0)
+        var energy = 0.0
+        var count = 0
+        for (i in 2_000 until output.size) {
+            energy += output[i].toDouble() * output[i].toDouble()
+            count++
+        }
+        val rms = kotlin.math.sqrt(energy / count)
+        assertTrue("30 kHz content must be attenuated before 48 kHz output, RMS=$rms", rms < 0.02)
+    }
+
 }
