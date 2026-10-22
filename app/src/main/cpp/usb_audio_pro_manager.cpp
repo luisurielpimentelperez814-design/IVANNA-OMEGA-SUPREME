@@ -28,6 +28,7 @@ std::atomic<bool> g_engine_running{false};
 #include <linux/usbdevice_fs.h>
 #include <linux/usb/ch9.h>
 #include "include/usb_asrc_kernel.hpp"
+#include "include/usb_asrc_clock_servo.hpp"
 
 // ════════════════════════════════════════════════════════════════════════════
 // MOTOR ASÍNCRONO USB AUDIO PRO — IMPLEMENTACIÓN REAL
@@ -217,7 +218,7 @@ public:
         nominalStep_ = static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
         step_ = nominalStep_;
         phase_ = 0.0;
-        correction_ = 0.0;
+        servo_.reset();
         historyCount_ = 0;
         for (int c = 0; c < kMaxChannels; ++c)
             for (int k = 0; k < kTaps; ++k) history_[c][k] = 0.0f;
@@ -233,15 +234,8 @@ public:
     int process(const float* input, int inputFrames, int32_t* output,
                 int capacityFrames, int ringFillFrames, int ringCapacityFrames) noexcept {
         if (!input || !output || inputFrames <= 0 || capacityFrames <= 0) return 0;
-        if (ringCapacityFrames > 0) {
-            const double target = static_cast<double>(ringCapacityFrames) * 0.5;
-            const double error = (static_cast<double>(ringFillFrames) - target) / target;
-            const double desired = error * 0.001;
-            correction_ += (desired - correction_) * 0.002;
-            if (correction_ > 0.001) correction_ = 0.001;
-            if (correction_ < -0.001) correction_ = -0.001;
-            step_ = nominalStep_ * (1.0 + correction_);
-        }
+        const double correction = servo_.update(ringFillFrames, ringCapacityFrames);
+        step_ = nominalStep_ * (1.0 + correction);
 
         int produced = 0;
         while (produced < capacityFrames && phase_ < static_cast<double>(inputFrames)) {
@@ -312,7 +306,8 @@ private:
     }
 
     int inputRate_ = 48000, outputRate_ = 48000, channels_ = 2;
-    double nominalStep_ = 1.0, step_ = 1.0, phase_ = 0.0, correction_ = 0.0;
+    double nominalStep_ = 1.0, step_ = 1.0, phase_ = 0.0;
+    ivanna::audio::UsbAsrcClockServo servo_;
     float history_[kMaxChannels][kTaps]{};
     int historyCount_ = 0;
     float kernel_[kPhases][kTaps]{};
