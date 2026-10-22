@@ -67,6 +67,7 @@
 #include "../neuromorphic/volterra_h2_symmetric.hpp"
 #include "../hexagon/ivanna_fastrpc_client.hpp"
 #include "../supreme/SupremeAcousticStabilityGuard.hpp"
+#include "../supreme/SpatialAngleReadback.hpp"
 #include "omega_shared.h"
 // FIX (build roto — ld: undefined symbol: g_shared): g_shared vive
 // DENTRO de un namespace anónimo en omega_daemon.cpp (líneas 53-514),
@@ -2772,10 +2773,11 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCompressorParams(
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetSpatialAngleRad(
     JNIEnv*, jobject, jfloat rad) {
-    if (!std::isfinite(rad)) return;
-    const float appliedDeg = std::clamp(rad * 57.29578f, -90.0f, 90.0f);
+    const float appliedRad = ivanna::supreme::SpatialAngleReadback::appliedRadians(rad);
+    if (!std::isfinite(appliedRad)) return; // preserve last valid command on invalid input
+    const float appliedDeg = appliedRad * 57.29577951308232f;
     g_pd.set_spatial_angle(appliedDeg);
-    g_spatialAppliedAngleRad.store(appliedDeg * 0.017453292519943295f, std::memory_order_release);
+    g_spatialAppliedAngleRad.store(appliedRad, std::memory_order_release);
 }
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpatialAngleRad(JNIEnv*, jobject) {
