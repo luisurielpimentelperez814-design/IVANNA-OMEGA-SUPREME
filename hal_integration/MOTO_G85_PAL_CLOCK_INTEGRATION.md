@@ -195,3 +195,20 @@ Acceptance criteria for declaring the physical ASRC feature complete remain:
 6. on-device playback-test internal output and USB-C DAC separately, checking applied-ratio telemetry, underruns and audio stability.
 
 Until those steps are completed, this branch is an integration/test improvement, not a claim of completed device-level clock correction.
+
+## Moto G85 probe results — 2026-10-22
+
+The uploaded `IVANNA_PAL_PROBE.tar.gz` was inspected. It contains `report.txt` and `config_files_with_hits.txt`; it does not contain the expanded `report_deep.txt`.
+
+Observed on the actual device:
+- `ro.product.model=moto g85 5G`, `ro.product.device=malmo`, `ro.board.platform=blair`, Android 15 / SDK 35, probe executed as root.
+- Vendor libraries present include `audio.primary.blair.so`, `libar-pal.so`, `libpalclient.so`, `libagm.so`, `libagmclient.so`, and `vendor.qti.hardware.pal@1.0-impl.so`.
+- PAL/AGM binaries expose timestamp-related symbols including `pal_get_timestamp`, `SessionAlsaPcm::getTimestamp`, `agm_get_session_time`, and `agm_get_buffer_timestamp`.
+- AudioFlinger reports active mixer output threads at 48 kHz. The `AudioOut_D` sample shows 192 HAL frames, 171 ms FastMixer latency, 27 underruns and 102 overruns in the captured counters; `AudioOut_15` shows 1,920 HAL frames and about 282 ms average threadloop write latency. These counters are point-in-time cumulative diagnostics, not evidence of ASRC control or a direct DAC-clock measurement.
+- The probe's filtered mixer-control section returned no named clock/ASRC/ppm controls. Its configuration search found resource-manager and policy XML files, but the emitted excerpts do not identify a variable-ratio actuator or prove which DSP module instance is active in the playback graph.
+
+### Decision after the real-device probe
+
+The device confirms that the expected PAL/AGM stack and timestamp interfaces exist. It does **not** confirm (a) a paired presentation-frame/hardware-time sample in the active output path or (b) a runtime variable-ratio ASRC actuator with documented payload, units, limits and acceptance status. The PAL callbacks therefore remain unbound and hardware correction remains disabled. Do not route the servo into `BT SLIMBUS CLK SRC`, timestamp mixer payloads, or nominal media-format parameters.
+
+The read-only probe was extended on `main` to capture additional AudioPolicy/AudioFlinger route context, audio-related properties, ALSA device listings, relevant resource-manager module/parameter lines, and a broader sample of mixer control names. Re-run the updated script and upload the new archive; it improves evidence collection but does not itself connect the HAL.
