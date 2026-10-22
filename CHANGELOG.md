@@ -4,6 +4,8 @@
 - La consulta de códec se vincula a la dirección del dispositivo seleccionado; si no coincide con un dispositivo conectado, no se reutiliza el códec de otro auricular.
 - Si el dispositivo Android no acepta la tasa elegida por el códec, se cae a 48 kHz antes de construir el AudioTrack; el log de ruta preferida ya no etiqueta todos los fallos como USB.
 - El `AudioTrackClockDriftServo` existente sigue corrigiendo el ASRC del reproductor propio con marcas temporales del `AudioTrack`; se añade cobertura JVM a la política de selección de tasa.
+- El PCM se remuestrea a la tasa real de salida antes de ejecutar DSP/HRTF; se evita procesar 44.1/48 kHz con filtros inicializados a 96 kHz.
+- Los retardos ITD/crossfeed del fallback espacial siguen la tasa del DAC/A2DP y el reproductor mantiene historial espacial aislado de la captura en vivo; los bloques se limitan para no exceder buffers de scratch al sobremuestrear.
 - **Alcance explícito:** esto solo afecta reproducción gestionada por `IvannaBridgePlayer`. No controla el reloj remoto A2DP, no inserta ASRC en el HAL Qualcomm y no modifica automáticamente el audio de Spotify/YouTube u otras apps. La validación CI y una prueba física con dispositivos Bluetooth siguen pendientes.
 
 ---
