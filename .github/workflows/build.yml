@@ -621,7 +621,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          STAGE_TAG="staging-${GITHUB_SHA}"
+          STAGE_TAG="staging-${GITHUB_SHA}-${GITHUB_RUN_ID}"
           NOTES="Transient build staging for commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
           if ! gh release view "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$STAGE_TAG" \
@@ -653,7 +653,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          STAGE_TAG="staging-${GITHUB_SHA}"
+          STAGE_TAG="staging-${GITHUB_SHA}-${GITHUB_RUN_ID}"
           gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Validate downloaded zip end-to-end
@@ -780,7 +780,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          STAGE_TAG="staging-${GITHUB_SHA}"
+          STAGE_TAG="staging-${GITHUB_SHA}-${GITHUB_RUN_ID}"
           gh release download "$STAGE_TAG" --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Derivar versión desde module.prop (fuente única de verdad)
@@ -825,7 +825,7 @@ jobs:
           FLYER_TAG="docs/release_media/ivanna_promo_flyer_${TAG}.png"
           FLYER_CANONICAL="docs/release_media/ivanna_promo_flyer.png"
           NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
-          STAGE_TAG="staging-${GITHUB_SHA}"
+          STAGE_TAG="staging-${GITHUB_SHA}-${GITHUB_RUN_ID}"
 
           EXTRA_ASSETS=()
           [ -f "$FLYER_TAG" ] && EXTRA_ASSETS+=("$FLYER_TAG")
