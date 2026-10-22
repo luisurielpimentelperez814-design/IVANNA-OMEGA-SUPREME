@@ -189,14 +189,17 @@ object AudioRouteManager {
      */
     private fun refreshBluetoothCodecProfileAsync(context: Context, generation: Long) {
         Thread({
-            // Match the codec query to the A2DP output selected from Android's device list.
-            // If Android hides the address, the detector safely falls back to its default lookup.
-            val selectedA2dp = runCatching {
+            // getDevices() lists connected endpoints, not the active system route.
+            // Only one A2DP candidate allows a codec query; multiple headsets must use fallback.
+            // Missing/ambiguous identity must not borrow codec OR vendor-bitrate metadata.
+            val a2dpAddresses = runCatching {
                 val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
                 manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-                    ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
-            }.getOrNull()
-            val selectedAddress = selectedA2dp?.address?.takeIf { it.isNotBlank() }
+                    ?.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+                    ?.map { it.address }
+                    .orEmpty()
+            }.getOrDefault(emptyList())
+            val selectedAddress = BluetoothOutputRatePolicy.selectUnambiguousAddress(a2dpAddresses)
             val info = if (selectedAddress == null) {
                 // Without a reliable address, do not borrow another connected headset's codec.
                 BluetoothCodecDetector.CodecInfo(BluetoothCodecDetector.RealCodec.UNAVAILABLE, 0, 0)
@@ -214,6 +217,9 @@ object AudioRouteManager {
             ) {
                 Log.i(TAG, "BT codec resolved asynchronously: ${info.codec} @ ${info.sampleRateHz}Hz/${info.bitsPerSample}bit")
                 BluetoothRouteProfilePolicy.forCodec(info.codec)
+            } else if (selectedAddress == null) {
+                // A vendor-global bitrate cannot safely identify which of multiple headsets it describes.
+                BluetoothRouteProfilePolicy.fallback()
             } else {
                 fallbackBluetoothProfile()
             }

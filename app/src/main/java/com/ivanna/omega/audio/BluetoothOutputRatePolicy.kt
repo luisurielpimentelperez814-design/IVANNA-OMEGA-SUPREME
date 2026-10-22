@@ -11,4 +11,13 @@ internal object BluetoothOutputRatePolicy {
 
     /** Codec metadata may only be borrowed from the selected output when its address is known. */
     fun hasReliableDeviceAddress(address: String?): Boolean = !address.isNullOrBlank()
+
+    /** Never infer a codec from another connected headset when route identity is missing. */
+    fun matchesSelectedDevice(selectedAddress: String?, candidateAddress: String?): Boolean =
+        hasReliableDeviceAddress(selectedAddress) && hasReliableDeviceAddress(candidateAddress) &&
+            selectedAddress!!.trim().equals(candidateAddress!!.trim(), ignoreCase = true)
+
+    /** Connected-device enumeration is not an active-route API; accept only one unambiguous A2DP candidate. */
+    fun selectUnambiguousAddress(addresses: List<String?>): String? =
+        addresses.singleOrNull()?.takeIf { hasReliableDeviceAddress(it) }?.trim()
 }
