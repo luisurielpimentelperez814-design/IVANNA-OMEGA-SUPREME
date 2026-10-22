@@ -153,6 +153,8 @@ object IvannaNativeLib {
     external fun nativeSetSpatialWidthDirect(width: Float)
     /** Ancho efectivo entregado al StereoWidener (base × escala térmica). Read-back, no medición de audio. */
     external fun nativeGetSpatialWidthDirect(): Float
+    /** Last finite, clamped spatial angle command in radians; not an acoustic measurement. */
+    external fun nativeGetSpatialAngleRad(): Float
     external fun nativeSetAntiDolbyIntensity(intensity: Float)
     /** Current Anti-Dolby DSP command value; not an acoustic-output measurement. */
     external fun nativeGetAntiDolbyIntensity(): Float
