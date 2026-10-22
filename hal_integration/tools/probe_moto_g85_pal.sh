@@ -114,7 +114,54 @@ else
   say "(sin dumpsys)"
 fi
 
-hdr "7. Resumen automático (lo que decide el siguiente paso)"
+hdr "7. Evidencia ampliada de ruta activa (solo lectura)"
+# La política indica rutas posibles; AudioFlinger/AudioPolicy y los controles
+# actuales ayudan a correlacionarlas, pero no demuestran por sí solos un ASRC.
+if have dumpsys; then
+  say "--- AudioPolicy: rutas/dispositivos/perfiles relevantes"
+  dumpsys media.audio_policy 2>/dev/null \
+    | grep -i -E "module|device|output|profile|route|port|mix port|primary|usb|bluetooth|speaker|sample.rate|sampling" \
+    | head -220 >> "$R"
+  say "--- AudioFlinger: hilos y pistas activos (resumen ampliado)"
+  dumpsys media.audio_flinger 2>/dev/null \
+    | grep -i -E "output thread|name AudioOut|type .*MIXER|standby:|sample rate:|HAL frame count|HAL format|timestamp stats|localSR|underrun|numTracks|srate|device" \
+    | head -220 >> "$R"
+fi
+
+say "--- Propiedades de audio relevantes"
+getprop 2>/dev/null | grep -i -E '\\[.*(audio|pal|agm|sound|sku|bluetooth).*\\]' | head -160 >> "$R"
+
+say "--- Dispositivos ALSA expuestos (si existen)"
+for f in /proc/asound/cards /proc/asound/pcm /proc/asound/devices; do
+  [ -r "$f" ] || continue
+  say "### $f"
+  sed -n '1,160p' "$f" >> "$R"
+done
+
+say "--- Configuración de módulos/formatos de audio (candidatos, NO prueba de grafo activo)"
+for f in /vendor/etc/audio/sku_blair/resourcemanager_blair_qrd.xml \
+         /vendor/etc/audio/sku_holi/resourcemanager_blair_mtp.xml \
+         /vendor/etc/audio/sku_holi/resourcemanager_blair_mtp_usbc.xml \
+         /vendor/etc/audio/sku_holi/resourcemanager_blair_qrd.xml; do
+  [ -r "$f" ] || continue
+  H="$(grep -n -i -E 'dynamic.?resampler|resampler|mfc|rat.?render|module.?id|param.?id|graph|device.?pp.?m|drift|rate.?adapt|asrc|slip' "$f" 2>/dev/null | head -100)"
+  [ -n "$H" ] || continue
+  say "### $f"
+  printf '%s\\n' "$H" >> "$R"
+done
+
+say "--- Nombres de controles tinymix (muestra; no se escribe ningún valor)"
+if have tinymix; then
+  tinymix 2>/dev/null | head -320 >> "$R"
+else
+  for t in /vendor/bin/tinymix /system/bin/tinymix /vendor/bin/tinymix_new; do
+    [ -x "$t" ] || continue
+    "$t" 2>/dev/null | head -320 >> "$R"
+    break
+  done
+fi
+
+hdr "8. Resumen automático (lo que decide el siguiente paso)"
 N_TS=0; N_ASRC=0
 if have strings; then
   for f in $LIBS; do
