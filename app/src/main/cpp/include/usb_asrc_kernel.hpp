@@ -12,7 +12,9 @@ template <std::size_t Phases, std::size_t Taps>
 void buildUsbAsrcKernel(int inputRate, int outputRate,
                         float (&kernel)[Phases][Taps]) noexcept {
     constexpr double kPi = 3.14159265358979323846;
-    const double cutoff = usbAsrcCutoffNyquistNormalized(inputRate, outputRate);
+    // Helper returns cutoff as a fraction of Nyquist (Nyquist = 1); sinc() below
+    // is normalized in cycles/sample (Nyquist = 0.5), so convert units here.
+    const double cutoff = 0.5 * usbAsrcCutoffNyquistNormalized(inputRate, outputRate);
     if (!(cutoff > 0.0) || !std::isfinite(cutoff)) {
         for (std::size_t p = 0; p < Phases; ++p)
             for (std::size_t k = 0; k < Taps; ++k) kernel[p][k] = 0.0f;
