@@ -386,6 +386,23 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         play(next)
     }
 
+    /**
+     * Avance explícito solicitado por controles del sistema (wearables,
+     * auriculares, pantalla de bloqueo). Comparte la misma cola y callback
+     * que el avance por EOS; no depende de que termine el tema actual.
+     */
+    fun skipToNext(): Boolean {
+        if (queueIndex < 0 || queueIndex >= queue.lastIndex) {
+            Log.i(TAG, "skipToNext ignored: no next item in queue")
+            return false
+        }
+        queueIndex++
+        val next = queue[queueIndex]
+        onQueueAdvance?.invoke(next)
+        play(next)
+        return true
+    }
+
     private val voiceProtection: VoiceProtectionController? by lazy {
         try {
             VoiceProtectionController(context).also { it.enabled = voiceProtectionEnabled }
