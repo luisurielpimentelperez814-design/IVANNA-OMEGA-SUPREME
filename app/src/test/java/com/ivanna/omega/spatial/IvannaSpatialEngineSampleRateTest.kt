@@ -24,7 +24,8 @@ class IvannaSpatialEngineSampleRateTest {
     }
 
     @Test fun spatialFallbackRemainsFiniteAfterRateChange() {
-        val engine = IvannaSpatialEngine.shared
+        // Isolate mutable delay lines so this test cannot race other tests using the global engine.
+        val engine = IvannaSpatialEngine.createIsolated()
         val inL = FloatArray(1_900) { i -> sin(i * 0.03).toFloat() }
         val inR = FloatArray(1_900) { i -> sin(i * 0.031).toFloat() }
         val outL = FloatArray(inL.size)
