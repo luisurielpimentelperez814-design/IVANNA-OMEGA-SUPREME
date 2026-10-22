@@ -31,7 +31,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments += listOf("-DCMAKE_CXX_STANDARD=20", "-DANDROID_STL=c++_shared")
+                arguments += listOf("-DCMAKE_CXX_STANDARD=26", "-DANDROID_STL=c++_shared")
             }
         }
     }
@@ -97,11 +97,11 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "3.30.3"
         }
     }
 
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "27.2.12479018"
 
     androidResources {
         noCompress += listOf("tflite")

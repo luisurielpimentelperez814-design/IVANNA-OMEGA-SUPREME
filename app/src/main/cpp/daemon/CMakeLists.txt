@@ -2,8 +2,11 @@
 # Se compila como ejecutable PIE independiente de libivanna_omega.so.
 # El resultado (ivanna_daemon) se stagea en magisk_module/system/bin/.
 
-cmake_minimum_required(VERSION 3.22.1)
+cmake_minimum_required(VERSION 3.30.3)
 project(ivanna_daemon LANGUAGES CXX C)
+
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Hardening global para ejecutables PIE del daemon (RELRO + BIND_NOW + new-dtags)
 set(IVANNA_DAEMON_HARDENING_FLAGS "-Wl,-z,relro -Wl,-z,now -Wl,--enable-new-dtags")
@@ -39,7 +42,7 @@ target_include_directories(ivanna_daemon PRIVATE
 )
 
 target_compile_options(ivanna_daemon PRIVATE
-    -std=c++17 -O3 -fPIE
+    -O3 -fPIE
     -Wall -Wno-unused-parameter -Wno-unused-function
 )
 

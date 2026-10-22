@@ -11,7 +11,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
 [![Versión de código](https://img.shields.io/badge/versión-según%20version.properties-64748b.svg)](version.properties)
 [![Android](https://img.shields.io/badge/plataforma-Android%20%7C%20ARM64-3ddc84.svg)](app/)
-[![C++20](https://img.shields.io/badge/motor-C%2B%2B20-00599C.svg)](app/src/main/cpp/)
+[![C++26](https://img.shields.io/badge/motor-C%2B%2B26-00599C.svg)](app/src/main/cpp/)
 
 [LÉAME para público general](LEAME.md) · [Documentación técnica](docs/ENGINEERING.md) · [Cambios recientes](CHANGELOG.md) · [Versiones y paquetes](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) · [Reportar un problema](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues)
 
@@ -40,7 +40,7 @@ La actividad **Captura espacial AR** usa ARCore para seguir el movimiento del te
 <summary><strong>Motor de audio y aplicación Android</strong></summary>
 
 - Aplicación Android con interfaz Kotlin/Jetpack Compose.
-- Motor nativo C++20 conectado mediante JNI y compilación dirigida a ARM64.
+- Motor nativo C++26 conectado mediante JNI y compilación dirigida a ARM64.
 - Herramientas de procesamiento espacial y recursos acústicos, incluidos datos en formato SOFA.
 - Controles y telemetría que deben distinguir los parámetros solicitados de los valores realmente confirmados por el motor.
 - Rutas de integración que contemplan dispositivos con root/Magisk y escenarios sin root; la disponibilidad real depende del dispositivo, permisos, ruta de salida y configuración.
@@ -81,7 +81,7 @@ La adquisición CSI depende de un proveedor compatible y de hardware y permisos 
 ```mermaid
 flowchart TD
     UI["Aplicación Android<br/>Kotlin / Compose"] --> JNI["Puente JNI"]
-    JNI --> DSP["Motor nativo<br/>C++20 / DSP"]
+    JNI --> DSP["Motor nativo<br/>C++26 / DSP"]
     UI --> MEASURE["Medición de sala<br/>captura + tonos"]
     MEASURE --> ANALYSIS["Análisis de señal<br/>niveles, ruido y retardo"]
     ANALYSIS --> VERIFY["Verificación antes/después"]
@@ -118,8 +118,8 @@ Los paquetes de [Releases](https://github.com/luisurielpimentelperez814-design/I
 ### Requisitos
 
 - Android Studio y JDK 17 para el proyecto Android.
-- Android SDK 35 y NDK 26.1.10909125, según la configuración del proyecto.
-- CMake 3.22.1 y Gradle Wrapper del repositorio.
+- Android SDK 35 y NDK 27.2.12479018, según la configuración del proyecto.
+- CMake 3.30.3 y Gradle Wrapper del repositorio.
 - Node.js 22 y npm para compilar el paquete web FotoHolo integrado.
 - Un entorno Linux compatible con los comandos de CI para reproducir la suite nativa completa.
 
