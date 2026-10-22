@@ -29,7 +29,10 @@ jobs:
 
   test-native-dsp:
     name: DSP Native Tests (host, CTest)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-18
+      CXX: clang++-18
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
