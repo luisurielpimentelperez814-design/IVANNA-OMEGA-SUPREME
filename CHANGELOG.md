@@ -6,6 +6,14 @@
 
 ---
 
+# CHANGELOG — Sin publicar — MAJESTY 3D azimut esférico 360°
+
+- `ObjectRenderer` conserva el hemisferio trasero: deja de recortar los azimuts a ±90° y envuelve la orientación relativa a la cabeza a [-180°, 180°].
+- Añade una función pura de envoltura angular y pruebas host para fuentes traseras, giros completos y valores no finitos.
+- No cambia el contrato de HRTF medido ni afirma calibración acústica física; queda sujeto a CI.
+
+---
+
 # CHANGELOG — Sin publicar — Read-back nativo RP-88
 
 - Se exponen getters JNI para la intensidad de realidad y Anti-Dolby y se guardan sus valores leídos tras aplicar LOCK, junto con el ancho espacial, en el JSON exportado y las preferencias locales.
