@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.116
-versionCode=407
+version=v2.5.117
+versionCode=408
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.116: clear Gemini quota message, stop auto-create on quota error
+description=v2.5.117: 64-tap FIR resampler and RP-88 acoustic room estimate
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
