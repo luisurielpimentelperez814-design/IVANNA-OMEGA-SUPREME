@@ -604,6 +604,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // Keep the Kotlin spatial fallback's ITD/crossfeed delays calibrated to the
             // selected sink rate too; native DSPBridge is initialized at this same rate.
             playbackSpatialEngine.configureSampleRate(sampleRate)
+            // A new media item must not inherit the previous item's convolution/ITD tail.
+            playbackSpatialEngine.reset()
             val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
             val outputTimestamp = AudioTimestamp()
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
