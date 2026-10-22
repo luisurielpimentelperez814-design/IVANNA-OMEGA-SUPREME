@@ -4,8 +4,8 @@
 > *For anyone who wants to evaluate the work in 5 minutes. Everything below is verifiable in this repo; where something is unproven, it says so.*
 
 ## Qué es / What it is
-Un motor de audio en tiempo real para Android (C++20 + Kotlin/Compose + módulo Magisk): audio espacial binaural con HRTF/SOFA, procesado adaptativo y dos rutas de despliegue (con root vía Magisk, sin root vía USB DAC).
-*A real-time Android audio engine (C++20 + Kotlin/Compose + Magisk module): binaural spatial audio with HRTF/SOFA, adaptive processing, and two deployment paths (rooted via Magisk, non-root via USB DAC).*
+Un motor de audio en tiempo real para Android (C++26 + Kotlin/Compose + módulo Magisk): audio espacial binaural con HRTF/SOFA, procesado adaptativo y dos rutas de despliegue (con root vía Magisk, sin root vía USB DAC).
+*A real-time Android audio engine (C++26 + Kotlin/Compose + Magisk module): binaural spatial audio with HRTF/SOFA, adaptive processing, and two deployment paths (rooted via Magisk, non-root via USB DAC).*
 
 ## Cifras (medidas del repo, no estimadas) / Numbers (measured from the repo)
 | Dato | Valor |
