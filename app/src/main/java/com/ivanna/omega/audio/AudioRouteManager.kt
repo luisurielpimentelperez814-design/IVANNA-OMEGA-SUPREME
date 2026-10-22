@@ -110,8 +110,8 @@ object AudioRouteManager {
         val route = currentRoute
         if (route == OutputRoute.UNKNOWN) return
         if (route == OutputRoute.BLUETOOTH) {
-            // Never block the caller on the asynchronous A2DP profile proxy.
-            applyProfileFor(route, fallbackBluetoothProfile())
+            // Never block the caller on A2DP proxy acquisition or vendor parameters.
+            applyProfileFor(route, BluetoothRouteProfilePolicy.fallback())
             val generation = routeGeneration.incrementAndGet()
             appContextRef?.let { refreshBluetoothCodecProfileAsync(it, generation) }
         } else {
@@ -225,13 +225,14 @@ object AudioRouteManager {
         currentRoute = route
         appContextRef?.let { ctx ->
             runCatching { AudioPipeline.syncHardwareSampleRate(ctx) }
+            if (route == OutputRoute.BLUETOOTH) BluetoothAudioProfiler.invalidate()
             Thread({
                 runCatching { BluetoothAudioProfiler.refresh(ctx) }
             }, "BtAudioProfilerRefresh").start()
         }
         if (route == OutputRoute.BLUETOOTH) {
             // Apply immediately with a bounded fallback; do not block the device callback.
-            applyProfileFor(route, fallbackBluetoothProfile())
+            applyProfileFor(route, BluetoothRouteProfilePolicy.fallback())
             appContextRef?.let { refreshBluetoothCodecProfileAsync(it, generation) }
         } else {
             applyProfileFor(route)
