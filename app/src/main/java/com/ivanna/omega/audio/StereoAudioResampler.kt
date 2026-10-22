@@ -3,6 +3,7 @@ package com.ivanna.omega.audio
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.ceil
 import kotlin.math.sin
 
 /**
@@ -140,7 +141,11 @@ class StereoAudioResampler(
             r[TAPS + i] = if (right.isFinite()) right else 0f
         }
 
-        val maxOut = (((total - HALF - pos) / step).toInt() + 2).coerceAtLeast(0)
+        // The loop emits one frame for each p < total - HALF. Allocate
+        // the exact upper bound instead of adding two spare frames and copying
+        // the result on every decoder chunk.
+        val available = total - HALF - pos
+        val maxOut = if (available > 0.0) ceil(available / step).toInt().coerceAtLeast(0) else 0
         val out = FloatArray(maxOut * 2)
         var o = 0
         val coef = coefficientScratch
