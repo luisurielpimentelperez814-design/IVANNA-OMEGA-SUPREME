@@ -93,10 +93,10 @@ class IvannaSpatialEngine private constructor() {
             shared.attachHeadTracker(tracker)
     }
 
-    private val sampleRate = 44100
+    @Volatile private var sampleRate = 44100
     private val maxBlockSize = 4096
-    private val maxItdSamples = (0.0015f * sampleRate).toInt()
-    private val crossfeedDelaySamples = 44
+    @Volatile private var maxItdSamples = (0.0015f * sampleRate).toInt()
+    @Volatile private var crossfeedDelaySamples = (0.001f * sampleRate).toInt().coerceAtLeast(1)
     private val earlyReflectionTimes = intArrayOf(7, 13, 17, 23)
     private val earlyReflectionGains = floatArrayOf(0.3f, 0.2f, 0.15f, 0.1f)
 
@@ -131,6 +131,25 @@ class IvannaSpatialEngine private constructor() {
     }
 
     fun init(modelPath: String? = null) { reset() }
+
+    /**
+     * Match time-domain delays to the actual output clock. A fixed 44.1 kHz
+     * ITD ring underestimates interaural delay at 48/96 kHz and shifts the
+     * apparent source position on USB DACs and Bluetooth routes.
+     * Called before the player starts feeding this engine.
+     */
+    @Synchronized
+    fun configureSampleRate(rateHz: Int) {
+        if (rateHz !in 8_000..192_000 || rateHz == sampleRate) return
+        sampleRate = rateHz
+        maxItdSamples = (0.0015f * rateHz).toInt().coerceAtLeast(1)
+        crossfeedDelaySamples = (0.001f * rateHz).toInt().coerceAtLeast(1)
+        delayedL = FloatArray(maxItdSamples)
+        delayedR = FloatArray(maxItdSamples)
+        crossfeedBufferL = FloatArray(crossfeedDelaySamples)
+        crossfeedBufferR = FloatArray(crossfeedDelaySamples)
+        reset()
+    }
 
     fun reset() {
         delayedL.fill(0f); delayedR.fill(0f)
