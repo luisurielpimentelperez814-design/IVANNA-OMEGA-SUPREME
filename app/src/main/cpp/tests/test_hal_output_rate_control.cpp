@@ -167,12 +167,12 @@ TEST(HalOutputStreamClockControl, InvalidTimestampOrRateNeverEnablesCorrection) 
     EXPECT_DOUBLE_EQ(control.lastAppliedRatio(), 1.0);
 }
 
-TEST(UsbAsrcCutoff, UsesCyclesPerSampleAndProtectsNyquist) {
+TEST(UsbAsrcCutoff, UsesNyquistNormalizedCutoffAndProtectsNyquist) {
     EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 48000), 0.94, 1e-12);
     EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNyquistNormalized(96000, 48000), 0.47, 1e-12);
-    EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 96000), 0.47, 1e-12);
-    EXPECT_LT(ivanna::audio::usbAsrcCutoffNyquistNormalized(96000, 48000), 1.0);
-    EXPECT_LT(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 48000), 0.5);
+    EXPECT_NEAR(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 96000), 0.94, 1e-12);
+    EXPECT_LT(ivanna::audio::usbAsrcCutoffNyquistNormalized(96000, 48000), 0.5);
+    EXPECT_LT(ivanna::audio::usbAsrcCutoffNyquistNormalized(48000, 48000), 1.0);
 }
 
 TEST(UsbAsrcCutoff, RejectsInvalidRatesAndIsMonotonicForDownsampling) {
