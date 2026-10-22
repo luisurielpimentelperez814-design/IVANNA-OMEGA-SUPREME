@@ -1,26 +1,35 @@
-# CHANGELOG — Sin publicar — Contrato de toolchain C++26
+# CHANGELOG — v2.5.120 (411) — RP-88, ASRC USB y toolchain C++26
 
-- Alinea la guía de contribución, el resumen de ingeniería, la matriz de cableado, la ficha de cita, la página de proyecto y los textos de lanzamiento/promoción con C++26, que ya usa CMake en el motor nativo.
-- Cambio documental únicamente; no modifica versión publicada ni afirma compatibilidad de hardware no medida.
+- RP-88 conserva el signo del ITD estimado, aplica simetría izquierda/derecha y pliega ángulos traseros para que el retardo vuelva hacia cero a 180°. El comando espacial enviado al DSP permanece limitado a ±90°.
+- Consolida las pruebas de FIR polifásico de 64 taps/1024 fases, rechazo de alias, banda pasante, ganancia DC, fases finitas y validación de la ruta USB; alinea los documentos y herramientas de promoción con C++26.
+- CI verificado: CTest, compilación nativa C++26/ARM64, APK, pruebas JVM, validación/empaquetado Magisk y verificación del artefacto descargado. La publicación de esta versión queda condicionada a repetir esas puertas en el commit de release.
+- Límite explícito: los resultados FIR son sintéticos. No se certifica la integración física Qualcomm PAL/HAL, el reloj del DAC USB ni una respuesta/RIR acústica medida.
 
 ---
 
-# CHANGELOG — Sin publicar — Contrato angular RP-88
+## Detalle — Contrato de toolchain C++26
+
+- Alinea la guía de contribución, el resumen de ingeniería, la matriz de cableado, la ficha de cita, la página de proyecto y los textos de lanzamiento/promoción con C++26, que ya usa CMake en el motor nativo.
+- La alineación documental no implica compatibilidad de hardware no medida.
+
+---
+
+## Detalle — Contrato angular RP-88
 
 - Limita el ángulo exportado por la calibración AR al rango nativo de ±90°, sin alterar el azimut normalizado usado para calcular ITD.
 - Añade pruebas Kotlin y C++ para saturación, límites y rechazo de comandos no finitos. El read-back confirma estado del comando DSP, no medición acústica.
 
 ---
 
-# CHANGELOG — Sin publicar — Despliegue estricto SAF/SOFA/RIR/HRTF
+## Detalle — Despliegue estricto SAF/SOFA/RIR/HRTF
 
 - El instalador Magisk rechaza datasets ausentes o incompletos, copia a staging, compara bytes y activa directorios con rollback si falla la sustitución.
 - SAF se copia y valida antes de activarse; RIR exige 200 WAV y metadata; HRTF exige 12 IHR1 con SHA-256 contra el índice; SOFA exige el conjunto completo y verifica la copia.
-- El empaquetado verifica además los conteos esperados del producto en el árbol fuente y el ZIP. No se cambia la versión publicada en esta rama.
+- El empaquetado verifica además los conteos esperados del producto en el árbol fuente y el ZIP; los artefactos de v2.5.120 pasan la validación automatizada.
 
 ---
 
-# CHANGELOG — Sin publicar — Read-back nativo de escena física RP-88
+## Detalle — Read-back nativo de escena física RP-88
 
 - Expone el read-back JNI de los parámetros de oclusión y absorción guardados por el DSP y los exporta en el informe de calibración.
 - Rechaza valores NaN/Inf y publica los controles de escena con atómicos para evitar carreras entre JNI y el callback de audio.
@@ -29,43 +38,43 @@
 
 ---
 
-# CHANGELOG — Sin publicar — ASRC USB espectral y FIR Kotlin
+## Detalle — ASRC USB espectral y FIR Kotlin
 
 - La ruta USB de producción y las pruebas host comparten el mismo generador polyphase FIR de 64 taps/1024 fases, para que las regresiones midan los coeficientes realmente usados por el motor.
 - Se añaden comprobaciones de banda pasante, rechazo de alias, ganancia DC y coeficientes finitos por fase en conversiones 48→24 kHz, 96→48 kHz y 44.1→96 kHz.
 - Se conserva la convención correcta del FIR Kotlin: fc normalizado a Nyquist (fc=1 equivale a Nyquist), con transición del 3 %; interpretarlo como ciclos/muestra habría reducido el corte a la mitad.
-- La aceptación requiere CI verde; los tests sintéticos no sustituyen mediciones con un DAC USB físico.
+- CTest, APK/JVM, empaquetado y verificación del artefacto descargado pasaron; los tests sintéticos no sustituyen mediciones con un DAC USB físico.
 
 ---
 
-# CHANGELOG — Sin publicar — Toolchain nativa C++26
+## Detalle — Toolchain nativa C++26
 
 - Se configura el motor Android, el daemon Magisk y los tests host con `CMAKE_CXX_STANDARD=26`, CMake 3.30.3 y Android NDK r27d (27.2.12479018).
 - CI fija Clang 18 en las pruebas host para evitar el compilador GCC 11 del runner, que no acepta el dialecto C++26; el daemon independiente usa el CMake instalado por el SDK.
-- No se declara listo para release hasta que CI demuestre compilación nativa, APK y pruebas completas.
+- La compilación nativa C++26, APK, JVM, empaquetado y verificación del artefacto descargado pasaron en CI.
 
 ---
 
-# CHANGELOG — Sin publicar — MAJESTY 3D azimut esférico 360°
+## Detalle — MAJESTY 3D azimut esférico 360°
 
 - `ObjectRenderer` conserva el hemisferio trasero: deja de recortar los azimuts a ±90° y envuelve la orientación relativa a la cabeza a [-180°, 180°].
 - Añade una función pura de envoltura angular y pruebas host para fuentes traseras, giros completos y valores no finitos.
-- No cambia el contrato de HRTF medido ni afirma calibración acústica física; queda sujeto a CI.
+- CI pasa; no cambia el contrato de HRTF medido ni afirma calibración acústica física.
 
 ---
 
-# CHANGELOG — Sin publicar — Read-back nativo RP-88
+## Detalle — Read-back nativo RP-88
 
 - Se exponen getters JNI para la intensidad de realidad y Anti-Dolby y se guardan sus valores leídos tras aplicar LOCK, junto con el ancho espacial, en el JSON exportado y las preferencias locales.
 - Las lecturas representan estado/comandos del motor DSP, no una medición de la salida acústica. El lock completo sigue desactivado hasta disponer de read-back de absorción de escena y medición acústica; no implica control físico del HAL/DAC.
-- Se invalidan lecturas anteriores cuando cambia el preset o se recalcula una captura para evitar exportar confirmaciones obsoletas. Pendiente build Android y validación de CI de esta rama.
+- Se invalidan lecturas anteriores cuando cambia el preset o se recalcula una captura para evitar exportar confirmaciones obsoletas. El build Android/JVM y las puertas de artefactos pasan; el read-back no es medición acústica.
 
 ---
 
-# CHANGELOG — Sin publicar — Contrato de cutoff ASRC USB
+## Detalle — Contrato de cutoff ASRC USB
 
 - Se extrae la fórmula de cutoff de `UsbIngressAsrc` a una función pura testeable. La convención existente es Nyquist-normalizada: `0.94 * min(outputRate/inputRate, 1)`; en el kernel `cutoff * sinc(cutoff * d)`, Nyquist equivale a 1.0 (0.5 ciclos/muestra). No cambia el comportamiento DSP de producción.
-- Se agregan pruebas CTest para tasas iguales, downsampling, upsampling y tasas inválidas. Queda pendiente confirmar CI y medir respuesta/aliasing con un DAC USB físico.
+- Las pruebas CTest para tasas iguales, downsampling, upsampling y tasas inválidas pasan. La medición de respuesta/aliasing con un DAC USB físico sigue pendiente.
 
 ---
 
