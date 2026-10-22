@@ -598,6 +598,9 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
 
             val resampler = StereoAudioResampler(sampleRate)
             resampler.setInputSampleRate(inputSampleRate)
+            // Keep the Kotlin spatial fallback's ITD/crossfeed delays calibrated to the
+            // selected sink rate too; native DSPBridge is initialized at this same rate.
+            com.ivanna.omega.spatial.IvannaSpatialEngine.shared.configureSampleRate(sampleRate)
             val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
             val outputTimestamp = AudioTimestamp()
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
@@ -761,7 +764,12 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             // inputSampleRate here; DSPBridge and the spatial kernels were initialized
                             // for the selected output rate. Processing first would skew filter cutoffs,
                             // HRTF delays and room timing whenever source and sink rates differ.
-                            val inputChunkFrames = minOf(MAX_CHUNK_FRAMES, totalFrames - offset)
+                            // Leave margin for FIR history/interpolation so upsampling never
+                            // exceeds the fixed spatial scratch buffers (MAX_CHUNK_FRAMES).
+                            val maxInputChunkFrames = (
+                                (MAX_CHUNK_FRAMES - 64).toDouble() * inputSampleRate / sampleRate
+                            ).toInt().coerceAtLeast(1)
+                            val inputChunkFrames = minOf(maxInputChunkFrames, totalFrames - offset)
                             val inputChunk = stereo.copyOfRange(offset * 2, (offset + inputChunkFrames) * 2)
                             val chunk = resampler.process(inputChunk)
                             val chunkFrames = chunk.size / 2
