@@ -20,6 +20,13 @@ inline UsbAsrcPhaseDisposition normalizeUsbAsrcPhase(
         int& base, int& phaseIndex) noexcept {
     if (!std::isfinite(phase) || phase < 0.0 || inputFrames <= 0 || phases <= 0)
         return UsbAsrcPhaseDisposition::Invalid;
+    // Guard before floating-to-integer conversion: an extreme but finite phase
+    // cannot be represented by int and must never trigger undefined behavior.
+    if (phase >= static_cast<double>(inputFrames)) {
+        base = inputFrames;
+        phaseIndex = 0;
+        return UsbAsrcPhaseDisposition::DeferToNextBlock;
+    }
     base = static_cast<int>(phase);
     const double frac = phase - static_cast<double>(base);
     phaseIndex = static_cast<int>(frac * static_cast<double>(phases) + 0.5);
