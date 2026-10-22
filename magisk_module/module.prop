@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.124
-versionCode=415
+version=v2.5.125
+versionCode=416
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.124: SAFMUS Plan 10D strict Bluetooth route identity
+description=v2.5.125: bounded software buffer PLL for app-owned ASRC
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
