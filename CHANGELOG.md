@@ -1,3 +1,12 @@
+# CHANGELOG — Sin publicar — ASRC USB espectral y FIR Kotlin
+
+- La ruta USB de producción y las pruebas host comparten el mismo generador polyphase FIR de 64 taps/1024 fases, para que las regresiones midan los coeficientes realmente usados por el motor.
+- Se añaden comprobaciones de banda pasante, rechazo de alias, ganancia DC y coeficientes finitos por fase en conversiones 48→24 kHz, 96→48 kHz y 44.1→96 kHz.
+- Se conserva la convención correcta del FIR Kotlin: fc normalizado a Nyquist (fc=1 equivale a Nyquist), con transición del 3 %; interpretarlo como ciclos/muestra habría reducido el corte a la mitad.
+- La aceptación requiere CI verde; los tests sintéticos no sustituyen mediciones con un DAC USB físico.
+
+---
+
 # CHANGELOG — Sin publicar — Toolchain nativa C++26
 
 - Se configura el motor Android, el daemon Magisk y los tests host con `CMAKE_CXX_STANDARD=26`, CMake 3.30.3 y Android NDK r27d (27.2.12479018).

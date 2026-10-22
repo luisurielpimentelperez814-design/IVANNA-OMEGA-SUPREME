@@ -27,7 +27,7 @@ std::atomic<bool> g_engine_running{false};
 #include <sys/resource.h>
 #include <linux/usbdevice_fs.h>
 #include <linux/usb/ch9.h>
-#include "include/usb_asrc_cutoff.hpp"
+#include "include/usb_asrc_kernel.hpp"
 
 // ════════════════════════════════════════════════════════════════════════════
 // MOTOR ASÍNCRONO USB AUDIO PRO — IMPLEMENTACIÓN REAL
@@ -282,35 +282,9 @@ public:
     }
 
 private:
-    static double sinc(double x) noexcept {
-        if (x > -1.0e-12 && x < 1.0e-12) return 1.0;
-        const double pix = 3.14159265358979323846 * x;
-        return std::sin(pix) / pix;
-    }
-
     void buildKernel() noexcept {
-        // For downsampling, cutoff is below output/input Nyquist; for
-        // upsampling, cutoff stays below input Nyquist to suppress images.
-        const double cutoff = ivanna::audio::usbAsrcCutoffNyquistNormalized(inputRate_, outputRate_);
-        constexpr double center = (kTaps - 1) * 0.5;
-        for (int p = 0; p < kPhases; ++p) {
-            const double frac = static_cast<double>(p) / kPhases;
-            double sum = 0.0;
-            for (int k = 0; k < kTaps; ++k) {
-                const double d = static_cast<double>(k) + frac - center;
-                const double norm = d / (center + 0.5);
-                const double window = (std::abs(norm) >= 1.0) ? 0.0 :
-                    0.35875 + 0.48829 * std::cos(3.14159265358979323846 * norm) +
-                    0.14128 * std::cos(2.0 * 3.14159265358979323846 * norm) +
-                    0.01168 * std::cos(3.0 * 3.14159265358979323846 * norm);
-                const double c = cutoff * sinc(cutoff * d) * window;
-                kernel_[p][k] = static_cast<float>(c);
-                sum += c;
-            }
-            if (std::abs(sum) > 1.0e-12)
-                for (int k = 0; k < kTaps; ++k)
-                    kernel_[p][k] = static_cast<float>(kernel_[p][k] / sum);
-        }
+        // Share the exact production coefficient generator with host spectral tests.
+        ivanna::audio::buildUsbAsrcKernel(inputRate_, outputRate_, kernel_);
     }
 
     void saveHistory(const float* input, int frames) noexcept {
