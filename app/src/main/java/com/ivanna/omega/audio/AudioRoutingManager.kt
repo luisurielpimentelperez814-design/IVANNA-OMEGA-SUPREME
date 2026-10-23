@@ -119,7 +119,8 @@ object AudioRoutingManager {
         }
         val usb = devices.firstOrNull {
             it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-            it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+            it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
         } ?: run {
             Log.i(TAG, "forceUsbDacRouting: no hay USB colgado — no-op")
             return false
