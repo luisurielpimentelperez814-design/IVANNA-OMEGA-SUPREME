@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME — audio digital y herramientas espaciales para Android" width="100%" />
+<img src="docs/release_media/ivanna_omega_hero.svg" alt="Portada editorial IVANNA OMEGA SUPREME: esfera armilar luminosa, geometría acústica y oro sobre azul noche" width="100%" />
 
 # IVANNA OMEGA SUPREME
 
@@ -65,9 +65,15 @@ Hay un renderizador geométrico y una ruta experimental de captura espacial con 
 </tr>
 </table>
 
-## Cómo se relacionan las piezas
+## Atlas visual: cómo se relacionan las piezas
 
-<img src="docs/release_media/architecture-map.svg" alt="Mapa visual de la arquitectura y los límites de integración" width="100%" />
+<div align="center">
+
+<img src="docs/release_media/architecture-map.svg" alt="Atlas técnico de la aplicación, audio, DSP, medición, FotoHolo y límites de hardware" width="100%" />
+
+<sub>PLANO 01 · MAPA CONCEPTUAL · LA VALIDACIÓN REAL SIGUE SIENDO OBLIGATORIA</sub>
+
+</div>
 
 El mapa muestra las relaciones generales del código. El bloque HAL/PAL representa un punto de integración documentado, no una prueba de que el hardware de un teléfono esté controlado por IVANNA.
 
