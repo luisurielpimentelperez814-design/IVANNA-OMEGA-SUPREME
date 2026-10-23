@@ -235,7 +235,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         // ── RIR ──
         PanelCard("RIR — REVERB DE SALA", AuroraCyan) {
             ToggleRow("Activar reverb RIR", cfg.rirEnabled) { apply(cfg.copy(rirEnabled = it)) }
-            SliderRow("Mezcla wet", cfg.rirWet, 0f..0.6f) { apply(cfg.copy(rirWet = it)) }
+            SliderRow("Mezcla wet", cfg.rirWet, 0f..1.0f) { apply(cfg.copy(rirWet = it)) }
             SliderRow("Distancia/Reflexiones", cfg.reflectionDistance, 0.5f..2.0f) {
                 apply(cfg.copy(reflectionDistance = it))
             }
