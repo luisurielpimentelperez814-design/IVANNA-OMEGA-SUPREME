@@ -215,6 +215,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var job: Job? = null
     private var audioTrack: AudioTrack? = null
+    // Session-scoped counters used only for diagnostic queue-latency telemetry.
+    @Volatile private var submittedFramesForMetrics: Long = 0L
     // Separate ITD/crossfeed history from the 48 kHz system-wide capture path.
     private val playbackSpatialEngine = com.ivanna.omega.spatial.IvannaSpatialEngine.createIsolated()
     @Volatile private var voiceProtectionEnabled = true
@@ -238,27 +240,21 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     val omegaMetrics: StateFlow<OmegaMetrics> = _omegaMetrics.asStateFlow()
 
 
-    private fun estimateHardwareLatencyMs(): Float {
+    /**
+     * Estima la cola pendiente del AudioTrack (frames aceptados por la app menos
+     * frames ya presentados según AudioTimestamp). No es una medición acústica
+     * del retardo del altavoz/DAC: ese requiere loopback físico calibrado.
+     */
+    private fun estimateQueuedOutputLatencyMs(): Float {
         return try {
             val track = audioTrack ?: return 0f
-
+            val rate = track.sampleRate.takeIf { it > 0 } ?: return 0f
             val timestamp = AudioTimestamp()
+            if (!track.getTimestamp(timestamp)) return 0f
 
-            if (track.getTimestamp(timestamp)) {
-                val nowNs = System.nanoTime()
-
-                val writtenFrames =
-                    timestamp.framePosition
-
-                val frameTimeNs =
-                    (writtenFrames * 1_000_000_000L) /
-                    AudioPipeline.SAMPLE_RATE
-
-                ((nowNs - frameTimeNs) / 1_000_000f)
-                    .coerceAtLeast(0f)
-            } else {
-                0f
-            }
+            val submitted = submittedFramesForMetrics
+            val queuedFrames = (submitted - timestamp.framePosition).coerceAtLeast(0L)
+            (queuedFrames * 1_000f / rate).coerceAtLeast(0f)
         } catch (_: Throwable) {
             0f
         }
@@ -310,8 +306,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 peakLevel        = pipelineState.peak,
                 clipCount        = clipCount,
                 cpuPercent       = cpuPercent,
-                latencyMs        = estimateHardwareLatencyMs(),
-                sampleRate       = AudioPipeline.SAMPLE_RATE,
+                latencyMs        = estimateQueuedOutputLatencyMs(),
+                sampleRate       = audioTrack?.sampleRate ?: AudioPipeline.SAMPLE_RATE,
                 yamnetCategory   = yamnetCategory,
                 yamnetConfidence = yamnetConfidence,
                 dspActive        = dspActive,
@@ -748,6 +744,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // AudioTrack.write(float[]) reports float samples, so divide by
             // two to count accepted interleaved stereo frames cumulatively.
             var submittedFrames = 0L
+            submittedFramesForMetrics = 0L
             var lastClockPollNs = 0L
 
             val spatialInL = FloatArray(MAX_CHUNK_FRAMES)
@@ -887,6 +884,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             // No Bluetooth/DAC/vendor-HAL clock writes are attempted.
                             if (writtenSamples > 0) {
                                 submittedFrames += (writtenSamples / 2).toLong()
+                                submittedFramesForMetrics = submittedFrames
                                 // Timestamp polling is throttled off the per-chunk hot path.
                                 val nowNs = SystemClock.elapsedRealtimeNanos()
                                 if (lastClockPollNs == 0L || nowNs - lastClockPollNs >= 250_000_000L) {
