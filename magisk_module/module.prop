@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.126
-versionCode=417
+version=v2.5.127
+versionCode=418
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.126: Plan 10D PLL and AR wiring acceptance gate
+description=v2.5.127: six-stage coordination and Moto G85 validation tooling
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
