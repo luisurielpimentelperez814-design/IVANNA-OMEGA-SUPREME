@@ -221,8 +221,8 @@ TEST(IvannaLab, ThdAndImdAreNotMeasuredOnProgramMaterial) {
 // Una fundamental fuerte no convierte una mezcla de tonos no armónicos en un test THD válido.
 TEST(IvannaLab, RejectsDominantToneMixedWithNonHarmonicProgram) {
     const int frames = static_cast<int>(1.2f * kFs);
-    constexpr double f1 = 85.0 * 48000.0 / 4096.0;       // bin coherente
-    constexpr double fOther = 111.0 * 48000.0 / 4096.0; // no es armónico de f1
+    constexpr double f1 = 85.0 * 96000.0 / 4096.0;       // bin coherente a kFs
+    constexpr double fOther = 111.0 * 96000.0 / 4096.0; // no es armónico de f1
     const auto signal = [&](int i) -> float {
         const double t = static_cast<double>(i) / kFs;
         return static_cast<float>(0.10 * std::sin(2.0 * M_PI * f1 * t) +
