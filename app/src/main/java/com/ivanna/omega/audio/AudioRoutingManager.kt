@@ -19,8 +19,10 @@ import android.util.Log
  * `audioManager` en cada metodo, sin obtener el AudioManager una sola vez.
  *
  * AHORA:
- *  - `detectOutputRoute()` sin cambios de comportamiento (mismo orden de
- *    prioridad, mismos tipos) pero envolviendo el `getDevices()` en
+ *  - `detectOutputRoute()` comparte los tipos de salida que reconoce el
+ *    reproductor: USB accessory y Bluetooth LE, además de USB/A2DP/cable.
+ *    La etiqueta describe el dispositivo conectado de mayor prioridad; Android
+ *    sigue siendo quien decide la ruta efectiva. `getDevices()` va protegido.
  *    try/catch: algunos OEM (Huawei EMUI) lanzan SecurityException si el
  *    permiso RECORD_AUDIO todavia no ha sido otorgado y la app se ejecuta
  *    antes del prompt de runtime.
@@ -50,7 +52,9 @@ object AudioRoutingManager {
         }
 
     /** 4D: detecta la salida de audio activa de mayor prioridad.
-     *  Orden: USB-DAC > Bluetooth A2DP > Auriculares con cable > Altavoz. */
+     *  Orden de preferencia informativa: USB > Bluetooth (A2DP/BLE) > cable > altavoz.
+     *  Esto detecta dispositivos conectados; no garantiza que Android haya enroutado
+     *  el AudioTrack a ese dispositivo. La ruta efectiva debe comprobarse en el track. */
     fun detectOutputRoute(context: Context): String {
         val am = audioManager(context) ?: return "Speaker"
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return "Speaker"
@@ -71,8 +75,11 @@ object AudioRoutingManager {
         for (d in devices) {
             val rank = when (d.type) {
                 AudioDeviceInfo.TYPE_USB_HEADSET,
-                AudioDeviceInfo.TYPE_USB_DEVICE -> 4
-                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> 3
+                AudioDeviceInfo.TYPE_USB_DEVICE,
+                AudioDeviceInfo.TYPE_USB_ACCESSORY -> 4
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                AudioDeviceInfo.TYPE_BLE_HEADSET,
+                AudioDeviceInfo.TYPE_BLE_SPEAKER -> 3
                 AudioDeviceInfo.TYPE_WIRED_HEADSET,
                 AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> 2
                 AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> 1
@@ -80,8 +87,11 @@ object AudioRoutingManager {
             }
             val label = when (d.type) {
                 AudioDeviceInfo.TYPE_USB_HEADSET,
-                AudioDeviceInfo.TYPE_USB_DEVICE -> "USB-DAC"
-                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
+                AudioDeviceInfo.TYPE_USB_DEVICE,
+                AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB-DAC"
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                AudioDeviceInfo.TYPE_BLE_HEADSET,
+                AudioDeviceInfo.TYPE_BLE_SPEAKER -> "Bluetooth"
                 AudioDeviceInfo.TYPE_WIRED_HEADSET,
                 AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Headphone"
                 AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Speaker"
