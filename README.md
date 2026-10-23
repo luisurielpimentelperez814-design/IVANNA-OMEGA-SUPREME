@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/release_media/ivanna_omega_hero.svg" alt="IVANNA OMEGA SUPREME — audio digital y herramientas espaciales para Android" width="100%" />
+<img src="docs/release_media/ivanna_omega_hero.svg" alt="Portada editorial IVANNA OMEGA SUPREME: esfera armilar luminosa, geometría acústica y oro sobre azul noche" width="100%" />
 
 # IVANNA OMEGA SUPREME
 
@@ -70,9 +70,15 @@ Renderizador geométrico y una ruta de captura AR experimental que puede recopil
 
 > **Regla de lectura:** que un módulo, modelo, dataset, control o contrato esté presente en el repositorio no demuestra por sí solo que esté conectado al audio activo, que funcione en todos los dispositivos ni que haya sido validado físicamente.
 
-## Mapa visual de la arquitectura
+## Atlas visual de la arquitectura
 
-<img src="docs/release_media/architecture-map.svg" alt="Diagrama de arquitectura de IVANNA OMEGA SUPREME, sus módulos Android, audio, medición, AR y la integración HAL/PAL pendiente de validar" width="100%" />
+<div align="center">
+
+<img src="docs/release_media/architecture-map.svg" alt="Atlas técnico con rutas Android, cadena propia de reproducción, motor DSP, medición acústica, visualización espacial y límites de integración de hardware" width="100%" />
+
+<sub>PLANO 01 · RELACIONES FUNCIONALES · LOS ENLACES NO SUSTITUYEN LAS PRUEBAS DE EJECUCIÓN</sub>
+
+</div>
 
 El diagrama representa las relaciones generales del código. En particular, el bloque HAL/PAL es un punto de integración documentado: no es evidencia de que exista control físico del reloj o del ASRC del proveedor en el Moto G85.
 
