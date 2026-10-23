@@ -1,29 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="560" viewBox="0 0 1440 560" role="img" aria-labelledby="title desc">
-<title id="title">IVANNA OMEGA SUPREME</title><desc id="desc">Ilustración técnica de audio digital, señal espacial, geometría y calibración para Android. Diseño conceptual, no captura de una medición.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="680" viewBox="0 0 1600 680" role="img" aria-labelledby="title desc">
+<title id="title">IVANNA OMEGA SUPREME — The Art of Sound</title>
+<desc id="desc">Portada editorial de inspiración renacentista y ciencia acústica: una esfera armónica tridimensional rodeada de órbitas, geometría sagrada, líneas de señal y luz dorada. Arte conceptual, no una medición física.</desc>
 <defs>
- <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111f"/><stop offset=".52" stop-color="#10172d"/><stop offset="1" stop-color="#070a14"/></linearGradient>
- <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9bf6ff"/><stop offset=".48" stop-color="#63a7ff"/><stop offset="1" stop-color="#c4a7ff"/></linearGradient>
- <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#ffe7a3"/><stop offset="1" stop-color="#f5b94c"/></linearGradient>
- <radialGradient id="glow"><stop stop-color="#2b83db" stop-opacity=".32"/><stop offset="1" stop-color="#2b83db" stop-opacity="0"/></radialGradient>
- <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#90b8e8" stroke-opacity=".08" stroke-width="1"/></pattern>
- <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
+  <linearGradient id="night" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#050b17"/><stop offset=".42" stop-color="#101b31"/><stop offset=".76" stop-color="#111126"/><stop offset="1" stop-color="#050914"/></linearGradient>
+  <radialGradient id="aura"><stop stop-color="#5ce8f2" stop-opacity=".28"/><stop offset=".48" stop-color="#6384ff" stop-opacity=".12"/><stop offset="1" stop-color="#6384ff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff0bd"/><stop offset=".28" stop-color="#d9b56e"/><stop offset=".58" stop-color="#fff0c2"/><stop offset="1" stop-color="#a87837"/></linearGradient>
+  <linearGradient id="ice" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d4ffff"/><stop offset=".4" stop-color="#69dce9"/><stop offset=".72" stop-color="#8b9cff"/><stop offset="1" stop-color="#e1c8ff"/></linearGradient>
+  <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a6f7ff" stop-opacity=".24"/><stop offset=".5" stop-color="#4a8bdb" stop-opacity=".06"/><stop offset="1" stop-color="#f1c77a" stop-opacity=".18"/></linearGradient>
+  <pattern id="microgrid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#a6c5e8" stroke-opacity=".07" stroke-width=".8"/></pattern>
+  <filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="18"/></filter>
+  <filter id="lineGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter>
+  <clipPath id="frame"><rect width="1600" height="680" rx="28"/></clipPath>
 </defs>
-<rect width="1440" height="560" rx="26" fill="url(#bg)"/><rect width="1440" height="560" rx="26" fill="url(#grid)"/><ellipse cx="1080" cy="260" rx="430" ry="330" fill="url(#glow)"/>
-<g opacity=".36" fill="none" stroke="#6da9ee"><circle cx="1090" cy="264" r="176"/><circle cx="1090" cy="264" r="132" stroke-dasharray="3 9"/><circle cx="1090" cy="264" r="88"/><path d="M850 264H1330M1090 24V504M920 94L1260 434M920 434L1260 94" stroke-opacity=".45"/></g>
-<g transform="translate(1090 264)">
- <circle r="74" fill="#111d33" stroke="url(#metal)" stroke-width="2"/><circle r="58" fill="none" stroke="#83c8ff" stroke-opacity=".7"/><circle r="39" fill="#0b1425" stroke="#e0bd74" stroke-opacity=".85"/>
- <path d="M-26 18V-2a26 26 0 0 1 52 0v20M-38 18H38M-24 30H24" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linecap="round"/>
- <g fill="#8be8ff"><circle cx="-98" cy="-60" r="4"/><circle cx="103" cy="-48" r="4"/><circle cx="0" cy="-119" r="4"/><circle cx="119" cy="35" r="4"/><circle cx="-72" cy="99" r="4"/></g>
+<g clip-path="url(#frame)">
+  <rect width="1600" height="680" fill="url(#night)"/>
+  <rect width="1600" height="680" fill="url(#microgrid)"/>
+  <ellipse cx="1160" cy="326" rx="510" ry="440" fill="url(#aura)"/>
+  <g fill="none" stroke="#9ebde5" stroke-opacity=".18">
+    <path d="M0 590 Q400 420 800 590 T1600 590"/>
+    <path d="M0 615 Q400 445 800 615 T1600 615"/>
+    <path d="M0 640 Q400 470 800 640 T1600 640"/>
+    <circle cx="1160" cy="322" r="255" stroke-dasharray="1 10"/>
+    <circle cx="1160" cy="322" r="292" stroke-dasharray="2 14"/>
+  </g>
+  <!-- Renaissance-inspired ornamental geometry -->
+  <g transform="translate(1160 322)" fill="none" stroke="url(#gold)" stroke-width="1.15" opacity=".7">
+    <circle r="222"/><circle r="198"/><circle r="156"/><circle r="112"/>
+    <ellipse rx="222" ry="92" transform="rotate(30)"/><ellipse rx="222" ry="92" transform="rotate(90)"/><ellipse rx="222" ry="92" transform="rotate(150)"/>
+    <path d="M0-252L218 126H-218Z M0 252L218-126H-218Z" opacity=".6"/>
+    <path d="M-242 0H242M0-242V242M-171-171L171 171M-171 171L171-171" stroke-dasharray="2 7" opacity=".65"/>
+  </g>
+  <!-- Harmonic orb -->
+  <circle cx="1160" cy="322" r="145" fill="#54ddeb" opacity=".12" filter="url(#softGlow)"/>
+  <g transform="translate(1160 322)">
+    <circle r="128" fill="#071326" stroke="url(#ice)" stroke-width="2.2"/>
+    <circle r="117" fill="url(#glass)" stroke="#d6f7ff" stroke-opacity=".4"/>
+    <ellipse rx="112" ry="43" transform="rotate(-34)" fill="none" stroke="#8cebf5" stroke-width="1.6" opacity=".85"/>
+    <ellipse rx="112" ry="43" transform="rotate(34)" fill="none" stroke="#d5c3ff" stroke-width="1.5" opacity=".8"/>
+    <ellipse rx="43" ry="112" fill="none" stroke="url(#gold)" stroke-width="1.5" opacity=".9"/>
+    <circle r="76" fill="#0a1930" stroke="url(#gold)" stroke-width="1.6"/>
+    <circle r="61" fill="none" stroke="#7ceaf2" stroke-opacity=".6" stroke-dasharray="2 5"/>
+    <path d="M-44 14 C-33-32-22 37-11-10S11 32 22-12S34 20 45-14" fill="none" stroke="#a8f7ff" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M-46 29H46" stroke="url(#gold)" stroke-width="1.5" opacity=".85"/>
+    <circle r="5" fill="#fff1c5"/><circle cx="-84" cy="-56" r="3.5" fill="#a8f7ff"/><circle cx="87" cy="52" r="3.5" fill="#e6caff"/>
+  </g>
+  <!-- Signal trails, luminous but restrained -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M835 440 C872 440 877 401 911 401 S947 470 982 470 S1015 365 1051 365 S1085 411 1115 411" stroke="#5ce8f2" stroke-width="8" opacity=".12" filter="url(#lineGlow)"/>
+    <path d="M835 440 C872 440 877 401 911 401 S947 470 982 470 S1015 365 1051 365 S1085 411 1115 411" stroke="#8af2f4" stroke-width="2.3"/>
+    <path d="M1205 215 C1236 215 1240 184 1270 184 S1304 244 1333 244 S1364 193 1395 193 S1426 218 1450 218" stroke="#d4bdff" stroke-width="2.1"/>
+    <path d="M1040 118 Q1160 42 1280 118" stroke="url(#gold)" stroke-width="1.5" opacity=".7"/>
+    <path d="M1040 526 Q1160 602 1280 526" stroke="url(#gold)" stroke-width="1.5" opacity=".7"/>
+  </g>
+  <!-- Editorial typography -->
+  <g font-family="Georgia, 'Times New Roman', serif">
+    <text x="94" y="90" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" letter-spacing="5.5" fill="#9ebbd9">AUDIO ENGINEERING  /  SPATIAL COMPUTING  /  ANDROID</text>
+    <path d="M96 120H480" stroke="url(#gold)" stroke-width="1.4"/>
+    <text x="88" y="222" font-size="73" font-weight="bold" letter-spacing="-2.5" fill="#f5f1e7">IVANNA OMEGA</text>
+    <text x="91" y="307" font-size="82" font-weight="bold" letter-spacing="1.8" fill="url(#gold)">SUPREME</text>
+    <text x="96" y="354" font-size="23" font-style="italic" fill="#c7d8ed">The art of sound, shaped by engineering.</text>
+  </g>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <rect x="96" y="395" width="352" height="42" rx="21" fill="#10263b" stroke="#6cbfda" stroke-opacity=".65"/>
+    <circle cx="119" cy="416" r="4" fill="#8ff4f0"/>
+    <text x="136" y="421" font-size="13" font-weight="700" letter-spacing="1.2" fill="#d8f4ff">KOTLIN  ·  C++  ·  DSP  ·  3D</text>
+    <text x="96" y="486" font-size="19" fill="#d5e1f1">Un laboratorio de audio digital y percepción espacial.</text>
+    <text x="96" y="516" font-size="19" fill="#d5e1f1">Código inspeccionable. Límites explícitos. Pruebas reales.</text>
+    <g transform="translate(96 574)">
+      <path d="M0 0H390" stroke="#9ab8d8" stroke-opacity=".35"/>
+      <text x="0" y="27" font-size="12" letter-spacing="2.2" fill="#9ebbd9">EN DESARROLLO</text>
+      <circle cx="149" cy="23" r="2.5" fill="#d9b56e"/>
+      <text x="164" y="27" font-size="12" letter-spacing="1.7" fill="#9ebbd9">EXPERIMENTAL</text>
+      <circle cx="302" cy="23" r="2.5" fill="#d9b56e"/>
+      <text x="317" y="27" font-size="12" letter-spacing="1.7" fill="#9ebbd9">VERIFICABLE</text>
+    </g>
+  </g>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" fill="#9ebbd9" font-size="11" letter-spacing="2">
+    <text x="1374" y="620" text-anchor="end">FIG. 01 — HARMONIC ORRERY</text>
+    <text x="1374" y="640" text-anchor="end" fill="#7188a8" letter-spacing="1">CONCEPT ART · NOT A MEASUREMENT</text>
+  </g>
+  <rect x="1" y="1" width="1598" height="678" rx="27" fill="none" stroke="#c3d6ef" stroke-opacity=".3"/>
+  <path d="M30 80V30H80M1520 30H1570V80M30 600V650H80M1520 650H1570V600" fill="none" stroke="url(#gold)" stroke-width="1.3" opacity=".8"/>
 </g>
-<g fill="none" stroke-linecap="round"><path d="M820 405 C850 405 852 370 875 370 S900 430 925 430 S950 330 975 330 S1005 390 1030 390" stroke="#7ee8ff" stroke-width="2.5"/><path d="M1160 150 C1185 150 1185 115 1210 115 S1235 180 1260 180 S1285 126 1310 126" stroke="#d2b5ff" stroke-width="2.5"/><path d="M820 405 C850 405 852 370 875 370 S900 430 925 430 S950 330 975 330" stroke="#7ee8ff" stroke-width="8" opacity=".15" filter="url(#shadow)"/></g>
-<g font-family="Inter,Segoe UI,Arial,sans-serif">
- <text x="82" y="88" font-size="15" letter-spacing="4" fill="#91a9c8">ANDROID AUDIO ENGINEERING · SPATIAL TOOLS · MEASUREMENT</text>
- <text x="78" y="190" font-size="61" font-weight="800" letter-spacing="-2" fill="#f4f7ff">IVANNA OMEGA</text><text x="78" y="258" font-size="61" font-weight="800" letter-spacing="-2" fill="url(#gold)">SUPREME</text>
- <rect x="82" y="292" width="242" height="39" rx="19" fill="#132944" stroke="#568ac4" stroke-opacity=".8"/><text x="203" y="317" text-anchor="middle" font-size="15" font-weight="700" fill="#c2e7ff">ANDROID · KOTLIN · C++</text>
- <text x="82" y="378" font-size="23" fill="#d7e2f2">Procesamiento de audio, calibración experimental</text><text x="82" y="410" font-size="23" fill="#d7e2f2">y herramientas de visualización espacial.</text>
- <text x="82" y="476" font-size="16" fill="#91a9c8">Proyecto en desarrollo · Funciones y límites documentados</text>
- <text x="82" y="508" font-size="14" fill="#7088a9">La ilustración es conceptual; no representa una medición ni certificación.</text>
- <g transform="translate(82 536)" font-size="12" fill="#728cab"><text>DSP</text><circle cx="37" cy="-4" r="2" fill="#d8b96e"/><text x="51">AR / 3D</text><circle cx="115" cy="-4" r="2" fill="#d8b96e"/><text x="129">VERIFICACIÓN</text><circle cx="238" cy="-4" r="2" fill="#d8b96e"/><text x="252">HARDWARE DEPENDIENTE</text></g>
-</g>
-<rect x="1" y="1" width="1438" height="558" rx="25" fill="none" stroke="#9abce8" stroke-opacity=".25"/>
 </svg>
