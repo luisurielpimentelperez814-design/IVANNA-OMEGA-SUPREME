@@ -1,3 +1,14 @@
+# CHANGELOG — v2.5.128 (419) — corrección de controles espaciales y telemetría
+
+- Evita que mover controles espaciales llame a `DSPBridge.setParams()`, que restablecía drive, excitador, mezcla, compresor, EQ y master; RIR sigue usando las rutas dedicadas de `OmegaEngineBridge.setRoom` y daemon `SET_REVERB`.
+- Amplía el slider RIR wet al rango que admite el motor (0–1) y sanea valores persistidos de RIR/SAF (finitos y acotados).
+- IvannaLab deja THD/IMD como “no medido” si el material no satisface la condición de tono/doble tono; se añade regresión para mezcla de tonos no armónicos.
+- No se elimina la protección de clipping ni se aumenta la ganancia maestra.
+- Validación host: CTest, ASan/UBSan, datasets HRTF y pruebas numéricas/CLI DEH6 pasaron en las ejecuciones asociadas al cambio. El build Android debe terminar en verde en el commit de release.
+- **Límite:** la audibilidad real, el comportamiento del Moto G85 5G, altavoz, Bluetooth y USB-C requieren prueba física; la telemetría de software no sustituye mediciones acústicas.
+
+---
+
 # CHANGELOG — v2.5.127 (418) — publicación de integración y validación
 
 - Publica el estado de `main` tras la coordinación WFS/FusionCore conservadora y el diagnóstico de solo lectura para Termux/Moto G85.
