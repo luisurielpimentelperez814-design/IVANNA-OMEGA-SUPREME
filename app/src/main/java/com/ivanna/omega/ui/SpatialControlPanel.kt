@@ -38,7 +38,9 @@ import java.io.File
  * Cableado (sin controles decorativos):
  *  HRTF on/off   → IvannaNativeLib.nativeSetHRTFEnabled (JNI real)
  *  Sujeto HRTF   → SaFBridge.nativeSaFSetSubjectIndex (ancla p₀) + daemon JSON
- *  RIR on/wet    → MagiskBridge SET_REVERB + DSPBridge.nativeSetSpatialWet
+ *  RIR on/wet    → OmegaEngineBridge.setRoom / MagiskBridge SET_REVERB
+ *                  (no re-use of DSPBridge.setParams: that API controls the exciter,
+ *                   and resetting it from a spatial slider overwrote unrelated DSP controls)
  *  Sala RIR      → metadata.csv real en /data/adb/ivanna_omega/rir/ (RT60 real)
  *  SAF on/int    → daemon SET_SAF_STATE (command_server lo procesa de verdad)
  *  Persistencia  → SpatialControlStore (SharedPreferences) en cada cambio
@@ -165,13 +167,12 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         // HRTF enable → motor in-process
         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetHRTFEnabled(c.hrtfEnabled) }
         // El sujeto y RIR se envían por el canal conflado en Dispatchers.IO.
-        // RIR wet → DSPBridge (wet espacial real) + daemon (reverb)
-        if (DSPBridge.isLoaded) runCatching {
-            // FIX: mix=0.8→0.5 (neutro). mix>0.5 → +3.6dB pre-EQ → biquad inestable → tronido
-            DSPBridge.setParams(drive = 0.5f, wet = if (c.rirEnabled) c.rirWet else 0f, mix = 0.5f,
-                alpha = 0.94f, beta = 0.85f, gamma = 0.72f, freq = 1000f, resonance = 0.7f,
-                low = 0f, mid = 0f, high = 0f, presence = 0f, master = 0.85f)
-        }
+        // RIR wet ya se envía por OmegaEngineBridge.setRoom (arriba) y al daemon
+        // mediante SET_REVERB. No llamar DSPBridge.setParams aquí: sus parámetros
+        // controlan otra cadena (exciter/compresor/EQ) y la llamada completa
+        // restablecía drive, wet, mix, compresión, EQ y master en cada movimiento
+        // de cualquier slider espacial. Eso hacía que los efectos se pisaran y
+        // que los cambios de otros controles parecieran no tener efecto.
         // Upmixer 4-Stems + posiciones 3D → IvannaSpatialManager
         IvannaSpatialManager.setUpmixerEnabled(c.upmixerEnabled)
         IvannaSpatialManager.setStemPosition(0, c.stem0X, c.stem0Y, c.stem0Z, c.stem0Width)
