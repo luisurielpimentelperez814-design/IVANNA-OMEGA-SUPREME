@@ -368,9 +368,12 @@ struct IvannaLab::Impl {
         if (total / N < 1e-6) return -1.f;
         const float low = dftMagnitudeAt(historyL, start, N, 250.f, (float)sampleRate);
         const float high = dftMagnitudeAt(historyL, start, N, 8000.f, (float)sampleRate);
-        // IMD SMPTE solo vale con el doble tono 250 Hz + 8 kHz: los dos portadores deben llevar al
-        // menos la mitad de la potencia. Con música daba un 83 % sin significado.
-        if (0.5 * ((double)low * low + (double)high * high) < 0.5 * (total / N)) return -1.f;
+        // IMD SMPTE solo vale con el doble tono 250 Hz + 8 kHz. Exigir que los dos portadores
+        // expliquen >=80 % de la potencia total; mera presencia de energía en ambos bins no basta.
+        const double carrierPower = 0.5 * (static_cast<double>(low) * low +
+                                             static_cast<double>(high) * high);
+        const double totalPower = total / N;
+        if (carrierPower < 0.80 * totalPower) return -1.f;
         // FIX: threshold 0.001f demasiado alto para audio real (no tonos puros).
         // Con programa musical/voz los componentes en 250Hz y 8000Hz pueden
         // ser órdenes de magnitud menores. Bajamos a 0.00005f para capturar
