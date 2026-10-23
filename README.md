@@ -25,6 +25,19 @@
 
 ---
 
+## Navegación del proyecto
+
+<div align="center">
+
+| **Visión general** | **Ingeniería** | **Validación** | **Historial** |
+|:---:|:---:|:---:|:---:|
+| [Áreas del producto](#en-una-mirada) | [Componentes y estado](#componentes-y-estado-real) | [Aceptación Moto G85](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md) | [Changelog](CHANGELOG.md) |
+| [Mapa de arquitectura](#mapa-visual-de-la-arquitectura) | [Ficha de ingeniería](docs/ENGINEERING.md) | [Issues](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues) | [Acciones CI](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) |
+
+</div>
+
+> **Principio rector:** la estética presenta el proyecto; el código y la evidencia determinan lo que podemos afirmar.
+
 ## En una mirada
 
 IVANNA OMEGA SUPREME combina una aplicación Android en Kotlin, componentes nativos de procesamiento de audio en C++, herramientas de medición acústica y módulos de visualización espacial. El propósito es construir rutas de procesamiento y calibración que se puedan inspeccionar y probar, sin convertir una intención de diseño en una promesa de resultado.
