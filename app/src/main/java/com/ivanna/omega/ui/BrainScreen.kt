@@ -439,6 +439,10 @@ private fun LabTab() {
                     "Peak (dBFS)",
                     "True Peak (dBTP)"
                 )
+                Text(
+                    "THD requiere tono de prueba; IMD requiere doble tono SMPTE 250 Hz + 8 kHz. — = no medible con la señal actual.",
+                    color = TextMuted, fontSize = 9.sp
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     labLabels.forEachIndexed { i, lbl ->
                         if (i < m.size) {

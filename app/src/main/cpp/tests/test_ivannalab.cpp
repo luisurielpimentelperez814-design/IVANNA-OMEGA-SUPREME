@@ -218,6 +218,23 @@ TEST(IvannaLab, ThdAndImdAreNotMeasuredOnProgramMaterial) {
     EXPECT_GT(r.peakDBFS, -60.f);                  // las métricas válidas siguen funcionando
 }
 
+// Una fundamental fuerte no convierte una mezcla de tonos no armónicos en un test THD válido.
+TEST(IvannaLab, RejectsDominantToneMixedWithNonHarmonicProgram) {
+    const int frames = static_cast<int>(1.2f * kFs);
+    constexpr double f1 = 85.0 * 96000.0 / 4096.0;       // bin coherente a kFs
+    constexpr double fOther = 111.0 * 96000.0 / 4096.0; // no es armónico de f1
+    const auto signal = [&](int i) -> float {
+        const double t = static_cast<double>(i) / kFs;
+        return static_cast<float>(0.10 * std::sin(2.0 * M_PI * f1 * t) +
+                                 0.06 * std::sin(2.0 * M_PI * fOther * t));
+    };
+    const auto buf = genStereo(frames, signal, signal);
+    IvannaLab lab(static_cast<uint32_t>(kFs), 4096);
+    const auto r = lab.measureOnce(buf.data(), frames);
+    EXPECT_EQ(r.thdPercent, -1.f)
+        << "una mezcla no armónica debe mostrarse como no medible, no como THD real";
+}
+
 // El analizador global nacía a 96 kHz y el motor corre a 48 kHz: con 250/8000 Hz fijos, el IMD
 // de un doble tono real a 48 kHz no se encontraba. setSampleRate lo corrige.
 TEST(IvannaLab, SetSampleRateMakesTheAnalyzerFollowTheRealStream) {
