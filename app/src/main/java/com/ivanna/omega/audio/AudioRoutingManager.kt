@@ -22,10 +22,8 @@ import android.util.Log
  *  - `detectOutputRoute()` comparte los tipos de salida que reconoce el
  *    reproductor: USB accessory y Bluetooth LE, además de USB/A2DP/cable.
  *    La etiqueta describe el dispositivo conectado de mayor prioridad; Android
- *    sigue siendo quien decide la ruta efectiva. `getDevices()` va protegido.
- *    try/catch: algunos OEM (Huawei EMUI) lanzan SecurityException si el
- *    permiso RECORD_AUDIO todavia no ha sido otorgado y la app se ejecuta
- *    antes del prompt de runtime.
+ *    sigue siendo quien decide la ruta efectiva. `getDevices()` queda protegido
+ *    porque algunos OEM lanzan SecurityException antes de conceder RECORD_AUDIO.
  *  - `forceUsbDacRouting()` ahora NO pisa isSpeakerphoneOn / isBluetoothA2dpOn
  *    globales — solo llama a AudioTrack.setPreferredDevice() (API 24+) sobre
  *    el track del propio pipeline, que es lo unico que un usuario espera
