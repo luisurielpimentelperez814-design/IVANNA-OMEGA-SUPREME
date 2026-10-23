@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.127 (418) — publicación de integración y validación
+
+- Publica el estado de `main` tras la coordinación WFS/FusionCore conservadora y el diagnóstico de solo lectura para Termux/Moto G85.
+- El pipeline de release debe volver a compilar APK y módulo Magisk desde el commit publicado, verificar integridad de los ZIP/APK y confirmar los assets del release.
+- **Límites:** el diagnóstico no modifica DSP, volumen, permisos, SELinux ni mezclador del proveedor. La validación acústica en el Moto G85 sigue pendiente; CI no sustituye la prueba física.
+
+---
+
 # CHANGELOG — v2.5.126 (417) — integración y aceptación del Plan 10D
 
 - Se limita la consulta de timestamps del reproductor propio a una ventana mínima de 250 ms para evitar sondear AudioTrack en cada bloque PCM; los intervalos sin consulta no se interpretan como fallos.
