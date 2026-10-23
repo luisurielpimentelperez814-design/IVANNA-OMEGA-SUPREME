@@ -12,6 +12,19 @@
 
 ---
 
+## Explora IVANNA
+
+<div align="center">
+
+| **Conocer** | **Entender** | **Comprobar** |
+|:---:|:---:|:---:|
+| [Áreas principales](#las-tres-áreas-principales) | [Mapa de arquitectura](#cómo-se-relacionan-las-piezas) | [Plan Moto G85](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md) |
+| [README técnico](README.md) | [Ficha de ingeniería](docs/ENGINEERING.md) | [Pruebas y CI](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) |
+
+</div>
+
+> **El arte inspira la experiencia; la evidencia define los límites de cada promesa.**
+
 ## ¿Qué es?
 
 IVANNA OMEGA SUPREME es un proyecto de software para Android que reúne una aplicación, componentes de procesamiento digital de audio y herramientas experimentales de medición y visualización espacial.
