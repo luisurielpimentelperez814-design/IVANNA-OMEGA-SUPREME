@@ -1130,7 +1130,16 @@ static int32_t omega_process(effect_handle_t self,
         const auto unityCtx = ivanna::unity::AcousticUnityEngine::instance().getContext();
         // v2.5.15 — armónicos: exc_red (motor adaptativo: se escribía y publicaba pero NADIE lo aplicaba)
         // y presupuesto armónico MEDIDO. Gana el más conservador (min), nunca se componen.
-        if (fc) fc->setSpatialCoordination(ctx->adaptWfsScale, ctx->adaptImmScale);
+        // v2.6.1 — Unity WFS arbitration is now consumed by the live FusionCore path.
+        // The Unity multiplier describes requested spread (>1 means a wider synthesized field);
+        // setSpatialCoordination is intentionally a safety attenuation [0.5, 1.0], so convert
+        // excess requested spread into a conservative reduction instead of passing >1 and
+        // silently having the consumer clamp it away. Invalid values fall back to neutral.
+        const float unityWfsSpread = std::isfinite(unityCtx.wfsSpreadMultiplier)
+            ? std::clamp(unityCtx.wfsSpreadMultiplier, 0.8f, 1.35f) : 1.0f;
+        const float coordinatedWfsScale = std::clamp(
+            ctx->adaptWfsScale / std::max(1.0f, unityWfsSpread), 0.5f, 1.0f);
+        if (fc) fc->setSpatialCoordination(coordinatedWfsScale, ctx->adaptImmScale);
         if (fc) fc->setHarmonicCoordination(std::min(
             1.0f - std::clamp(ctx->pendingSnap.exc_red, 0.0f, 1.0f), unityCtx.harmonicBudget));
 
