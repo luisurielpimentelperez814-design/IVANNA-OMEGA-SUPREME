@@ -1,43 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820" role="img" aria-labelledby="title desc">
-<title id="title">IVANNA OMEGA SUPREME — atlas de arquitectura</title>
-<desc id="desc">Mapa visual de las áreas Android, reproducción propia, motor DSP nativo, medición acústica y visualización espacial. Las conexiones son conceptuales; HAL y el control de hardware se muestran como no verificados.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+<title id="title">IVANNA OMEGA SUPREME — mapa de arquitectura y evidencia</title>
+<desc id="desc">Atlas técnico de las áreas de IVANNA: interfaz Android, reproducción propia, DSP nativo, medición y visualización espacial. Las rutas se muestran como relaciones generales. HAL/PAL está señalado como punto de integración no validado físicamente.</desc>
 <defs>
- <linearGradient id="night" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111e"/><stop offset=".52" stop-color="#101b30"/><stop offset="1" stop-color="#080e19"/></linearGradient>
- <radialGradient id="halo"><stop stop-color="#37dce9" stop-opacity=".19"/><stop offset="1" stop-color="#37dce9" stop-opacity="0"/></radialGradient>
- <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#f7d98b"/><stop offset=".5" stop-color="#fff0bf"/><stop offset="1" stop-color="#c58b32"/></linearGradient>
- <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#172b42"/><stop offset="1" stop-color="#101d30"/></linearGradient>
- <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L0 6L9 3Z" fill="#5adce8"/></marker>
- <marker id="arrowGold" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L0 6L9 3Z" fill="#d9b76b"/></marker>
- <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#89a9c5" stroke-opacity=".075" stroke-width="1"/></pattern>
- <filter id="glow"><feGaussianBlur stdDeviation="5"/></filter>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#050a15"/><stop offset=".5" stop-color="#0e1b2d"/><stop offset="1" stop-color="#070c17"/></linearGradient>
+ <linearGradient id="gold" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#a97832"/><stop offset=".48" stop-color="#fff0bf"/><stop offset="1" stop-color="#c89a4a"/></linearGradient>
+ <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c8ffff"/><stop offset=".5" stop-color="#54e2ed"/><stop offset="1" stop-color="#597cff"/></linearGradient>
+ <linearGradient id="card" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#172d43"/><stop offset="1" stop-color="#0c1829"/></linearGradient>
+ <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#8ab1ce" stroke-opacity=".07"/></pattern>
+ <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L0 6L9 3Z" fill="#56dce7"/></marker>
+ <marker id="arrowGold" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L0 6L9 3Z" fill="#d6b66f"/></marker>
+ <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="9"/></filter>
 </defs>
-<rect width="1400" height="820" rx="24" fill="url(#night)"/><rect width="1400" height="820" rx="24" fill="url(#grid)"/>
-<circle cx="700" cy="360" r="380" fill="url(#halo)"/>
-<g fill="none" stroke="#d5b46a" stroke-opacity=".34"><circle cx="700" cy="350" r="280"/><circle cx="700" cy="350" r="300" stroke-dasharray="2 11"/><path d="M700 55V640M405 350H995M491 141L909 559M909 141L491 559"/></g>
-<text x="64" y="68" fill="url(#gold)" font-family="Georgia,serif" font-size="17" letter-spacing="4">IVANNA OMEGA SUPREME</text>
-<text x="64" y="118" fill="#f5f3ec" font-family="Georgia,serif" font-size="36">Atlas de arquitectura</text>
-<text x="66" y="148" fill="#a8bfd1" font-family="Arial,sans-serif" font-size="15">Mapa de áreas y límites de integración · lectura conceptual, no certificación</text>
-<g stroke="#5adce8" stroke-width="2.2" fill="none" marker-end="url(#arrowCyan)" stroke-linecap="round" stroke-linejoin="round">
- <path d="M700 245V210H300V230"/><path d="M700 245V210H1100V230"/>
- <path d="M300 350V405H700V430"/><path d="M1100 350V405H700"/>
- <path d="M700 550V595H330V630"/><path d="M700 550V595H1070V630"/>
+<rect width="1600" height="1000" rx="26" fill="url(#bg)"/><rect width="1600" height="1000" rx="26" fill="url(#grid)"/>
+<!-- framing and title -->
+<g fill="none" stroke="url(#gold)" stroke-opacity=".45"><path d="M44 78V42H80M1520 42H1556V78M44 922V958H80M1520 958H1556V922"/><circle cx="800" cy="485" r="355" stroke-dasharray="2 12"/><circle cx="800" cy="485" r="332"/><path d="M800 125V850M440 485H1160" stroke-opacity=".13"/></g>
+<text x="82" y="82" fill="url(#gold)" font-family="Georgia,serif" font-size="16" letter-spacing="5">IVANNA / SYSTEM ATLAS / 01</text>
+<text x="80" y="138" fill="#f7f4ec" font-family="Georgia,serif" font-size="43">Arquitectura y evidencia</text>
+<text x="83" y="171" fill="#9eb7cc" font-family="Arial,sans-serif" font-size="16">Mapa conceptual de módulos · conexiones sujetas a validación por ruta</text>
+<!-- connector lines behind cards -->
+<g fill="none" stroke="#56dce7" stroke-width="2.2" stroke-opacity=".9" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round">
+ <path d="M800 370V305H330V332"/><path d="M800 370V305H1270V332"/>
+ <path d="M330 475V530H800V575"/><path d="M1270 475V530H800"/>
+ <path d="M800 710V752H375V785"/><path d="M800 710V752H1225V785"/>
 </g>
+<g fill="none" stroke="url(#gold)" stroke-width="1.5" stroke-dasharray="6 7" marker-end="url(#arrowGold)"><path d="M1225 870H1410V912"/><path d="M800 710V730H1410V912"/></g>
+<!-- top cards -->
 <g font-family="Arial,sans-serif">
- <rect x="90" y="230" width="420" height="120" rx="18" fill="url(#panel)" stroke="#5adce8" stroke-opacity=".85"/>
- <circle cx="126" cy="265" r="12" fill="#5adce8" fill-opacity=".17" stroke="#5adce8"/><text x="151" y="270" fill="#effbff" font-size="21" font-weight="700">Aplicación Android</text>
- <text x="120" y="304" fill="#bdd0df" font-size="15">Kotlin · Jetpack Compose · servicios y puentes</text><text x="120" y="329" fill="#75dce6" font-size="13">INTERFAZ / ORQUESTACIÓN</text>
- <rect x="890" y="230" width="420" height="120" rx="18" fill="url(#panel)" stroke="#5adce8" stroke-opacity=".85"/>
- <circle cx="926" cy="265" r="12" fill="#5adce8" fill-opacity=".17" stroke="#5adce8"/><text x="951" y="270" fill="#effbff" font-size="21" font-weight="700">Medición acústica</text>
- <text x="920" y="304" fill="#bdd0df" font-size="15">Tonos de prueba · captura · comparación</text><text x="920" y="329" fill="#75dce6" font-size="13">RESULTADOS DEPENDEN DEL DISPOSITIVO</text>
- <rect x="470" y="245" width="460" height="125" rx="20" fill="#13273a" stroke="url(#gold)" stroke-width="1.5"/>
- <circle cx="700" cy="278" r="23" fill="none" stroke="url(#gold)" stroke-width="1.4"/><circle cx="700" cy="278" r="14" fill="none" stroke="#5adce8" stroke-opacity=".8"/><path d="M682 278H718M700 260V296" stroke="#d8b46a" stroke-opacity=".8"/>
- <text x="700" y="319" text-anchor="middle" fill="#fff3d0" font-size="22" font-weight="700">Rutas de audio de IVANNA</text><text x="700" y="344" text-anchor="middle" fill="#bfd2df" font-size="14">Solo las rutas propias de reproducción de la app</text>
- <rect x="470" y="430" width="460" height="120" rx="18" fill="url(#panel)" stroke="#5adce8" stroke-opacity=".8"/>
- <text x="700" y="466" text-anchor="middle" fill="#f1fbff" font-size="22" font-weight="700">Motor nativo C++ / DSP</text><text x="700" y="495" text-anchor="middle" fill="#bdd0df" font-size="15">JNI · procesamiento según la cadena conectada</text><text x="700" y="522" text-anchor="middle" fill="#75dce6" font-size="13">VERIFICAR ACTIVACIÓN POR RUTA</text>
- <rect x="90" y="630" width="480" height="112" rx="18" fill="url(#panel)" stroke="#a4a8ff" stroke-opacity=".9"/>
- <text x="120" y="666" fill="#eff0ff" font-size="21" font-weight="700">Visualización espacial / FotoHolo</text><text x="120" y="697" fill="#c1c6df" font-size="15">Render geométrico · captura AR experimental</text><text x="120" y="721" fill="#b3b0ff" font-size="13">NO EQUIVALE A HOLOGRAFÍA ÓPTICA EN EL AIRE</text>
- <rect x="830" y="630" width="480" height="112" rx="18" fill="#241f1b" stroke="#d8ad61" stroke-width="1.5" stroke-dasharray="8 6"/>
- <text x="860" y="666" fill="url(#gold)" font-size="21" font-weight="700">HAL / PAL / ASRC del proveedor</text><text x="860" y="697" fill="#dfcdb5" font-size="15">Punto de integración de bajo nivel</text><text x="860" y="721" fill="#f0b9a1" font-size="13">CONTROL FÍSICO NO DEMOSTRADO EN MOTO G85</text>
+ <rect x="105" y="332" width="450" height="143" rx="20" fill="url(#card)" stroke="#56dce7" stroke-opacity=".8"/>
+ <circle cx="148" cy="374" r="17" fill="#56dce7" fill-opacity=".12" stroke="#56dce7"/><path d="M140 368H156V380H140Z M143 364H153" fill="none" stroke="#9af7fa" stroke-width="1.4"/>
+ <text x="180" y="380" fill="#f4fbff" font-size="24" font-weight="700">Aplicación Android</text><text x="140" y="416" fill="#b7cbd9" font-size="16">Kotlin · Jetpack Compose · JNI</text><text x="140" y="447" fill="#5edce7" font-size="13" letter-spacing="1.7">INTERFAZ Y ORQUESTACIÓN</text>
+ <rect x="1045" y="332" width="450" height="143" rx="20" fill="url(#card)" stroke="#56dce7" stroke-opacity=".8"/>
+ <circle cx="1088" cy="374" r="17" fill="#56dce7" fill-opacity=".12" stroke="#56dce7"/><path d="M1078 374H1083L1087 365L1093 383L1098 374H1102" fill="none" stroke="#9af7fa" stroke-width="1.4"/>
+ <text x="1120" y="380" fill="#f4fbff" font-size="24" font-weight="700">Medición acústica</text><text x="1080" y="416" fill="#b7cbd9" font-size="16">Tonos · captura · comparación</text><text x="1080" y="447" fill="#5edce7" font-size="13" letter-spacing="1.5">MICRÓFONO Y SEÑALES DE PRUEBA</text>
+ <!-- central title plaque -->
+ <rect x="520" y="370" width="560" height="340" rx="28" fill="#0a1627" stroke="url(#gold)" stroke-width="1.5"/>
+ <rect x="535" y="385" width="530" height="310" rx="20" fill="none" stroke="#d7b66b" stroke-opacity=".25"/>
+ <circle cx="800" cy="458" r="54" fill="#55e1ec" fill-opacity=".08" stroke="url(#gold)" stroke-width="1.3"/>
+ <circle cx="800" cy="458" r="39" fill="none" stroke="#5be3ed" stroke-opacity=".8"/><circle cx="800" cy="458" r="22" fill="none" stroke="url(#gold)"/>
+ <path d="M800 397V519M739 458H861M757 415L843 501M843 415L757 501" stroke="#e7d19a" stroke-opacity=".65"/>
+ <circle cx="800" cy="458" r="5" fill="#fff2c8"/>
+ <text x="800" y="552" text-anchor="middle" fill="#fff4d4" font-family="Georgia,serif" font-size="27">Cadena propia de reproducción</text>
+ <text x="800" y="585" text-anchor="middle" fill="#bed1df" font-size="16">Decodificación · procesamiento · AudioTrack</text>
+ <path d="M610 610H990" stroke="url(#gold)" stroke-opacity=".5"/>
+ <text x="800" y="638" text-anchor="middle" fill="#5de1eb" font-size="14" letter-spacing="1.8">SOLO EL AUDIO QUE REPRODUCE IVANNA</text>
+ <text x="800" y="668" text-anchor="middle" fill="#9db1c4" font-size="13">No implica procesar el audio de otras aplicaciones</text>
+ <!-- DSP -->
+ <rect x="565" y="575" width="470" height="135" rx="18" fill="#11263b" fill-opacity=".98" stroke="#5adce8" stroke-opacity=".65"/>
+ <text x="800" y="613" text-anchor="middle" fill="#f0fbff" font-size="23" font-weight="700">Motor nativo C++ / DSP</text><text x="800" y="642" text-anchor="middle" fill="#bdd0df" font-size="15">JNI · etapas según la cadena conectada</text><text x="800" y="675" text-anchor="middle" fill="#73dfe7" font-size="13" letter-spacing="1.4">VERIFICAR ACTIVACIÓN POR RUTA</text>
+ <!-- lower cards -->
+ <rect x="105" y="785" width="540" height="112" rx="18" fill="url(#card)" stroke="#a4a5ff" stroke-opacity=".9"/>
+ <text x="140" y="824" fill="#f0f0ff" font-size="22" font-weight="700">Visualización espacial / FotoHolo</text><text x="140" y="855" fill="#c3c6df" font-size="15">Render geométrico · captura AR experimental</text><text x="140" y="878" fill="#b3b3ff" font-size="12" letter-spacing="1.2">NO ES HOLOGRAFÍA ÓPTICA EN EL AIRE</text>
+ <rect x="955" y="785" width="540" height="112" rx="18" fill="#241f1b" stroke="#d8ad61" stroke-width="1.5" stroke-dasharray="8 6"/>
+ <text x="990" y="824" fill="url(#gold)" font-size="22" font-weight="700">HAL / PAL / ASRC del proveedor</text><text x="990" y="855" fill="#dfcdb5" font-size="15">Punto de integración de bajo nivel</text><text x="990" y="878" fill="#f0b9a1" font-size="12" letter-spacing="1.1">CONTROL FÍSICO NO DEMOSTRADO EN MOTO G85</text>
 </g>
-<g font-family="Arial,sans-serif" font-size="12" fill="#9fb3c8"><text x="64" y="784">Las flechas expresan relaciones generales; no prueban que todos los módulos estén activos en cada reproducción.</text><text x="1336" y="784" text-anchor="end">DISEÑO · EVIDENCIA · VALIDACIÓN</text></g>
+<!-- legend -->
+<g font-family="Arial,sans-serif" font-size="13"><circle cx="108" cy="225" r="5" fill="#55e1ec"/><text x="124" y="230" fill="#bfd0df">Área presente en el proyecto</text><circle cx="390" cy="225" r="5" fill="#b1a8ff"/><text x="406" y="230" fill="#bfd0df">Módulo experimental</text><circle cx="650" cy="225" r="5" fill="#d8ad61"/><text x="666" y="230" fill="#bfd0df">Integración no validada físicamente</text></g>
+<text x="80" y="940" fill="#9bb0c5" font-family="Arial,sans-serif" font-size="13">Las flechas indican relaciones funcionales generales; no certifican que todas las etapas estén activas en cada ruta o dispositivo.</text>
+<text x="1520" y="940" text-anchor="end" fill="url(#gold)" font-family="Georgia,serif" font-style="italic" font-size="14">Rigor antes que promesas.</text>
 </svg>
