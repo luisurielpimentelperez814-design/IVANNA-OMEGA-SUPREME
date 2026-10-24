@@ -178,26 +178,9 @@ public:
         truePeakAbs_.store(0.0f, std::memory_order_relaxed);
     }
 
-private:
-    // True peak aproximado por sobremuestreo 4x con interpolación cúbica.
-    // Mantener muestras con signo y procesar L/R por separado: interpolar |x|
-    // destruye la fase y no estima los picos inter-muestra de la señal original.
-    inline static float interpolatePeak4x(const float z[4]) noexcept {
-        float best = std::max(std::max(std::fabs(z[0]), std::fabs(z[1])),
-                              std::max(std::fabs(z[2]), std::fabs(z[3])));
-        const float y0 = z[0], y1 = z[1], y2 = z[2], y3 = z[3];
-        const float c0 = y1;
-        const float c1 = 0.5f * (y2 - y0);
-        const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
-        const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-        for (int k = 1; k < 4; ++k) {
-            const float t = 0.25f * static_cast<float>(k);
-            const float v = std::fabs(((c3 * t + c2) * t + c1) * t + c0);
-            if (std::isfinite(v) && v > best) best = v;
-        }
-        return best;
-    }
-
+public:
+    // Helper puro expuesto para regresiones deterministas del interpolador.
+    // No mantiene estado y no debe confundirse con medición del hardware DAC.
     inline void updateTruePeak(float left, float right) noexcept {
         tpZL_[0] = tpZL_[1]; tpZL_[1] = tpZL_[2]; tpZL_[2] = tpZL_[3]; tpZL_[3] = left;
         tpZR_[0] = tpZR_[1]; tpZR_[1] = tpZR_[2]; tpZR_[2] = tpZR_[3]; tpZR_[3] = right;
