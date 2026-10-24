@@ -11,7 +11,7 @@ TEST(LoudnessTruePeak, TruePeakNeverBelowSamplePeakForSameSignal) {
     int filled = 0;
     for (int i = 0; i < n; ++i) {
         // Non-bin-centered, high-frequency tone exposes inter-sample peaks.
-        const float x = 0.91f * std::sin(2.0 * M_PI * 0.237 * i + 0.173);
+        const float x = 0.91f * std::sin(2.0 * 3.14159265358979323846 * 0.237 * i + 0.173);
         peak = std::max(peak, std::fabs(x));
         samples[filled++] = x;
         samples[filled++] = -0.83f * x;
@@ -26,10 +26,10 @@ TEST(LoudnessTruePeak, TruePeakNeverBelowSamplePeakForSameSignal) {
 }
 
 TEST(LoudnessTruePeak, SignedInterpolationPreservesInterSampleOvershoot) {
-    const float signedSamples[4] = {0.42f, 0.91f, 0.38f, -0.67f};
-    const float magnitudeOnly[4] = {0.42f, 0.91f, 0.38f, 0.67f};
+    const float signedSamples[4] = {0.8887f, -0.5659f, -0.9584f, 0.8372f};
+    const float magnitudeOnly[4] = {0.8887f, 0.5659f, 0.9584f, 0.8372f};
     const float signedPeak = ivanna::metering::LoudnessMeter::interpolatePeak4x(signedSamples);
     const float magnitudePeak = ivanna::metering::LoudnessMeter::interpolatePeak4x(magnitudeOnly);
-    EXPECT_GE(signedPeak, 0.91f);
+    EXPECT_GT(signedPeak, 0.9584f);
     EXPECT_GT(std::fabs(signedPeak - magnitudePeak), 1e-3f);
 }
