@@ -22,3 +22,12 @@ Se añadieron tests host para configuración, ratio, bloques variables, NaN/Inf 
 3. Añadir cola SPSC de ratio y logs ASRC-CTRL throttled.
 4. Ejecutar CTest/build APK y corregir fallos.
 5. Probar altavoz y USB-C DAC por separado durante 10 min; comparar off/on, deriva, underruns y artefactos. Bluetooth requiere prueba separada.
+
+
+## Distinción de rutas (actualización 2026-10-24)
+
+La ruta **de reproductor propio** ya cablea corrección de tasa por software: `IvannaBridgePlayer` aplica `StereoAudioResampler` al PCM decodificado, y el `AudioTrackBufferPll` calcula la corrección desde frames enviados menos frames consumidos en timestamps de ese mismo `AudioTrack`. La corrección se entrega a `StereoAudioResampler.setClockCorrectionPpm()`; si falla `getTimestamp()`, el control se reinicia y la corrección vuelve a cero. Esto es una ASRC software válida para el flujo que IVANNA reproduce y posee.
+
+La pieza nativa `VariableAsrc` es un componente separado y todavía no sustituye a ese resampler en la ruta de reproducción. Tampoco se debe alimentar el PLL de `AudioTrack` con muestras PAL de otro flujo: son dominios/identidades distintos hasta que una integración demuestre lo contrario.
+
+Por tanto, el bloqueo pendiente no es «encontrar un control ASRC físico»: es integrar una corrección software en el punto correcto si se busca controlar audio de sistema/terceros, y enlazar la telemetría PAL al propietario real del stream. Un daemon externo que abre otro PCM no equivale al flujo activo. La ruta de reproducción propia debe conservar unity-ratio/bypass si sus timestamps son inválidos; el efecto global requiere integración de HAL/efecto compartido y pruebas de dispositivo.

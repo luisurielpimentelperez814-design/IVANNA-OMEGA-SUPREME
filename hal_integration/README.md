@@ -8,6 +8,8 @@ This directory contains the reusable HAL-side hook. It is not a replacement for 
 - `ivanna_legacy_audio_hal_adapter.hpp`: concrete adapter for Android's legacy `audio_stream_out::get_presentation_position` API; it still requires the target HAL's real ASRC callback.
 - `ivanna_audio_clock_reporter.hpp`: optional diagnostic snapshot publisher.
 - `ivanna_qualcomm_pal_clock_integration.hpp`: Qualcomm PAL seam (paired-sample validation + optional shared-memory publishing on top of `HalOutputStreamClockControl`). Both device-specific callbacks are intentionally unbound; see `MOTO_G85_PAL_CLOCK_INTEGRATION.md`. Host-tested with fake callbacks (`test_qualcomm_pal_clock_integration`); not validated against the real Moto G85 HAL.
+- `ivanna_pal_mmap_position_adapter.hpp`: converts one `pal_stream_get_mmap_position()` result (frames + `CLOCK_MONOTONIC` ns) into a validated 64-bit frame sample; target code supplies the callback bound to its existing PAL stream handle. Host tests cover 32-bit wrap and fail-closed resets; actual Motorola API support remains unverified.
+- `ivanna_pal_active_stream_clock_publisher.hpp`: report-only bridge that combines the paired-position adapter with the shared snapshot publisher. Bind its callback to the active stream's real `pal_stream_handle_t`; poll at 10–20 Hz from a serialized non-real-time control task. It does not command ASRC and does not attach itself to the proprietary HAL automatically.
 - `tools/probe_moto_g85_pal.sh`: read-only on-device probe that gathers the PAL/ASRC evidence the Qualcomm seam still needs (see `MOTO_G85_PAL_CLOCK_INTEGRATION.md`).
 - `sepolicy/` and `init.ivanna_audio_clock.rc`: product-specific templates only; adapt to the target policy and init layout.
 
@@ -93,3 +95,43 @@ If the presentation-position query fails, the controller resets and attempts to 
 5. Do not claim physical DAC-clock correction from host tests. Software ASRC compensates stream cadence; it does not directly discipline the oscillator.
 
 The repository does not contain the proprietary target HAL source, so this component is the integration implementation/contract. A target-specific patch cannot be completed safely until the vendor stream and its ASRC API are identified.
+
+
+## Moto G85 symbol finding and concrete report bridge
+
+The latest device report shows that the installed `/vendor/lib64/hw/audio.primary.blair.so` contains `StreamOutPrimary::GetMmapPosition` and references `pal_stream_get_mmap_position`. This narrows the likely source-level insertion point to the primary HAL's existing output-stream implementation, but symbol presence alone does not prove the active music route calls it or that the stream supports MMAP.
+
+For a HAL source tree with access to its existing `pal_stream_handle_t`, use `ivanna_pal_active_stream_clock_publisher.hpp` for telemetry-only wiring:
+
+```cpp
+#include <PalApi.h>
+#include "ivanna_pal_active_stream_clock_publisher.hpp"
+
+struct ActivePalContext { pal_stream_handle_t* stream; };
+
+static bool queryActivePalPosition(void* opaque, int32_t* frames,
+                                   int64_t* timeNs) noexcept {
+    auto* ctx = static_cast<ActivePalContext*>(opaque);
+    if (!ctx || !ctx->stream || !frames || !timeNs) return false;
+    pal_mmap_position position{};
+    if (pal_stream_get_mmap_position(ctx->stream, &position) != 0) return false;
+    *frames = position.position_frames;
+    *timeNs = position.time_nanoseconds;
+    return true;
+}
+
+// Construct once for the lifetime of the actual output stream, after its PAL
+// handle and sample rate are known. Start/poll/reset/stop from the HAL's
+// serialized control/lifecycle path, never from the hard-real-time write path.
+ActivePalContext context{existingPalStreamHandle};
+ivanna::audio::PalMmapActiveStreamClockPublisher clock(
+    &queryActivePalPosition, &context, activeSampleRateHz);
+const bool reporterReady = clock.start();
+// At ~10–20 Hz: if (reporterReady) (void)clock.poll();
+// On standby/reopen/route change: clock.reset();
+// On stream destruction: clock.stop();
+```
+
+This bridge deliberately publishes telemetry only. If PAL returns `-ENOSYS` on a non-MMAP stream, it publishes no new sample. It does not infer frames from elapsed time, open a second PCM node, enable correction, or identify an ASRC actuator.
+
+**Important limit for this repository:** the proprietary Motorola `audio.primary.blair.so` source and its active `StreamOutPrimary` object are not present here. The helper is now in the repository, but the actual call site inside that vendor HAL is not patched by this change; doing so requires the matching HAL source/build integration (or a separately validated runtime instrumentation path). Do not claim the phone is connected until a live report shows advancing frames and monotonic timestamps while the relevant route is playing.

@@ -1,24 +1,17 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────────────────────
-// hal_clock_producer.hpp — productor del reloj de hardware para la ruta Magisk.
+// hal_clock_producer.hpp — productor experimental de snapshots HAL-CLOCK.
 //
-// QUÉ ES: el eslabón que faltaba. El efecto lee un snapshot (HardwareClockReader)
-// y el panel "Reloj hardware" de la app lo muestra; hasta ahora NADIE lo
-// publicaba en la ruta Magisk, así que el panel decía siempre "sin productor
-// validado". Este productor corre en el daemon (root), lee la posición de trama
-// y el timestamp MONOTÓNICO que el driver entrega EN LA MISMA CONSULTA y publica
-// el snapshot SOLO si la muestra es correlacionada.
+// El daemon puede intentar leer SNDRV_PCM_IOCTL_STATUS de un nodo PCM ALSA y
+// publicar el par hw_ptr/tstamp devuelto por UNA consulta. Esto no demuestra que
+// el nodo sea el stream que Android/HAL tiene activo: el open independiente puede
+// fallar por exclusividad o referirse a otro cliente/ruta. Tampoco demuestra por
+// sí solo el dominio/unidades del timestamp en el driver concreto.
 //
-// QUÉ NO ES: no identifica ni acciona ningún ASRC físico. El actuador del
-// Moto G85 no está identificado en el repo y adivinar su nodo está prohibido:
-// si no hay fuente fiable, el productor no publica nada (fail-closed) y lo
-// declara con un motivo legible.
-//
-// Fuente real de la muestra: SNDRV_PCM_IOCTL_STATUS sobre /dev/snd/pcmC*D*p.
-// Ese ioctl devuelve, en una sola estructura, `hw_ptr` (posición presentada en
-// frames) y `tstamp` (CLOCK_MONOTONIC del driver). Es exactamente el contrato
-// que exige audio_hardware_clock_hal_adapter.hpp: frames + timespec de la MISMA
-// consulta. No se inventa ningún símbolo de HAL/PAL.
+// QUÉ NO ES: no es una integración PAL del stream propietario, ni identifica ni
+// acciona un ASRC físico. En el Moto G85 aún faltan callbacks PAL verificados
+// para frames+timestamp pareados y para el actuador de corrección de tasa. No
+// habilitar corrección física a partir de este productor.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include <cstdint>
@@ -57,8 +50,10 @@ struct PairedSample {
     uint32_t nominalRateHz = 0;
 };
 
-// ── Descubrimiento por /proc/asound (real en cualquier Android con root) ─────
-// Devuelve solo PCMs de reproducción con rate nominal parseado.
+// ── Descubrimiento ALSA conservador ─────────────────────────────────────────
+// Primero consulta /proc/asound; si faltan status/hw_params, enumera nodos de
+// reproducción en /dev/snd como evidencia de presencia, no como reloj válido.
+// El productor no abre ni publica un dispositivo sin rate nominal verificable.
 std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot = "/proc/asound",
                                                const std::string& devRoot = "/dev/snd");
 
