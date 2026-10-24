@@ -28,8 +28,8 @@ PhysicalTargetDispatcher::PhysicalTargetDispatcher() noexcept {
     // Safe, explicit downmix fallback: every virtual source contributes to both
     // stereo front buses at low level. It is not a calibrated 5-speaker layout.
     for (std::size_t i = 0; i < kInputs; ++i) {
-        matrix_[0 * kInputs + i] = 0.25f;
-        matrix_[1 * kInputs + i] = 0.25f;
+        matrix_[0 * kInputs + i] = 1.0f / static_cast<float>(kInputs);
+        matrix_[1 * kInputs + i] = 1.0f / static_cast<float>(kInputs);
     }
 }
 
