@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.131
-versionCode=422
+version=v2.5.132
+versionCode=423
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.131 (SAFMUS Magisk: UUID de efecto alineado en perfiles vendor; prioridad global forzada retirada para preservar efectos OEM; pendiente validacion de audio en Moto G85)
+description=v2.5.132 (renderer binaural espacial ampliado a 16 fuentes virtuales; salida final estéreo binaural; pendiente validación auditiva en Moto G85)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
