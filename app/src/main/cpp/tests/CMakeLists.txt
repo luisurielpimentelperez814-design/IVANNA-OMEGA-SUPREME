@@ -25,6 +25,7 @@ include(GoogleTest)
 add_library(ivanna_dsp_under_test STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/Compressor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/SafetyLimiter.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/variable_asrc.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/ParametricEQ.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/HarmonicExciter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/StereoWidener.cpp
