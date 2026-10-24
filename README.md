@@ -17,7 +17,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.130-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.132-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -143,6 +143,16 @@ El diagrama representa las relaciones generales del código. En particular, el b
 <td>Desde 2.5.130 el primer tramo de la cadena existe en la ruta Magisk: productor → mmap → lector del efecto → JNI → fila «Reloj hardware». La prueba de extremo a extremo del contrato IPC está en host (9/9). Que el driver del Moto G85 entregue muestras dentro de tolerancia solo se comprueba en el dispositivo, leyendo las líneas <code>HAL-CLOCK</code> del log del daemon.</td>
 </tr>
 <tr>
+<td><strong>Bocinas declaradas (estéreo/surround + subwoofer)</strong></td>
+<td><code>SpeakerLayoutPolicy</code> (lógica pura, 9 pruebas JVM) y el panel <code>SpeakerLayoutPanel</code> dejan declarar modo (estéreo/surround), número de satélites y si hay subwoofer activo. Generaliza el mismo mecanismo que ya conectaba el perfil Genezy MHCPZ1.</td>
+<td>El único actuador real al final de la cadena sigue siendo <code>spatial_width</code> → <code>StereoWidener</code>. El campo <code>high_cut_hz</code> del daemon se guarda y se lee de vuelta, pero ningún código del efecto lo aplica a la señal (confirmado por lectura directa de <code>omega_effect.cpp</code>). Por eso esta función solo matiza el ancho estéreo (±15 % máx.) según lo declarado; <strong>no</strong> enruta canales discretos ni gestiona graves/LFE reales — el motor no tiene un crossover conectado.</td>
+</tr>
+<tr>
+<td><strong>Renderizador binaural de objetos</strong></td>
+<td><code>ivanna_object_renderer.hpp</code> amplió sus posiciones virtuales de 12 a 16, con cuatro satélites laterales adicionales sobre el renderer HRTF/VBAP existente.</td>
+<td>Son fuentes virtuales renderizadas en binaural estéreo (auriculares o los dos altavoces del teléfono), no canales físicos independientes; no implica reenrutamiento multicanal real.</td>
+</tr>
+<tr>
 <td><strong>SAFMUS / ACSR / HAL-PAL</strong></td>
 <td>Hay lógica, adaptadores y contratos de integración en distintas partes del repositorio.</td>
 <td>La documentación de integración no demuestra una unión de extremo a extremo con el hardware del fabricante. No afirmamos un actuador PAL/ASRC operativo ni control físico de reloj en el Moto G85 sin lectura de retorno y pruebas. El actuador ASRC físico sigue sin identificar y sin enlazar: el productor queda <strong>fail-closed</strong> y declara el motivo.</td>
@@ -235,6 +245,24 @@ Estos comandos no sustituyen la compilación Android, las pruebas instrumentadas
 - [Plan de aceptación para Moto G85 / Android 15](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md)
 
 El distintivo CI refleja el estado del flujo configurado en GitHub; no es una certificación acústica ni demuestra que se haya probado el teléfono. Antes de considerar una versión lista, verifica que la compilación, los tests, el APK y el ZIP Magisk procedan del mismo commit, inspecciona sus hashes y prueba la instalación en el dispositivo de destino.
+
+### El pipeline de release no publicaba (corregido en 2.5.132)
+
+Hasta 2.5.131, el job `publish-release` se disparaba comparando el **texto literal** del mensaje de
+commit contra `"release:"` / `"— v"`. Los commits de bump reales usaban formatos como
+`chore(release): v2.5.130 (421) — …`, que no calzan con ese patrón (el paréntesis rompe el match). Resultado
+verificado contra la API de GitHub: **v2.5.129, v2.5.130 y v2.5.131 nunca se publicaron** como release real
+pese a estar en `main` con `version.properties`/`module.prop` correctamente bumpeados; `update.json` seguía
+apuntando a `v2.5.130`, un tag que nunca existió, y el OTA del módulo Magisk llevaba varias versiones
+apuntando a un asset inexistente. El repositorio acumuló cientos de drafts `staging-<sha>-<run>` (el bundle
+intermedio que sí se publica siempre) sin barrer, porque la limpieza de esos drafts vive dentro del mismo job
+que nunca se ejecutaba.
+
+Desde 2.5.132, un job `detect-release` decide si publicar comparando `version.properties` contra el commit
+padre con `git diff` — ya no depende de cómo se redacte el mensaje. Verifica tú mismo que una versión quedó
+publicada de verdad en <https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases>
+(debe aparecer como release, no como draft `staging-*`) antes de confiar en el ZIP que ofrece el updater del
+módulo.
 
 ### Reloj de hardware: qué quedó enlazado en 2.5.130
 
