@@ -6,14 +6,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FotoHoloRouteBTest {
-    @Test fun \`el comando lleva solo el ancho para no pisar el resto del estado del demonio\`() {
+    @Test fun commandContainsOnlyWidth() {
         val j = FotoHoloRouteB.json(1.2f)
         assertTrue(j.contains("\"action\":\"SET_PERCEPTUAL_STATE\""))
         assertTrue(j.contains("\"spatialWidth\":1.2000"))
         assertFalse(j.contains("compressor") || j.contains("exciter") || j.contains("harmonic"))
     }
 
-    @Test fun \`la respuesta del demonio se traduce sin asumir exito\`() {
+    @Test fun responseRequiresExplicitApplicationConfirmation() {
         assertEquals("demonio no disponible", FotoHoloRouteB.statusFromReply(""))
         assertEquals("rechazado por el demonio", FotoHoloRouteB.statusFromReply("{\"ok\":false}"))
         assertEquals("aceptado; sin consumidor activo",
