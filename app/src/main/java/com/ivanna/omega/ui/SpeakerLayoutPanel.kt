@@ -30,12 +30,14 @@ import com.ivanna.omega.fotoholo.FotoHoloEngine
 import com.ivanna.omega.fotoholo.SpeakerLayout
 import com.ivanna.omega.fotoholo.SpeakerLayoutPolicy
 import com.ivanna.omega.fotoholo.SpeakerMode
+import com.ivanna.omega.spatial.WfsCalibrationManager
 
 /**
  * Declaración del usuario: cuántas bocinas satélite tiene conectadas, en qué modo (estéreo o
- * surround) y si hay subwoofer activo. Conecta al mismo único actuador real que el resto de
- * NanoTomix (ancho estéreo), con el mismo límite honesto: esto NO enruta canales discretos ni
- * gestiona graves/LFE reales — ver el comentario de cabecera de `SpeakerLayoutPolicy`.
+ * surround) y si hay subwoofer activo. En modo surround vuelve a publicar la geometría WFS
+ * calibrada existente (relativa a la posición del oyente) en la ruta nativa/daemon. El conteo
+ * también modula el ancho perceptual; NO inventa coordenadas por satélite ni crea salidas físicas
+ * discretas. La ruta WFS debe estar habilitada para que su geometría afecte el renderizado.
  */
 @Composable
 fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
@@ -46,6 +48,14 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
 
     LaunchedEffect(mode, satellites, subwoofer) {
         FotoHoloEngine.setSpeakerLayout(context, SpeakerLayout(mode, satellites, subwoofer))
+        // Reutiliza las coordenadas persistidas y calibradas; no genera un layout ficticio a
+        // partir del simple conteo. WfsCalibrationManager publica al renderer activo por JNI.
+        if (mode == SpeakerMode.SURROUND) {
+            val published = WfsCalibrationManager.restore(context)
+            if (!published) {
+                android.util.Log.w("SpeakerLayoutPanel", "Geometría WFS no publicada; se conserva la ruta de audio previa")
+            }
+        }
     }
     val layout = SpeakerLayout(mode, satellites, subwoofer)
     val factor = SpeakerLayoutPolicy.widthFactor(layout)
@@ -56,8 +66,8 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
     ) {
         Text("BOCINAS DECLARADAS", color = Color(0xFF65E7F2), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
         Text(
-            "Cuántas bocinas y en qué modo escuchas realmente. Solo matiza el ancho estéreo (±15 % máx.); " +
-            "no crea canales discretos ni gestiona graves/LFE reales — el motor no tiene un crossover conectado.",
+            "Surround reutiliza las coordenadas WFS calibradas y las publica al motor. El conteo solo matiza " +
+            "el ancho perceptual (±15 % máx.); no crea canales físicos ni gestiona graves/LFE reales.",
             color = Color(0xFF9AA4B2), fontSize = 11.sp
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
