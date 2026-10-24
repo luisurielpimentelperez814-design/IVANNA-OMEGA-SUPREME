@@ -116,8 +116,8 @@ fun GenezyMhcpz1ProfileCard(modifier: Modifier = Modifier) {
         Text("Satélites laterales L/R: 24 Ω declarados por lado", color = Color(0xFFB7C1CE), fontSize = 11.sp)
         Text("Graves: 1×15″ + 2×4″ · 6 Ω declarados para el conjunto", color = Color(0xFFB7C1CE), fontSize = 11.sp)
         Text(
-            if (enabled) "Perfil guardado; mapa calculado para ${routes.size} posiciones. La aplicación efectiva a salidas discretas requiere que la ruta de audio confirme esos canales."
-            else "Perfil guardado como referencia; procesamiento del motor sin cambios mientras está apagado.",
+            if (enabled) "Perfil conectado al ancho estéreo NanoTomix: extensión lateral +8 % cuando NanoTomix está activo y sin bypass. No crea salidas discretas."
+            else "Perfil apagado: el DSP conserva el ancho base del usuario.",
             color = if (enabled) Color(0xFF65E7F2) else Color(0xFF9AA4B2), fontSize = 11.sp
         )
         if (enabled) routes.forEach { r ->
