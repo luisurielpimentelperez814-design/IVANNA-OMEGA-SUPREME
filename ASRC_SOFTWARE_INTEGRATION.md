@@ -5,7 +5,7 @@
 - Controlador de reloj: componente aislado y fail-closed; exige validación explícita de ruta antes de TRACKING.
 - Integración de producción: BLOCKED. El snapshot IVHC no contiene identidad de stream y el productor actual elige el primer PCM playback con tasa nominal. No prueba que el reloj corresponda al AudioTrack/PCM que consume el ASRC.
 - Moto G85 altavoz/USB-C: NEEDS_DEVICE_PROBE. No se han ejecutado pruebas físicas ni se declara éxito.
-- Mantener desactivado por defecto hasta resolver la ruta.
+- No hay todavía un feature flag de usuario conectado: el nuevo núcleo está compilado pero no invocado por la ruta de producción, por lo que queda inerte. No habilitarlo hasta resolver la ruta.
 
 ## Ruta detectada
 Audio decoder/DSP Kotlin -> StereoAudioResampler.kt -> AudioTrack. En paralelo: hal_clock_producer.cpp -> mmap IVHC -> HardwareClockReader. No está demostrado que ambos extremos sean el mismo flujo. El nuevo núcleo aún no reemplaza el resampler Kotlin ni se invoca desde JNI.
