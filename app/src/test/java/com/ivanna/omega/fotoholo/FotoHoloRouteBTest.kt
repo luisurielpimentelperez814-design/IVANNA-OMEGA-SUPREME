@@ -19,7 +19,11 @@ class FotoHoloRouteBTest {
         assertEquals("aceptado; sin consumidor activo",
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"accepted_pending_consumer\"}"))
         assertEquals("aplicado en Ruta B",
-            FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"applied\",\"generation\":7}"))
+            FotoHoloRouteB.statusFromReply("{\\"ok\\":true,\\"applied\\":true,\\"status\\":\\"applied\\",\\"generation\\":7}"))
+        assertEquals("no aplicado: el consumidor DSP no confirmó la aplicación",
+            FotoHoloRouteB.statusFromReply("{\\"ok\\":true,\\"command\\":\\"GET_STATUS\\",\\"applied\\":false,\\"status\\":\\"applied\\"}"))
+        assertEquals("estado sin confirmación explícita de aplicación",
+            FotoHoloRouteB.statusFromReply("{\\"ok\\":true,\\"status\\":\\"applied\\",\\"generation\\":7}"))
         assertEquals("respuesta no reconocida", FotoHoloRouteB.statusFromReply("ACK"))
     }
 }
