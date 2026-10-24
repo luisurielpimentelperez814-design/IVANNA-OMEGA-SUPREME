@@ -1,3 +1,44 @@
+# CHANGELOG — v2.5.130 (421) — Productor del reloj de hardware en la ruta Magisk
+
+## El eslabón que faltaba
+
+La cadena de reloj existía de extremo a extremo **menos en su primer tramo**: el efecto leía el snapshot
+(`HardwareClockReader`), el JNI lo exponía (`nativeGetClockTelemetryJni`) y el panel «Reloj hardware»
+(`NeonProfilerPanel.kt:164`) lo mostraba, pero **nadie publicaba el snapshot** en la ruta Magisk. Antes de este
+cambio había cero ocurrencias de `hal-clock`, `hal_clock`, `proc/asound` o `pcm_timestamp` en todo el árbol.
+
+## Qué se añade
+
+- `daemon/hal_clock_producer.{hpp,cpp}`: productor que lee la muestra del **driver**, no del callback.
+  Fuente: `SNDRV_PCM_IOCTL_STATUS` sobre `/dev/snd/pcmC*D*p`, que devuelve `hw_ptr` (frames presentados) y
+  `tstamp` (CLOCK_MONOTONIC del driver) **en una sola consulta** — exactamente el contrato que ya exigía
+  `audio_hardware_clock_hal_adapter.hpp`. No se inventa ningún símbolo de HAL ni de PAL.
+- `CorrelationGate`: rechaza rate nominal ausente, timestamp no positivo, Δt ≤ 1 µs, Δt > 500 ms (PCM parado),
+  frames que retroceden y tasa implícita fuera de 0,80–1,20 × la nominal. Exige **3 pares coherentes**
+  consecutivos antes de publicar. Todo rechazo se declara con motivo legible.
+- Daemon: argumentos `--hal-clock` / `--no-hal-clock` (activo por defecto) e hilo de sondeo a 250 ms con log
+  **solo al cambiar de estado**, para no inundar el log del módulo.
+
+## Lo que deliberadamente NO se enlaza
+
+El **actuador ASRC físico del Moto G85**. `hal_integration/MOTO_G85_PAL_CLOCK_INTEGRATION.md` y el observador
+PAL documentan que `session_time` / `absolute_time` / `timestamp` de `pal_get_timestamp` **no** son un par
+frames + CLOCK_MONOTONIC y por tanto no pueden alimentar al tracker ni al servo. Adivinar el nodo produciría
+justo la telemetría falsa que la Fase 0 del plan 10D ordena eliminar: el productor queda **fail-closed** y
+declara el motivo.
+
+## Verificación
+
+- `test_hal_clock_producer`: **9/9 verdes** en host (`g++ 13`, `-std=c++20 -O2 -Wall -Wextra`, 0 warnings),
+  incluida la prueba de extremo a extremo real Publisher → mmap → Reader
+  (`1440 frames / 1 030 000 000 ns / 48 000 Hz` leídos de vuelta).
+- 8/8 puertas estáticas `rc=0`.
+
+## No verificado
+
+Compilación Kotlin/APK y CTest del runner (sin Android SDK ni NDK en el entorno local), y la tolerancia real
+del driver del Moto G85: eso se lee en el log del daemon como líneas `HAL-CLOCK`.
+
 # CHANGELOG — v2.5.129 (420) — Conteo de bocinas declarado (estéreo/surround + subwoofer) y PR #148 integrado
 
 1. **Merge de PR #148:** perfil Genezy MHCPZ1 (frontales + satélites laterales + graves, impedancias declaradas) conectado al ancho estéreo existente de `FotoHoloEngine` — Ruta A con factor acotado 1.08×, Ruta B solo con el efecto habilitado y sin bypass.

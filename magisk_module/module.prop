@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.129
-versionCode=420
+version=v2.5.130
+versionCode=421
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.128: spatial control wiring and telemetry validation
+description=v2.5.130 (productor de reloj correlacionado en el daemon: SNDRV_PCM_IOCTL_STATUS entrega hw_ptr + tstamp en una sola consulta, puerta de correlacion fail-closed, 9/9 pruebas host; el actuador ASRC fisico del Moto G85 sigue sin enlazar a proposito sobre v2.5.129)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
