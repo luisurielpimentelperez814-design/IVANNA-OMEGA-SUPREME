@@ -28,6 +28,6 @@ class FotoHoloRouteBTest {
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\"}"))
         assertEquals("estado sin confirmación explícita de aplicación",
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"applied\",\"generation\":7}"))
-        assertEquals("respuesta no reconocida", FotoHoloRouteB.statusFromReply("ACK"))
+        assertEquals("respuesta sin confirmación válida del demonio", FotoHoloRouteB.statusFromReply("ACK"))
     }
 }
