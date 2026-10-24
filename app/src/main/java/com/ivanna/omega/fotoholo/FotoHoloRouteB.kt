@@ -39,9 +39,13 @@ object FotoHoloRouteB {
         if (jsonBoolean(reply, "ok") == false) return "rechazado por el demonio"
         val statusApplied = Regex("\\\"status\\\"\\s*:\\s*\\\"applied\\\"").containsMatchIn(reply)
         val pendingConsumer = Regex("\\\"status\\\"\\s*:\\s*\\\"accepted_pending_consumer\\\"").containsMatchIn(reply)
+        val consumerDeclared = Regex("\\\"consumer\\\"\\s*:\\s*\\\"omega_effect\\\"").containsMatchIn(reply)
         return when {
             pendingConsumer -> "aceptado; sin consumidor activo"
-            statusApplied && jsonBoolean(reply, "applied") == true -> "aplicado en Ruta B"
+            statusApplied && jsonBoolean(reply, "applied") == true && consumerDeclared ->
+                "publicado en Ruta B; consumidor declarado, audio no verificado"
+            statusApplied && jsonBoolean(reply, "applied") == true ->
+                "publicado en Ruta B; sin consumidor DSP declarado"
             jsonBoolean(reply, "applied") == false ->
                 "no aplicado: el consumidor DSP no confirmó la aplicación"
             statusApplied -> "estado sin confirmación explícita de aplicación"
