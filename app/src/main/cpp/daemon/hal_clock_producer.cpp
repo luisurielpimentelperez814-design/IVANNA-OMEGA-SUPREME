@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
 #include <fcntl.h>
 #include <fstream>
 #include <sstream>
@@ -98,9 +99,82 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
                     // Sin rate no hay correlación posible: no se publica.
                     d.nominalRateHz = 0;
                 }
-                out.push_back(d);
+                auto existing = out.end();
+                for (auto it = out.begin(); it != out.end(); ++it) {
+                    if (it->card == d.card && it->device == d.device) {
+                        existing = it;
+                        break;
+                    }
+                }
+                if (existing == out.end()) {
+                    out.push_back(d);
+                } else if (existing->nominalRateHz == 0 && d.nominalRateHz > 0) {
+                    // Prefer the substream that actually exposes a nominal rate.
+                    *existing = d;
+                }
             }
         }
+    }
+
+    // Android vendors sometimes expose ALSA PCM character devices while
+    // omitting /proc/asound/cardN/pcmNp/subN/status. Enumerate playback nodes
+    // as presence evidence only: without hw_params rate we must not open PCM
+    // or attempt to publish a clock sample.
+    DIR* dir = ::opendir(devRoot.c_str());
+    if (dir) {
+        while (const dirent* ent = ::readdir(dir)) {
+            int card = -1;
+            int pcm = -1;
+            int consumed = 0;
+            if (std::sscanf(ent->d_name, "pcmC%dD%dp%n", &card, &pcm, &consumed) != 2 ||
+                consumed <= 0 || ent->d_name[consumed] != '\0' ||
+                card < 0 || card >= 16 || pcm < 0 || pcm >= 32) {
+                continue;
+            }
+
+            bool duplicate = false;
+            for (const auto& existing : out) {
+                if (existing.card == card && existing.device == pcm) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
+
+            PcmDevice d;
+            d.card = card;
+            d.device = pcm;
+            d.capture = false;
+            d.devPath = devRoot + "/" + ent->d_name;
+            d.procDir = procRoot + "/card" + std::to_string(card) + "/pcm" +
+                        std::to_string(pcm) + "p/sub0";
+            d.state = "node-present; proc-status-unavailable";
+
+            // Some kernels expose hw_params even when status is missing.
+            // A rate is trusted only when explicitly reported there.
+            for (int sub = 0; sub < 2; ++sub) {
+                const std::string pdir = procRoot + "/card" + std::to_string(card) +
+                    "/pcm" + std::to_string(pcm) + "p/sub" + std::to_string(sub);
+                const std::string hw = readSmallFile(pdir + "/hw_params");
+                long rate = 0;
+                if (parseIntAfter(hw, "rate", rate) && rate > 0) {
+                    d.nominalRateHz = static_cast<unsigned>(rate);
+                    d.procDir = pdir;
+                    const std::string status = readSmallFile(pdir + "/status");
+                    if (!status.empty()) {
+                        long stateVal = 0;
+                        d.state = parseIntAfter(status, "state", stateVal)
+                            ? std::to_string(stateVal) : "status-unparsed";
+                    } else {
+                        d.state = "hw-params-rate-available; status-unavailable";
+                    }
+                    break;
+                }
+            }
+            if (d.nominalRateHz == 0) d.state = "node-present; rate-unavailable";
+            out.push_back(d);
+        }
+        ::closedir(dir);
     }
     return out;
 }
@@ -132,6 +206,10 @@ bool StatusIoctlSource::read(PairedSample& out) noexcept {
     if (fd_ < 0) return false;
     struct snd_pcm_status st{};
     if (::ioctl(fd_, SNDRV_PCM_IOCTL_STATUS, &st) < 0) return false;
+    // Un fd abierto por el daemon no es el stream HAL de Android. Como mínimo,
+    // descartar estados OPEN/SETUP/PREPARED: no son una salida que esté corriendo.
+    // RUNNING tampoco prueba por sí solo que este sea el PCM propietario del HAL.
+    if (st.state != SNDRV_PCM_STATE_RUNNING) return false;
     // Una sola consulta => un solo par (hw_ptr, tstamp). Nunca se mezclan.
     out.presentedFrames = static_cast<uint64_t>(st.hw_ptr);
     out.timestampNs = static_cast<int64_t>(st.tstamp.tv_sec) * 1000000000ll +
@@ -228,29 +306,55 @@ ProducerStatus HalClockProducer::poll() noexcept {
             st_.reason = "sin PCM de reproduccion en /proc/asound";
             return st_;
         }
-        // Se prefiere el que tenga rate nominal declarado.
+        // No abrir un PCM únicamente porque exista el nodo: sin rate nominal
+        // explícito no se puede correlacionar frames/tiempo. Reintentar en el
+        // siguiente poll por si el firmware publica hw_params al iniciar audio.
         const PcmDevice* pick = nullptr;
         for (const auto& d : devices) if (d.nominalRateHz > 0) { pick = &d; break; }
-        if (!pick) pick = &devices.front();
+        if (!pick) {
+            st_.state = ProducerState::kWaitingSamples;
+            st_.device = devices.front().devPath;
+            st_.reason = "PCM presente, pero sin rate nominal verificable en /proc/asound; no se abre ni publica";
+            return st_;
+        }
         device_ = *pick;
         st_.device = device_.devPath;
         opened_ = src_->open(device_);
         if (!opened_) {
+            // No fijar device_ si el open falla: un poll posterior debe poder
+            // redescubrir/reintentar (p. ej., cuando Android libere el PCM).
             st_.state = ProducerState::kNoSource;
-            st_.reason = "no se pudo abrir el dispositivo PCM";
+            st_.reason = "no se pudo abrir el dispositivo PCM; se reintentara";
+            src_->close();
+            opened_ = false;
+            device_ = PcmDevice{};
+            gate_.reset();
             return st_;
         }
     }
 
     PairedSample s{};
     if (!src_->read(s)) {
+        // Un ioctl fallido no debe dejar anclado un fd/dispositivo posiblemente
+        // obsoleto. Cierra y vuelve a descubrir en el siguiente ciclo.
         st_.state = ProducerState::kWaitingSamples;
-        st_.reason = "lectura sin muestra (ioctl fallo o sin cabeceras)";
+        st_.reason = "lectura sin muestra; fuente cerrada y se reintentara";
+        src_->close();
+        opened_ = false;
+        device_ = PcmDevice{};
+        gate_.reset();
         return st_;
     }
 
     const GateVerdict v = gate_.evaluate(s);
     if (!v.accepted) {
+        // La primera muestra solo establece el ancla temporal; no es una
+        // muestra rechazada ni un error de fuente. Esperar al siguiente par.
+        if (v.reason && std::strcmp(v.reason, "primera muestra: ancla") == 0) {
+            st_.state = ProducerState::kWaitingSamples;
+            st_.reason = v.reason;
+            return st_;
+        }
         if (gate_.streak() == 0) ++st_.rejected;
         st_.state = ProducerState::kRejected;
         st_.reason = v.reason;

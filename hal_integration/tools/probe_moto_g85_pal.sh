@@ -25,7 +25,7 @@ R="$OUT/report.txt"
 
 # Palabras que delatan un actuador de deriva/ASRC o un par frames+timestamp.
 KW_ASRC='asrc|sample.?slip|slip|drift|rate.?adapt|rat_render|clk.?recov|clock.?recov|rate.?match|ppm|ratio'
-KW_TS='get_timestamp|session_time|presentation_position|timestamp|absolute_time'
+KW_TS='get_timestamp|session_time|presentation_position|timestamp|absolute_time|get_mmap_position|mmap_position'
 
 say()  { printf '%s\n' "$*" >> "$R"; }
 hdr()  { say ""; say "=================== $* ==================="; }
@@ -114,6 +114,28 @@ else
   say "(sin dumpsys)"
 fi
 
+hdr "6b. Compatibilidad PAL MMAP / get_mmap_position (solo lectura)"
+say "aaudio.mmap_policy = $(getprop aaudio.mmap_policy 2>/dev/null)"
+say "aaudio.mmap_exclusive_policy = $(getprop aaudio.mmap_exclusive_policy 2>/dev/null)"
+say "--- API/símbolos PAL MMAP encontrados en bibliotecas (si readelf/nm disponible)"
+for f in $LIBS; do
+  if have readelf; then
+    HIT="$(readelf -Ws --dyn-syms "$f" 2>/dev/null | awk '{print $NF}' | grep -i -E 'pal_stream_get_mmap_position|get_mmap_position|mmap_position' | sort -u)"
+  elif have nm; then
+    HIT="$(nm -D "$f" 2>/dev/null | awk '{print $NF}' | grep -i -E 'pal_stream_get_mmap_position|get_mmap_position|mmap_position' | sort -u)"
+  else
+    HIT=""
+  fi
+  [ -n "$HIT" ] || continue
+  say "--- $f"
+  printf '%s\n' "$HIT" >> "$R"
+done
+say "--- Perfiles de política que mencionan MMAP_NOIRQ (configuración, no prueba de ruta activa)"
+for d in /vendor/etc /odm/etc /system/etc; do
+  [ -d "$d" ] || continue
+  grep -r -I -n -i -E 'MMAP_NOIRQ|mmap_no_irq_out|pal_stream_get_mmap_position' "$d" 2>/dev/null | head -80
+done >> "$R"
+
 hdr "7. Evidencia ampliada de ruta activa (solo lectura)"
 # La política indica rutas posibles; AudioFlinger/AudioPolicy y los controles
 # actuales ayudan a correlacionarlas, pero no demuestran por sí solos un ASRC.
@@ -162,17 +184,20 @@ else
 fi
 
 hdr "8. Resumen automático (lo que decide el siguiente paso)"
-N_TS=0; N_ASRC=0
+N_TS=0; N_MMAP=0; N_ASRC=0
 if have strings; then
   for f in $LIBS; do
     case "$f" in *libar-pal.so|*libpalclient.so|*pal@1.0-impl.so)
-      c="$(strings -a "$f" 2>/dev/null | grep -c -i -E "get_timestamp|session_time")"; N_TS=$((N_TS + c)) ;; esac
+      c="$(strings -a "$f" 2>/dev/null | grep -c -i -E "get_timestamp|session_time")"; N_TS=$((N_TS + c))
+      m="$(strings -a "$f" 2>/dev/null | grep -c -i -E "pal_stream_get_mmap_position|get_mmap_position|mmap_position")"; N_MMAP=$((N_MMAP + m)) ;;
+    esac
   done
 fi
 # Cuenta SOLO evidencia: excluye encabezados, rutas de archivo y las propias frases del informe.
 N_ASRC="$(grep -v -E '^(=|---|\(|LECTURA|referencias|líneas|  ->|herramientas|archivos con|usando)' "$R" 2>/dev/null \
           | grep -c -i -E 'asrc|sample.?slip|rate.?adapt|rat_render|clk.?recov|rate.?match')"
 say "referencias a timestamp/session_time en PAL: $N_TS"
+say "referencias a get_mmap_position/mmap_position en PAL: $N_MMAP"
 say "líneas del informe con pistas de ASRC/slip/rate-adapter: $N_ASRC"
 if [ "$N_ASRC" -eq 0 ] 2>/dev/null; then
   say "LECTURA: no hay pista de un actuador de razón variable en lo inspeccionado."

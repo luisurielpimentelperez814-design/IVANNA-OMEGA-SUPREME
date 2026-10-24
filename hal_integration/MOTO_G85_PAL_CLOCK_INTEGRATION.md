@@ -239,3 +239,87 @@ Inspection of the repository's actual sources on 2026-10-22 clarifies an importa
 ### Updated investigation direction
 
 Do not assume the phone exposes a user-visible mixer control named ASRC, or that the daemon must write one. First trace which actual layer IVANNA owns and can control: (1) app-owned `AudioTrack` software ASRC, (2) globally attached `omega_effect` DSP processing, or (3) a vendor-HAL/DSP path that requires a ROM-specific target integration. Use live daemon status/logs and the app/effect route evidence to establish which path is active. Only pursue PAL hardware-clock correction if the relevant target stream source and its documented rate-adjustment interface are available. A privileged ELF process alone does not provide that interface.
+
+## Public PAL timestamp implementation cross-check (2026-10-24)
+
+A read-only comparison against public LineageOS/AudioReach PAL sources narrows the timestamp path, but does not replace verification against the installed Motorola binary:
+
+- Public `PalDefs.h` defines `pal_time_us` as two 32-bit words (low/high) and `pal_session_time` as three such values: `session_time`, `absolute_time`, and `timestamp`. The public structure is therefore 24 bytes and carries microsecond time values; it has **no frame-position field**.
+- Public `SessionAlsaPcm::getTimestamp()` obtains the SPR module-instance ID and delegates to `SessionAlsaUtils::getTimestamp()`.
+- The public utility builds a timestamp payload, addresses the PCM device's `getParam` mixer control, writes it with `mixer_ctl_set_array()`, reads the payload back with `mixer_ctl_get_array()`, and copies the three time values into `pal_session_time`.
+- This is consistent with the device-dump leads for `PayloadBuilder::payloadTimestamp` and `mixer_ctl_set_array`, but public PAL source is a cross-check only: it does not prove that Motorola's installed `libar-pal.so` uses the identical structure layout, payload ABI, module instance, or clock domain.
+
+### Integration consequence
+
+Do **not** treat `pal_get_timestamp()` / `pal_session_time` as a paired frame+timestamp API. The public contract exposes times but no frames. A valid IVANNA sample still needs a frame counter tied to the same active playback stream and a timestamp whose clock domain/units are verified. Combining the PAL time with an unrelated `/proc/asound` read or a separately opened PCM handle does not establish that pairing.
+
+The immediate next binary-analysis target is the installed build's implementation behind `SessionAlsaUtils::getTimestamp` and the active output stream's own PCM/frame-position path. If no common snapshot or documented pairing exists, the integration must remain fail-closed; do not synthesize frame positions from elapsed wall time. No verified runtime ASRC ratio actuator has been found by this cross-check.
+
+### Additional public PAL lead: paired mmap position
+
+The same public PAL source has a separate `pal_mmap_position` with `time_nanoseconds` (documented as `CLOCK_MONOTONIC`) and `position_frames`. `SessionAlsaPcm::GetMmapPosition()` obtains both in one call through `pcm_mmap_get_hw_ptr(pcm, &position_frames, &timespec)`, using the session's own `pcm` handle. This is structurally much closer to the pair IVANNA needs than `pal_session_time`.
+
+However, the public implementation explicitly returns `-ENOSYS` unless the stream is Ultra Low Latency with `PAL_STREAM_FLAG_MMAP_NO_IRQ`, Voice UI, or ACD; it is not a general playback timestamp API. The supplied Moto G85 report does not establish that the active USB music output uses one of those modes, nor that Motorola's implementation is identical.
+
+**Next discriminating check:** establish the active PAL stream type/flags and whether its real stream object supports `GetMmapPosition()`. If yes, test that API on the active stream and validate advancing frames plus monotonic time across route changes. If not, the next implementation point must be the active stream's PCM status/frame-position path inside the owning HAL/PAL—not a separately opened `/dev/snd` node. This remains a candidate, not a confirmed target binding.
+
+## Direct PAL MMAP paired-position adapter (2026-10-24)
+
+A public PAL API exists for the candidate found above: `pal_stream_get_mmap_position(pal_stream_handle_t*, pal_mmap_position*)`. The public definition documents `time_nanoseconds` as `CLOCK_MONOTONIC` and `position_frames` as a 32-bit counter that resets on stop. The public implementation calls the session's own `GetMmapPosition()`, which obtains both fields from one `pcm_mmap_get_hw_ptr()` call. Sources: [PAL API declaration](https://github.com/AudioReach/audioreach-pal/blob/09abaa9f7bc8ed2159b9907de9e21cfbbb86e171/inc/PalApi.h), [PAL position structure](https://github.com/AudioReach/audioreach-pal/blob/09abaa9f7bc8ed2159b9907de9e21cfbbb86e171/inc/PalDefs.h), [implementation](https://github.com/AudioReach/audioreach-pal/blob/09abaa9f7bc8ed2159b9907de9e21cfbbb86e171/session/SessionAlsaPcm/src/SessionAlsaPcm.cpp).
+
+I added `ivanna_pal_mmap_position_adapter.hpp` as a target-independent conversion layer. The target HAL supplies a tiny callback that invokes `pal_stream_get_mmap_position()` on its **existing active stream handle**; the adapter validates timestamps, extends a legitimate 32-bit frame-counter wrap, and rejects implausible jumps / resets. Four host tests cover wrap, reset, timestamp failure and invalid configuration. This does not open a second PCM device.
+
+Example binding inside the actual PAL stream owner (names/types must match the vendor headers):
+
+```cpp
+#include <PalApi.h>
+#include "ivanna_pal_mmap_position_adapter.hpp"
+#include "ivanna_qualcomm_pal_clock_integration.hpp"
+
+struct PalPositionContext { pal_stream_handle_t* stream; };
+
+static bool queryPalPosition(void* opaque, int32_t* frames,
+                             int64_t* timeNs) noexcept {
+    auto* ctx = static_cast<PalPositionContext*>(opaque);
+    if (!ctx || !ctx->stream || !frames || !timeNs) return false;
+    pal_mmap_position pos{};
+    if (pal_stream_get_mmap_position(ctx->stream, &pos) != 0) return false;
+    *frames = pos.position_frames;
+    *timeNs = pos.time_nanoseconds;
+    return true;
+}
+
+// Lifetime: one context/query/controller per real output stream.
+PalPositionContext positionContext{activePalStreamHandle};
+PalMmapPositionClockQuery positionQuery(&queryPalPosition, &positionContext, activeRateHz);
+QualcommPalClockIntegration clock(
+    &PalMmapPositionClockQuery::queryThunk, &positionQuery,
+    &applyExistingAsrcRatio, existingAsrcContext);
+// Schedule clock.controlTick() on the stream's serialized low-rate control task.
+// On standby/reopen/route change call BOTH clock.reset() and positionQuery.reset().
+```
+
+**Hard gates remain:** public PAL source returns `-ENOSYS` for unsupported stream types/flags, and this API is intended for MMAP streams. Before integrating this call, verify on the installed Motorola build that (1) `pal_stream_get_mmap_position` is present/ABI-compatible, (2) the active USB playback stream is a supported MMAP stream and the API returns advancing paired samples, and (3) the real variable-ratio ASRC and its accepted units are identified. The adapter is only a query path; it does not implement or enable an ASRC actuator. If the current music stream is a regular mixer stream, this candidate will fail closed and the proper target is the HAL's existing `get_presentation_position` / driver position method inside the stream owner.
+
+
+## Installed Motorola HAL symbol cross-check and report-only bridge (2026-10-24)
+
+The uploaded device report narrows the installed target further:
+
+- `/vendor/lib64/hw/audio.primary.blair.so` contains the demangled symbol `StreamOutPrimary::GetMmapPosition` and references `pal_stream_get_mmap_position`.
+- `/vendor/lib64/libar-pal.so` contains PAL-side `GetMmapPosition` implementations and the `pal_stream_get_mmap_position` API.
+- These are static ELF findings. They do not prove the current active output route invokes the method, that the active stream has MMAP flags, or that a query returns advancing frame/time pairs during normal music playback.
+- The captured report showed active AudioFlinger output, but the USB-specific thread in that capture was in standby with zero tracks. Therefore that capture cannot validate USB PAL clock polling.
+
+I added `ivanna_pal_active_stream_clock_publisher.hpp` as a concrete **report-only** bridge. In a matching Motorola HAL source tree, the long-lived output-stream owner can bind its own `pal_stream_handle_t*` to `pal_stream_get_mmap_position()`, then call `poll()` from a serialized low-rate control task. The bridge validates and extends the frame counter through `PalMmapPositionClockQuery` and publishes the paired frame/time sample to IVANNA's shared snapshot. It does not open another PCM fd or write any mixer/DSP control.
+
+### What is and is not completed
+
+- **Implemented in this repository:** the reusable active-stream callback/publisher bridge and integration instructions.
+- **Not patched:** the actual call site in Motorola's proprietary `audio.primary.blair.so`. Its source and build files are not present in this repository, and the private active stream object cannot be reconstructed safely from symbol names alone.
+- **Not validated on device:** MMAP eligibility of the active stream, successful live queries, advancing frames, monotonic timestamps, snapshot permissions/reader visibility, or route-change resets.
+- **Still unknown:** a verified variable-ratio ASRC actuator, its parameter/payload, units, limits, and acceptance/error semantics. No correction servo should be bound or enabled.
+
+### Required acceptance probe
+
+With the matching HAL source/build available, bind the helper to the actual active PAL stream and capture playback separately for phone speaker, Bluetooth A2DP, and USB-C. For each route, require a sequence of successful samples where both frame count and timestamp advance consistently, the timestamp remains monotonic, and the IVANNA reader sees the same committed snapshot. Test standby/reopen/route change and confirm that a failed/unsupported PAL query stops new publication. Keep physical ASRC correction disabled until its real actuator is independently identified and tested.

@@ -1421,6 +1421,7 @@ endif()
 gtest_discover_tests(test_azimuth_math)
 
 ivanna_add_test(test_qualcomm_pal_clock_integration)
+ivanna_add_test(test_pal_mmap_position_adapter)
 
 # ── Productor del reloj HAL (daemon): descubrimiento /proc/asound, puerta de
 # correlacion y publicacion real en el snapshot compartido. Fail-closed sin ASRC

@@ -47,8 +47,15 @@ struct FakeSource : PairedSampleSource {
     std::vector<PairedSample> seq;
     size_t i = 0;
     bool opened = false;
+    int openAttempts = 0;
+    int failOpenAttempts = 0;
     const char* name() const noexcept override { return "fake"; }
-    bool open(const PcmDevice&) noexcept override { opened = true; return true; }
+    bool open(const PcmDevice&) noexcept override {
+        ++openAttempts;
+        if (openAttempts <= failOpenAttempts) return false;
+        opened = true;
+        return true;
+    }
     void close() noexcept override { opened = false; }
     bool read(PairedSample& out) noexcept override {
         if (i >= seq.size()) return false;
@@ -86,7 +93,76 @@ TEST(HalClockProducer, DiscoversPlaybackPcmAndParsesRate) {
 TEST(HalClockProducer, NoPcmMeansNoDevice) {
     const std::string root = tmpRoot("empty");
     mkdirs(root + "/proc");
+    mkdirs(root + "/dev");
     EXPECT_TRUE(discoverPlaybackDevices(root + "/proc", root + "/dev").empty());
+}
+
+TEST(HalClockProducer, DiscoversDevNodeWithoutInventingRate) {
+    const std::string root = tmpRoot("node_only");
+    mkdirs(root + "/proc");
+    mkdirs(root + "/dev");
+    writeFile(root + "/dev/pcmC1D2p", "");
+    const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
+    ASSERT_EQ(devs.size(), 1u);
+    EXPECT_EQ(devs[0].card, 1);
+    EXPECT_EQ(devs[0].device, 2);
+    EXPECT_EQ(devs[0].nominalRateHz, 0u);
+    EXPECT_STREQ(devs[0].state.c_str(), "node-present; rate-unavailable");
+}
+
+TEST(HalClockProducer, DoesNotOpenPcmWithoutVerifiableRate) {
+    const std::string root = tmpRoot("no_rate_open");
+    mkdirs(root + "/proc");
+    mkdirs(root + "/dev");
+    writeFile(root + "/dev/pcmC1D2p", "");
+    FakeSource src;
+    src.seq = {mk(0, 1'000'000'000), mk(480, 1'010'000'000)};
+    HalClockProducer::Config cfg;
+    cfg.procRoot = root + "/proc";
+    cfg.devRoot = root + "/dev";
+    cfg.source = &src;
+    cfg.snapshotPath = root + "/snapshot";
+    HalClockProducer prod(cfg);
+    prod.setEnabled(true);
+    const ProducerStatus status = prod.poll();
+    EXPECT_EQ(status.state, ProducerState::kWaitingSamples);
+    EXPECT_FALSE(src.opened);
+    EXPECT_EQ(status.published, 0u);
+    EXPECT_NE(status.reason, "");
+}
+
+TEST(HalClockProducer, RetriesAfterPcmOpenFailure) {
+    const std::string root = tmpRoot("open_retry");
+    mkdirs(root + "/proc/card0/pcm0p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card0/pcm0p/sub0/status", "state: RUNNING\n");
+    writeFile(root + "/proc/card0/pcm0p/sub0/hw_params", "rate: 48000 (48000/1)\n");
+
+    FakeSource src;
+    src.failOpenAttempts = 1;
+    src.seq = {mk(0, 1'000'000'000), mk(480, 1'010'000'000),
+               mk(960, 1'020'000'000), mk(1440, 1'030'000'000)};
+    HalClockProducer::Config cfg;
+    cfg.procRoot = root + "/proc";
+    cfg.devRoot = root + "/dev";
+    cfg.source = &src;
+    cfg.snapshotPath = root + "/snapshot";
+    HalClockProducer prod(cfg);
+    prod.setEnabled(true);
+
+    const ProducerStatus failed = prod.poll();
+    EXPECT_EQ(failed.state, ProducerState::kNoSource);
+    EXPECT_EQ(src.openAttempts, 1);
+    EXPECT_FALSE(src.opened);
+
+    EXPECT_EQ(prod.poll().state, ProducerState::kWaitingSamples); // retry opens; first sample anchors
+    EXPECT_TRUE(src.opened);
+    EXPECT_EQ(src.openAttempts, 2);
+    prod.poll();
+    prod.poll();
+    const ProducerStatus published = prod.poll();
+    EXPECT_EQ(published.state, ProducerState::kPublishing);
+    EXPECT_EQ(published.published, 1u);
 }
 
 // ── Puerta de correlación ─────────────────────────────────────────────────

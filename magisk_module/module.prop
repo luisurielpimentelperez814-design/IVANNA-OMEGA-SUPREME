@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.132
-versionCode=423
+version=v2.5.133
+versionCode=424
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.132 (fix(ci): publish-release ya no depende del texto del mensaje de commit — se dispara por el bump real de version.properties; v2.5.129-131 nunca se publicaron pese a estar en main)
+description=v2.5.133 (ASRC software scope documented; PAL active-stream clock bridge groundwork; Moto G85 HAL integration remains unvalidated)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

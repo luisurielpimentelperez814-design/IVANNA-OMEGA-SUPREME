@@ -1,4 +1,20 @@
-# CHANGELOG — v2.5.132 (423) — El pipeline de release vuelve a publicar de verdad
+# CHANGELOG — v2.5.133 (424) — Software ASRC documentado y puente PAL de reloj
+
+## v2.5.133 — Alcance ASRC y base de integración PAL
+
+- Documenta que la corrección ASRC por software ya está cableada en `IvannaBridgePlayer`: `StereoAudioResampler` recibe el ratio de `AudioTrackBufferPll`, alimentado por frames enviados y timestamp del mismo `AudioTrack`.
+- Aclara que esa corrección solo afecta al reproductor propio de IVANNA; no retima aplicaciones de terceros ni afirma controlar el reloj físico del DAC.
+- Añade `docs/ASRC_SOFTWARE_CLOCK_WIRING.md` para separar el ASRC software del reproductor, el componente nativo experimental `VariableAsrc` y el puente de telemetría PAL.
+- Añade `hal_integration/ivanna_pal_active_stream_clock_publisher.hpp` y prueba host para publicar muestras PAL simuladas al snapshot compartido.
+- **Estado de dispositivo:** la integración dentro del HAL propietario de Motorola sigue pendiente. No se afirma que HAL-CLOCK esté conectado a la ruta activa ni que la corrección de reloj sea global.
+
+## Corrección HAL-CLOCK en curso — pendiente de CI y dispositivo
+
+- El descubrimiento de reproducción ahora contempla nodos `/dev/snd/pcmC*D*p` cuando el firmware no expone `/proc/asound/cardN/pcmNp/subN/status`.
+- La presencia del nodo no se trata como evidencia de reloj válido: si no hay una tasa nominal explícita en `hw_params`, el productor no abre el PCM ni publica muestras; informa el motivo y reintenta en el siguiente sondeo.
+- Se añaden pruebas host para detección del nodo sin tasa y para garantizar que no se abre ni publica en ese caso.
+- **Estado:** el productor HAL-CLOCK externo y el callback PAL siguen pendientes de validación en el Moto G85. Distinto de eso, la ruta de reproducción propia de IVANNA ya tiene corrección ASRC por software: `IvannaBridgePlayer` alimenta `StereoAudioResampler.setClockCorrectionPpm()` desde `AudioTrackBufferPll` con timestamps del mismo `AudioTrack`. Esto solo controla el reproductor de IVANNA; no controla audio de terceros ni demuestra conexión al reloj PAL/DAC. La compilación/CTest del HEAD actual y la validación física en el Moto G85 siguen pendientes.
+
 
 ## Hallazgo (sincronización de hoy)
 
