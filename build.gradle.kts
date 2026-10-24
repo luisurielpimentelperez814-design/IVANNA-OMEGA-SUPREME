@@ -1,6 +1,7 @@
 // ============================================================================
 // IVANNA OMEGA SUPREME - Root Build Configuration
 // Source of truth for plugin versions.
+// Kotlin 2.4 requires R8 9.1.29+ for Kotlin metadata parsing.
 // ============================================================================
 
 buildscript {
@@ -9,11 +10,11 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools:r8:8.8.34")
+        classpath("com.android.tools:r8:9.1.29")
     }
     configurations.classpath {
         resolutionStrategy {
-            force("com.android.tools:r8:8.8.34")
+            force("com.android.tools:r8:9.1.29")
         }
     }
 }
