@@ -1,0 +1,14 @@
+#include <gtest/gtest.h>
+#include "../dsp/variable_asrc.hpp"
+#include "../dsp/asrc_clock_controller.hpp"
+#include <cmath>
+#include <limits>
+#include <vector>
+using ivanna::dsp::VariableAsrc;
+TEST(VariableAsrc, InvalidConfigurationAndRatioRejected){VariableAsrc::Config c;c.outputRateHz=0;VariableAsrc b(c);EXPECT_FALSE(b.valid());VariableAsrc a;EXPECT_FALSE(a.setTargetRatio(std::numeric_limits<double>::quiet_NaN()));EXPECT_TRUE(a.setTargetRatio(1.5));EXPECT_DOUBLE_EQ(a.metrics().targetRatio,1.001);}
+TEST(VariableAsrc, VariableBlocksRemainFinite){VariableAsrc::Config c;c.maxSlewPpmPerSecond=0;VariableAsrc a(c);double p=0,inc=2*3.141592653589793*440/48000;for(size_t n:{31u,127u,64u,255u,96u,511u}){std::vector<float>in(n*2),out((n+8)*2);for(size_t i=0;i<n;++i){float v=std::sin(p);p+=inc;in[i*2]=in[i*2+1]=v;}size_t made=0;ASSERT_TRUE(a.process(in.data(),n,out.data(),n+8,made));for(size_t i=0;i<made*2;++i)EXPECT_TRUE(std::isfinite(out[i]));}EXPECT_GT(a.metrics().outputFrames,0u);}
+TEST(VariableAsrc, RatioBoundedAndSlewLimited){VariableAsrc::Config c;c.maxSlewPpmPerSecond=50;VariableAsrc a(c);ASSERT_TRUE(a.setTargetRatio(1.0005));std::vector<float>in(1002*2,.1f),out(1010*2);size_t made=0;for(int k=0;k<48;++k){ASSERT_TRUE(a.process(in.data(),1002,out.data(),1010,made));}EXPECT_LE(a.metrics().appliedRatio,1.000051);}
+TEST(VariableAsrc, InvalidSamplesDoNotPropagate){VariableAsrc::Config c;c.maxSlewPpmPerSecond=0;VariableAsrc a(c);std::vector<float>in(256*2,.2f),out(260*2);in[18]=std::numeric_limits<float>::infinity();size_t n=0;ASSERT_TRUE(a.process(in.data(),256,out.data(),260,n));for(size_t i=0;i<n*2;++i)EXPECT_TRUE(std::isfinite(out[i]));}
+TEST(AsrcClockController, RouteMustBeValidated){ivanna::dsp::AsrcClockController c;EXPECT_EQ(c.update({48000,1000000000LL,48000},false,true).state,ivanna::dsp::AsrcState::WAITING_FOR_SAMPLES);}
+TEST(AsrcClockController, RegressionHolds){ivanna::dsp::AsrcClockController c;c.update({10,1000000000LL,48000},true,true);EXPECT_EQ(c.update({9,1010000000LL,48000},true,true).state,ivanna::dsp::AsrcState::HOLD);}
+TEST(AsrcClockController, DisabledBypasses){ivanna::dsp::AsrcClockController c;EXPECT_EQ(c.update({},false,false).state,ivanna::dsp::AsrcState::BYPASS);}

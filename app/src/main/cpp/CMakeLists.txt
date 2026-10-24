@@ -82,6 +82,7 @@ add_library(ivanna_omega SHARED
     dsp/HarmonicExciter.cpp
     dsp/StereoWidener.cpp
     dsp/GainStage.cpp
+    dsp/variable_asrc.cpp
     dsp/SafetyLimiter.cpp
 
     # SAF Phi_SAF_infinity HRTF adaptive bridge

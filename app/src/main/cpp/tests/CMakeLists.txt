@@ -111,6 +111,8 @@ ivanna_add_test(test_audio_callback_clock)
 # Estimator fed only by real HAL/driver presentation timestamps and frame positions.
 ivanna_add_test(test_audio_hardware_clock)
 ivanna_add_test(test_audio_hardware_clock_bridge)
+# IVANNA-ASRC-X1: núcleo variable y control fail-closed (sin ruta productiva habilitada).
+ivanna_add_test(test_variable_asrc)
 ivanna_add_test(test_hal_output_rate_control)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
