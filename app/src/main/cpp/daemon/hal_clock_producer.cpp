@@ -1,6 +1,6 @@
 #include "hal_clock_producer.hpp"
 
-#include "include/audio_hardware_clock_bridge.hpp"
+#include "../include/audio_hardware_clock_bridge.hpp"
 
 #include <cerrno>
 #include <cstdio>
