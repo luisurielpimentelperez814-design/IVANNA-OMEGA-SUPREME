@@ -1429,3 +1429,15 @@ target_link_libraries(test_hal_clock_producer PRIVATE GTest::gtest_main)
 target_include_directories(test_hal_clock_producer PRIVATE ../include ../daemon)
 target_compile_options(test_hal_clock_producer PRIVATE -Wall -Wextra)
 gtest_discover_tests(test_hal_clock_producer)
+
+# Regression: signed stereo 4x true-peak interpolation must preserve phase and
+# cannot report a lower peak than sample peak when both observe the same stream.
+add_executable(test_loudness_true_peak test_loudness_true_peak.cpp)
+target_link_libraries(test_loudness_true_peak PRIVATE GTest::gtest_main)
+target_include_directories(test_loudness_true_peak PRIVATE .. ../include)
+target_compile_options(test_loudness_true_peak PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_loudness_true_peak PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_loudness_true_peak PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_loudness_true_peak)
