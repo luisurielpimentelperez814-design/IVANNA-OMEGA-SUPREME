@@ -36,7 +36,9 @@ object FotoHoloRouteB {
     /** status=applied no basta: exigimos applied=true en la respuesta del comando. */
     fun statusFromReply(reply: String): String {
         if (reply.isBlank()) return "demonio no disponible"
-        if (jsonBoolean(reply, "ok") == false) return "rechazado por el demonio"
+        val ok = jsonBoolean(reply, "ok")
+        if (ok == false) return "rechazado por el demonio"
+        if (ok != true) return "respuesta sin confirmación válida del demonio"
         val statusApplied = Regex("\\\"status\\\"\\s*:\\s*\\\"applied\\\"").containsMatchIn(reply)
         val pendingConsumer = Regex("\\\"status\\\"\\s*:\\s*\\\"accepted_pending_consumer\\\"").containsMatchIn(reply)
         val consumerDeclared = Regex("\\\"consumer\\\"\\s*:\\s*\\\"omega_effect\\\"").containsMatchIn(reply)
