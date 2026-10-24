@@ -1,5 +1,6 @@
 #include "../ivanna_hires_config.hpp"
 #include "control/command_server.h"
+#include "hal_clock_producer.hpp"
 #include "control/peer_auth.hpp"
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
@@ -207,7 +208,7 @@ int main(int argc, char* argv[]) {
     std::string socket_path = DEFAULT_SOCKET_PATH;
     int rate = 48000, buffer = 64; bool realtime = false;
     ensure_directory_exists(OMEGA_DIR_PATH);
-    int tcp_port = 0;
+    int tcp_port = 0; bool hal_clock_enabled = true;
     for (int i=1;i<argc;i++) {
         std::string arg=argv[i];
         if (arg=="--socket" && i+1<argc) socket_path=argv[++i];
@@ -215,6 +216,8 @@ int main(int argc, char* argv[]) {
         else if (arg=="--buffer" && i+1<argc) { try{buffer=std::stoi(argv[++i]);}catch(...){buffer=64;} }
         else if (arg=="--realtime") realtime=true;
         else if (arg=="--tcp-port" && i+1<argc) { try{ tcp_port = std::stoi(argv[++i]); } catch(...) { tcp_port = 0; } }
+        else if (arg=="--hal-clock") hal_clock_enabled=true;
+        else if (arg=="--no-hal-clock") hal_clock_enabled=false;
     }
     g_socket_path=socket_path;
     (void)buffer;
@@ -302,6 +305,46 @@ int main(int argc, char* argv[]) {
 
     Ivanna::IvannaSelfHealingEngine selfHealer;
     selfHealer.startMonitoring();
+    // ── PRODUCTOR DEL RELOJ HAL (el eslabon que faltaba) ────────────────────
+    // El efecto lee el snapshot y el panel "Reloj hardware" lo muestra, pero en la
+    // ruta Magisk nadie lo publicaba. Este hilo lo publica SOLO con pares
+    // (frames, timestamp) correlacionados leidos del driver en una unica consulta.
+    // Fail-closed: sin fuente fiable no publica nada y lo declara.
+    std::thread hal_clock_thread;
+    if (hal_clock_enabled) {
+        hal_clock_thread = std::thread([](){
+            ivanna::audio::halclock::HalClockProducer::Config c;
+            ivanna::audio::halclock::HalClockProducer producer(c);
+            producer.setEnabled(true);
+            auto& st = producer.status();
+            (void)st;
+            ivanna::audio::halclock::ProducerState last =
+                ivanna::audio::halclock::ProducerState::kDisabled;
+            std::string lastReason;
+            for (;;) {
+                const auto s = producer.poll();
+                if (s.state != last || std::string(s.reason) != lastReason) {
+                    log_message(std::string("HAL-CLOCK ") +
+                        ivanna::audio::halclock::stateName(s.state) +
+                        " dev=" + (s.device.empty() ? std::string("-") : s.device) +
+                        " motivo=" + s.reason +
+                        " pub=" + std::to_string(s.published) +
+                        " rech=" + std::to_string(s.rejected) +
+                        (s.measuredRateHz > 0.0
+                             ? " rate=" + std::to_string(s.measuredRateHz) +
+                               " deriva_ppm=" + std::to_string(s.driftPpm)
+                             : std::string()));
+                    last = s.state; lastReason = s.reason;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            }
+        });
+        hal_clock_thread.detach();
+        log_message("HAL-CLOCK productor activo (SNDRV_PCM_IOCTL_STATUS, fail-closed sin ASRC fisico)");
+    } else {
+        log_message("HAL-CLOCK productor deshabilitado por --no-hal-clock");
+    }
+
     log_message("Self-Healing Engine activated and monitoring components.");
 
     if (!ivanna::controlBus().openWriter()) {

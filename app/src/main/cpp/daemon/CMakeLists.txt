@@ -15,6 +15,7 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${IVANNA_DAEMON_HARDENING_
 add_executable(ivanna_daemon
     ivanna_daemon.cpp
     control/command_server.cpp
+    hal_clock_producer.cpp
     core/shm_manager.cpp
     core/omega_control_bus.cpp
     ../IvannaSelfHealingEngine.cpp

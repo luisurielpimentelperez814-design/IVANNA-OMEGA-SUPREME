@@ -1417,3 +1417,12 @@ endif()
 gtest_discover_tests(test_azimuth_math)
 
 ivanna_add_test(test_qualcomm_pal_clock_integration)
+
+# ── Productor del reloj HAL (daemon): descubrimiento /proc/asound, puerta de
+# correlacion y publicacion real en el snapshot compartido. Fail-closed sin ASRC
+# fisico identificado: el actuador del Moto G85 sigue sin enlazar a proposito.
+add_executable(test_hal_clock_producer test_hal_clock_producer.cpp ../daemon/hal_clock_producer.cpp)
+target_link_libraries(test_hal_clock_producer PRIVATE GTest::gtest_main)
+target_include_directories(test_hal_clock_producer PRIVATE ../include ../daemon)
+target_compile_options(test_hal_clock_producer PRIVATE -Wall -Wextra)
+gtest_discover_tests(test_hal_clock_producer)
