@@ -61,6 +61,22 @@ object FotoHoloEngine {
     @Volatile var enabled: Boolean = false; private set
     @Volatile var intensity: Float = 0.6f; private set
     @Volatile var bypass: Boolean = false; private set
+    @Volatile var genezyProfileEnabled: Boolean = false; private set
+    @Volatile var genezyLateralExtension: Boolean = true; private set
+
+    // Bounded stereo-width adaptation for the declared lateral satellite layout.
+    // This is not discrete satellite-channel routing.
+    private fun genezyWidth(base: Float): Float =
+        (base * if (genezyProfileEnabled && genezyLateralExtension) 1.08f else 1f).coerceIn(0f, 1.5f)
+
+    @Volatile private var genezyPrefs: android.content.SharedPreferences? = null
+
+    fun setGenezyProfile(enabled: Boolean, lateralExtension: Boolean) {
+        genezyProfileEnabled = enabled
+        genezyLateralExtension = lateralExtension
+        genezyPrefs?.edit()?.putBoolean("genezy_profile_enabled", enabled)
+            ?.putBoolean("genezy_lateral_extension", lateralExtension)?.apply()
+    }
     @Volatile private var viewers = 0
     @Volatile private var started = false
 
@@ -70,8 +86,11 @@ object FotoHoloEngine {
     fun load(context: Context) {
         try {
             val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            genezyPrefs = p
             enabled = p.getBoolean("enabled", false)
             intensity = p.getFloat("intensity", 0.6f).let { if (it.isFinite()) it.coerceIn(0f, 1f) else 0.6f }
+            genezyProfileEnabled = p.getBoolean("genezy_profile_enabled", false)
+            genezyLateralExtension = p.getBoolean("genezy_lateral_extension", true)
         } catch (t: Throwable) {
             Log.w(TAG, "No se pudieron cargar preferencias; se usan valores seguros", t)
         }
@@ -214,7 +233,7 @@ object FotoHoloEngine {
                     val shouldModulate = routeDecision.allowSpectralAdaptation && features.valid && !routeARestorePending
                     var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
                     if (shouldModulate) {
-                        val target = FotoHoloMath.targetWidth(base, intensity, features)
+                        val target = genezyWidth(FotoHoloMath.targetWidth(base, intensity, features))
                         current = FotoHoloMath.slew(if (current.isFinite()) current else base, target)
                         val needsWrite = !lastCommanded.isFinite() || FotoHoloMath.changed(current, lastCommanded) || lastError != null
                         if (needsWrite) {
@@ -257,8 +276,9 @@ object FotoHoloEngine {
                             !FotoHoloRouteB.status.contains("aplicado en Ruta B")
                         if (!lastRouteBCommanded.isFinite() ||
                             FotoHoloMath.changed(base, lastRouteBCommanded) || routeBRetryDue) {
-                            FotoHoloRouteB.push(base)
-                            lastRouteBCommanded = base
+                            val routeBWidth = if (enabled && !bypass) genezyWidth(base) else base
+                            FotoHoloRouteB.push(routeBWidth)
+                            lastRouteBCommanded = routeBWidth
                             lastRouteBPushMs = nowMs
                         }
                     } else {
