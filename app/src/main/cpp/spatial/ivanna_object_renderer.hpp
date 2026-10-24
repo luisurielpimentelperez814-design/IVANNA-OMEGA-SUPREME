@@ -34,7 +34,7 @@ namespace ivanna::spatial {
 
 static constexpr int kMaxObjects = 32;
 static constexpr int kBedChannels = 6;
-static constexpr int kNumVirtualSpeakers = 12;
+static constexpr int kNumVirtualSpeakers = 16;
 
 struct AudioObject {
     int id = -1;
@@ -51,7 +51,9 @@ struct VirtualSpeaker {
     float gain;
 };
 
-// Dodecaedro virtual — 12 speakers distribuidos en esfera
+// Cascarón espacial virtual de 16 fuentes: 6 ecuatoriales, 6 verticales y 4
+// satélites laterales extendidos (izq./der. × delante/detrás, con elevación).
+// Son objetos virtuales renderizados binauralmente; NO implican 16 salidas físicas.
 // [FIX-CONSTEXPR] Usar inline static en vez de constexpr lambda con sqrt
 inline const std::array<VirtualSpeaker, kNumVirtualSpeakers> kVirtualSpeakers = []() {
     std::array<VirtualSpeaker, kNumVirtualSpeakers> spk{};
@@ -71,6 +73,14 @@ inline const std::array<VirtualSpeaker, kNumVirtualSpeakers> kVirtualSpeakers = 
     spk[9] = {0.f, 0.f, -1.f, 1.f};
     spk[10] = {0.707f, 0.f, -0.707f, 1.f};
     spk[11] = {-0.707f, 0.f, -0.707f, 1.f};
+
+    // Cuatro satélites laterales extendidos. Las coordenadas están en la misma
+    // esfera unitaria aproximada que el resto del layout; VBAP normaliza cada
+    // vector de objeto y reparte energía entre los vértices activos.
+    spk[12] = { 0.92f,  0.25f,  0.25f, 1.f}; // derecha, frente, arriba
+    spk[13] = { 0.92f, -0.25f, -0.25f, 1.f}; // derecha, atrás, abajo
+    spk[14] = {-0.92f,  0.25f, -0.25f, 1.f}; // izquierda, frente, abajo
+    spk[15] = {-0.92f, -0.25f,  0.25f, 1.f}; // izquierda, atrás, arriba
 
     return spk;
 }();
@@ -139,7 +149,7 @@ public:
 
     void reset() noexcept;
 
-    // Propaga el vector latente q_t del optimizador Φ_SAF^∞ a los 12 virtual
+    // Propaga el vector latente q_t del optimizador Φ_SAF^∞ a las 16 fuentes virtuales
     // speakers. Llamar desde el hilo de control tras cada feedFeedback().
     void setLatentParams(const float q[7]) noexcept {
         if (!ivanna::safmus::isFiniteLatent(q)) return;
@@ -153,7 +163,7 @@ public:
         }
     }
 
-    // Propaga un dataset HRTF personalizado a los 12 virtual speakers.
+    // Propaga un dataset HRTF personalizado a las 16 fuentes virtuales.
     // ── Estado HRTF observable (FASE 1) — la UI no asume, pregunta ──────
     bool hrtfDatasetLoaded() const noexcept { return hrtfDatasetLoaded_.load(std::memory_order_acquire); }
     const std::string& currentSubject() const noexcept { return currentSubject_; }
