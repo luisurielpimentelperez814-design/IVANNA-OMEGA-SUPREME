@@ -16,6 +16,8 @@ class FotoHoloRouteBTest {
     @Test fun responseRequiresExplicitApplicationConfirmation() {
         assertEquals("demonio no disponible", FotoHoloRouteB.statusFromReply(""))
         assertEquals("rechazado por el demonio", FotoHoloRouteB.statusFromReply("{\"ok\":false}"))
+        assertEquals("respuesta sin confirmación válida del demonio",
+            FotoHoloRouteB.statusFromReply("{\"status\":\"applied\",\"applied\":true}"))
         assertEquals("aceptado; sin consumidor activo",
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"accepted_pending_consumer\"}"))
         assertEquals("publicado en Ruta B; consumidor declarado, audio no verificado",
