@@ -71,11 +71,13 @@ object FotoHoloEngine {
 
     @Volatile private var genezyPrefs: android.content.SharedPreferences? = null
 
-    fun setGenezyProfile(enabled: Boolean, lateralExtension: Boolean) {
+    fun setGenezyProfile(context: Context, enabled: Boolean, lateralExtension: Boolean) {
         genezyProfileEnabled = enabled
         genezyLateralExtension = lateralExtension
-        genezyPrefs?.edit()?.putBoolean("genezy_profile_enabled", enabled)
-            ?.putBoolean("genezy_lateral_extension", lateralExtension)?.apply()
+        val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        genezyPrefs = p
+        p.edit().putBoolean("genezy_profile_enabled", enabled)
+            .putBoolean("genezy_lateral_extension", lateralExtension).apply()
     }
     @Volatile private var viewers = 0
     @Volatile private var started = false
