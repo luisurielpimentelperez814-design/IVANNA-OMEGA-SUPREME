@@ -1,3 +1,42 @@
+# CHANGELOG — v2.5.132 (423) — El pipeline de release vuelve a publicar de verdad
+
+## Hallazgo (sincronización de hoy)
+
+Al sincronizar contra `origin/main` tras el rebase, el repo tenía **cero releases reales publicadas**
+en toda su historia (solo cientos de drafts `staging-<sha>-<run>` acumulados, ~110 MB cada uno, nunca
+barridos). `magisk_module/update.json` apuntaba a `v2.5.130`, un tag que **nunca existió** como release
+— el OTA del módulo Magisk llevaba varias versiones 404-eando en silencio.
+
+Causa raíz, verificada leyendo `.github/workflows/build.yml`: el job `publish-release` solo se disparaba
+si el mensaje del commit contenía literalmente la subcadena `release:` o `— v`. Los commits de bump reales
+usaban formatos que **no** calzan con eso:
+- `chore(release): v2.5.130 (421) — …` → el paréntesis entre `release` y `:` rompe el match de `release:`.
+- `feat(…): …; chore(release): v2.5.129 (420)` → no hay em-dash antes de la `v`.
+
+Resultado confirmado contra la API de GitHub: `v2.5.127` y `v2.5.128` sí se publicaron (esos commits usaban
+`release: vX.Y.Z — …` sin paréntesis); **v2.5.129, v2.5.130 y v2.5.131 nunca se publicaron** pese a estar
+mergeados en `main` con `version.properties`/`module.prop` correctamente bumpeados. El 16-source binaural
+renderer de v2.5.131 (`ivanna_object_renderer.hpp`: 4 posiciones satélite laterales nuevas sobre el
+renderer HRTF/VBAP existente, salida binaural estéreo sin reenrutamiento multicanal físico) tampoco tenía
+entrada de CHANGELOG — se documenta aquí.
+
+## Qué se corrige
+
+- `detect-release` (job nuevo en `build.yml`): decide si publicar comparando `version.properties` contra
+  el commit padre con `git diff`, no el texto del mensaje. `publish-release` ahora depende de su output
+  (`should_release`), no de `contains(message, …)`.
+- `magisk_module/update.json` realineado a `v2.5.132` (423) — coincide con `version.properties` y
+  `module.prop` por primera vez en varias versiones; antes `validateUnifiedVersion` solo comparaba
+  `version.properties` contra `module.prop` y nunca detectaba que `update.json` se había quedado atrás.
+
+## Verificación
+
+- 8/8 puertas estáticas `scripts/check_*.py` en verde.
+- `validateUnifiedVersion`: `version.properties` == `module.prop` == `update.json` → `2.5.132 (423)`.
+- Pendiente de observar en este mismo push: que `detect-release` marque `should_release=true` y que
+  `publish-release` publique por fin un release no-draft `v2.5.132` con los assets que
+  `magisk_module/update.json` espera.
+
 # CHANGELOG — v2.5.130 (421) — Productor del reloj de hardware en la ruta Magisk
 
 ## El eslabón que faltaba

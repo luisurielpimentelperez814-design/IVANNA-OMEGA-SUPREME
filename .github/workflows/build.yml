@@ -650,6 +650,47 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --clobber
           echo "✓ Bundle staged en draft release $STAGE_TAG"
 
+  # ── DETECCIÓN ROBUSTA DE RELEASE: basada en el diff real, no en el texto del mensaje ──
+  # publish-release dependía de que el mensaje del commit contuviera literalmente "release:" o
+  # "— v". Eso fallaba en silencio para mensajes legítimos de bump como
+  # "chore(release): v2.5.130 (421) — productor del reloj de hardware..." (el paréntesis rompe
+  # el match de "release:") o "feat(...): ...; chore(release): v2.5.129 (420)" (sin em-dash antes
+  # de la v). Resultado real verificado: v2.5.129, v2.5.130 y v2.5.131 llegaron a main con el
+  # version.properties/module.prop bumpeado pero el job de publicación se saltó siempre — cero
+  # release real (no-draft) existe para esas versiones; update.json de Magisk apuntaba a un
+  # asset que nunca se publicó. Ahora se detecta el bump comparando version.properties contra el
+  # commit padre: no depende de cómo se redacte el mensaje.
+  detect-release:
+    name: Detect version bump (triggers publish-release)
+    runs-on: ubuntu-22.04
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: ¿Cambió version.properties respecto al commit anterior?
+        id: check
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "workflow_dispatch manual en main: se fuerza la publicación."
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" != "push" ] || [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git rev-parse HEAD~1 >/dev/null 2>&1 && git diff --quiet HEAD~1 HEAD -- version.properties; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "version.properties sin cambios respecto al commit anterior: no es un bump de release."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version.properties cambió (o es el primer commit visible): se publica release."
+          fi
+
   # ── JOB DE VERIFICACIÓN: descarga y valida artefactos publicados ──────
   verify-release:
     name: Verify published artifact (download → extract → validate)
@@ -775,8 +816,8 @@ jobs:
   publish-release:
     name: Publish GitHub Release (asset que Magisk update.json espera)
     runs-on: ubuntu-22.04
-    needs: [verify-release]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(github.event.head_commit.message, 'release:') || contains(github.event.head_commit.message, '— v'))) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: [verify-release, detect-release]
+    if: needs.detect-release.outputs.should_release == 'true'
     concurrency:
       group: omega-release-${{ github.ref }}
       cancel-in-progress: false
