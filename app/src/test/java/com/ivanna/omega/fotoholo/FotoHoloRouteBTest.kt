@@ -18,7 +18,10 @@ class FotoHoloRouteBTest {
         assertEquals("rechazado por el demonio", FotoHoloRouteB.statusFromReply("{\"ok\":false}"))
         assertEquals("aceptado; sin consumidor activo",
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"accepted_pending_consumer\"}"))
-        assertEquals("aplicado en Ruta B",
+        assertEquals("publicado en Ruta B; consumidor declarado, audio no verificado",
+            FotoHoloRouteB.statusFromReply("{\"ok\":true,\"applied\":true,\"status\":\"applied\",\"consumer\":\"omega_effect\",\"generation\":7}"))
+        assertEquals("publicado en Ruta B; sin consumidor DSP declarado",
+            FotoHoloRouteB.statusFromReply("{\"ok\":true,\"applied\":true,\"status\":\"applied\",\"consumer\":null,\"generation\":7}"))
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"applied\":true,\"status\":\"applied\",\"generation\":7}"))
         assertEquals("no aplicado: el consumidor DSP no confirmó la aplicación",
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\"}"))
