@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.134
-versionCode=425
+version=v2.5.135
+versionCode=426
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.134 (cortex 3D con histeresis; HRTF-UI de FotoHolo sincronizado con el motor real; core ASRC software cableado al daemon con canal IPC propio y visible sin ADB; aplicado sobre v2.5.133 ASRC/PAL docs + HAL-CLOCK)
+description=v2.5.135 (SCHED_FIFO del daemon realmente se aplica: --realtime faltaba en service.sh, el resultado del syscall ya no se descarta, sepolicy cubre CAP_SYS_NICE)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

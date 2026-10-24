@@ -1,3 +1,48 @@
+# CHANGELOG — v2.5.135 (426) — SCHED_FIFO del daemon: de nunca-se-ejecuta a confirmado y auditable
+
+Cierra los puntos 2 y 3 que quedaban pendientes de la lista "qué sigue faltando" de v2.5.133/134.
+
+## Punto 2 (EFFECT_CMD_SET_PARAM) — ya estaba resuelto, verificado sin tocar código
+
+Revisión de `app/src/main/cpp/omega_effect.cpp::omega_command()`: `EFFECT_CMD_SET_PARAM` /
+`EFFECT_CMD_SET_PARAM_COMMIT` ya parsean el id/valor AOSP, aplican el parámetro directo a
+`ctx->fusionCore` vía `omega_apply_snapshot()` (nunca se pierde antes del próximo `readLatest()`) y
+publican al `OmegaControlBus` (writer local si el daemon no tiene uno abierto, para no romper el
+seqlock con dos escritores). `EFFECT_CMD_GET_PARAM` también está implementado, no solo `SET`. No se
+necesitó ningún cambio — era del "AUDIT FIX #4" de una versión anterior, confirmado leyendo el código
+real, no asumido.
+
+## Punto 3 (CAP_SYS_NICE / SCHED_FIFO 98→80) — bug real, dos capas, ambas cerradas
+
+Causa confirmada, y más simple de lo que parecía: **`sched_setscheduler()` nunca se ejecutaba en
+producción.** `ivanna_daemon.cpp` soporta `--realtime` desde hace varias versiones, pero
+`magisk_module/service.sh` arrancaba el daemon sin ese flag — no era un denial de SELinux silencioso
+por falta de `CAP_SYS_NICE`, era una llamada que ni se intentaba. Encima, cuando el flag SÍ se pasaba
+a mano, el valor de retorno del syscall se descartaba — un `EPERM` real habría sido igual de invisible.
+
+- `service.sh`: el daemon ahora arranca siempre con `--realtime` (es el daemon de audio en tiempo real
+  del módulo, no un proceso best-effort).
+- `ivanna_daemon.cpp`: el bloque de `sched_setscheduler(0, SCHED_FIFO, &p)` ahora comprueba el `rc` Y
+  confirma con `sched_getscheduler(0)` (defensa extra: algún kernel puede devolver 0 en un path
+  parcialmente aplicado), y loguea `SCHED-RT: ...` con el mismo prefijo grep-eable que ya usan
+  `HAL-CLOCK`/`ASRC-SW` — éxito confirmado o fallo con `errno`/`strerror` explícitos, nunca silencio.
+- `magisk_module/sepolicy.rule` (v3.2, nueva sección): `allow <domain> <domain> capability sys_nice` +
+  `process setsched` para los mismos tcontext que ya cubre el resto del archivo para el daemon
+  (`magisk`, `su`, `kernel`, `init`, `zygote`, `mihome`, `samsung_dsp`) — mismo criterio que el resto
+  del archivo: cubrir la matriz observada en campo en vez de adivinar cuál aplica en el dispositivo
+  del usuario.
+- **Verificación en 30 segundos tras instalar**: `adb shell ps -A -o PID,NAME,POLICY,CLS,PRI,NI | grep
+  ivanna_daemon` — `POLICY=FF CLS=RT PRI=80` si quedó aplicado; si no, `daemon.log` ahora tiene la
+  línea `SCHED-RT: FALLÓ ...` con la causa exacta en vez de silencio.
+
+## Evidencia
+
+El bloque `sched_setscheduler`/`sched_getscheduler`/logging se extrajo tal cual y se compiló/corrió
+aislado en host con `g++ -std=c++20 -Wall -Wextra` (ambas ramas, éxito y fallo, verificadas). 9/9
+`scripts/check_*.py` en verde contra el árbol completo. No verificado en este entorno (sin SDK/NDK):
+que `ps` en el Moto G85 real muestre `POLICY=FF` tras instalar — pendiente de confirmación del usuario
+en dispositivo, igual que el punto 1 (reloj de hardware) que sigue sin `daemon.log` real.
+
 # CHANGELOG — v2.5.134 (425) — Cortex 3D, HRTF-UI de FotoHolo y core ASRC software, cableados de verdad
 
 Responde a 4 reportes concretos del usuario tras instalar v2.5.132 en el Moto G85: el ancho no

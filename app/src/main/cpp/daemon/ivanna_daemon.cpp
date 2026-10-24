@@ -228,7 +228,43 @@ int main(int argc, char* argv[]) {
     sigaction(SIGINT,&sa,nullptr); sigaction(SIGTERM,&sa,nullptr);
     signal(SIGPIPE, SIG_IGN);
     log_message("IVANNA-OMEGA Daemon v1.8 REAL TELEMETRY - Starting");
-    if (realtime) { struct sched_param p; p.sched_priority=80; sched_setscheduler(0,SCHED_FIFO,&p); }
+    // FIX (CAP_SYS_NICE / SCHED_FIFO silencioso): dos bugs distintos, ambos reales.
+    //   (1) `realtime` solo se ponía a true con `--realtime`, y NINGÚN caller de
+    //       producción (service.sh) pasaba ese flag. sched_setscheduler() nunca
+    //       se EJECUTABA — no es que fallara por falta de CAP_SYS_NICE, es que la
+    //       syscall ni se intentaba. service.sh ahora siempre arranca con
+    //       --realtime (este es el daemon de audio RT del módulo, no un proceso
+    //       best-effort).
+    //   (2) Cuando SÍ se llamaba, el valor de retorno de sched_setscheduler()
+    //       se descartaba. Un denial de SELinux (dominio del daemon sin
+    //       `capability sys_nice`/`process setsched`) devuelve -1/EPERM sin
+    //       ningún rastro — exactamente "ps muestra POLICY=0 CLS=0 PRI=20" sin
+    //       explicación. Ahora se verifica el resultado con sched_getscheduler()
+    //       (no basta con chequear errno: algunos kernels devuelven 0 en un
+    //       path parcialmente aplicado) y se loguea con el mismo prefijo
+    //       grep-eable que ya usan HAL-CLOCK/ASRC-SW, para que
+    //       `adb shell dmesg | grep avc` + `daemon.log` puedan correlacionarse.
+    if (realtime) {
+        struct sched_param p{};
+        p.sched_priority = 80;
+        errno = 0;
+        int rc = sched_setscheduler(0, SCHED_FIFO, &p);
+        int actual_policy = sched_getscheduler(0);
+        if (rc == 0 && actual_policy == SCHED_FIFO) {
+            log_message("SCHED-RT: SCHED_FIFO(80) aplicado y confirmado via sched_getscheduler()");
+        } else {
+            int err = errno;
+            log_message("SCHED-RT: FALLÓ sched_setscheduler(SCHED_FIFO,80) rc=" + std::to_string(rc) +
+                        " errno=" + std::to_string(err) + " (" + strerror(err) + ")" +
+                        " sched_getscheduler_actual=" + std::to_string(actual_policy) +
+                        " — el daemon sigue en SCHED_OTHER/best-effort. Causa probable: dominio" +
+                        " SELinux del proceso sin capability sys_nice (revisar" +
+                        " `dmesg | grep avc | grep -i ivanna_daemon` y sepolicy.rule).");
+        }
+    } else {
+        log_message("SCHED-RT: --realtime no solicitado — daemon en SCHED_OTHER por diseño (no debería" +
+                     std::string(" pasar en el service.sh del módulo; revisar su invocación)."));
+    }
     // FIX (resiliencia): la SHM es opcional para el socket de comandos. Si
     // /data/adb/ivanna_omega no está montado/escribible aún, shmManager.init
     // falla y (antes) el socket nacía paralizado. El daemon DEBE bindear el

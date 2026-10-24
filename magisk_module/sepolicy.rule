@@ -323,3 +323,35 @@ allow untrusted_app_34 adb_data_file file { read write open getattr map }
 allow untrusted_app_34 adb_data_file dir { search getattr open read }
 allow untrusted_app_35 adb_data_file file { read write open getattr map }
 allow untrusted_app_35 adb_data_file dir { search getattr open read }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v3.2 — DAEMON (ivanna_daemon --realtime) → CAP_SYS_NICE para SCHED_FIFO 80
+#
+# ivanna_daemon.cpp llama sched_setscheduler(0, SCHED_FIFO, &p) sobre sí mismo
+# al arrancar con --realtime (ahora SIEMPRE, ver service.sh). Root (uid 0) trae
+# la capability POSIX por defecto, pero SELinux hace una comprobación
+# INDEPENDIENTE sobre la clase "capability" — un dominio sin "sys_nice"
+# explícito en su policy puede recibir EPERM en el syscall aunque el proceso
+# sea uid 0. Antes esto era invisible dos veces: el flag --realtime nunca se
+# pasaba (fix en service.sh) Y el valor de retorno de sched_setscheduler()
+# nunca se comprobaba (fix en ivanna_daemon.cpp, log "SCHED-RT:").
+#
+# Mismo criterio que el resto de este archivo: cubrir todos los tcontext
+# observados en campo para el daemon (ver HISTORIA arriba — magisk, kernel,
+# init, zygote, y las variantes OEM mihome/samsung_dsp) en vez de adivinar
+# cuál aplica en el dispositivo del usuario.
+# ═══════════════════════════════════════════════════════════════════════════════
+allow magisk magisk capability sys_nice
+allow magisk magisk process setsched
+allow su su capability sys_nice
+allow su su process setsched
+allow kernel kernel capability sys_nice
+allow kernel kernel process setsched
+allow init init capability sys_nice
+allow init init process setsched
+allow zygote zygote capability sys_nice
+allow zygote zygote process setsched
+allow mihome mihome capability sys_nice
+allow mihome mihome process setsched
+allow samsung_dsp samsung_dsp capability sys_nice
+allow samsung_dsp samsung_dsp process setsched
