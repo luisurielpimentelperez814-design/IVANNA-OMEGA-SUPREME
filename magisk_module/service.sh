@@ -10,6 +10,12 @@ mkdir -p "$STATE"
 
 # SAFMUS: map whole-device resource conditions before starting the shared daemon.
 # The probe is read-only; it publishes a bounded budget for later consumers.
+SAFMUS_AUDIO_AUDIT="$MODDIR/core/safmus_audio_effect_audit.sh"
+if [ -f "$SAFMUS_AUDIO_AUDIT" ]; then
+    chmod 755 "$SAFMUS_AUDIO_AUDIT" 2>/dev/null
+    "$SAFMUS_AUDIO_AUDIT" >> "$LOG" 2>&1
+fi
+
 SAFMUS_ENV="$MODDIR/core/safmus_environment_optimizer.sh"
 if [ -x "$SAFMUS_ENV" ]; then
     "$SAFMUS_ENV" >> "$LOG" 2>&1
