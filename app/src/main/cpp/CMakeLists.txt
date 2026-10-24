@@ -65,6 +65,7 @@ add_library(ivanna_omega SHARED
     jni/ivanna_spatial_jni.cpp
 
     # Spatial engine
+    spatial/PhysicalTargetDispatcher.cpp
     spatial/spatial_engine.cpp
     spatial/room_model.cpp
     spatial/ivanna_head_tracker.cpp

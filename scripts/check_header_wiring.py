@@ -37,6 +37,11 @@ STANDALONE_HEADERS = {
     "include/g_pll_core.hpp",
     "include/gauge_field_engine.hpp",
     "include/hal_output_rate_control.hpp",
+    # Controlador ASRC experimental: se prueba como primitiva pura, pero no debe
+    # conectarse a la ruta PCM mientras no haya una ruta writable/correlacionada
+    # validada. La reproducción Android usa su servo software existente; activar
+    # este controlador en paralelo duplicaría los lazos de reloj.
+    "dsp/asrc_clock_controller.hpp",
 }
 
 INCLUDE_DIRS = [
@@ -142,7 +147,7 @@ def main() -> int:
     print("=== [0.2] CHECK HEADER WIRING REPORT ===")
     print(f"Runtime headers checked (.h/.hpp)  : {len(all_headers)}")
     print(f"Reached from compiled CMake TUs    : {len(reached_headers)}")
-    print(f"Standalone/test/HAL headers scoped out: {len(STANDALONE_HEADERS)}")
+    print(f"Standalone/test/HAL/experimental headers scoped out: {len(STANDALONE_HEADERS)}")
     for name in sorted(STANDALONE_HEADERS):
         print(f"  - {name}")
     print(f"Orphan headers                     : {len(orphans)}")

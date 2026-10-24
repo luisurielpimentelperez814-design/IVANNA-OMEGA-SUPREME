@@ -300,8 +300,9 @@ object FotoHoloEngine {
                     // Reintento limitado si no hay confirmación explícita de aplicación.
                     if (routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_B) {
                         val routeBWidth = if (enabled && !bypass) declaredWidth(base) else base
+                        val routeBPublished = FotoHoloRouteB.status.startsWith("publicado en Ruta B")
                         val routeBRetryDue = nowMs - lastRouteBPushMs >= 1_500L &&
-                            !FotoHoloRouteB.status.contains("aplicado en Ruta B")
+                            !routeBPublished
                         if (!lastRouteBCommanded.isFinite() ||
                             FotoHoloMath.changed(routeBWidth, lastRouteBCommanded) || routeBRetryDue) {
                             FotoHoloRouteB.push(routeBWidth)

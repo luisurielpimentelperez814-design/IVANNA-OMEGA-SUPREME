@@ -112,7 +112,8 @@ public:
         integrated_.store(-70.0f, std::memory_order_relaxed);
         momentary_.store(-70.0f, std::memory_order_relaxed);
         shortTerm_.store(-70.0f, std::memory_order_relaxed);
-        tpZ_[0] = tpZ_[1] = tpZ_[2] = tpZ_[3] = 0.0f;
+        tpZL_[0] = tpZL_[1] = tpZL_[2] = tpZL_[3] = 0.0f;
+        tpZR_[0] = tpZR_[1] = tpZR_[2] = tpZR_[3] = 0.0f;
     }
 
     // Alimenta N frames estéreo intercalados (L,R,L,R,...). RT-safe.
@@ -142,7 +143,7 @@ public:
         float pk = a > b ? a : b;
         float prevPk = peakAbs_.load(std::memory_order_relaxed);
         if (pk > prevPk) peakAbs_.store(pk, std::memory_order_relaxed);
-        updateTruePeak(pk);
+        updateTruePeak(l, r);
 
         double kl = hpL_.process(shelfL_.process((double)l));
         double kr = hpR_.process(shelfR_.process((double)r));
@@ -177,22 +178,35 @@ public:
         truePeakAbs_.store(0.0f, std::memory_order_relaxed);
     }
 
-private:
-    // True peak por sobremuestreo 4x (interpolación de Lagrange de 4 puntos)
-    inline void updateTruePeak(float xAbs) noexcept {
-        tpZ_[0] = tpZ_[1]; tpZ_[1] = tpZ_[2]; tpZ_[2] = tpZ_[3]; tpZ_[3] = xAbs;
-        float best = xAbs;
+public:
+    // Helper puro expuesto para regresiones deterministas del interpolador.
+    // No mantiene estado y no debe confundirse con medición del hardware DAC.
+    inline static float interpolatePeak4x(const float z[4]) noexcept {
+        float best = std::max(std::max(std::fabs(z[0]), std::fabs(z[1])),
+                              std::max(std::fabs(z[2]), std::fabs(z[3])));
+        const float y0 = z[0], y1 = z[1], y2 = z[2], y3 = z[3];
+        const float c0 = y1;
+        const float c1 = 0.5f * (y2 - y0);
+        const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+        const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
         for (int k = 1; k < 4; ++k) {
-            float t = 0.25f * (float)k;
-            float y0 = tpZ_[0], y1 = tpZ_[1], y2 = tpZ_[2], y3 = tpZ_[3];
-            float c0 = y1;
-            float c1 = 0.5f * (y2 - y0);
-            float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
-            float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-            float v  = std::fabs(((c3 * t + c2) * t + c1) * t + c0);
-            if (v > best) best = v;
+            const float t = 0.25f * static_cast<float>(k);
+            const float v = std::fabs(((c3 * t + c2) * t + c1) * t + c0);
+            if (std::isfinite(v) && v > best) best = v;
         }
-        float prev = truePeakAbs_.load(std::memory_order_relaxed);
+        return best;
+    }
+
+private:
+    // True peak aproximado: canales separados y muestras con signo.
+    inline void updateTruePeak(float left, float right) noexcept {
+        tpZL_[0] = tpZL_[1]; tpZL_[1] = tpZL_[2]; tpZL_[2] = tpZL_[3]; tpZL_[3] = left;
+        tpZR_[0] = tpZR_[1]; tpZR_[1] = tpZR_[2]; tpZR_[2] = tpZR_[3]; tpZR_[3] = right;
+        // Incluye el sample peak explícitamente: dBTP no puede ser menor que dBFS
+        // si ambos medidores observan la misma señal y el mismo intervalo.
+        const float sample = std::max(std::fabs(left), std::fabs(right));
+        const float best = std::max(sample, std::max(interpolatePeak4x(tpZL_), interpolatePeak4x(tpZR_)));
+        const float prev = truePeakAbs_.load(std::memory_order_relaxed);
         if (best > prev) truePeakAbs_.store(best, std::memory_order_relaxed);
     }
 
@@ -290,7 +304,8 @@ private:
     int    ringHead_ = 0, ringCount_ = 0;
     bool   dirty_ = false;
 
-    float  tpZ_[4] = {0, 0, 0, 0};
+    float  tpZL_[4] = {0, 0, 0, 0};
+    float  tpZR_[4] = {0, 0, 0, 0};
 
     std::atomic<float> peakAbs_{0.0f};
     std::atomic<float> truePeakAbs_{0.0f};

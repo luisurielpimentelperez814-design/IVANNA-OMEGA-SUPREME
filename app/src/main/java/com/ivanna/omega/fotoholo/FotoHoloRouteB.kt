@@ -26,13 +26,33 @@ object FotoHoloRouteB {
     fun json(width: Float): String =
         String.format(Locale.US, "{\"action\":\"SET_PERCEPTUAL_STATE\",\"spatialWidth\":%.4f}", width)
 
-    /** Interpreta la respuesta del demonio; "" = no contestó. Puro, para probarlo en JVM. */
-    fun statusFromReply(reply: String): String = when {
-        reply.isEmpty() -> "demonio no disponible"
-        reply.contains("\"ok\":false") -> "rechazado por el demonio"
-        reply.contains("accepted_pending_consumer") -> "aceptado; sin consumidor activo"
-        reply.contains("\"status\":\"applied\"") -> "aplicado en Ruta B"
-        else -> "respuesta no reconocida"
+    /** Extrae un booleano JSON de forma estricta; evita confundir status con aplicación real. */
+    private fun jsonBoolean(reply: String, key: String): Boolean? {
+        val match = Regex("\\\""+Regex.escape(key)+"\\\"\\s*:\\s*(true|false)", RegexOption.IGNORE_CASE)
+            .find(reply) ?: return null
+        return match.groupValues[1].equals("true", ignoreCase = true)
+    }
+
+    /** status=applied no basta: exigimos applied=true en la respuesta del comando. */
+    fun statusFromReply(reply: String): String {
+        if (reply.isBlank()) return "demonio no disponible"
+        val ok = jsonBoolean(reply, "ok")
+        if (ok == false) return "rechazado por el demonio"
+        if (ok != true) return "respuesta sin confirmación válida del demonio"
+        val statusApplied = Regex("\\\"status\\\"\\s*:\\s*\\\"applied\\\"").containsMatchIn(reply)
+        val pendingConsumer = Regex("\\\"status\\\"\\s*:\\s*\\\"accepted_pending_consumer\\\"").containsMatchIn(reply)
+        val consumerDeclared = Regex("\\\"consumer\\\"\\s*:\\s*\\\"omega_effect\\\"").containsMatchIn(reply)
+        return when {
+            pendingConsumer -> "aceptado; sin consumidor activo"
+            statusApplied && jsonBoolean(reply, "applied") == true && consumerDeclared ->
+                "publicado en Ruta B; consumidor declarado, audio no verificado"
+            statusApplied && jsonBoolean(reply, "applied") == true ->
+                "publicado en Ruta B; sin consumidor DSP declarado"
+            jsonBoolean(reply, "applied") == false ->
+                "no aplicado: el consumidor DSP no confirmó la aplicación"
+            statusApplied -> "estado sin confirmación explícita de aplicación"
+            else -> "respuesta no reconocida"
+        }
     }
 
     /** Seguro desde cualquier hilo; ancho no finito se ignora. */
