@@ -23,6 +23,7 @@ enable_testing()
 include(GoogleTest)
 
 add_library(ivanna_dsp_under_test STATIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/../spatial/PhysicalTargetDispatcher.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/Compressor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/SafetyLimiter.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../dsp/variable_asrc.cpp
@@ -1441,3 +1442,6 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_loudness_true_peak PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_loudness_true_peak)
+
+# 16-to-5 logical bus dispatcher: bounded SIMD/scalar kernel and sensor-gated thermal guard.
+ivanna_add_test(test_physical_target_dispatcher)
