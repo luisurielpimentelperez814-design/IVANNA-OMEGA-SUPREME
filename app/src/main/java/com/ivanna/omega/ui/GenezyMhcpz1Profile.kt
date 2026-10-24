@@ -87,7 +87,7 @@ fun GenezyMhcpz1ProfileCard(modifier: Modifier = Modifier) {
     var enabled by remember { mutableStateOf(prefs.getBoolean("enabled", false)) }
     var lateralExtension by remember { mutableStateOf(prefs.getBoolean("lateral_extension", true)) }
     LaunchedEffect(enabled, lateralExtension) {
-        com.ivanna.omega.fotoholo.FotoHoloEngine.setGenezyProfile(enabled, lateralExtension)
+        com.ivanna.omega.fotoholo.FotoHoloEngine.setGenezyProfile(context, enabled, lateralExtension)
     }
     val profile = GenezySpeakerProfile.GENEZY_MHCPZ1
     val routes = remember(lateralExtension) { GenezySpatialMapping.routeAll(lateralExtension) }
