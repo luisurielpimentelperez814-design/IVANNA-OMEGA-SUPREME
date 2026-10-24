@@ -7,7 +7,7 @@
 // G85 ni ningún ASRC físico: eso requiere dispositivo y sigue sin enlazar.
 
 #include "../daemon/hal_clock_producer.hpp"
-#include "include/audio_hardware_clock_bridge.hpp"
+#include "../include/audio_hardware_clock_bridge.hpp"
 
 #include <gtest/gtest.h>
 
