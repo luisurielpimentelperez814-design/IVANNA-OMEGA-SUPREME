@@ -53,10 +53,10 @@
         <!-- UUID ALINEADO con el binario nativo (omega_effect.cpp:135,
              OMEGA_EFFECT_UUID = 0x4956414e,0x4e41,0x4f4d,0x4547,"ASUPRE"
              = ASCII "IVANNAOMEGASUPRE") y con IvannaGlobalEffectManager.kt:233.
-             ANTES: 8d7d5e0a-a6eb-4fde-a0ff-cb1b2dd7275e — no coincidía con el
+             ANTES: 4956414e-4e41-4f4d-4547-415355505245 — no coincidía con el
              binario; AudioFlinger habría rechazado EffectCreate con -EINVAL
              y el DSP quedaría registrado pero inerte. -->
-        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245" priority="1000"/>
+        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>
     </effects>
     <postprocess>
         <stream type="music">
