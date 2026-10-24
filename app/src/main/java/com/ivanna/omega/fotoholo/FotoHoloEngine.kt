@@ -272,11 +272,11 @@ object FotoHoloEngine {
                     // usuario; la modulación basada en Bark de Ruta A se abstiene en este modo.
                     // Reintento limitado si no hay confirmación explícita de aplicación.
                     if (routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_B) {
+                        val routeBWidth = if (enabled && !bypass) genezyWidth(base) else base
                         val routeBRetryDue = nowMs - lastRouteBPushMs >= 1_500L &&
                             !FotoHoloRouteB.status.contains("aplicado en Ruta B")
                         if (!lastRouteBCommanded.isFinite() ||
-                            FotoHoloMath.changed(base, lastRouteBCommanded) || routeBRetryDue) {
-                            val routeBWidth = if (enabled && !bypass) genezyWidth(base) else base
+                            FotoHoloMath.changed(routeBWidth, lastRouteBCommanded) || routeBRetryDue) {
                             FotoHoloRouteB.push(routeBWidth)
                             lastRouteBCommanded = routeBWidth
                             lastRouteBPushMs = nowMs
