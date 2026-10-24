@@ -190,6 +190,9 @@ fun SpatialAudioPanel(
         // ── Fotoholografía·Nanotomix: escena paramétrica + ancho estéreo adaptativo ──
         FotoHoloCard()
 
+        // Perfil Genezy MHCPZ1: 16 posiciones virtuales y extensión lateral declarada.
+        GenezyMhcpz1ProfileCard()
+
         // The same React/WebGL FotoHolo scene, packaged as a local asset and fed by
         // the native read-only telemetry bridge. No remote page receives this bridge.
         Text(
