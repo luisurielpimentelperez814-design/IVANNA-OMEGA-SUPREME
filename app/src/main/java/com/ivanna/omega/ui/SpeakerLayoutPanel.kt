@@ -34,8 +34,8 @@ import com.ivanna.omega.spatial.WfsCalibrationManager
 
 /**
  * Declaración del usuario: cuántas bocinas satélite tiene conectadas, en qué modo (estéreo o
- * surround) y si hay subwoofer activo. En modo surround vuelve a publicar la geometría WFS
- * calibrada existente (relativa a la posición del oyente) en la ruta nativa/daemon. El conteo
+ * surround) y si hay subwoofer activo. Al entrar en Surround vuelve a publicar el layout WFS 7ch
+ * de referencia relativo a la posición del oyente persistida, usando la ruta nativa/daemon. El conteo
  * también modula el ancho perceptual; NO inventa coordenadas por satélite ni crea salidas físicas
  * discretas. La ruta WFS debe estar habilitada para que su geometría afecte el renderizado.
  */
@@ -48,12 +48,14 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
 
     LaunchedEffect(mode, satellites, subwoofer) {
         FotoHoloEngine.setSpeakerLayout(context, SpeakerLayout(mode, satellites, subwoofer))
-        // Reutiliza las coordenadas persistidas y calibradas; no genera un layout ficticio a
-        // partir del simple conteo. WfsCalibrationManager publica al renderer activo por JNI.
+    }
+    LaunchedEffect(mode) {
+        // Reutiliza el layout WFS 7ch de referencia y la posición del oyente persistida; no
+        // genera coordenadas ficticias a partir del simple conteo de satélites.
         if (mode == SpeakerMode.SURROUND) {
             val published = WfsCalibrationManager.restore(context)
             if (!published) {
-                android.util.Log.w("SpeakerLayoutPanel", "Geometría WFS no publicada; se conserva la ruta de audio previa")
+                android.util.Log.w("SpeakerLayoutPanel", "Layout WFS no publicado; se conserva la ruta de audio previa")
             }
         }
     }
