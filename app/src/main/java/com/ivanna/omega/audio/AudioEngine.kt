@@ -21,6 +21,23 @@ data class AudioClockTelemetry(
 )
 
 /**
+ * Estado del core ASRC software (AsrcClockController), publicado por el
+ * daemon de la ruta Magisk desde 2026-10-24 — antes el controlador compilaba
+ * y tenía tests propios pero ningún consumidor real lo instanciaba, así que
+ * el módulo instalado nunca mostraba nada distinto para el usuario. Sigue
+ * siendo un servo software sobre el resampler, no un actuador físico.
+ */
+enum class AsrcSoftwareState { UNKNOWN, INIT, WAITING_FOR_SAMPLES, TRACKING, HOLD, BYPASS, FAULT }
+
+data class AsrcSoftwareTelemetry(
+    val valid: Boolean = false,
+    val state: AsrcSoftwareState = AsrcSoftwareState.UNKNOWN,
+    val driftPpm: Float = 0f,
+    val targetPpm: Float = 0f,
+    val appliedRatio: Float = 1f
+)
+
+/**
  * AudioEngine v1.5 — Motor de audio DSP.
  */
 class AudioEngine {
@@ -113,6 +130,41 @@ class AudioEngine {
         }
 
         @JvmStatic private external fun nativeGetClockTelemetryJni(): FloatArray?
+
+        /**
+         * Estado del core ASRC software leído del canal IPC del daemon
+         * (asrc_state_bridge.hpp). valid=false si el daemon no está corriendo
+         * con --hal-clock (Ruta A sin Magisk, o módulo detenido) — se reporta
+         * "no disponible" en vez de simular TRACKING.
+         */
+        fun getAsrcStateStatic(): AsrcSoftwareTelemetry {
+            if (!libLoaded) return AsrcSoftwareTelemetry()
+            return runCatching {
+                val v = nativeGetAsrcStateJni() ?: return@runCatching AsrcSoftwareTelemetry()
+                if (v.size < 5 || v[0] < 0.5f) return@runCatching AsrcSoftwareTelemetry()
+                val state = when (v[1].toInt()) {
+                    0 -> AsrcSoftwareState.INIT
+                    1 -> AsrcSoftwareState.WAITING_FOR_SAMPLES
+                    2 -> AsrcSoftwareState.TRACKING
+                    3 -> AsrcSoftwareState.HOLD
+                    4 -> AsrcSoftwareState.BYPASS
+                    5 -> AsrcSoftwareState.FAULT
+                    else -> AsrcSoftwareState.UNKNOWN
+                }
+                AsrcSoftwareTelemetry(
+                    valid = true,
+                    state = state,
+                    driftPpm = v[2],
+                    targetPpm = v[3],
+                    appliedRatio = v[4]
+                )
+            }.getOrElse {
+                Log.w(TAG, "ASRC state telemetry unavailable: $it")
+                AsrcSoftwareTelemetry()
+            }
+        }
+
+        @JvmStatic private external fun nativeGetAsrcStateJni(): FloatArray?
     }
 
     private var audioRecord: AudioRecord? = null

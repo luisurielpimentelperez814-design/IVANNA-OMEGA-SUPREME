@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.AudioClockTelemetry
 import com.ivanna.omega.audio.AudioEngine
+import com.ivanna.omega.audio.AsrcSoftwareState
+import com.ivanna.omega.audio.AsrcSoftwareTelemetry
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.ui.theme.*
@@ -42,6 +44,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
     var nativeHeap  by remember { mutableLongStateOf(0L) }
     var javaHeap    by remember { mutableLongStateOf(0L) }
     var effectClockTelemetry by remember { mutableStateOf(AudioClockTelemetry()) }
+    var asrcTelemetry by remember { mutableStateOf(AsrcSoftwareTelemetry()) }
 
     // Todo lo de abajo es medición real: nada de cifras fijas ni modelos estimados.
     val cpuFeatures = remember { readCpuFeatures() }
@@ -61,6 +64,9 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             }
             effectClockTelemetry = withContext(Dispatchers.IO) {
                 AudioEngine.getClockTelemetryStatic()
+            }
+            asrcTelemetry = withContext(Dispatchers.IO) {
+                AudioEngine.getAsrcStateStatic()
             }
             val cpu = android.os.Process.getElapsedCpuTime()
             val wall = android.os.SystemClock.elapsedRealtime()
@@ -169,6 +175,35 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 LiveRow(
                     "Deriva hardware",
                     if (effectClockTelemetry.hardwareClockValid) "%+.1f ppm".format(effectClockTelemetry.hardwareDriftPpm) else "—"
+                )
+            }
+        }
+
+        GlassCard(
+            "CORE ASRC SOFTWARE", PhosphorGreen,
+            "Servo software sobre el resampler (AsrcClockController, ruta Magisk); NO un actuador físico del DAC"
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiveRow(
+                    "Estado",
+                    if (!asrcTelemetry.valid) "no disponible (daemon sin --hal-clock o Ruta A sin Magisk)"
+                    else when (asrcTelemetry.state) {
+                        AsrcSoftwareState.TRACKING -> "corrigiendo activamente"
+                        AsrcSoftwareState.HOLD -> "en espera (muestra fuera de rango seguro)"
+                        AsrcSoftwareState.WAITING_FOR_SAMPLES -> "acumulando pares coherentes"
+                        AsrcSoftwareState.BYPASS -> "bypass (deshabilitado)"
+                        AsrcSoftwareState.FAULT -> "fallo (timestamp/rate inválido)"
+                        AsrcSoftwareState.INIT -> "inicializando"
+                        AsrcSoftwareState.UNKNOWN -> "desconocido"
+                    }
+                )
+                LiveRow(
+                    "Deriva medida",
+                    if (asrcTelemetry.valid) "%+.1f ppm".format(asrcTelemetry.driftPpm) else "—"
+                )
+                LiveRow(
+                    "Corrección aplicada",
+                    if (asrcTelemetry.valid) "%+.1f ppm (ratio %.6f)".format(asrcTelemetry.targetPpm, asrcTelemetry.appliedRatio) else "—"
                 )
             }
         }

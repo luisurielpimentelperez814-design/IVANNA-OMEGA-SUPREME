@@ -16,6 +16,7 @@
 #include <cmath>
 #include <algorithm>
 #include "../include/omega_effect_beacon.h"
+#include "../include/asrc_state_bridge.hpp"
 
 #define LOG_TAG "IVANNA-Stub"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
@@ -217,6 +218,33 @@ Java_com_ivanna_omega_audio_AudioEngine_nativeGetClockTelemetryJni(
     };
     jfloatArray result = env->NewFloatArray(6);
     if (result != nullptr) env->SetFloatArrayRegion(result, 0, 6, values);
+    return result;
+}
+
+/*
+ * Estado del core ASRC software (AsrcClockController, cableado al daemon en
+ * 2026-10-24 — antes no tenía ningún consumidor real fuera de su propio test).
+ * Return layout: [valid, stateCode, driftPpm, targetPpm, appliedRatio].
+ * stateCode: 0=INIT 1=WAITING_FOR_SAMPLES 2=TRACKING 3=HOLD 4=BYPASS 5=FAULT.
+ * valid=0 significa que el canal no existe todavía (daemon no arrancado con
+ * --hal-clock, o Ruta A sin Magisk) — el llamador debe mostrar "no disponible",
+ * nunca simular un valor.
+ */
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_audio_AudioEngine_nativeGetAsrcStateJni(
+    JNIEnv* env, jclass /*clazz*/) {
+    ivanna::audio::AsrcStateReader reader;
+    ivanna::audio::AsrcStateSample sample{};
+    const bool ok = reader.open() && reader.read(sample);
+    const jfloat values[5] = {
+        ok ? 1.0f : 0.0f,
+        ok ? static_cast<jfloat>(static_cast<int>(sample.state)) : 0.0f,
+        ok ? static_cast<jfloat>(sample.driftPpm) : 0.0f,
+        ok ? static_cast<jfloat>(sample.targetPpm) : 0.0f,
+        ok ? static_cast<jfloat>(sample.appliedRatio) : 1.0f
+    };
+    jfloatArray result = env->NewFloatArray(5);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 5, values);
     return result;
 }
 

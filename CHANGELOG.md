@@ -1,3 +1,88 @@
+# CHANGELOG — v2.5.133 (424) — Cortex 3D, HRTF-UI de FotoHolo y core ASRC software, cableados de verdad
+
+Responde a 4 reportes concretos del usuario tras instalar v2.5.132 en el Moto G85: el ancho no
+convergía a 1.00, el cortex nunca pasaba a 3D, FotoHolo no veía el HRTF ni al daemon, y el módulo
+"seguía igual" sin nada del ASRC nuevo. Se investigó cada uno leyendo el código real (no la UI) antes
+de tocar nada, y se exigió evidencia verificable para cada fix — nada se da por resuelto solo con una
+explicación.
+
+## 1. Cortex nunca se asentaba en 3D_SURROUND/HOLOGRAM
+
+Causa confirmada: `spatialMode` en `PerceptualDecisionEngine.kt` era un `when` sin estado con umbral
+`spatialWidth > 0.9`. Con los valores por defecto (immersión 0.90 × spatialPreference 1.2 ≈ 1.08)
+el modo SÍ debía cruzar el umbral, pero cualquier micro-fluctuación de telemetría lo regresaba a
+STEREO_NEUTRAL antes de que el usuario llegara a notarlo — nunca se "asentaba".
+
+- `SpatialModeHysteresis` (nuevo, objeto puro y testeable): entra a SURROUND en ≥0.85, solo sale por
+  debajo de 0.75; entra a HOLOGRAM en ≥1.3, solo sale por debajo de 1.2. `PerceptualDecisionEngine`
+  ahora es stateful (`lastSpatialMode`) y usa esta función en vez del `when` plano.
+- **Evidencia**: `app/src/test/java/com/ivanna/omega/ai/SpatialModeHysteresisTest.kt`, 8/8 casos en
+  verde compilados y ejecutados en host con `kotlinc 2.0.21` + JUnit contra el código EXACTO que
+  quedó commiteado (no una copia aparte) — incluye el caso real del usuario (1.08 desde STEREO → SURROUND)
+  y el caso de histéresis que antes causaba el parpadeo.
+
+## 2. FotoHolo mostraba "HRTF habilitado (UI): NO" sin forma de cambiarlo
+
+Causa confirmada: `src/fotoholo-embed.tsx` — el entrypoint que el WebView de Android realmente carga
+(`assets/fotoholo-web/fotoholo-embed.html`, compilado en CI con `vite.fotoholo.config.ts`) — inicializaba
+`hrtfEnabled: false` a mano y **no incluye** el panel `SpatialHrtfPanel` que sí existe en la app web
+completa. El usuario no tenía ningún control para cambiarlo ni forma de ver el estado real del motor.
+
+- `fotoholo-embed.tsx`: default corregido a `true` (igual que `App.tsx`) y ahora se resincroniza cada
+  250 ms leyendo `hrtfRuntime` real de `window.IvannaFotoHoloBridge.getSnapshotJson()` — nunca queda
+  congelado mintiendo sobre el motor.
+- `FotoHolo3DGenerator.tsx`: la fila ya no muestra solo el flag de intención; muestra
+  "HRTF solicitado / motor" con ambos valores lado a lado (SÍ/NO solicitado vs. activo/cargado sin
+  confirmar/no cargado/motor no cargado, derivado de `telemetry.hrtfRuntime` real).
+- **Evidencia**: `npx tsc --noEmit` sin errores nuevos (los 2 preexistentes en líneas no tocadas se
+  verificaron idénticos antes/después del cambio) y `npx vite build --config vite.fotoholo.config.ts`
+  — el MISMO comando que ejecuta CI — genera `dist-fotoholo/fotoholo-embed.html` conteniendo el fix
+  (`grep hrtfEnabled` en el bundle resultante lo confirma).
+
+## 3. El módulo Magisk "seguía igual" — el core ASRC software nunca tuvo un consumidor real
+
+Causa confirmada, la más seria de las cuatro: `AsrcClockController` (`dsp/asrc_clock_controller.hpp`)
+existía, compilaba y tenía su propio test desde antes de esta versión, pero **ningún archivo fuera de
+su propio test lo instanciaba**. El usuario reinstalaba el módulo y no podía ver ningún cambio porque,
+literalmente, nada lo ejecutaba — ni el daemon, ni el efecto, ni la app.
+
+- `include/asrc_state_bridge.hpp` (nuevo): canal IPC propio de 64 B, mismo patrón seqlock ya probado
+  en producción por `audio_hardware_clock_bridge.hpp` desde 2.5.130 (`AsrcStatePublisher`/`AsrcStateReader`,
+  mmap real, sin locks ni syscalls en el hot path).
+- `ivanna_daemon.cpp`: el hilo que ya sondeaba el reloj hardware cada 250 ms ahora también relee la
+  misma muestra validada vía `HardwareClockReader`, la alimenta a `AsrcClockController::update()` y
+  publica el resultado (`TRACKING`/`HOLD`/`BYPASS`/`FAULT` + deriva/corrección en ppm) en el nuevo canal.
+  Sigue siendo un servo software sobre el resampler de la app — no identifica ni acciona ningún ASRC
+  físico del Moto G85.
+- JNI nuevo `nativeGetAsrcStateJni` (`ivanna_jni_stub.cpp`) + `AudioEngine.getAsrcStateStatic()` +
+  tarjeta nueva "CORE ASRC SOFTWARE" en el Profiler (`NeonProfilerPanel.kt`) — el usuario puede ver el
+  estado real sin ADB por primera vez.
+- **Evidencia**: `test_asrc_state_bridge.cpp` (nuevo, gtest), 5/5 verdes compilado con `clang++`/`g++`
+  dentro del proyecto CMake real de tests (`cmake 4.4.4`, el mismo árbol que usa CTest), incluyendo el
+  roundtrip completo publisher→mmap real→reader y la integración con `AsrcClockController` reproduciendo
+  exactamente lo que el hilo del daemon hace cada ciclo. 9/9 `scripts/check_*.py` en verde, incluido
+  `check_jni_wiring.py` (377/377 — el nuevo `external fun` tiene su `Java_*` correspondiente) y
+  `check_header_wiring.py` (0 huérfanos).
+
+## 4. Reloj de hardware "sin productor validado" en el Moto G85 — SIN RESOLVER, evidencia pendiente
+
+No se tocó. La única fuente de verdad posible es el `daemon.log` real del dispositivo con las líneas
+`HAL-CLOCK`/`ASRC-SW` — sin él, cualquier cambio a `hal_clock_producer.cpp` sería adivinar en vez de
+corregir un bug confirmado, exactamente lo que el proyecto prohíbe. El estado `sin productor validado`
+puede ser (a) un bug real de descubrimiento (`/proc/asound` no encuentra el PCM), (b) la puerta de
+correlación rechazando muestras por una causa real, o (c) que el Moto G85 simplemente no expone ese
+nodo — las tres tienen arreglos distintos y solo el log del dispositivo distingue cuál es. Pendiente:
+el usuario comparte `daemon.log` (o `/data/local/tmp/ivanna_daemon.log` según la ruta configurada) con
+las líneas `HAL-CLOCK` y `ASRC-SW` (esta última ya debería aparecer en 2.5.133) para completar este punto.
+
+## No verificado
+
+Compilación Android/NDK completa (APK + `.so` + daemon ARM64) y CTest del runner — este entorno no
+tiene SDK/NDK de Android; se verificó todo lo que es honestamente verificable en host: lógica Kotlin
+pura compilada y testeada con `kotlinc` real contra el código commiteado, lógica C++ nueva compilada y
+testeada con `g++`/`clang++` + gtest dentro del proyecto CMake real, y el bundle web de FotoHolo
+compilado con el comando exacto que usa CI. CI confirmará la compilación Android/NDK en el próximo push.
+
 # CHANGELOG — v2.5.132 (423) — El pipeline de release vuelve a publicar de verdad
 
 ## Hallazgo (sincronización de hoy)

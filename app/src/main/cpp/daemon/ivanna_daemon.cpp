@@ -1,6 +1,8 @@
 #include "../ivanna_hires_config.hpp"
 #include "control/command_server.h"
 #include "hal_clock_producer.hpp"
+#include "../include/audio_hardware_clock_bridge.hpp"
+#include "../include/asrc_state_bridge.hpp"
 #include "control/peer_auth.hpp"
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
@@ -321,6 +323,23 @@ int main(int argc, char* argv[]) {
             ivanna::audio::halclock::ProducerState last =
                 ivanna::audio::halclock::ProducerState::kDisabled;
             std::string lastReason;
+
+            // ── CORE ASRC SOFTWARE (el eslabon que faltaba, parte 2) ───────────
+            // AsrcClockController compilaba y tenia tests propios desde antes,
+            // pero NADIE lo instanciaba: cero consumidores reales fuera de su
+            // propio test. Aqui se alimenta con la MISMA muestra que el productor
+            // de reloj acaba de validar y publicar (se relee via HardwareClockReader,
+            // nunca se inventa un par frames+timestamp propio), y su decision
+            // (TRACKING/HOLD/BYPASS/FAULT + correccion en ppm) se publica en su
+            // propio canal para que la app la muestre sin ADB. Sigue siendo un
+            // servo SOFTWARE sobre el resampler de la app: no identifica ni
+            // acciona ningun ASRC fisico del Moto G85.
+            ivanna::dsp::AsrcClockController asrcController;
+            ivanna::audio::AsrcStatePublisher asrcPublisher;
+            ivanna::audio::HardwareClockReader clockReader;
+            ivanna::dsp::AsrcState lastAsrcState = ivanna::dsp::AsrcState::INIT;
+            std::string lastAsrcReason;
+
             for (;;) {
                 const auto s = producer.poll();
                 if (s.state != last || std::string(s.reason) != lastReason) {
@@ -336,13 +355,52 @@ int main(int argc, char* argv[]) {
                              : std::string()));
                     last = s.state; lastReason = s.reason;
                 }
+
+                const bool routeValidated =
+                    (s.state == ivanna::audio::halclock::ProducerState::kPublishing);
+                ivanna::dsp::ClockSample cs{};
+                bool haveSample = false;
+                if (routeValidated) {
+                    if (!clockReader.open()) {
+                        // El publisher del reloj hardware abre el mismo archivo;
+                        // reintentar es gratis y evita quedar huerfano si el
+                        // orden de arranque de hilos varia.
+                    } else {
+                        ivanna::audio::HardwareClockSample hcs{};
+                        if (clockReader.read(hcs)) {
+                            cs.presentedFrames = hcs.presentedFrames;
+                            cs.timestampNs = static_cast<int64_t>(hcs.hardwareTimestampNs);
+                            cs.nominalRateHz = hcs.nominalSampleRateHz;
+                            haveSample = true;
+                        }
+                    }
+                }
+                const auto asrcSnap = asrcController.update(
+                    cs, routeValidated && haveSample, hal_clock_enabled);
+                if (asrcSnap.state != lastAsrcState || std::string(asrcSnap.reason) != lastAsrcReason) {
+                    log_message(std::string("ASRC-SW ") +
+                        ivanna::audio::asrcStateName(asrcSnap.state) +
+                        " motivo=" + asrcSnap.reason +
+                        " deriva_ppm=" + std::to_string(asrcSnap.driftPpm) +
+                        " correccion_ppm=" + std::to_string(asrcSnap.targetPpm) +
+                        " ratio=" + std::to_string(asrcSnap.appliedRatio));
+                    lastAsrcState = asrcSnap.state; lastAsrcReason = asrcSnap.reason;
+                }
+                if (!asrcPublisher.open()) {
+                    log_message("ASRC-SW no se pudo abrir el canal de publicacion de estado");
+                } else {
+                    asrcPublisher.publish(asrcSnap);
+                }
+
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
         });
         hal_clock_thread.detach();
         log_message("HAL-CLOCK productor activo (SNDRV_PCM_IOCTL_STATUS, fail-closed sin ASRC fisico)");
+        log_message("ASRC-SW core activo: consume el reloj hardware validado, servo software sobre el resampler de la app");
     } else {
         log_message("HAL-CLOCK productor deshabilitado por --no-hal-clock");
+        log_message("ASRC-SW core deshabilitado (depende de --hal-clock)");
     }
 
     log_message("Self-Healing Engine activated and monitoring components.");

@@ -1431,6 +1431,15 @@ target_include_directories(test_hal_clock_producer PRIVATE ../include ../daemon)
 target_compile_options(test_hal_clock_producer PRIVATE -Wall -Wextra)
 gtest_discover_tests(test_hal_clock_producer)
 
+# AsrcClockController antes no tenia ningun consumidor real fuera de su propio
+# test (2026-10-24). Este test valida el canal IPC nuevo (asrc_state_bridge.hpp)
+# que el daemon ahora usa para publicar su decision de extremo a extremo.
+add_executable(test_asrc_state_bridge test_asrc_state_bridge.cpp)
+target_link_libraries(test_asrc_state_bridge PRIVATE GTest::gtest_main)
+target_include_directories(test_asrc_state_bridge PRIVATE ../include ../dsp)
+target_compile_options(test_asrc_state_bridge PRIVATE -Wall -Wextra)
+gtest_discover_tests(test_asrc_state_bridge)
+
 # Regression: signed stereo 4x true-peak interpolation must preserve phase and
 # cannot report a lower peak than sample peak when both observe the same stream.
 add_executable(test_loudness_true_peak test_loudness_true_peak.cpp)

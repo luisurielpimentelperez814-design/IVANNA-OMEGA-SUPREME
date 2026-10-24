@@ -5,12 +5,44 @@ import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.saf.SaFRoomBridge
 // coerceIn is stdlib — no import needed
 
+/**
+ * Decide spatialMode con histéresis para evitar parpadeo en el borde del umbral.
+ * FIX (2026-10-24): antes era un `when` sin estado — con spatialWidth
+ * rondando 0.9-0.95 por defecto (immersión alta × spatialPreference=1.2),
+ * cualquier micro-fluctuación de telemetría hacía que el modo nunca se
+ * "asentara" en 3D_SURROUND de forma visible para el usuario, y una sesión
+ * real con immersión/perfil ligeramente más bajos de lo esperado se quedaba
+ * permanentemente en STEREO_NEUTRAL sin margen de recuperación. Función pura
+ * y testeable en host — ver PerceptualDecisionEngineTest.
+ */
+object SpatialModeHysteresis {
+    const val SURROUND_ENTER = 0.85f
+    const val SURROUND_EXIT = 0.75f
+    const val HOLOGRAM_ENTER = 1.3f
+    const val HOLOGRAM_EXIT = 1.2f
+
+    fun next(spatialWidth: Float, previous: String): String = when (previous) {
+        "3D_HOLOGRAM" -> if (spatialWidth >= HOLOGRAM_EXIT) "3D_HOLOGRAM" else next(spatialWidth, "3D_SURROUND")
+        "3D_SURROUND" -> when {
+            spatialWidth >= HOLOGRAM_ENTER -> "3D_HOLOGRAM"
+            spatialWidth >= SURROUND_EXIT -> "3D_SURROUND"
+            else -> "STEREO_NEUTRAL"
+        }
+        else -> when {
+            spatialWidth >= HOLOGRAM_ENTER -> "3D_HOLOGRAM"
+            spatialWidth >= SURROUND_ENTER -> "3D_SURROUND"
+            else -> "STEREO_NEUTRAL"
+        }
+    }
+}
+
 class PerceptualDecisionEngine {
     private var currentProfile: UserProfile = UserProfile()
     // FIX (fatiga temporal siempre 0): durationMin era constante 0f —
     // la componente temporal del fatigueWeight nunca contribuía.
     // Ahora se mide desde que se instanció el engine (inicio de sesión).
     private val sessionStartMs = System.currentTimeMillis()
+    private var lastSpatialMode: String = "STEREO_NEUTRAL"
 
     fun updateProfile(profile: UserProfile) {
         this.currentProfile = profile
@@ -68,11 +100,8 @@ class PerceptualDecisionEngine {
         val contentBias = musicCue * 0.10f + bassCue * 0.06f - speechCue * 0.08f
         val antiDolby = (compAmount * 0.72f + aggress * 0.18f + contentBias + 0.10f).coerceIn(0.1f, 1.0f)
 
-        val sMode = when {
-            spatialWidth > 1.4f -> "3D_HOLOGRAM"
-            spatialWidth > 0.9f -> "3D_SURROUND"
-            else -> "STEREO_NEUTRAL"
-        }
+        val sMode = SpatialModeHysteresis.next(spatialWidth, lastSpatialMode)
+        lastSpatialMode = sMode
 
         return DSPDecision(
             compressorAmount = compAmount,
