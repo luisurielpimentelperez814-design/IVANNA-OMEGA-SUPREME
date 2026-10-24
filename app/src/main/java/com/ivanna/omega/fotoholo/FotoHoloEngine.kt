@@ -63,11 +63,17 @@ object FotoHoloEngine {
     @Volatile var bypass: Boolean = false; private set
     @Volatile var genezyProfileEnabled: Boolean = false; private set
     @Volatile var genezyLateralExtension: Boolean = true; private set
+    /** Conteo de bocinas/modo declarado por el usuario (SpeakerLayoutPanel). STEREO_NO_SUB = sin efecto. */
+    @Volatile var speakerLayout: SpeakerLayout = SpeakerLayout.STEREO_NO_SUB; private set
 
-    // Bounded stereo-width adaptation for the declared lateral satellite layout.
-    // This is not discrete satellite-channel routing.
-    private fun genezyWidth(base: Float): Float =
-        (base * if (genezyProfileEnabled && genezyLateralExtension) 1.08f else 1f).coerceIn(0f, 1.5f)
+    // Adaptación acotada del ancho estéreo para el perfil Genezy Y para cualquier disposición de
+    // bocinas que el usuario declare (SpeakerLayoutPolicy). Se componen (ambos son factores acotados
+    // de ±8-15%), no se suman valores absolutos. NO es enrutamiento discreto por canal/satélite: el
+    // único actuador real al final es spatial_width -> StereoWidener (ver SpeakerLayoutPolicy.kt).
+    private fun declaredWidth(base: Float): Float {
+        val genezy = (base * if (genezyProfileEnabled && genezyLateralExtension) 1.08f else 1f)
+        return SpeakerLayoutPolicy.apply(genezy, speakerLayout).let { if (it.isFinite()) it.coerceIn(0f, 1.5f) else base }
+    }
 
     @Volatile private var genezyPrefs: android.content.SharedPreferences? = null
 
@@ -78,6 +84,18 @@ object FotoHoloEngine {
         genezyPrefs = p
         p.edit().putBoolean("genezy_profile_enabled", enabled)
             .putBoolean("genezy_lateral_extension", lateralExtension).apply()
+    }
+
+    /** Declara cuántas bocinas y en qué modo (estéreo/surround), y si el subwoofer está activo. */
+    fun setSpeakerLayout(context: Context, layout: SpeakerLayout) {
+        speakerLayout = layout
+        val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        genezyPrefs = p
+        p.edit()
+            .putString("speaker_mode", layout.mode.name)
+            .putInt("speaker_satellites", layout.satelliteCount)
+            .putBoolean("speaker_subwoofer", layout.subwooferActive)
+            .apply()
     }
     @Volatile private var viewers = 0
     @Volatile private var started = false
@@ -93,6 +111,13 @@ object FotoHoloEngine {
             intensity = p.getFloat("intensity", 0.6f).let { if (it.isFinite()) it.coerceIn(0f, 1f) else 0.6f }
             genezyProfileEnabled = p.getBoolean("genezy_profile_enabled", false)
             genezyLateralExtension = p.getBoolean("genezy_lateral_extension", true)
+            val mode = runCatching { SpeakerMode.valueOf(p.getString("speaker_mode", null) ?: "STEREO") }
+                .getOrDefault(SpeakerMode.STEREO)
+            speakerLayout = SpeakerLayout(
+                mode = mode,
+                satelliteCount = p.getInt("speaker_satellites", 2),
+                subwooferActive = p.getBoolean("speaker_subwoofer", false)
+            )
         } catch (t: Throwable) {
             Log.w(TAG, "No se pudieron cargar preferencias; se usan valores seguros", t)
         }
@@ -235,7 +260,7 @@ object FotoHoloEngine {
                     val shouldModulate = routeDecision.allowSpectralAdaptation && features.valid && !routeARestorePending
                     var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base
                     if (shouldModulate) {
-                        val target = genezyWidth(FotoHoloMath.targetWidth(base, intensity, features))
+                        val target = declaredWidth(FotoHoloMath.targetWidth(base, intensity, features))
                         current = FotoHoloMath.slew(if (current.isFinite()) current else base, target)
                         val needsWrite = !lastCommanded.isFinite() || FotoHoloMath.changed(current, lastCommanded) || lastError != null
                         if (needsWrite) {
@@ -274,7 +299,7 @@ object FotoHoloEngine {
                     // usuario; la modulación basada en Bark de Ruta A se abstiene en este modo.
                     // Reintento limitado si no hay confirmación explícita de aplicación.
                     if (routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_B) {
-                        val routeBWidth = if (enabled && !bypass) genezyWidth(base) else base
+                        val routeBWidth = if (enabled && !bypass) declaredWidth(base) else base
                         val routeBRetryDue = nowMs - lastRouteBPushMs >= 1_500L &&
                             !FotoHoloRouteB.status.contains("aplicado en Ruta B")
                         if (!lastRouteBCommanded.isFinite() ||

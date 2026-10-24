@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.128
-versionCode=419
+version=v2.5.129
+versionCode=420
 author=Luis Uriel Pimentel Pérez (Gore TNS)
 description=v2.5.128: spatial control wiring and telemetry validation
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

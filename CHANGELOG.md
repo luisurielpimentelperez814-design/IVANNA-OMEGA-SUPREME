@@ -1,3 +1,13 @@
+# CHANGELOG — v2.5.129 (420) — Conteo de bocinas declarado (estéreo/surround + subwoofer) y PR #148 integrado
+
+1. **Merge de PR #148:** perfil Genezy MHCPZ1 (frontales + satélites laterales + graves, impedancias declaradas) conectado al ancho estéreo existente de `FotoHoloEngine` — Ruta A con factor acotado 1.08×, Ruta B solo con el efecto habilitado y sin bypass.
+2. **`SpeakerLayoutPolicy` (nuevo, lógica pura, 9 tests JVM):** generaliza ese mismo mecanismo a cualquier sistema declarado por el usuario, no solo Genezy — modo estéreo/surround, cantidad de bocinas satélite y subwoofer activo o no. Produce un factor de ancho acotado a [0.9, 1.15] que se COMPONE (se multiplica, no se suma) con el factor Genezy existente.
+3. **Límite dejado explícito en el propio código y en la tarjeta de UI, verificado leyendo `omega_effect.cpp`:** el único actuador real al final de esta cadena es `spatial_width → StereoWidener::setSpatialWidth`. El campo `high_cut_hz` del daemon se guarda y se lee de vuelta pero NINGÚN código del motor lo aplica a la señal — confirmado por lectura directa, cero ocurrencias de consumo fuera de guardar/leer. Por eso esta función SOLO matiza el ancho estéreo; no reclama gestión de graves, crossover ni separación de canal LFE real, y lo dice en la propia tarjeta (`SpeakerLayoutPanel`), no solo en un documento aparte.
+4. **`FotoHoloEngine`:** `genezyWidth` pasa a `declaredWidth`, que compone el factor Genezy con `SpeakerLayoutPolicy.apply(...)` y acota siempre al mismo techo real del motor (1.5). `setSpeakerLayout(...)` persiste el layout declarado igual que el resto del estado de FotoHolo.
+5. **`SpeakerLayoutPanel` (nuevo, en `SpatialAudioPanel`):** botones estéreo/surround, contador de satélites (2-8) y switch de subwoofer, con el factor resultante mostrado en vivo.
+
+**No verificado aquí:** compilación Android/APK (la cubre el CI) y, sobre todo, si abrir el ancho un 3-15 % con más bocinas o subwoofer suena mejor en un sistema real — eso solo se puede confirmar con un A/B en el propio sistema de bocinas, no en host.
+
 # CHANGELOG — v2.5.128 (419) — corrección de controles espaciales y telemetría
 
 - Evita que mover controles espaciales llame a `DSPBridge.setParams()`, que restablecía drive, excitador, mezcla, compresor, EQ y master; RIR sigue usando las rutas dedicadas de `OmegaEngineBridge.setRoom` y daemon `SET_REVERB`.
