@@ -36,6 +36,9 @@ object WfsCalibrationManager {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    private fun safeStoredFloat(value: Float, fallback: Float, min: Float, max: Float): Float =
+        if (value.isFinite()) value.coerceIn(min, max) else fallback
+
     private fun publishRelativeLayout(context: Context): Boolean {
         if (!IvannaNativeLib.isLoaded) {
             Log.w(TAG, "No se envía WFS: biblioteca nativa no cargada")
@@ -77,9 +80,11 @@ object WfsCalibrationManager {
     /** Restaura la geometría relativa al oyente, no el layout absoluto por defecto. */
     fun restore(context: Context): Boolean {
         val p = prefs(context)
-        listenerX = p.getFloat(KEY_LX, 1.75f).coerceIn(0f, 3.5f)
-        listenerY = p.getFloat(KEY_LY, 1.20f).coerceIn(0f, 3.5f)
-        listenerZ = p.getFloat(KEY_LZ, 3.50f).coerceIn(0f, 7f)
+        // Preferencias antiguas/corruptas pueden contener NaN o Inf. No las publiques
+        // al daemon: la geometría relativa debe permanecer finita y dentro de la sala.
+        listenerX = safeStoredFloat(p.getFloat(KEY_LX, 1.75f), 1.75f, 0f, 3.5f)
+        listenerY = safeStoredFloat(p.getFloat(KEY_LY, 1.20f), 1.20f, 0f, 3.5f)
+        listenerZ = safeStoredFloat(p.getFloat(KEY_LZ, 3.50f), 3.50f, 0f, 7f)
         presetName = p.getString(KEY_PRESET, "7ch-default") ?: "7ch-default"
         return publishRelativeLayout(context)
     }
