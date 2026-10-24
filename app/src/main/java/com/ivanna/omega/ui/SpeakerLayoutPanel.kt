@@ -66,7 +66,7 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
     ) {
         Text("BOCINAS DECLARADAS", color = Color(0xFF65E7F2), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
         Text(
-            "Surround reutiliza las coordenadas WFS calibradas y las publica al motor. El conteo solo matiza " +
+            "Surround reutiliza las coordenadas WFS de referencia y las publica al motor. El conteo solo matiza " +
             "el ancho perceptual (±15 % máx.); no crea canales físicos ni gestiona graves/LFE reales.",
             color = Color(0xFF9AA4B2), fontSize = 11.sp
         )
