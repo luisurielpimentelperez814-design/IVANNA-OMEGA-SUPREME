@@ -17,7 +17,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.126-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.130-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -138,9 +138,14 @@ El diagrama representa las relaciones generales del código. En particular, el b
 <td>Renderiza la geometría configurada. No es por sí solo una reconstrucción automática de la habitación ni una simulación acústica validada.</td>
 </tr>
 <tr>
+<td><strong>Reloj de hardware (productor HAL)</strong></td>
+<td><code>daemon/hal_clock_producer</code> lee la muestra del driver con <code>SNDRV_PCM_IOCTL_STATUS</code> sobre <code>/dev/snd/pcmC*D*p</code>, que devuelve <code>hw_ptr</code> (frames presentados) y <code>tstamp</code> (CLOCK_MONOTONIC) en una sola consulta, y publica el snapshot compartido <code>IVHC</code> solo si la muestra es correlacionada.</td>
+<td>Desde 2.5.130 el primer tramo de la cadena existe en la ruta Magisk: productor → mmap → lector del efecto → JNI → fila «Reloj hardware». La prueba de extremo a extremo del contrato IPC está en host (9/9). Que el driver del Moto G85 entregue muestras dentro de tolerancia solo se comprueba en el dispositivo, leyendo las líneas <code>HAL-CLOCK</code> del log del daemon.</td>
+</tr>
+<tr>
 <td><strong>SAFMUS / ACSR / HAL-PAL</strong></td>
-<td>Hay lógica, adaptadores o contratos de integración en distintas partes del repositorio.</td>
-<td>La documentación de integración no demuestra una unión de extremo a extremo con el hardware del fabricante. No afirmamos un actuador PAL/ASRC operativo ni control físico de reloj en el Moto G85 sin lectura de retorno y pruebas.</td>
+<td>Hay lógica, adaptadores y contratos de integración en distintas partes del repositorio.</td>
+<td>La documentación de integración no demuestra una unión de extremo a extremo con el hardware del fabricante. No afirmamos un actuador PAL/ASRC operativo ni control físico de reloj en el Moto G85 sin lectura de retorno y pruebas. El actuador ASRC físico sigue sin identificar y sin enlazar: el productor queda <strong>fail-closed</strong> y declara el motivo.</td>
 </tr>
 <tr>
 <td><strong>Wi-Fi / CSI</strong></td>
@@ -231,6 +236,21 @@ Estos comandos no sustituyen la compilación Android, las pruebas instrumentadas
 
 El distintivo CI refleja el estado del flujo configurado en GitHub; no es una certificación acústica ni demuestra que se haya probado el teléfono. Antes de considerar una versión lista, verifica que la compilación, los tests, el APK y el ZIP Magisk procedan del mismo commit, inspecciona sus hashes y prueba la instalación en el dispositivo de destino.
 
+### Reloj de hardware: qué quedó enlazado en 2.5.130
+
+Hasta 2.5.129 la cadena de reloj existía de extremo a extremo **menos en su primer tramo**: el efecto leía el snapshot (`HardwareClockReader`), el JNI lo exponía (`nativeGetClockTelemetryJni`) y el panel «Reloj hardware» lo mostraba, pero nadie lo publicaba en la ruta Magisk. La versión 2.5.130 añade ese productor.
+
+| Pieza añadida | Qué hace | Evidencia |
+|---|---|---|
+| `daemon/hal_clock_producer.hpp` (167 líneas) | `ProducerState` con siete estados honestos, `PcmDevice`, `PairedSample`, `CorrelationGate` y `HalClockProducer` | Compila con `g++ 13 -std=c++20 -O2 -Wall -Wextra`, 0 avisos |
+| `daemon/hal_clock_producer.cpp` (302 líneas) | Descubrimiento por `/proc/asound`, lectura por ioctl, puerta de correlación y publicación en el mmap `IVHC` | 9/9 pruebas host |
+| `daemon/ivanna_daemon.cpp` (+45) | `--hal-clock` / `--no-hal-clock` (activo por defecto) e hilo de sondeo a 250 ms con registro solo al cambiar de estado | Sintaxis verificada en host con cabecera `android/log.h` simulada |
+| `tests/test_hal_clock_producer.cpp` (192 líneas) | 9 pruebas, incluida la de extremo a extremo Publisher → mmap → Reader | `[ PASSED ] 9 tests` |
+
+La puerta de correlación rechaza rate nominal ausente, timestamp no positivo, Δt ≤ 1 µs, Δt > 500 ms (PCM parado), frames que retroceden y tasa implícita fuera de 0,80–1,20 × la nominal; exige tres pares coherentes consecutivos antes de publicar. Todo rechazo se declara con motivo legible.
+
+Lo que **no** cambia con esta versión: el actuador ASRC físico del Moto G85 sigue sin identificar. `hal_integration/MOTO_G85_PAL_CLOCK_INTEGRATION.md` documenta que `pal_get_timestamp` no entrega un par frames + CLOCK_MONOTONIC, así que no puede alimentar al tracker ni al servo; adivinar el nodo produciría la telemetría falsa que la Fase 0 del plan 10D ordena eliminar. Tampoco se ha verificado aquí la compilación Kotlin/APK ni la ejecución de CTest en el runner.
+
 ### Lista de aceptación en hardware
 
 - [ ] Instalar APK y módulo generados desde el mismo commit aprobado.
@@ -239,6 +259,7 @@ El distintivo CI refleja el estado del flujo configurado en GitHub; no es una ce
 - [ ] Abrir FotoHolo, confirmar cámara en vivo, seguimiento, pausa/reanudación y exportación.
 - [ ] Registrar el modelo, versión Android, ruta, SHA del commit, hashes de artefactos y resultados.
 - [ ] No declarar HAL/PAL conectado sin identificar el callback real, unidades del parámetro, actuador, lectura de retorno y prueba en hardware.
+- [ ] Leer las líneas `HAL-CLOCK` del log del daemon durante reproducción real y anotar el estado observado (`publishing`, `rejected`, `no-devices`, `no-source`) junto con el motivo y la deriva en ppm.
 
 ## Contribuir y reportar problemas
 
