@@ -67,10 +67,10 @@ static void setCurrentThreadBestEffort(const char* role) noexcept {
     const int err = (rc == 0) ? 0 : errno;
     const int policy = sched_getscheduler(0);
     if (rc != 0 || policy != SCHED_OTHER) {
-        log_message(std::string("SCHED-WORKER: ") + role +
-                    " could not confirm SCHED_OTHER rc=" + std::to_string(rc) +
-                    " errno=" + std::to_string(err) + " policy=" +
-                    std::to_string(policy));
+        // Avoid std::string/ofstream from this noexcept thread-entry helper.
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG,
+                            "SCHED-WORKER: %s could not confirm SCHED_OTHER rc=%d errno=%d policy=%d",
+                            role, rc, err, policy);
     }
 }
 
@@ -243,76 +243,28 @@ int main(int argc, char* argv[]) {
     struct sigaction sa; memset(&sa,0,sizeof(sa)); sa.sa_handler=signal_handler;
     sigaction(SIGINT,&sa,nullptr); sigaction(SIGTERM,&sa,nullptr);
     signal(SIGPIPE, SIG_IGN);
-    log_message("IVANNA-OMEGA Daemon v1.8 REAL TELEMETRY - Starting");
-    // FIX (CAP_SYS_NICE / SCHED_FIFO silencioso): dos bugs distintos, ambos reales.
-    //   (1) `realtime` solo se ponía a true con `--realtime`, y NINGÚN caller de
-    //       producción (service.sh) pasaba ese flag. sched_setscheduler() nunca
-    //       se EJECUTABA — no es que fallara por falta de CAP_SYS_NICE, es que la
-    //       syscall ni se intentaba. service.sh ahora siempre arranca con
-    //       --realtime (este es el daemon de audio RT del módulo, no un proceso
-    //       best-effort).
-    //   (2) Cuando SÍ se llamaba, el valor de retorno de sched_setscheduler()
-    //       se descartaba. Un denial de SELinux (dominio del daemon sin
-    //       `capability sys_nice`/`process setsched`) devuelve -1/EPERM sin
-    //       ningún rastro — exactamente "ps muestra POLICY=0 CLS=0 PRI=20" sin
-    //       explicación. Ahora se verifica el resultado con sched_getscheduler()
-    //       (no basta con chequear errno: algunos kernels devuelven 0 en un
-    //       path parcialmente aplicado) y se loguea con el mismo prefijo
-    //       grep-eable que ya usan HAL-CLOCK/ASRC-SW, para que
-    //       `adb shell dmesg | grep avc` + `daemon.log` puedan correlacionarse.
-    if (realtime) {
-        struct sched_param p{};
-        p.sched_priority = 80;
-        errno = 0;
-        int rc = sched_setscheduler(0, SCHED_FIFO, &p);
-        int actual_policy = sched_getscheduler(0);
-        if (rc == 0 && actual_policy == SCHED_FIFO) {
-            log_message("SCHED-RT: SCHED_FIFO(80) aplicado y confirmado via sched_getscheduler()");
-        } else {
-            int err = errno;
-            log_message("SCHED-RT: FALLÓ sched_setscheduler(SCHED_FIFO,80) rc=" + std::to_string(rc) +
-                        " errno=" + std::to_string(err) + " (" + strerror(err) + ")" +
-                        " sched_getscheduler_actual=" + std::to_string(actual_policy) +
-                        " — el daemon sigue en SCHED_OTHER/best-effort. Causa probable: dominio" +
-                        " SELinux del proceso sin capability sys_nice (revisar" +
-                        " `dmesg | grep avc | grep -i ivanna_daemon` y sepolicy.rule).");
-            // FIX (fallback degradado, no reemplazo): si el SCHED_FIFO directo
-            // falló — ya sea por CAP_SYS_NICE denegado o por presupuesto
-            // cpu.rt_runtime_us=0 de un cgroup RT-group-scheduled (candidato #3
-            // del diagnóstico diferencial, distinto del #2 de arriba) —
-            // intentamos unirnos al cpuset "audio-app", que es infraestructura
-            // AOSP estándar (system/core cpuset.json, presente en prácticamente
-            // todo dispositivo desde Android 8), NO un task_profiles.json vendor
-            // cuyo nombre de perfil tendríamos que adivinar. Esto NO es
-            // SCHED_FIFO ni sube prioridad por encima del HAL/fast mixer — solo
-            // agrupa el proceso en el cpuset ya reservado para trabajo de audio,
-            // cumpliendo la regla de no tocar rt_runtime_us global ni exceder
-            // la prioridad del HAL. Best-effort: si el nodo no existe o no hay
-            // permiso, se loguea y se continúa en modo degradado, igual que
-            // antes — nunca aborta el arranque del daemon.
-            {
-                const pid_t self_tid = gettid();
-                const std::string cpuset_path = "/dev/cpuset/audio-app/tasks";
-                std::ofstream cpuset_file(cpuset_path, std::ios::out);
-                bool joined = false;
-                if (cpuset_file.is_open()) {
-                    cpuset_file << self_tid;
-                    cpuset_file.flush();
-                    joined = !cpuset_file.fail();
-                }
-                if (joined) {
-                    log_message("SCHED-RT: fallback aplicado — unido a cpuset " + cpuset_path +
-                                " (NO es SCHED_FIFO; agrupa CPU share, no prioridad de kernel)");
-                } else {
-                    log_message("SCHED-RT: fallback a cpuset " + cpuset_path +
-                                " también falló (errno=" + std::to_string(errno) + " " +
-                                strerror(errno) + ") — daemon permanece en SCHED_OTHER sin agrupar.");
-                }
-            }
-        }
+    log_message("IVANNA-OMEGA Dae    // The daemon is a control plane (UNIX sockets, watchdog, SHM and HAL-clock
+    // polling), not the PCM callback. Giving this main thread SCHED_FIFO—even
+    // at 80—risks propagating RT scheduling to workers and can harm touch/system
+    // responsiveness while it performs I/O. Keep it SCHED_OTHER; only a measured,
+    // bounded audio callback may request high RT priority in its own thread.
+    // --realtime remains accepted for service.sh compatibility, but is not a
+    // license to elevate this control loop.
+    struct sched_param control_sched{};
+    errno = 0;
+    const int control_sched_rc = sched_setscheduler(0, SCHED_OTHER, &control_sched);
+    const int control_sched_errno = (control_sched_rc == 0) ? 0 : errno;
+    const int control_policy = sched_getscheduler(0);
+    if (control_sched_rc == 0 && control_policy == SCHED_OTHER) {
+        log_message(std::string("SCHED-CONTROL: main thread pinned to SCHED_OTHER; --realtime=") +
+                    (realtime ? "requested but intentionally not applied to control plane" : "not requested"));
     } else {
-        log_message("SCHED-RT: --realtime no solicitado — daemon en SCHED_OTHER por diseño (no debería" +
-                     std::string(" pasar en el service.sh del módulo; revisar su invocación)."));
+        log_message("SCHED-CONTROL: failed to confirm SCHED_OTHER rc=" +
+                    std::to_string(control_sched_rc) + " errno=" +
+                    std::to_string(control_sched_errno) + " policy=" +
+                    std::to_string(control_policy));
+    }
+lo; revisar su invocación)."));
     }
     // FIX (resiliencia): la SHM es opcional para el socket de comandos. Si
     // /data/adb/ivanna_omega no está montado/escribible aún, shmManager.init
