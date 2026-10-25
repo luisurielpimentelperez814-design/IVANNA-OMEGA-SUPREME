@@ -49,12 +49,28 @@ void log_message(const std::string& msg) {
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "%s", msg.c_str());
     std::ofstream log_file(g_log_path, std::ios::app);
     if (log_file.is_open()) {
-        auto now = std::chrono::system_clock::now();
-        auto in_time_t = std::chrono::system_clock::to_time_t(now);
+        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         struct tm tm_buf{};
-        localtime_r(&in_time_t, &tm_buf);
+        localtime_r(&now, &tm_buf);
         log_file << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S")
                  << " [IVANNA-DAEMON] " << msg << std::endl;
+    }
+}
+
+// Threads created by an SCHED_FIFO creator can inherit real-time scheduling.
+// Control, polling and watchdog workers must drop to best-effort before doing
+// I/O. Keep deadline-critical audio processing out of this helper.
+static void setCurrentThreadBestEffort(const char* role) noexcept {
+    struct sched_param p{};
+    errno = 0;
+    const int rc = sched_setscheduler(0, SCHED_OTHER, &p);
+    const int err = (rc == 0) ? 0 : errno;
+    const int policy = sched_getscheduler(0);
+    if (rc != 0 || policy != SCHED_OTHER) {
+        log_message(std::string("SCHED-WORKER: ") + role +
+                    " could not confirm SCHED_OTHER rc=" + std::to_string(rc) +
+                    " errno=" + std::to_string(err) + " policy=" +
+                    std::to_string(policy));
     }
 }
 
@@ -332,7 +348,10 @@ int main(int argc, char* argv[]) {
     commandServer.resetState();
     if (commandServer.start("@omega_command_socket")) {
         log_message("CONTROL socket ready: @omega_command_socket");
-        std::thread([&commandServer](){ commandServer.acceptLoop(); }).detach();
+        std::thread([&commandServer](){
+            setCurrentThreadBestEffort("command-server");
+            commandServer.acceptLoop();
+        }).detach();
     } else {
         // FIX: antes este fallo era SILENCIOSO. El socket de control es
         // secundario — no abortamos el daemon principal, solo lo logueamos.
@@ -343,6 +362,7 @@ int main(int argc, char* argv[]) {
     // Si el accept loop se bloquea (cliente colgado), el heartbeat sigue
     // latiendo y la app distingue "daemon vivo, socket ocupado" de "daemon muerto".
     std::thread([](){
+        setCurrentThreadBestEffort("heartbeat-watchdog");
         const auto t0 = std::chrono::steady_clock::now();
         uint64_t beats = 0;
         auto publishNowMs = []() noexcept {
@@ -384,6 +404,7 @@ int main(int argc, char* argv[]) {
     std::thread hal_clock_thread;
     if (hal_clock_enabled) {
         hal_clock_thread = std::thread([hal_clock_enabled](){
+            setCurrentThreadBestEffort("hal-clock-asrc-poller");
             ivanna::audio::halclock::HalClockProducer::Config c;
             ivanna::audio::halclock::HalClockProducer producer(c);
             producer.setEnabled(true);
@@ -550,6 +571,7 @@ int main(int argc, char* argv[]) {
             // pudria en el backlog. Ahora cada conexion va a su propio hilo
             // (los handlers de CommandServer ya estan protegidos por mutex).
             std::thread([client_fd, &commandServer]() {
+                setCurrentThreadBestEffort("control-client");
                 struct timeval rcv_tv{0,150000}; setsockopt(client_fd,SOL_SOCKET,SO_RCVTIMEO,&rcv_tv,sizeof(rcv_tv));
                 struct timeval snd_tv{0,300000}; setsockopt(client_fd,SOL_SOCKET,SO_SNDTIMEO,&snd_tv,sizeof(snd_tv));
 
