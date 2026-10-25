@@ -6,7 +6,16 @@ DAEMON="$MODDIR/system/bin/ivanna_daemon"
 STATE="/data/adb/ivanna_omega"
 LOG="$STATE/daemon.log"
 
-mkdir -p "$STATE"
+mkdir -p "$STATE" || exit 1
+
+# Load the decision engine if present; keep boot compatible with older packages.
+CORE="$MODDIR/core/ivanna_autonomous_core.sh"
+if [ -f "$CORE" ]; then
+    . "$CORE" || {
+        echo "$(date) ERROR: no se pudo cargar el motor autónomo" >> "$LOG"
+        exit 1
+    }
+fi
 
 # SAFMUS: map whole-device resource conditions before starting the shared daemon.
 # The probe is read-only; it publishes a bounded budget for later consumers.
@@ -65,6 +74,20 @@ if [ -f "$MODDIR/.safe_mode" ]; then
     exit 0
 fi
 
+# Gate the launch through the autonomous decision engine when available.
+# The module safe-mode flag above remains the authoritative emergency veto.
+if command -v decision_evaluate >/dev/null 2>&1; then
+    decision_evaluate "DAEMON_RUNTIME"
+    DECISION_RC=$?
+    if [ "$DECISION_RC" -ne 0 ]; then
+        echo "$(date) DECISION VETO: DAEMON_RUNTIME rc=$DECISION_RC state=$(get_state)" >> "$LOG"
+        setprop persist.ivanna.daemon_active 0 2>/dev/null
+        exit 0
+    fi
+else
+    echo "$(date) WARN: motor de decisiones ausente; se conserva gate legacy" >> "$LOG"
+fi
+
 # Detección de bucles de choque continuos
 CRASH_COUNT_FILE="$STATE/daemon_crash_streak"
 CRASHES=$(cat "$CRASH_COUNT_FILE" 2>/dev/null || echo 0)
@@ -103,11 +126,25 @@ echo "$(date) iniciando ivanna_daemon" >> "$LOG"
 PID=$!
 echo "$PID" > "$STATE/daemon.pid"
 
-sleep 3
+# Confirm both process survival and the actual abstract socket, not PID alone.
+SOCKET_READY=0
+i=0
+while [ "$i" -lt 20 ]; do
+    if ! kill -0 "$PID" 2>/dev/null; then
+        break
+    fi
+    if grep -aq omega_daemon_socket /proc/net/unix 2>/dev/null; then
+        SOCKET_READY=1
+        break
+    fi
+    i=$((i + 1))
+    sleep 0.5 2>/dev/null || sleep 1
+done
 
-if kill -0 "$PID" 2>/dev/null; then
-    echo "$(date) daemon activo PID=$PID" >> "$LOG"
+if kill -0 "$PID" 2>/dev/null && [ "$SOCKET_READY" -eq 1 ]; then
+    echo "$(date) daemon listo PID=$PID socket=@omega_daemon_socket" >> "$LOG"
     setprop persist.ivanna.daemon_active 1 2>/dev/null
+    command -v set_state >/dev/null 2>&1 && set_state "OPTIMAL"
     echo "0" > "$CRASH_COUNT_FILE"
     touch /data/adb/ivanna_omega_last_boot_ok 2>/dev/null
     CLIENT="$MODDIR/system/bin/ivanna_client"
@@ -121,7 +158,13 @@ if kill -0 "$PID" 2>/dev/null; then
         fi
     fi
 else
-    echo "$(date) ERROR daemon murió al iniciar" >> "$LOG"
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "$(date) ERROR daemon vivo pero socket no listo tras 10 s" >> "$LOG"
+        command -v set_state >/dev/null 2>&1 && set_state "DEGRADED"
+    else
+        echo "$(date) ERROR daemon murió antes de quedar listo" >> "$LOG"
+        command -v set_state >/dev/null 2>&1 && set_state "DEGRADED"
+    fi
     setprop persist.ivanna.daemon_active 0 2>/dev/null
     echo $((CRASHES + 1)) > "$CRASH_COUNT_FILE"
 fi
