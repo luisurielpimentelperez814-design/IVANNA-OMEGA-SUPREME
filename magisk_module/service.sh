@@ -93,15 +93,11 @@ echo "$(date) iniciando ivanna_daemon" >> "$LOG"
 # Control autenticado solo por socket UNIX abstracto. El daemon rechaza TCP
 # deliberadamente; no pasar un flag de fallback que la app no debe usar.
 #
-# FIX (SCHED_FIFO nunca se aplicaba): el parser de ivanna_daemon.cpp soporta
-# --realtime desde hace varias versiones, pero NINGÚN caller de producción lo
-# pasaba — ni aquí ni en ningún otro script del módulo. sched_setscheduler()
-# nunca se ejecutaba: no era un denial de SELinux silencioso, era una llamada
-# que nunca ocurría. Este es el daemon de audio en tiempo real del módulo;
-# --realtime va siempre. El daemon ahora verifica y loguea
-# (prefijo "SCHED-RT:" en daemon.log) si SCHED_FIFO se aplicó de verdad o si
-# quedó en SCHED_OTHER por un denial de capability — antes esto era invisible
-# en ambos sentidos.
+# El daemon es el plano de control (sockets/SHM/watchdog/sondeo de reloj),
+# no el callback que procesa PCM. Se conserva --realtime por compatibilidad
+# con scripts/versiones anteriores, pero ivanna_daemon fuerza su hilo principal
+# y sus trabajadores a SCHED_OTHER para no competir con AudioFlinger/táctil.
+# La prioridad RT extrema debe reservarse a un hilo de audio dedicado y medido.
 "$DAEMON" --realtime >> "$LOG" 2>&1 &
 
 PID=$!
