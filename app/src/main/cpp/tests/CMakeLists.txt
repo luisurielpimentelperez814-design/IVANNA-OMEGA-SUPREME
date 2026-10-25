@@ -213,6 +213,19 @@ target_compile_options(test_effect_beacon PRIVATE -Wall -Wextra)
 target_link_libraries(test_effect_beacon PRIVATE Threads::Threads)
 add_test(NAME test_effect_beacon COMMAND test_effect_beacon)
 
+# ── test_audio_effect_library_tag: AUDIO_EFFECT_LIBRARY_TAG == valor real AOSP ──
+# Regresión del hallazgo v2.5.139: el shim audio_effect_compat.h tenía los
+# shifts de bits de AUDIO_EFFECT_LIBRARY_TAG en orden inverso al real de AOSP
+# (0x544C4541 en vez de 0x41454C54). EffectsXmlConfigLoader::loadLibrary() del
+# audioserver real rechaza cualquier librería cuyo tag no coincida EXACTO,
+# antes de cualquier otro chequeo (XML, SELinux, etc). Sin este test, un
+# futuro cambio accidental al shim vuelve a romper esto en silencio.
+add_executable(test_audio_effect_library_tag test_audio_effect_library_tag.cpp)
+target_include_directories(test_audio_effect_library_tag PRIVATE .. ../include)
+target_compile_options(test_audio_effect_library_tag PRIVATE -Wall -Wextra)
+target_link_libraries(test_audio_effect_library_tag PRIVATE GTest::gtest_main)
+gtest_discover_tests(test_audio_effect_library_tag)
+
 # ── test_upmixing_control_plane: evidencia del canal app->daemon->SHM->effect ──
 # Compila el omega_control_bus.cpp REAL (writer/reader seqlock + CRC32) y
 # verifica que el snapshot transporta upmixing_enabled/immersivity con

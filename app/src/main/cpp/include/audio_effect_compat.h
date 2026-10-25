@@ -141,8 +141,32 @@ enum effect_command_e {
 #define EFFECT_LIBRARY_API_VERSION    EFFECT_MAKE_API_VERSION(3, 0)
 
 /* ── Tabla de la librería (dlopen entry point) ───────────────────────────────*/
+/* FIX CRÍTICO #2 (orden de bytes invertido vs. AOSP real — hallazgo verificado
+ * contra el fuente genuino de hardware/libhardware/include/hardware/
+ * audio_effect.h): esta macro tenía los shifts en orden INVERSO al real.
+ *
+ *   AOSP genuino:  (('A')<<24) | (('E')<<16) | (('L')<<8) | ('T')  = 0x41454C54
+ *   Este archivo (antes de este fix): 'A' | ('E'<<8) | ('L'<<16) | ('T'<<24)
+ *                                     = 0x544C4541  (byte-swapped)
+ *
+ * EffectsXmlConfigLoader.cpp::loadLibrary() (AOSP real, frameworks/av) hace
+ * dlsym("AELI") y, ANTES de cualquier otra cosa — antes de query_effect,
+ * antes de create_effect, antes de que audio_effects.xml o SELinux importen
+ * en absoluto —, compara:
+ *     if (description->tag != AUDIO_EFFECT_LIBRARY_TAG) {
+ *         ALOGE("Bad tag %#08x ... expected %#08x for library %s", ...);
+ *         return false;  // dlclose() y la librería se descarta
+ *     }
+ * Con el valor viejo, ESTE check fallaba siempre, sin importar si el XML
+ * estaba en la partición correcta o si SELinux permitía dlopen/execute —
+ * la librería nunca pasaba de esta línea. Esto explica "el binario es
+ * válido, el hash es correcto, y aun así AudioFlinger nunca lo instancia"
+ * de forma más directa que cualquiera de los 3 candidatos de v2.5.138: con
+ * el tag equivocado, NINGUNO de esos 3 fixes podía importar — el rechazo
+ * ocurre antes de que SELinux o la partición del XML entren en juego.
+ */
 #define AUDIO_EFFECT_LIBRARY_TAG \
-    ((uint32_t)('A') | ((uint32_t)('E') << 8) | ((uint32_t)('L') << 16) | ((uint32_t)('T') << 24))
+    (((uint32_t)('A') << 24) | ((uint32_t)('E') << 16) | ((uint32_t)('L') << 8) | (uint32_t)('T'))
 
 /* FIX CRÍTICO (causa raíz del fallo real en dispositivo, Android 15):
  * "EffectsFactoryConfigLoader: failed not find symbol 'AELI' ... undefined

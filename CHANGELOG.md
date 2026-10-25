@@ -1,3 +1,73 @@
+# CHANGELOG — v2.5.139 (430) — CRÍTICO: AUDIO_EFFECT_LIBRARY_TAG tenía los bytes invertidos — audioserver rechazaba la librería antes de cualquier otro chequeo
+
+Hallazgo más grave que los 3 candidatos de v2.5.138, y confirmado contra la fuente real de
+AOSP (no especulación): `app/src/main/cpp/include/audio_effect_compat.h` definía
+`AUDIO_EFFECT_LIBRARY_TAG` con los shifts de bits en **orden inverso** al real.
+
+## El bug exacto
+
+```c
+// ANTES (bug, orden de shifts invertido):
+#define AUDIO_EFFECT_LIBRARY_TAG \
+    ((uint32_t)('A') | ((uint32_t)('E') << 8) | ((uint32_t)('L') << 16) | ((uint32_t)('T') << 24))
+// = 0x544C4541
+
+// AOSP real (hardware/libhardware/include/hardware/audio_effect.h):
+#define AUDIO_EFFECT_LIBRARY_TAG ((('A') << 24) | (('E') << 16) | (('L') << 8) | ('T'))
+// = 0x41454C54
+```
+
+Verificado leyendo la fuente real de AOSP (`hardware/libhardware/include/hardware/audio_effect.h`,
+vía mirror público) — no es una suposición. Los dos valores son **distintos**
+(`0x41454C54` vs `0x544C4541`), confirmado numéricamente con un programa C aislado antes y
+después del fix.
+
+## Por qué esto bloquea TODO lo demás, incluidos los 3 candidatos de v2.5.138
+
+`EffectsXmlConfigLoader.cpp::loadLibrary()` del audioserver real (frameworks/av, código
+verificado) hace `dlsym("AELI")` y, **como primer chequeo tras eso — antes de
+`query_effect`, antes de `create_effect`, antes de que `audio_effects.xml` o SELinux
+importen en absoluto**:
+
+```cpp
+if (description->tag != AUDIO_EFFECT_LIBRARY_TAG) {
+    ALOGE("Bad tag %#08x in description structure, expected %#08x for library %s", ...);
+    return false;  // dlclose() inmediato, la librería se descarta
+}
+```
+
+Con el tag equivocado, este check fallaba **siempre**, sin importar si `audio_effects.xml`
+estaba en la partición correcta (candidato 1), si SELinux permitía `execute` (candidato 2),
+o si el scheduler del daemon era `SCHED_FIFO` o `SCHED_OTHER` (candidato 3) — ninguno de los
+3 llega a importar porque el rechazo ocurre antes. Esto explica de forma mucho más directa
+"el binario es válido, el hash es correcto, y aun así AudioFlinger nunca lo instancia"
+que cualquiera de los candidatos anteriores.
+
+## Fix
+
+- `audio_effect_compat.h`: shifts corregidos al orden real de AOSP
+  (`'A'<<24 | 'E'<<16 | 'L'<<8 | 'T'` = `0x41454C54`).
+- `EFFECT_LIBRARY_API_VERSION`/`EFFECT_CONTROL_API_VERSION` (misma región del archivo):
+  verificadas también contra la fuente real de AOSP — **estas dos ya eran correctas**,
+  `EFFECT_MAKE_API_VERSION(M,m) = ((M)<<16)|((m)&0xFFFF)` coincide exacto, sin bug ahí.
+- Nuevo `test_audio_effect_library_tag.cpp` (gtest): fija el valor numérico exacto esperado
+  (`0x41454C54`) citando la fuente primaria, y verifica explícitamente que NO regrese al
+  valor byte-swapped (`0x544C4541`).
+
+## Verificación
+
+- El valor corregido se comparó numéricamente contra AOSP real con un programa C aislado:
+  coincide exacto (`0x41454C54` == `0x41454C54`).
+- El nuevo test se compiló y corrió dos veces con gtest real: **falla** contra el header
+  viejo (reproduce el valor exacto del bug, `1414284609` = `0x544C4541`) y **pasa** contra
+  el header corregido — confirma que el test detecta la regresión real, no es un check vacío.
+- 9/9 `scripts/check_*.py` en verde contra el árbol completo.
+
+**NO VERIFICADO en el Moto G85 real.** Este fix es el candidato más fuerte hasta ahora para
+explicar por qué Ruta B nunca enganchaba — pero sigue siendo código, no el dispositivo. Los 3
+comandos `adb` pedidos en v2.5.135/138 (`dumpsys media.audio_flinger`, `dmesg | grep avc`,
+`ps` del daemon) siguen siendo la única confirmación real.
+
 # CHANGELOG — v2.5.138 (429) — 3 huecos de "¿por qué Ruta B no engancha en el Moto G85?" cerrados por código, pendientes de confirmar en dispositivo
 
 Continuación directa del briefing quirúrgico de v2.5.135: diagnóstico diferencial de 3
