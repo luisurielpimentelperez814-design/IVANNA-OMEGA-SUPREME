@@ -27,11 +27,11 @@ static_assert(offsetof(effect_interface_s, get_descriptor) == 2 * sizeof(void*))
 static_assert(offsetof(effect_interface_s, process_reverse) == 3 * sizeof(void*));
 static_assert(sizeof(effect_interface_s) == 4 * sizeof(void*));
 
-static_assert(offsetof(audio_effect_library_t, query_num_effects) == 4 * sizeof(void*));
-static_assert(offsetof(audio_effect_library_t, query_effect) == 5 * sizeof(void*));
-static_assert(offsetof(audio_effect_library_t, create_effect) == 6 * sizeof(void*));
-static_assert(offsetof(audio_effect_library_t, release_effect) == 7 * sizeof(void*));
-static_assert(offsetof(audio_effect_library_t, get_descriptor) == 8 * sizeof(void*));
+static_assert(offsetof(audio_effect_library_t, query_num_effects) == 2 * sizeof(uint32_t) + 2 * sizeof(void*));
+static_assert(offsetof(audio_effect_library_t, query_effect) == 2 * sizeof(uint32_t) + 3 * sizeof(void*));
+static_assert(offsetof(audio_effect_library_t, create_effect) == 2 * sizeof(uint32_t) + 4 * sizeof(void*));
+static_assert(offsetof(audio_effect_library_t, release_effect) == 2 * sizeof(uint32_t) + 5 * sizeof(void*));
+static_assert(offsetof(audio_effect_library_t, get_descriptor) == 2 * sizeof(uint32_t) + 6 * sizeof(void*));
 
 TEST(AudioEffectAbiLayoutTest, DescriptorMatchesAospLayout) {
     effect_descriptor_t descriptor{};
