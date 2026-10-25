@@ -47,12 +47,26 @@ inline void enableAudioThreadFastMath() noexcept {
     fpscr |= (1u << 19); // DAZ
     asm volatile("vmsr fpscr, %0" : : "r"(fpscr));
 #endif
+#endif
+}
+
+// Scheduling is deliberately separate from FP-mode setup. The generic helper
+// above is also called from JNI, visualizer initialization and constructors;
+// promoting those callers to FIFO/99 can starve touch and system services.
+// Call this only from a dedicated, measured audio-deadline thread.
+inline bool requestCurrentThreadRealtimePriority(int priority) noexcept {
 #if defined(__ANDROID__)
-    static constexpr int kAndroidPriorityAudio = -19;
-    setpriority(PRIO_PROCESS, static_cast<id_t>(gettid()), kAndroidPriorityAudio);
+    if (priority < 1 || priority > 99) return false;
     sched_param sp{};
-    sp.sched_priority = 99;
-    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+    sp.sched_priority = priority;
+    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) return false;
+    int actual_policy = 0;
+    sched_param actual{};
+    return pthread_getschedparam(pthread_self(), &actual_policy, &actual) == 0 &&
+           actual_policy == SCHED_FIFO && actual.sched_priority == priority;
+#else
+    (void)priority;
+    return false;
 #endif
 }
 
