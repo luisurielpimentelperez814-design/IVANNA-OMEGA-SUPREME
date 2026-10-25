@@ -1,4 +1,4 @@
-# CHANGELOG — v2.5.136 (427) — 3 huecos de "¿por qué Ruta B no engancha en el Moto G85?" cerrados por código, pendientes de confirmar en dispositivo
+# CHANGELOG — v2.5.138 (429) — 3 huecos de "¿por qué Ruta B no engancha en el Moto G85?" cerrados por código, pendientes de confirmar en dispositivo
 
 Continuación directa del briefing quirúrgico de v2.5.135: diagnóstico diferencial de 3
 candidatos para por qué AudioFlinger podría no estar insertando `libomega_effect.so` en
@@ -6,6 +6,13 @@ el mix real. Sin acceso a un dispositivo en este entorno, los 3 fixes son **defe
 y no especulativos** — cada uno cierra un hueco real confirmado leyendo el código, no
 una hipótesis sobre el G85 específico del usuario. Los 3 pueden aplicar o no; solo el
 dispositivo real lo confirma.
+
+
+**Nota de fusión:** en paralelo, otra sesión publicó v2.5.136 (427, fix de ruta
+raíz en safmus_audio_effect_audit.sh) y luego v2.5.137 (428, empaquetado SOFA
+completo 239/200 ARI) directamente en `main`. Ambos releases ya son inmutables en
+GitHub. Este trabajo —que también usaba 2.5.136 porque partió del mismo punto—
+se renumera a v2.5.138 (429) y se aplica encima de ambos, sin pisar nada.
 
 ## Candidato 1 — audio_effects.xml se fusionaba en una partición fija, no en la detectada
 
@@ -75,6 +82,22 @@ del usuario. Pendiente que el usuario corra en el G85:
 `setprop ctl.restart audioserver`, y
 `adb shell dumpsys media.audio_flinger | grep -i -A5 omega`.
 
+---
+# CHANGELOG — v2.5.136 (427) — SAFMUS: raíz del módulo y rutas reales de registro de audio
+
+## Corrección confirmada por auditoría del dispositivo
+
+- safmus_audio_effect_audit.sh deriva la raíz real del módulo desde <module-root>/core, en lugar de tratar core/ como raíz. Esto evita buscar XML y bibliotecas bajo core/system/....
+- El auditor comprueba primero los archivos del overlay del módulo y después las rutas activas habituales de /vendor y /system.
+- El reporte distingue module_overlay de runtime_path y mantiene system_wide_audio_coverage=unverified: encontrar XML y ELF no demuestra que AudioFlinger haya creado una instancia ni que procese audio.
+- Se añade un contrato de regresión al chequeo SAFMUS transversal de CI.
+- No se modifica el XML de Dolby/OEM, la prioridad del efecto, SELinux ni se reinicia ningún servicio.
+
+## Validación pendiente
+
+CI debe compilar y ejecutar los gates del repositorio. La activación efectiva en AudioFlinger sigue pendiente de verificación en el Moto G85 con telemetría real durante reproducción.
+
+---
 # CHANGELOG — v2.5.135 (426) — SCHED_FIFO del daemon: de nunca-se-ejecuta a confirmado y auditable
 
 Cierra los puntos 2 y 3 que quedaban pendientes de la lista "qué sigue faltando" de v2.5.133/134.

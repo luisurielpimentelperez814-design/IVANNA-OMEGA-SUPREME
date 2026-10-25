@@ -383,7 +383,7 @@ int main(int argc, char* argv[]) {
     // Fail-closed: sin fuente fiable no publica nada y lo declara.
     std::thread hal_clock_thread;
     if (hal_clock_enabled) {
-        hal_clock_thread = std::thread([](){
+        hal_clock_thread = std::thread([hal_clock_enabled](){
             ivanna::audio::halclock::HalClockProducer::Config c;
             ivanna::audio::halclock::HalClockProducer producer(c);
             producer.setEnabled(true);
