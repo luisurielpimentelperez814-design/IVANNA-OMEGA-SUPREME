@@ -83,15 +83,15 @@ get_state() {
 json_escape() {
     # Escape JSON string contents without requiring jq/python on Android.
     printf '%s' "$1" | awk 'BEGIN { ORS="" } {
+      if (NR>1) printf "\\n"
       for (i=1; i<=length($0); i++) {
         ch=substr($0,i,1)
-        if (ch=="\\") printf "\\\\"
-        else if (ch=="\042") printf "\\\""
-        else if (ch=="\t") printf "\\t"
-        else if (ch=="\r") printf "\\r"
+        if (ch=="\\\\") printf "\\\\\\\\"
+        else if (ch=="\042") printf "\\\\\042"
+        else if (ch=="\t") printf "\\\\t"
+        else if (ch=="\r") printf "\\\\r"
         else printf "%s", ch
       }
-      if (NR>1) printf "\\n"
     }'
 }
 
