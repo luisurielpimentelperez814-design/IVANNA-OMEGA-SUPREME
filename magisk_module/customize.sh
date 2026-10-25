@@ -177,9 +177,20 @@ set_perm_recursive "$SOFA_STAGE" root root 0755 0644 || abort "ERROR: no se pudi
 activate_staged_dir "$SOFA_STAGE" "$SOFA_DEST" || abort "ERROR: no se pudo activar SOFA; se restauró el dataset previo si existía"
 ui_print "  ✓ SOFA validado y desplegado: $SOFA_DEST ($SOFA_STAGE_COUNT total, $SOFA_ARI_STAGE_COUNT ARI)"
 # ── Fusión dinámica de audio_effects.xml ──────────────────────────────────────
+# FIX (candidato #1 del diagnóstico diferencial "¿por qué Ruta B no engancha"):
+# ANTES, TARGET_XML estaba hardcodeado a system/vendor/etc SIN IMPORTAR en qué
+# partición se encontró el XML real del dispositivo. Un G85 (u otro device)
+# donde audioserver cargue de verdad desde /system/etc/ (no vendor) recibía el
+# merge en la partición equivocada: el mirror de Magisk en vendor/etc existía
+# y parecía correcto, pero audioserver seguía leyendo el /system/etc/
+# original sin omega_effect — EACCES/vacío en dumpsys sin ningún error visible,
+# porque técnicamente no hay error: el XML fusionado simplemente nunca se lee.
+# AHORA: TARGET_XML sigue la MISMA partición que ORIG_XML detectó en el
+# dispositivo real, en vez de asumir vendor siempre. El fallback estático
+# pre-empaquetado en magisk_module/system/vendor/etc/audio_effects.xml (caso
+# "Base del sistema no accesible") se mantiene sin cambios — sigue siendo la
+# base razonable cuando el installer no puede leer el XML real del device.
 ui_print "- Configurando audio_effects.xml..."
-TARGET_XML="$MODPATH/system/vendor/etc/audio_effects.xml"
-mkdir -p "$(dirname "$TARGET_XML")"
 ORIG_XML=""
 for P in /system/vendor/etc/audio_effects.xml /vendor/etc/audio_effects.xml /system/etc/audio_effects.xml; do
     if [ -f "$P" ]; then
@@ -189,15 +200,37 @@ for P in /system/vendor/etc/audio_effects.xml /vendor/etc/audio_effects.xml /sys
 done
 
 if [ -n "$ORIG_XML" ] && grep -q "<audio_effects_conf" "$ORIG_XML" 2>/dev/null; then
+    # TARGET_XML espeja la partición REAL detectada (ORIG_XML), no una fija.
+    # Normalización: este módulo, igual que el resto de sus archivos (ver
+    # system/vendor/lib64/soundfx/, system/vendor/etc/ estático), representa
+    # /vendor/... como $MODPATH/system/vendor/... — NO $MODPATH/vendor/...
+    # directo. Es el mapeo que Magisk espera en layouts system-as-root
+    # (Android 10+, incluye el Moto G85). Si ORIG_XML venía de /vendor/ a
+    # secas, se traduce antes de prependear $MODPATH; /system/... y
+    # /system/vendor/... ya son 1:1.
+    case "$ORIG_XML" in
+        /vendor/*) MIRRORED_PATH="/system$ORIG_XML" ;;
+        *)         MIRRORED_PATH="$ORIG_XML" ;;
+    esac
+    TARGET_XML="$MODPATH$MIRRORED_PATH"
+    mkdir -p "$(dirname "$TARGET_XML")"
     ui_print "  ✓ Base detectada: $ORIG_XML"
+    ui_print "  ✓ Destino del merge alineado a la misma partición: $TARGET_XML"
     cp -f "$ORIG_XML" "$TARGET_XML"
     if ! grep -q "omega_effect" "$TARGET_XML"; then
         sed -i '/<libraries>/a \        <library name="omega_effect" path="libomega_effect.so"/>' "$TARGET_XML"
         sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$TARGET_XML"
         ui_print "  ✓ omega_effect fusionado preservando efectos OEM"
     fi
+    # Si ORIG_XML NO era el vendor/etc por defecto que ya trae el módulo
+    # empaquetado (fallback estático), ese fallback queda intacto y no
+    # colisiona: Magisk solo monta lo que existe bajo $MODPATH/, y ahora hay
+    # dos archivos distintos reales (vendor/etc estático + la partición real
+    # recién fusionada) en vez de pisar silenciosamente el que sí se lee.
 else
-    ui_print "  ! Base del sistema no accesible — manteniendo configuración propia"
+    TARGET_XML="$MODPATH/system/vendor/etc/audio_effects.xml"
+    mkdir -p "$(dirname "$TARGET_XML")"
+    ui_print "  ! Base del sistema no accesible — manteniendo configuración propia (fallback estático en vendor/etc)"
 fi
 
 ui_print "- Setting permissions on DSP libraries..."

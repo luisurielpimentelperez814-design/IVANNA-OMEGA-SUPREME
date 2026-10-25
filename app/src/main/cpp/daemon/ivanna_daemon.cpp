@@ -260,6 +260,39 @@ int main(int argc, char* argv[]) {
                         " — el daemon sigue en SCHED_OTHER/best-effort. Causa probable: dominio" +
                         " SELinux del proceso sin capability sys_nice (revisar" +
                         " `dmesg | grep avc | grep -i ivanna_daemon` y sepolicy.rule).");
+            // FIX (fallback degradado, no reemplazo): si el SCHED_FIFO directo
+            // falló — ya sea por CAP_SYS_NICE denegado o por presupuesto
+            // cpu.rt_runtime_us=0 de un cgroup RT-group-scheduled (candidato #3
+            // del diagnóstico diferencial, distinto del #2 de arriba) —
+            // intentamos unirnos al cpuset "audio-app", que es infraestructura
+            // AOSP estándar (system/core cpuset.json, presente en prácticamente
+            // todo dispositivo desde Android 8), NO un task_profiles.json vendor
+            // cuyo nombre de perfil tendríamos que adivinar. Esto NO es
+            // SCHED_FIFO ni sube prioridad por encima del HAL/fast mixer — solo
+            // agrupa el proceso en el cpuset ya reservado para trabajo de audio,
+            // cumpliendo la regla de no tocar rt_runtime_us global ni exceder
+            // la prioridad del HAL. Best-effort: si el nodo no existe o no hay
+            // permiso, se loguea y se continúa en modo degradado, igual que
+            // antes — nunca aborta el arranque del daemon.
+            {
+                const pid_t self_tid = gettid();
+                const std::string cpuset_path = "/dev/cpuset/audio-app/tasks";
+                std::ofstream cpuset_file(cpuset_path, std::ios::out);
+                bool joined = false;
+                if (cpuset_file.is_open()) {
+                    cpuset_file << self_tid;
+                    cpuset_file.flush();
+                    joined = !cpuset_file.fail();
+                }
+                if (joined) {
+                    log_message("SCHED-RT: fallback aplicado — unido a cpuset " + cpuset_path +
+                                " (NO es SCHED_FIFO; agrupa CPU share, no prioridad de kernel)");
+                } else {
+                    log_message("SCHED-RT: fallback a cpuset " + cpuset_path +
+                                " también falló (errno=" + std::to_string(errno) + " " +
+                                strerror(errno) + ") — daemon permanece en SCHED_OTHER sin agrupar.");
+                }
+            }
         }
     } else {
         log_message("SCHED-RT: --realtime no solicitado — daemon en SCHED_OTHER por diseño (no debería" +

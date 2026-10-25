@@ -1,3 +1,80 @@
+# CHANGELOG — v2.5.136 (427) — 3 huecos de "¿por qué Ruta B no engancha en el Moto G85?" cerrados por código, pendientes de confirmar en dispositivo
+
+Continuación directa del briefing quirúrgico de v2.5.135: diagnóstico diferencial de 3
+candidatos para por qué AudioFlinger podría no estar insertando `libomega_effect.so` en
+el mix real. Sin acceso a un dispositivo en este entorno, los 3 fixes son **defensivos
+y no especulativos** — cada uno cierra un hueco real confirmado leyendo el código, no
+una hipótesis sobre el G85 específico del usuario. Los 3 pueden aplicar o no; solo el
+dispositivo real lo confirma.
+
+## Candidato 1 — audio_effects.xml se fusionaba en una partición fija, no en la detectada
+
+`customize.sh` buscaba el XML original del sistema en 3 rutas posibles
+(`/system/vendor/etc`, `/vendor/etc`, `/system/etc`) pero el destino del merge estaba
+hardcodeado a `system/vendor/etc` sin importar cuál de las 3 se encontró. En un
+dispositivo donde `audioserver` lee de verdad desde `/system/etc/` (no vendor), el
+merge se escribía en una partición que el proceso nunca lee — sin ningún error visible,
+porque técnicamente no hay error.
+
+- `TARGET_XML` ahora espeja la partición de `ORIG_XML` detectada en el dispositivo real
+  (con normalización `/vendor/...` → `$MODPATH/system/vendor/...`, el mapeo que ya usa
+  el resto del módulo para layouts system-as-root).
+- Verificado en host: los 3 casos de búsqueda (`/system/vendor/etc`, `/vendor/etc`,
+  `/system/etc`) resuelven al destino `$MODPATH` correcto (probado con un harness `sh`
+  aislado reproduciendo exactamente la lógica del script).
+- El fallback estático pre-empaquetado en `vendor/etc` no se tocó.
+
+## Candidato 2 — cero reglas SELinux "execute" para que audioserver cargue el .so
+
+`sepolicy.rule` (427 líneas antes de este cambio) tenía reglas `read`/`open`/`map` para
+el SHM y los datasets, pero **ninguna regla `execute`** en todo el archivo. Un XML
+correcto y un binario correcto no bastan: `audioserver` haciendo `dlopen()` sobre
+`libomega_effect.so` pasa por el permiso `execute` de la clase `file` de SELinux, no por
+`read`/`map`. Este era el hueco más silencioso de los tres: ni `dumpsys` ni logcat lo
+señalan, solo `dmesg | grep avc`.
+
+- Nueva sección v3.3: `allow audioserver <tipo> file { ... execute execute_no_trans }`
+  cubriendo `vendor_file`, `magisk_file`, `unlabeled`, `system_file` y
+  `same_process_hal_file` — la matriz de contextos posibles que puede terminar teniendo
+  `libomega_effect.so` tras el overlay de Magisk, mismo criterio que el resto del
+  archivo (regla de más, no denial silencioso).
+
+## Candidato 3 — sin fallback si SCHED_FIFO falla por cgroup (distinto de CAP_SYS_NICE)
+
+v2.5.135 ya cerró el caso "`--realtime` nunca se pasaba" y "el `rc` se descartaba". Pero
+un `EPERM` de `sched_setscheduler()` también puede venir de un cgroup RT-group-scheduled
+con `cpu.rt_runtime_us=0`, no solo de SELinux — causa distinta, mismo síntoma. En vez de
+adivinar nombres de perfil de un `task_profiles.json` vendor-específico (que este repo
+no tiene y que varía por OEM), el daemon ahora intenta un fallback **best-effort, no
+fatal**: unirse al cpuset `audio-app` (infraestructura AOSP estándar desde Android 8, no
+vendor-propietaria). No es SCHED_FIFO ni sube prioridad sobre el HAL/fast mixer — solo
+agrupa el proceso en el cpuset ya reservado para audio. Si también falla, se loguea con
+el mismo prefijo `SCHED-RT:` y el daemon sigue en modo degradado, igual que antes.
+
+## Lo que NO se tocó (ya estaba resuelto, verificado sin cambiar código)
+
+- `EFFECT_CMD_SET_PARAM`/`GET_PARAM` (`omega_effect.cpp`, AUDIT FIX #4 previo): parsea,
+  aplica a `fusionCore` y publica al `OmegaControlBus`.
+- ABI del bus de control (`omega_control_bus.h`): ya tiene `magic`+`version`+
+  `static_assert(sizeof(...) <= 512)` + `isValid()` combinando los tres checks, con
+  tests (`test_upmixing_control_plane.cpp`) que ya lo ejercitan.
+- R8 keep para el bridge JNI (`proguard-rules.pro`): ya existe desde antes.
+
+## Verificación
+
+El bloque de fallback a cpuset se extrajo y compiló/corrió aislado en host
+(`g++ -std=c++20`), confirmando que escribe el tid real al nodo. La lógica de
+mirroring de partición de `customize.sh` se probó con un harness `sh` reproduciendo los
+3 casos de búsqueda. 9/9 `scripts/check_*.py` en verde contra el árbol completo.
+
+**NO VERIFICADO en el Moto G85 real** — ninguno de los 3 candidatos se confirmó como LA
+causa; son gaps reales independientes de cuál (o cuáles) estén bloqueando el dispositivo
+del usuario. Pendiente que el usuario corra en el G85:
+`adb shell ls -lZ /vendor/etc/audio_effects.xml /system/etc/audio_effects.xml`,
+`adb shell dmesg | grep avc | grep -iE "omega|audioserver"` tras
+`setprop ctl.restart audioserver`, y
+`adb shell dumpsys media.audio_flinger | grep -i -A5 omega`.
+
 # CHANGELOG — v2.5.135 (426) — SCHED_FIFO del daemon: de nunca-se-ejecuta a confirmado y auditable
 
 Cierra los puntos 2 y 3 que quedaban pendientes de la lista "qué sigue faltando" de v2.5.133/134.

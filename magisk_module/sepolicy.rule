@@ -355,3 +355,35 @@ allow mihome mihome capability sys_nice
 allow mihome mihome process setsched
 allow samsung_dsp samsung_dsp capability sys_nice
 allow samsung_dsp samsung_dsp process setsched
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v3.3 — AUDIOSERVER → EXECUTE sobre libomega_effect.so (candidato #2 del
+# diagnóstico diferencial "¿por qué Ruta B no engancha")
+#
+# Hueco real, confirmado por ausencia: hasta esta versión, sepolicy.rule tenía
+# reglas file={read,open,getattr,map} para el SHM y los datasets (secciones 6,
+# 9, 10) pero CERO reglas "execute" en todo el archivo. audio_effects.xml
+# (sección "Fusión dinámica", customize.sh) puede declarar el efecto y
+# AudioFlinger puede intentar dlopen("libomega_effect.so") — pero SELinux
+# evalúa dlopen() de una librería compartida contra la clase "file" con el
+# permiso "execute" (y "execute_no_trans" cuando no hay domain transition),
+# NO contra "read"/"open"/"map" que sí autorizábamos para datos. Sin esta
+# sección, el escenario exacto es: XML correcto, binario correcto, hash
+# correcto, y aun así EACCES silencioso en dlopen() — dumpsys no lista nada y
+# nada en logcat lo señala salvo `dmesg | grep avc` (denial "execute").
+#
+# libomega_effect.so se empaqueta en magisk_module/system/vendor/lib64/
+# soundfx/ (ver .github/workflows/build.yml:415-416), que Magisk superpone
+# sobre /vendor/lib64/soundfx/ real. El contexto SELinux que termina teniendo
+# ese archivo tras el overlay de Magisk varía por versión/flavor (Magisk,
+# Magisk Delta, KernelSU, APatch) y por si el directorio destino ya tenía
+# contexto propio — se cubre la matriz observada, mismo criterio que el resto
+# de este archivo (preferir regla de más que denial silencioso).
+# ═══════════════════════════════════════════════════════════════════════════════
+allow audioserver vendor_file file { read open getattr map execute execute_no_trans }
+allow audioserver vendor_file dir { search getattr open read }
+allow audioserver magisk_file file { execute execute_no_trans }
+allow audioserver unlabeled file { execute execute_no_trans }
+allow audioserver system_file file { execute execute_no_trans }
+allow audioserver same_process_hal_file file { read open getattr map execute execute_no_trans }
+allow audioserver same_process_hal_file dir { search getattr open read }
