@@ -47,7 +47,6 @@ inline void enableAudioThreadFastMath() noexcept {
     fpscr |= (1u << 19); // DAZ
     asm volatile("vmsr fpscr, %0" : : "r"(fpscr));
 #endif
-#endif
 }
 
 // Scheduling is deliberately separate from FP-mode setup. The generic helper
