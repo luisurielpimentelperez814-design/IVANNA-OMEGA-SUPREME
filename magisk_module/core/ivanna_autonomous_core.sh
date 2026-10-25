@@ -82,7 +82,7 @@ get_state() {
 # ==============================================================================
 json_escape() {
     # Escape JSON metacharacters and embedded newlines using POSIX sed.
-    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; :a; N; $!ba; s/\n/\\n/g'
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; :a; $!N; $!ba; s/\n/\\n/g'
 }
 memory_core_record() {
     local EVENT_TYPE="$1"
