@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.136
-versionCode=427
+version=v2.5.137
+versionCode=428
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.136 (SAFMUS corrige raíz del módulo y audita rutas runtime; activación AudioFlinger sigue sin presumirse)
+description=v2.5.137 (SOFA completo: 239 archivos totales, 200 ARI; empaquetado validado antes de publicar)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
