@@ -32,8 +32,10 @@ ISOLATION_DIR="$CORE_DATA/isolation"
 observatory_log() {
     local TAG="$1"
     local MSG="$2"
-    local STATE=$(cat "$CORE_DATA/STATE" 2>/dev/null || echo "UNKNOWN")
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$TAG] [$STATE] $MSG" >> "$OBSERVATORY_LOG"
+    local STATE
+    STATE=$(cat "$CORE_DATA/STATE" 2>/dev/null || echo "UNKNOWN")
+    mkdir -p "$CORE_DATA" 2>/dev/null || return 1
+    printf '[%s] [%s] [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$TAG" "$STATE" "$MSG" >> "$OBSERVATORY_LOG"
 }
 
 # ==============================================================================
@@ -41,9 +43,13 @@ observatory_log() {
 # ==============================================================================
 ivanna_platform_init() {
     GLOBAL_MODDIR="$1"
-    mkdir -p "$CORE_DATA" "$FORENSICS_DIR" "$ISOLATION_DIR" 2>/dev/null
+    if ! mkdir -p "$CORE_DATA" "$FORENSICS_DIR" "$ISOLATION_DIR" 2>/dev/null; then
+        return 1
+    fi
+    chmod 700 "$CORE_DATA" "$FORENSICS_DIR" "$ISOLATION_DIR" 2>/dev/null
     if [ ! -f "$CORE_DATA/STATE" ]; then
-        echo "UNKNOWN" > "$CORE_DATA/STATE"
+        printf '%s\n' "UNKNOWN" > "$CORE_DATA/STATE" || return 1
+        chmod 600 "$CORE_DATA/STATE" 2>/dev/null
     fi
     observatory_log "CORE" "IVANNA Autonomous Runtime Platform Inicializada."
 }
@@ -55,7 +61,15 @@ ivanna_platform_init() {
 # DEGRADED, SELF_REPAIR, SAFE_MODE
 set_state() {
     local NEW_STATE="$1"
-    echo "$NEW_STATE" > "$CORE_DATA/STATE"
+    case "$NEW_STATE" in
+        UNKNOWN|BOOT_ANALYSIS|ENVIRONMENT_MAPPING|OPTIMAL|PROTECTED|DEGRADED|SELF_REPAIR|SAFE_MODE) ;;
+        *) observatory_log "STATE_ENGINE" "RECHAZADO: estado desconocido '$NEW_STATE'"; return 2 ;;
+    esac
+    [ -d "$CORE_DATA" ] || mkdir -p "$CORE_DATA" 2>/dev/null || return 1
+    local TMP="$CORE_DATA/STATE.tmp.$"
+    printf '%s\n' "$NEW_STATE" > "$TMP" || { rm -f "$TMP"; return 1; }
+    chmod 600 "$TMP" 2>/dev/null
+    mv -f "$TMP" "$CORE_DATA/STATE" || { rm -f "$TMP"; return 1; }
     observatory_log "STATE_ENGINE" "Transición de estado ejecutada -> $NEW_STATE"
 }
 
@@ -66,11 +80,34 @@ get_state() {
 # ==============================================================================
 # 4. SISTEMA DE MEMORIA DEL MÓDULO (IVANNA Memory Core)
 # ==============================================================================
+json_escape() {
+    # Escape JSON string contents without requiring jq/python on Android.
+    printf '%s' "$1" | awk 'BEGIN { ORS="" } {
+      for (i=1; i<=length($0); i++) {
+        ch=substr($0,i,1)
+        if (ch=="\\") printf "\\\\"
+        else if (ch=="\042") printf "\\\""
+        else if (ch=="\t") printf "\\t"
+        else if (ch=="\r") printf "\\r"
+        else printf "%s", ch
+      }
+      if (NR>1) printf "\\n"
+    }'
+}
+
 memory_core_record() {
     local EVENT_TYPE="$1"
     local DATA="$2"
-    observatory_log "MEMORY_CORE" "Registrando evento: $EVENT_TYPE"
-    echo "{\"timestamp\":$(date +%s),\"type\":\"$EVENT_TYPE\",\"data\":\"$DATA\"}" >> "$MEMORY_CORE_DB"
+    local TS TYPE_ESC DATA_ESC LINE TMP
+    TS=$(date +%s)
+    TYPE_ESC=$(json_escape "$EVENT_TYPE") || return 1
+    DATA_ESC=$(json_escape "$DATA") || return 1
+    LINE="{\"timestamp\":$TS,\"type\":\"$TYPE_ESC\",\"data\":\"$DATA_ESC\"}"
+    mkdir -p "$CORE_DATA" 2>/dev/null || return 1
+    # One append operation per record; the database is JSON Lines (JSONL).
+    printf '%s\n' "$LINE" >> "$MEMORY_CORE_DB" || return 1
+    chmod 600 "$MEMORY_CORE_DB" 2>/dev/null
+    observatory_log "MEMORY_CORE" "Evento registrado: $EVENT_TYPE"
 }
 
 # ==============================================================================
@@ -112,100 +149,209 @@ security_intelligence_scan() {
 # ==============================================================================
 decision_evaluate() {
     local TARGET_ACTION="$1"
-    local CURRENT_STATE=$(get_state)
+    local CURRENT_STATE
+    CURRENT_STATE=$(get_state)
 
-    if [ "$CURRENT_STATE" = "SAFE_MODE" ]; then
-        observatory_log "DECISION" "VETO: Acción $TARGET_ACTION denegada en SAFE_MODE."
+    case "$TARGET_ACTION" in
+        DAEMON_RUNTIME) ;;
+        MQA_INTELLIGENCE) ;;
+        *) observatory_log "DECISION" "VETO: acción desconocida '$TARGET_ACTION'"; return 2 ;;
+    esac
+
+    if [ "$CURRENT_STATE" = "SAFE_MODE" ] || [ "$CURRENT_STATE" = "SELF_REPAIR" ]; then
+        observatory_log "DECISION" "VETO: $TARGET_ACTION bloqueada en estado $CURRENT_STATE"
+        return 1
+    fi
+    if [ "$CURRENT_STATE" = "PROTECTED" ]; then
+        observatory_log "DECISION" "VETO: $TARGET_ACTION bloqueada por política PROTECTED"
         return 1
     fi
 
-    # Cero Impacto Invisible
-    if [ "$TARGET_ACTION" = "DAEMON_RUNTIME" ]; then
-        if is_component_active "DAEMON"; then
-            return 1
-        fi
-        observatory_log "DECISION" "AUTORIZADO: $TARGET_ACTION es necesario y seguro."
-        return 0
+    local COMP_ID
+    case "$TARGET_ACTION" in
+        DAEMON_RUNTIME) COMP_ID="DAEMON" ;;
+        MQA_INTELLIGENCE) COMP_ID="MQA" ;;
+    esac
+    if is_component_active "$COMP_ID"; then
+        observatory_log "DECISION" "NO-OP: $COMP_ID ya está activo"
+        return 3
     fi
+    observatory_log "DECISION" "AUTORIZADO: $TARGET_ACTION -> $COMP_ID"
+    return 0
+}
 
-    if [ "$TARGET_ACTION" = "MQA_INTELLIGENCE" ]; then
-        if is_component_active "MQA"; then
-            return 1
-        fi
-        observatory_log "DECISION" "AUTORIZADO: $TARGET_ACTION es seguro."
-        return 0
+# Decision-to-execution bridge. Call as:
+# decision_dispatch ACTION COMPONENT_ID /absolute/or/relative/executable [args...]
+# Return: 0 started, 1 policy veto, 2 invalid action/component, 3 already active.
+decision_dispatch() {
+    local ACTION="$1"
+    local REQUESTED_COMP="$2"
+    shift 2 2>/dev/null || {
+        observatory_log "DECISION" "VETO: faltan argumentos de dispatch"
+        return 2
+    }
+    [ "$#" -gt 0 ] || {
+        observatory_log "DECISION" "VETO: comando vacío para $ACTION"
+        return 2
+    }
+
+    local EXPECTED_COMP
+    case "$ACTION" in
+        DAEMON_RUNTIME) EXPECTED_COMP="DAEMON" ;;
+        MQA_INTELLIGENCE) EXPECTED_COMP="MQA" ;;
+        *) observatory_log "DECISION" "VETO: acción no permitida '$ACTION'"; return 2 ;;
+    esac
+    [ "$REQUESTED_COMP" = "$EXPECTED_COMP" ] || {
+        observatory_log "DECISION" "VETO: $ACTION no puede lanzar $REQUESTED_COMP"
+        return 2
+    }
+    case "$1" in
+        /*) [ -x "$1" ] || { observatory_log "DECISION" "VETO: ejecutable no disponible: $1"; return 2; } ;;
+        *) observatory_log "DECISION" "VETO: se requiere ruta absoluta del ejecutable"; return 2 ;;
+    esac
+
+    decision_evaluate "$ACTION"
+    local RC=$?
+    [ "$RC" -eq 0 ] || return "$RC"
+    component_isolate_execute "$REQUESTED_COMP" "$@"
+    RC=$?
+    if [ "$RC" -eq 0 ]; then
+        memory_core_record "DECISION_DISPATCH" "$ACTION lanzó $REQUESTED_COMP"
+    else
+        observatory_log "DECISION" "ERROR: dispatch $ACTION/$REQUESTED_COMP rc=$RC"
     fi
-
-    return 1
+    return "$RC"
 }
 
 # ==============================================================================
 # 7. CAPA DE AISLAMIENTO (Component Isolation System)
 # ==============================================================================
+component_id_valid() {
+    case "$1" in
+        DAEMON|MQA) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+proc_start_token() {
+    # /proc/PID/stat: strip through the final ')' in comm; starttime is field 20
+    # of the remaining fields (original field 22).
+    [ -r "/proc/$1/stat" ] || return 1
+    sed 's/^.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'
+}
+
+pid_matches_component() {
+    local COMP_DIR="$1" PID="$2" SAVED CURRENT STAT_REST
+    case "$PID" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$PID" -gt 1 ] 2>/dev/null || return 1
+    kill -0 "$PID" 2>/dev/null || return 1
+    SAVED=$(cat "$COMP_DIR/starttime" 2>/dev/null)
+    CURRENT=$(proc_start_token "$PID" 2>/dev/null)
+    [ -n "$SAVED" ] && [ -n "$CURRENT" ] && [ "$SAVED" = "$CURRENT" ] || return 1
+    STAT_REST=$(sed 's/^.*) //' "/proc/$PID/stat" 2>/dev/null | awk '{print $1}')
+    [ "$STAT_REST" != "Z" ] || return 1
+    return 0
+}
+
 component_isolate_execute() {
     local COMP_ID="$1"
     shift
-    # Use POSIX arguments directly
-
-
+    component_id_valid "$COMP_ID" || {
+        observatory_log "ISOLATION" "RECHAZADO: ID de componente inválido"
+        return 2
+    }
+    [ "$#" -gt 0 ] || return 2
     local COMP_DIR="$ISOLATION_DIR/$COMP_ID"
-    mkdir -p "$COMP_DIR"
+    mkdir -p "$COMP_DIR" 2>/dev/null || return 1
 
-    observatory_log "ISOLATION" "Desplegando $COMP_ID en burbuja de aislamiento..."
-    
-    "$@" >> "$COMP_DIR/stdout.log" 2>&1 &
-    local PID=$!
-    echo "$PID" > "$COMP_DIR/pid"
-
-    # FIX (socket ausente en /proc/net/unix — el daemon crasheaba antes del
-    # bind y el panel mostraba CORRIENDO pero DESCONECTADO): el executor solo
-    # guardaba el PID sin confirmar que el proceso sobrevivió al arranque.
-    # Ahora, para el DAEMON, espera a que el socket abstracto quede bindeado
-    # (visible en /proc/net/unix) y loguea el resultado real — si el binario
-    # murió (ELF corrupto, ENOEXEC, bind fallido), queda registrado aquí en
-    # vez de fallar en silencio y dejar el panel sin pista de la causa.
-    if [ "$COMP_ID" = "DAEMON" ]; then
-        local i=0
-        while [ $i -lt 20 ]; do
-            if grep -q "@omega_daemon_socket" /proc/net/unix 2>/dev/null; then
-                observatory_log "ISOLATION" "DAEMON bindeó @omega_daemon_socket OK (intento $i)"
-                break
-            fi
-            if ! kill -0 "$PID" 2>/dev/null; then
-                observatory_log "ISOLATION" "FATAL: DAEMON murió antes del bind — ver $COMP_DIR/stdout.log"
-                memory_core_record "DAEMON_BIND_FAIL" "proceso muerto pre-bind, stdout.log tiene la causa"
-                break
-            fi
-            i=$((i+1)); sleep 0.5 2>/dev/null || sleep 1
-        done
+    if is_component_active "$COMP_ID"; then
+        observatory_log "ISOLATION" "$COMP_ID ya está activo; se evita duplicado"
+        return 3
     fi
 
+    observatory_log "ISOLATION" "Lanzando $COMP_ID; no implica sandbox del kernel"
+    "$@" >> "$COMP_DIR/stdout.log" 2>&1 &
+    local PID=$!
+    local START=""
+    local i=0
+    while [ "$i" -lt 10 ]; do
+        START=$(proc_start_token "$PID" 2>/dev/null)
+        [ -n "$START" ] && break
+        kill -0 "$PID" 2>/dev/null || break
+        i=$((i+1))
+        sleep 0.1 2>/dev/null || sleep 1
+    done
+    if [ -z "$START" ] || ! kill -0 "$PID" 2>/dev/null; then
+        wait "$PID" 2>/dev/null
+        observatory_log "ISOLATION" "FALLO: $COMP_ID no sobrevivió al arranque; revisar $COMP_DIR/stdout.log"
+        memory_core_record "COMPONENT_START_FAIL" "$COMP_ID no sobrevivió al arranque"
+        return 1
+    fi
+
+    local PID_TMP="$COMP_DIR/pid.tmp.$$"
+    local START_TMP="$COMP_DIR/starttime.tmp.$$"
+    printf '%s\n' "$PID" > "$PID_TMP" || { rm -f "$PID_TMP" "$START_TMP"; kill "$PID" 2>/dev/null; return 1; }
+    printf '%s\n' "$START" > "$START_TMP" || { rm -f "$PID_TMP" "$START_TMP"; kill "$PID" 2>/dev/null; return 1; }
+    chmod 600 "$PID_TMP" "$START_TMP" 2>/dev/null
+    mv -f "$START_TMP" "$COMP_DIR/starttime" || { rm -f "$PID_TMP"; kill "$PID" 2>/dev/null; return 1; }
+    mv -f "$PID_TMP" "$COMP_DIR/pid" || { kill "$PID" 2>/dev/null; return 1; }
+
+    if [ "$COMP_ID" = "DAEMON" ]; then
+        local socket_ok=0
+        i=0
+        while [ "$i" -lt 20 ]; do
+            if ! pid_matches_component "$COMP_DIR" "$PID"; then
+                observatory_log "ISOLATION" "FATAL: DAEMON terminó antes de la comprobación del socket"
+                memory_core_record "DAEMON_BIND_FAIL" "proceso muerto pre-bind; revisar stdout.log"
+                rm -f "$COMP_DIR/pid" "$COMP_DIR/starttime"
+                return 1
+            fi
+            if grep -q '@omega_daemon_socket' /proc/net/unix 2>/dev/null; then
+                socket_ok=1
+                break
+            fi
+            i=$((i+1))
+            sleep 0.5 2>/dev/null || sleep 1
+        done
+        if [ "$socket_ok" -ne 1 ]; then
+            observatory_log "ISOLATION" "ADVERTENCIA: DAEMON vivo, pero @omega_daemon_socket no fue observado en 10 s"
+            memory_core_record "DAEMON_SOCKET_TIMEOUT" "PID=$PID socket no observado"
+            return 1
+        fi
+        observatory_log "ISOLATION" "DAEMON vivo y socket abstracto observado"
+    fi
     memory_core_record "COMPONENT_START" "$COMP_ID PID=$PID"
+    return 0
 }
 
 is_component_active() {
     local COMP_ID="$1"
+    component_id_valid "$COMP_ID" || return 1
     local COMP_DIR="$ISOLATION_DIR/$COMP_ID"
-    if [ -f "$COMP_DIR/pid" ]; then
-        local PID=$(cat "$COMP_DIR/pid")
-        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
-            return 0
-        fi
+    [ -f "$COMP_DIR/pid" ] || return 1
+    local PID
+    PID=$(cat "$COMP_DIR/pid" 2>/dev/null)
+    if pid_matches_component "$COMP_DIR" "$PID"; then
+        return 0
     fi
+    # Stale or recycled PID: clear only this component's metadata.
+    rm -f "$COMP_DIR/pid" "$COMP_DIR/starttime"
     return 1
 }
 
 component_crashed() {
     local COMP_ID="$1"
+    component_id_valid "$COMP_ID" || return 1
     local COMP_DIR="$ISOLATION_DIR/$COMP_ID"
-    if [ -f "$COMP_DIR/pid" ]; then
-        local PID=$(cat "$COMP_DIR/pid")
-        if [ -n "$PID" ] && ! kill -0 "$PID" 2>/dev/null; then
-            rm -f "$COMP_DIR/pid"
-            return 0
-        fi
+    [ -f "$COMP_DIR/pid" ] || return 1
+    local PID
+    PID=$(cat "$COMP_DIR/pid" 2>/dev/null)
+    if pid_matches_component "$COMP_DIR" "$PID"; then
+        return 1
     fi
-    return 1
+    rm -f "$COMP_DIR/pid" "$COMP_DIR/starttime"
+    observatory_log "ISOLATION" "$COMP_ID PID ausente, zombie o reutilizado; metadata obsoleta limpiada"
+    return 0
 }
 
 # ==============================================================================
@@ -274,27 +420,37 @@ FORENSIOUT
 # 5. REPARACIÓN AUTÓNOMA (Self Healing Framework)
 # ==============================================================================
 self_healing_framework() {
-    observatory_log "HEALING" "Iniciando Protocolo de Autorreparación..."
-    set_state "SELF_REPAIR"
+    # Safe recovery is diagnostic-only: this framework does not own all child
+    # process groups and must never kill arbitrary PIDs or claim a restart.
+    observatory_log "HEALING" "Iniciando recuperación segura y no destructiva..."
+    set_state "SELF_REPAIR" || return 1
 
+    local d COMP_ID PID
     for d in "$ISOLATION_DIR"/*; do
-        if [ -d "$d" ]; then
-            local PID=$(cat "$d/pid" 2>/dev/null)
-            if [ -n "$PID" ]; then
-                kill -9 "$PID" 2>/dev/null
-                observatory_log "HEALING" "Componente aislado aniquilado (PID $PID)."
-            fi
-            rm -f "$d/pid"
-            mv "$d/stdout.log" "$d/stdout_repaired.log" 2>/dev/null
+        [ -d "$d" ] || continue
+        COMP_ID=${d##*/}
+        component_id_valid "$COMP_ID" || {
+            observatory_log "HEALING" "Directorio desconocido preservado: $COMP_ID"
+            continue
+        }
+        if component_crashed "$COMP_ID"; then
+            observatory_log "HEALING" "$COMP_ID confirmado como inactivo; metadatos obsoletos limpiados"
+            [ -f "$d/stdout.log" ] && tail -n 200 "$d/stdout.log" > "$d/stdout.last_failure.log" 2>/dev/null
+        elif is_component_active "$COMP_ID"; then
+            PID=$(cat "$d/pid" 2>/dev/null)
+            observatory_log "HEALING" "$COMP_ID sigue vivo (PID $PID); no se mata ni reinicia automáticamente"
         fi
     done
 
-    build_device_runtime_profile
-    
-    observatory_log "HEALING" "Homeostasis restaurada. Retornando a flujo operativo."
-    set_state "OPTIMAL"
+    if ! build_device_runtime_profile; then
+        observatory_log "HEALING" "Perfil no pudo regenerarse; estado DEGRADED"
+        set_state "DEGRADED"
+        return 1
+    fi
+    observatory_log "HEALING" "Diagnóstico completado; no se afirmó reparación de procesos"
+    set_state "DEGRADED"
+    return 0
 }
-
 # ==============================================================================
 # 8. SISTEMA DE ACTUALIZACIÓN EVOLUTIVA
 # ==============================================================================
