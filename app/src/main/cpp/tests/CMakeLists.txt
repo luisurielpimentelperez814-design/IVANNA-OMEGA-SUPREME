@@ -226,6 +226,15 @@ target_compile_options(test_audio_effect_library_tag PRIVATE -Wall -Wextra)
 target_link_libraries(test_audio_effect_library_tag PRIVATE GTest::gtest_main)
 gtest_discover_tests(test_audio_effect_library_tag)
 
+# ── test_audio_effect_abi_layout: layouts de structs/vtables contra AOSP ──────
+# Caza la corrupción ABI de effect_descriptor_t (cpuLoad/memoryUsage son uint16_t)
+# y fija offsets/tamaño del descriptor y el orden de los slots de callbacks.
+add_executable(test_audio_effect_abi_layout test_audio_effect_abi_layout.cpp)
+target_include_directories(test_audio_effect_abi_layout PRIVATE .. ../include)
+target_compile_options(test_audio_effect_abi_layout PRIVATE -Wall -Wextra)
+target_link_libraries(test_audio_effect_abi_layout PRIVATE GTest::gtest_main)
+gtest_discover_tests(test_audio_effect_abi_layout)
+
 # ── test_upmixing_control_plane: evidencia del canal app->daemon->SHM->effect ──
 # Compila el omega_control_bus.cpp REAL (writer/reader seqlock + CRC32) y
 # verifica que el snapshot transporta upmixing_enabled/immersivity con

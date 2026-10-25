@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.139
-versionCode=430
+version=v2.5.140
+versionCode=431
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.139 (CRÍTICO: AUDIO_EFFECT_LIBRARY_TAG tenía los bytes invertidos vs AOSP real — audioserver rechazaba la librería antes de cualquier otro chequeo. Confirmado contra el fuente de AOSP y con test de regresión) — NO VERIFICADO en dispositivo real
+description=v2.5.140 (FIX ABI AOSP: effect_descriptor_t con cpuLoad/memoryUsage uint16_t; layout y slots de callbacks fijados por tests)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

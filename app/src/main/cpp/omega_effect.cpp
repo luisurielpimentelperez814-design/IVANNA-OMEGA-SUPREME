@@ -171,8 +171,8 @@ static const effect_descriptor_t OMEGA_DESCRIPTOR = {
     {0x4956414e, 0x4e41, 0x4f4d, 0x4547, {0x41, 0x53, 0x55, 0x50, 0x52, 0x45}},
     EFFECT_CONTROL_API_VERSION,
     EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_ANY,
-    100,                                  /* cpuLoad */
-    1024,                                 /* memoryUsage (KB) */
+    static_cast<uint16_t>(100),          /* cpuLoad: AOSP uint16_t */
+    static_cast<uint16_t>(1024),         /* memoryUsage KB: AOSP uint16_t */
     "IVANNA Omega Effect",
     "IVANNA OMEGA SUPREME"
 };

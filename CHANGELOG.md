@@ -1,3 +1,27 @@
+# CHANGELOG — v2.5.140 (431) — FIX ABI AOSP: effect_descriptor_t tenía campos de 32 bits donde AOSP define 16 bits
+
+## Hallazgo y corrección
+
+La comparación con `hardware/libhardware/include/hardware/audio_effect.h` de AOSP confirma que
+`effect_descriptor_s::cpuLoad` y `memoryUsage` son `uint16_t`, no `uint32_t`. El shim local
+usaba dos campos de 32 bits, desplazando `name` y `implementor` cuatro bytes y haciendo que
+el descriptor entregado a audioserver no respetara el ABI.
+
+- `audio_effect_compat.h`: corregidos ambos tipos a `uint16_t`.
+- `omega_effect.cpp`: inicializador de `OMEGA_DESCRIPTOR` expresa explícitamente los dos
+  campos como `uint16_t`, manteniendo el orden de miembros AOSP.
+- `test_audio_effect_abi_layout.cpp`: fija tamaño 172 bytes, offsets 40/42/44/108, tipos
+  de campo y orden/stride de las funciones de `effect_interface_s` y `audio_effect_library_t`.
+- `tests/CMakeLists.txt`: el nuevo test queda registrado en CTest para que no sea una prueba huérfana.
+
+El descriptor AOSP esperado usa offsets: `apiVersion=32`, `flags=36`, `cpuLoad=40`,
+`memoryUsage=42`, `name=44`, `implementor=108`; tamaño total 172 bytes.
+
+**Estado:** corrección aplicada al árbol fuente; requiere CI y validación del artefacto/dispositivo
+antes de declarar el efecto activo en AudioFlinger.
+
+---
+
 # CHANGELOG — v2.5.139 (430) — CRÍTICO: AUDIO_EFFECT_LIBRARY_TAG tenía los bytes invertidos — audioserver rechazaba la librería antes de cualquier otro chequeo
 
 Hallazgo más grave que los 3 candidatos de v2.5.138, y confirmado contra la fuente real de
