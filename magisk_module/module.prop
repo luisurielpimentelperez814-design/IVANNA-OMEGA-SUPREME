@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.135
-versionCode=426
+version=v2.5.136
+versionCode=427
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.135 (SCHED_FIFO del daemon realmente se aplica: --realtime faltaba en service.sh, el resultado del syscall ya no se descarta, sepolicy cubre CAP_SYS_NICE)
+description=v2.5.136 (SAFMUS corrige raíz del módulo y audita rutas runtime; activación AudioFlinger sigue sin presumirse)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

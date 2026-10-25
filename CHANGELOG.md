@@ -1,3 +1,18 @@
+# CHANGELOG — v2.5.136 (427) — SAFMUS: raíz del módulo y rutas reales de registro de audio
+
+## Corrección confirmada por auditoría del dispositivo
+
+- safmus_audio_effect_audit.sh deriva la raíz real del módulo desde <module-root>/core, en lugar de tratar core/ como raíz. Esto evita buscar XML y bibliotecas bajo core/system/....
+- El auditor comprueba primero los archivos del overlay del módulo y después las rutas activas habituales de /vendor y /system.
+- El reporte distingue module_overlay de runtime_path y mantiene system_wide_audio_coverage=unverified: encontrar XML y ELF no demuestra que AudioFlinger haya creado una instancia ni que procese audio.
+- Se añade un contrato de regresión al chequeo SAFMUS transversal de CI.
+- No se modifica el XML de Dolby/OEM, la prioridad del efecto, SELinux ni se reinicia ningún servicio.
+
+## Validación pendiente
+
+CI debe compilar y ejecutar los gates del repositorio. La activación efectiva en AudioFlinger sigue pendiente de verificación en el Moto G85 con telemetría real durante reproducción.
+
+---
 # CHANGELOG — v2.5.135 (426) — SCHED_FIFO del daemon: de nunca-se-ejecuta a confirmado y auditable
 
 Cierra los puntos 2 y 3 que quedaban pendientes de la lista "qué sigue faltando" de v2.5.133/134.
