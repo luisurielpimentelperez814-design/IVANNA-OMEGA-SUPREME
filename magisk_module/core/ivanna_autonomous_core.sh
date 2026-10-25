@@ -81,20 +81,9 @@ get_state() {
 # 4. SISTEMA DE MEMORIA DEL MÓDULO (IVANNA Memory Core)
 # ==============================================================================
 json_escape() {
-    # Escape JSON string contents without requiring jq/python on Android.
-    printf '%s' "$1" | awk 'BEGIN { ORS="" } {
-      if (NR>1) printf "\\n"
-      for (i=1; i<=length($0); i++) {
-        ch=substr($0,i,1)
-        if (ch=="\\\\") printf "\\\\\\\\"
-        else if (ch=="\042") printf "\\\\\042"
-        else if (ch=="\t") printf "\\\\t"
-        else if (ch=="\r") printf "\\\\r"
-        else printf "%s", ch
-      }
-    }'
+    # Escape JSON metacharacters and embedded newlines using POSIX sed.
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; :a; N; $!ba; s/\n/\\n/g'
 }
-
 memory_core_record() {
     local EVENT_TYPE="$1"
     local DATA="$2"
