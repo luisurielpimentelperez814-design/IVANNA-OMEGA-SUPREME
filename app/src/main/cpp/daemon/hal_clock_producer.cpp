@@ -49,6 +49,20 @@ bool parseIntAfter(const std::string& text, const char* key, long& out) {
     return true;
 }
 
+bool parseTokenAfter(const std::string& text, const char* key, std::string& out) {
+    const std::string k(key);
+    size_t p = text.find(k);
+    if (p == std::string::npos) return false;
+    p += k.size();
+    while (p < text.size() && (text[p] == ' ' || text[p] == '\\t' || text[p] == ':')) ++p;
+    const size_t begin = p;
+    while (p < text.size() && text[p] != ' ' && text[p] != '\\t' &&
+           text[p] != '\\r' && text[p] != '\\n') ++p;
+    if (p == begin) return false;
+    out.assign(text, begin, p - begin);
+    return true;
+}
+
 }  // namespace
 
 const char* stateName(ProducerState s) noexcept {
@@ -85,11 +99,9 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
                 d.devPath = devRoot + "/pcmC" + std::to_string(card) + "D" +
                             std::to_string(pcm) + "p";
                 const std::string status = readSmallFile(statusPath);
-                long stateVal = 0;
-                if (parseIntAfter(status, "state", stateVal))
-                    d.state = std::to_string(stateVal);
-                else
-                    d.state = status.empty() ? "unknown" : "parsed-empty";
+                if (!parseTokenAfter(status, "state", d.state))
+                    d.state = status.empty() ? "unknown" : "state-unparsed";
+                d.running = (d.state == "RUNNING");
 
                 const std::string hw = readSmallFile(pdir + "/hw_params");
                 long rate = 0;
@@ -162,11 +174,12 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
                     d.procDir = pdir;
                     const std::string status = readSmallFile(pdir + "/status");
                     if (!status.empty()) {
-                        long stateVal = 0;
-                        d.state = parseIntAfter(status, "state", stateVal)
-                            ? std::to_string(stateVal) : "status-unparsed";
+                        if (!parseTokenAfter(status, "state", d.state))
+                            d.state = "status-unparsed";
+                        d.running = (d.state == "RUNNING");
                     } else {
                         d.state = "hw-params-rate-available; status-unavailable";
+                        d.running = false;
                     }
                     break;
                 }
@@ -282,15 +295,15 @@ HalClockProducer::~HalClockProducer() {
 bool HalClockProducer::ensureSource() noexcept {
     if (src_) return true;
     if (cfg_.source) { src_ = cfg_.source; return true; }
-    auto* s = new StatusIoctlSource();
-    ownSource_ = s;
-    src_ = s;
-    if (!StatusIoctlSource::compiledWithAlsaHeaders()) {
-        st_.state = ProducerState::kNoSource;
-        st_.reason = "binario sin sound/asound.h: no hay fuente de timestamps";
-        return false;
-    }
-    return true;
+
+    // Critical safety boundary: the daemon is not the owner of Android's active
+    // output stream. Opening the first /dev/snd/pcmC*D*p node creates an
+    // independent ALSA client and cannot establish that its pointer belongs to
+    // the HAL stream audible to the user. Only an explicitly bound owner-side
+    // source may feed this producer; until then it stays fail-closed.
+    st_.state = ProducerState::kNoSource;
+    st_.reason = "sin publicador ligado al stream HAL/PAL propietario; daemon no abre PCM";
+    return false;
 }
 
 ProducerStatus HalClockProducer::poll() noexcept {
@@ -310,11 +323,13 @@ ProducerStatus HalClockProducer::poll() noexcept {
         // explícito no se puede correlacionar frames/tiempo. Reintentar en el
         // siguiente poll por si el firmware publica hw_params al iniciar audio.
         const PcmDevice* pick = nullptr;
-        for (const auto& d : devices) if (d.nominalRateHz > 0) { pick = &d; break; }
+        for (const auto& d : devices) {
+            if (d.running && d.nominalRateHz > 0) { pick = &d; break; }
+        }
         if (!pick) {
             st_.state = ProducerState::kWaitingSamples;
             st_.device = devices.front().devPath;
-            st_.reason = "PCM presente, pero sin rate nominal verificable en /proc/asound; no se abre ni publica";
+            st_.reason = "ningun PCM con estado RUNNING y rate verificable; no se abre ni publica";
             return st_;
         }
         device_ = *pick;
