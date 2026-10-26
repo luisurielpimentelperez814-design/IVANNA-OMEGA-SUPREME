@@ -33,7 +33,6 @@
 #include <atomic>
 #include <netinet/in.h>
 #include <time.h>
-#include <limits>
 
 #define LOG_TAG "IVANNA_OMEGA_DAEMON"
 
@@ -409,21 +408,17 @@ lo; revisar su invocación)."));
                 bool haveSample = false;
                 if (clockReader.open()) {
                     ivanna::audio::HardwareClockSample hcs{};
-                    if (clockReader.read(hcs) &&
-                        hcs.hardwareTimestampNs > 0 &&
-                        hcs.hardwareTimestampNs <=
-                            static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+                    if (clockReader.read(hcs)) {
                         timespec now{};
-                        if (::clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
-                            const int64_t nowNs =
-                                static_cast<int64_t>(now.tv_sec) * 1000000000LL +
-                                static_cast<int64_t>(now.tv_nsec);
-                            const int64_t sampleNs =
-                                static_cast<int64_t>(hcs.hardwareTimestampNs);
-                            const int64_t ageNs = nowNs - sampleNs;
-                            if (ageNs >= 0 && ageNs <= 1000000000LL) {
+                        if (::clock_gettime(CLOCK_MONOTONIC, &now) == 0 &&
+                            now.tv_sec >= 0 && now.tv_nsec >= 0 &&
+                            now.tv_nsec < 1000000000L) {
+                            const uint64_t nowNs =
+                                static_cast<uint64_t>(now.tv_sec) * 1000000000ull +
+                                static_cast<uint64_t>(now.tv_nsec);
+                            if (ivanna::audio::isFreshMonotonicHardwareClockSample(hcs, nowNs)) {
                                 cs.presentedFrames = hcs.presentedFrames;
-                                cs.timestampNs = sampleNs;
+                                cs.timestampNs = static_cast<int64_t>(hcs.hardwareTimestampNs);
                                 cs.nominalRateHz = hcs.nominalSampleRateHz;
                                 haveSample = true;
                             }
