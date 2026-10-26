@@ -40,6 +40,8 @@ jobs:
         run: python3 scripts/check_safmus_transversal_wiring.py
       - name: Adversarial audio measurement regression suite
         run: python3 -m unittest discover -s tests -p 'test_ivanna_audio_certify.py' -v
+      - name: Synthetic signal fault-injection suite
+        run: python3 -m unittest discover -s tests -p 'test_ivanna_synthetic_audio_suite.py' -v
       - name: Auditory magnificence gate policy tests
         run: python3 -m unittest discover -s tests -p 'test_ivanna_auditory_gate.py' -v
       - name: Configure (Release)
