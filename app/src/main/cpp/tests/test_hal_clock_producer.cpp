@@ -229,7 +229,7 @@ TEST(HalClockProducer, DefaultProducerNeverOpensAnIndependentPcm) {
     EXPECT_STREQ(status.reason,
         "sin publicador ligado al stream HAL/PAL propietario; daemon no abre PCM");
 }
-\n// ── Puerta de correlación ─────────────────────────────────────────────────
+// ── Puerta de correlación ─────────────────────────────────────────────────
 TEST(HalClockProducer, GateRejectsUncorrelatedAndAcceptsCoherent) {
     CorrelationGate g;
     // 480 frames en 10 ms = 48000 Hz exacto.

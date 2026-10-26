@@ -289,8 +289,7 @@ ProducerStatus HalClockProducer::poll() noexcept {
             // Presence-only node is not a selected source. Keep device empty so
             // logs cannot imply that pcmC*D*p was opened or owns the active route.
             st_.device.clear();
-            st_.reason = "nodos playback presentes=" + std::to_string(devices.size()) +
-                "; ninguno con estado RUNNING y rate verificable; no se abre ni publica";
+            st_.reason = "nodos playback presentes; ninguno con estado RUNNING y rate verificable; no se abre ni publica";
             return st_;
         }
         device_ = *pick;
