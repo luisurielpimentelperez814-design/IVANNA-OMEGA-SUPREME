@@ -1,3 +1,93 @@
+# CHANGELOG — v2.5.141 (432) — CRÍTICO: audio_effect_library_s tenía 2 campos fantasma (query_num_effects/query_effect) que corrompían el ABI leído por audioserver
+
+Segundo hallazgo de la misma sesión de auditoría que descubrió el bug del tag en v2.5.139,
+y de la misma clase de raíz: `audio_effect_compat.h` es una reimplementación manual del
+header de AOSP (necesaria porque NDK r25+ eliminó `<hardware/audio_effect.h>`), y ese
+header se autodeclaraba "verificado contra AOSP" sin estarlo en varios puntos distintos —
+este es el segundo, encontrado en paralelo al fix de `cpuLoad`/`memoryUsage` (v2.5.140)
+que ya está en este árbol.
+
+## El bug exacto
+
+`audio_effect_library_s` declaraba **9 campos**:
+
+```c
+// ANTES (bug):
+typedef struct audio_effect_library_s {
+    uint32_t    tag;
+    uint32_t    version;
+    const char *name;
+    const char *implementor;
+    int32_t (*query_num_effects)(uint32_t *pNumEffects);          // ← NO EXISTE en AOSP real
+    int32_t (*query_effect)(uint32_t index, effect_descriptor_t*); // ← NO EXISTE en AOSP real
+    int32_t (*create_effect)(const effect_uuid_t*, int32_t, int32_t, effect_handle_t*);
+    int32_t (*release_effect)(effect_handle_t);
+    int32_t (*get_descriptor)(const effect_uuid_t*, effect_descriptor_t*);
+} audio_effect_library_t;
+```
+
+El struct real de AOSP (confirmado de forma independiente contra 3 fuentes: dos mirrors de
+`hardware/libhardware/include/hardware/audio_effect.h` y la documentación oficial
+`source.android.com/reference/hal/structaudio__effect__library__s`) tiene **exactamente 7
+campos** — sin `query_num_effects` ni `query_effect`:
+
+```c
+// AOSP real:
+typedef struct audio_effect_library_s {
+    uint32_t    tag;
+    uint32_t    version;
+    const char *name;
+    const char *implementor;
+    int32_t (*create_effect)(const effect_uuid_t*, int32_t, int32_t, effect_handle_t*);
+    int32_t (*release_effect)(effect_handle_t);
+    int32_t (*get_descriptor)(const effect_uuid_t*, effect_descriptor_t*);
+} audio_effect_library_t;
+```
+
+## Por qué esto es más grave que el bug del tag (v2.5.139)
+
+El bug del tag (ya corregido) hacía que `loadLibrary()` del audioserver real rechazara la
+librería de forma limpia en el primer chequeo — fallo silencioso pero seguro. Este bug es
+un problema de **layout de memoria/ABI**: con el tag ya corregido, audioserver real
+interpretaría los 9 punteros de función de nuestro struct usando el offset de **su propio**
+struct de 7 campos. Leería el puntero a `omega_query_num_effects` en el offset donde espera
+`create_effect`, y lo invocaría con la firma y los argumentos de `create_effect` (un `uuid`,
+dos `int32_t` y un `effect_handle_t*` en vez del único `uint32_t*` que `query_num_effects`
+realmente espera). Esto corrompe lo que el llamador cree que es un `effect_uuid_t` válido y,
+dependiendo del layout exacto de la ABI, probablemente provoca un crash o corrupción de
+memoria en el proceso `audioserver` — no solo un fallo de carga de efecto, sino un riesgo
+de estabilidad del propio servicio de audio del sistema.
+
+## El fix
+
+- `app/src/main/cpp/include/audio_effect_compat.h`: eliminados los dos campos fantasma del
+  struct `audio_effect_library_s`; añadido un `static_assert(sizeof(audio_effect_library_t)
+  == 2*sizeof(uint32_t) + 5*sizeof(void*), ...)` que fija el struct a exactamente 7 campos y
+  revienta en tiempo de compilación si alguien reintroduce los campos eliminados.
+- `app/src/main/cpp/omega_effect.cpp`: eliminadas las funciones huérfanas
+  `omega_query_num_effects`/`omega_query_effect` (ya no referenciadas por ningún struct);
+  corregido el inicializador `AUDIO_EFFECT_LIBRARY_INFO_SYM` de 9 a 7 valores.
+
+## Verificación
+
+- Compilación aislada en host (`g++ -std=c++20 -fsyntax-only`) del header corregido: limpia,
+  0 errores.
+- Prueba de regresión del `static_assert`: compilando una copia del struct con los 9 campos
+  originales (el bug), el `static_assert` falla exactamente como se espera
+  (`64 == 48` → "debe tener 7 campos"), confirmando que el guard realmente detecta el bug y
+  no es un chequeo trivial.
+- `grep` confirma 0 referencias colgantes a `omega_query_num_effects`/`omega_query_effect`
+  fuera del comentario explicativo, y que `OMEGA_DESCRIPTOR` sigue siendo usado
+  correctamente por las funciones `get_descriptor` sobrevivientes.
+- Las 9 verificaciones del repositorio (`scripts/check_*.py`) pasan: 10D axis truth, ARCore
+  manifest, build flags, datasets deploy, docs claims, header wiring, JNI wiring, Kotlin
+  wrapper wiring, RT-safety static, SAFMUS transversal wiring.
+- **NO VERIFICADO en el Moto G85 real** — esto corrige un bug de ABI en la definición del
+  struct; la verificación física requiere que `libomega_effect.so` se cargue en audioserver
+  real, algo fuera del alcance de este entorno de compilación en host.
+
+---
+
 # CHANGELOG — v2.5.140 (431) — FIX ABI AOSP: effect_descriptor_t tenía campos de 32 bits donde AOSP define 16 bits
 
 ## Hallazgo y corrección

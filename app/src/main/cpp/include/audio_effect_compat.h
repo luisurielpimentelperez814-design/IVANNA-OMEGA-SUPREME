@@ -204,13 +204,43 @@ enum effect_command_e {
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM AELI
 #define AUDIO_EFFECT_LIBRARY_INFO_SYM_AS_STR "AELI"
 
+/* FIX CRÍTICO #3 (corrupción de ABI del vtable de librería, más grave que el
+ * tag byte-swapped): este struct tenía DOS campos de función que NO EXISTEN
+ * en el audio_effect_library_s real de AOSP — query_num_effects y
+ * query_effect, insertados entre `implementor` y `create_effect`.
+ *
+ * Confirmado de forma independiente contra 3 fuentes (git.aicp-rom.com mirror
+ * del fuente real, source.android.com/reference/hal/structaudio__effect__
+ * library__s — la referencia oficial de Google — y una segunda consulta
+ * específica al mismo mirror contando campo por campo): el struct real tiene
+ * EXACTAMENTE 7 campos, en este orden:
+ *   tag, version, name, implementor, create_effect, release_effect,
+ *   get_descriptor
+ * — sin query_num_effects ni query_effect. En el modelo moderno de AOSP
+ * (audio_effects.xml con UUID explícito por efecto, API 29+), audioserver ya
+ * no necesita que la librería se auto-enumere; llama create_effect(uuid,...)
+ * directo por el UUID que el XML ya le dio.
+ *
+ * Con los 2 campos extra, el layout de memoria de ESTE struct (9 punteros)
+ * no coincidía con el que audioserver realmente usa para leerlo (7
+ * punteros). Resultado, una vez el tag pasara el chequeo (fix anterior,
+ * v2.5.139): audioserver, creyendo leer `create_effect` en el offset del
+ * 5.º campo, en realidad leía el puntero a `omega_query_num_effects` —
+ * una función de 1 argumento (uint32_t*) invocada como si tomara 4
+ * (uuid, sessionId, ioId, pHandle*). En AArch64 (x0=primer argumento),
+ * omega_query_num_effects escribiría `*pNumEffects=1` sobre la memoria que
+ * en realidad era el effect_uuid_t* que audioserver pasó — corrompiendo esa
+ * estructura — y devolvería 0 (éxito), dejando a AudioFlinger creyendo que
+ * creó el efecto con un effect_handle_t* nunca inicializado. El create_effect
+ * REAL de este archivo (offset del 7.º campo según el struct corrupto) nunca
+ * se llegaba a invocar. Esto es consistente con crash/corrupción de
+ * audioserver, no solo "el efecto no se aplica".
+ */
 typedef struct audio_effect_library_s {
     uint32_t    tag;
     uint32_t    version;
     const char *name;
     const char *implementor;
-    int32_t (*query_num_effects)(uint32_t *pNumEffects);
-    int32_t (*query_effect)(uint32_t index, effect_descriptor_t *pDescriptor);
     int32_t (*create_effect)(const effect_uuid_t *uuid,
                              int32_t sessionId, int32_t ioId,
                              effect_handle_t *pHandle);
@@ -218,6 +248,19 @@ typedef struct audio_effect_library_s {
     int32_t (*get_descriptor)(const effect_uuid_t *uuid,
                               effect_descriptor_t *pDescriptor);
 } audio_effect_library_t;
+
+#ifdef __cplusplus
+/* Regresión del FIX CRÍTICO #3: 7 campos reales de AOSP (2 uint32_t + 5
+ * punteros de 8 bytes en destino de 64 bits, sin padding intermedio ya que
+ * tag+version ya suman 8). Si alguien vuelve a insertar query_num_effects/
+ * query_effect, este assert revienta en tiempo de compilación en vez de
+ * fallar en silencio dentro de audioserver. */
+static_assert(sizeof(audio_effect_library_t) ==
+                  2 * sizeof(uint32_t) + 5 * sizeof(void *),
+              "audio_effect_library_t debe tener EXACTO 7 campos "
+              "(tag,version,name,implementor,create_effect,release_effect,"
+              "get_descriptor) — ver FIX CRITICO #3 en este archivo");
+#endif
 
 /* UUID nulo de conveniencia */
 static const effect_uuid_t EFFECT_UUID_NULL_VAL = {0, 0, 0, 0, {0,0,0,0,0,0}};

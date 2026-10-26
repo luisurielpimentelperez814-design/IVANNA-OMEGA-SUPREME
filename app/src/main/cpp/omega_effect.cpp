@@ -2093,17 +2093,10 @@ static const struct effect_interface_s OMEGA_INTERFACE = {
 };
 
 /* ── Funciones de librería (dlopen entry points) ─────────────────────────── */
-static int32_t omega_query_num_effects(uint32_t *pNumEffects) {
-    if (pNumEffects) *pNumEffects = 1;
-    return 0;
-}
-
-static int32_t omega_query_effect(uint32_t index, effect_descriptor_t *pDescriptor) {
-    if (index != 0 || !pDescriptor) return -EINVAL;
-    *pDescriptor = OMEGA_DESCRIPTOR;
-    return 0;
-}
-
+/* FIX CRÍTICO #3: omega_query_num_effects/omega_query_effect eliminadas —
+ * no existen en audio_effect_library_s real de AOSP (7 campos, no 9; ver
+ * audio_effect_compat.h). El modelo moderno (audio_effects.xml con UUID
+ * explícito) no necesita que la librería se auto-enumere. */
 static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
                                    int32_t ioId, effect_handle_t *pHandle) {
     if (!pHandle) return -EINVAL;
@@ -2371,14 +2364,15 @@ extern "C" ivanna::unified::DeclarativeUnifiedPipeline* omega_test_get_unified_p
 }
 
 /* ── SÍMBOLO "AELI" — el que audioserver busca con dlsym() ───────────────── */
+/* FIX CRÍTICO #3 (ver audio_effect_compat.h): audio_effect_library_t real de
+ * AOSP tiene 7 campos, no 9 — query_num_effects/query_effect no existen en
+ * el struct real. Inicializador ajustado a los 7 campos reales. */
 extern "C" __attribute__((visibility("default"), used))
 audio_effect_library_t AUDIO_EFFECT_LIBRARY_INFO_SYM = {
     AUDIO_EFFECT_LIBRARY_TAG,
     EFFECT_LIBRARY_API_VERSION,
     "IVANNA Omega Effect Library",
     "IVANNA OMEGA SUPREME",
-    omega_query_num_effects,
-    omega_query_effect,
     omega_create_effect,
     omega_release_effect,
     omega_get_descriptor_lib
