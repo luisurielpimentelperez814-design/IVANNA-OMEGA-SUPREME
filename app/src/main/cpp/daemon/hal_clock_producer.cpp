@@ -7,22 +7,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
-#include <fcntl.h>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <sys/ioctl.h>
 #include <unistd.h>
 
-#if defined(__has_include)
-#  if __has_include(<sound/asound.h>)
-#    include <sound/asound.h>
-#    define IVANNA_HAS_ASOUND 1
-#  endif
-#endif
-#ifndef IVANNA_HAS_ASOUND
-#  define IVANNA_HAS_ASOUND 0
-#endif
 
 namespace ivanna::audio::halclock {
 namespace {
@@ -46,6 +35,20 @@ bool parseIntAfter(const std::string& text, const char* key, long& out) {
     const long v = std::strtol(text.c_str() + p, &end, 10);
     if (end == text.c_str() + p) return false;
     out = v;
+    return true;
+}
+
+bool parseTokenAfter(const std::string& text, const char* key, std::string& out) {
+    const std::string k(key);
+    size_t p = text.find(k);
+    if (p == std::string::npos) return false;
+    p += k.size();
+    while (p < text.size() && (text[p] == ' ' || text[p] == '\t' || text[p] == ':')) ++p;
+    const size_t begin = p;
+    while (p < text.size() && text[p] != ' ' && text[p] != '\t' &&
+           text[p] != '\r' && text[p] != '\n') ++p;
+    if (p == begin) return false;
+    out.assign(text, begin, p - begin);
     return true;
 }
 
@@ -85,11 +88,9 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
                 d.devPath = devRoot + "/pcmC" + std::to_string(card) + "D" +
                             std::to_string(pcm) + "p";
                 const std::string status = readSmallFile(statusPath);
-                long stateVal = 0;
-                if (parseIntAfter(status, "state", stateVal))
-                    d.state = std::to_string(stateVal);
-                else
-                    d.state = status.empty() ? "unknown" : "parsed-empty";
+                if (!parseTokenAfter(status, "state", d.state))
+                    d.state = status.empty() ? "unknown" : "state-unparsed";
+                d.running = (d.state == "RUNNING");
 
                 const std::string hw = readSmallFile(pdir + "/hw_params");
                 long rate = 0;
@@ -108,8 +109,11 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
                 }
                 if (existing == out.end()) {
                     out.push_back(d);
-                } else if (existing->nominalRateHz == 0 && d.nominalRateHz > 0) {
-                    // Prefer the substream that actually exposes a nominal rate.
+                } else if ((d.running && !existing->running) ||
+                           (d.running == existing->running &&
+                            existing->nominalRateHz == 0 && d.nominalRateHz > 0)) {
+                    // Prefer the active substream first; a rate from a closed
+                    // sibling substream must not mask the active one.
                     *existing = d;
                 }
             }
@@ -162,11 +166,12 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
                     d.procDir = pdir;
                     const std::string status = readSmallFile(pdir + "/status");
                     if (!status.empty()) {
-                        long stateVal = 0;
-                        d.state = parseIntAfter(status, "state", stateVal)
-                            ? std::to_string(stateVal) : "status-unparsed";
+                        if (!parseTokenAfter(status, "state", d.state))
+                            d.state = "status-unparsed";
+                        d.running = (d.state == "RUNNING");
                     } else {
                         d.state = "hw-params-rate-available; status-unavailable";
+                        d.running = false;
                     }
                     break;
                 }
@@ -179,53 +184,20 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
     return out;
 }
 
-bool StatusIoctlSource::compiledWithAlsaHeaders() noexcept { return IVANNA_HAS_ASOUND != 0; }
-
-bool StatusIoctlSource::open(const PcmDevice& d) noexcept {
-    close();
-#if IVANNA_HAS_ASOUND
-    if (d.device < 0 || d.card < 0) return false;
-    fd_ = ::open(d.devPath.c_str(), O_RDONLY | O_CLOEXEC);
-    if (fd_ < 0) return false;
-    rate_ = d.nominalRateHz;
-    return true;
-#else
-    (void)d;
-    return false;
-#endif
-}
-
-void StatusIoctlSource::close() noexcept {
-    if (fd_ >= 0) ::close(fd_);
-    fd_ = -1;
-    rate_ = 0;
-}
-
-bool StatusIoctlSource::read(PairedSample& out) noexcept {
-#if IVANNA_HAS_ASOUND
-    if (fd_ < 0) return false;
-    struct snd_pcm_status st{};
-    if (::ioctl(fd_, SNDRV_PCM_IOCTL_STATUS, &st) < 0) return false;
-    // Un fd abierto por el daemon no es el stream HAL de Android. Como mínimo,
-    // descartar estados OPEN/SETUP/PREPARED: no son una salida que esté corriendo.
-    // RUNNING tampoco prueba por sí solo que este sea el PCM propietario del HAL.
-    if (st.state != SNDRV_PCM_STATE_RUNNING) return false;
-    // Una sola consulta => un solo par (hw_ptr, tstamp). Nunca se mezclan.
-    out.presentedFrames = static_cast<uint64_t>(st.hw_ptr);
-    out.timestampNs = static_cast<int64_t>(st.tstamp.tv_sec) * 1000000000ll +
-                      static_cast<int64_t>(st.tstamp.tv_nsec);
-    out.nominalRateHz = rate_;
-    return true;
-#else
-    (void)out;
-    return false;
-#endif
-}
-
 GateVerdict CorrelationGate::evaluate(const PairedSample& s) noexcept {
     GateVerdict v{};
-    if (s.nominalRateHz == 0) { v.reason = "sin rate nominal"; return v; }
-    if (s.timestampNs <= 0) { v.reason = "timestamp no positivo"; return v; }
+    if (s.nominalRateHz < 8000 || s.nominalRateHz > 768000) {
+        v.reason = s.nominalRateHz == 0 ? "sin rate nominal" : "tasa nominal fuera de rango";
+        havePrev_ = false;
+        streak_ = 0;
+        return v;
+    }
+    if (s.timestampNs <= 0) {
+        v.reason = "timestamp no positivo";
+        havePrev_ = false;
+        streak_ = 0;
+        return v;
+    }
 
     if (!havePrev_) {
         // Primera muestra: solo se acepta como ancla, no publica todavía.
@@ -271,7 +243,6 @@ reject:
 }
 
 HalClockProducer::~HalClockProducer() {
-    delete ownSource_;
     if (publisher_) {
         auto* p = static_cast<ivanna::audio::HardwareClockPublisher*>(publisher_);
         p->close();
@@ -282,15 +253,15 @@ HalClockProducer::~HalClockProducer() {
 bool HalClockProducer::ensureSource() noexcept {
     if (src_) return true;
     if (cfg_.source) { src_ = cfg_.source; return true; }
-    auto* s = new StatusIoctlSource();
-    ownSource_ = s;
-    src_ = s;
-    if (!StatusIoctlSource::compiledWithAlsaHeaders()) {
-        st_.state = ProducerState::kNoSource;
-        st_.reason = "binario sin sound/asound.h: no hay fuente de timestamps";
-        return false;
-    }
-    return true;
+
+    // Critical safety boundary: the daemon is not the owner of Android's active
+    // output stream. Opening the first /dev/snd/pcmC*D*p node creates an
+    // independent ALSA client and cannot establish that its pointer belongs to
+    // the HAL stream audible to the user. Only an explicitly bound owner-side
+    // source may feed this producer; until then it stays fail-closed.
+    st_.state = ProducerState::kNoSource;
+    st_.reason = "sin publicador ligado al stream HAL/PAL propietario; daemon no abre PCM";
+    return false;
 }
 
 ProducerStatus HalClockProducer::poll() noexcept {
@@ -310,11 +281,16 @@ ProducerStatus HalClockProducer::poll() noexcept {
         // explícito no se puede correlacionar frames/tiempo. Reintentar en el
         // siguiente poll por si el firmware publica hw_params al iniciar audio.
         const PcmDevice* pick = nullptr;
-        for (const auto& d : devices) if (d.nominalRateHz > 0) { pick = &d; break; }
+        for (const auto& d : devices) {
+            if (d.running && d.nominalRateHz > 0) { pick = &d; break; }
+        }
         if (!pick) {
             st_.state = ProducerState::kWaitingSamples;
-            st_.device = devices.front().devPath;
-            st_.reason = "PCM presente, pero sin rate nominal verificable en /proc/asound; no se abre ni publica";
+            // Presence-only node is not a selected source. Keep device empty so
+            // logs cannot imply that pcmC*D*p was opened or owns the active route.
+            st_.device.clear();
+            st_.reason = "nodos playback presentes=" + std::to_string(devices.size()) +
+                "; ninguno con estado RUNNING y rate verificable; no se abre ni publica";
             return st_;
         }
         device_ = *pick;

@@ -182,11 +182,13 @@ require("app/src/main/java/com/ivanna/omega/fotoholo/RoomArCaptureActivity.kt",
 # SAFMUS audio-effect audit must resolve <module-root>/core/<script> correctly
 # and inspect runtime vendor paths without claiming AudioFlinger activation.
 require("magisk_module/core/safmus_audio_effect_audit.sh",
-        'SCRIPT_DIR="${0%/*}"', 'MODDIR="${SCRIPT_DIR%/*}"',
+        'SCRIPT_DIR=${0%/*}', 'MODDIR=${SCRIPT_DIR%/*}',
         '/vendor/etc/audio_effects.xml',
         '/vendor/lib64/soundfx/libomega_effect.so',
         'system_wide_audio_coverage=unverified',
-        'prerequisites_present_not_proof_of_audioflinger_activation')
+        'prerequisites_present_activation_unverified',
+        'audioflinger_activation_verified=',
+        'observed_in_dumpsys_not_proof_of_active_processing')
 
 if errors:
     print("SAFMUS transversal wiring audit FAILED:")

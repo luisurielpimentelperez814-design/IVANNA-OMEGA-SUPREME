@@ -127,6 +127,7 @@ TEST(HalClockProducer, DoesNotOpenPcmWithoutVerifiableRate) {
     const ProducerStatus status = prod.poll();
     EXPECT_EQ(status.state, ProducerState::kWaitingSamples);
     EXPECT_FALSE(src.opened);
+    EXPECT_EQ(status.device, ""); // presence-only node must not look selected
     EXPECT_EQ(status.published, 0u);
     EXPECT_NE(status.reason, "");
 }
@@ -165,7 +166,70 @@ TEST(HalClockProducer, RetriesAfterPcmOpenFailure) {
     EXPECT_EQ(published.published, 1u);
 }
 
-// ── Puerta de correlación ─────────────────────────────────────────────────
+
+TEST(HalClockProducer, ParsesRunningStateInsteadOfTreatingTextAsInteger) {
+    const std::string root = tmpRoot("state_parse");
+    mkdirs(root + "/proc/card0/pcm2p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card0/pcm2p/sub0/status", "state: RUNNING\n");
+    writeFile(root + "/proc/card0/pcm2p/sub0/hw_params", "rate: 48000 (48000/1)\n");
+    const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
+    ASSERT_EQ(devs.size(), 1u);
+    EXPECT_EQ(devs[0].state, "RUNNING");
+    EXPECT_TRUE(devs[0].running);
+    EXPECT_EQ(devs[0].nominalRateHz, 48000u);
+}
+
+TEST(HalClockProducer, ActiveSubstreamWinsOverClosedSiblingRate) {
+    const std::string root = tmpRoot("active_substream");
+    mkdirs(root + "/proc/card1/pcm14p/sub0");
+    mkdirs(root + "/proc/card1/pcm14p/sub1");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card1/pcm14p/sub0/status", "state: CLOSED\n");
+    writeFile(root + "/proc/card1/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\n");
+    writeFile(root + "/proc/card1/pcm14p/sub1/status", "state: RUNNING\n");
+    writeFile(root + "/proc/card1/pcm14p/sub1/hw_params", "rate: 44100 (44100/1)\n");
+    const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
+    ASSERT_EQ(devs.size(), 1u);
+    EXPECT_TRUE(devs[0].running);
+    EXPECT_EQ(devs[0].state, "RUNNING");
+    EXPECT_EQ(devs[0].nominalRateHz, 44100u);
+}
+ 
+TEST(HalClockProducer, InactivePcmWithRateIsNotAClockCandidate) {
+    const std::string root = tmpRoot("inactive_rate");
+    mkdirs(root + "/proc/card0/pcm14p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card0/pcm14p/sub0/status", "state: CLOSED\n");
+    writeFile(root + "/proc/card0/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\n");
+    const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
+    ASSERT_EQ(devs.size(), 1u);
+    EXPECT_EQ(devs[0].nominalRateHz, 48000u);
+    EXPECT_FALSE(devs[0].running);
+    EXPECT_EQ(devs[0].state, "CLOSED");
+}
+
+TEST(HalClockProducer, DefaultProducerNeverOpensAnIndependentPcm) {
+    const std::string root = tmpRoot("no_owner");
+    mkdirs(root + "/proc/card1/pcm14p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card1/pcm14p/sub0/status", "state: RUNNING\n");
+    writeFile(root + "/proc/card1/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\n");
+    writeFile(root + "/dev/pcmC1D14p", "");
+    HalClockProducer::Config cfg;
+    cfg.procRoot = root + "/proc";
+    cfg.devRoot = root + "/dev";
+    cfg.snapshotPath = root + "/snapshot";
+    HalClockProducer producer(cfg);
+    producer.setEnabled(true);
+    const auto status = producer.poll();
+    EXPECT_EQ(status.state, ProducerState::kNoSource);
+    EXPECT_EQ(status.device, "");
+    EXPECT_EQ(status.published, 0u);
+    EXPECT_STREQ(status.reason,
+        "sin publicador ligado al stream HAL/PAL propietario; daemon no abre PCM");
+}
+\n// ── Puerta de correlación ─────────────────────────────────────────────────
 TEST(HalClockProducer, GateRejectsUncorrelatedAndAcceptsCoherent) {
     CorrelationGate g;
     // 480 frames en 10 ms = 48000 Hz exacto.
@@ -207,10 +271,42 @@ TEST(HalClockProducer, GateRejectsMissingNominalRate) {
     EXPECT_STREQ(v.reason, "sin rate nominal");
 }
 
+TEST(HalClockProducer, GateRejectsNominalRatesOutsideAudioRange) {
+    CorrelationGate low;
+    const auto l = low.evaluate(mk(0, 1'000'000'000, 7999));
+    EXPECT_FALSE(l.accepted);
+    EXPECT_STREQ(l.reason, "tasa nominal fuera de rango");
+    EXPECT_EQ(low.streak(), 0);
+
+    CorrelationGate high;
+    const auto h = high.evaluate(mk(0, 1'000'000'000, 768001));
+    EXPECT_FALSE(h.accepted);
+    EXPECT_STREQ(h.reason, "tasa nominal fuera de rango");
+    EXPECT_EQ(high.streak(), 0);
+}
+
+TEST(HalClockProducer, InvalidTimestampClearsCorrelationStreak) {
+    CorrelationGate g;
+    EXPECT_FALSE(g.evaluate(mk(0, 1'000'000'000)).accepted);
+    EXPECT_TRUE(g.evaluate(mk(480, 1'010'000'000)).accepted);
+    EXPECT_EQ(g.streak(), 1);
+    const auto bad = g.evaluate(mk(960, 0));
+    EXPECT_FALSE(bad.accepted);
+    EXPECT_STREQ(bad.reason, "timestamp no positivo");
+    EXPECT_EQ(g.streak(), 0);
+    EXPECT_FALSE(g.evaluate(mk(1440, 1'030'000'000)).accepted); // new anchor
+    EXPECT_EQ(g.streak(), 0);
+}
+
 // ── Productor completo contra el snapshot real del producto ───────────────
 TEST(HalClockProducer, PublishesOnlyAfterThreeCoherentPairs) {
-    const std::string snap = tmpRoot("snap");
+    const std::string root = tmpRoot("publish_three");
+    const std::string snap = root + "/snapshot";
     ::unlink(snap.c_str());
+    mkdirs(root + "/proc/card0/pcm0p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card0/pcm0p/sub0/status", "state: RUNNING\n");
+    writeFile(root + "/proc/card0/pcm0p/sub0/hw_params", "rate: 48000 (48000/1)\n");
 
     FakeSource src;
     src.seq = {mk(0, 1'000'000'000), mk(480, 1'010'000'000),
@@ -218,19 +314,31 @@ TEST(HalClockProducer, PublishesOnlyAfterThreeCoherentPairs) {
                mk(1920, 1'040'000'000)};
 
     HalClockProducer::Config cfg;
+    cfg.procRoot = root + "/proc";
+    cfg.devRoot = root + "/dev";
     cfg.source = &src;
     cfg.snapshotPath = snap;
     cfg.gate.consecutiveRequired = 3;
     HalClockProducer prod(cfg);
     prod.setEnabled(true);
 
-    // El dispositivo falso se fuerza con un PcmDevice ya resuelto: se usa el
-    // descubrimiento real sobre /tmp vacio => sin dispositivo, no publica.
-    const ProducerStatus s0 = prod.poll();
-    EXPECT_EQ(s0.state, ProducerState::kNoDevices);
-    EXPECT_EQ(s0.published, 0u);
-}
+    EXPECT_EQ(prod.poll().state, ProducerState::kWaitingSamples); // anchor
+    EXPECT_EQ(prod.poll().state, ProducerState::kWaitingSamples); // coherent pair 1
+    EXPECT_EQ(prod.poll().state, ProducerState::kWaitingSamples); // coherent pair 2
+    const ProducerStatus published = prod.poll();                 // coherent pair 3
+    EXPECT_EQ(published.state, ProducerState::kPublishing);
+    EXPECT_EQ(published.published, 1u);
 
+    HardwareClockReader rd;
+    ASSERT_TRUE(rd.open(snap.c_str()));
+    HardwareClockSample got{};
+    ASSERT_TRUE(rd.read(got));
+    EXPECT_EQ(got.presentedFrames, 1440u);
+    EXPECT_EQ(got.hardwareTimestampNs, 1'030'000'000ull);
+    EXPECT_EQ(got.nominalSampleRateHz, 48000u);
+    rd.close();
+}
+ 
 TEST(HalClockProducer, DisabledProducerNeverPublishes) {
     FakeSource src;
     HalClockProducer::Config cfg;

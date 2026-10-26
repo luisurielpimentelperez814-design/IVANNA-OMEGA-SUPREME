@@ -2,11 +2,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // hal_clock_producer.hpp — productor experimental de snapshots HAL-CLOCK.
 //
-// El daemon puede intentar leer SNDRV_PCM_IOCTL_STATUS de un nodo PCM ALSA y
-// publicar el par hw_ptr/tstamp devuelto por UNA consulta. Esto no demuestra que
-// el nodo sea el stream que Android/HAL tiene activo: el open independiente puede
-// fallar por exclusividad o referirse a otro cliente/ruta. Tampoco demuestra por
-// sí solo el dominio/unidades del timestamp en el driver concreto.
+// El daemon NO abre nodos PCM ALSA. La selección de un nodo por presencia/rate
+// no identifica el stream de salida que posee el HAL y un open independiente puede
+// observar otro cliente o ruta. La producción solo puede comenzar cuando el HAL/PAL
+// propietario publique frames+timestamp asociados en el snapshot compartido.
 //
 // QUÉ NO ES: no es una integración PAL del stream propietario, ni identifica ni
 // acciona un ASRC físico. En el Moto G85 aún faltan callbacks PAL verificados
@@ -24,7 +23,7 @@ namespace ivanna::audio::halclock {
 enum class ProducerState : uint8_t {
     kDisabled = 0,     // no habilitado por argumento
     kNoDevices,        // /proc/asound no expone ningún PCM de reproducción
-    kNoSource,         // el binario no se compiló con cabeceras ALSA (sin fuente)
+    kNoSource,         // no hay fuente ligada al stream HAL/PAL propietario
     kWaitingSamples,   // dispositivo encontrado, aún sin muestras válidas
     kPublishing,       // publicando muestras correlacionadas
     kRejected,         // muestras presentes pero NO correlacionadas (se descartan)
@@ -40,7 +39,8 @@ struct PcmDevice {
     std::string procDir;      // /proc/asound/card0/pcm0p
     std::string devPath;      // /dev/snd/pcmC0D0p
     unsigned nominalRateHz = 0;
-    std::string state;        // contenido de /proc/.../status (state: RUNNING…)
+    bool running = false;     // true only when /proc/.../status explicitly says state: RUNNING
+    std::string state;        // raw state token from /proc/.../status, or diagnostic reason
 };
 
 // Muestra pareada: SIEMPRE procede de una única consulta al driver.
@@ -67,20 +67,9 @@ public:
     virtual bool read(PairedSample& out) noexcept = 0;
 };
 
-// Implementación con SNDRV_PCM_IOCTL_STATUS. Si el binario no tiene cabeceras
-// ALSA (sound/asound.h), open() devuelve false y el productor queda fail-closed.
-class StatusIoctlSource final : public PairedSampleSource {
-public:
-    const char* name() const noexcept override { return "SNDRV_PCM_IOCTL_STATUS"; }
-    bool open(const PcmDevice& d) noexcept override;
-    void close() noexcept override;
-    bool read(PairedSample& out) noexcept override;
-    static bool compiledWithAlsaHeaders() noexcept;
-
-private:
-    int fd_ = -1;
-    uint32_t rate_ = 0;
-};
+// The daemon intentionally has no ALSA PCM opener. Only synthetic sources are
+// injected in host tests; production samples must arrive via the HAL/PAL-owned
+// shared snapshot consumed by the daemon's HardwareClockReader.
 
 // ── Puerta de correlación: rechaza lo que no es una muestra coherente ───────
 struct GateConfig {
@@ -132,7 +121,7 @@ public:
         std::string snapshotPath;  // vacío => kHardwareClockSnapshotPath del bridge
         int pollIntervalMs = 100;
         GateConfig gate{};
-        PairedSampleSource* source = nullptr;  // nullptr => StatusIoctlSource
+        PairedSampleSource* source = nullptr;  // host-test injection only; production must read HAL/PAL snapshot
     };
 
     HalClockProducer() = default;
@@ -151,7 +140,6 @@ private:
     ProducerStatus st_{};
     CorrelationGate gate_{};
     PcmDevice device_{};
-    PairedSampleSource* ownSource_ = nullptr;
     PairedSampleSource* src_ = nullptr;
     bool enabled_ = false;
     bool opened_ = false;
