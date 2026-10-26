@@ -2,11 +2,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // hal_clock_producer.hpp — productor experimental de snapshots HAL-CLOCK.
 //
-// El daemon puede intentar leer SNDRV_PCM_IOCTL_STATUS de un nodo PCM ALSA y
-// publicar el par hw_ptr/tstamp devuelto por UNA consulta. Esto no demuestra que
-// el nodo sea el stream que Android/HAL tiene activo: el open independiente puede
-// fallar por exclusividad o referirse a otro cliente/ruta. Tampoco demuestra por
-// sí solo el dominio/unidades del timestamp en el driver concreto.
+// El daemon NO abre nodos PCM ALSA. La selección de un nodo por presencia/rate
+// no identifica el stream de salida que posee el HAL y un open independiente puede
+// observar otro cliente o ruta. La producción solo puede comenzar cuando el HAL/PAL
+// propietario publique frames+timestamp asociados en el snapshot compartido.
 //
 // QUÉ NO ES: no es una integración PAL del stream propietario, ni identifica ni
 // acciona un ASRC físico. En el Moto G85 aún faltan callbacks PAL verificados
@@ -141,7 +140,6 @@ private:
     ProducerStatus st_{};
     CorrelationGate gate_{};
     PcmDevice device_{};
-    PairedSampleSource* ownSource_ = nullptr;
     PairedSampleSource* src_ = nullptr;
     bool enabled_ = false;
     bool opened_ = false;
