@@ -179,6 +179,22 @@ TEST(HalClockProducer, ParsesRunningStateInsteadOfTreatingTextAsInteger) {
     EXPECT_EQ(devs[0].nominalRateHz, 48000u);
 }
 
+TEST(HalClockProducer, ActiveSubstreamWinsOverClosedSiblingRate) {
+    const std::string root = tmpRoot("active_substream");
+    mkdirs(root + "/proc/card1/pcm14p/sub0");
+    mkdirs(root + "/proc/card1/pcm14p/sub1");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card1/pcm14p/sub0/status", "state: CLOSED\n");
+    writeFile(root + "/proc/card1/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\n");
+    writeFile(root + "/proc/card1/pcm14p/sub1/status", "state: RUNNING\n");
+    writeFile(root + "/proc/card1/pcm14p/sub1/hw_params", "rate: 44100 (44100/1)\n");
+    const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
+    ASSERT_EQ(devs.size(), 1u);
+    EXPECT_TRUE(devs[0].running);
+    EXPECT_EQ(devs[0].state, "RUNNING");
+    EXPECT_EQ(devs[0].nominalRateHz, 44100u);
+}
+ 
 TEST(HalClockProducer, InactivePcmWithRateIsNotAClockCandidate) {
     const std::string root = tmpRoot("inactive_rate");
     mkdirs(root + "/proc/card0/pcm14p/sub0");
