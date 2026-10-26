@@ -1,7 +1,5 @@
-# Gate machine-readable — uso
+# IVANNA Auditory Magnificence Gate
 
-Ejecuta `python3 scripts/ivanna_auditory_gate.py evidence.json --json-out gate-result.json`. Cada check contiene `id`, `status` (PASS/FAIL/NOT_TESTED) y `critical`. Incluye commit exacto, versión, dispositivo y `device_scope` con `routes`, `required_routes`, `physical_device_evidence` y `level_matched_listening_evidence`.
+The PCM analyzer now reports severity-coded findings and concrete adjustments for clipping, peak headroom, DC offset, channel imbalance, short captures, known-tone THD+N residual and reference alignment/SNR. Thresholds are conservative screening heuristics, not universal perceptual standards. A clean synthetic WAV proves only that the measurement code behaves as tested; it does not certify a phone, Bluetooth receiver, DAC or acoustic chain.
 
-Salida: 0 GREEN, 1 AMBER, 2 RED o manifiesto inválido. Un fallo es RED. Check no probado, ruta requerida ausente o falta de evidencia física/escucha nivelada impide GREEN. No promedia fallos críticos.
-
-Ejemplo de ejecución inicial: las pruebas CI pueden estar PASS, pero mientras falten las mediciones físicas del Moto G85 y la comparación auditiva nivelada, el resultado correcto es AMBER. Esta herramienta evalúa el manifiesto; no captura el teléfono ni certifica automáticamente el audio.
+Run adversarial tests with `python3 -m unittest discover -s tests -p 'test_ivanna_audio_certify.py' -v`. The test set includes clean tone, full-scale clipping, channel imbalance, DC offset, reference length mismatch, JSON finiteness, 24-bit PCM sign extension, sample-rate mismatch and invalid tone frequency. Hardware GREEN still requires captured physical-route evidence and level-matched listening evidence.

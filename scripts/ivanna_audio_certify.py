@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure PCM WAV captures for IVANNA. File analysis only; not a live-route certificate."""
+"""Strict PCM WAV diagnostics for IVANNA; not a live-route or laboratory certificate."""
 import argparse
 import json
 import math
@@ -13,8 +13,8 @@ def load_wav(path):
         if wav.getcomptype() != "NONE" or width not in (1, 2, 3, 4):
             raise ValueError("Expected uncompressed integer PCM WAV, 8/16/24/32-bit")
         raw = wav.readframes(frames)
-    if channels < 1 or rate < 1 or len(raw) != frames * channels * width:
-        raise ValueError("Invalid or truncated WAV")
+    if channels < 1 or rate < 1 or frames < 1 or len(raw) != frames * channels * width:
+        raise ValueError("Invalid, empty, or truncated WAV")
     scale = float(1 << (8 * width - 1))
     data = [[] for _ in range(channels)]
     clipped = 0
@@ -47,7 +47,6 @@ def fit_tone(x, rate, hz):
     n = len(x)
     if n < max(64, int(rate / hz * 8)):
         raise ValueError("Capture too short for a stable tone estimate")
-    # Least-squares fit y = a*sin(wt) + b*cos(wt) + dc, including cross terms.
     ss = cc = sc = s1 = c1 = sy = cy = y1 = 0.0
     for i, y in enumerate(x):
         s, c = math.sin(2 * math.pi * hz * i / rate), math.cos(2 * math.pi * hz * i / rate)
@@ -82,6 +81,58 @@ def fit_tone(x, rate, hz):
             "dc_from_fit": dc}
 
 
+def diagnose(result):
+    findings = []
+    def add(severity, code, metric, value, threshold, adjustment):
+        findings.append({"severity": severity, "code": code, "metric": metric,
+                         "measured": value, "threshold": threshold, "recommended_adjustment": adjustment})
+    if result["clipped_samples"] > 0:
+        add("CRITICAL", "PCM_CLIPPING", "clipped_samples", result["clipped_samples"], 0,
+            "Reduce cumulative pre-output gain; inspect EQ boosts, exciter harmonics, limiter ceiling and fixed-point conversion. Re-capture at identical source level.")
+    elif any(c["peak_dbfs"] is not None and c["peak_dbfs"] > -1.0 for c in result["channel_metrics"]):
+        add("WARNING", "LOW_PEAK_HEADROOM", "peak_dbfs",
+            [c["peak_dbfs"] for c in result["channel_metrics"]], "<= -1.0 dBFS preferred for this diagnostic",
+            "Create at least 1 dB digital headroom before the final output stage; do not treat this guard band as a universal loudness standard.")
+    for c in result["channel_metrics"]:
+        if abs(c["dc_offset"]) > 0.001:
+            add("WARNING", "DC_OFFSET", "channel_" + str(c["channel"]) + "_dc_offset", c["dc_offset"], "absolute <= 0.001 FS",
+                "Check DC-blocking/high-pass placement, state reset and fixed-point rounding; verify with a silent input and impulse test.")
+    imbalance = result.get("channel_rms_imbalance_db")
+    if imbalance is not None and imbalance > 3.0:
+        add("CRITICAL", "CHANNEL_IMBALANCE", "channel_rms_imbalance_db", imbalance, "<= 1 dB target; > 3 dB critical",
+            "Check per-channel gain coefficients, channel mapping, mono fold-down, HRTF convolution normalization and route-specific balance.")
+    elif imbalance is not None and imbalance > 1.0:
+        add("WARNING", "CHANNEL_IMBALANCE", "channel_rms_imbalance_db", imbalance, "<= 1 dB target",
+            "Verify channel gain and routing with identical in-phase test signals before changing spatialization parameters.")
+    if result["duration_s"] < 0.1:
+        add("WARNING", "CAPTURE_TOO_SHORT", "duration_s", result["duration_s"], ">= 0.1 s screening minimum",
+            "Capture a longer stable segment; use longer runs for drift, thermal, dropout and low-frequency response tests.")
+    for c in result.get("tone_analysis", []):
+        thdn = c["thdn_percent"]
+        if thdn is not None and thdn > 1.0:
+            add("CRITICAL", "TONE_THDN_HIGH", "thdn_percent", thdn, "<= 0.1% screening target; > 1% critical",
+                "Inspect clipping, nonlinear DSP stages, limiter/exciter drive, resampler overload and capture-chain quality. Repeat with a calibrated loopback before attributing distortion to IVANNA.")
+        elif thdn is not None and thdn > 0.1:
+            add("WARNING", "TONE_THDN_ELEVATED", "thdn_percent", thdn, "<= 0.1% screening target",
+                "Compare bypass and each DSP stage separately; lower stage drive and inspect resampling/limiting. This residual includes noise and capture-chain error.")
+    comp = result.get("reference_comparison")
+    if comp:
+        if comp["length_delta_frames"] != 0:
+            add("WARNING", "REFERENCE_LENGTH_MISMATCH", "length_delta_frames", comp["length_delta_frames"], 0,
+                "Align capture start/stop and compare equal-duration steady-state windows; separately measure latency rather than hiding it with arbitrary trimming.")
+        for i, snr in enumerate(comp["snr_db_per_channel"]):
+            if snr is not None and snr < 40:
+                add("CRITICAL", "REFERENCE_ERROR_HIGH", "reference_snr_db_channel_" + str(i + 1), snr, ">= 60 dB screening target; < 40 dB critical",
+                    "Check sample alignment, sample-rate conversion, gain matching and unintended DSP changes. Confirm whether the difference is intended processing or degradation.")
+            elif snr is not None and snr < 60:
+                add("WARNING", "REFERENCE_ERROR_ELEVATED", "reference_snr_db_channel_" + str(i + 1), snr, ">= 60 dB screening target",
+                    "Verify exact sample alignment and gain before interpreting the residual as degradation; use bypass null tests for transparency claims.")
+    result["findings"] = findings
+    result["diagnostic_status"] = "RED" if any(f["severity"] == "CRITICAL" for f in findings) else ("AMBER" if findings else "NO_SCREENING_FLAGS")
+    result["diagnostic_policy"] = "Screening heuristics only, not universal perceptual limits. A clean report is not hardware certification."
+    return result
+
+
 def analyze(path, reference=None, tone_hz=None):
     measured = load_wav(path)
     samples = measured.pop("samples")
@@ -96,10 +147,13 @@ def analyze(path, reference=None, tone_hz=None):
     result["clipping_percent"] = 100 * result["clipped_samples"] / max(1, total)
     if len(samples) >= 2:
         l, r = result["channel_metrics"][:2]
-        result["channel_rms_imbalance_db"] = abs(l["rms_dbfs"] - r["rms_dbfs"]) if l["rms_dbfs"] is not None and r["rms_dbfs"] is not None else None
+        if l["rms_dbfs"] is not None and r["rms_dbfs"] is not None:
+            result["channel_rms_imbalance_db"] = abs(l["rms_dbfs"] - r["rms_dbfs"])
+        else:
+            result["channel_rms_imbalance_db"] = None
     if tone_hz is not None:
         result["tone_analysis"] = [fit_tone(x, result["sample_rate_hz"], tone_hz) for x in samples]
-        result["tone_analysis_warning"] = "THD+N estimate applies only to a clean known-frequency sine; capture-chain distortion is included."
+        result["tone_analysis_warning"] = "Known-sine residual estimate; includes noise and capture-chain distortion."
     if reference:
         ref = load_wav(reference)
         if (result["sample_rate_hz"], result["channels"]) != (ref["sample_rate_hz"], ref["channels"]):
@@ -117,7 +171,7 @@ def analyze(path, reference=None, tone_hz=None):
             "length_delta_frames": result["frames"] - ref["frames"], "snr_db_per_channel": snrs,
             "warning": "Requires sample-aligned identical signals. Gain/latency mismatch counts as error; null SNR means zero residual."}
     result["scope_warning"] = "WAV metrics only; this does not prove live Android routing, negotiated Bluetooth codec, end-to-end latency, acoustic SPL, or calibrated device THD."
-    return result
+    return diagnose(result)
 
 
 def main():
