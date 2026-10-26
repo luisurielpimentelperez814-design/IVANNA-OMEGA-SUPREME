@@ -240,8 +240,18 @@ bool StatusIoctlSource::read(PairedSample& out) noexcept {
 
 GateVerdict CorrelationGate::evaluate(const PairedSample& s) noexcept {
     GateVerdict v{};
-    if (s.nominalRateHz == 0) { v.reason = "sin rate nominal"; return v; }
-    if (s.timestampNs <= 0) { v.reason = "timestamp no positivo"; return v; }
+    if (s.nominalRateHz < 8000 || s.nominalRateHz > 768000) {
+        v.reason = s.nominalRateHz == 0 ? "sin rate nominal" : "tasa nominal fuera de rango";
+        havePrev_ = false;
+        streak_ = 0;
+        return v;
+    }
+    if (s.timestampNs <= 0) {
+        v.reason = "timestamp no positivo";
+        havePrev_ = false;
+        streak_ = 0;
+        return v;
+    }
 
     if (!havePrev_) {
         // Primera muestra: solo se acepta como ancla, no publica todavía.
