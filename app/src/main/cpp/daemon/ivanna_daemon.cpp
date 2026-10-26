@@ -32,6 +32,8 @@
 #include <thread>
 #include <atomic>
 #include <netinet/in.h>
+#include <time.h>
+#include <limits>
 
 #define LOG_TAG "IVANNA_OMEGA_DAEMON"
 
@@ -398,27 +400,40 @@ lo; revisar su invocación)."));
                     last = s.state; lastReason = s.reason;
                 }
 
-                const bool routeValidated =
-                    (s.state == ivanna::audio::halclock::ProducerState::kPublishing);
+                // The daemon must consume a snapshot published by the actual
+                // HAL/PAL stream owner. It must never gate reading on its own PCM
+                // producer: that producer intentionally stays blocked unless an
+                // owner-bound source is injected. A leftover snapshot from an old
+                // route/process is rejected unless its monotonic timestamp is fresh.
                 ivanna::dsp::ClockSample cs{};
                 bool haveSample = false;
-                if (routeValidated) {
-                    if (!clockReader.open()) {
-                        // El publisher del reloj hardware abre el mismo archivo;
-                        // reintentar es gratis y evita quedar huerfano si el
-                        // orden de arranque de hilos varia.
-                    } else {
-                        ivanna::audio::HardwareClockSample hcs{};
-                        if (clockReader.read(hcs)) {
-                            cs.presentedFrames = hcs.presentedFrames;
-                            cs.timestampNs = static_cast<int64_t>(hcs.hardwareTimestampNs);
-                            cs.nominalRateHz = hcs.nominalSampleRateHz;
-                            haveSample = true;
+                if (clockReader.open()) {
+                    ivanna::audio::HardwareClockSample hcs{};
+                    if (clockReader.read(hcs) &&
+                        hcs.hardwareTimestampNs > 0 &&
+                        hcs.hardwareTimestampNs <=
+                            static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+                        timespec now{};
+                        if (::clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+                            const int64_t nowNs =
+                                static_cast<int64_t>(now.tv_sec) * 1000000000LL +
+                                static_cast<int64_t>(now.tv_nsec);
+                            const int64_t sampleNs =
+                                static_cast<int64_t>(hcs.hardwareTimestampNs);
+                            const int64_t ageNs = nowNs - sampleNs;
+                            if (ageNs >= 0 && ageNs <= 1000000000LL) {
+                                cs.presentedFrames = hcs.presentedFrames;
+                                cs.timestampNs = sampleNs;
+                                cs.nominalRateHz = hcs.nominalSampleRateHz;
+                                haveSample = true;
+                            }
                         }
                     }
                 }
+                const bool routeValidated = haveSample;
+                if (!routeValidated) asrcController.reset();
                 const auto asrcSnap = asrcController.update(
-                    cs, routeValidated && haveSample, hal_clock_enabled);
+                    cs, routeValidated, hal_clock_enabled);
                 if (asrcSnap.state != lastAsrcState || std::string(asrcSnap.reason) != lastAsrcReason) {
                     log_message(std::string("ASRC-SW ") +
                         ivanna::audio::asrcStateName(asrcSnap.state) +
@@ -438,8 +453,8 @@ lo; revisar su invocación)."));
             }
         });
         hal_clock_thread.detach();
-        log_message("HAL-CLOCK productor activo (SNDRV_PCM_IOCTL_STATUS, fail-closed sin ASRC fisico)");
-        log_message("ASRC-SW core activo: consume el reloj hardware validado, servo software sobre el resampler de la app");
+        log_message("HAL-CLOCK daemon activo en fail-closed: sin callsite HAL/PAL propietario no abre PCM ni publica reloj");
+        log_message("ASRC-SW core activo: solo consume snapshots HAL/PAL externos, frescos y coherentes; sin ellos permanece bloqueado");
     } else {
         log_message("HAL-CLOCK productor deshabilitado por --no-hal-clock");
         log_message("ASRC-SW core deshabilitado (depende de --hal-clock)");
