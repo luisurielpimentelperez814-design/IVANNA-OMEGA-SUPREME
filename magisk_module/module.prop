@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.142
-versionCode=433
+version=v2.5.143
+versionCode=434
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.142: SAFMUS Bluetooth codec identity hardening; Opus ID mapping is API-gated and ambiguous/vendor IDs fail closed; JVM regression tests added — NO VERIFICADO en dispositivo real
+description=v2.5.143: daemon SHM bridge via SCM_RIGHTS; atomically published shared-state pointer; release build pending CI and device validation
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

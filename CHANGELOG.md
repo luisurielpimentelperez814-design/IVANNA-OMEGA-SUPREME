@@ -1,4 +1,14 @@
-# CHANGELOG — v2.5.142 (433) — SAFMUS Bluetooth: identidad de códec Opus segura
+# CHANGELOG — v2.5.143 (434) — daemon SHM bridge via SCM_RIGHTS
+
+## Cambios
+- El puente JNI solicita el descriptor de la memoria compartida al daemon por el socket abstracto `@omega_daemon_socket`, en lugar de abrir directamente `/data/adb/ivanna_omega/omega_shm`.
+- Valida el descriptor recibido, el tamaño de la región y el encabezado SHM antes de publicar el estado compartido.
+- El puntero al estado se publica atómicamente para evitar carreras durante la inicialización concurrente.
+- Añade registros de diagnóstico para conexión, recepción SCM_RIGHTS, mapeo y validación.
+- **Estado:** publicación y build en CI pendientes; no afirmar todavía validación en Moto G85 ni audio funcional.
+
+---
+
 
 ## Cambios
 - Corrige el perfilador A2DP que clasificaba el ID 6 como LHDC, en contradicción con el detector de IVANNA para Android 13+.
