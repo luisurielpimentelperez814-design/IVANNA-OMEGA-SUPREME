@@ -17,7 +17,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.142-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.144-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -40,15 +40,16 @@
 
 ## Sincronización del estado del código — 2026-10-26
 
-Estado contrastado directamente con `main`, `version.properties`, `CHANGELOG.md` y el workflow `.github/workflows/build.yml`.
+Esta sección refleja el árbol de `main` inspeccionado para esta revisión; la versión declarada en archivos no implica que exista un Release público ni que se haya probado el hardware.
 
-- **HEAD consultado:** [`ce48bd9`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/ce48bd94cd54b5b2323f401588761f5fb6315b5e).
-- **Versión declarada:** `2.5.142`, `versionCode=433`. La insignia del README refleja esta versión del árbol; no significa que ya exista un release publicado.
-- **Último cambio funcional documentado:** SAFMUS Bluetooth endurece la identificación de códecs: Opus solo se reconoce con API 33 o posterior; IDs ambiguos o de proveedor usan el perfil conservador. No se infieren bitrate, pasabanda ni buffering del receptor y no se promete transparencia sin evidencia.
-- **Correcciones inmediatamente anteriores en `main`:** reparación de la compilación host del productor de reloj HAL y correcciones de sintaxis/alcance en el daemon. Esto confirma que hubo reparaciones recientes, no que el build completo actual esté verde.
-- **Validación de release:** `.github/workflows/build.yml` contiene etapas para pruebas nativas, APK/binarios, validación de artefactos y publicación condicionada. El estado de CI y la existencia de un release real deben comprobarse en [Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); no se declaran exitosos aquí sin un resultado de ejecución verificable.
-- **Límite de hardware:** la detección de códecs Bluetooth no conecta por sí sola un ASRC físico ni demuestra control global de PAL/AGM. La correlación del reloj HAL, el DAC USB-C y cada ruta Bluetooth siguen requiriendo logs y pruebas en el dispositivo.
-- **Criterio de documentación:** las funciones, pruebas host, artefactos CI y validación física son niveles distintos de evidencia. No se equiparan entre sí.
+- **HEAD de referencia:** [`7b5c77b`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/7b5c77bee9920799faff11c161feb2ffb5f95210).
+- **Versión declarada en el árbol:** `2.5.144`, `versionCode=435` en `version.properties` y `magisk_module/module.prop`; `magisk_module/update.json` declara `v2.5.144` y apunta al ZIP canónico de esa versión. Confirma el Release en la página de [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) antes de instalar: los metadatos no prueban publicación.
+- **Cambio de este conjunto de commits:** se añadieron análisis WAV, diagnósticos accionables y pruebas sintéticas por inyección de fallos. Es una mejora del sistema de verificación; no significa que este cambio haya añadido por sí solo un nuevo efecto DSP al audio en tiempo real.
+- **Puertas Python incorporadas en CI:** `test_ivanna_audio_certify.py`, `test_ivanna_synthetic_audio_suite.py` y `test_ivanna_auditory_gate.py`, además de pruebas nativas CTest, validación de datasets y construcción/verificación del APK y del módulo.
+- **Bluetooth / PAL / ASRC:** detectar o clasificar un códec no conecta por sí solo un actuador ASRC del fabricante. El control físico de PAL/AGM, la correlación de reloj y el comportamiento de cada receptor requieren evidencia de lectura de retorno y pruebas en el dispositivo.
+- **Evidencias que no deben mezclarse:** prueba unitaria, prueba sintética, build verde, artefacto verificado, Release publicado y prueba acústica física son estados diferentes. Un resultado sintético limpio no certifica el Moto G85, Bluetooth, USB-C DAC, SPL ni THD calibrada.
+
+Para conocer el estado vivo, consulta [Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); no se fija un resultado de ejecución en este documento porque cambia con cada run.
 
 ## En una mirada
 
@@ -248,6 +249,50 @@ done
 ```
 
 Estos comandos no sustituyen la compilación Android, las pruebas instrumentadas ni la validación del teléfono. Para reproducir exactamente la entrega, revisa [el flujo de GitHub Actions](.github/workflows/build.yml).
+
+## Banco sintético de audio y diagnósticos accionables
+
+El banco de pruebas de Python tiene tres piezas separadas. Sus resultados deben interpretarse según el alcance de cada una:
+
+1. **Analizador WAV** — [`scripts/ivanna_audio_certify.py`](scripts/ivanna_audio_certify.py): lee PCM entero sin compresión de 8, 16, 24 o 32 bits; informa RMS y pico por canal, offset DC, clipping y desequilibrio entre canales. Opcionalmente estima el residuo de un tono conocido y compara una captura contra un WAV de referencia.
+2. **Inyección sintética de fallos** — [`scripts/ivanna_synthetic_audio_suite.py`](scripts/ivanna_synthetic_audio_suite.py): genera siete estímulos de control y verifica que el analizador detecte los defectos inyectados sin marcar determinados casos limpios como defectuosos.
+3. **Puerta de evidencia física** — [`scripts/ivanna_auditory_gate.py`](scripts/ivanna_auditory_gate.py): exige checks explícitos, las rutas requeridas, evidencia del dispositivo y escucha con niveles igualados para devolver `GREEN`. Ausencia de evidencia no pasa como éxito.
+
+### Estímulos sintéticos cubiertos
+
+| Estímulo | Comportamiento esperado |
+|---|---|
+| `clean_sine` | Sin clipping, desequilibrio ni DC detectados; sin THD+N residual crítico. |
+| `clipping` | Debe informar `PCM_CLIPPING`. |
+| `dc_offset` | Debe informar `DC_OFFSET`. |
+| `channel_imbalance` | Debe informar `CHANNEL_IMBALANCE`. |
+| `harmonic_distortion` | Debe informar `TONE_THDN_HIGH`. |
+| `near_full_scale` | Debe avisar `LOW_PEAK_HEADROOM` sin confundirlo con clipping. |
+| `silent` | No debe producir las alarmas de clipping, DC ni desequilibrio definidas para la prueba. |
+
+### Ejecutar el banco
+
+Desde la raíz del repositorio:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_ivanna_audio_certify.py' -v
+python3 -m unittest discover -s tests -p 'test_ivanna_synthetic_audio_suite.py' -v
+python3 -m unittest discover -s tests -p 'test_ivanna_auditory_gate.py' -v
+python3 scripts/ivanna_synthetic_audio_suite.py --output-dir /tmp/ivanna-synthetic-report
+```
+
+Para analizar una captura real, el archivo debe ser WAV PCM entero sin compresión:
+
+```bash
+python3 scripts/ivanna_audio_certify.py captura.wav --tone-hz 1000 --json-out informe.json
+python3 scripts/ivanna_audio_certify.py despues.wav --reference antes.wav --json-out comparacion.json
+```
+
+La comparación de referencia requiere la misma frecuencia de muestreo y el mismo número de canales; el SNR residual también penaliza desalineación temporal y diferencia de ganancia. No recortes muestras arbitrariamente para ocultar latencia: alinea ventanas equivalentes y mide la latencia por separado.
+
+Los hallazgos del analizador pueden ser `CRITICAL`, `WARNING` o inexistentes, y el resumen puede ser `RED`, `AMBER` o `NO_SCREENING_FLAGS`. Son heurísticas de cribado, no límites universales de percepción. La puerta física usa `RED`/`AMBER`/`GREEN` con otra semántica; no son intercambiables.
+
+**Límite esencial:** el banco sintético comprueba el comportamiento del analizador ante señales generadas. No mide la ruta Android en vivo, el códec Bluetooth realmente negociado, el ASRC del proveedor, la latencia extremo a extremo, SPL acústico ni THD de laboratorio. Para eso se requieren capturas de la ruta física, equipo adecuado y escucha controlada con niveles igualados.
 
 ## Estado de CI, versiones y pruebas físicas
 
