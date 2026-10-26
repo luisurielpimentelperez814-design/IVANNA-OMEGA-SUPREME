@@ -7,22 +7,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
-#include <fcntl.h>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <sys/ioctl.h>
 #include <unistd.h>
 
-#if defined(__has_include)
-#  if __has_include(<sound/asound.h>)
-#    include <sound/asound.h>
-#    define IVANNA_HAS_ASOUND 1
-#  endif
-#endif
-#ifndef IVANNA_HAS_ASOUND
-#  define IVANNA_HAS_ASOUND 0
-#endif
 
 namespace ivanna::audio::halclock {
 namespace {
@@ -193,49 +182,6 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
         ::closedir(dir);
     }
     return out;
-}
-
-bool StatusIoctlSource::compiledWithAlsaHeaders() noexcept { return IVANNA_HAS_ASOUND != 0; }
-
-bool StatusIoctlSource::open(const PcmDevice& d) noexcept {
-    close();
-#if IVANNA_HAS_ASOUND
-    if (d.device < 0 || d.card < 0) return false;
-    fd_ = ::open(d.devPath.c_str(), O_RDONLY | O_CLOEXEC);
-    if (fd_ < 0) return false;
-    rate_ = d.nominalRateHz;
-    return true;
-#else
-    (void)d;
-    return false;
-#endif
-}
-
-void StatusIoctlSource::close() noexcept {
-    if (fd_ >= 0) ::close(fd_);
-    fd_ = -1;
-    rate_ = 0;
-}
-
-bool StatusIoctlSource::read(PairedSample& out) noexcept {
-#if IVANNA_HAS_ASOUND
-    if (fd_ < 0) return false;
-    struct snd_pcm_status st{};
-    if (::ioctl(fd_, SNDRV_PCM_IOCTL_STATUS, &st) < 0) return false;
-    // Un fd abierto por el daemon no es el stream HAL de Android. Como mínimo,
-    // descartar estados OPEN/SETUP/PREPARED: no son una salida que esté corriendo.
-    // RUNNING tampoco prueba por sí solo que este sea el PCM propietario del HAL.
-    if (st.state != SNDRV_PCM_STATE_RUNNING) return false;
-    // Una sola consulta => un solo par (hw_ptr, tstamp). Nunca se mezclan.
-    out.presentedFrames = static_cast<uint64_t>(st.hw_ptr);
-    out.timestampNs = static_cast<int64_t>(st.tstamp.tv_sec) * 1000000000ll +
-                      static_cast<int64_t>(st.tstamp.tv_nsec);
-    out.nominalRateHz = rate_;
-    return true;
-#else
-    (void)out;
-    return false;
-#endif
 }
 
 GateVerdict CorrelationGate::evaluate(const PairedSample& s) noexcept {
