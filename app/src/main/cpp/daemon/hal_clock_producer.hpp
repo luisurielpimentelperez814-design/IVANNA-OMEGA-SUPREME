@@ -68,20 +68,9 @@ public:
     virtual bool read(PairedSample& out) noexcept = 0;
 };
 
-// Implementación con SNDRV_PCM_IOCTL_STATUS. Si el binario no tiene cabeceras
-// ALSA (sound/asound.h), open() devuelve false y el productor queda fail-closed.
-class StatusIoctlSource final : public PairedSampleSource {
-public:
-    const char* name() const noexcept override { return "SNDRV_PCM_IOCTL_STATUS"; }
-    bool open(const PcmDevice& d) noexcept override;
-    void close() noexcept override;
-    bool read(PairedSample& out) noexcept override;
-    static bool compiledWithAlsaHeaders() noexcept;
-
-private:
-    int fd_ = -1;
-    uint32_t rate_ = 0;
-};
+// The daemon intentionally has no ALSA PCM opener. Only synthetic sources are
+// injected in host tests; production samples must arrive via the HAL/PAL-owned
+// shared snapshot consumed by the daemon's HardwareClockReader.
 
 // ── Puerta de correlación: rechaza lo que no es una muestra coherente ───────
 struct GateConfig {
@@ -133,7 +122,7 @@ public:
         std::string snapshotPath;  // vacío => kHardwareClockSnapshotPath del bridge
         int pollIntervalMs = 100;
         GateConfig gate{};
-        PairedSampleSource* source = nullptr;  // nullptr => fail-closed; never open an independent PCM
+        PairedSampleSource* source = nullptr;  // host-test injection only; production must read HAL/PAL snapshot
     };
 
     HalClockProducer() = default;
