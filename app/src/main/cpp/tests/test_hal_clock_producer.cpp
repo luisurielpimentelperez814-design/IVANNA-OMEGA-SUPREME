@@ -127,6 +127,7 @@ TEST(HalClockProducer, DoesNotOpenPcmWithoutVerifiableRate) {
     const ProducerStatus status = prod.poll();
     EXPECT_EQ(status.state, ProducerState::kWaitingSamples);
     EXPECT_FALSE(src.opened);
+    EXPECT_EQ(status.device, ""); // presence-only node must not look selected
     EXPECT_EQ(status.published, 0u);
     EXPECT_NE(status.reason, "");
 }
