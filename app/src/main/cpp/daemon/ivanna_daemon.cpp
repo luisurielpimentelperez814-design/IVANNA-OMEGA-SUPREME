@@ -244,7 +244,7 @@ int main(int argc, char* argv[]) {
     struct sigaction sa; memset(&sa,0,sizeof(sa)); sa.sa_handler=signal_handler;
     sigaction(SIGINT,&sa,nullptr); sigaction(SIGTERM,&sa,nullptr);
     signal(SIGPIPE, SIG_IGN);
-    log_message("IVANNA-OMEGA Dae    // The daemon is a control plane (UNIX sockets, watchdog, SHM and HAL-clock
+    log_message("IVANNA-OMEGA Daemon iniciado; control plane con SCHED_OTHER.");
     // polling), not the PCM callback. Giving this main thread SCHED_FIFO—even
     // at 80—risks propagating RT scheduling to workers and can harm touch/system
     // responsiveness while it performs I/O. Keep it SCHED_OTHER; only a measured,
@@ -265,7 +265,6 @@ int main(int argc, char* argv[]) {
                     std::to_string(control_sched_errno) + " policy=" +
                     std::to_string(control_policy));
     }
-lo; revisar su invocación)."));
     }
     // FIX (resiliencia): la SHM es opcional para el socket de comandos. Si
     // /data/adb/ivanna_omega no está montado/escribible aún, shmManager.init
