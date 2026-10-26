@@ -243,7 +243,6 @@ reject:
 }
 
 HalClockProducer::~HalClockProducer() {
-    delete ownSource_;
     if (publisher_) {
         auto* p = static_cast<ivanna::audio::HardwareClockPublisher*>(publisher_);
         p->close();
