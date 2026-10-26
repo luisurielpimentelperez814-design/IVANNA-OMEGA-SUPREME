@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.143
-versionCode=434
+version=v2.5.144
+versionCode=435
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.143: daemon SHM bridge via SCM_RIGHTS; atomically published shared-state pointer; release build pending CI and device validation
+description=v2.5.144: adversarial synthetic audio diagnostics and release validation; build pending CI and device validation
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
