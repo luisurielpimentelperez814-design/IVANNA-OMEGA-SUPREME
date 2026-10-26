@@ -171,7 +171,7 @@ TEST(HalClockProducer, ParsesRunningStateInsteadOfTreatingTextAsInteger) {
     mkdirs(root + "/proc/card0/pcm2p/sub0");
     mkdirs(root + "/dev");
     writeFile(root + "/proc/card0/pcm2p/sub0/status", "state: RUNNING\n");
-    writeFile(root + "/proc/card0/pcm2p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
+    writeFile(root + "/proc/card0/pcm2p/sub0/hw_params", "rate: 48000 (48000/1)\n");
     const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
     ASSERT_EQ(devs.size(), 1u);
     EXPECT_EQ(devs[0].state, "RUNNING");
@@ -184,7 +184,7 @@ TEST(HalClockProducer, InactivePcmWithRateIsNotAClockCandidate) {
     mkdirs(root + "/proc/card0/pcm14p/sub0");
     mkdirs(root + "/dev");
     writeFile(root + "/proc/card0/pcm14p/sub0/status", "state: CLOSED\n");
-    writeFile(root + "/proc/card0/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
+    writeFile(root + "/proc/card0/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\n");
     const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
     ASSERT_EQ(devs.size(), 1u);
     EXPECT_EQ(devs[0].nominalRateHz, 48000u);
@@ -197,7 +197,7 @@ TEST(HalClockProducer, DefaultProducerNeverOpensAnIndependentPcm) {
     mkdirs(root + "/proc/card1/pcm14p/sub0");
     mkdirs(root + "/dev");
     writeFile(root + "/proc/card1/pcm14p/sub0/status", "state: RUNNING\n");
-    writeFile(root + "/proc/card1/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
+    writeFile(root + "/proc/card1/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\n");
     writeFile(root + "/dev/pcmC1D14p", "");
     HalClockProducer::Config cfg;
     cfg.procRoot = root + "/proc";
@@ -261,8 +261,8 @@ TEST(HalClockProducer, PublishesOnlyAfterThreeCoherentPairs) {
     ::unlink(snap.c_str());
     mkdirs(root + "/proc/card0/pcm0p/sub0");
     mkdirs(root + "/dev");
-    writeFile(root + "/proc/card0/pcm0p/sub0/status", "state: RUNNING\\n");
-    writeFile(root + "/proc/card0/pcm0p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
+    writeFile(root + "/proc/card0/pcm0p/sub0/status", "state: RUNNING\n");
+    writeFile(root + "/proc/card0/pcm0p/sub0/hw_params", "rate: 48000 (48000/1)\n");
 
     FakeSource src;
     src.seq = {mk(0, 1'000'000'000), mk(480, 1'010'000'000),
