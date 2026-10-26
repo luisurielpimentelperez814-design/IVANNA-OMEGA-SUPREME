@@ -24,7 +24,7 @@ namespace ivanna::audio::halclock {
 enum class ProducerState : uint8_t {
     kDisabled = 0,     // no habilitado por argumento
     kNoDevices,        // /proc/asound no expone ningún PCM de reproducción
-    kNoSource,         // el binario no se compiló con cabeceras ALSA (sin fuente)
+    kNoSource,         // no hay fuente ligada al stream HAL/PAL propietario
     kWaitingSamples,   // dispositivo encontrado, aún sin muestras válidas
     kPublishing,       // publicando muestras correlacionadas
     kRejected,         // muestras presentes pero NO correlacionadas (se descartan)
@@ -133,7 +133,7 @@ public:
         std::string snapshotPath;  // vacío => kHardwareClockSnapshotPath del bridge
         int pollIntervalMs = 100;
         GateConfig gate{};
-        PairedSampleSource* source = nullptr;  // nullptr => StatusIoctlSource
+        PairedSampleSource* source = nullptr;  // nullptr => fail-closed; never open an independent PCM
     };
 
     HalClockProducer() = default;
