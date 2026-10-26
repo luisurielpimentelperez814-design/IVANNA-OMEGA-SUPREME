@@ -265,7 +265,6 @@ int main(int argc, char* argv[]) {
                     std::to_string(control_sched_errno) + " policy=" +
                     std::to_string(control_policy));
     }
-    }
     // FIX (resiliencia): la SHM es opcional para el socket de comandos. Si
     // /data/adb/ivanna_omega no está montado/escribible aún, shmManager.init
     // falla y (antes) el socket nacía paralizado. El daemon DEBE bindear el
