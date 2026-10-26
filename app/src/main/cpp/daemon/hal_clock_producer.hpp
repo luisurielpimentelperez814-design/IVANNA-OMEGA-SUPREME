@@ -40,7 +40,8 @@ struct PcmDevice {
     std::string procDir;      // /proc/asound/card0/pcm0p
     std::string devPath;      // /dev/snd/pcmC0D0p
     unsigned nominalRateHz = 0;
-    std::string state;        // contenido de /proc/.../status (state: RUNNING…)
+    bool running = false;     // true only when /proc/.../status explicitly says state: RUNNING
+    std::string state;        // raw state token from /proc/.../status, or diagnostic reason
 };
 
 // Muestra pareada: SIEMPRE procede de una única consulta al driver.
