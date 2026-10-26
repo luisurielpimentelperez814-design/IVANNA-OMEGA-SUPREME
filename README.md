@@ -17,7 +17,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.132-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.142-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -37,6 +37,18 @@
 </div>
 
 > **Principio rector:** la estética presenta el proyecto; el código y la evidencia determinan lo que podemos afirmar.
+
+## Sincronización del estado del código — 2026-10-26
+
+Estado contrastado directamente con `main`, `version.properties`, `CHANGELOG.md` y el workflow `.github/workflows/build.yml`.
+
+- **HEAD consultado:** [`ce48bd9`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/ce48bd94cd54b5b2323f401588761f5fb6315b5e).
+- **Versión declarada:** `2.5.142`, `versionCode=433`. La insignia del README refleja esta versión del árbol; no significa que ya exista un release publicado.
+- **Último cambio funcional documentado:** SAFMUS Bluetooth endurece la identificación de códecs: Opus solo se reconoce con API 33 o posterior; IDs ambiguos o de proveedor usan el perfil conservador. No se infieren bitrate, pasabanda ni buffering del receptor y no se promete transparencia sin evidencia.
+- **Correcciones inmediatamente anteriores en `main`:** reparación de la compilación host del productor de reloj HAL y correcciones de sintaxis/alcance en el daemon. Esto confirma que hubo reparaciones recientes, no que el build completo actual esté verde.
+- **Validación de release:** `.github/workflows/build.yml` contiene etapas para pruebas nativas, APK/binarios, validación de artefactos y publicación condicionada. El estado de CI y la existencia de un release real deben comprobarse en [Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); no se declaran exitosos aquí sin un resultado de ejecución verificable.
+- **Límite de hardware:** la detección de códecs Bluetooth no conecta por sí sola un ASRC físico ni demuestra control global de PAL/AGM. La correlación del reloj HAL, el DAC USB-C y cada ruta Bluetooth siguen requiriendo logs y pruebas en el dispositivo.
+- **Criterio de documentación:** las funciones, pruebas host, artefactos CI y validación física son niveles distintos de evidencia. No se equiparan entre sí.
 
 ## En una mirada
 
