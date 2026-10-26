@@ -170,7 +170,7 @@ TEST(HalClockProducer, ParsesRunningStateInsteadOfTreatingTextAsInteger) {
     const std::string root = tmpRoot("state_parse");
     mkdirs(root + "/proc/card0/pcm2p/sub0");
     mkdirs(root + "/dev");
-    writeFile(root + "/proc/card0/pcm2p/sub0/status", "state: RUNNING\\n");
+    writeFile(root + "/proc/card0/pcm2p/sub0/status", "state: RUNNING\n");
     writeFile(root + "/proc/card0/pcm2p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
     const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
     ASSERT_EQ(devs.size(), 1u);
@@ -183,7 +183,7 @@ TEST(HalClockProducer, InactivePcmWithRateIsNotAClockCandidate) {
     const std::string root = tmpRoot("inactive_rate");
     mkdirs(root + "/proc/card0/pcm14p/sub0");
     mkdirs(root + "/dev");
-    writeFile(root + "/proc/card0/pcm14p/sub0/status", "state: CLOSED\\n");
+    writeFile(root + "/proc/card0/pcm14p/sub0/status", "state: CLOSED\n");
     writeFile(root + "/proc/card0/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
     const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
     ASSERT_EQ(devs.size(), 1u);
@@ -196,7 +196,7 @@ TEST(HalClockProducer, DefaultProducerNeverOpensAnIndependentPcm) {
     const std::string root = tmpRoot("no_owner");
     mkdirs(root + "/proc/card1/pcm14p/sub0");
     mkdirs(root + "/dev");
-    writeFile(root + "/proc/card1/pcm14p/sub0/status", "state: RUNNING\\n");
+    writeFile(root + "/proc/card1/pcm14p/sub0/status", "state: RUNNING\n");
     writeFile(root + "/proc/card1/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
     writeFile(root + "/dev/pcmC1D14p", "");
     HalClockProducer::Config cfg;
