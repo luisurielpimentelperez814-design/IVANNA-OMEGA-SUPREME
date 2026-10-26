@@ -165,7 +165,54 @@ TEST(HalClockProducer, RetriesAfterPcmOpenFailure) {
     EXPECT_EQ(published.published, 1u);
 }
 
-// ── Puerta de correlación ─────────────────────────────────────────────────
+
+TEST(HalClockProducer, ParsesRunningStateInsteadOfTreatingTextAsInteger) {
+    const std::string root = tmpRoot("state_parse");
+    mkdirs(root + "/proc/card0/pcm2p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card0/pcm2p/sub0/status", "state: RUNNING\\n");
+    writeFile(root + "/proc/card0/pcm2p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
+    const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
+    ASSERT_EQ(devs.size(), 1u);
+    EXPECT_EQ(devs[0].state, "RUNNING");
+    EXPECT_TRUE(devs[0].running);
+    EXPECT_EQ(devs[0].nominalRateHz, 48000u);
+}
+
+TEST(HalClockProducer, InactivePcmWithRateIsNotAClockCandidate) {
+    const std::string root = tmpRoot("inactive_rate");
+    mkdirs(root + "/proc/card0/pcm14p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card0/pcm14p/sub0/status", "state: CLOSED\\n");
+    writeFile(root + "/proc/card0/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
+    const auto devs = discoverPlaybackDevices(root + "/proc", root + "/dev");
+    ASSERT_EQ(devs.size(), 1u);
+    EXPECT_EQ(devs[0].nominalRateHz, 48000u);
+    EXPECT_FALSE(devs[0].running);
+    EXPECT_EQ(devs[0].state, "CLOSED");
+}
+
+TEST(HalClockProducer, DefaultProducerNeverOpensAnIndependentPcm) {
+    const std::string root = tmpRoot("no_owner");
+    mkdirs(root + "/proc/card1/pcm14p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card1/pcm14p/sub0/status", "state: RUNNING\\n");
+    writeFile(root + "/proc/card1/pcm14p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
+    writeFile(root + "/dev/pcmC1D14p", "");
+    HalClockProducer::Config cfg;
+    cfg.procRoot = root + "/proc";
+    cfg.devRoot = root + "/dev";
+    cfg.snapshotPath = root + "/snapshot";
+    HalClockProducer producer(cfg);
+    producer.setEnabled(true);
+    const auto status = producer.poll();
+    EXPECT_EQ(status.state, ProducerState::kNoSource);
+    EXPECT_EQ(status.device, "");
+    EXPECT_EQ(status.published, 0u);
+    EXPECT_STREQ(status.reason,
+        "sin publicador ligado al stream HAL/PAL propietario; daemon no abre PCM");
+}
+\n// ── Puerta de correlación ─────────────────────────────────────────────────
 TEST(HalClockProducer, GateRejectsUncorrelatedAndAcceptsCoherent) {
     CorrelationGate g;
     // 480 frames en 10 ms = 48000 Hz exacto.
