@@ -42,7 +42,7 @@
 
 Esta sección refleja el árbol de `main` inspeccionado para esta revisión; la versión declarada en archivos no implica que exista un Release público ni que se haya probado el hardware.
 
-- **HEAD de referencia:** [`7b5c77b`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/7b5c77bee9920799faff11c161feb2ffb5f95210).
+- **Base de código y metadatos auditados:** [`7b5c77b`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/7b5c77bee9920799faff11c161feb2ffb5f95210). La sincronización documental más reciente está en [`d3d8d59`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/d3d8d595269cf72ded03ca994b1fa22dc385d5f5); ese commit cambia el README, no el runtime.
 - **Versión declarada en el árbol:** `2.5.144`, `versionCode=435` en `version.properties` y `magisk_module/module.prop`; `magisk_module/update.json` declara `v2.5.144` y apunta al ZIP canónico de esa versión. Confirma el Release en la página de [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) antes de instalar: los metadatos no prueban publicación.
 - **Cambio de este conjunto de commits:** se añadieron análisis WAV, diagnósticos accionables y pruebas sintéticas por inyección de fallos. Es una mejora del sistema de verificación; no significa que este cambio haya añadido por sí solo un nuevo efecto DSP al audio en tiempo real.
 - **Puertas Python incorporadas en CI:** `test_ivanna_audio_certify.py`, `test_ivanna_synthetic_audio_suite.py` y `test_ivanna_auditory_gate.py`, además de pruebas nativas CTest, validación de datasets y construcción/verificación del APK y del módulo.
@@ -127,8 +127,8 @@ El diagrama representa las relaciones generales del código. En particular, el b
 </tr>
 <tr>
 <td><strong>HRTF / SOFA / SAF</strong></td>
-<td>Cargadores y convolucionador HRTF, bases PCA y paquetes de datos. La puerta <code>check_datasets_deploy.py</code> verifica que los 239 <code>.sofa</code>, 12 HRTF y 200 RIR del APK coincidan con los del módulo Magisk y que los archivos HDF5 estén íntegros.</td>
-<td>La integridad y la coherencia de los archivos están comprobadas de forma automática. Que la espacialización binaural resulte audible, correcta y cómoda en el teléfono no está demostrado por esa puerta y requiere escucha controlada. Una HRTF genérica no equivale a la HRTF personal de cada oyente.</td>
+<td>Cargadores y convolucionador HRTF, bases PCA y paquetes de datos. <code>check_datasets_deploy.py</code> compara la presencia/paridad de los datasets entre assets del APK y módulo, revisa cabeceras mágicas y tamaño mínimo, comprueba metadatos RIR, hashes de los IHR1 y consistencia del JSON SAF. El empaquetado del workflow impone además los conteos esperados (239 SOFA, 200 ARI, 200 RIR y 12 IHR1).</td>
+<td><strong>Límite del validador actual:</strong> para SOFA solo comprueba la firma inicial HDF5 y un tamaño mínimo; no abre cada archivo con un lector HDF5 ni valida todos sus metadatos o checksums internos. Por tanto, la puerta no demuestra integridad estructural completa de SOFA y el estado de cada archivo requiere una validación HDF5 real. Además, la presencia/paridad de los datos no prueba que la espacialización binaural resulte audible, correcta o cómoda; eso requiere escucha controlada. Una HRTF genérica no equivale a la HRTF personal de cada oyente.</td>
 </tr>
 <tr>
 <td><strong>Anti-Dolby / clasificador de contenido</strong></td>
