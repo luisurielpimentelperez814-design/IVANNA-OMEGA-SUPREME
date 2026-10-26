@@ -20,6 +20,20 @@ inline constexpr const char* kHardwareClockSnapshotPath =
 inline constexpr uint32_t kHardwareClockSnapshotMagic = 0x49564843u; // "IVHC"
 inline constexpr size_t kHardwareClockSnapshotBytes = 64;
 
+// A shared snapshot can outlive the output route/process that published it.
+// Consumers must reject future timestamps and stale snapshots before treating
+// them as a live route. nowMonotonicNs must come from CLOCK_MONOTONIC.
+inline bool isFreshMonotonicHardwareClockSample(
+        const HardwareClockSample& sample,
+        uint64_t nowMonotonicNs,
+        uint64_t maxAgeNs = 1000000000ull) noexcept {
+    if (sample.hardwareTimestampNs == 0 ||
+        sample.hardwareTimestampNs > nowMonotonicNs ||
+        sample.nominalSampleRateHz < 8000 ||
+        sample.nominalSampleRateHz > 768000) return false;
+    return nowMonotonicNs - sample.hardwareTimestampNs <= maxAgeNs;
+}
+
 struct alignas(8) HardwareClockSnapshot {
     std::atomic<uint32_t> magic{0};
     std::atomic<uint32_t> sequence{0};
