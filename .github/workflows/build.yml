@@ -39,7 +39,9 @@ jobs:
       - name: SAFMUS transversal wiring contract
         run: python3 scripts/check_safmus_transversal_wiring.py
       - name: Audio measurement harness regression tests
-        run: python3 -m unittest tests.test_ivanna_audio_certify -v
+        run: python3 -m unittest discover -s tests -p 'test_ivanna_audio_certify.py' -v
+      - name: Auditory magnificence gate policy tests
+        run: python3 -m unittest discover -s tests -p 'test_ivanna_auditory_gate.py' -v
       - name: Configure (Release)
         run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
       - name: Build
