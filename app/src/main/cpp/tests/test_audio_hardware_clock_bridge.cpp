@@ -13,6 +13,20 @@ std::string testPath() {
     return "/tmp/ivanna_hw_clock_snapshot_test_" + std::to_string(::getpid());
 }
 
+
+TEST(HardwareClockBridge, RejectsStaleFutureAndOutOfRangeSnapshotAsLiveRoute) {
+    using ivanna::audio::HardwareClockSample;
+    using ivanna::audio::isFreshMonotonicHardwareClockSample;
+    const HardwareClockSample fresh{48000, 9'500'000'000ull, 48000};
+    EXPECT_TRUE(isFreshMonotonicHardwareClockSample(fresh, 10'000'000'000ull));
+    EXPECT_FALSE(isFreshMonotonicHardwareClockSample(fresh, 11'000'000'001ull));
+    EXPECT_FALSE(isFreshMonotonicHardwareClockSample(fresh, 9'499'999'999ull));
+    EXPECT_FALSE(isFreshMonotonicHardwareClockSample(
+        HardwareClockSample{48000, 9'500'000'000ull, 7999}, 10'000'000'000ull));
+    EXPECT_FALSE(isFreshMonotonicHardwareClockSample(
+        HardwareClockSample{48000, 0, 48000}, 10'000'000'000ull));
+}
+
 TEST(HardwareClockBridge, InvalidSnapshotCanBeRetriedAfterPublisherInitializesIt) {
     const std::string path = testPath();
     std::remove(path.c_str());
