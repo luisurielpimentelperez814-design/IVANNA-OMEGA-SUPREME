@@ -54,10 +54,10 @@ bool parseTokenAfter(const std::string& text, const char* key, std::string& out)
     size_t p = text.find(k);
     if (p == std::string::npos) return false;
     p += k.size();
-    while (p < text.size() && (text[p] == ' ' || text[p] == '\\t' || text[p] == ':')) ++p;
+    while (p < text.size() && (text[p] == ' ' || text[p] == '\t' || text[p] == ':')) ++p;
     const size_t begin = p;
-    while (p < text.size() && text[p] != ' ' && text[p] != '\\t' &&
-           text[p] != '\\r' && text[p] != '\\n') ++p;
+    while (p < text.size() && text[p] != ' ' && text[p] != '\t' &&
+           text[p] != '\r' && text[p] != '\n') ++p;
     if (p == begin) return false;
     out.assign(text, begin, p - begin);
     return true;
@@ -120,8 +120,11 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
                 }
                 if (existing == out.end()) {
                     out.push_back(d);
-                } else if (existing->nominalRateHz == 0 && d.nominalRateHz > 0) {
-                    // Prefer the substream that actually exposes a nominal rate.
+                } else if ((d.running && !existing->running) ||
+                           (d.running == existing->running &&
+                            existing->nominalRateHz == 0 && d.nominalRateHz > 0)) {
+                    // Prefer the active substream first; a rate from a closed
+                    // sibling substream must not mask the active one.
                     *existing = d;
                 }
             }
