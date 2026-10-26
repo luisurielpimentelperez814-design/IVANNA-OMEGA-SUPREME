@@ -20,7 +20,7 @@
 
 #define LOG_TAG "OmegaDaemonBridge"
 
-static OmegaSharedState* g_shared = nullptr;
+static std::atomic<OmegaSharedState*> g_shared{nullptr};
 static void* g_map = nullptr;
 static size_t g_map_size = 0;
 static std::atomic_flag g_connecting = ATOMIC_FLAG_INIT;
@@ -102,7 +102,7 @@ static int receiveDaemonShmFd() noexcept {
 
 extern "C"
 OmegaSharedState* omega_daemon_get_shared_state() {
-    if (g_shared != nullptr) return g_shared;
+    if (auto* shared = g_shared.load(std::memory_order_acquire)) return shared;
 
     // audioRouteBridgeLoop may call this every 30 ms; serialize initial mapping
     // and avoid repeated socket handshakes while a mapping is being established.
@@ -111,7 +111,7 @@ OmegaSharedState* omega_daemon_get_shared_state() {
         ~ClearFlag() { g_connecting.clear(std::memory_order_release); }
     } clear_flag;
 
-    if (g_shared != nullptr) return g_shared;
+    if (auto* shared = g_shared.load(std::memory_order_acquire)) return shared;
 
     const int fd = receiveDaemonShmFd();
     if (fd < 0) return nullptr;
@@ -152,7 +152,7 @@ OmegaSharedState* omega_daemon_get_shared_state() {
     auto* state = reinterpret_cast<OmegaSharedState*>(
         static_cast<uint8_t*>(g_map) + ivanna::SHM_STATE_OFFSET);
 
-    g_shared = state;
+    g_shared.store(state, std::memory_order_release);
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
                         "OmegaSharedState conectado via SCM_RIGHTS epoch=%llu size=%zu",
                         static_cast<unsigned long long>(header->epoch.load()),
