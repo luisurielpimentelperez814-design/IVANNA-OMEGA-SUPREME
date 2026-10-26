@@ -150,9 +150,15 @@ object BluetoothCodecDetector {
     // todas las versiones del SDK público — se resuelven por valor entero
     // documentado por Android (Opus=6 desde API 33) en vez de referenciar
     // un símbolo que no compila en minSdk/compileSdk anteriores.
-    private fun mapExtendedCodec(codecType: Int): RealCodec = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && codecType == 6 -> RealCodec.OPUS
-        codecType == 5 -> RealCodec.APTX_ADAPTIVE // valor de fabricante extendido, no siempre presente
+    /**
+     * Extended IDs are OEM-dependent. Only map Opus where Android defines ID 6;
+     * ID 5 is ambiguous and must not silently claim aptX Adaptive.
+     */
+    internal fun mapExtendedCodec(
+        codecType: Int,
+        sdkInt: Int = Build.VERSION.SDK_INT,
+    ): RealCodec = when {
+        sdkInt >= Build.VERSION_CODES.TIRAMISU && codecType == 6 -> RealCodec.OPUS
         else -> RealCodec.UNKNOWN
     }
 

@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.141
-versionCode=432
+version=v2.5.142
+versionCode=433
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.141 (CRÍTICO: audio_effect_library_s tenía 2 campos fantasma (query_num_effects/query_effect) que no existen en AOSP real — 9 campos declarados vs 7 reales, corrompía el ABI leído por audioserver. Incluye también el fix previo de cpuLoad/memoryUsage a uint16_t. Confirmado contra fuentes AOSP independientes, static_assert de regresión añadido) — NO VERIFICADO en dispositivo real
+description=v2.5.142: SAFMUS Bluetooth codec identity hardening; Opus ID mapping is API-gated and ambiguous/vendor IDs fail closed; JVM regression tests added — NO VERIFICADO en dispositivo real
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

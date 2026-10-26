@@ -59,6 +59,9 @@ object BluetoothAudioProfiler {
         APTX_ADAPT("aptX Adaptive", 20000,  80, 0.36f, 0.85f),
         LDAC(       "LDAC",         22000, 220, 0.40f, 0.90f),
         LHDC(       "LHDC/LLAC",    22000, 190, 0.40f, 0.90f),
+        // Recognize the Android codec ID, but keep DSP conservative: the ID alone
+        // does not prove negotiated bitrate, passband, or remote buffering.
+        OPUS(       "Opus",          16000, 180, 0.22f, 0.60f),
         UNKNOWN(    "Bluetooth",    16000, 180, 0.22f, 0.60f),
         WIRED(      "Alámbrico",    24000,   0, 1.00f, 1.00f),
         NONE(       "Sin audio",        0,   0, 0.00f, 0.00f),
@@ -154,7 +157,7 @@ object BluetoothAudioProfiler {
                 latencyMs     = codec.latencyMs,
                 harmonicCeil  = codec.harmonicCeil,
                 spatialWetMax = codec.spatialWetMax,
-                transparent   = codec.ordinal >= Codec.APTX_HD.ordinal,
+                transparent   = isTransparentCodec(codec),
             )
         }
         if (generation == profileGeneration.get() && codec != Codec.UNKNOWN) profileCache[mac] = profile
@@ -271,15 +274,24 @@ object BluetoothAudioProfiler {
         }.getOrNull()
     }
 
+    /** El ID del códec no demuestra calidad negociada; Opus sigue conservador hasta medir bitrate/banda/buffer. */
+    internal fun isTransparentCodec(codec: Codec): Boolean = when (codec) {
+        Codec.APTX_HD, Codec.APTX_ADAPT, Codec.LDAC, Codec.LHDC, Codec.WIRED -> true
+        else -> false
+    }
+
     /** Mapea el código numérico A2DP al enum. Fuentes: AOSP BluetoothCodecConfig. */
-    private fun codecFromInt(type: Int): Codec = when (type) {
-        0    -> Codec.SBC
-        1    -> Codec.AAC
-        2    -> Codec.APTX
-        3    -> Codec.APTX_HD
-        4    -> Codec.LDAC
-        5    -> Codec.UNKNOWN          // aptX Adaptive no tiene código propio en API ≤33
-        6    -> Codec.LHDC
+    internal fun codecFromInt(type: Int, sdkInt: Int = Build.VERSION.SDK_INT): Codec = when (type) {
+        0 -> Codec.SBC
+        1 -> Codec.AAC
+        2 -> Codec.APTX
+        3 -> Codec.APTX_HD
+        4 -> Codec.LDAC
+        // 5 is vendor/OEM-dependent; never guess aptX Adaptive from a bare integer.
+        5 -> Codec.UNKNOWN
+        // Android 13+ assigns source codec type 6 to Opus. Older OEM stacks may
+        // use vendor-specific IDs, so only recognize it on API 33+.
+        6 -> if (sdkInt >= Build.VERSION_CODES.TIRAMISU) Codec.OPUS else Codec.UNKNOWN
         else -> Codec.UNKNOWN
     }
 

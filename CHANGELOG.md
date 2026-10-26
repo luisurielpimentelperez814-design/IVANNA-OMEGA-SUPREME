@@ -1,3 +1,14 @@
+# CHANGELOG — v2.5.142 (433) — SAFMUS Bluetooth: identidad de códec Opus segura
+
+## Cambios
+- Corrige el perfilador A2DP que clasificaba el ID 6 como LHDC, en contradicción con el detector de IVANNA para Android 13+.
+- Reconoce Opus solo desde API 33; los identificadores ambiguos/vendor y las versiones antiguas quedan en perfil conservador.
+- Evita elevar Opus a perfil de transparencia sin evidencia de bitrate, pasabanda o buffering del receptor.
+- Añade pruebas JVM para los IDs estables, el fallback conservador y el límite de versión.
+- No cambia el DSP del sistema ni afirma ASRC global de Qualcomm PAL/AGM o validación física Bluetooth. El build y los artefactos deben pasar CI antes de publicar.
+
+---
+
 # CHANGELOG — v2.5.141 (432) — CRÍTICO: audio_effect_library_s tenía 2 campos fantasma (query_num_effects/query_effect) que corrompían el ABI leído por audioserver
 
 Segundo hallazgo de la misma sesión de auditoría que descubrió el bug del tag en v2.5.139,
