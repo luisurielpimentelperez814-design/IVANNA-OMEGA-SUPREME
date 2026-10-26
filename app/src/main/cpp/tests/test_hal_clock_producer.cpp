@@ -256,8 +256,13 @@ TEST(HalClockProducer, GateRejectsMissingNominalRate) {
 
 // ── Productor completo contra el snapshot real del producto ───────────────
 TEST(HalClockProducer, PublishesOnlyAfterThreeCoherentPairs) {
-    const std::string snap = tmpRoot("snap");
+    const std::string root = tmpRoot("publish_three");
+    const std::string snap = root + "/snapshot";
     ::unlink(snap.c_str());
+    mkdirs(root + "/proc/card0/pcm0p/sub0");
+    mkdirs(root + "/dev");
+    writeFile(root + "/proc/card0/pcm0p/sub0/status", "state: RUNNING\\n");
+    writeFile(root + "/proc/card0/pcm0p/sub0/hw_params", "rate: 48000 (48000/1)\\n");
 
     FakeSource src;
     src.seq = {mk(0, 1'000'000'000), mk(480, 1'010'000'000),
@@ -265,19 +270,31 @@ TEST(HalClockProducer, PublishesOnlyAfterThreeCoherentPairs) {
                mk(1920, 1'040'000'000)};
 
     HalClockProducer::Config cfg;
+    cfg.procRoot = root + "/proc";
+    cfg.devRoot = root + "/dev";
     cfg.source = &src;
     cfg.snapshotPath = snap;
     cfg.gate.consecutiveRequired = 3;
     HalClockProducer prod(cfg);
     prod.setEnabled(true);
 
-    // El dispositivo falso se fuerza con un PcmDevice ya resuelto: se usa el
-    // descubrimiento real sobre /tmp vacio => sin dispositivo, no publica.
-    const ProducerStatus s0 = prod.poll();
-    EXPECT_EQ(s0.state, ProducerState::kNoDevices);
-    EXPECT_EQ(s0.published, 0u);
-}
+    EXPECT_EQ(prod.poll().state, ProducerState::kWaitingSamples); // anchor
+    EXPECT_EQ(prod.poll().state, ProducerState::kWaitingSamples); // coherent pair 1
+    EXPECT_EQ(prod.poll().state, ProducerState::kWaitingSamples); // coherent pair 2
+    const ProducerStatus published = prod.poll();                 // coherent pair 3
+    EXPECT_EQ(published.state, ProducerState::kPublishing);
+    EXPECT_EQ(published.published, 1u);
 
+    HardwareClockReader rd;
+    ASSERT_TRUE(rd.open(snap.c_str()));
+    HardwareClockSample got{};
+    ASSERT_TRUE(rd.read(got));
+    EXPECT_EQ(got.presentedFrames, 1440u);
+    EXPECT_EQ(got.hardwareTimestampNs, 1'030'000'000ull);
+    EXPECT_EQ(got.nominalSampleRateHz, 48000u);
+    rd.close();
+}
+ 
 TEST(HalClockProducer, DisabledProducerNeverPublishes) {
     FakeSource src;
     HalClockProducer::Config cfg;
