@@ -254,6 +254,33 @@ TEST(HalClockProducer, GateRejectsMissingNominalRate) {
     EXPECT_STREQ(v.reason, "sin rate nominal");
 }
 
+TEST(HalClockProducer, GateRejectsNominalRatesOutsideAudioRange) {
+    CorrelationGate low;
+    const auto l = low.evaluate(mk(0, 1'000'000'000, 7999));
+    EXPECT_FALSE(l.accepted);
+    EXPECT_STREQ(l.reason, "tasa nominal fuera de rango");
+    EXPECT_EQ(low.streak(), 0);
+
+    CorrelationGate high;
+    const auto h = high.evaluate(mk(0, 1'000'000'000, 768001));
+    EXPECT_FALSE(h.accepted);
+    EXPECT_STREQ(h.reason, "tasa nominal fuera de rango");
+    EXPECT_EQ(high.streak(), 0);
+}
+
+TEST(HalClockProducer, InvalidTimestampClearsCorrelationStreak) {
+    CorrelationGate g;
+    EXPECT_FALSE(g.evaluate(mk(0, 1'000'000'000)).accepted);
+    EXPECT_TRUE(g.evaluate(mk(480, 1'010'000'000)).accepted);
+    EXPECT_EQ(g.streak(), 1);
+    const auto bad = g.evaluate(mk(960, 0));
+    EXPECT_FALSE(bad.accepted);
+    EXPECT_STREQ(bad.reason, "timestamp no positivo");
+    EXPECT_EQ(g.streak(), 0);
+    EXPECT_FALSE(g.evaluate(mk(1440, 1'030'000'000)).accepted); // new anchor
+    EXPECT_EQ(g.streak(), 0);
+}
+
 // ── Productor completo contra el snapshot real del producto ───────────────
 TEST(HalClockProducer, PublishesOnlyAfterThreeCoherentPairs) {
     const std::string root = tmpRoot("publish_three");
