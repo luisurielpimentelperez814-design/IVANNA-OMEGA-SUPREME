@@ -18,7 +18,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.145-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.170-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -41,14 +41,13 @@
 
 ## Sincronización del estado del código — 2026-10-27
 
-Esta revisión prepara `v2.5.155` (`versionCode=446`) con refinamiento de calibración WFS, un cuarto control de orientación del oyente, ayuda de uso en español y lectura de retorno de la ruta real del `AudioTrack` propio.
+Esta ficha se mantiene deliberadamente alineada con `main`. La versión de esta revisión es **v2.5.170** (`versionCode=461`); el release solo se considera disponible cuando CI publica y verifica los artefactos versionados.
 
-- **WFS:** los controles X (ancho), Y (altura), Z (fondo) y giro horizontal se guardan y publican mediante el setter JNI existente hacia el renderer. El giro transforma las coordenadas relativas de los siete altavoces alrededor del eje vertical.
-- **Ruta USB-C/AUX/Bluetooth:** `IvannaBridgePlayer` solicita el dispositivo preferido detectado y ahora consulta `AudioTrack.routedDevice` durante la reproducción. La interfaz diferencia la ruta solicitada de la lectura real de Android.
-- **Límite del DAC:** la lectura de `AudioTrack` confirma solamente la ruta expuesta para la reproducción propia de IVANNA. No demuestra que el reloj físico del DAC esté controlado ni que el ASRC global HAL/PAL esté conectado.
-- **Uso sencillo:** la calibración explica cada eje y la orientación; el profiler ofrece recomendaciones prudentes para audífonos HRTF, estéreo AUX/USB-C, Bluetooth y receptores multicanal.
-- **Release:** el workflow `build.yml` debe completar CTest, APK, ZIP Magisk y validación de artefactos antes de considerar `v2.5.150` publicable. La versión del módulo, `version.properties` y `update.json` quedan alineadas.
-- **Prueba física pendiente:** conectar un DAC USB-C real, reproducir PCM, confirmar que `routedDevice` coincide con el dispositivo esperado, escuchar cambios sin clics y probar desconexión/reconexión. No se afirma mejora audible ni control de hardware sin esa evidencia.
+- **Interfaz adaptable:** los indicadores de estado del encabezado OMNI ahora fluyen en filas de hasta tres elementos. Evita que los chips de ruta, espacialidad y modo automático se recorten en pantallas estrechas o con fuente ampliada.
+- **Lenguaje visual:** se conserva el sistema Aurora Obsidiana (fondo obsidiana, cian de señal, magenta de procesamiento, verde de estado y oro de acento); los colores no sustituyen el estado real del motor.
+- **Evidencia del audio:** la presencia de un indicador de ruta o de un panel de telemetría no certifica por sí misma que el audio se esté procesando ni que exista control del reloj físico del DAC/HAL/PAL.
+- **Puerta de publicación:** la CI debe pasar los tests nativos, el empaquetado Android, la comprobación de integridad del APK/ZIP y la publicación. La mejora visual no se presenta como una mejora acústica medida.
+- **Validación pendiente en hardware:** revisar el encabezado OMNI en el Moto G85 con tamaño de fuente estándar y ampliado, y comprobar que ningún indicador importante queda oculto al cambiar de ruta o activar módulos.
 
 Para el estado vivo, consulta [Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases).
 

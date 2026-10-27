@@ -12,6 +12,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +39,7 @@ import kotlin.math.min
 // ═══════════════════════════════════════════════════════════════════════════
 //  HERO HEADER con anillo OMNI
 // ═══════════════════════════════════════════════════════════════════════════
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun OmniHeroHeader(
     omegaMode: Int,
@@ -99,7 +102,13 @@ internal fun OmniHeroHeader(
                 color = AuroraCyan
             )
             Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // FlowRow permite que los indicadores se adapten a pantallas estrechas
+            // y fuentes grandes sin recortar la ruta activa ni empujar el título fuera.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                maxItemsInEachRow = 3
+            ) {
                 StatusPill(
                     text = when (omegaMode) { 1 -> "OPE +NHO"; 2 -> "OPE +SPATIAL"; 3 -> "OPE +HRTF"; else -> "OPE DSP" },
                     accent = AuroraCyan
