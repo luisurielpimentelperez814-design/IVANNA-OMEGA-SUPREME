@@ -137,7 +137,7 @@ fun ControlHelpText(label: String) {
         .replace("á", "a").replace("é", "e").replace("í", "i")
         .replace("ó", "o").replace("ú", "u").replace("ü", "u")
     val explanation = when {
-        "exciter" in key || "armonic" in key -> "Qué hace: añade armónicos para aumentar presencia y brillo. Cómo usarlo: sube gradualmente; si las voces o los platillos se vuelven ásperos, reduce el valor."
+        ("exciter" in key || "armonic" in key) && !("ganancia armonica" in key || "transarmonic" in key || "harmonic gain" in key) -> "Qué hace: añade armónicos para aumentar presencia y brillo. Cómo usarlo: sube gradualmente; si las voces o los platillos se vuelven ásperos, reduce el valor."
         "eq gain" in key || key == "eq" || "ecual" in key -> "Qué hace: realza o atenúa el nivel tonal de la etapa indicada. Cómo usarlo: corrige de forma moderada y evita grandes realces que puedan provocar saturación."
         "stereo width" in key || "anchura" in key || "width" in key || "spread" in key -> "Qué hace: cambia la amplitud estéreo o espacial percibida. Cómo usarlo: aumenta poco a poco y comprueba que las voces sigan centradas y que el sonido mono no se vacíe."
         "threshold" in key || "umbral" in key -> "Qué hace: fija el nivel a partir del cual empieza a actuar el compresor. Cómo usarlo: un umbral más bajo suele hacer que la compresión actúe más a menudo."
@@ -156,7 +156,7 @@ fun ControlHelpText(label: String) {
         "fuerza de vibracion" in key || "haptic" in key || "habtica" in key -> "Qué hace: regula la intensidad de vibración en hardware compatible. Cómo usarlo: ajusta a un nivel cómodo; la vibración no aumenta el grave acústico que llega al oído."
         "retumbo" in key || "rumble" in key -> "Qué hace: controla la componente de vibración grave sostenida. Cómo usarlo: mantén un nivel moderado para evitar vibración continua molesta."
         "sincronia" in key || "trim" in key || "retardo" in key || "delay" in key -> "Qué hace: desplaza la sincronización temporal de la etapa indicada. Cómo usarlo: cambia en pasos pequeños; si el efecto queda adelantado o retrasado, vuelve al valor anterior."
-        "target agc" in key || "lufs" in key || "loudness" in key || "sonoridad" in key -> "Qué hace: define la referencia de nivel para la compensación automática de sonoridad. Cómo usarlo: elige un objetivo moderado y evita perseguir más volumen a costa de dinámica."
+        "target agc" in key || "agc target" in key || "lufs" in key || "loudness" in key || "sonoridad" in key -> "Qué hace: define la referencia de nivel para la compensación automática de sonoridad. Cómo usarlo: elige un objetivo moderado y evita perseguir más volumen a costa de dinámica."
         "azimut" in key || "azimuth" in key -> "Qué hace: coloca la fuente virtual a izquierda o derecha alrededor del oyente. Cómo usarlo: deja 0° para el centro y usa cambios graduales para posicionar una fuente."
         "elevacion" in key || "elevation" in key || "posicion y" in key -> "Qué hace: sitúa la fuente virtual por encima o debajo del plano del oyente. Cómo usarlo: ajusta según la posición deseada; una HRTF incompatible puede reducir la precisión."
         "profundidad" in key || "distance" in key || "distancia" in key || "posicion z" in key -> "Qué hace: modifica la profundidad o distancia virtual. Cómo usarlo: cambia poco a poco y conserva un punto de referencia."
@@ -165,7 +165,7 @@ fun ControlHelpText(label: String) {
         "generacion" in key -> "Qué hace: define cuántas rondas de evolución ejecuta el laboratorio. Cómo usarlo: aumenta solo en pruebas controladas; más rondas consumen más tiempo."
         "poblacion" in key -> "Qué hace: define el número de soluciones candidatas del proceso evolutivo. Cómo usarlo: valores mayores pueden exigir más CPU y tiempo; no garantizan mejor sonido."
         "intensidad" in key -> "Qué hace: regula la fuerza del efecto o de la adaptación indicada. Cómo usarlo: empieza bajo, sube gradualmente y detente si notas bombeo, aspereza o fatiga."
-        "gain" in key || "ganancia" in key -> "Qué hace: ajusta el nivel de la etapa indicada. Cómo usarlo: evita picos y clipping; más ganancia no equivale a mayor fidelidad."
+        ("gain" in key || "ganancia" in key) && !("armonica" in key || "master" in key || "nho" in key || "npe" in key) -> "Qué hace: ajusta el nivel de la etapa indicada. Cómo usarlo: evita picos y clipping; más ganancia no equivale a mayor fidelidad."
         "frecuencia" in key || "frequency" in key -> "Qué hace: selecciona la frecuencia de operación indicada por este módulo. Cómo usarlo: respeta los límites y la compatibilidad de la salida conectada."
         "mezcla binaural" in key || "binaural wet" in key -> "Qué hace: determina cuánto procesamiento binaural se mezcla con la señal. Cómo usarlo: empieza con una mezcla moderada y baja si la escena suena artificial."
         "sala acustica" in key || "room size" in key -> "Qué hace: cambia el tamaño/intensidad del espacio simulado por la convolución. Cómo usarlo: usa ajustes bajos para grabaciones ya reverberantes."
