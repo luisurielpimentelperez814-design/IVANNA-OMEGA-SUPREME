@@ -163,6 +163,7 @@ private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null)
                     }
                 )
             }
+            ControlHelpText("MODO MANUAL")
             if (audioState.manualModeEnabled) {
                 IvannaSliderRowBrain("COMPRESOR", audioState.compressorThreshold, -60f, 0f, "dB") { v ->
                     AudioStateManager.updateState { it.copy(compressorThreshold = v) }
@@ -387,6 +388,7 @@ private fun LabTab() {
                     }
                 )
             }
+            ControlHelpText("AUTOMÁTICO DEL LABORATORIO")
             Text(reportText, color = TextMuted, fontSize = 10.sp,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 modifier = Modifier.fillMaxWidth())
@@ -568,6 +570,7 @@ private fun CognitiveEvolutionTab() {
                     }
                 )
             }
+            ControlHelpText("RECONSTRUCCIÓN DE REALIDAD")
             IvannaSliderRowBrain("INTENSIDAD REALIDAD", realityIntensity, 0f, 1f, "") { v ->
                 realityIntensity = v
                 val next = axesState.copy(realityIntensity = v)
