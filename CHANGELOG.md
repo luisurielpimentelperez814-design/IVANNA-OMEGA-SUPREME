@@ -1,3 +1,10 @@
+## v2.5.166 — Release recovery and Genezi Spatial AUX
+
+- Genezi AUX profile uses the conservative stereo width multiplier (1.08) with bass/dialog boosts disabled in the route profile.
+- Documents the ideal Mid/Side model and distinguishes it from the frequency-dependent native DSP implementation.
+- CI Android SDK provisioning retries failed package downloads and clears partial SDK download caches after corrupted NDK archives.
+- Release remains gated on successful Android build, unit tests, and artifact integrity verification.
+
 # CHANGELOG — v2.5.165 (456) — Genezi Spatial publication repair
 
 ## Release integrity
