@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.159
-versionCode=450
+version=v2.5.160
+versionCode=451
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.159: verified build with Kotlin/WFS link fixes and Spanish contextual help for all DSP controls
+description=v2.5.160: verified build with Kotlin/WFS link fixes and Spanish contextual help for DSP controls
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
