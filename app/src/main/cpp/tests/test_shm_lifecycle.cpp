@@ -243,7 +243,8 @@ int main() {
             }
             return ::sendmsg(socketFd, &msg, 0) == static_cast<ssize_t>(length);
         };
-        auto makePair = [](int pair[2]) { return ::socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0; };
+        // SCM_RIGHTS test messages must preserve record boundaries: SOCK_STREAM may split "xy" into a one-byte recvmsg and make the malformed-payload test nondeterministic.
+        auto makePair = [](int pair[2]) { return ::socketpair(AF_UNIX, SOCK_SEQPACKET, 0, pair) == 0; };
         int pair[2] = {-1, -1};
         CHECK(makePair(pair), "SCM_RIGHTS: socketpair de prueba creado");
         if (pair[0] >= 0 && pair[1] >= 0) {
@@ -277,8 +278,9 @@ int main() {
             if (source >= 0) {
                 CHECK(sendMessage(pair[0], "xy", 2, &source, 1), "SCM_RIGHTS: payload de longitud incorrecta enviado");
                 int received = -1;
-                CHECK(ivanna::ipc::receiveExactlyOneFd(pair[1], &received) ==
-                      ivanna::ipc::ReceiveFdResult::kBadPayloadLength && received == -1,
+                const auto malformed = ivanna::ipc::receiveExactlyOneFd(pair[1], &received);
+                CHECK((malformed == ivanna::ipc::ReceiveFdResult::kBadPayloadLength ||
+                       malformed == ivanna::ipc::ReceiveFdResult::kTruncated) && received == -1,
                       "SCM_RIGHTS: payload incorrecto rechazado y fd cerrado");
                 ::close(source);
             }
