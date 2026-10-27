@@ -243,7 +243,8 @@ int main() {
             }
             return ::sendmsg(socketFd, &msg, 0) == static_cast<ssize_t>(length);
         };
-        auto makePair = [](int pair[2]) { return ::socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0; };
+        // SCM_RIGHTS test messages must preserve record boundaries: SOCK_STREAM may split "xy" into a one-byte recvmsg and make the malformed-payload test nondeterministic.
+        auto makePair = [](int pair[2]) { return ::socketpair(AF_UNIX, SOCK_SEQPACKET, 0, pair) == 0; };
         int pair[2] = {-1, -1};
         CHECK(makePair(pair), "SCM_RIGHTS: socketpair de prueba creado");
         if (pair[0] >= 0 && pair[1] >= 0) {
