@@ -289,6 +289,7 @@ private fun DynamicsTab(
                     }
                 )
             }
+            ControlHelpText("LOUDNESS TRIM")
             IvannaSliderRow("TARGET AGC / LUFS", prefs.agcTarget, -36f, -6f, "LUFS") { v ->
                 updatePrefs { it.copy(agcTarget = v) }
                 if (IvannaNativeLib.isLoaded) {
@@ -405,6 +406,7 @@ private fun BinauralTab(
                     }
                 )
             }
+            ControlHelpText("HRTF ACTIVO")
             // Bug D fix — adaptEnabled/azimuth/elevation levantados a prefs
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("MOTOR ADAPTATIVO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
@@ -416,6 +418,7 @@ private fun BinauralTab(
                     }
                 )
             }
+            ControlHelpText("MOTOR ADAPTATIVO")
             IvannaSliderRow("AZIMUT", prefs.binauralAzimuth, -180f, 180f, "°") { v ->
                 val next = prefs.copy(binauralAzimuth = v)
                 updatePrefs { next }
@@ -458,6 +461,7 @@ private fun BinauralTab(
                     }
                 )
             }
+            ControlHelpText("MOVIMIENTO 3D · ÓRBITA LENTA")
             Text("La órbita se mueve fuera del hilo de audio y se detiene al alcanzar los límites espaciales.", color = TextSecondary, fontSize = 9.sp)
             Text(tenDStatus, color = TextSecondary, fontSize = 10.sp)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -492,6 +496,7 @@ private fun BinauralTab(
                     }
                 )
             }
+            ControlHelpText("CONVOLUCIÓN HÍBRIDA + SALA ACTIVA")
             IvannaSliderRow("MEZCLA BINAURAL 128-TAP", prefs.hybridBinauralWet, 0f, 1f, "") { v ->
                 val next = prefs.copy(hybridBinauralWet = v)
                 updatePrefs { next }
