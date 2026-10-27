@@ -3341,10 +3341,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
         env->ExceptionClear();
         return;
     }
+    // These arrays are room-frame coordinates translated into the native fixed-listener
+    // frame by WfsCalibrationManager. A listener near a room boundary or a yaw rotation
+    // can legitimately place virtual speakers outside the physical room bounds; reject
+    // non-finite/extreme values, but do not silently drop valid translated geometry.
     for (int i = 0; i < 7; ++i) {
         if (!std::isfinite(x[i]) || !std::isfinite(y[i]) || !std::isfinite(z[i]) ||
-            std::fabs(x[i]) > 3.5f || std::fabs(y[i]) > 3.5f ||
-            std::fabs(z[i]) > 7.0f) return;
+            std::fabs(x[i]) > 7.0f || std::fabs(y[i]) > 5.0f ||
+            std::fabs(z[i]) > 9.0f) return;
     }
 
     auto& bus = ivanna::effectControlBus();
