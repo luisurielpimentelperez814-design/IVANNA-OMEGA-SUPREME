@@ -1,4 +1,4 @@
-# CHANGELOG — v2.5.154 (445) — WFS frame correction, SAFMUS controls and USB-C route readback
+# CHANGELOG — v2.5.155 (446) — WFS listener-frame and JNI boundary correction
 
 ## Cambios
 - Añade el cuarto control de calibración WFS: orientación horizontal del oyente (0–360°), persistida y aplicada como rotación de coordenadas relativas de los siete altavoces mediante el setter JNI ya existente.
