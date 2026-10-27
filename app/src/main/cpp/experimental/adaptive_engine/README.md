@@ -15,26 +15,30 @@ parámetros, sin tocar el DSP en tiempo real.
 ## Arquitectura
 
 ```
-[audio thread, RT — NO se toca en esta fase]      [hilo de control dedicado, NO RT]
-────────────────────────────────────────────      ──────────────────────────────────
-SafetyLimiter::getPeakBeforeLimit()
-SafetyLimiter::getGainReduction()   ─┐
-RMS/energía por banda (ya calculada   │
-en algún punto del pipeline, no es    │
-análisis nuevo)                       │
-                                       │
-RawMetricsBus::publish()  ────────────┤  store atómico, un memcpy de un POD,
-(1 vez por bloque, coste trivial)     │  sin bloqueo, sin malloc
-                                       ▼
-                              AdaptiveDecisionEngine::controlLoop()
-                              (std::thread propio, cada 50ms, lee
-                               RawMetricsBus y calcula AdaptiveState)
-                                       │
-                                       ▼
-AdaptiveStateBus::consumeIfNewer() ◄── AdaptiveStateBus::publish()
-(futuro: 1 vez por bloque en el
- audio thread, lock-free)
+Ruta A: JNI/player                         Ruta B: AudioFlinger/omega_effect
+audio callback                             efecto en audioserver
+     │ publish(RouteA_BridgePlayer)              │ publish(RouteB_OmegaEffect)
+     └──────────────────┐                        └──────────────────┐
+                        ▼                                           ▼
+               RawMetricsBus (slot por fuente / secuencia global)
+                                      │
+                                      ▼
+                         AdaptiveDecisionEngine
+                           hilo de control NO RT
+                              cada ~50 ms
+                                      │
+                                      ▼
+                              AdaptiveStateBus
+                         snapshot POD con secuencia
+                           │                       │
+             Ruta A: consume/apply       Ruta B: consume/apply
+             en el pipeline JNI          en el efecto de audio
 ```
+
+Las dos rutas son procesos distintos: cada biblioteca mantiene su propia instancia
+del motor y sus propios buses. La comunicación entre app y efecto no se realiza por
+punteros compartidos; Ruta B usa su integración local y el puente app↔efecto utiliza
+el bus/SHM ya existente cuando corresponde.
 
 ### Qué corre en el hilo de control (offline, NO tiempo real)
 - `AdaptiveDecisionEngine::controlLoop()` — bucle a cadencia fija (50ms), corre en su propio
@@ -46,11 +50,14 @@ AdaptiveStateBus::consumeIfNewer() ◄── AdaptiveStateBus::publish()
   (mismo input → mismo output, sin estado oculto salvo lo que reciben por parámetro),
   expuestas `static` públicas específicamente para poder testearlas sin arrancar ningún hilo.
 
-### Qué consumiría el audio thread (futuro, no implementado en esta fase)
-- Solo `AdaptiveStateBus::consumeIfNewer()` — una copia lock-free de un struct POD de 6 floats.
-  Ningún cálculo, ninguna función con lógica condicional compleja, ningún bucle no acotado.
-- El audio thread NUNCA llamaría a ninguna de las funciones de análisis directamente — esas
-  viven exclusivamente en el hilo de control.
+### Consumo de decisiones en las rutas integradas
+- El callback solo lee un snapshot nuevo de `AdaptiveStateBus` y aplica los campos que su
+  ruta tiene cableados; el análisis, EMA y decisiones se ejecutan en el hilo de control.
+- No se deben añadir FFT, I/O, logging, locks bloqueantes ni asignaciones dinámicas al callback.
+- Las decisiones son sugerencias limitadas por clamps y por la política de la ruta; no sustituyen
+  al `SafetyLimiter` ni autorizan amplificación por encima de la envolvente segura.
+- La presencia del wiring no demuestra por sí sola que cada salida del struct se aplique:
+  verificar campo por campo y mantener métricas de lectura/aplicación por ruta.
 
 ## Estado del wiring en producción
 
