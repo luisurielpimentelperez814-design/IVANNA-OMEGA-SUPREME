@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.159 (450) — Release de artefactos verificados
+
+## Lanzamiento
+- Incrementa de forma coordinada `version.properties`, `magisk_module/module.prop` y `magisk_module/update.json` para activar el flujo de publicación tras CI verde.
+- El workflow debe compilar APK y binarios nativos, empaquetar y validar el ZIP Magisk, descargar el bundle de staging y publicar ambos artefactos en el Release canónico.
+- URL canónica del módulo: `https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/download/v2.5.159/ivanna_omega_supreme_v2.5.159.zip`.
+- Incluye las correcciones Kotlin/WFS y las explicaciones contextuales en español de la versión anterior.
+
 # CHANGELOG — v2.5.158 (449) — Build reparado y guía contextual por control
 
 ## Correcciones
