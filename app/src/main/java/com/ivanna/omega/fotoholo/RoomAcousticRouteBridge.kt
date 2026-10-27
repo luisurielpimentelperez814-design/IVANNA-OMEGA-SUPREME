@@ -7,8 +7,6 @@ import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
 import org.json.JSONObject
 import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Applies the last user-locked AR room prior to the currently active output route.
