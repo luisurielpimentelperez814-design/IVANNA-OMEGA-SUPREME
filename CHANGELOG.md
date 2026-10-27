@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.156 (447) — Guía completa de controles en español
+
+## Cambios
+- Añade la guía transversal desplegable «GUÍA EN ESPAÑOL · TODOS LOS CONTROLES» en CONTROL, organizada por CONTROL, sala/AUX/WFS, SOUND, BRAIN, ADAPTIVE, SPATIAL, PROFILER y tipos de salida.
+- Cada entrada explica qué hace, cuándo usarla y sus límites; incluye recomendaciones diferenciadas para audífonos cableados, Bluetooth, estéreo AUX, DAC USB-C y sistemas multicanal.
+- Añade explicaciones contextuales bajo los deslizadores de SOUND y BRAIN y los controles deslizantes/conmutadores compartidos de SPATIAL.
+- La guía advierte explícitamente que «no disponible», telemetría ausente o una ruta solicitada no prueban que exista procesamiento efectivo ni control del reloj físico del DAC.
+- Documentación completa: `docs/GUIA_CONTROLES_COMPLETA_ES.md`.
+
 # CHANGELOG — v2.5.155 (446) — WFS listener-frame and JNI boundary correction
 
 ## Cambios
