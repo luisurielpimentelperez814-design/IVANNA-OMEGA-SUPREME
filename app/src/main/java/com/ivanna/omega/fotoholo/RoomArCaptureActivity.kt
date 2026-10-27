@@ -589,6 +589,21 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
             .putBoolean("anti_dolby_command_readback_confirmed", antiDolbyReadback.isFinite() && kotlin.math.abs(antiDolbyReadback - 0.88f) <= 0.02f)
             .putLong("updated_at_ms", System.currentTimeMillis())
             .apply()
+
+        // The explicit LOCK is the only point where AR room priors may enter audio.
+        // Apply immediately to the current output route; AudioRouteManager reapplies
+        // the bounded route-specific version on every subsequent device transition.
+        val routeApplyConfirmed = runCatching {
+            RoomAcousticRouteBridge.applySaved(
+                this,
+                com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
+            )
+        }.getOrDefault(false)
+        android.util.Log.i(
+            "IVANNA.RP88",
+            "Room calibration dispatched to active route; routeControlReadbackConfirmed=$routeApplyConfirmed"
+        )
+
         statusView.text = if (applied) {
             "RP-88 PARCIAL · ancho DSP=${String.format(Locale.US, "%.2f", readback)}, ángulo=${if (angleReadback.isFinite()) String.format(Locale.US, "%.1f°", Math.toDegrees(angleReadback.toDouble())) else "sin lectura"}, escena=${if (latestPhysicalSceneReadbackConfirmed) "confirmada por read-back" else "sin confirmación"}. Los read-backs son valores de control, no mediciones acústicas; RT60/RIR siguen estimados."
         } else {
