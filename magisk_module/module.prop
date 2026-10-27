@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.167
-versionCode=458
+version=v2.5.168
+versionCode=459
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.167: SOFA HDF5 integrity gate and verified build pipeline
+description=v2.5.168: adaptive engine wiring audit and release documentation reconciliation
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

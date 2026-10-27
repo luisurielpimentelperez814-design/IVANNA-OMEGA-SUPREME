@@ -1665,6 +1665,18 @@ significa cubrir v2.3.6→v2.3.9 completo, no un parche de una línea; queda
 para quien retome con tiempo para eso. Flanco libre.
 
 ### AdaptiveDecisionEngine — capa de control lento (experimental/adaptive_engine)
+
+> **AUDITORÍA ACTUAL 2026-10-27 — esta sección histórica quedó superada por el código real.**
+> No usar las afirmaciones siguientes de “no está cableado”, “tests/ vacío” o “nadie lo consume”
+> como estado actual. En el HEAD `efe62cab1c9cf0447f2def85404939a32b3ab2e3`, el README y el header ya documentan el wiring:
+> `CMakeLists.txt` compila el motor; `jni/ivanna_omega_jni.cpp` integra Ruta A y
+> `omega_effect.cpp` integra Ruta B. La búsqueda de código confirma consumidores de
+> `AdaptiveStateBus` en ambas rutas. CI del commit `efe62cab1c9cf0447f2def85404939a32b3ab2e3` completó con éxito
+> `DSP Native Tests`, build Android, verificación ZIP/APK descargados y publicación.
+> Release verificable: [v2.5.167](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.167).
+> La integración de código NO equivale a certificación acústica ni a validación de jitter
+> en hardware; esas pruebas físicas siguen pendientes. El texto que sigue se conserva como
+> historial de coordinación, no como inventario vigente de deuda.
 **Tomado por:** sesion Genspark (chat, misma que cerro HEXAGON), iniciado
 2026-09-10. EXCLUSIVO. Candidato sin dueno segun el MAPA DE FLANCOS
 2026-09-10, con la condicion anotada de coordinar con el dueno DSP.
