@@ -323,3 +323,12 @@ I added `ivanna_pal_active_stream_clock_publisher.hpp` as a concrete **report-on
 ### Required acceptance probe
 
 With the matching HAL source/build available, bind the helper to the actual active PAL stream and capture playback separately for phone speaker, Bluetooth A2DP, and USB-C. For each route, require a sequence of successful samples where both frame count and timestamp advance consistently, the timestamp remains monotonic, and the IVANNA reader sees the same committed snapshot. Test standby/reopen/route change and confirm that a failed/unsupported PAL query stops new publication. Keep physical ASRC correction disabled until its real actuator is independently identified and tested.
+
+
+## Presentation-position capture observed on Moto G85 — 2026-10-26
+
+A bounded Frida capture of `audio.primary.blair.so`'s `astream_out_get_presentation_position` callback observed successful return status and two distinct output-stream pointers. The fast stream advanced by approximately 192 frames per ~4 ms callback; the slower stream advanced by approximately 1,920 frames per ~40 ms callback. Each rate is compatible with 48,000 frames/s nominally. Counters were monotonic in the recorded interval.
+
+This is stronger evidence that the HAL callback returns a stable, nominal-48-kHz presentation counter during the tested playback route. It does not prove that the returned timespec is the physical DAC clock, that two streams share the same clock, that the active route is Bluetooth or USB unless that route is explicitly recorded in the same capture, or that an ASRC correction is enabled. Do not combine the two stream pointers or infer drift from nominal cadence alone.
+
+Reproduce with `hal_integration/tools/ivanna_hal_bounded.js`; the script caps the capture at 1,200 callback returns and emits per-stream counts. Keep the route and active tracks documented alongside the log. The PAL shared-snapshot binding remains report-only until the actual vendor HAL source/build binds it to the active stream owner and SELinux/shared-memory access is verified. The physical ASRC callback remains intentionally disabled because its target actuator and ratio units are not yet verified.

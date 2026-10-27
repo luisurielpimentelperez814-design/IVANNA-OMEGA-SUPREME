@@ -1,3 +1,14 @@
+# CHANGELOG — v2.5.145 (436) — HAL presentation-clock telemetry acceptance
+
+## Cambios
+- Consolida el siguiente paquete de prueba del Moto G85 con una captura Frida reproducible y acotada del callback `astream_out_get_presentation_position`.
+- Registra el resultado observado: dos streams independientes con cadencias aproximadas de 192 frames/4 ms y 1,920 frames/40 ms, compatibles con 48 kHz nominales. Los streams se analizan por separado.
+- Añade una guía de aceptación que separa la telemetría del callback, la publicación PAL a memoria compartida, la corrección ASRC y la validación acústica física.
+- No conecta el selector `BT SLIMBUS CLK SRC` como actuador ASRC ni escribe parámetros PAL/AGM no verificados. La telemetría PAL report-only requiere que un árbol HAL propietario real enlace el helper al stream activo; este repositorio no contiene el source/build de `audio.primary.blair.so`.
+- **Estado:** build, artefactos, publicación y prueba física pendientes de CI y del dispositivo para este SHA. No declarar mejora sonora ni corrección ASRC global hasta que las pruebas lo demuestren.
+
+---
+
 # CHANGELOG — v2.5.143 (434) — daemon SHM bridge via SCM_RIGHTS
 
 ## Cambios

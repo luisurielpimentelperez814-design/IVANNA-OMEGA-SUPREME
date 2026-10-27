@@ -17,7 +17,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.144-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.145-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -40,11 +40,13 @@
 
 ## Sincronización del estado del código — 2026-10-26
 
-Esta sección refleja el árbol de `main` inspeccionado para esta revisión; la versión declarada en archivos no implica que exista un Release público ni que se haya probado el hardware.
+Esta revisión prepara `v2.5.145` para validar en el dispositivo la telemetría del reloj de presentación. El número de versión solo identifica el paquete; el estado de publicación y los resultados del hardware deben verificarse en Actions/Releases y en las pruebas descritas abajo.
 
-- **Base de código y metadatos auditados:** [`7b5c77b`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/7b5c77bee9920799faff11c161feb2ffb5f95210). La sincronización documental más reciente está en [`d3d8d59`](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/commit/d3d8d595269cf72ded03ca994b1fa22dc385d5f5); ese commit cambia el README, no el runtime.
-- **Versión declarada en el árbol:** `2.5.144`, `versionCode=435` en `version.properties` y `magisk_module/module.prop`; `magisk_module/update.json` declara `v2.5.144` y apunta al ZIP canónico de esa versión. Confirma el Release en la página de [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) antes de instalar: los metadatos no prueban publicación.
-- **Cambio de este conjunto de commits:** se añadieron análisis WAV, diagnósticos accionables y pruebas sintéticas por inyección de fallos. Es una mejora del sistema de verificación; no significa que este cambio haya añadido por sí solo un nuevo efecto DSP al audio en tiempo real.
+- **Base consultada:** `main` en `00d46f162b7ee35789cb83830368fe27ad0b0bce` antes de preparar este cambio.
+- **Versión candidata:** `2.5.145`, `versionCode=436`; módulo, `version.properties` y `update.json` se actualizan en conjunto para que CI genere el ZIP canónico `ivanna_omega_supreme_v2.5.145.zip`.
+- **Nueva evidencia de presentación HAL:** el callback `astream_out_get_presentation_position` se observó durante reproducción en dos flujos distintos. Un flujo mostró deltas típicos de 192 frames en ~4 ms y otro 1,920 frames en ~40 ms; ambos son compatibles con un contador nominal de 48 kHz. Esto valida la cadencia observada del callback, no el reloj físico del DAC ni el uso de ASRC.
+- **Integración PAL/AGM:** el puente de telemetría a memoria compartida existe como seam de código, pero la llamada desde el HAL propietario no está enlazada por este repositorio. El paquete de esta versión se usa para validar los artefactos y reproducir la captura acotada; no se afirma que active una corrección de deriva PAL/ASRC global.
+- **Aceptación:** la compilación, CTest, los APK/ZIP y el Release deben quedar verificados por el workflow del SHA de merge. La prueba en Moto G85 debe confirmar reproducción, que la captura acotada termina, que los contadores son monotónicos por stream y que el audio sigue estable. Un build verde no sustituye esta prueba.
 - **Puertas Python incorporadas en CI:** `test_ivanna_audio_certify.py`, `test_ivanna_synthetic_audio_suite.py` y `test_ivanna_auditory_gate.py`, además de pruebas nativas CTest, validación de datasets y construcción/verificación del APK y del módulo.
 - **Bluetooth / PAL / ASRC:** detectar o clasificar un códec no conecta por sí solo un actuador ASRC del fabricante. El control físico de PAL/AGM, la correlación de reloj y el comportamiento de cada receptor requieren evidencia de lectura de retorno y pruebas en el dispositivo.
 - **Evidencias que no deben mezclarse:** prueba unitaria, prueba sintética, build verde, artefacto verificado, Release publicado y prueba acústica física son estados diferentes. Un resultado sintético limpio no certifica el Moto G85, Bluetooth, USB-C DAC, SPL ni THD calibrada.

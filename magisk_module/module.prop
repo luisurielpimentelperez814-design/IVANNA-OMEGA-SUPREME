@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.144
-versionCode=435
+version=v2.5.145
+versionCode=436
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.144: adversarial synthetic audio diagnostics and release validation; build pending CI and device validation
+description=v2.5.145: HAL presentation-clock telemetry acceptance; ASRC hardware correction remains disabled pending verified actuator
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
