@@ -1,3 +1,16 @@
+# CHANGELOG — v2.5.161 (452) — ARCore room calibration routed to live audio output
+
+## AR / audio route integration
+- Adds `RoomAcousticRouteBridge`: only an explicit user LOCK can dispatch the saved room-geometry/material prior to native spatial controls.
+- Applies the locked room prior immediately to the active output route and reapplies it after route changes detected by `AudioRouteManager`.
+- Uses bounded route-aware spatial width: conservative factors for Bluetooth and built-in speaker, full calibrated command for wired AUX and USB-C DAC.
+- Validates persisted dimensions/commands before dispatch and records route, command, and native read-back status separately.
+- Extends the SAFMUS wiring contract to prevent disconnecting the AR-to-audio route bridge.
+- Read-back confirms control values only; AR geometry and material absorption remain estimates. This does not claim measured RT60/RIR, acoustic improvement, or hardware DAC clock control.
+
+## Release gate
+- APK and Magisk ZIP are not considered published until CI passes and both release assets are verified for this version and commit.
+
 # CHANGELOG — v2.5.160 (451) — Publicación de artefactos
 
 ## Lanzamiento
