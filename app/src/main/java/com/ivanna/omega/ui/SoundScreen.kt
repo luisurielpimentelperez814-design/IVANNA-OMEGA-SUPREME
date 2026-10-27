@@ -608,5 +608,6 @@ private fun IvannaSliderRow(
             ),
             modifier = Modifier.fillMaxWidth()
         )
+        ControlHelpText(label)
     }
 }
