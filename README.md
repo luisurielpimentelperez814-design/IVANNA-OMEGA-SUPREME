@@ -8,6 +8,7 @@
 
 <p>
   <a href="LEAME.md">Guía en español sencillo</a> ·
+  <a href="docs/GUIA_CONTROLES_COMPLETA_ES.md">Guía completa de controles en español</a> ·
   <a href="docs/ENGINEERING.md">Ficha de ingeniería</a> ·
   <a href="CHANGELOG.md">Registro de cambios</a> ·
   <a href="docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md">Aceptación Moto G85</a>
