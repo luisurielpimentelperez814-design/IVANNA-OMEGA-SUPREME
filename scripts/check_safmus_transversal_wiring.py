@@ -177,6 +177,17 @@ require("app/src/main/java/com/ivanna/omega/ui/FotoHoloCard.kt",
 require("app/src/main/AndroidManifest.xml", ".fotoholo.RoomArCaptureActivity")
 require("app/src/main/java/com/ivanna/omega/fotoholo/RoomArCaptureActivity.kt",
         "class RoomArCaptureActivity", "beginCapture()", "finishCapture()", "requestExport()")
+require("app/src/main/java/com/ivanna/omega/fotoholo/RoomArCaptureActivity.kt",
+        "RoomAcousticRouteBridge.applySaved", "AudioRouteManager.detectOutputRoute()",
+        "routeControlReadbackConfirmed")
+require("app/src/main/java/com/ivanna/omega/fotoholo/RoomAcousticRouteBridge.kt",
+        "fun applySaved(context: Context, route: OutputRoute)",
+        "OutputRoute.BLUETOOTH -> 0.88f", "OutputRoute.SPEAKER -> 0.85f",
+        "nativeSetSpatialWidthDirect(routedWidth)", "nativeSetSpatialAngleRad(angleRad)",
+        "safeSetPhysicalSceneParams", "last_route_width_readback_confirmed",
+        "read-back confirms control values only, not measured acoustic response")
+require("app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt",
+        "RoomAcousticRouteBridge.applySaved(ctx, route)")
 
 
 # SAFMUS audio-effect audit must resolve <module-root>/core/<script> correctly
