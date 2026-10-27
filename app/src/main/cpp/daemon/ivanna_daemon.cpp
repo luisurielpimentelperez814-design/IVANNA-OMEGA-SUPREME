@@ -582,11 +582,16 @@ int main(int argc, char* argv[]) {
                                 cmsg->cmsg_type  = SCM_RIGHTS;
                                 cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
                                 std::memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
-                                ssize_t sent = sendmsg(client_fd, &msg, MSG_NOSIGNAL);
+                                const ssize_t sent = sendmsg(client_fd, &msg, MSG_NOSIGNAL);
                                 if (sent < 0) {
-                                    log_message(std::string("Modo B: sendmsg(SCM_RIGHTS) fallo errno=") + std::to_string(errno));
+                                    const int send_errno = errno;
+                                    log_message(std::string("Modo B: sendmsg(SCM_RIGHTS) fallo errno=") +
+                                                std::to_string(send_errno) + " (" + strerror(send_errno) + ")");
+                                } else if (sent != 1) {
+                                    log_message("Modo B: sendmsg(SCM_RIGHTS) entrega incompleta: bytes=" +
+                                                std::to_string(sent) + " esperado=1");
                                 } else {
-                                    log_message("Modo B: fd de omega_shm entregado por SCM_RIGHTS");
+                                    log_message("Modo B: fd de omega_shm entregado por SCM_RIGHTS (1 byte + 1 fd)");
                                 }
                             } else {
                                 log_message("Modo B: cliente silencioso pero shmManager().fd() invalido (SHM aun no inicializada)");
