@@ -27,7 +27,7 @@ riesgo de alcance para la Fase 4.
 | Módulo | Produce | Consume | Estado | Fuente real |
 |---|---|---|---|---|
 | **AdaptiveEngineV2** | `g_wfs_adaptive_spread_scale` y otros parámetros derivados de `spatialIntensity`/fatiga/saturación (según `be214e85`) | Señal real del pipeline (a través de `ctx->adaptiveEngine`) | **VIVO** — instanciado y destruido en `omega_effect.cpp:803,1124,1183`; es el único "cerebro adaptativo" realmente conectado al audio hoy | `app/src/main/cpp/adaptive_engine_v2.hpp`, uso en `omega_effect.cpp` |
-| **AdaptiveDecisionEngine** | Decisiones vía `AdaptiveStateBus` (seqlock); expone JNI propio | Debería consumir `RawMetricsBus`, publicada por el hot path | **CÓDIGO MUERTO EN LA PRÁCTICA** — se compila (`CMakeLists.txt:228`) y tiene tests propios, pero el propio `CMakeLists.txt` documenta (comentario junto a la línea 228, verificado 2026-09-10): *"ningún archivo llama a `RawMetricsBus::publish()` ni a `AdaptiveStateBus::consumeIfNewer()` fuera de `experimental/`"*. Los 4 archivos que lo mencionan (`wfs_globals_effect.cpp`, `wfs_controls_bridge.cpp`, `dsp/SafetyLimiter.cpp`, `jni/ivanna_adaptive_jni.cpp`) **solo lo nombran en comentarios**, no lo invocan. No confundir con AdaptiveEngineV2 (nombre parecido, clase distinta) | `app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.{hpp,cpp}` |
+| **AdaptiveDecisionEngine** | `RawMetricsBus` recibe métricas y `AdaptiveStateBus` publica decisiones | Ruta A: `jni/ivanna_omega_jni.cpp`; Ruta B: `omega_effect.cpp` y el puente de telemetría/SHM donde aplica | **WIRING DE CÓDIGO PRESENTE; VALIDACIÓN EN HARDWARE PENDIENTE**. La evidencia en `main` contiene productores y consumidores reales. No confundir con `AdaptiveEngineV2` (clase distinta que también está activa en Ruta B); verificar por campo qué salidas se aplican y mantener `SafetyLimiter` como autoridad final. | `app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.{hpp,cpp}`, `jni/ivanna_omega_jni.cpp`, `omega_effect.cpp` |
 | **PerceptualBrainDashboard** | Estado perceptual (escena/fatiga/separación/presencia vocal) vía `PerceptualBrainEngine`/`PerceptualBrainCortex` | UI (`BrainScreen.kt`, `PerceptualViewModel.kt`), enrutado desde `MainActivity.kt`/`IvannaRoute.kt` | **CORRECCIÓN (2026-09-23, sesión posterior a esta auditoría): SÍ EXISTE y SÍ ESTÁ CONECTADO** — el hallazgo original de esta fila era incorrecto. Los archivos (`ai/PerceptualBrainCortex.kt`, `ai/PerceptualBrainEngine.kt`, `ui/PerceptualBrainDashboard.kt`) existen desde el commit `ef98f234` (2026-09-03, **20 días antes** de esta auditoría) — no una adición posterior. Confirmado con `git log --diff-filter=A` (fecha real de creación) y con `grep` de importadores reales (`MainActivity.kt`, `BrainScreen.kt`, `PerceptualViewModel.kt`, `IvannaRoute.kt`). Nota: existen también `PerceptualDecisionEngine.kt`/`PerceptualCortex.kt` con nombres muy similares — no confundir las cuatro clases entre sí sin verificar cuál es cuál antes de tocar código | `ai/PerceptualBrainEngine.kt`, `ai/PerceptualBrainCortex.kt`, `ui/PerceptualBrainDashboard.kt`, `ai/PerceptualDecisionEngine.kt`, `ai/PerceptualCortex.kt` |
 | **WFS (WfsRenderer)** | Salida de objetos renderizados (VBAP+delay lines) | `IvannaFusionCore::process()` (Ruta B); geometría/spread vía `OmegaControlBus` (`SET_WFS`) | **VIVO**, auditado a fondo esta sesión (sin malloc/locks en `process()`, transiciones suaves). `WfsProtectionChain` ya integrada (`be214e85`) | `spatial/WfsRenderer.{hpp,cpp}` |
 | **HRTF** | `HRIRPair` binaural vía `HRTFConvolver::process()` | Ruta B (`IvannaFusionCore`) y Ruta A (uso independiente, no verificado en esta pasada) | **VIVO** — se acaba de corregir un bug real de asignación de memoria en el hot path (`SyntheticHRTF::generate()`, ver `CHANGELOG.md` v2.3.11) | `spatial/hrtf_convolver.{hpp,cpp}`, `spatial/synthetic_hrtf.hpp` |
@@ -40,7 +40,7 @@ riesgo de alcance para la Fase 4.
 | **SafetyLimiter** | Señal limitada (true-peak) | Ambas rutas, instancia propia cada una | **VIVO**, confirmado por instanciación real y comentario explícito de reutilización de la clase entre rutas (`omega_effect.cpp:21`) | `include/SafetyLimiter.h`, `dsp/SafetyLimiter.cpp` |
 | **ParameterStore** | Persistencia de parámetros (SharedPreferences) | UI, `VoiceController`, `ProfileManager`, etc. | **DUPLICADO REAL, confirmado por conteo de importadores**: `com.ivanna.omega.core.ParameterStore` es la SSOT dominante (usada en `ControlTabScreen`, `MainActivity`, `ProfileManager`, `VoiceController`, `PersistedStateRestorer`, `OemViewModel`...). `com.ivanna.omega.audio.ParameterStore` es un store **separado, deliberado** (Gson, para `AdaptiveBackend`) — su propio comentario dice explícitamente que es independiente del de `core`. No es un bug, pero si el Orquestador va a escribir preferencias, debe apuntar a `core.ParameterStore` (la SSOT) | `app/src/main/java/.../core/ParameterStore.kt`, `.../audio/ParameterStore.kt` |
 | **OmegaControlBus** (daemon) | Snapshot de estado (WFS, RIR, EQ, etc.) publicado por el daemon root | `omega_effect.cpp` (`omega_apply_snapshot`), ambas rutas vía socket de comandos | **VIVO** — es el canal real app↔daemon↔audioserver ya usado hoy por `SET_WFS`, `SET_HIRES`, etc. (confirmado y extendido esta sesión con `nativeSetWfsSpeakerLayout`) | `daemon/core/omega_control_bus.cpp`, `include/omega_control_bus.h`, `daemon/control/command_server.cpp` |
-| **AdaptiveStateBus** | Snapshot de decisión adaptativa (seqlock) | Nadie fuera de `experimental/` — ver fila AdaptiveDecisionEngine | **BUS SIN CONSUMIDOR REAL** — exactamente el patrón que el prompt pide detectar. Existe, compila, tiene su propio bug de sincronización ya corregido (ver comentario en `include/audio_bus.h`), pero no está conectado al camino vivo | `experimental/adaptive_engine/adaptive_decision_engine.hpp` |
+| **AdaptiveStateBus** | Snapshot de decisión adaptativa (seqlock) | Consumidores en las rutas A/B descritos arriba | **BUS EN USO EN CÓDIGO DE PRODUCCIÓN** — la existencia de consumidores no demuestra por sí sola la aplicación de cada campo ni la calidad acústica en hardware | `experimental/adaptive_engine/adaptive_decision_engine.hpp` |
 | **JNI** | Puentes Kotlin↔C++ | App (Ruta A) y wrapper de IME | **VIVO, mapeado en profundidad esta sesión** (se repararon 2 símbolos indefinidos y una función JNI faltante esta misma sesión) | `jni/ivanna_omega_jni.cpp` (~2600 líneas, Ruta A completa), `jni/ivanna_ime_jni.cpp`, `jni/ivanna_adaptive_jni.cpp` (puente hacia el motor desconectado) |
 | **IvannaFusionCore** | Orquesta HOA/HRTF/WFS/RIR/Compressor/Widener (Ruta B) | `omega_process()` | **VIVO, es el "cerebro" actual de Ruta B** — pero decide con lógica si/else embebida en `process()`, no con un motor de decisión centralizado. Es, en la práctica, el candidato natural a *consumir* las salidas del futuro `MasterAudioOrchestrator`, no a ser reemplazado por él (regla explícita del prompt: "no crear otro FusionCore") | `IvannaFusionCore.{h,cpp}` |
 
@@ -48,11 +48,9 @@ riesgo de alcance para la Fase 4.
 
 1. **Ya existe un motor de decisión centralizado a medio construir**:
    `AdaptiveDecisionEngine` + `AdaptiveStateBus` + `RawMetricsBus`, con su propio
-   JNI (`ivanna_adaptive_jni.cpp`) y tests. Está **compilado pero desconectado**
-   (0 publishers reales, 0 consumers reales fuera de su propia carpeta). Antes de
-   escribir un `MasterAudioOrchestrator` nuevo, hay que decidir explícitamente:
-   **¿se resucita/cablea este motor, o se documenta como abandonado y se construye
-   uno nuevo?** El prompt maestro prohíbe "duplicar AdaptiveDecisionEngine" — pero
+   JNI (`ivanna_adaptive_jni.cpp`) y tests. Está compilado y **ya tiene wiring de código en Ruta A y Ruta B**. Antes de
+   crear otro orquestador, la prioridad es auditar los campos aplicados, evitar
+   duplicar decisiones con `AdaptiveEngineV2` y medir el comportamiento integrado. El prompt maestro prohíbe "duplicar AdaptiveDecisionEngine" — pero
    ya existe un `AdaptiveDecisionEngine` real en el árbol. Construir el
    `MasterAudioOrchestrator` sin tocar ese archivo, o sin dejar constancia
    explícita de por qué no se usa, sería violar esa regla por omisión.
@@ -77,9 +75,7 @@ código + `git blame`/comentarios propios del repo), pero **no** incluye todaví
 - Diseño de los contratos de datos de Fase 1 (`OrchestratorInputs`/`Outputs`) —
   eso es la Fase 1, no esta.
 
-**No se ha escrito ninguna línea de `MasterAudioOrchestrator` todavía.** Por regla
-explícita del prompt ("NO escribir MasterAudioOrchestrator hasta terminar esta
-auditoría"), y dado el hallazgo del punto 1 (un motor de decisión ya existe, a
-medio cablear), la Fase 1 no debería empezar sin que el dueño del repo decida
-explícitamente qué hacer con `AdaptiveDecisionEngine` — construir sobre él o
-documentar por qué se abandona.
+**Esta auditoría es un documento histórico** basado en un commit anterior; sus conclusiones de estado
+sobre `AdaptiveDecisionEngine` han sido corregidas arriba para reflejar el wiring visible en `main`
+(2026-10-26). El siguiente trabajo debe centrarse en validación de integración y arbitraje entre
+`AdaptiveDecisionEngine` y `AdaptiveEngineV2`, no en volver a conectar desde cero.
