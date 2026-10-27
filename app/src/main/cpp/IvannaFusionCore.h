@@ -7,6 +7,7 @@
 #include "spatial/IntelligentUpmixer.hpp"
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/WfsRenderer.hpp"
+#include "spatial/WfsSpreadGovernor.hpp"
 #include "spatial/AuxFieldCoherence.hpp"
 #include "spatial/TemporalSpatialDynamics.hpp"
 #include "spatial/RoomCorrectionEq.hpp"
@@ -374,6 +375,10 @@ private:
     float m_compEnv_              = 0.0f;
     float m_harmCoordScale_       = 1.0f;
     float m_wfsCoordScale_        = 1.0f;
+    // Apertura del campo WFS acondicionada: recorte al radio util del array,
+    // suavizado de un polo (sin zipper al mover el slider) y defensa NaN.
+    // Antes el valor se usaba crudo: spread > 1 sacaba las fuentes del array.
+    ivanna::spatial::WfsSpreadGovernor m_wfsGov;
     float m_immCoordScale_        = 1.0f;
     float m_routeBassDb_          = 0.0f;
     float m_routeDialogDb_        = 0.0f;

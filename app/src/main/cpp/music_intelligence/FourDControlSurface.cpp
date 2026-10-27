@@ -282,7 +282,8 @@ void publishAnticipatedScene() noexcept {
 
 // ── Estado ───────────────────────────────────────────────────────────────────
 ivanna::ime::FourDStatus status() noexcept {
-    if (!active()) return ivanna::ime::FourDStatus{};
+    if (!active()) st.outputLatencyMs = m_outputLatencyMs;
+    return ivanna::ime::FourDStatus{};
     return chain()->status();
 }
 

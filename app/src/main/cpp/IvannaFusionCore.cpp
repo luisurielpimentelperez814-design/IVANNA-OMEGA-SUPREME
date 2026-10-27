@@ -28,6 +28,7 @@ extern std::atomic<float> g_hrtf_wet_dry;
 extern std::atomic<bool>  g_hrtf_flush_req;
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
+extern std::atomic<float> g_wfs_applied_spread;   // read-back: spread REALMENTE aplicado
 extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
@@ -116,6 +117,9 @@ IvannaFusionEngine::IvannaFusionEngine() {
     m_npe.prepare(48000.0f);
     m_xtc.prepare(48000.0f, 2048);
     m_wfsInit = true;
+    // 100 bloques/s a 48 kHz/480 muestras: asentamiento de 120 ms al mover el slider.
+    m_wfsGov.configure(48000.0f / static_cast<float>(Ivanna::BLOCK_SIZE), 0.12f);
+    m_wfsGov.reset(g_wfs_spread.load(std::memory_order_relaxed));
     m_wfsInL.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsInR.assign(Ivanna::BLOCK_SIZE, 0.0f);
     m_wfsOutL.assign(Ivanna::BLOCK_SIZE, 0.0f);
@@ -311,7 +315,13 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         if (m_wfsFade > 0.0f && m_wfsInit) {
             const int n = Ivanna::BLOCK_SIZE;
             for (int i = 0; i < n; ++i) { m_wfsOutL[i] = 0.f; m_wfsOutR[i] = 0.f; }
-            const float spread = g_wfs_spread.load(std::memory_order_relaxed) * m_wfsCoordScale_;
+            // El slider WFS llega aqui ya acondicionado: radio util del array,
+            // suavizado temporal y NaN saneado (WfsSpreadGovernor).
+            const float requestedSpread = g_wfs_spread.load(std::memory_order_relaxed);
+            const auto wfsGov = m_wfsGov.process(requestedSpread, m_wfsCoordScale_);
+            g_wfs_applied_spread.store(wfsGov.spread, std::memory_order_relaxed);
+            const float spread = wfsGov.spread;
+            const float apertureM = wfsGov.offsetM;
             const auto realitySnap = ivanna::reality::AcousticRealityOrchestrator::instance().stateBus().readLatestSnapshot();
             if (realitySnap.enabled && realitySnap.sequence > 0) {
                 m_wfs.setRoomDimensions(
@@ -321,13 +331,13 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
                     realitySnap.neuralProposal.inferredWallAbsorption);
                 const auto& sL = realitySnap.genome.sources[1];
                 const auto& sR = realitySnap.genome.sources[2];
-                m_wfs.setObject4D(0, -0.75f * spread + sL.posX * 0.25f, sL.posY, sL.posZ,
+                m_wfs.setObject4D(0, -apertureM + sL.posX * 0.25f, sL.posY, sL.posZ,
                                   sL.velX, sL.velY, sL.velZ, 1.0f, sL.roomCoupling);
-                m_wfs.setObject4D(1,  0.75f * spread + sR.posX * 0.25f, sR.posY, sR.posZ,
+                m_wfs.setObject4D(1,  apertureM + sR.posX * 0.25f, sR.posY, sR.posZ,
                                   sR.velX, sR.velY, sR.velZ, 1.0f, sR.roomCoupling);
             } else {
-                m_wfs.setObject(0, -0.75f * spread, 1.5f, 1.0f);  // fuente L
-                m_wfs.setObject(1,  0.75f * spread, 1.5f, 1.0f);  // fuente R
+                m_wfs.setObject(0, -apertureM, 1.5f, 1.0f);  // fuente L
+                m_wfs.setObject(1,  apertureM, 1.5f, 1.0f);  // fuente R
             }
             const float* wfsIn[2] = { m_wfsInL.data(), m_wfsInR.data() };
             m_wfs.process(wfsIn, 2, m_wfsOutL.data(), m_wfsOutR.data(), n);

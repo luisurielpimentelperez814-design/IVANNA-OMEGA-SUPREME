@@ -62,6 +62,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
     var arcDepth by remember { mutableStateOf(store.get4dArcDepth()) }
     var hapticScale by remember { mutableStateOf(store.get4dHapticScale()) }
     var dosMode by remember { mutableStateOf(store.get4dDosimeterMode()) }
+    var outLatencyMs by remember { mutableStateOf(store.get4dOutputLatencyMs()) }
     var dosCal by remember { mutableStateOf(store.get4dDosimeterCal()) }   // dBFS -> SPL; 94 = defecto nativo del dosímetro
 
     val cyan = Color(0xFF00E5FF)
@@ -289,6 +290,22 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     }
                 }
             }
+            // ── Slider 4D que faltaba: latencia de salida del dispositivo ──
+            // El motor predice el golpe 5-10 ms antes, pero necesita saber CUANDO
+            // sale el sonido por el altavoz o el DAC. Sin este valor la apertura
+            // del campo llega tarde en cualquier telefono con latencia > 10 ms.
+            Text(
+                "Latencia de salida del dispositivo: %.1f ms".format(outLatencyMs),
+                color = Color(0xFFB0BEC5), fontSize = 11.sp
+            )
+            Slider(
+                value = outLatencyMs, valueRange = 0f..40f,
+                onValueChange = {
+                    outLatencyMs = it
+                    store.set4dOutputLatencyMs(it)
+                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetOutputLatencyMs(it)
+                }
+            )
             Text("Calibración dosímetro: %.0f dB SPL a fondo de escala".format(dosCal), color = Color(0xFFB0BEC5), fontSize = 11.sp)
             Slider(
                 value = dosCal, valueRange = 70f..145f,

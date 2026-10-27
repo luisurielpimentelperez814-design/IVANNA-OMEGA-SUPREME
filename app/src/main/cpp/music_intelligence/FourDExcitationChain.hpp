@@ -54,6 +54,7 @@ struct FourDStatus {
     float   arcArousal = 0.0f;     // 0..1 relativa al máximo propio del tema
     float   arcTension = 0.0f;     // 0..1 hueco previo al drop
     float   arcImpact = 0.0f;      // 0..1 envolvente del impacto
+    float   outputLatencyMs = 0.0f; // latencia de salida configurada (read-back del slider 4D)
 };
 
 class alignas(64) FourDExcitationChain {

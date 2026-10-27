@@ -8,6 +8,8 @@
 
 std::atomic<bool>  g_wfs_enabled{true};
 std::atomic<float> g_wfs_spread{1.18f};
+// Read-back honesto: lo que el array REALMENTE recibio tras recorte y suavizado.
+std::atomic<float> g_wfs_applied_spread{1.18f};
 
 // Modo AUX/altavoces (campo de presion coherente). Mismo patron que g_wfs_*: el proceso app los
 // define aqui (wfs_controls_bridge.cpp) y libomega_effect.so en su stub (wfs_globals_effect.cpp);

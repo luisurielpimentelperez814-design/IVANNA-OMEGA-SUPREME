@@ -1477,3 +1477,10 @@ gtest_discover_tests(test_loudness_true_peak)
 
 # 16-to-5 logical bus dispatcher: bounded SIMD/scalar kernel and sensor-gated thermal guard.
 ivanna_add_test(test_physical_target_dispatcher)
+
+# ── Gobernador del spread WFS: apertura acotada, suavizado y defensa NaN ──
+add_executable(test_wfs_spread_governor test_wfs_spread_governor.cpp)
+target_link_libraries(test_wfs_spread_governor PRIVATE GTest::gtest_main)
+target_include_directories(test_wfs_spread_governor PRIVATE ../ ../spatial ../include)
+target_compile_options(test_wfs_spread_governor PRIVATE -Wall -Wextra)
+gtest_discover_tests(test_wfs_spread_governor)

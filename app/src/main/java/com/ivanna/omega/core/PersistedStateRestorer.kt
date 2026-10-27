@@ -174,6 +174,7 @@ object PersistedStateRestorer {
             if (Ivanna4DNative.isAvailable) {
                 val ps = ParameterStore(ctx)
                 Ivanna4DNative.nativeFourDSetLeadMs(ps.get4dLeadMs())
+            runCatching { Ivanna4DNative.nativeFourDSetOutputLatencyMs(paramStore.get4dOutputLatencyMs()) }
                 Ivanna4DNative.nativeFourDSetDepth(ps.get4dDepth())
                 Ivanna4DNative.nativeFourDSetHapticScale(ps.get4dHapticScale())
                 Ivanna4DNative.nativeFourDSetDosimeterMode(ps.get4dDosimeterMode())

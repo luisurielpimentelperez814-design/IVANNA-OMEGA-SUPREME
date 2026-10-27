@@ -135,6 +135,7 @@ class ParameterStore(context: Context) {
         private const val KEY_4D_ARCDEPTH = "fourd_arc_depth"
         private const val KEY_4D_DOSMODE  = "fourd_dos_mode"
         private const val KEY_4D_DOSCAL   = "fourd_dos_cal"
+        private const val KEY_4D_OUTLAT   = "fourd_output_latency_ms"
         private const val KEY_HAPTIC_ENABLED  = "bass_haptic_enabled"
         private const val KEY_HAPTIC_STRENGTH = "bass_haptic_strength"
         private const val KEY_HAPTIC_RUMBLE   = "bass_haptic_rumble"
@@ -424,6 +425,12 @@ class ParameterStore(context: Context) {
     fun set4dDosimeterMode(v: Int) = prefs.edit().putInt(KEY_4D_DOSMODE, v.coerceIn(0, 2)).apply()
     fun get4dDosimeterCal(): Float = safeGetFloat(KEY_4D_DOSCAL, 94f)
     fun set4dDosimeterCal(v: Float) = prefs.edit().putFloat(KEY_4D_DOSCAL, v.coerceIn(70f, 145f)).apply()
+
+    // Latencia de salida real del dispositivo. Sin este dato el planificador 4D
+    // no puede abrir el campo 5-10 ms ANTES del golpe: se quedaba con el valor
+    // interno del motor y no habia forma de corregirlo desde la app.
+    fun get4dOutputLatencyMs(): Float = safeGetFloat(KEY_4D_OUTLAT, 12f)
+    fun set4dOutputLatencyMs(v: Float) = prefs.edit().putFloat(KEY_4D_OUTLAT, v.coerceIn(0f, 40f)).apply()
 
     fun isAuxFieldEnabled(): Boolean = safeGetBoolean(KEY_AUX_ENABLED, false)
     fun getAuxXoverHz(): Float = safeGetFloat(KEY_AUX_XOVER, 120f)
