@@ -1,3 +1,14 @@
+# CHANGELOG — v2.5.148 (439) — ASRC clock-control test build
+
+## Cambios
+- Corrige la prueba de transporte SCM_RIGHTS para preservar límites de mensaje usando SOCK_SEQPACKET en el test de payload inválido.
+- Alinea version.properties, module.prop y update.json para producir APK y módulo Magisk de prueba con versionCode 439.
+- Incluye el controlador ASRC software y la telemetría de reloj ya presentes para diagnóstico y validación de laboratorio.
+- **Límite explícito:** este release no afirma que el callback propietario HAL/PAL del Moto G85 esté conectado ni que un ASRC de sistema esté actuando. La corrección de sistema permanece fail-closed hasta verificar query de frames+timestamp correlacionados y un actuador de ratio real. No se debe interpretar la publicación de ppm como audio corregido.
+- Los artefactos se publican solo si CI, tests nativos, build Android y verificación del ZIP/APK pasan.
+
+---
+
 # CHANGELOG — v2.5.146 (437) — AdaptiveDecisionEngine wiring audit
 
 ## Cambios
