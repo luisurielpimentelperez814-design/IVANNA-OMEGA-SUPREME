@@ -51,11 +51,14 @@
  *     std::thread en sí asigna una vez al arrancar (aceptado, ocurre antes
  *     de que el sistema esté "caliente"), controlLoop() en sí no allocatea.
  *
- * IMPORTANTE: este módulo hoy SOLO PUBLICA una AdaptiveState calculada.
- * No hay ningún código en producción que la consuma todavía — eso es
- * deliberado, es el punto de "experimental" y "no hacer merge todavía"
- * del prompt de Fase 3. Cablearlo a nativeProcess() es una fase futura
- * separada, después de validar este módulo en aislamiento.
+ * ESTADO ACTUAL DEL WIRING:
+ * El motor tiene consumidores en el código de producción de ambas rutas.
+ * Ruta A (JNI/player propio) publica métricas y consume AdaptiveStateBus
+ * mediante sus workers de snapshot/puente; Ruta B (omega_effect.cpp)
+ * publica métricas y consume nuevos snapshots adaptativos en el callback.
+ * Esto acredita integración de código, no certificación acústica ni una
+ * medición de jitter en dispositivo. Se mantiene EXPERIMENTAL hasta validar
+ * el comportamiento integrado y sus límites de tiempo real.
  * ============================================================================
  */
 
@@ -368,9 +371,9 @@ public:
     AdaptiveDecisionEngine(const AdaptiveDecisionEngine&) = delete;
     AdaptiveDecisionEngine& operator=(const AdaptiveDecisionEngine&) = delete;
 
-    // Buses públicos: el audio thread llama rawMetrics.publish(...);
-    // cualquier consumidor (futuro: el audio thread) llama
-    // adaptiveState.consumeIfNewer(...).
+    // Buses públicos: los productores de las rutas integradas llaman
+    // rawMetrics.publish(...); los consumidores de snapshot llaman
+    // adaptiveState.consumeIfNewer(...) cuando hay una secuencia nueva.
     RawMetricsBus    rawMetrics;
     AdaptiveStateBus adaptiveState;
 
