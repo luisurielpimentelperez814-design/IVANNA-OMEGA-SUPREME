@@ -1,4 +1,4 @@
-# CHANGELOG — v2.5.152 (443) — WFS yaw, guía de uso y lectura de ruta USB-C
+# CHANGELOG — v2.5.154 (445) — WFS frame correction, SAFMUS controls and USB-C route readback
 
 ## Cambios
 - Añade el cuarto control de calibración WFS: orientación horizontal del oyente (0–360°), persistida y aplicada como rotación de coordenadas relativas de los siete altavoces mediante el setter JNI ya existente.
