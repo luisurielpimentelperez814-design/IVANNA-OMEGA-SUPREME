@@ -16,7 +16,7 @@ def validate_file(path: Path) -> list[str]:
     errors: list[str] = []
     try:
         with h5py.File(path, "r") as handle:
-            if not handle.keys():
+            if len(handle.keys()) == 0:
                 errors.append("HDF5 file has no root objects")
             convention = handle.attrs.get("Conventions", handle.attrs.get("Convention"))
             if convention is not None:
@@ -55,12 +55,13 @@ def validate_file(path: Path) -> list[str]:
                                 dataset[tuple(reversed(slices))]
                         else:
                             # Bound memory for contiguous datasets by slicing their first axis.
-                            if dataset.ndim == 1:
-                                step = max(1, min(dataset.shape[0], (8 * 1024 * 1024) // max(1, dataset.dtype.itemsize)))
-                                for start in range(0, dataset.shape[0], step):
-                                    dataset[start:start + step]
-                            else:
-                                dataset[...]
+                            trailing_items = 1
+                            for dim in dataset.shape[1:]:
+                                trailing_items *= dim
+                            bytes_per_row = max(1, trailing_items * dataset.dtype.itemsize)
+                            step = max(1, min(dataset.shape[0], (8 * 1024 * 1024) // bytes_per_row))
+                            for start in range(0, dataset.shape[0], step):
+                                dataset[start:start + step, ...]
                 except Exception as exc:
                     errors.append(f"dataset {name!r} unreadable: {type(exc).__name__}: {exc}")
     except Exception as exc:
