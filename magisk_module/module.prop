@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.164
-versionCode=455
+version=v2.5.165
+versionCode=456
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.164: conservative Sony Genezi Spatial AUX beta
+description=v2.5.165: Genezi Spatial model and release integrity fix
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
