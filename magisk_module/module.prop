@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.165
-versionCode=456
+version=v2.5.166
+versionCode=457
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.165: Genezi Spatial model and release integrity fix
+description=v2.5.166: Genezi Spatial profile and resilient Android SDK provisioning
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
