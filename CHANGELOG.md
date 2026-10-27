@@ -1,3 +1,15 @@
+# CHANGELOG — v2.5.163 (454) — Sony Genezi MHC-PZ1D AUX reference profile
+
+## Audio route / acoustic model
+- Documenta el modelo de transferencia dependiente de frecuencia y estados Stereo/Surround/subwoofer, sin inventar coeficientes no medidos.
+- Conserva la ruta WIRED_AUX en estéreo neutro: 0 dB de graves, 0 dB de diálogo y ancho 1.0× para dejar el upmix al amplificador externo.
+- Explica las hipótesis de aumento percibido de satélites al activar el subwoofer y el protocolo de cuatro estados para estimar los términos de interacción.
+- Distingue datos del manual de servicio de observaciones auditivas; no afirma una calibración acústica medida.
+- Añade docs/SONY_GENEZI_MHC_PZ1D_ACOUSTIC_PROFILE.md.
+
+## Validación y publicación
+- Release condicionada a CI verde, APK y ZIP Magisk generados y assets verificados para v2.5.163.
+
 # CHANGELOG — v2.5.162 (453) — Refinamiento integral Aurora Obsidiana
 
 ## UI / UX
