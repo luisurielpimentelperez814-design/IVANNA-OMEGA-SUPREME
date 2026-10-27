@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.152
-versionCode=443
+version=v2.5.153
+versionCode=444
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.152: WFS yaw calibration, Spanish control guidance, USB-C AudioTrack route readback; physical DAC clock remains unclaimed
+description=v2.5.153: WFS yaw calibration via SAFMUS slider wrapper, Spanish control guidance, USB-C AudioTrack route readback; physical DAC clock remains unclaimed
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
