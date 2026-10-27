@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.147
-versionCode=438
+version=v2.5.148
+versionCode=439
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.147: live diagnostic bridge deployment wiring; telemetry opt-in; DSP behavior unchanged
+description=v2.5.148: ASRC clock-control test build; hardware HAL/PAL callbacks remain unbound; correction fail-closed
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
