@@ -20,14 +20,13 @@ app/src/main/cpp/experimental/adaptive_engine/
 
 `CMakeLists.txt`: **no modificado EN FASE 3** (decisión deliberada de entonces).
 
-> **ACTUALIZACIÓN 2026-09-10 (auditoría del flanco adaptive_engine):** lo
-> anterior quedó OBSOLETO. El módulo SÍ está hoy en
-> `app/src/main/cpp/CMakeLists.txt` (línea ~199: compila dentro del `.so`
-> real) y por tanto ya pasa por el toolchain NDK en cada build de CI — la
-> verificación que esta sección decía que faltaba quedó cubierta de hecho.
-> Lo que SIGUE sin existir (verificado por grep): ningún consumidor fuera de
-> `experimental/` — el wiring a `nativeProcess()` sigue siendo Fase 4,
-> pendiente de las 3 decisiones listadas en README.md.
+> **Actualización de estado (2026-10-26):** el registro histórico anterior ya no
+> describe `main`. El motor está compilado en los targets de Ruta A y Ruta B, y
+> existen llamadas de producción a `RawMetricsBus::publish()` y
+> `AdaptiveStateBus::consumeIfNewer()` en `jni/ivanna_omega_jni.cpp` y
+> `omega_effect.cpp`. La evidencia confirma wiring de código, no la certificación
+> de todos los campos, la estabilidad temporal en hardware ni la calidad acústica.
+> Esta Fase 3 sigue siendo el informe de diseño y pruebas unitarias originales.
 
 ## Evidencia — compilación y tests reales (no simulados)
 
@@ -112,15 +111,19 @@ Cero mutex, cero malloc tras `start()`, cero I/O, cero logging, cero excepciones
 en `consumeIfNewer()`, acotado a microsegundos por diseño (copia de un struct POD pequeño) —
 mismo argumento de seguridad ya validado para `ControlFrameBus` en producción.
 
-## Condiciones para Fase 4 (no iniciada)
+## Estado posterior: integración en producción y validación pendiente
 
 - ✅ Módulo compila y pasa tests en aislamiento total.
 - ✅ Documentado qué falta para conectarlo a producción (ver README.md, sección "Por qué no
   está wireado a producción todavía").
 - ✅ (2026-09-10) Verificado con el toolchain NDK real — el módulo compila
   dentro del `.so` en cada build de CI desde que se agregó a CMakeLists.
-- ❌ NO hay cálculo de `RawAudioMetrics.band_*_energy` en el hot-path real — eso es trabajo
-  nuevo (FFT o banco de filtros ligero), no parte de esta fase.
-- ❌ NO se decidió qué hace la cadena DSP real con un `AdaptiveState` recibido.
+- ✅ Hay productores y consumidores en el código de ambas rutas.
+- ⚠️ Las bandas de Ruta B pueden ser medidas compartidas o proxies de fallback; no deben
+  confundirse con análisis espectral de precisión.
+- ⚠️ Falta acreditar en dispositivo latencia/jitter, estabilidad bajo carga, y aplicación
+  efectiva de cada campo adaptativo en cada ruta.
+- ⚠️ El `SafetyLimiter` permanece como última barrera; las decisiones adaptativas no lo sustituyen.
 
-Esperando validación antes de continuar.
+Siguiente gate: ejecutar suites host/CI, inspeccionar el artefacto generado y después medir en
+hardware con telemetría de decisiones producidas, consumidas y aplicadas.
