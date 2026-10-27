@@ -60,44 +60,30 @@ static int receiveDaemonShmFd() noexcept {
         return -1;
     }
 
-    char byte = 0;
-    iovec io{};
-    io.iov_base = &byte;
-    io.iov_len = sizeof(byte);
-    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(int))]{};
-    msghdr msg{};
-    msg.msg_iov = &io;
-    msg.msg_iovlen = 1;
-    msg.msg_control = control;
-    msg.msg_controllen = sizeof(control);
-
-    const ssize_t n = recvmsg(sock, &msg, MSG_CMSG_CLOEXEC);
-    const int recv_errno = errno;
+    int received_fd = -1;
+    int recv_errno = 0;
+    const auto receive_result = ivanna::ipc::receiveExactlyOneFd(sock, &received_fd, &recv_errno);
     close(sock);
-
-    if (n != 1 || (msg.msg_flags & (MSG_CTRUNC | MSG_TRUNC)) != 0) {
-        __android_log_print(ANDROID_LOG_WARN, LOG_TAG,
-                            "recvmsg SCM_RIGHTS fallo n=%zd flags=0x%x errno=%d (%s)",
-                            n, msg.msg_flags, recv_errno, strerror(recv_errno));
+    if (receive_result != ivanna::ipc::ReceiveFdResult::kOk) {
+        const char* reason = "unknown";
+        switch (receive_result) {
+            case ivanna::ipc::ReceiveFdResult::kRecvError: reason = "recvmsg"; break;
+            case ivanna::ipc::ReceiveFdResult::kBadPayloadLength: reason = "bad payload length"; break;
+            case ivanna::ipc::ReceiveFdResult::kTruncated: reason = "MSG_CTRUNC/MSG_TRUNC"; break;
+            case ivanna::ipc::ReceiveFdResult::kMissingRights: reason = "missing SCM_RIGHTS"; break;
+            case ivanna::ipc::ReceiveFdResult::kMalformedControl: reason = "malformed control message"; break;
+            case ivanna::ipc::ReceiveFdResult::kWrongDescriptorCount: reason = "descriptor count != 1"; break;
+            case ivanna::ipc::ReceiveFdResult::kOk: break;
+        }
+        if (receive_result == ivanna::ipc::ReceiveFdResult::kRecvError) {
+            __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "recvmsg SCM_RIGHTS fallo errno=%d (%s)",
+                                recv_errno, strerror(recv_errno));
+        } else {
+            __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "respuesta SCM_RIGHTS rechazada: %s", reason);
+        }
         return -1;
     }
-
-    for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr;
-         cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-        if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
-            cmsg->cmsg_len < CMSG_LEN(sizeof(int))) {
-            continue;
-        }
-        int received_fd = -1;
-        std::memcpy(&received_fd, CMSG_DATA(cmsg), sizeof(received_fd));
-        if (received_fd >= 0) {
-            return received_fd;
-        }
-    }
-
-    __android_log_print(ANDROID_LOG_ERROR, LOG_TAG,
-                        "daemon respondio sin descriptor SCM_RIGHTS");
-    return -1;
+    return received_fd;
 }
 
 extern "C"
