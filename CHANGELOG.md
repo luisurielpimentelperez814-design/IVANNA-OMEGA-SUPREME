@@ -1,3 +1,15 @@
+# CHANGELOG — v2.5.150 (441) — WFS yaw, guía de uso y lectura de ruta USB-C
+
+## Cambios
+- Añade el cuarto control de calibración WFS: orientación horizontal del oyente (0–360°), persistida y aplicada como rotación de coordenadas relativas de los siete altavoces mediante el setter JNI ya existente.
+- Rediseña `WfsCalibrationPanel` con explicaciones en español para X/ancho, Y/altura, Z/fondo, orientación, preset 7ch y centrado; incluye recomendaciones para audífonos, estéreo AUX/USB-C y receptores multicanal.
+- Añade `AudioTrackRouteReadback`, que separa dispositivo solicitado de `AudioTrack.routedDevice` observado durante la reproducción real de IVANNA.
+- El Profiler muestra estado de ruta, dispositivo solicitado, dispositivo enroutado y tasa configurada, junto con recomendaciones de escucha para el público general.
+- Integra el reporte de ruta en el reproductor propio sin tocar la selección global de salida de otras aplicaciones ni escribir controles propietarios del DAC.
+- **Límites explícitos:** la lectura de ruta no prueba control del reloj físico del DAC ni ASRC global PAL/AGM; el efecto acústico de WFS requiere una instalación compatible y validación en sala. La publicación de APK/ZIP queda sujeta al resultado de CI y a la verificación de artefactos.
+
+---
+
 # CHANGELOG — v2.5.149 (440) — dual audio routes test release
 
 ## Cambios
