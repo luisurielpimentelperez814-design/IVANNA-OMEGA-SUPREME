@@ -42,4 +42,11 @@ class OutputRoutePolicyTest {
             OutputRoutePolicy.select(false, false, false, false)
         )
     }
+    @Test fun wiredAuxKeepsNeutralStereoForExternalSurroundUpmix() {
+        val profile = AudioRouteManager.profileFor(OutputRoute.WIRED_AUX)
+        assertEquals(0f, profile.bassBoostDb, 0f)
+        assertEquals(0f, profile.dialogBoostDb, 0f)
+        assertEquals(1f, profile.widenerMult, 0f)
+    }
+
 }
