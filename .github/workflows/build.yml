@@ -159,7 +159,7 @@ jobs:
           echo "GRADLE_HOME=$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}" >> "$GITHUB_ENV"
           echo "$GRADLE_HOME_DIR/gradle-${GRADLE_VERSION}/bin"          >> "$GITHUB_PATH"
 
-      - name: Install Android SDK + NDK (manual)
+      - name: Install Android SDK + NDK (retry corrupted Google SDK archives)
         run: |
           set -euo pipefail
           export ANDROID_SDK_ROOT="$HOME/android-sdk"
@@ -168,14 +168,34 @@ jobs:
           cd "$ANDROID_SDK_ROOT/cmdline-tools"
           curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
                -o tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
+          unzip -tq tools.zip
           unzip -q tools.zip && rm tools.zip && mv cmdline-tools latest
           SDKMGR="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
-          "$SDKMGR" "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" \
-                    "build-tools;${ANDROID_BUILD_TOOLS}" \
-                    "ndk;${ANDROID_NDK_VERSION}" \
-                    "cmake;${ANDROID_CMAKE_VERSION}"
+
+          # sdkmanager can receive a truncated NDK archive from Google's mirror.
+          # Install packages separately, retrying and deleting only the partial
+          # package download/cache between attempts.
+          install_package() {
+            local package="$1" attempt
+            for attempt in 1 2 3 4 5; do
+              echo "[sdkmanager] attempt ${attempt}/5: ${package}"
+              if "$SDKMGR" --install "$package"; then return 0; fi
+              echo "::warning::sdkmanager failed for ${package}; clearing partial downloads before retry"
+              rm -rf "$ANDROID_SDK_ROOT/temp" "$ANDROID_SDK_ROOT/.temp"
+              sleep "$((attempt * 3))"
+            done
+            echo "::error::Failed to install Android SDK package after 5 attempts: ${package}"
+            return 1
+          }
+          install_package "platform-tools"
+          install_package "platforms;android-${ANDROID_COMPILE_SDK}"
+          install_package "build-tools;${ANDROID_BUILD_TOOLS}"
+          install_package "cmake;${ANDROID_CMAKE_VERSION}"
+          install_package "ndk;${ANDROID_NDK_VERSION}"
+
+          test -f "$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}/build/cmake/android.toolchain.cmake"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT"     >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
