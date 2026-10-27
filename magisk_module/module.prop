@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.170
-versionCode=461
+version=v2.5.171
+versionCode=462
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.170: responsive OMNI status hierarchy and release documentation
+description=v2.5.171: fault-tolerant adaptive telemetry and locale-stable meters
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

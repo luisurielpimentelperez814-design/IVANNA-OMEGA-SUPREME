@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.log10
 import kotlin.math.max
+import java.util.Locale
 
 /**
  * AdaptiveDashboard — pantalla de telemetría real del AdaptiveDecisionEngine.
@@ -49,7 +50,11 @@ fun AdaptiveDashboard(
     audioChar: FloatArray?    = null,  // FloatArray[8]: [rms,peak,percussiveness,tonality,reverb,dynRange,centroid,spread]
     modifier: Modifier = Modifier
 ) {
-    val t = telemetry
+    // Fail closed: a partial or non-finite JNI snapshot must never render as plausible telemetry.
+    val t = telemetry?.takeIf { values -> values.size >= 10 && values.take(10).all { it.isFinite() } }
+    val safeBands = bandEnergies?.takeIf { values -> values.size >= 3 && values.take(3).all { it.isFinite() } }
+        ?.map { it.coerceAtLeast(0f) }
+    val safeAudioChar = audioChar?.takeIf { values -> values.size >= 8 && values.take(8).all { it.isFinite() } }
 
     Column(
         modifier = modifier
@@ -81,6 +86,15 @@ fun AdaptiveDashboard(
             )
         }
 
+        if (telemetry != null && t == null) {
+            Text(
+                "Telemetría no válida o incompleta · esperando una muestra íntegra",
+                color = AmberSignal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+        }
+
         // ── Signal meters ─────────────────────────────────────────────────
         GlassCard(title = "SEÑAL", accent = AuroraCyan.copy(alpha = 0.25f)) {
             Column(
@@ -88,8 +102,8 @@ fun AdaptiveDashboard(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
 
-                val rmsDb  = if (t != null) linToDb(t[0]) else -60f
-                val peakDb = if (t != null) linToDb(t[1]) else -60f
+                val rmsDb  = if (t != null) linToDb(t[0].coerceIn(0f, 1f)) else -60f
+                val peakDb = if (t != null) linToDb(t[1].coerceIn(0f, 1f)) else -60f
                 val grDb   = t?.getOrElse(2) { 0f } ?: 0f
 
                 MeterRow("RMS",  rmsDb,  -60f, 0f, AuroraCyan,    "${rmsDb.format(1)} dBFS")
@@ -142,9 +156,9 @@ fun AdaptiveDashboard(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                val bandLow  = bandEnergies?.getOrElse(0) { 0f } ?: 0f
-                val bandMid  = bandEnergies?.getOrElse(1) { 0f } ?: 0f
-                val bandHigh = bandEnergies?.getOrElse(2) { 0f } ?: 0f
+                val bandLow  = safeBands?.getOrElse(0) { 0f } ?: 0f
+                val bandMid  = safeBands?.getOrElse(1) { 0f } ?: 0f
+                val bandHigh = safeBands?.getOrElse(2) { 0f } ?: 0f
                 val total    = (bandLow + bandMid + bandHigh).coerceAtLeast(1e-6f)
 
                 MeterRow("LOW",  bandLow,  0f, total.coerceAtLeast(0.01f), AmberSignal,
@@ -154,7 +168,7 @@ fun AdaptiveDashboard(
                 MeterRow("HIGH", bandHigh, 0f, total.coerceAtLeast(0.01f), NeonMagenta,
                          "${(bandHigh/total*100).toInt()}%")
 
-                if (bandEnergies == null) {
+                if (safeBands == null) {
                     Text("Sin señal de audio activa",
                          color = Color.White.copy(0.3f),
                          fontFamily = FontFamily.Monospace, fontSize = 10.sp)
@@ -163,20 +177,20 @@ fun AdaptiveDashboard(
         }
 
         // ── Audio characteristics (nativeGetAudioCharacteristics — antes descableado) ──
-        if (audioChar != null) {
-            val percussive = audioChar.getOrElse(2) { 0f }
-            val tonality   = audioChar.getOrElse(3) { 0f }
-            val centroid   = audioChar.getOrElse(6) { 0f }
-            val spread     = audioChar.getOrElse(7) { 0f }
+        if (safeAudioChar != null) {
+            val percussive = safeAudioChar[2].coerceIn(0f, 1f)
+            val tonality   = safeAudioChar[3].coerceIn(0f, 1f)
+            val centroid   = safeAudioChar[6].coerceAtLeast(0f)
+            val spread     = safeAudioChar[7].coerceAtLeast(0f)
             GlassCard(title = "CARACTERÍSTICAS DE AUDIO", accent = AuroraCyan.copy(0.5f)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MeterRow("Percusividad",  percussive, 0f, 1f, AmberSignal,  "${"%.0f".format(percussive*100)}%")
-                    MeterRow("Tonalidad",     tonality,   0f, 1f, AuroraCyan,   "${"%.0f".format(tonality*100)}%")
+                    MeterRow("Percusividad",  percussive, 0f, 1f, AmberSignal,  "${"%.0f".format(Locale.ROOT, percussive*100)}%")
+                    MeterRow("Tonalidad",     tonality,   0f, 1f, AuroraCyan,   "${"%.0f".format(Locale.ROOT, tonality*100)}%")
                     Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)) {
-                        androidx.compose.material3.Text("Centroide espectral: ${"%.0f".format(centroid)} Hz",
+                        androidx.compose.material3.Text("Centroide espectral: ${"%.0f".format(Locale.ROOT, centroid)} Hz",
                             color = androidx.compose.ui.graphics.Color.White.copy(0.5f),
                             fontFamily = FontFamily.Monospace, fontSize = 10.sp)
-                        androidx.compose.material3.Text("Spread: ${"%.0f".format(spread)} Hz",
+                        androidx.compose.material3.Text("Spread: ${"%.0f".format(Locale.ROOT, spread)} Hz",
                             color = androidx.compose.ui.graphics.Color.White.copy(0.5f),
                             fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                     }
@@ -227,7 +241,8 @@ private fun MeterRow(
     accent: Color,
     display: String
 ) {
-    val fraction = ((value - min) / (max - min)).coerceIn(0f, 1f)
+    val fraction = if (value.isFinite() && min.isFinite() && max.isFinite() && max > min)
+        ((value - min) / (max - min)).coerceIn(0f, 1f) else 0f
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -264,7 +279,9 @@ private fun DecisionRow(
     display: String,
     normalizedValue: Float? = null
 ) {
-    val fraction = normalizedValue ?: ((value - min) / (max - min)).coerceIn(0f, 1f)
+    val rawFraction = normalizedValue ?: if (value.isFinite() && min.isFinite() && max.isFinite() && max > min)
+        (value - min) / (max - min) else 0f
+    val fraction = if (rawFraction.isFinite()) rawFraction.coerceIn(0f, 1f) else 0f
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -294,4 +311,4 @@ private fun DecisionRow(
 private fun linToDb(linear: Float): Float =
     if (linear > 1e-6f) 20f * log10(max(linear, 1e-6f)) else -60f
 
-private fun Float.format(decimals: Int) = "%.${decimals}f".format(this)
+private fun Float.format(decimals: Int) = "%.${decimals}f".format(Locale.ROOT, this)

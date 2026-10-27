@@ -1,3 +1,11 @@
+## v2.5.171 — Resilient adaptive telemetry UI
+
+- Rejects incomplete or non-finite native telemetry snapshots before they can paint plausible-but-invalid meters; shows a clear invalid-data message instead.
+- Clamps signal and spectral display ranges and guards meter normalization against NaN, infinity and invalid ranges to prevent broken progress bars.
+- Uses `Locale.ROOT` for numeric telemetry so decimal separators remain stable across device locales and comparisons.
+- Keeps telemetry read-only; no synthetic fallback values are presented as measured audio.
+- Version metadata: v2.5.171 / versionCode 462. CI must pass native tests, Android build, artifact integrity and release publication before the package is considered ready.
+
 ## v2.5.170 — Responsive OMNI visual hierarchy
 
 - Replaces the single-line OMNI status-chip row with a responsive FlowRow capped at three chips per line. Route and processing indicators remain visible on narrow screens and under larger font settings instead of competing horizontally with the product title.
