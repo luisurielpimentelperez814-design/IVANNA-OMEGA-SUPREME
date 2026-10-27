@@ -38,20 +38,18 @@
 
 > **Principio rector:** la estética presenta el proyecto; el código y la evidencia determinan lo que podemos afirmar.
 
-## Sincronización del estado del código — 2026-10-26
+## Sincronización del estado del código — 2026-10-27
 
-Esta revisión prepara `v2.5.145` para validar en el dispositivo la telemetría del reloj de presentación. El número de versión solo identifica el paquete; el estado de publicación y los resultados del hardware deben verificarse en Actions/Releases y en las pruebas descritas abajo.
+Esta revisión prepara `v2.5.150` (`versionCode=441`) con refinamiento de calibración WFS, un cuarto control de orientación del oyente, ayuda de uso en español y lectura de retorno de la ruta real del `AudioTrack` propio.
 
-- **Base consultada:** `main` en `00d46f162b7ee35789cb83830368fe27ad0b0bce` antes de preparar este cambio.
-- **Versión candidata:** `2.5.145`, `versionCode=436`; módulo, `version.properties` y `update.json` se actualizan en conjunto para que CI genere el ZIP canónico `ivanna_omega_supreme_v2.5.145.zip`.
-- **Nueva evidencia de presentación HAL:** el callback `astream_out_get_presentation_position` se observó durante reproducción en dos flujos distintos. Un flujo mostró deltas típicos de 192 frames en ~4 ms y otro 1,920 frames en ~40 ms; ambos son compatibles con un contador nominal de 48 kHz. Esto valida la cadencia observada del callback, no el reloj físico del DAC ni el uso de ASRC.
-- **Integración PAL/AGM:** el puente de telemetría a memoria compartida existe como seam de código, pero la llamada desde el HAL propietario no está enlazada por este repositorio. El paquete de esta versión se usa para validar los artefactos y reproducir la captura acotada; no se afirma que active una corrección de deriva PAL/ASRC global.
-- **Aceptación:** la compilación, CTest, los APK/ZIP y el Release deben quedar verificados por el workflow del SHA de merge. La prueba en Moto G85 debe confirmar reproducción, que la captura acotada termina, que los contadores son monotónicos por stream y que el audio sigue estable. Un build verde no sustituye esta prueba.
-- **Puertas Python incorporadas en CI:** `test_ivanna_audio_certify.py`, `test_ivanna_synthetic_audio_suite.py` y `test_ivanna_auditory_gate.py`, además de pruebas nativas CTest, validación de datasets y construcción/verificación del APK y del módulo.
-- **Bluetooth / PAL / ASRC:** detectar o clasificar un códec no conecta por sí solo un actuador ASRC del fabricante. El control físico de PAL/AGM, la correlación de reloj y el comportamiento de cada receptor requieren evidencia de lectura de retorno y pruebas en el dispositivo.
-- **Evidencias que no deben mezclarse:** prueba unitaria, prueba sintética, build verde, artefacto verificado, Release publicado y prueba acústica física son estados diferentes. Un resultado sintético limpio no certifica el Moto G85, Bluetooth, USB-C DAC, SPL ni THD calibrada.
+- **WFS:** los controles X (ancho), Y (altura), Z (fondo) y giro horizontal se guardan y publican mediante el setter JNI existente hacia el renderer. El giro transforma las coordenadas relativas de los siete altavoces alrededor del eje vertical.
+- **Ruta USB-C/AUX/Bluetooth:** `IvannaBridgePlayer` solicita el dispositivo preferido detectado y ahora consulta `AudioTrack.routedDevice` durante la reproducción. La interfaz diferencia la ruta solicitada de la lectura real de Android.
+- **Límite del DAC:** la lectura de `AudioTrack` confirma solamente la ruta expuesta para la reproducción propia de IVANNA. No demuestra que el reloj físico del DAC esté controlado ni que el ASRC global HAL/PAL esté conectado.
+- **Uso sencillo:** la calibración explica cada eje y la orientación; el profiler ofrece recomendaciones prudentes para audífonos HRTF, estéreo AUX/USB-C, Bluetooth y receptores multicanal.
+- **Release:** el workflow `build.yml` debe completar CTest, APK, ZIP Magisk y validación de artefactos antes de considerar `v2.5.150` publicable. La versión del módulo, `version.properties` y `update.json` quedan alineadas.
+- **Prueba física pendiente:** conectar un DAC USB-C real, reproducir PCM, confirmar que `routedDevice` coincide con el dispositivo esperado, escuchar cambios sin clics y probar desconexión/reconexión. No se afirma mejora audible ni control de hardware sin esa evidencia.
 
-Para conocer el estado vivo, consulta [Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); no se fija un resultado de ejecución en este documento porque cambia con cada run.
+Para el estado vivo, consulta [Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases).
 
 ## En una mirada
 
