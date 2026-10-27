@@ -149,7 +149,12 @@ void setHapticsEnabled(bool on) noexcept {
     if (active()) chain()->setHapticsEnabled(on);
 }
 void setHapticScale(float s) noexcept              { if (!std::isfinite(s)) return; g_hapticScale.store(s, std::memory_order_relaxed); if (active()) chain()->setHapticScale(s); }
-void setOutputLatencyMs(float ms) noexcept         { if (active()) chain()->setOutputLatencyMs(ms); }
+void setOutputLatencyMs(float ms) noexcept {
+    if (!std::isfinite(ms)) return;
+    const float applied = ms < 0.0f ? 0.0f : ms;      // el motor no acepta negativos
+    appliedOutputLatencyMsRef().store(applied, std::memory_order_relaxed);
+    if (active()) chain()->setOutputLatencyMs(applied);
+}
 void setLeadMs(float ms) noexcept                  { if (!std::isfinite(ms)) return; g_leadMs.store(ms, std::memory_order_relaxed); if (active()) chain()->setLeadMs(ms); }
 void setDepth(float d) noexcept                    { if (!std::isfinite(d)) return; g_depth.store(d, std::memory_order_relaxed); if (active()) chain()->setDepth(d); }
 void setArcEnabled(bool on) noexcept {
@@ -282,9 +287,9 @@ void publishAnticipatedScene() noexcept {
 
 // ── Estado ───────────────────────────────────────────────────────────────────
 ivanna::ime::FourDStatus status() noexcept {
-    if (!active()) st.outputLatencyMs = m_outputLatencyMs;
-    return ivanna::ime::FourDStatus{};
-    return chain()->status();
+    ivanna::ime::FourDStatus st = active() ? chain()->status() : ivanna::ime::FourDStatus{};
+    st.outputLatencyMs = appliedOutputLatencyMsRef().load(std::memory_order_relaxed);
+    return st;
 }
 
 float arcImpact() noexcept {

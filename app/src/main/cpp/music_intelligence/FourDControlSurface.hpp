@@ -18,10 +18,21 @@
 // RT-safe en feed/apply: sin malloc (búferes fijos reutilizados), sin locks, sin excepciones.
 #pragma once
 
+#include <atomic>
+
 #include "FourDExcitationChain.hpp"
 #include <cstdint>
 
 namespace ivanna { namespace fourd {
+
+// Read-back de la latencia REALMENTE aplicada por el motor (tras su propio recorte).
+// La UI muestra status().outputLatencyMs, que sale de aqui: si el motor recorta el
+// valor pedido, el panel ensena el recorte y no el estado de Compose. Funcion inline
+// con local estatico => una unica instancia en todo el programa (C++17 [dcl.fct.spec]).
+inline std::atomic<float>& appliedOutputLatencyMsRef() noexcept {
+    static std::atomic<float> v{0.0f};
+    return v;
+}
 
 // Tamaño de bloque de análisis con el que se prepara la cadena (y chunk fijo de feed/apply).
 // El tiempo por bloque del conductor se deriva de él, así que init y feed deben coincidir.
