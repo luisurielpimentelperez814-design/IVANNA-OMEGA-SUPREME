@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ivanna-diagnostic-bridge
+    runtime: docker
+    dockerfilePath: ./diagnostic-bridge/Dockerfile
+    dockerContext: ./diagnostic-bridge
+    healthCheckPath: /healthz
+    envVars:
+      - key: IVANNA_DIAGNOSTIC_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: PORT
+        value: "8787"

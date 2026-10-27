@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.146
-versionCode=437
+version=v2.5.147
+versionCode=438
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.146: AdaptiveDecisionEngine Route A/Route B wiring audit; DSP behavior unchanged, hardware validation pending
+description=v2.5.147: live diagnostic bridge deployment wiring; telemetry opt-in; DSP behavior unchanged
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

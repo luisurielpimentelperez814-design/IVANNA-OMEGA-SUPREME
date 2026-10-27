@@ -294,7 +294,12 @@ fun SystemHubScreen(
                 onDismissRequest = { showDiagnosticDialog = false },
                 title = { Text("Conector de diagnóstico vivo") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 480.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Text("Solo envía métricas técnicas resumidas. No envía audio ni ejecuta reparaciones. Requiere un servidor HTTPS desplegado y token privado.")
                         OutlinedTextField(
                             value = diagnosticEndpoint,
