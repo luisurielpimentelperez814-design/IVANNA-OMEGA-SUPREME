@@ -17,8 +17,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.ivanna.omega.core.LiveDiagnosticConnector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -413,32 +415,83 @@ fun SystemHubScreen(
 
 @Composable
 private fun HubHeader(title: String, subtitle: String, accent: Color) {
-    Spacer(Modifier.height(4.dp))
-    Text(title,    color = accent,       style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    Text(subtitle, color = TextMuted,    style = MaterialTheme.typography.labelSmall)
-    Spacer(Modifier.height(4.dp))
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(7.dp).background(accent, androidx.compose.foundation.shape.CircleShape))
+            Text(
+                "IVANNA  /  OMEGA SYSTEMS",
+                color = TextMuted,
+                style = MaterialTheme.typography.labelSmall,
+                letterSpacing = 1.25.sp
+            )
+        }
+        Text(
+            title,
+            color = TextPrimary,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            subtitle,
+            color = TextSecondary,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Box(
+            Modifier.fillMaxWidth().height(1.dp).background(
+                Brush.horizontalGradient(listOf(accent.copy(alpha = 0.85f), accent.copy(alpha = 0.18f), Color.Transparent))
+            )
+        )
+    }
 }
 
 @Composable
 private fun HubCard(title: String, subtitle: String, accent: Color, onClick: () -> Unit) {
     Surface(
-        onClick  = onClick,
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        color    = ObsidianSoft,
-        shape    = MaterialTheme.shapes.medium,
-        border   = BorderStroke(1.dp, accent.copy(alpha = 0.30f))
+        color = ObsidianRaised,
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, GlassOutline.copy(alpha = 0.58f)),
+        shadowElevation = 2.dp
     ) {
         Row(
-            modifier  = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(13.dp)
         ) {
-            Box(Modifier.size(4.dp, 36.dp).background(accent, MaterialTheme.shapes.extraSmall))
-            Column(Modifier.weight(1f)) {
-                Text(title,    color = TextPrimary,   style = MaterialTheme.typography.labelLarge,  fontWeight = FontWeight.SemiBold)
-                Text(subtitle, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
+            Box(
+                modifier = Modifier.size(42.dp).background(
+                    Brush.linearGradient(listOf(accent.copy(alpha = 0.23f), accent.copy(alpha = 0.06f))),
+                    RoundedCornerShape(13.dp)
+                ).border(1.dp, accent.copy(alpha = 0.38f), RoundedCornerShape(13.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(Modifier.size(7.dp).background(accent, androidx.compose.foundation.shape.CircleShape))
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = accent.copy(alpha = 0.6f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    title,
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2
+                )
+                Text(
+                    subtitle,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Abrir $title",
+                tint = accent,
+                modifier = Modifier.size(23.dp)
+            )
         }
     }
 }
