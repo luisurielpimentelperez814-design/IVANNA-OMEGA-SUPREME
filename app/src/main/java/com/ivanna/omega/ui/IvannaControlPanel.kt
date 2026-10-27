@@ -1358,6 +1358,10 @@ fun IvannaControlPanel(
         SectionLabel("ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE", AuroraCyan)
         AcousticRealityReconstructionCard()
 
+        // Guía transversal: explica los controles de CONTROL, SOUND, BRAIN,
+        // ADAPTIVE, SPATIAL, PROFILER y las salidas físicas.
+        ControlHelpCatalogPanel()
+
         Spacer(Modifier.height(4.dp))
         Text(
             "IVANNA-OMEGA-SUPREME · GORE TNS / LUPP-OR9 © 2026",
