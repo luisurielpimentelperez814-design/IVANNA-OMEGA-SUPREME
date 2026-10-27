@@ -104,17 +104,25 @@ OmegaSharedState* omega_daemon_get_shared_state() {
     if (fd < 0) return nullptr;
 
     struct stat st{};
-    if (fstat(fd, &st) != 0 || st.st_size < static_cast<off_t>(ivanna::SHM_SIZE)) {
+    if (fstat(fd, &st) != 0) {
+        const int stat_errno = errno;
         __android_log_print(ANDROID_LOG_ERROR, LOG_TAG,
-                            "descriptor SHM invalido size=%lld esperado_min=%zu errno=%d",
-                            static_cast<long long>(st.st_size), ivanna::SHM_SIZE, errno);
+                            "fstat descriptor SHM fallo errno=%d (%s)",
+                            stat_errno, strerror(stat_errno));
+        close(fd);
+        return nullptr;
+    }
+    if (st.st_size < static_cast<off_t>(ivanna::SHM_SIZE)) {
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG,
+                            "descriptor SHM demasiado pequeno size=%lld esperado_min=%zu",
+                            static_cast<long long>(st.st_size), ivanna::SHM_SIZE);
         close(fd);
         return nullptr;
     }
 
     g_map_size = ivanna::SHM_SIZE;
     g_map = mmap(nullptr, g_map_size, PROT_READ, MAP_SHARED, fd, 0);
-    const int map_errno = errno;
+    const int map_errno = (g_map == MAP_FAILED) ? errno : 0;
     close(fd);
 
     if (g_map == MAP_FAILED) {
