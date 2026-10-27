@@ -40,7 +40,7 @@
 
 ## Sincronización del estado del código — 2026-10-27
 
-Esta revisión prepara `v2.5.150` (`versionCode=441`) con refinamiento de calibración WFS, un cuarto control de orientación del oyente, ayuda de uso en español y lectura de retorno de la ruta real del `AudioTrack` propio.
+Esta revisión prepara `v2.5.151` (`versionCode=442`) con refinamiento de calibración WFS, un cuarto control de orientación del oyente, ayuda de uso en español y lectura de retorno de la ruta real del `AudioTrack` propio.
 
 - **WFS:** los controles X (ancho), Y (altura), Z (fondo) y giro horizontal se guardan y publican mediante el setter JNI existente hacia el renderer. El giro transforma las coordenadas relativas de los siete altavoces alrededor del eje vertical.
 - **Ruta USB-C/AUX/Bluetooth:** `IvannaBridgePlayer` solicita el dispositivo preferido detectado y ahora consulta `AudioTrack.routedDevice` durante la reproducción. La interfaz diferencia la ruta solicitada de la lectura real de Android.
