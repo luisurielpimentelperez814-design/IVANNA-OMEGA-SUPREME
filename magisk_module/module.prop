@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.156
-versionCode=447
+version=v2.5.157
+versionCode=448
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.156: complete Spanish control guide, inline explanations, WFS geometry and USB-C route readback; physical DAC clock remains unclaimed
+description=v2.5.157: Kotlin restore and WFS linker fixes; per-control Spanish explanations across DSP, spatial, brain and sound panels
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
