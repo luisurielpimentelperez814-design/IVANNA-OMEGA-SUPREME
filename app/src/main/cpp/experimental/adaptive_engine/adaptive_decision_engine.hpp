@@ -72,7 +72,7 @@
 
 namespace ivanna::experimental {
 
-// ── Salida del motor — lo único que el audio thread consumiría ────────────
+// ── Salida del motor — snapshot POD consumido por las rutas integradas ────
 struct AdaptiveState {
     float target_gain       = 1.0f;  // multiplicador lineal de ganancia sugerido (1.0 = sin cambio)
     float compressor_amount = 0.0f;  // 0..1, cuanta compresión adicional sugerir encima de la actual
@@ -108,11 +108,10 @@ struct AdaptiveState {
     uint64_t timestamp      = 0;     // REALMENTE: seq de publicación (no ms de pared)
 };
 
-// ── Métricas crudas que el audio thread publicaría (cálculo trivial, ya
-// disponible en el hot-path existente — SafetyLimiter ya expone
-// getPeakBeforeLimit()/getGainReduction() como atomics; band_*_energy
-// serían sumas de energía ya computadas en algún punto del pipeline, no
-// un análisis nuevo dentro del callback) ───────────────────────────────────
+// ── Métricas crudas publicadas por los productores de cada ruta.
+// Mantener el productor RT en cálculo acotado: RMS/peak y bandas deben ser
+// medidas existentes o proxies explícitamente identificados, nunca FFT/I/O
+// añadidos al callback sin presupuesto temporal y pruebas. ─────────────────
 struct RawAudioMetrics {
     float rms               = 0.0f;  // RMS del bloque actual, lineal [0,~1.4]
     float peak              = 0.0f;  // peak absoluto del bloque, lineal [0,~1.4]
@@ -146,9 +145,9 @@ struct RawAudioMetrics {
     uint64_t seq             = 0;
 };
 
-// ── Bus SPSC seqlock — escritor: audio thread. Lector: hilo de control.
-// Idéntico en diseño a ControlFrameBus (control_frame.hpp) — ver ese
-// archivo para la explicación completa del algoritmo. ─────────────────────
+// ── Bus multi-fuente con slot seqlock por productor. Cada slot es SPSC
+// y el lector elige el snapshot de mayor secuencia global, evitando que
+// las rutas A/B compitan por el mismo slot. ────────────────────────────────
 // ── Bus MPSC — un slot dedicado por fuente productora, cada slot es SPSC
 // puro (un solo escritor conocido de antemano, no genérico/dinámico).
 //
