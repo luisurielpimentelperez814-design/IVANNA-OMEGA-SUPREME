@@ -97,6 +97,23 @@ El mapa muestra las relaciones generales del código. El bloque HAL/PAL represen
 
 Las funciones locales que no llaman a servicios externos deben poder operar sin una clave de Google. Una clave solo es necesaria para una función opcional si esa función utiliza un servicio externo que la requiere. Que exista un campo de configuración no demuestra que el servicio esté conectado o activo.
 
+## Guía rápida: qué salida usar
+
+- **Audífonos:** empieza con estéreo normal. Activa HRTF/binaural cuando quieras una escena espacial con contenido estéreo; la sensación depende de la anatomía y del ajuste personal. WFS está pensado para arreglos de altavoces compatibles, no para reemplazar HRTF en audífonos.
+- **Estéreo por AUX:** usa el modo estéreo y comienza con EQ neutra. Sube el volumen desde el equipo de reproducción y evita combinar varios realces de graves si oyes distorsión.
+- **DAC USB-C:** conecta el DAC antes de iniciar la reproducción de IVANNA. El Profiler muestra el dispositivo solicitado y la lectura de `AudioTrack.routedDevice` cuando Android la expone. Si no coincide, desconecta y vuelve a conectar el DAC y comprueba la salida del sistema. Esa lectura confirma la ruta de la app, no el reloj físico del DAC.
+- **Bluetooth:** el códec y la latencia los negocian Android y el receptor. Para música, prioriza estabilidad; para juegos o vídeo, prueba el modo de baja latencia que realmente soporte tu dispositivo.
+- **Receptor 5.1/7.1:** confirma que la conexión transporta el número de canales esperado. Una salida USB-C estéreo o un cable AUX estéreo no se convierte automáticamente en multicanal por seleccionar un preset.
+
+## Calibración WFS: cuatro controles
+
+1. **X — ancho:** mueve el punto de escucha a izquierda/derecha.
+2. **Y — altura:** ajusta la altura aproximada de los oídos respecto al suelo.
+3. **Z — fondo:** indica la distancia desde el frente de la sala.
+4. **Orientación — giro horizontal:** rota el marco de referencia del oyente; 0° conserva el frente original.
+
+El preset 7ch reenvía la distribución virtual de siete altavoces; Centrar recupera una posición de referencia. El mensaje de envío no sustituye una escucha controlada ni una medición con micrófono/equipo adecuados.
+
 ## ¿Cómo sé si una versión está lista?
 
 Consulta [GitHub Actions](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) y las [versiones publicadas](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases). Antes de instalar, comprueba:
