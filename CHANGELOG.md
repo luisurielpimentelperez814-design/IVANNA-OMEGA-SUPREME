@@ -1,3 +1,14 @@
+# CHANGELOG — v2.5.164 (455) — IVANNA Genezi Spatial beta
+
+## Audio DSP
+- Añade un perfil AUX Genezi Spatial conservador: anchura solicitada 1.08×, sin realce de graves ni diálogo, aprovechando el StereoWidener nativo existente con transición suavizada y protección de Side en graves.
+- Añade prueba Kotlin del perfil AUX específico.
+- Documenta el modelo Mid/Side, sus límites y el protocolo de validación en `docs/IVANNA_GENEZI_SPATIAL_MODEL.md`.
+- Beta de procesamiento estéreo para el upmix del Sony; no produce cinco canales discretos y no declara calibración acústica sin mediciones.
+
+## Validación y publicación
+- La versión se considera publicada únicamente cuando CI pasa y los artefactos APK y ZIP Magisk de v2.5.164 están presentes y verificados.
+
 # CHANGELOG — v2.5.163 (454) — Sony Genezi MHC-PZ1D AUX reference profile
 
 ## Audio route / acoustic model
