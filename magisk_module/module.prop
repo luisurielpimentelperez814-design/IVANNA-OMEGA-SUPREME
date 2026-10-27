@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.149
-versionCode=440
+version=v2.5.150
+versionCode=441
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.149: dual-route audio test release; hardware HAL/PAL callbacks remain unbound; correction fail-closed
+description=v2.5.150: WFS yaw calibration, Spanish control guidance, USB-C AudioTrack route readback; physical DAC clock remains unclaimed
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
