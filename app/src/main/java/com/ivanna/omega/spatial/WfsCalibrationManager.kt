@@ -48,21 +48,25 @@ object WfsCalibrationManager {
             return false
         }
         return runCatching {
-            // Rotate the listener reference frame around vertical Y before publishing the seven-speaker layout.
+            // JNI/C++ expects room-frame speaker coordinates and subtracts its fixed default listener
+            // (1.75, 1.20, 3.50 m). Convert the user-relative geometry back into that frame here;
+            // otherwise passing relative coordinates would subtract the default listener twice.
             val radians = Math.toRadians(listenerYawDegrees.toDouble())
             val cosYaw = kotlin.math.cos(radians).toFloat()
             val sinYaw = kotlin.math.sin(radians).toFloat()
-            val relativeX = FloatArray(DEFAULT_X.size)
-            val relativeY = FloatArray(DEFAULT_Y.size)
-            val relativeZ = FloatArray(DEFAULT_Z.size)
+            val nativeX = FloatArray(DEFAULT_X.size)
+            val nativeY = FloatArray(DEFAULT_Y.size)
+            val nativeZ = FloatArray(DEFAULT_Z.size)
             for (i in DEFAULT_X.indices) {
                 val dx = DEFAULT_X[i] - listenerX
                 val dz = DEFAULT_Z[i] - listenerZ
-                relativeX[i] = dx * cosYaw + dz * sinYaw
-                relativeY[i] = DEFAULT_Y[i] - listenerY
-                relativeZ[i] = -dx * sinYaw + dz * cosYaw
+                val rotatedX = dx * cosYaw + dz * sinYaw
+                val rotatedZ = -dx * sinYaw + dz * cosYaw
+                nativeX[i] = 1.75f + rotatedX
+                nativeY[i] = 1.20f + DEFAULT_Y[i] - listenerY
+                nativeZ[i] = 3.50f + rotatedZ
             }
-            IvannaNativeLib.nativeSetWfsSpeakerLayout(relativeX, relativeY, relativeZ)
+            IvannaNativeLib.nativeSetWfsSpeakerLayout(nativeX, nativeY, nativeZ)
             true
         }.getOrElse {
             Log.w(TAG, "No se pudo enviar layout WFS", it)
