@@ -36,7 +36,7 @@ if (!mod) {
         } catch (e) {}
         let deltaFrames = 'n/a', deltaMs = 'n/a';
         const prev = previous[stream];
-        if (prev && /^\\d+$/.test(frames) && /^\\d+$/.test(prev.frames)) {
+        if (prev && /^\d+$/.test(frames) && /^\d+$/.test(prev.frames)) {
           try {
             deltaFrames = (BigInt(frames) - BigInt(prev.frames)).toString();
             deltaMs = (this.wallMs - prev.wallMs).toFixed(3);
