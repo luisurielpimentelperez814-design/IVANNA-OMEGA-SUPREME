@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.166
-versionCode=457
+version=v2.5.167
+versionCode=458
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.166: Genezi Spatial profile and resilient Android SDK provisioning
+description=v2.5.167: SOFA HDF5 integrity gate and verified build pipeline
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
