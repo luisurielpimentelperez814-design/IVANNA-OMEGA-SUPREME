@@ -452,6 +452,8 @@ internal fun AuroraSlider(
                 modifier = Modifier.fillMaxWidth()
             )
         }
+        // Toda barra compartida muestra una explicación específica del control, no solo el valor.
+        ControlHelpText(label)
     }
 }
 
