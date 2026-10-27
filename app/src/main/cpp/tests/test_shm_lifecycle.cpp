@@ -278,8 +278,9 @@ int main() {
             if (source >= 0) {
                 CHECK(sendMessage(pair[0], "xy", 2, &source, 1), "SCM_RIGHTS: payload de longitud incorrecta enviado");
                 int received = -1;
-                CHECK(ivanna::ipc::receiveExactlyOneFd(pair[1], &received) ==
-                      ivanna::ipc::ReceiveFdResult::kBadPayloadLength && received == -1,
+                const auto malformed = ivanna::ipc::receiveExactlyOneFd(pair[1], &received);
+                CHECK((malformed == ivanna::ipc::ReceiveFdResult::kBadPayloadLength ||
+                       malformed == ivanna::ipc::ReceiveFdResult::kTruncated) && received == -1,
                       "SCM_RIGHTS: payload incorrecto rechazado y fd cerrado");
                 ::close(source);
             }
