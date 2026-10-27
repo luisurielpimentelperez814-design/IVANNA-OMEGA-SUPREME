@@ -22,7 +22,7 @@ def validate_file(path: Path) -> list[str]:
             if convention is not None:
                 if isinstance(convention, bytes):
                     convention = convention.decode("utf-8", "replace")
-                if "SOFA" not in str(convention).upper():
+                if str(convention).upper().split(",")[0].strip() != "SOFA":
                     errors.append(f"unexpected convention attribute: {convention!r}")
 
             datasets = []
