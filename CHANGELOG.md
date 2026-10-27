@@ -1,3 +1,16 @@
+# CHANGELOG — v2.5.162 (453) — Refinamiento integral Aurora Obsidiana
+
+## UI / UX
+- Refina la paleta OLED con superficies ObsidianRaised/Inset y contornos de cristal más legibles.
+- Mejora jerarquía tipográfica y reduce el tracking de títulos para evitar recortes en pantallas móviles.
+- Rediseña la navegación inferior como dock flotante con superficie de cristal y selección más clara.
+- Unifica cabeceras y tarjetas de los hubs SPATIAL/SYSTEM y pule GlassCard, toggles y etiquetas de estado compartidas.
+- Documenta los principios visuales, accesibilidad, estados reales y gates de validación en docs/REFINAMIENTO_UI_AURORA_OBSIDIANA.md.
+- No modifica deliberadamente los callbacks, valores DSP ni la ruta de audio.
+
+## Validación y publicación
+- La publicación solo se considera completa cuando CI compila Kotlin/Compose, las pruebas pasan y los artefactos APK y ZIP Magisk quedan verificados para este tag.
+
 # CHANGELOG — v2.5.161 (452) — ARCore room calibration routed to live audio output
 
 ## AR / audio route integration
