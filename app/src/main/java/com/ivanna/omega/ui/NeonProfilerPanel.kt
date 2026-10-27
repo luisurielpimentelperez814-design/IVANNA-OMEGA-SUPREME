@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.AudioClockTelemetry
 import com.ivanna.omega.audio.AudioEngine
+import com.ivanna.omega.audio.AudioTrackRouteReadback
 import com.ivanna.omega.audio.AsrcSoftwareState
 import com.ivanna.omega.audio.AsrcSoftwareTelemetry
 import com.ivanna.omega.audio.OmegaMetrics
@@ -45,6 +46,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
     var javaHeap    by remember { mutableLongStateOf(0L) }
     var effectClockTelemetry by remember { mutableStateOf(AudioClockTelemetry()) }
     var asrcTelemetry by remember { mutableStateOf(AsrcSoftwareTelemetry()) }
+    var routeSnapshot by remember { mutableStateOf(AudioTrackRouteReadback.current()) }
 
     // Todo lo de abajo es medición real: nada de cifras fijas ni modelos estimados.
     val cpuFeatures = remember { readCpuFeatures() }
@@ -68,6 +70,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             asrcTelemetry = withContext(Dispatchers.IO) {
                 AudioEngine.getAsrcStateStatic()
             }
+            routeSnapshot = AudioTrackRouteReadback.current()
             val cpu = android.os.Process.getElapsedCpuTime()
             val wall = android.os.SystemClock.elapsedRealtime()
             val dw = wall - lastWall
@@ -153,6 +156,21 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             }
         }
 
+        GlassCard(
+            "SALIDA REAL · USB-C DAC / AUX / BLUETOOTH", AuroraCyan,
+            "Lectura del AudioTrack que reproduce IVANNA; no demuestra control del reloj físico del DAC ni del audio de otras aplicaciones"
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiveRow("Estado de ruta", routeSnapshot.status)
+                LiveRow("Dispositivo solicitado", routeSnapshot.requestedDevice)
+                LiveRow("Dispositivo enroutado", routeSnapshot.actualDevice)
+                LiveRow("Tasa del AudioTrack", if (routeSnapshot.sampleRateHz > 0) "${routeSnapshot.sampleRateHz} Hz" else "—")
+                Text(
+                    "Audífonos: prueba HRTF/binaural con volumen moderado. Estéreo por AUX o DAC USB-C: empieza con EQ neutra y evita realce de graves excesivo. Bluetooth: la ruta y el códec dependen de Android y del receptor. Sistemas 5.1/7.1: confirma que el receptor acepta esos canales; esta lectura solo confirma la salida de la reproducción propia de IVANNA.",
+                    color = TextSecondary, fontSize = 10.sp
+                )
+            }
+        }
         GlassCard(
             "BEACON DEL EFECTO GLOBAL", AuroraCyan,
             "Callback = cadencia software; hardware = válido solo con productor PCM correlacionado"
