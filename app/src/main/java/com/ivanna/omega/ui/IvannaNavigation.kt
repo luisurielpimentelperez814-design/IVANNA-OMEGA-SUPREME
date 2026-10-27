@@ -3,6 +3,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -69,27 +70,51 @@ fun MainScaffold(
     Scaffold(
         containerColor = ObsidianVoid,
         bottomBar = {
-            NavigationBar(containerColor = ObsidianSoft, tonalElevation = 0.dp) {
-                TABS.forEach { tab ->
-                    NavigationBarItem(
-                        selected = current == tab.route,
-                        onClick  = {
-                            tabNav.navigate(tab.route) {
-                                popUpTo(tabNav.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState    = true
-                            }
-                        },
-                        icon   = { Icon(tab.icon, contentDescription = tab.label) },
-                        label  = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor   = AuroraCyan,
-                            selectedTextColor   = AuroraCyan,
-                            indicatorColor      = AuroraCyan.copy(alpha = 0.12f),
-                            unselectedIconColor = TextMuted,
-                            unselectedTextColor = TextMuted
+            // Dock flotante de cristal: separa la navegación del contenido,
+            // conserva contraste OLED y evita la banda plana típica de Material.
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 7.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(23.dp),
+                color = ObsidianSoft.copy(alpha = 0.98f),
+                border = BorderStroke(1.dp, GlassOutline.copy(alpha = 0.55f)),
+                shadowElevation = 12.dp
+            ) {
+                NavigationBar(
+                    modifier = Modifier.fillMaxWidth(),
+                    containerColor = Color.Transparent,
+                    tonalElevation = 0.dp,
+                    windowInsets = WindowInsets(0.dp)
+                ) {
+                    TABS.forEach { tab ->
+                        val selected = current == tab.route
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                if (current != tab.route) {
+                                    tabNav.navigate(tab.route) {
+                                        popUpTo(tabNav.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
+                            icon = {
+                                Icon(
+                                    tab.icon,
+                                    contentDescription = tab.label,
+                                    modifier = Modifier.size(if (selected) 23.dp else 21.dp)
+                                )
+                            },
+                            label = { Text(tab.label, style = MaterialTheme.typography.labelSmall, maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = AuroraIce,
+                                selectedTextColor = AuroraCyan,
+                                indicatorColor = AuroraCyan.copy(alpha = 0.16f),
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
