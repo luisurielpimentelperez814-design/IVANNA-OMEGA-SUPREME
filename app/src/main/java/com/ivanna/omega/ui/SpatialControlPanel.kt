@@ -428,6 +428,7 @@ private fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit
         Text(label, color = TextSecondary, fontSize = 11.sp)
         Switch(checked = value, onCheckedChange = onChange)
     }
+    ControlHelpText(label)
 }
 
 @Composable
@@ -440,5 +441,6 @@ private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRan
                 fontFamily = FontFamily.Monospace)
         }
         Slider(value = value, onValueChange = onChange, valueRange = range)
+        ControlHelpText(label)
     }
 }
