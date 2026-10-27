@@ -1,3 +1,11 @@
+# CHANGELOG — v2.5.160 (451) — Publicación de artefactos
+
+## Lanzamiento
+- Versión coordinada para disparar el flujo automático de publicación con CI verde.
+- El flujo debe validar APK, daemon AArch64/PIE, ZIP Magisk, hashes y paquete descargado antes de publicar.
+- El módulo updater apunta al asset canónico `ivanna_omega_supreme_v2.5.160.zip`.
+- Incluye las correcciones Kotlin/WFS y las explicaciones contextuales de controles en español.
+
 # CHANGELOG — v2.5.159 (450) — Release de artefactos verificados
 
 ## Lanzamiento
