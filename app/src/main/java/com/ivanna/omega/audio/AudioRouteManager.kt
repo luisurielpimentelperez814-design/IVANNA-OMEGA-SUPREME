@@ -312,6 +312,11 @@ object AudioRouteManager {
         // ANTES del primer bloque de audio (y en cada cambio de salida física).
         appContextRef?.let { ctx ->
             runCatching { RouteDspCalibrator.onRouteChanged(ctx, route) }
+            // Re-apply an explicitly locked AR room prior after route-specific DSP
+            // selection, so Bluetooth/AUX/USB-C/speaker all use the same live route.
+            runCatching {
+                com.ivanna.omega.fotoholo.RoomAcousticRouteBridge.applySaved(ctx, route)
+            }.onFailure { Log.w(TAG, "AR room calibration route apply failed: ${it.message}") }
         }
 
         // FIX DAC USB-C: al conectar un DAC USB-C, el historial de convolución
