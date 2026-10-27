@@ -235,15 +235,14 @@ add_library(ivanna_omega SHARED
     # (lado Kotlin, no .cpp aquí)
 
     # ============================================================================
-    # Fase 4B: AdaptiveDecisionEngine (capa de control lento, experimental)
-    # COMPILA en el .so real (está en este target), pero NADIE lo consume aún:
-    # ningún archivo llama a RawMetricsBus::publish() ni a
-    # AdaptiveStateBus::consumeIfNewer() fuera de experimental/ (verificado
-    # por grep 2026-09-10). El comentario anterior decía que
-    # DSPBridge.nativeProcess() publicaba métricas y consumía AdaptiveState —
-    # era la INTENCIÓN de Fase 4, nunca se cableó. Cablearlo requiere decidir
-    # dónde se calculan RawAudioMetrics en el hot-path (no existe hoy) y es
-    # una fase separada que requiere OK del dueño del flanco DSP cadena.
+    # AdaptiveDecisionEngine — motor adaptativo de control lento (experimental).
+    # Wiring vigente: Ruta A (JNI/player) publica RawAudioMetrics y consume
+    # AdaptiveStateBus; Ruta B (omega_effect/audioserver) publica métricas y
+    # consume decisiones en su integración de efecto. El .cpp se compila por
+    # separado en ambos SHARED targets porque app y audioserver son procesos
+    # distintos y no comparten instancias ni memoria estática.
+    # La integración de código no sustituye pruebas de estabilidad, medición RT
+    # ni validación acústica en dispositivo.
     # ============================================================================
     experimental/adaptive_engine/adaptive_decision_engine.cpp
 
