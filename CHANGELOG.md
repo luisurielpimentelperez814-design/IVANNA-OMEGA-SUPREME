@@ -1,3 +1,18 @@
+# CHANGELOG — v2.5.158 (449) — Build reparado y guía contextual por control
+
+## Correcciones
+- Corrige la referencia Kotlin no resuelta `paramStore` en la restauración de latencia 4D: se usa la instancia `ps` creada en el mismo ámbito.
+- Define `g_wfs_applied_spread` en el target de `libomega_effect.so` para que el enlazador resuelva el read-back WFS en el proceso de AudioFlinger.
+- Mantiene activos los gates de compilación, CTest, validación de APK y ZIP, y comprobación de integridad. El lanzamiento no se declara exitoso hasta que CI finalice en verde.
+
+## Explicaciones para el usuario
+- Cada `AuroraSlider` muestra una descripción contextual bajo el control, con propósito y recomendación específica para EQ, dinámica, TinyML, WFS, HOA, AUX, NHO/NPE, HRTF, geometría, laboratorio evolutivo y ajustes avanzados.
+- SOUND, BRAIN y SPATIAL muestran explicaciones debajo de sus controles principales.
+- La guía en español incluye los controles de los paneles principales y avanzados, y recomendaciones para audífonos cableados, Bluetooth, estéreo AUX, DAC USB-C y multicanal.
+- La documentación distingue explícitamente una ruta solicitada de una ruta realmente confirmada y no atribuye a la app control del reloj físico del DAC sin evidencia.
+
+Documentación: `docs/GUIA_CONTROLES_COMPLETA_ES.md`.
+
 # CHANGELOG — v2.5.157 (448) — Corrección de build y ayuda contextual de controles
 
 ## Correcciones de compilación
