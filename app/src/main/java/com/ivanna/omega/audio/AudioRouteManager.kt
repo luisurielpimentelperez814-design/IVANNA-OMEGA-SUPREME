@@ -151,9 +151,16 @@ object AudioRouteManager {
         // recodificar; se compensa diálogo y se reduce ancho.
         // Public profile query must stay non-blocking; async lookup refines this fallback.
         OutputRoute.BLUETOOTH -> BluetoothRouteProfilePolicy.fallback()
-        // AUX cableado y USB-C DAC: mismo path unificado de línea/audífonos
-        // con respuesta limpia y compensación coherente.
-        OutputRoute.WIRED_AUX,
+        // AUX para amplificadores con upmix propio (p. ej. Genezy MHCPZ1):
+        // conservar L/R y polaridad, no inyectar anchura ni realce de graves
+        // antes de que el equipo genere sus satélites y subwoofer. El modo
+        // Stereo/Surround y el botón físico del sub siguen siendo del amplificador.
+        OutputRoute.WIRED_AUX -> RouteProfile(
+            bassBoostDb = 0f,
+            dialogBoostDb = 0f,
+            widenerMult = 1.0f
+        )
+        // USB-C DAC: ruta de línea limpia, sin boost de graves.
         OutputRoute.USB -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 1.0f)
         // Altavoz integrado: no forzar graves (evita excursion/limitacion en
         // transductores pequeños); realce moderado de presencia y anchura
