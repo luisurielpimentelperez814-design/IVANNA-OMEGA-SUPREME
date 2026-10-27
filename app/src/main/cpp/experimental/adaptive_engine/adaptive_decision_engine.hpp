@@ -427,7 +427,7 @@ public:
     // audio thread real) no existe todavía porque RawAudioMetrics no se
     // calcula en ningún lado del hot-path actual (ver README.md, punto 1
     // de Fase 4). Queda lista y testeada para cuando ese wiring se decida.
-    static float gainReductionLinearToDb(float reductionLinear, float ceiling = 0.989f) noexcept;
+    static float gainReductionLinearToDb(float peakExcessLinear, float ceiling = 0.98855f) noexcept;
 
     // Combina las funciones puras en un AdaptiveState completo.
     // Soporta evaluación con o sin fatiga acumulada (default 0.0f para compatibilidad total).

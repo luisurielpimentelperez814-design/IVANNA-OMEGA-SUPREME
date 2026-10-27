@@ -245,11 +245,17 @@ void SafetyLimiter::process(float* L, float* R, int frames) {
     if (clips > 0) m_clipCount.fetch_add(clips, std::memory_order_relaxed);
     m_peakBefore.store(peak, std::memory_order_relaxed);
 
-    // Reduccion en dB (convencion de AdaptiveDecisionEngine::computeTargetGain).
+    // Telemetría de atenuación objetivo en dB, basada en la ganancia que
+    // realmente calcula el limiter. El cálculo anterior solo reportaba GR
+    // cuando peak > ceiling; entre threshold (-4 dBFS) y ceiling (-0.1 dBFS)
+    // el limiter ya atenuaba, pero publicaba 0 dB y cegaba al controlador
+    // adaptativo. blockGain está acotada a (0,1], así que esta conversión es
+    // finita y no confunde "pico sobre ceiling" con "ganancia aplicada".
     float reduction_db = 0.0f;
-    if (peak > ceil_ && peak > 1e-9f && ceil_ > 1e-9f)
-        reduction_db = 20.0f * std::log10(peak / ceil_);
-    if (reduction_db < 0.0f) reduction_db = 0.0f;
+    if (blockGain > 1e-9f && blockGain < 1.0f)
+        reduction_db = -20.0f * std::log10(blockGain);
+    if (!std::isfinite(reduction_db) || reduction_db < 0.0f)
+        reduction_db = 0.0f;
     m_gainReduction.store(reduction_db, std::memory_order_relaxed);
 }
 

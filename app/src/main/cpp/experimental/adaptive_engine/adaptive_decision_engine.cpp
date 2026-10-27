@@ -16,12 +16,10 @@ namespace ivanna::experimental {
 namespace {
 constexpr float kEps = 1e-8f;
 
-// SafetyLimiter (app/src/main/cpp/include/SafetyLimiter.h) usa
-// threshold=0.98855f y ceiling=0.989f por defecto. Se definen aquí como
-// constantes locales para calcular proximidad de headroom en dB y convertir
-// reducción lineal a dB en gainReductionLinearToDb() sin acoplar el header.
-constexpr float kLimiterThreshold = 0.98855f;
-constexpr float kLimiterCeiling = 0.989f;
+// SafetyLimiter defaults (include/SafetyLimiter.h): threshold=-4 dBFS
+// (0.63096), ceiling=-0.1 dBFS (0.98855). Safety margin is measured against
+// the output ceiling; limiter attenuation telemetry arrives in dB separately.
+constexpr float kLimiterCeiling = 0.98855f;
 
 inline float clamp01(float x) noexcept {
     if (!std::isfinite(x)) return 0.0f;   // NaN/Inf nunca sale de esta función
@@ -93,7 +91,7 @@ float AdaptiveDecisionEngine::computeSafetyMargin(const RawAudioMetrics& m) noex
     if (peak < kEps) {
         proximityDb = 1.0f;  // silencio total = margen máximo, evita log(0)
     } else {
-        const float headroomDb = 20.0f * std::log10(kLimiterThreshold / std::max(peak, kEps));
+        const float headroomDb = 20.0f * std::log10(kLimiterCeiling / std::max(peak, kEps));
         // 12dB de headroom o más → margen 1.0 (máximo). 0dB (peak ya en
         // el threshold) → margen 0.0. Rango lineal entre ambos extremos.
         proximityDb = clamp01(headroomDb / 12.0f);
@@ -106,8 +104,8 @@ float AdaptiveDecisionEngine::computeSafetyMargin(const RawAudioMetrics& m) noex
     return std::min(proximityDb, reductionPenalty);
 }
 
-float AdaptiveDecisionEngine::gainReductionLinearToDb(float reductionLinear, float ceiling) noexcept {
-    const float rl = std::max(0.0f, reductionLinear);
+float AdaptiveDecisionEngine::gainReductionLinearToDb(float peakExcessLinear, float ceiling) noexcept {
+    const float rl = std::max(0.0f, peakExcessLinear);
     if (rl < kEps) return 0.0f;
     if (!std::isfinite(ceiling) || ceiling < kEps) return 0.0f;  // fallback seguro
     // peak = reductionLinear + ceiling (ver derivación en el .hpp — se

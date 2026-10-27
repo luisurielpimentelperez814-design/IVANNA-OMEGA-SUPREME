@@ -36,6 +36,21 @@ TEST(SafetyLimiterRegression, ClipCountNotDoubled) {
     EXPECT_EQ(clips, 1) << "Cada sample clipeado debe contar exactamente 1 vez (no 2)";
 }
 
+// Regression: el limiter debe reportar reducción aunque el pico siga
+// por debajo del ceiling, siempre que haya cruzado el threshold.
+TEST(SafetyLimiterRegression, ReportsReductionBetweenThresholdAndCeiling) {
+    ivanna::SafetyLimiter limiter;
+    limiter.setParams(); // threshold=0.63096, ceiling=0.98855
+    limiter.reset();
+    const int N = 512;
+    std::vector<float> L(N, 0.70f), R(N, 0.70f);
+    limiter.process(L.data(), R.data(), N);
+    EXPECT_GT(limiter.getGainReduction(), 0.1f)
+        << "Pico 0.70 supera threshold y exige atenuación; GR no debe quedarse en cero";
+    EXPECT_LT(limiter.getGainReduction(), 3.0f)
+        << "La reducción objetivo debe permanecer finita y en un rango físico plausible";
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Parche 6B: gainReduction debe estar en dB, no en amplitud lineal
 // ────────────────────────────────────────────────────────────────────────────

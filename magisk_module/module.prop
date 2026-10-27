@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.168
-versionCode=459
+version=v2.5.169
+versionCode=460
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.168: adaptive engine wiring audit and release documentation reconciliation
+description=v2.5.169: limiter attenuation telemetry correction and regression gate
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

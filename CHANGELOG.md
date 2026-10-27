@@ -1,3 +1,10 @@
+## v2.5.169 — Limiter telemetry correctness
+
+- Fixes a control-loop blind spot: SafetyLimiter previously reported 0 dB reduction for peaks above its threshold but below its ceiling, despite applying attenuation. Telemetry now derives target gain reduction from the limiter's bounded block gain.
+- Adds a regression test for the threshold-to-ceiling region.
+- Aligns AdaptiveDecisionEngine's headroom reference and conversion default with the actual SafetyLimiter ceiling (0.98855).
+- Version metadata: v2.5.169 / versionCode 460.
+
 ## v2.5.168 — Adaptive engine audit and coordination-state repair
 
 - Reconciles the agent coordination ledger with current code: `AdaptiveDecisionEngine` is wired in Ruta A (JNI) and Ruta B (`omega_effect`); the old “not consumed / tests empty” statements are explicitly marked historical.
