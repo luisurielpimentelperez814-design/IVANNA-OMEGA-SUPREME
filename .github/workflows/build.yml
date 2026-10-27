@@ -36,6 +36,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
+      - name: Install HDF5 validator
+        run: python3 -m pip install --disable-pip-version-check h5py numpy
+      - name: Validate every SOFA with a real HDF5 reader
+        run: python3 scripts/validate_sofa_hdf5.py .
+      - name: SOFA validator regression tests
+        run: python3 -m unittest discover -s tests -p 'test_validate_sofa_hdf5.py' -v
       - name: SAFMUS transversal wiring contract
         run: python3 scripts/check_safmus_transversal_wiring.py
       - name: Adversarial audio measurement regression suite
