@@ -1,3 +1,12 @@
+# CHANGELOG — v2.5.146 (437) — AdaptiveDecisionEngine wiring audit
+
+## Cambios
+- Alinea la documentación con los puntos de integración ya presentes de `AdaptiveDecisionEngine`: publicación de métricas y consumo de snapshots en las rutas A (JNI/player) y B (`omega_effect`).
+- Aclara que el motor continúa siendo experimental hasta validar aplicación campo por campo, arbitraje con `AdaptiveEngineV2`, jitter de tiempo real y comportamiento acústico en dispositivo.
+- No introduce cambios en el DSP ni afirma mejora sonora, corrección ASRC o certificación acústica. El build y los artefactos de esta versión deben superar CI antes de publicarse.
+
+---
+
 # CHANGELOG — v2.5.145 (436) — HAL presentation-clock telemetry acceptance
 
 ## Cambios
