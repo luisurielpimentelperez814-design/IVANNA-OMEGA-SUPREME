@@ -28,6 +28,7 @@
 // file en /tmp.
 
 #include "daemon/core/shm_manager.h"
+#include "include/omega_control_bus.h"
 
 #include <cstdio>
 #include <cstring>
@@ -38,6 +39,7 @@
                        // como el struct y la compilacion falla (error real
                        // detectado por g++ tras el push e3767a9d)
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <fcntl.h>
 
 using namespace ivanna;
@@ -219,6 +221,100 @@ int main() {
         setField(offsetof(ShmHeader, state_size), (uint32_t)sizeof(OmegaSharedState) - 4u);
         CHECK(!validateShmHeader(bad, sizeof(bad)),
               "validate: state_size divergente rechazado");
+    }
+
+    // ── 9. SCM_RIGHTS receiver contract: real Unix socketpair, host reproducible ──
+    {
+        auto sendMessage = [](int socketFd, const char* payload, size_t length,
+                              const int* fds, size_t fdCount) {
+            iovec io{const_cast<char*>(payload), length};
+            alignas(cmsghdr) unsigned char control[CMSG_SPACE(sizeof(int) * 32)]{};
+            msghdr msg{};
+            msg.msg_iov = &io;
+            msg.msg_iovlen = 1;
+            if (fdCount) {
+                msg.msg_control = control;
+                msg.msg_controllen = CMSG_SPACE(sizeof(int) * fdCount);
+                cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+                cmsg->cmsg_level = SOL_SOCKET;
+                cmsg->cmsg_type = SCM_RIGHTS;
+                cmsg->cmsg_len = CMSG_LEN(sizeof(int) * fdCount);
+                std::memcpy(CMSG_DATA(cmsg), fds, sizeof(int) * fdCount);
+            }
+            return ::sendmsg(socketFd, &msg, 0) == static_cast<ssize_t>(length);
+        };
+        auto makePair = [](int pair[2]) { return ::socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0; };
+        int pair[2] = {-1, -1};
+        CHECK(makePair(pair), "SCM_RIGHTS: socketpair de prueba creado");
+        if (pair[0] >= 0 && pair[1] >= 0) {
+            int source = ::open("/dev/null", O_RDONLY);
+            CHECK(source >= 0, "SCM_RIGHTS: descriptor fuente disponible");
+            if (source >= 0) {
+                CHECK(sendMessage(pair[0], "x", 1, &source, 1), "SCM_RIGHTS: productor envía un byte y un fd");
+                int received = -1, receiveError = 0;
+                const auto ok = ivanna::ipc::receiveExactlyOneFd(pair[1], &received, &receiveError);
+                CHECK(ok == ivanna::ipc::ReceiveFdResult::kOk && received >= 0 && receiveError == 0,
+                      "SCM_RIGHTS: acepta exactamente un descriptor sin errno obsoleto");
+                if (received >= 0) ::close(received);
+                ::close(source);
+            }
+            ::close(pair[0]); ::close(pair[1]);
+        }
+
+        CHECK(makePair(pair), "SCM_RIGHTS: segundo socketpair creado");
+        if (pair[0] >= 0 && pair[1] >= 0) {
+            CHECK(sendMessage(pair[0], "x", 1, nullptr, 0), "SCM_RIGHTS: mensaje sin descriptor enviado");
+            int received = -1;
+            CHECK(ivanna::ipc::receiveExactlyOneFd(pair[1], &received) ==
+                  ivanna::ipc::ReceiveFdResult::kMissingRights && received == -1,
+                  "SCM_RIGHTS: ausencia de descriptor identificada");
+            ::close(pair[0]); ::close(pair[1]);
+        }
+
+        CHECK(makePair(pair), "SCM_RIGHTS: tercer socketpair creado");
+        if (pair[0] >= 0 && pair[1] >= 0) {
+            int source = ::open("/dev/null", O_RDONLY);
+            if (source >= 0) {
+                CHECK(sendMessage(pair[0], "xy", 2, &source, 1), "SCM_RIGHTS: payload de longitud incorrecta enviado");
+                int received = -1;
+                CHECK(ivanna::ipc::receiveExactlyOneFd(pair[1], &received) ==
+                      ivanna::ipc::ReceiveFdResult::kBadPayloadLength && received == -1,
+                      "SCM_RIGHTS: payload incorrecto rechazado y fd cerrado");
+                ::close(source);
+            }
+            ::close(pair[0]); ::close(pair[1]);
+        }
+
+        CHECK(makePair(pair), "SCM_RIGHTS: cuarto socketpair creado");
+        if (pair[0] >= 0 && pair[1] >= 0) {
+            int source = ::open("/dev/null", O_RDONLY);
+            if (source >= 0) {
+                int fds[2] = {source, source};
+                CHECK(sendMessage(pair[0], "x", 1, fds, 2), "SCM_RIGHTS: mensaje con fd extra enviado");
+                int received = -1;
+                CHECK(ivanna::ipc::receiveExactlyOneFd(pair[1], &received) ==
+                      ivanna::ipc::ReceiveFdResult::kWrongDescriptorCount && received == -1,
+                      "SCM_RIGHTS: descriptor extra rechazado y ambos fd recibidos cerrados");
+                ::close(source);
+            }
+            ::close(pair[0]); ::close(pair[1]);
+        }
+
+        CHECK(makePair(pair), "SCM_RIGHTS: quinto socketpair creado");
+        if (pair[0] >= 0 && pair[1] >= 0) {
+            int source = ::open("/dev/null", O_RDONLY);
+            if (source >= 0) {
+                int fds[32]; for (int& fd : fds) fd = source;
+                CHECK(sendMessage(pair[0], "x", 1, fds, 32), "SCM_RIGHTS: control truncado enviado");
+                int received = -1;
+                const auto truncated = ivanna::ipc::receiveExactlyOneFd(pair[1], &received);
+                CHECK((truncated == ivanna::ipc::ReceiveFdResult::kTruncated ||
+                       truncated == ivanna::ipc::ReceiveFdResult::kWrongDescriptorCount) && received == -1,
+                      "SCM_RIGHTS: control truncado rechazado sin transferir fd");
+                ::close(source);
+            }
+            ::close(pair[0]); ::close(pair[1]);
+        }
     }
 
     mgr.close();
