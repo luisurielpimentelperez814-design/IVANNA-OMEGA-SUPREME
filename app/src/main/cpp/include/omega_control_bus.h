@@ -45,6 +45,61 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cerrno>
+#include <sys/socket.h>
+#include <unistd.h>
+
+namespace ivanna::ipc {
+enum class ReceiveFdResult { kOk, kRecvError, kBadPayloadLength, kTruncated, kMissingRights, kMalformedControl, kWrongDescriptorCount };
+
+// Receive the protocol's one-byte payload and exactly one SCM_RIGHTS fd.
+// Any descriptor received on a rejected message is closed before returning.
+inline ReceiveFdResult receiveExactlyOneFd(int socket_fd, int* out_fd, int* out_errno = nullptr) noexcept {
+    if (out_fd) *out_fd = -1;
+    if (out_errno) *out_errno = 0;
+    if (!out_fd) return ReceiveFdResult::kMalformedControl;
+    char payload = 0;
+    iovec io{}; io.iov_base = &payload; io.iov_len = sizeof(payload);
+    constexpr std::size_t kMaxRights = 16;
+    alignas(cmsghdr) unsigned char control[CMSG_SPACE(sizeof(int) * kMaxRights)]{};
+    msghdr msg{}; msg.msg_iov = &io; msg.msg_iovlen = 1;
+    msg.msg_control = control; msg.msg_controllen = sizeof(control);
+    const ssize_t received = ::recvmsg(socket_fd, &msg, MSG_CMSG_CLOEXEC);
+    const int receive_error = received < 0 ? errno : 0;
+    if (out_errno) *out_errno = receive_error;
+
+    int descriptors[kMaxRights]; std::size_t descriptor_count = 0;
+    bool saw_rights = false, malformed = false;
+    for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) continue;
+        saw_rights = true;
+        if (cmsg->cmsg_len < CMSG_LEN(0)) { malformed = true; continue; }
+        const std::size_t bytes = cmsg->cmsg_len - CMSG_LEN(0);
+        if (bytes % sizeof(int)) malformed = true;
+        const auto* data = reinterpret_cast<const unsigned char*>(CMSG_DATA(cmsg));
+        for (std::size_t i = 0; i < bytes / sizeof(int); ++i) {
+            int fd = -1; std::memcpy(&fd, data + i * sizeof(int), sizeof(fd));
+            if (fd < 0) { malformed = true; continue; }
+            if (descriptor_count < kMaxRights) descriptors[descriptor_count++] = fd;
+            else { ::close(fd); malformed = true; }
+        }
+    }
+    ReceiveFdResult result = ReceiveFdResult::kOk;
+    if (received < 0) result = ReceiveFdResult::kRecvError;
+    else if (msg.msg_flags & (MSG_CTRUNC | MSG_TRUNC)) result = ReceiveFdResult::kTruncated;
+    else if (received != 1) result = ReceiveFdResult::kBadPayloadLength;
+    else if (malformed) result = ReceiveFdResult::kMalformedControl;
+    else if (!saw_rights) result = ReceiveFdResult::kMissingRights;
+    else if (descriptor_count != 1) result = ReceiveFdResult::kWrongDescriptorCount;
+    if (result != ReceiveFdResult::kOk) {
+        for (std::size_t i = 0; i < descriptor_count; ++i) ::close(descriptors[i]);
+        return result;
+    }
+    *out_fd = descriptors[0];
+    return ReceiveFdResult::kOk;
+}
+} // namespace ivanna::ipc
+
 
 // Evitar conflictos con android/log.h en omega_effect.cpp
 #ifndef OMEGA_CTRL_LOGD
