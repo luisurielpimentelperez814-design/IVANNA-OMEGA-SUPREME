@@ -109,3 +109,42 @@ Esta guía explica en lenguaje cotidiano para qué sirve cada familia de control
 4. Si aparecen clipping, fatiga, voces huecas, imagen inestable o chasquidos, vuelve al último ajuste estable.
 5. Si aparece «no disponible», «—» o «motor no cargado», considéralo no verificado; no es una medición de cero.
 6. La disponibilidad depende del hardware, Android, permisos, ruta y build instalado. No todos los controles funcionan en todas las salidas.
+
+
+## Controles avanzados adicionales de la interfaz
+
+Esta sección cubre los controles avanzados que aparecen en los paneles DSP, NHO/NPE, laboratorio evolutivo y reconstrucción perceptual. Son parámetros de procesamiento, no una garantía de que el hardware o la ruta física permitan aplicar todos los efectos.
+
+| Control visible | Qué hace | Recomendación |
+|---|---|---|
+| **CANCELACIÓN OBJETOS ATMOS** | Ajusta la intensidad de la etapa de procesamiento atmosférico indicada por el motor. | Empieza bajo; compara con bypass al mismo volumen y reduce ante artefactos. |
+| **SUPRESIÓN COHERENCIA FALSA** | Regula la mezcla espacial de la etapa asociada. | Reduce si las voces se difuminan o el centro pierde estabilidad. |
+| **FACTOR ANCHO RING BUFFER SPSC** | Modifica un factor interno del búfer circular entre componentes DSP. | Parámetro avanzado de estabilidad/latencia; conserva el valor recomendado salvo que midas el cambio. |
+| **GANANCIA INFERENCIA TINYML** | Ajusta la ganancia aplicada a la etapa de inferencia TinyML compatible. | Más ganancia no significa más calidad; vigila clipping y artefactos. |
+| **IMPACTO** | Cambia la sensación de golpe de los transitorios. | Empieza bajo para no endurecer bombos ni percusión. |
+| **APERTURA WFS** | Ajusta la apertura del campo virtual de Wave Field Synthesis. | Solo tiene sentido en una ruta compatible; no reemplaza un arreglo físico de altavoces. |
+| **GANANCIA ARMÓNICA (NHO/NPE)** | Controla la cantidad de armónicos añadidos por la etapa indicada. | Sube poco a poco y reduce si aparecen sibilancia o aspereza. |
+| **ÁNGULO ESPACIAL / ANCHO ESPACIAL** | Coloca la fuente virtual y regula su extensión espacial. | Cambia una cosa por vez; conserva el centro vocal. |
+| **INHIBICIÓN LATERAL** | Regula la interacción/inhibición entre componentes de la etapa neuromórfica. | Es avanzado; compara separación y cuerpo a volumen igualado. |
+| **COMPRESIÓN OHC** | Ajusta la compresión del modelo de células ciliadas externas. | No es un control universal de ecualización; cambia con cautela y conserva una referencia. |
+| **MASTER GAIN / GANANCIA MASTER** | Ajusta la ganancia general de la etapa correspondiente. | Evita clipping y no confundas más volumen con más fidelidad. |
+| **AGC TARGET / TARGET AGC / LUFS** | Define la referencia de nivel de la compensación automática de sonoridad. | Usa un objetivo moderado para conservar dinámica. |
+| **AGC RATE** | Ajusta la rapidez de la compensación automática. | Si el volumen sube y baja audiblemente, reduce la rapidez. |
+| **TAMAÑO POBLACIÓN / POBLACIÓN** | Define cuántas soluciones candidatas evalúa el laboratorio evolutivo. | Más candidatos pueden requerir más CPU; no garantizan mejor resultado. |
+| **GENERACIONES MAX / GENERACIONES** | Define cuántas rondas de evolución ejecuta el laboratorio. | Aumenta solo en pruebas controladas. |
+| **TASA DE MUTACIÓN** | Controla cuánto cambian las soluciones candidatas entre rondas. | Cambia poco a poco y registra resultados para comparar. |
+| **INTENSIDAD DE RECONSTRUCCIÓN DEL EVENTO** | Regula cuánto interviene la etapa de reconstrucción perceptual. | Comienza bajo y compara con la etapa desactivada. |
+| **RADIO CEFÁLICO PERSONAL** | Ajusta el radio de cabeza asumido por el modelo auditivo. | Personalización geométrica avanzada; no cambia el volumen. |
+| **COMPENSACIÓN NO-LINEAL / VOLTERRA / IMD** | Controla etapas experimentales de compensación no lineal o intermodulación. | No las ajustes a oído como si fueran EQ; usa señales de prueba y mediciones reproducibles. |
+| **FACTOR DE DEFORMACIÓN BARK** | Ajusta una dimensión del modelo perceptual en escala Bark. | Es experimental; cambia un parámetro por vez. |
+| **HISTÉRESIS MAGNÉTICA DE CINTA** | Añade coloración no lineal inspirada en el comportamiento de cinta magnética. | Es un efecto creativo, no una corrección transparente. |
+| **UMBRAL LIF SNN** | Define el umbral de disparo de la etapa neuronal LIF. | Parámetro de laboratorio; conserva el valor predeterminado fuera de pruebas controladas. |
+| **MEZCLA WET/DRY FIR PERSONALIZADO** | Mezcla el filtro FIR personalizado con la señal original. | Empieza con mezcla baja y comprueba que no se vuelva hueco el timbre. |
+| **PROFUNDIDAD DE CONCHA / CURVATURA DEL HÉLIX / ANCHO INTERAURAL** | Personaliza dimensiones geométricas usadas por el modelo binaural. | Cambia una dimensión por vez y compara con el perfil original. |
+| **ALINEACIÓN MSO / FARROW** | Ajusta la alineación temporal entre ambos oídos. | Valores extremos pueden difuminar o desplazar el centro; realiza cambios pequeños. |
+| **MODO MANUAL** | Mantiene parámetros compatibles bajo control directo y evita cambios adaptativos simultáneos. | Útil para pruebas A/B reproducibles. |
+| **AUTOMÁTICO DEL LABORATORIO** | Permite al laboratorio ejecutar la política automática disponible. | Apágalo para experimentos paso a paso. |
+| **RECONSTRUCCIÓN DE REALIDAD** | Habilita o deshabilita la etapa de reconstrucción perceptual correspondiente. | Compara con el mismo fragmento y nivel percibido. |
+| **RESET / MEDIR / BENCH** | Restablece el experimento, solicita una medición o ejecuta un benchmark del laboratorio. | No equivalen a medir la acústica de una sala; revisa el informe y confirma que el motor esté disponible. |
+
+Los controles cuyo nombre incluya términos internos (por ejemplo SPSC, OHC, LIF, MSO, FIR o Volterra) son para ajuste avanzado. La explicación visible en la app debe ser la referencia rápida; esta tabla ofrece más contexto. Si un panel muestra «no disponible», un guion o un motor descargado, la función se considera **no verificada en esa ruta**.
