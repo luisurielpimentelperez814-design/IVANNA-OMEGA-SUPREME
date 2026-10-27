@@ -17,6 +17,7 @@
 
 #include "include/omega_shared.h"
 #include "daemon/core/shm_manager.h"
+#include "include/omega_control_bus.h"
 
 #define LOG_TAG "OmegaDaemonBridge"
 
