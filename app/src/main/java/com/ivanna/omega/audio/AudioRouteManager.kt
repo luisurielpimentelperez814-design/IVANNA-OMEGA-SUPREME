@@ -151,14 +151,14 @@ object AudioRouteManager {
         // recodificar; se compensa diálogo y se reduce ancho.
         // Public profile query must stay non-blocking; async lookup refines this fallback.
         OutputRoute.BLUETOOTH -> BluetoothRouteProfilePolicy.fallback()
-        // AUX para amplificadores con upmix propio (p. ej. Genezy MHCPZ1):
-        // conservar L/R y polaridad, no inyectar anchura ni realce de graves
-        // antes de que el equipo genere sus satélites y subwoofer. El modo
-        // Stereo/Surround y el botón físico del sub siguen siendo del amplificador.
+        // Genezi Spatial (beta): conservar el centro y la polaridad, sin boost
+        // de graves ni diálogo; anchura diferencial muy moderada antes del upmix
+        // externo. El widener nativo protege la banda baja y suaviza cambios.
+        // No genera canales discretos: Surround/sub siguen bajo control del Sony.
         OutputRoute.WIRED_AUX -> RouteProfile(
             bassBoostDb = 0f,
             dialogBoostDb = 0f,
-            widenerMult = 1.0f
+            widenerMult = 1.08f
         )
         // USB-C DAC: ruta de línea limpia, sin boost de graves.
         OutputRoute.USB -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 1.0f)
