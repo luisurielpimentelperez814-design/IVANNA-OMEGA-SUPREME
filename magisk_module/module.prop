@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.155
-versionCode=446
+version=v2.5.156
+versionCode=447
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.155: WFS listener-frame mapping and bounded JNI coordinates, SAFMUS sliders, Spanish guidance, USB-C route readback; physical DAC clock remains unclaimed
+description=v2.5.156: complete Spanish control guide, inline explanations, WFS geometry and USB-C route readback; physical DAC clock remains unclaimed
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
