@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.157
-versionCode=448
+version=v2.5.158
+versionCode=449
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.157: Kotlin restore and WFS linker fixes; per-control Spanish explanations across DSP, spatial, brain and sound panels
+description=v2.5.158: repaired Kotlin and WFS linking; contextual Spanish explanations for DSP, adaptive, HRTF, WFS and output controls
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
