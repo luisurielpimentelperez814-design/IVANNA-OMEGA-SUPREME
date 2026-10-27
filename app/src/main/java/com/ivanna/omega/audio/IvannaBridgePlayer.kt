@@ -728,6 +728,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                 runCatching {
                     codec.start()
                     track.play()
+                    AudioTrackRouteReadback.update(track, outputRoute.preferredDevice, sampleRate)
+                    Log.i(TAG, "AudioTrack route readback after play: ${AudioTrackRouteReadback.current()}")
                 }.onFailure {
                     Log.e(TAG, "codec.start/track.play falló (prev codecState=CONFIGURED): ${it.message}")
                     releaseTrackLocked()
@@ -883,6 +885,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                             // accepted by this AudioTrack minus its timestamped consumed frames.
                             // No Bluetooth/DAC/vendor-HAL clock writes are attempted.
                             if (writtenSamples > 0) {
+                                AudioTrackRouteReadback.update(track, outputRoute.preferredDevice, sampleRate)
                                 submittedFrames += (writtenSamples / 2).toLong()
                                 submittedFramesForMetrics = submittedFrames
                                 // Timestamp polling is throttled off the per-chunk hot path.
