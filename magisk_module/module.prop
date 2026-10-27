@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.162
-versionCode=453
+version=v2.5.163
+versionCode=454
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.162: Aurora Obsidiana UI refinement across navigation, module hubs and shared controls
+description=v2.5.163: Sony Genezi AUX reference profile and acoustic model
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
