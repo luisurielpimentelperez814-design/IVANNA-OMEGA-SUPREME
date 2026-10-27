@@ -351,16 +351,16 @@ internal fun GlassCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(
                 Brush.verticalGradient(
-                    listOf(ObsidianGlass, ObsidianSoft.copy(alpha = 0.85f))
+                    listOf(ObsidianRaised.copy(alpha = 0.98f), ObsidianSoft.copy(alpha = 0.96f), ObsidianInset)
                 )
             )
-            .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
-            .border(1.dp, GlassHighlight, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .border(1.dp, GlassOutline.copy(alpha = 0.72f), RoundedCornerShape(20.dp))
+            .border(1.dp, GlassHighlight, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 0.dp, bottomEnd = 0.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -375,7 +375,7 @@ internal fun GlassCard(
                             .clip(CircleShape)
                             .background(Brush.radialGradient(listOf(accent, accent.copy(alpha = 0.3f))))
                     )
-                    Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.SemiBold)
                 }
                 if (subtitle != null) {
                     Spacer(Modifier.height(2.dp))
@@ -489,8 +489,8 @@ internal fun FlagToggle(
     val fg by animateColorAsState(if (checked) accent else TextMuted, label = "flagFg")
     Surface(
         onClick = { onCheckedChange(!checked) },
-        modifier = modifier.height(58.dp),
-        shape = RoundedCornerShape(10.dp),
+        modifier = modifier.height(60.dp),
+        shape = RoundedCornerShape(14.dp),
         color = bg,
         border = androidx.compose.foundation.BorderStroke(1.dp, border)
     ) {
@@ -510,9 +510,9 @@ internal fun StatusPill(text: String, accent: Color) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(accent.copy(alpha = 0.16f))
-            .border(1.dp, accent.copy(alpha = 0.6f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.19f), accent.copy(alpha = 0.08f))))
+            .border(1.dp, accent.copy(alpha = 0.48f), RoundedCornerShape(50))
+            .padding(horizontal = 9.dp, vertical = 5.dp)
     ) {
         Text(text, style = MaterialTheme.typography.labelSmall, color = accent, fontWeight = FontWeight.SemiBold)
     }
