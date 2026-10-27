@@ -1,4 +1,11 @@
-# CHANGELOG — v2.5.164 (455) — IVANNA Genezi Spatial beta
+# CHANGELOG — v2.5.165 (456) — Genezi Spatial publication repair
+
+## Release integrity
+- Carries forward the Genezi Spatial AUX beta and canonical Mid/Side model specification.
+- Corrects the updater metadata versionCode mismatch and aligns module.prop, update.json, and version.properties at 456.
+- Release is considered published only after CI publishes and verifies the versioned Magisk ZIP and APK assets.
+
+# CHANGELOG — v2.5.164 (455) — IVANNA Genezi Spatial beta (superseded by v2.5.165)
 
 ## Audio DSP
 - Añade un perfil AUX Genezi Spatial conservador: anchura solicitada 1.08×, sin realce de graves ni diálogo, aprovechando el StereoWidener nativo existente con transición suavizada y protección de Side en graves.
