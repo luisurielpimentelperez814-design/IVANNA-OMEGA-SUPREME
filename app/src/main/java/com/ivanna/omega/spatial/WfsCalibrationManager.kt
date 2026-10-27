@@ -18,6 +18,7 @@ object WfsCalibrationManager {
     private const val KEY_LX = "lx"
     private const val KEY_LY = "ly"
     private const val KEY_LZ = "lz"
+    private const val KEY_LYAW = "lyaw"
     private const val KEY_PRESET = "preset"
 
     val DEFAULT_X = floatArrayOf(0.35f, 3.15f, 0.25f, 3.25f, 0.25f, 3.25f, 3.00f)
@@ -29,6 +30,8 @@ object WfsCalibrationManager {
     @Volatile var listenerY = 1.20f
         private set
     @Volatile var listenerZ = 3.50f
+        private set
+    @Volatile var listenerYawDegrees = 0f
         private set
     @Volatile var presetName = "7ch-default"
         private set
@@ -45,11 +48,21 @@ object WfsCalibrationManager {
             return false
         }
         return runCatching {
-            IvannaNativeLib.nativeSetWfsSpeakerLayout(
-                DEFAULT_X.map { it - listenerX }.toFloatArray(),
-                DEFAULT_Y.map { it - listenerY }.toFloatArray(),
-                DEFAULT_Z.map { it - listenerZ }.toFloatArray()
-            )
+            // Rotate the listener reference frame around vertical Y before publishing the seven-speaker layout.
+            val radians = Math.toRadians(listenerYawDegrees.toDouble())
+            val cosYaw = kotlin.math.cos(radians).toFloat()
+            val sinYaw = kotlin.math.sin(radians).toFloat()
+            val relativeX = FloatArray(DEFAULT_X.size)
+            val relativeY = FloatArray(DEFAULT_Y.size)
+            val relativeZ = FloatArray(DEFAULT_Z.size)
+            for (i in DEFAULT_X.indices) {
+                val dx = DEFAULT_X[i] - listenerX
+                val dz = DEFAULT_Z[i] - listenerZ
+                relativeX[i] = dx * cosYaw + dz * sinYaw
+                relativeY[i] = DEFAULT_Y[i] - listenerY
+                relativeZ[i] = -dx * sinYaw + dz * cosYaw
+            }
+            IvannaNativeLib.nativeSetWfsSpeakerLayout(relativeX, relativeY, relativeZ)
             true
         }.getOrElse {
             Log.w(TAG, "No se pudo enviar layout WFS", it)
@@ -65,14 +78,16 @@ object WfsCalibrationManager {
     }
 
     /** Persiste y aplica la posición del oyente con límites físicos de la sala. */
-    fun setListener(context: Context, lx: Float, ly: Float, lz: Float): Boolean {
+    fun setListener(context: Context, lx: Float, ly: Float, lz: Float, yawDegrees: Float = listenerYawDegrees): Boolean {
         listenerX = lx.takeIf { it.isFinite() }?.coerceIn(0f, 3.5f) ?: 1.75f
         listenerY = ly.takeIf { it.isFinite() }?.coerceIn(0f, 3.5f) ?: 1.20f
         listenerZ = lz.takeIf { it.isFinite() }?.coerceIn(0f, 7f) ?: 3.50f
+        listenerYawDegrees = yawDegrees.takeIf { it.isFinite() }?.let { ((it % 360f) + 360f) % 360f } ?: 0f
         prefs(context).edit()
             .putFloat(KEY_LX, listenerX)
             .putFloat(KEY_LY, listenerY)
             .putFloat(KEY_LZ, listenerZ)
+            .putFloat(KEY_LYAW, listenerYawDegrees)
             .apply()
         return publishRelativeLayout(context)
     }
@@ -85,6 +100,7 @@ object WfsCalibrationManager {
         listenerX = safeStoredFloat(p.getFloat(KEY_LX, 1.75f), 1.75f, 0f, 3.5f)
         listenerY = safeStoredFloat(p.getFloat(KEY_LY, 1.20f), 1.20f, 0f, 3.5f)
         listenerZ = safeStoredFloat(p.getFloat(KEY_LZ, 3.50f), 3.50f, 0f, 7f)
+        listenerYawDegrees = safeStoredFloat(p.getFloat(KEY_LYAW, 0f), 0f, 0f, 360f)
         presetName = p.getString(KEY_PRESET, "7ch-default") ?: "7ch-default"
         return publishRelativeLayout(context)
     }
