@@ -1,3 +1,19 @@
+# CHANGELOG — v2.5.157 (448) — Corrección de build y ayuda contextual de controles
+
+## Correcciones de compilación
+- Kotlin: `PersistedStateRestorer.kt` usa la instancia local `ps` al restaurar la latencia de salida 4D; elimina la referencia no resuelta `paramStore`.
+- C++: `wfs_globals_effect.cpp` define `g_wfs_applied_spread` en el proceso de `libomega_effect.so`, junto con los demás estados WFS, resolviendo el símbolo que faltaba en el enlazado.
+- Se mantienen las pruebas nativas, la validación de artefactos y las comprobaciones de integridad como gates obligatorios.
+
+## Usabilidad
+- `AuroraSlider` muestra ayuda contextual bajo cada control deslizante compartido, con explicación específica del parámetro cuando se identifica.
+- La ayuda cubre EQ, compresor, coherencia de fase, TinyML, HOA, AUX/crossover, sala, binaural, WFS, temporización, vibración, geometría y diagnóstico.
+- SOUND y BRAIN incluyen explicaciones debajo de sus conmutadores principales; SPATIAL explica sus sliders y toggles.
+- Las explicaciones recomiendan cambios graduales y pruebas a volumen igualado, y aclaran los límites de Bluetooth y DAC USB-C.
+
+## Validación
+- Esta versión solo se considera publicada cuando CI compile Kotlin Release y enlace el objetivo nativo ARM64 y se verifiquen los artefactos APK/ZIP.
+
 # CHANGELOG — v2.5.156 (447) — Guía completa de controles en español
 
 ## Cambios
