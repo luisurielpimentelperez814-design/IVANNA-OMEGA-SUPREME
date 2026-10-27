@@ -1,3 +1,14 @@
+# CHANGELOG — v2.5.149 (440) — dual audio routes test release
+
+## Cambios
+- Añade `docs/DUAL_AUDIO_ROUTES.md` con el diagrama de las dos rutas: A (AudioFlinger → `libomega_effect.so` → DSP/daemon → HAL) y B (PlaybackCaptureService → DSPBridge/resampler/PLL → AudioTrack propio).
+- Define gates de verificación para distinguir daemon vivo, efecto realmente procesando y reproductor propio en ejecución.
+- Mantiene explícito el límite de reloj: el PLL de AudioTrack no corrige directamente el reloj físico USB/Bluetooth ni demuestra que el ASRC nativo esté conectado a la ruta de sistema.
+- Conserva la estimación de +4.17 ppm como condicional, pendiente de validar la semántica de `localSR` contra el mismo flujo.
+- Release de prueba: APK y ZIP Magisk deben generarse y validarse por GitHub Actions; no se declara CI verde ni Ruta A validada hasta observar los resultados reales.
+
+---
+
 # CHANGELOG — v2.5.148 (439) — ASRC clock-control test build
 
 ## Cambios
