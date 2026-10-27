@@ -696,5 +696,6 @@ private fun IvannaSliderRowBrain(
             valueRange = min..max,
             colors = SliderDefaults.colors(thumbColor = NeonMagenta, activeTrackColor = NeonMagenta, inactiveTrackColor = ObsidianEdge)
         )
+        ControlHelpText(label)
     }
 }
