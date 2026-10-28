@@ -280,6 +280,11 @@ else()
     set(android-lib "")
 endif()
 
+# ABI: alineacion de segmentos LOAD a 16 KB (Android 15+ con paginas de 16 KB; requisito de Google Play).
+# Medido sobre el Release v2.5.177: p_align=0x1000 (4 KB) en libivanna_omega.so/libomega_effect.so/ivanna_daemon,
+# mientras libc++_shared.so ya iba a 0x4000. Un max-page-size mayor es valido tambien en dispositivos de 4 KB.
+target_link_options(ivanna_omega PRIVATE -Wl,-z,max-page-size=16384)
+
 target_link_libraries(ivanna_omega
     ${log-lib}
     ${aaudio-lib}
@@ -392,6 +397,7 @@ target_include_directories(omega_effect PRIVATE
 )
 
 target_link_options(omega_effect PRIVATE
+    -Wl,-z,max-page-size=16384
     -Wl,-z,relro
     -Wl,-z,now
     -Wl,--enable-new-dtags

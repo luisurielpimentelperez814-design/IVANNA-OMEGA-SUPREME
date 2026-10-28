@@ -246,7 +246,7 @@ jobs:
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-27 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--enable-new-dtags" \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--enable-new-dtags -Wl,-z,max-page-size=16384" \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
           cmake --build build-daemon -j --config Release
           # Localizar el binario producido — DEBE existir, nunca copiar otra cosa
@@ -261,7 +261,7 @@ jobs:
           CXX="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
           test -x "$CXX" || { echo "ERROR: clang NDK no encontrado"; exit 1; }
           "$CXX" -std=c11 -O2 -pie -fPIE -fstack-protector-strong \
-            -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,--build-id=sha1 \
+            -D_FORTIFY_SOURCE=2 -Wl,-z,relro,-z,now -Wl,-z,max-page-size=16384 -Wl,--build-id=sha1 \
             app/src/main/cpp/daemon/ivanna_client.c -o ivanna_client
           chmod 755 ivanna_client
           file ivanna_client | grep -qiE "aarch64|arm64" || { echo "ERROR: no ARM64"; exit 1; }
@@ -785,6 +785,25 @@ jobs:
           readelf -h extracted_daemon | grep -q "AArch64" || { echo "ERROR: readelf no confirma AArch64"; exit 1; }
           readelf -h extracted_daemon | grep -qE "Type:.*DYN" || { echo "ERROR: no es PIE"; exit 1; }
 
+          # ── GATE ABI: segmentos LOAD alineados a >= 16 KB en NUESTROS binarios nativos ──
+          # (Android 15+ con paginas de 16 KB; requisito de Google Play). Se mide el artefacto publicado.
+          elf_align_gate() {
+            local f="$1" name="$2" bad
+            bad=0
+            while read -r al; do
+              [ $((al)) -ge 16384 ] || bad=$((bad+1))
+            done < <(readelf -lW "$f" | awk '/^ *LOAD/{print $NF}')
+            [ "$bad" = "0" ] || { echo "ERROR ABI: $name tiene $bad segmento(s) LOAD con p_align < 0x4000"; readelf -lW "$f" | grep LOAD; exit 1; }
+            echo "ABI OK: $name LOAD p_align >= 0x4000"
+          }
+          elf_align_gate extracted_daemon ivanna_daemon
+          unzip -p "$ZIPNAME" system/vendor/lib64/soundfx/libomega_effect.so > extracted_effect.so
+          readelf -h extracted_effect.so | grep -q "AArch64" || { echo "ERROR: libomega_effect.so no es AArch64"; exit 1; }
+          elf_align_gate extracted_effect.so libomega_effect.so
+          unzip -p "$APK_NAME" lib/arm64-v8a/libivanna_omega.so > extracted_jni.so
+          readelf -h extracted_jni.so | grep -q "AArch64" || { echo "ERROR: libivanna_omega.so no es AArch64"; exit 1; }
+          elf_align_gate extracted_jni.so libivanna_omega.so
+
           H_EXTRACT=$(sha256sum extracted_daemon | awk '{print $1}')
           H_PUBLISHED=$(sha256sum ivanna_daemon   | awk '{print $1}')
           H_RECORDED=$(awk '{print $1}' daemon_sha256.txt)
@@ -936,7 +955,11 @@ jobs:
           NOTES="Build automatico desde commit ${GITHUB_SHA} (run #${GITHUB_RUN_NUMBER})."
           STAGE_TAG="staging-${GITHUB_SHA}-${GITHUB_RUN_ID}"
 
-          EXTRA_ASSETS=()
+          # Manifiesto de integridad publicado junto al Release (antes solo existia en el staging draft).
+          sha256sum "$ZIP_NAME" "$APK_NAME" > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+
+          EXTRA_ASSETS=("SHA256SUMS.txt")
           [ -f "$FLYER_TAG" ] && EXTRA_ASSETS+=("$FLYER_TAG")
           [ -f "$FLYER_CANONICAL" ] && EXTRA_ASSETS+=("$FLYER_CANONICAL")
 
@@ -966,7 +989,7 @@ jobs:
               | grep -E '^ivanna-omega-supreme-[0-9a-f]{40}\.apk$' | grep -v -F "$APK_NAME" \
               | while read -r old; do gh release delete-asset "$TAG" "$old" --repo "$GITHUB_REPOSITORY" --yes; done || true
             # Sin '|| true': si la subida falla, el job DEBE fallar (antes quedaban assets viejos con notas nuevas).
-            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" "$ZIP_NAME" "$APK_NAME" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
           fi
 

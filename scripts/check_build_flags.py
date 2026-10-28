@@ -61,7 +61,22 @@ def main() -> int:
             print(item)
         return 1
 
-    print("[PASS] 0 flags prohibidos (-ffast-math / -Ofast / -ffinite-math-only).")
+    # ABI: los 3 binarios nativos propios deben enlazarse con alineacion de 16 KB (Android 15+ / Google Play).
+    cmake_src = (ROOT / "app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+    wf_src = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    abi_missing = []
+    for tgt in ("ivanna_omega", "omega_effect"):
+        if not re.search(r"target_link_options\(" + tgt + r"\s+PRIVATE[^)]*max-page-size=16384", cmake_src):
+            abi_missing.append(f"CMake target {tgt} sin -Wl,-z,max-page-size=16384")
+    if wf_src.count("max-page-size=16384") < 2:
+        abi_missing.append("build.yml: ivanna_daemon/ivanna_client sin -Wl,-z,max-page-size=16384")
+    if abi_missing:
+        print("[FAIL] ABI 16 KB:")
+        for item in abi_missing:
+            print("  - " + item)
+        return 1
+
+    print("[PASS] 0 flags prohibidos (-ffast-math / -Ofast / -ffinite-math-only); alineacion ABI 16 KB presente.")
     return 0
 
 
