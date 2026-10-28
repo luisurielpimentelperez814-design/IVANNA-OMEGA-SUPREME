@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.188
-versionCode=479
+version=v2.5.189
+versionCode=480
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.188: SAFMUS clears stale drift when AudioTrack frames stall
+description=v2.5.188: SAFMUS validates signed clock-drift correction
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

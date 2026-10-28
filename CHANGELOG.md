@@ -1,3 +1,10 @@
+## v2.5.189 — SAFMUS bidirectional clock-drift polarity proof
+
+- Adds a deterministic JVM regression for a consumer clock running 1,000 ppm slower than nominal, complementing the positive-drift test.
+- Verifies signed OLS drift, measured rate, and actuator polarity: a slower consumer clock must not receive the same correction sign as a faster one.
+- Advances all release metadata to v2.5.189 / versionCode 480 because v2.5.188 is already immutable and its latest build cannot be attached to that tag.
+- Release remains contingent on GitHub Actions passing the Android/JVM/native gates and verifying the exact APK and Magisk ZIP assets; no physical HAL/PAL or Bluetooth clock-control claim is made.
+
 ## v2.5.188 — SAFMUS clears stale clock drift when presented frames stall
 
 - Treats an advancing monotonic timestamp with a frozen presented-frame position as a stalled/invalid clock observation instead of retaining an old OLS drift estimate in feed-forward control.

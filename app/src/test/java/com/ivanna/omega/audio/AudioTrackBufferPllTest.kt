@@ -89,6 +89,24 @@ class AudioTrackBufferPllTest {
         assertTrue(pll.correctionPpm <= 500.0)
     }
 
+    @Test fun negativeConsumerClockDriftProducesNegativeResamplerCorrection() {
+        val pll = AudioTrackBufferPll(48_000)
+        var timeNs = 1_000_000_000L
+        var consumed = 0L
+        repeat(20) {
+            // 47,952 frames/s = -1,000 ppm against 48 kHz nominal.
+            val submitted = consumed + 5_000L
+            pll.observe(submitted, consumed, 10_000, timeNs)
+            consumed += 11_988L
+            timeNs += 250_000_000L
+        }
+        assertTrue("regression must lock on a slower consumer clock", pll.isDriftLocked)
+        assertEquals(47_952.0, pll.measuredRateHz, 0.5)
+        assertEquals(-1_000.0, pll.measuredDriftPpm, 10.0)
+        assertTrue("slower consumer must request negative resampler correction", pll.correctionPpm < 0.0)
+        assertTrue(pll.correctionPpm >= -500.0)
+    }
+
     @Test fun implausibleClockOutlierClearsStaleFeedForwardAndReacquires() {
         val pll = AudioTrackBufferPll(48_000)
         var timeNs = 1_000_000_000L
