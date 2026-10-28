@@ -211,4 +211,29 @@ class StereoAudioResamplerTest {
         assertTrue(fasterOutput.all { it.isFinite() } && slowerOutput.all { it.isFinite() })
     }
 
+    @Test fun oddInterleavedInputDropsOnlyTheIncompleteTrailingSampleAtUnityRate() {
+        val input = FloatArray(4097) { i -> (i % 97 - 48) / 64.0f }
+        val resampler = StereoAudioResampler(48_000)
+        resampler.setInputSampleRate(48_000)
+
+        val output = resampler.process(input)
+
+        assertEquals("must discard only the unmatched trailing sample", input.size - 1, output.size)
+        for (i in output.indices) assertEquals("sample $i", input[i], output[i], 0.0f)
+    }
+
+    @Test fun oddInterleavedInputMatchesItsCompleteStereoPrefixWhenResampling() {
+        val input = FloatArray(8193) { i -> (i % 113 - 56) / 128.0f }
+        val oddInputResampler = StereoAudioResampler(96_000).apply { setInputSampleRate(44_100) }
+        val completePrefixResampler = StereoAudioResampler(96_000).apply { setInputSampleRate(44_100) }
+
+        val oddOutput = oddInputResampler.process(input)
+        val completeOutput = completePrefixResampler.process(input.copyOf(input.size - 1))
+
+        assertEquals("incomplete trailing sample must not alter frame count", completeOutput.size, oddOutput.size)
+        for (i in oddOutput.indices) {
+            assertEquals("sample $i", completeOutput[i], oddOutput[i], 0.0f)
+        }
+    }
+
 }

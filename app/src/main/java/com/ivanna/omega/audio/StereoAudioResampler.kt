@@ -115,12 +115,17 @@ class StereoAudioResampler(
     }
 
     fun process(input: FloatArray): FloatArray {
+        // Stereo PCM is interleaved L/R. A trailing unmatched sample is not a
+        // complete frame: discard only that sample, never shift channel parity.
+        val completeInput = if (input.size % 2 == 0) input else input.copyOf(input.size - 1)
+        if (completeInput.isEmpty()) return FloatArray(0)
+
         if (inputRate == targetRate && clockCorrectionPpm == 0.0 &&
-            input.all { it.isFinite() }) {
-            rememberPassThrough(input)
-            return input
+            completeInput.all { it.isFinite() }) {
+            rememberPassThrough(completeInput)
+            return completeInput
         }
-        val n = input.size / 2
+        val n = completeInput.size / 2
         if (n == 0) return FloatArray(0)
 
         val total = TAPS + n
@@ -134,8 +139,8 @@ class StereoAudioResampler(
         System.arraycopy(histL, 0, l, 0, TAPS)
         System.arraycopy(histR, 0, r, 0, TAPS)
         for (i in 0 until n) {
-            val left = input[2 * i]
-            val right = input[2 * i + 1]
+            val left = completeInput[2 * i]
+            val right = completeInput[2 * i + 1]
             // A corrupt decoder/DSP sample must not poison the FIR history.
             l[TAPS + i] = if (left.isFinite()) left else 0f
             r[TAPS + i] = if (right.isFinite()) right else 0f

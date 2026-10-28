@@ -1,3 +1,11 @@
+## v2.5.180 — Stereo ASRC rejects incomplete interleaved frames safely
+
+- Closes a malformed-input edge case in `StereoAudioResampler.process()`: an odd-length interleaved L/R float array previously passed through unchanged on the unity-rate fast path, while resampling paths silently ignored the final unmatched sample. The two paths therefore had inconsistent frame contracts.
+- The resampler now removes only the unmatched trailing sample before either fast-path or FIR processing. This preserves L/R parity, prevents a partial frame from leaking through, and leaves the state/output for valid even-length PCM unchanged.
+- Adds JVM regressions for unity-rate transparency with odd-length input and equivalence between malformed input and its complete stereo prefix during resampling.
+- Updates README release metadata and aligns `version.properties`, `module.prop`, and Magisk updater metadata at v2.5.180 / versionCode 471.
+- Release acceptance remains gated on CI tests, Android build, APK/ZIP integrity and publication. This software fix does not certify physical Bluetooth, DAC, PAL or HAL clock correction.
+
 ## v2.5.179 — TinyML ring-buffer overflow is now counted, not silently dropped
 
 - `IvannaTinyMLAudioKernel::ingestPcmBlock()` called `SpscAudioRingBuffer::push()` (declared `[[nodiscard]]` for a reason) and discarded its `bool` result, twice. If the inference worker thread ever fell behind the audio producer (thermal throttling, priority inversion, scheduling starvation) a full ring silently dropped decimated audio feature samples with zero counter, zero log, zero way to observe it from outside. Normal load never hits this (ring holds ~1s of decimated audio against a worker that drains every 2ms), but a silent failure mode in a real-time acoustic-classification path is still a defect in its own right.

@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.179
-versionCode=470
+version=v2.5.180
+versionCode=471
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.179: fix silent TinyML ring-buffer overflow drops (now counted, no longer invisible)
+description=v2.5.180: harden stereo ASRC against incomplete interleaved frames
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
