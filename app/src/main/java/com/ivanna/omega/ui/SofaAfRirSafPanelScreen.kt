@@ -466,7 +466,7 @@ fun SofaAfRirSafPanelScreen(
                             items(rirRoomLines.size) { i ->
                                 val parts = rirRoomLines[i].split("|")
                                 Text(
-                                    text = parts[0] + "  ·  RT60 " +
+                                    text = parts[0] + "  ·  RT60 nom. " +
                                         parts.getOrElse(1) { "?" } + " s  ·  " +
                                         parts.getOrElse(2) { "?" } + " m³",
                                     color = if (rirRoomIdx == i) AmberSignal else TextSecondary,

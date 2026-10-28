@@ -200,6 +200,7 @@ bool RirDataset::loadFromCsv(std::ifstream& f) {
         m.micZM       = toFloatSafe(fields[9]);
         m.distanceM   = toFloatSafe(fields[10]);
         m.rt60S       = toFloatSafe(fields[11]);
+        if (fields.size() >= 13) m.rt60MeasuredS = toFloatSafe(fields[12]);
 
         // Verificar que el .wav referenciado exista de verdad en disco antes
         // de indexarlo — no prometer una sala que no está.
