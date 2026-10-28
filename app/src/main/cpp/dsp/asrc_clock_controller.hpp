@@ -20,8 +20,11 @@ struct AsrcControlSnapshot {
     AsrcState state = AsrcState::INIT;
     double driftPpm = 0.0;
     double targetPpm = 0.0;
-    // Ratio convention: input frames consumed per output frame.
-    // >1 consumes input faster and therefore emits fewer output frames.
+    // Ratio convention: rho = input frames consumed per output frame (VariableAsrc).
+    // rho > 1 consumes input faster and therefore emits FEWER output frames.
+    // driftPpm = 1e6*(f_sink/f_nominal - 1) is measured on the PRESENTED-frame (sink)
+    // clock. A faster sink (drift > 0) needs MORE output frames per input frame, so
+    // rho = 1/(1 + drift*1e-6) < 1. Sign is verified closed-loop in test_variable_asrc.
     double appliedRatio = 1.0;
     const char* reason = "not-initialized";
 };
@@ -144,7 +147,7 @@ private:
         out.reason = reason;
         out.driftPpm = std::isfinite(driftPpm_) ? driftPpm_ : 0.0;
         out.targetPpm = state == AsrcState::TRACKING ? targetPpm_ : 0.0;
-        out.appliedRatio = state == AsrcState::TRACKING ? 1.0 + appliedPpm_ * 1.0e-6 : 1.0;
+        out.appliedRatio = state == AsrcState::TRACKING ? 1.0 / (1.0 + appliedPpm_ * 1.0e-6) : 1.0;
         return out;
     }
 
