@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.177
-versionCode=468
+version=v2.5.178
+versionCode=469
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.177: AudioTrack reroute-vs-drift guard + AutoEQ corpus/Kotlin consistency gate
+description=v2.5.178: remove two dead-code files resurrected by a past merge (AudioResampler, HeadTrackingManager)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
