@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.184
-versionCode=475
+version=v2.5.185
+versionCode=476
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.184: SAFMUS buffer deadband and anti-windup
+description=v2.5.185: SAFMUS clock-outlier rejection and regression reacquisition
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
