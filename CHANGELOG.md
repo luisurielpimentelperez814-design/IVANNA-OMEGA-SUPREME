@@ -1,3 +1,12 @@
+## v2.5.173 — SAFMUS unified app-owned clock servo
+
+- Unifies the app player's clock-drift feed-forward and buffer-occupancy PI into one actuator path; removes the separate diagnostic estimator from the live correction loop.
+- Adds centered rolling least-squares estimation over paired AudioTrack presented-frame/timestamp samples, bounded drift filtering, ±500 ppm output limits, and 25 ppm/update slew limiting.
+- Preserves fail-closed unity correction on invalid timestamps, regressing frame/time pairs, impossible queue occupancy, or controller reset.
+- Adds JVM regression tests for clock-slope polarity, feed-forward correction, bounded control, and timestamp-regression reset.
+- Scope is the app-owned AudioTrack only. The daemon's native controller remains separate; no claim of PAL/HAL, physical DAC, Bluetooth sink-clock, or system-wide correction.
+- Version metadata: v2.5.173 / versionCode 464. Release requires passing native tests, Android JVM tests, build, and artifact verification.
+
 ## v2.5.172 — SAFMUS clock-drift estimator and ASRC ratio contract
 
 - Replaces interval-only drift smoothing with a fixed-size rolling least-squares estimate over paired cumulative frame positions and monotonic timestamps.

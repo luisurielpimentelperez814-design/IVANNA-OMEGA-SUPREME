@@ -640,9 +640,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             resampler.setInputSampleRate(inputSampleRate)
             playbackSpatialEngine.configureSampleRate(sampleRate)
             playbackSpatialEngine.reset()
-            // Rate estimator remains diagnostic; the closed-loop correction is
-            // driven by actual AudioTrack queue phase (submitted - consumed frames).
-            val clockDriftServo = AudioTrackClockDriftServo(sampleRate)
+            // One SAFMUS servo owns both rolling clock-drift estimation and
+            // queue-phase correction. Never run a second controller on this resampler.
             val bufferPll = AudioTrackBufferPll(sampleRate)
             val outputTimestamp = AudioTimestamp()
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
@@ -893,11 +892,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                 if (lastClockPollNs == 0L || nowNs - lastClockPollNs >= 250_000_000L) {
                                     lastClockPollNs = nowNs
                                     if (track.getTimestamp(outputTimestamp)) {
-                                        // Frequency estimate is diagnostic; the buffer PI drives ASRC.
-                                        clockDriftServo.observe(
-                                            outputTimestamp.framePosition,
-                                            outputTimestamp.nanoTime
-                                        )
+                                        // One controller estimates clock slope by centered rolling OLS
+                                        // and combines feed-forward drift with bounded queue PI.
                                         val correctionPpm = bufferPll.observe(
                                             submittedFrames = submittedFrames,
                                             consumedFrames = outputTimestamp.framePosition,
@@ -908,12 +904,11 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                         OmegaMetrics.updateClockServoTelemetry(
                                             timestampAvailable = true,
                                             locked = bufferPll.isLocked,
-                                            measuredRateHz = clockDriftServo.measuredRateHz,
-                                            measuredDriftPpm = clockDriftServo.measuredDriftPpm,
+                                            measuredRateHz = bufferPll.measuredRateHz,
+                                            measuredDriftPpm = bufferPll.measuredDriftPpm,
                                             correctionPpm = correctionPpm
                                         )
                                     } else {
-                                        clockDriftServo.reset()
                                         bufferPll.reset()
                                         resampler.setClockCorrectionPpm(0.0)
                                         OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)

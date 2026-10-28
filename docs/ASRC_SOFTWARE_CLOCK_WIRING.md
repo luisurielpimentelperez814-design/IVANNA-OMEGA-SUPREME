@@ -12,7 +12,7 @@ The local-file player (`IvannaBridgePlayer`) already wires a software ASRC loop:
 2. Process the interleaved stereo chunk through `StereoAudioResampler.process()`. The resampler uses a 64-tap, 1024-phase windowed-sinc FIR, preserves fractional position/history between chunks, and exposes `setClockCorrectionPpm()`.
 3. Write the resampled chunk to IVANNA's own `AudioTrack`.
 4. Poll `AudioTrack.getTimestamp()` off the hot path. Use the timestamp's frame position together with cumulative frames accepted by this same `AudioTrack` to estimate queue occupancy.
-5. `AudioTrackBufferPll.observe()` computes a bounded, slew-limited correction (±500 ppm; max 25 ppm per update) and `IvannaBridgePlayer` passes it to `StereoAudioResampler.setClockCorrectionPpm()`.
+5. `AudioTrackBufferPll.observe()` now performs centered rolling least-squares regression over paired presented-frame/timestamp samples and combines the measured clock-rate feed-forward with the bounded buffer-occupancy PI term. The single output is limited to ±500 ppm and 25 ppm per update, then passed to `StereoAudioResampler.setClockCorrectionPpm()`.
 6. If timestamp retrieval fails, reset both controllers and force resampler correction to zero.
 
 This is a software ASRC/queue-control loop for IVANNA's own player. The timestamp and frame counter are paired to that app-owned track; it is not a PAL/DAC clock read and does not control the Qualcomm HAL, other applications, or a Bluetooth sink's physical oscillator.
@@ -23,7 +23,7 @@ This is a software ASRC/queue-control loop for IVANNA's own player. The timestam
 
 ## Native `VariableAsrc`
 
-`app/src/main/cpp/dsp/variable_asrc.cpp` is a native variable-ratio component with bounded target ratio, slew control, and tests. It is not currently the active resampler in `IvannaBridgePlayer`; the live player path uses `StereoAudioResampler` and `AudioTrackBufferPll`. Do not report the native component as production-active merely because CMake compiles it.
+`app/src/main/cpp/dsp/variable_asrc.cpp` remains a separately tested native variable-ratio component and is not the actuator in `IvannaBridgePlayer`. The app-owned live path uses `StereoAudioResampler` with one `AudioTrackBufferPll` controller; the daemon's native estimator is not fed into that app-owned loop, avoiding two controllers acting on the same resampler.
 
 ## Release gates
 
@@ -42,4 +42,4 @@ No hardware mixer control or undocumented ASRC parameter is required or assumed 
 
 Ratio convention is explicit: `appliedRatio` means **input frames consumed per output frame** by `VariableAsrc`. Therefore positive measured source-clock drift requests a ratio above unity; the opposite sign would increase output production and worsen a producer-ahead buffer. A configurable deadband suppresses corrections below measurement resolution, and the ratio correction is bounded and slew-limited. Any disabled, invalid, uncorrelated, or faulted route reports unity ratio.
 
-This native controller is covered by host regression tests. It is not automatically the active player controller: `IvannaBridgePlayer` currently uses `AudioTrackBufferPll` and `StereoAudioResampler`. Do not connect both controllers to one actuator simultaneously. Device validation and explicit stream-identity wiring are still required before promoting the native controller into a live route.
+The native daemon controller remains a separate telemetry/control-plane component. The app-owned path has its own rolling regression and buffer controller, driven exclusively by paired timestamps and frame positions from that same AudioTrack. Do not cross-feed PAL/daemon measurements into the app track. Device validation and explicit stream-identity wiring are still required before claiming system-wide or physical-clock correction.
