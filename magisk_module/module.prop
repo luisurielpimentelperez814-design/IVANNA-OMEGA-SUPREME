@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.182
-versionCode=473
+version=v2.5.183
+versionCode=474
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.182: bound ASRC controller configuration to observable window and positive ratios
+description=v2.5.183: reject stale ASRC telemetry after producer stops
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

@@ -1,3 +1,9 @@
+## v2.5.183 — ASRC telemetry expires when its producer stops
+
+- Adds a monotonic publication timestamp to the existing shared snapshot. Readers reject future or stale samples (default maximum age: 1 second), preventing persisted TRACKING state from masquerading as live control after producer failure.
+- Adds a regression test for stale-snapshot rejection with a shorter explicit age budget.
+- Aligns version metadata at v2.5.183 / versionCode 474.
+
 ## v2.5.182 — ASRC controller rejects untrackable and nonphysical configurations
 
 - The regression estimator has a fixed nine-anchor window. Configurations requesting nine or more intervals could never enter TRACKING; the constructor now rejects them fail-closed.

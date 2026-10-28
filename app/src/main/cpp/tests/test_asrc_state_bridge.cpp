@@ -113,6 +113,23 @@ TEST_F(AsrcStateBridgeTest, RechazaValoresNoFinitosSinCorromperSnapshot) {
     EXPECT_FALSE(pub.publish(invalid));
 }
 
+TEST_F(AsrcStateBridgeTest, RechazaSnapshotObsoleto) {
+    AsrcStatePublisher pub;
+    ASSERT_TRUE(pub.open(path_.c_str()));
+    AsrcControlSnapshot snap{};
+    snap.state = AsrcState::TRACKING;
+    snap.driftPpm = 12.0;
+    snap.targetPpm = 12.0;
+    snap.appliedRatio = 1.0 / 1.000012;
+    snap.reason = "correlated-route-valid";
+    ASSERT_TRUE(pub.publish(snap));
+    AsrcStateReader reader;
+    ASSERT_TRUE(reader.open(path_.c_str()));
+    ::usleep(3000);
+    AsrcStateSample out{};
+    EXPECT_FALSE(reader.read(out, 1000000ULL));
+}
+
 TEST_F(AsrcStateBridgeTest, SinRutaValidadaPublicaBypassOEspera) {
     AsrcClockController controller;
     ClockSample s{};

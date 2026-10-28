@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 namespace ivanna::audio {
@@ -42,6 +43,9 @@ struct alignas(8) AsrcStateSnapshot {
     std::atomic<uint32_t> driftPpmBits{0};      // float reinterpretado a bits
     std::atomic<uint32_t> targetPpmBits{0};
     std::atomic<uint32_t> appliedRatioBits{0};
+    // Split into lock-free 32-bit words for 32-bit ARM portability.
+    std::atomic<uint32_t> publishedAtMonotonicNsLo{0};
+    std::atomic<uint32_t> publishedAtMonotonicNsHi{0};
     // Texto en palabras atomicas: el seqlock no elimina data races de bytes no atomicos.
     std::array<std::atomic<uint32_t>, 6> reasonWords{}; // 24 bytes, NUL-terminado
 };
@@ -95,6 +99,10 @@ public:
         if (!p || state > static_cast<uint32_t>(::ivanna::dsp::AsrcState::FAULT) ||
             !std::isfinite(s.driftPpm) || !std::isfinite(s.targetPpm) ||
             !std::isfinite(s.appliedRatio) || s.appliedRatio <= 0.0) return false;
+        timespec now{};
+        if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0) return false;
+        const uint64_t publishedNs = static_cast<uint64_t>(now.tv_sec) * 1000000000ULL +
+                                     static_cast<uint64_t>(now.tv_nsec);
         uint32_t seq = p->sequence.load(std::memory_order_relaxed);
         if (seq & 1u) ++seq;
         p->sequence.store(seq + 1u, std::memory_order_release);
@@ -102,6 +110,8 @@ public:
         p->driftPpmBits.store(floatToBits(static_cast<float>(s.driftPpm)), std::memory_order_relaxed);
         p->targetPpmBits.store(floatToBits(static_cast<float>(s.targetPpm)), std::memory_order_relaxed);
         p->appliedRatioBits.store(floatToBits(static_cast<float>(s.appliedRatio)), std::memory_order_relaxed);
+        p->publishedAtMonotonicNsLo.store(static_cast<uint32_t>(publishedNs), std::memory_order_relaxed);
+        p->publishedAtMonotonicNsHi.store(static_cast<uint32_t>(publishedNs >> 32), std::memory_order_relaxed);
         char reason[24]{};
         if (s.reason) std::strncpy(reason, s.reason, sizeof(reason) - 1);
         uint32_t words[6]{};
@@ -125,6 +135,7 @@ struct AsrcStateSample {
     double driftPpm = 0.0;
     double targetPpm = 0.0;
     double appliedRatio = 1.0;
+    uint64_t publishedAtMonotonicNs = 0;
     char reason[24]{};
 };
 
@@ -159,7 +170,9 @@ public:
         return true;
     }
 
-    bool read(AsrcStateSample& out) const noexcept {
+    // Persisted mmap state must not masquerade as live after producer failure.
+    bool read(AsrcStateSample& out,
+              uint64_t maxAgeNs = 1000000000ULL) const noexcept {
         const auto* s = snapshot_;
         if (!s || s->magic.load(std::memory_order_acquire) != kAsrcStateSnapshotMagic)
             return false;
@@ -171,6 +184,9 @@ public:
             sample.driftPpm = bitsToFloat(s->driftPpmBits.load(std::memory_order_relaxed));
             sample.targetPpm = bitsToFloat(s->targetPpmBits.load(std::memory_order_relaxed));
             sample.appliedRatio = bitsToFloat(s->appliedRatioBits.load(std::memory_order_relaxed));
+            const uint32_t publishedLo = s->publishedAtMonotonicNsLo.load(std::memory_order_relaxed);
+            const uint32_t publishedHi = s->publishedAtMonotonicNsHi.load(std::memory_order_relaxed);
+            sample.publishedAtMonotonicNs = (static_cast<uint64_t>(publishedHi) << 32) | publishedLo;
             uint32_t words[6]{};
             for (size_t i = 0; i < s->reasonWords.size(); ++i)
                 words[i] = s->reasonWords[i].load(std::memory_order_relaxed);
@@ -181,7 +197,14 @@ public:
             if (before == after && !(after & 1u) &&
                 state <= static_cast<uint32_t>(::ivanna::dsp::AsrcState::FAULT) &&
                 std::isfinite(sample.driftPpm) && std::isfinite(sample.targetPpm) &&
-                std::isfinite(sample.appliedRatio) && sample.appliedRatio > 0.0) {
+                std::isfinite(sample.appliedRatio) && sample.appliedRatio > 0.0 &&
+                sample.publishedAtMonotonicNs != 0) {
+                timespec now{};
+                if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0) return false;
+                const uint64_t nowNs = static_cast<uint64_t>(now.tv_sec) * 1000000000ULL +
+                                       static_cast<uint64_t>(now.tv_nsec);
+                if (sample.publishedAtMonotonicNs > nowNs ||
+                    nowNs - sample.publishedAtMonotonicNs > maxAgeNs) return false;
                 out = sample;
                 return true;
             }
