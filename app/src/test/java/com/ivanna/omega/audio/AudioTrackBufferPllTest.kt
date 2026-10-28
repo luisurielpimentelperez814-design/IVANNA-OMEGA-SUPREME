@@ -112,6 +112,25 @@ class AudioTrackBufferPllTest {
         assertEquals(0.0, pll.measuredRateHz, 0.0)
     }
 
+    @Test fun frozenPresentedFramePositionClearsDriftEstimate() {
+        val pll = AudioTrackBufferPll(48_000)
+        var timeNs = 1_000_000_000L
+        var consumed = 0L
+        repeat(8) {
+            pll.observe(consumed + 5_000L, consumed, 10_000, timeNs)
+            consumed += 12_012L
+            timeNs += 250_000_000L
+        }
+        assertTrue(pll.isDriftLocked)
+        assertEquals(1_000.0, pll.measuredDriftPpm, 10.0)
+        timeNs += 250_000_000L
+        val correction = pll.observe(consumed + 5_000L, consumed, 10_000, timeNs)
+        assertTrue(!pll.isDriftLocked)
+        assertEquals(0.0, pll.measuredDriftPpm, 0.0)
+        assertEquals(0.0, pll.measuredRateHz, 0.0)
+        assertTrue(correction in -500.0..500.0)
+    }
+
     @Test fun timestampRegressionResetsClockAndActuatorToUnity() {
         val pll = AudioTrackBufferPll(48_000)
         pll.observe(5_000, 0, 10_000, 2_000_000_000L)

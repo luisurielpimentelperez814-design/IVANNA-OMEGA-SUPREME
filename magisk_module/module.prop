@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.187
-versionCode=478
+version=v2.5.188
+versionCode=479
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.187: SAFMUS bounded anti-windup and drift deadband stability
+description=v2.5.188: SAFMUS clears stale drift when AudioTrack frames stall
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

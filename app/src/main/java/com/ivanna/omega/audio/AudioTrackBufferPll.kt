@@ -117,6 +117,13 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
             return 0.0
         }
 
+        // A timestamp whose frame position stops advancing is not a valid
+        // clock-rate observation. Drop stale drift feed-forward immediately;
+        // keep the independent buffer PI alive so queue control can still recover.
+        if (consumedFrames == previousConsumedFrames) {
+            resetClockEstimateAt(consumedFrames, timestampNs)
+        }
+
         val dtSeconds = elapsedNs / 1_000_000_000.0
         val occupancyError = when {
             abs(phaseErrorFraction) <= BUFFER_DEADBAND_FRACTION -> 0.0
@@ -227,6 +234,10 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
             if (historyNext == 0) REGRESSION_WINDOW - 1 else historyNext - 1
         val latestFrame = if (latest >= 0) frameHistory[latest] else previousConsumedFrames
         val latestTime = if (latest >= 0) timeHistoryNs[latest] else previousTimestampNs
+        resetClockEstimateAt(latestFrame, latestTime)
+    }
+
+    private fun resetClockEstimateAt(framePosition: Long, timestampNs: Long) {
         frameHistory.fill(0L)
         timeHistoryNs.fill(0L)
         historyCount = 0
@@ -235,9 +246,9 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         hasDriftEstimate = false
         measuredRateHz = 0.0
         measuredDriftPpm = 0.0
-        if (latestFrame >= 0L && latestTime > 0L) {
-            frameHistory[0] = latestFrame
-            timeHistoryNs[0] = latestTime
+        if (framePosition >= 0L && timestampNs > 0L) {
+            frameHistory[0] = framePosition
+            timeHistoryNs[0] = timestampNs
             historyCount = 1
             historyNext = 1
         }

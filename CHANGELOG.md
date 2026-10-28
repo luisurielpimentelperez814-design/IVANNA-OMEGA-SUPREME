@@ -1,3 +1,10 @@
+## v2.5.188 — SAFMUS clears stale clock drift when presented frames stall
+
+- Treats an advancing monotonic timestamp with a frozen presented-frame position as a stalled/invalid clock observation instead of retaining an old OLS drift estimate in feed-forward control.
+- Clears stale measured rate and drift while retaining the independent buffer-occupancy PI, so queue recovery can continue without trusting a stopped clock.
+- Adds a JVM regression for a previously locked +1,000 ppm clock that then stops advancing; verifies drift lock and stale telemetry are cleared and the correction remains bounded.
+- Aligns release metadata at v2.5.188 / versionCode 479. CI and device playback measurements remain required; this does not claim physical HAL/PAL or Bluetooth clock control.
+
 ## v2.5.187 — SAFMUS anti-windup saturation boundary and drift deadband
 
 - Fixes the PI anti-windup decision to evaluate the current unsaturated actuator demand, allowing the controller to reach the exact ±500 ppm clamp instead of freezing one integral step early.
