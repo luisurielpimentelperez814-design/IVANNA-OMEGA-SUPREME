@@ -1,3 +1,12 @@
+## v2.5.175 — SAFMUS time-evolving acoustic regression and release candidate
+
+- Carries forward the SAFMUS bounded clock/FIFO servo, Q0.32 fractional phase stepping, 64-tap Kaiser ASRC reference, clock-loop feasibility checks, and GCC-PHAT delay-polarity regression gates.
+- Includes the latest native WFS time-evolving acoustic-trajectory regression added on main; CI must execute it with the complete native DSP suite.
+- Aligns version metadata for a fresh release pipeline run so the verified APK and ARM64 Magisk ZIP are built from the same commit.
+- Scope remains explicit: the host ASRC reference is not a PAL/HAL/DAC actuator. Live drift correction claims remain limited to the app-owned AudioTrack route; Bluetooth sink-clock and system-wide correction require separate device evidence.
+- Release is considered usable only after the current commit's Android build, JVM tests, APK/ZIP integrity gates and published assets all pass.
+- Version metadata: v2.5.175 / versionCode 466.
+
 ## v2.5.174 — SAFMUS sync/ASRC mathematical reference and release verification
 
 - Adds a deterministic host reference for the bounded clock/FIFO servo, Q0.32 fractional phase stepping, 64-tap Kaiser ASRC, clock-loop bandwidth feasibility, and GCC-PHAT fractional-delay polarity.
