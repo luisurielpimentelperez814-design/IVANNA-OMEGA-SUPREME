@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,12 +21,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.ivanna.omega.core.FourDRouteB
+import com.ivanna.omega.core.Ivanna4DNative
+import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.spatial.WfsCalibrationManager
 import java.util.Locale
 
 @Composable
 fun WfsCalibrationPanel() {
     val ctx = LocalContext.current
+    val store = remember { ParameterStore(ctx.applicationContext) }
+    var fdOn by remember { mutableStateOf(store.is4dEnabled()) }
+    var fdDepth by remember { mutableStateOf(store.get4dDepth()) }
+    var fdLead by remember { mutableStateOf(store.get4dLeadMs()) }
+    var fdArc by remember { mutableStateOf(store.is4dArcOn()) }
+    var fdArcDepth by remember { mutableStateOf(store.get4dArcDepth()) }
     var lx by remember { mutableStateOf(WfsCalibrationManager.listenerX) }
     var ly by remember { mutableStateOf(WfsCalibrationManager.listenerY) }
     var lz by remember { mutableStateOf(WfsCalibrationManager.listenerZ) }
@@ -108,6 +118,57 @@ fun WfsCalibrationPanel() {
                     }, modifier = Modifier.weight(1f)) { Text("Centrar") }
                 }
                 Text("Preset 7ch: reenvía el diseño de siete altavoces virtuales. Centrar: restaura una posición de referencia y orientación frontal.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("4D · Campo anticipado", style = MaterialTheme.typography.titleMedium)
+                // Mismo cableado que FourDPredictionPanel: ParameterStore -> SET_4D al daemon (efecto) + motor en proceso.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Switch(checked = fdOn, onCheckedChange = {
+                        fdOn = it
+                        store.set4dEnabled(it)
+                        FourDRouteB.push(store)
+                        if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetEnabled(it)
+                    })
+                    Text(if (fdOn) "4D activo" else "4D apagado: no altera el audio")
+                }
+                Text("Profundidad 4D: ${fmt(fdDepth)}", style = MaterialTheme.typography.bodyLarge)
+                Slider(value = fdDepth, valueRange = 0f..1f, onValueChange = {
+                    fdDepth = it
+                    store.set4dDepth(it)
+                    FourDRouteB.push(store)
+                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDepth(it)
+                })
+                Text("Antelación (lead): ${String.format(Locale.getDefault(), "%.1f", fdLead)} ms", style = MaterialTheme.typography.bodyLarge)
+                Slider(value = fdLead, valueRange = 5f..10f, onValueChange = {
+                    fdLead = it
+                    store.set4dLeadMs(it)
+                    FourDRouteB.push(store)
+                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetLeadMs(it)
+                })
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Switch(checked = fdArc, onCheckedChange = {
+                        fdArc = it
+                        store.set4dArcOn(it)
+                        store.set4dArcDepth(fdArcDepth)
+                        FourDRouteB.push(store)
+                        if (Ivanna4DNative.isAvailable) {
+                            Ivanna4DNative.nativeFourDSetArcDepth(fdArcDepth)
+                            Ivanna4DNative.nativeFourDSetArc(it)
+                        }
+                    })
+                    Text("Arco narrativo")
+                }
+                Text("Profundidad del arco: ${fmt(fdArcDepth)}", style = MaterialTheme.typography.bodyLarge)
+                Slider(value = fdArcDepth, valueRange = 0f..1f, onValueChange = {
+                    fdArcDepth = it
+                    store.set4dArcDepth(it)
+                    FourDRouteB.push(store)
+                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetArcDepth(it)
+                })
+                Text("Los controles viajan por SET_4D al daemon, que es lo que consume el efecto del sistema. Si el daemon no responde, solo actúa el motor en proceso. Enviar no equivale a una mejora audible verificada.", style = MaterialTheme.typography.bodySmall)
             }
         }
 
