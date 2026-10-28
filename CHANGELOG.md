@@ -1,3 +1,11 @@
+## v2.5.181 — ASRC shared-state IPC removes the non-atomic reason-string race
+
+- Replaces the shared-memory reason[24] character array with six lock-free atomic 32-bit words. A sequence counter alone does not make concurrent non-atomic string copies race-free.
+- Publisher rejects invalid enum states, non-finite drift/target/ratio values, and non-positive ratios. Reader validates state and numeric fields after a stable sequence read, rejecting corrupt telemetry.
+- Adds host regression coverage for NaN, infinity, and non-positive ASRC ratios.
+- Aligns version.properties, module.prop, Magisk updater metadata and README at v2.5.181 / versionCode 472.
+- This hardens software telemetry; it does not claim physical HAL/PAL ASRC actuation or device-level acoustic certification.
+
 ## v2.5.180 — Stereo ASRC rejects incomplete interleaved frames safely
 
 - Closes a malformed-input edge case in `StereoAudioResampler.process()`: an odd-length interleaved L/R float array previously passed through unchanged on the unity-rate fast path, while resampling paths silently ignored the final unmatched sample. The two paths therefore had inconsistent frame contracts.

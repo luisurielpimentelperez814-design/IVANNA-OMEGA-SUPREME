@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -95,6 +96,21 @@ TEST_F(AsrcStateBridgeTest, ControllerAhoraTieneUnConsumidorRealDeExtremoAExtrem
     ASSERT_TRUE(reader.read(out));
     EXPECT_EQ(out.state, AsrcState::TRACKING);
     EXPECT_STREQ(out.reason, "correlated-route-valid");
+}
+
+TEST_F(AsrcStateBridgeTest, RechazaValoresNoFinitosSinCorromperSnapshot) {
+    AsrcStatePublisher pub;
+    ASSERT_TRUE(pub.open(path_.c_str()));
+    AsrcControlSnapshot invalid{};
+    invalid.state = AsrcState::TRACKING;
+    invalid.driftPpm = std::numeric_limits<double>::quiet_NaN();
+    invalid.appliedRatio = 1.0;
+    EXPECT_FALSE(pub.publish(invalid));
+    invalid.driftPpm = 12.0;
+    invalid.appliedRatio = std::numeric_limits<double>::infinity();
+    EXPECT_FALSE(pub.publish(invalid));
+    invalid.appliedRatio = 0.0;
+    EXPECT_FALSE(pub.publish(invalid));
 }
 
 TEST_F(AsrcStateBridgeTest, SinRutaValidadaPublicaBypassOEspera) {

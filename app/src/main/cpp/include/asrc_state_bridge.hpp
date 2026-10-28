@@ -18,9 +18,11 @@
 
 #include "../dsp/asrc_clock_controller.hpp"
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -40,7 +42,8 @@ struct alignas(8) AsrcStateSnapshot {
     std::atomic<uint32_t> driftPpmBits{0};      // float reinterpretado a bits
     std::atomic<uint32_t> targetPpmBits{0};
     std::atomic<uint32_t> appliedRatioBits{0};
-    char reason[24]{};                     // motivo legible, NUL-terminado
+    // Texto en palabras atomicas: el seqlock no elimina data races de bytes no atomicos.
+    std::array<std::atomic<uint32_t>, 6> reasonWords{}; // 24 bytes, NUL-terminado
 };
 static_assert(sizeof(AsrcStateSnapshot) <= kAsrcStateSnapshotBytes,
               "AsrcStateSnapshot excede 64 B");
@@ -88,7 +91,10 @@ public:
 
     bool publish(const ::ivanna::dsp::AsrcControlSnapshot& s) noexcept {
         auto* p = snapshot_;
-        if (!p) return false;
+        const uint32_t state = static_cast<uint32_t>(s.state);
+        if (!p || state > static_cast<uint32_t>(::ivanna::dsp::AsrcState::FAULT) ||
+            !std::isfinite(s.driftPpm) || !std::isfinite(s.targetPpm) ||
+            !std::isfinite(s.appliedRatio) || s.appliedRatio <= 0.0) return false;
         uint32_t seq = p->sequence.load(std::memory_order_relaxed);
         if (seq & 1u) ++seq;
         p->sequence.store(seq + 1u, std::memory_order_release);
@@ -96,8 +102,12 @@ public:
         p->driftPpmBits.store(floatToBits(static_cast<float>(s.driftPpm)), std::memory_order_relaxed);
         p->targetPpmBits.store(floatToBits(static_cast<float>(s.targetPpm)), std::memory_order_relaxed);
         p->appliedRatioBits.store(floatToBits(static_cast<float>(s.appliedRatio)), std::memory_order_relaxed);
-        std::memset(p->reason, 0, sizeof(p->reason));
-        if (s.reason) std::strncpy(p->reason, s.reason, sizeof(p->reason) - 1);
+        char reason[24]{};
+        if (s.reason) std::strncpy(reason, s.reason, sizeof(reason) - 1);
+        uint32_t words[6]{};
+        std::memcpy(words, reason, sizeof(reason));
+        for (size_t i = 0; i < p->reasonWords.size(); ++i)
+            p->reasonWords[i].store(words[i], std::memory_order_relaxed);
         p->sequence.store(seq + 2u, std::memory_order_release);
         return true;
     }
@@ -161,10 +171,20 @@ public:
             sample.driftPpm = bitsToFloat(s->driftPpmBits.load(std::memory_order_relaxed));
             sample.targetPpm = bitsToFloat(s->targetPpmBits.load(std::memory_order_relaxed));
             sample.appliedRatio = bitsToFloat(s->appliedRatioBits.load(std::memory_order_relaxed));
-            std::memcpy(sample.reason, const_cast<char*>(s->reason), sizeof(sample.reason));
+            uint32_t words[6]{};
+            for (size_t i = 0; i < s->reasonWords.size(); ++i)
+                words[i] = s->reasonWords[i].load(std::memory_order_relaxed);
+            std::memcpy(sample.reason, words, sizeof(sample.reason));
             sample.reason[sizeof(sample.reason) - 1] = '\0';
             const uint32_t after = s->sequence.load(std::memory_order_acquire);
-            if (before == after && !(after & 1u)) { out = sample; return true; }
+            const uint32_t state = static_cast<uint32_t>(sample.state);
+            if (before == after && !(after & 1u) &&
+                state <= static_cast<uint32_t>(::ivanna::dsp::AsrcState::FAULT) &&
+                std::isfinite(sample.driftPpm) && std::isfinite(sample.targetPpm) &&
+                std::isfinite(sample.appliedRatio) && sample.appliedRatio > 0.0) {
+                out = sample;
+                return true;
+            }
         }
         return false;
     }
