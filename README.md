@@ -19,7 +19,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.188-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.189-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -42,7 +42,7 @@
 
 ## Sincronización del estado del código — 2026-10-28
 
-Esta ficha se mantiene deliberadamente alineada con `main`. La versión de esta revisión es **v2.5.188** (`versionCode=479`); el release solo se considera disponible cuando CI publica y verifica los artefactos versionados.
+Esta ficha se mantiene deliberadamente alineada con `main`. La versión de esta revisión es **v2.5.189** (`versionCode=480`); el release solo se considera disponible cuando CI publica y verifica los artefactos versionados.
 
 - **Interfaz adaptable:** los indicadores del encabezado OMNI se distribuyen en filas de hasta tres elementos para evitar recortes en pantallas estrechas y con fuente ampliada.
 - **Telemetría robusta:** el panel adaptativo rechaza muestras nativas incompletas o no finitas, limita las escalas de las barras y usa formato numérico independiente de la configuración regional. Si los datos no son válidos, lo indica en vez de simular una lectura.
