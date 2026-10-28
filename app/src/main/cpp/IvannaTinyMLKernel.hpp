@@ -174,6 +174,19 @@ public:
      */
     bool loadTrainedModelWeights(std::span<const uint8_t> binaryBlob) noexcept;
 
+    /**
+     * @brief Bloques decimados perdidos porque m_ringBuffer.push() devolvió
+     *        false (hilo de inferencia no drenó a tiempo). push()/pop() son
+     *        [[nodiscard]] por diseño -- antes ingestPcmBlock() descartaba el
+     *        resultado sin contarlo, así que un overrun bajo contención real
+     *        (throttling térmico, inversión de prioridad) era indistinguible
+     *        de "todo bien": sin contador, sin log en el hot path, sin forma
+     *        de verlo. RT-safe: un solo fetch_add relaxed, sin I/O ni malloc.
+     */
+    uint32_t ringOverflowCount() const noexcept {
+        return m_ringOverflowCount.load(std::memory_order_relaxed);
+    }
+
 private:
     void workerInferenceLoop() noexcept;
     void computeCausalMelSpectrogram(const float* __restrict inputFrame) noexcept;
@@ -181,6 +194,7 @@ private:
     void initializeFilterbanks() noexcept;
 
     SpscAudioRingBuffer<float, kRingCapacity> m_ringBuffer;
+    std::atomic<uint32_t> m_ringOverflowCount{0};
 
     IVANNA_ALIGNED_SIMD float m_decimRing[8]{0.0f};
     size_t m_decimRingPos{0};

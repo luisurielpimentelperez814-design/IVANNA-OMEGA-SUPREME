@@ -124,14 +124,18 @@ void IvannaTinyMLAudioKernel::ingestPcmBlock(
             decimatedStaging[stagingCount++] = filteredSample;
 
             if (stagingCount == 256) {
-                m_ringBuffer.push(decimatedStaging, stagingCount);
+                if (!m_ringBuffer.push(decimatedStaging, stagingCount)) [[unlikely]] {
+                    m_ringOverflowCount.fetch_add(1, std::memory_order_relaxed);
+                }
                 stagingCount = 0;
             }
         }
     }
 
     if (stagingCount > 0) {
-        m_ringBuffer.push(decimatedStaging, stagingCount);
+        if (!m_ringBuffer.push(decimatedStaging, stagingCount)) [[unlikely]] {
+            m_ringOverflowCount.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 }
 
@@ -332,7 +336,16 @@ void IvannaTinyMLAudioKernel::workerInferenceLoop() noexcept {
             std::memmove(&frameBuffer[0], &frameBuffer[kHopLengthSamples],
                          (kFftWindowSize - kHopLengthSamples) * sizeof(float));
 
-            m_ringBuffer.pop(&frameBuffer[kFftWindowSize - kHopLengthSamples], kHopLengthSamples);
+            // SPSC with a single consumer (this thread) and the availability
+            // check just above: pop() succeeding is an invariant, not a
+            // possibility. It is still checked -- processing frameBuffer
+            // after a failed pop would run inference on a stale/partially
+            // shifted window instead of real samples, which is worse than
+            // skipping one hop.
+            if (!m_ringBuffer.pop(&frameBuffer[kFftWindowSize - kHopLengthSamples],
+                                  kHopLengthSamples)) [[unlikely]] {
+                continue;
+            }
 
             computeCausalMelSpectrogram(frameBuffer);
             executeInt8StreamingInference();

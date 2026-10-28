@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.178
-versionCode=469
+version=v2.5.179
+versionCode=470
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.178: remove two dead-code files resurrected by a past merge (AudioResampler, HeadTrackingManager)
+description=v2.5.179: fix silent TinyML ring-buffer overflow drops (now counted, no longer invisible)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
