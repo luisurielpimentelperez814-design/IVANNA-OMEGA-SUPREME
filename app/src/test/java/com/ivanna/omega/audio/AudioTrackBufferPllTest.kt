@@ -37,10 +37,14 @@ class AudioTrackBufferPllTest {
         val pll = AudioTrackBufferPll(48_000)
         var timeNs = 1_000_000_000L
         // Capacity 10,000; target 5,000; 5,100 is only 1% above target.
-        pll.observe(5_100, 0, 10_000, timeNs)
+        var submitted = 5_100L
+        var consumed = 0L
+        pll.observe(submitted, consumed, 10_000, timeNs)
         repeat(20) {
             timeNs += 100_000_000L
-            val correction = pll.observe(5_100, 100, 10_000, timeNs)
+            submitted += 4_800L
+            consumed += 4_800L
+            val correction = pll.observe(submitted, consumed, 10_000, timeNs)
             assertEquals("deadband suppresses small occupancy noise", 0.0, correction, 0.0)
         }
     }
