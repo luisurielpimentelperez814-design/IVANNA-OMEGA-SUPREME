@@ -111,8 +111,7 @@ class AudioEngine {
          * Invalid/missing beacon data is reported as unavailable, never guessed.
          */
         fun getClockTelemetryStatic(): AudioClockTelemetry {
-            if (!libLoaded) return AudioClockTelemetry()
-            return runCatching {
+            val direct = if (!libLoaded) AudioClockTelemetry() else runCatching {
                 val v = nativeGetClockTelemetryJni() ?: return@runCatching AudioClockTelemetry()
                 if (v.size < 6) return@runCatching AudioClockTelemetry()
                 AudioClockTelemetry(
@@ -127,6 +126,18 @@ class AudioEngine {
                 Log.w(TAG, "Clock telemetry unavailable: $it")
                 AudioClockTelemetry()
             }
+            // El beacon vive en /data/local/tmp (shell_data_file): una app untrusted_app normalmente NO puede
+            // abrirlo y el JNI devuelve "no válido" aunque el efecto sí publique. El daemon (root) lo relevará.
+            if (direct.callbackValid || direct.hardwareClockValid) return direct
+            val d = DaemonClockRelay.fetch() ?: return direct
+            return AudioClockTelemetry(
+                callbackValid = d.optBoolean("callbackValid", false),
+                callbackRateHz = d.optDouble("callbackRateHz", 0.0).toFloat(),
+                callbackDriftPpm = d.optDouble("callbackDriftPpm", 0.0).toFloat(),
+                hardwareClockValid = d.optBoolean("hardwareValid", false),
+                hardwareRateHz = d.optDouble("hardwareRateHz", 0.0).toFloat(),
+                hardwareDriftPpm = d.optDouble("hardwareDriftPpm", 0.0).toFloat()
+            )
         }
 
         @JvmStatic private external fun nativeGetClockTelemetryJni(): FloatArray?
@@ -138,7 +149,31 @@ class AudioEngine {
          * "no disponible" en vez de simular TRACKING.
          */
         fun getAsrcStateStatic(): AsrcSoftwareTelemetry {
-            if (!libLoaded) return AsrcSoftwareTelemetry()
+            val direct = if (!libLoaded) AsrcSoftwareTelemetry() else getAsrcStateDirect()
+            if (direct.valid) return direct
+            // /data/vendor/ivanna_audio/asrc_state es 0660 root: la app no lo abre. Relevo por el daemon.
+            val d = DaemonClockRelay.fetch() ?: return direct
+            if (!d.optBoolean("asrcValid", false)) return direct
+            return AsrcSoftwareTelemetry(
+                valid = true,
+                state = asrcStateFromCode(d.optInt("asrcState", -1)),
+                driftPpm = d.optDouble("asrcDriftPpm", 0.0).toFloat(),
+                targetPpm = d.optDouble("asrcTargetPpm", 0.0).toFloat(),
+                appliedRatio = d.optDouble("asrcRatio", 1.0).toFloat()
+            )
+        }
+
+        private fun asrcStateFromCode(code: Int): AsrcSoftwareState = when (code) {
+            0 -> AsrcSoftwareState.INIT
+            1 -> AsrcSoftwareState.WAITING_FOR_SAMPLES
+            2 -> AsrcSoftwareState.TRACKING
+            3 -> AsrcSoftwareState.HOLD
+            4 -> AsrcSoftwareState.BYPASS
+            5 -> AsrcSoftwareState.FAULT
+            else -> AsrcSoftwareState.UNKNOWN
+        }
+
+        private fun getAsrcStateDirect(): AsrcSoftwareTelemetry {
             return runCatching {
                 val v = nativeGetAsrcStateJni() ?: return@runCatching AsrcSoftwareTelemetry()
                 if (v.size < 5 || v[0] < 0.5f) return@runCatching AsrcSoftwareTelemetry()
@@ -302,5 +337,28 @@ class AudioEngine {
     fun getBenchmarkPath(): String? {
         if (!libLoaded) return null
         return runCatching { nativeGetBenchmarkPath() }.getOrNull()
+    }
+}
+
+/**
+ * Relevo de telemetría de reloj vía daemon (GET_CLOCK_TELEMETRY). Caché de 400 ms para que beacon y ASRC
+ * compartan una sola consulta por refresco del Profiler. Devuelve null si el daemon no responde (nunca simula).
+ */
+internal object DaemonClockRelay {
+    private const val TTL_MS = 400L
+    @Volatile private var lastAt = 0L
+    @Volatile private var last: org.json.JSONObject? = null
+
+    @Synchronized
+    fun fetch(): org.json.JSONObject? {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastAt < TTL_MS) return last
+        lastAt = now
+        last = runCatching {
+            val raw = com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"GET_CLOCK_TELEMETRY\"}")
+            if (raw.isBlank() || raw == "ACK") null
+            else org.json.JSONObject(raw).takeIf { it.optBoolean("ok", false) }
+        }.getOrNull()
+        return last
     }
 }

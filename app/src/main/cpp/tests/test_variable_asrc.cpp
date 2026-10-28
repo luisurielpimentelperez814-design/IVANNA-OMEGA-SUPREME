@@ -23,10 +23,11 @@ TEST(AsrcClockController, RegressionEstimatesDriftAndUsesDocumentedRatioSign) {
     }
     ASSERT_EQ(s.state, ivanna::dsp::AsrcState::TRACKING);
     EXPECT_NEAR(s.driftPpm, 41.6667, 0.5);
-    // Ratio is input-frames consumed per output frame: positive source-clock
-    // drift must advance through input faster to keep output on nominal time.
-    EXPECT_GT(s.appliedRatio, 1.0);
-    EXPECT_LE(s.appliedRatio, 1.0005);
+    // rho = input frames consumed per output frame. The measured clock is the SINK
+    // (presented frames): positive drift = sink faster = more output frames needed,
+    // so rho must be BELOW unity (verified closed-loop in SinkDriftIsCancelledClosedLoop).
+    EXPECT_LT(s.appliedRatio, 1.0);
+    EXPECT_GE(s.appliedRatio, 1.0 / 1.0005);
 }
 
 TEST(AsrcClockController, SmallDriftFallsInsideDeadband) {
@@ -68,6 +69,56 @@ TEST(AsrcClockController, RatioCorrectionIsBoundedAndSlewLimited) {
                       48000}, true, true);
     }
     ASSERT_EQ(s.state, ivanna::dsp::AsrcState::TRACKING);
-    EXPECT_LE(s.appliedRatio, 1.000011);
-    EXPECT_GE(s.appliedRatio, 1.0);
+    EXPECT_GE(s.appliedRatio, 1.0 / 1.000011);
+    EXPECT_LE(s.appliedRatio, 1.0);
+}
+
+// Lazo cerrado: la razon publicada, aplicada a VariableAsrc, debe REDUCIR el desajuste
+// entre lo que produce el ASRC y lo que consume el sumidero. Detecta el signo invertido.
+static double closedLoopResidualPpm(double sinkPpm, double* uncorrectedPpm) {
+    const double nominal = 48000.0;
+    ivanna::dsp::AsrcClockController::Config cc{};
+    cc.maxSlewPpmPerSecond = 1.0e6;                    // aislar el signo de la dinamica de slew
+    ivanna::dsp::AsrcClockController c(cc);
+    ivanna::dsp::AsrcControlSnapshot s{};
+    // Intervalos de 1 s: la resolucion de un contador entero de frames es 1/48000 ~ 21 ppm por muestra.
+    for (int i = 1; i <= 8; ++i) {
+        const int64_t dt = static_cast<int64_t>(i) * 1000000000LL;
+        const uint64_t frames = static_cast<uint64_t>(std::llround(dt * 1e-9 * nominal * (1.0 + sinkPpm * 1e-6)));
+        s = c.update({frames, 1000000000LL + dt, 48000}, true, true);
+    }
+    if (s.state != ivanna::dsp::AsrcState::TRACKING) return 1e9;
+    VariableAsrc::Config vc; vc.maxSlewPpmPerSecond = 1.0e9;
+    VariableAsrc a(vc);
+    a.setTargetRatio(s.appliedRatio);
+    std::vector<float> in(2 * 480, 0.f), out(2 * 1000);
+    size_t made = 0, produced = 0, consumed = 0;
+    for (int k = 0; k < 6000; ++k) { a.process(in.data(), 480, out.data(), 1000, made); produced += made; consumed += 480; }
+    const double needed = 1.0 + sinkPpm * 1e-6;                   // salidas por entrada nominal
+    const double got = static_cast<double>(produced) / static_cast<double>(consumed);
+    if (uncorrectedPpm) *uncorrectedPpm = std::abs(needed - 1.0) / needed * 1e6;
+    return std::abs(needed - got) / needed * 1e6;
+}
+
+TEST(AsrcClockController, SinkDriftIsCancelledClosedLoop) {
+    for (double sinkPpm : {+100.0, -100.0, +300.0, -300.0}) {
+        double before = 0.0;
+        const double after = closedLoopResidualPpm(sinkPpm, &before);
+        EXPECT_LT(after, 0.2 * before + 10.0) << "sink " << sinkPpm << " ppm: residual " << after << " ppm";
+        EXPECT_LT(after, before) << "la correccion no debe empeorar el desajuste (sink " << sinkPpm << " ppm)";
+    }
+}
+
+// Caso negativo: un detector de signo invertido DEBE fallar. Con rho = 1 + drift el residuo duplica el error.
+TEST(AsrcClockController, InvertedSignWouldBeDetected) {
+    const double sinkPpm = 100.0;
+    VariableAsrc::Config vc; vc.maxSlewPpmPerSecond = 1.0e9;
+    VariableAsrc a(vc);
+    a.setTargetRatio(1.0 + sinkPpm * 1e-6);                       // convencion ANTIGUA (incorrecta)
+    std::vector<float> in(2 * 480, 0.f), out(2 * 1000);
+    size_t made = 0, produced = 0, consumed = 0;
+    for (int k = 0; k < 6000; ++k) { a.process(in.data(), 480, out.data(), 1000, made); produced += made; consumed += 480; }
+    const double needed = 1.0 + sinkPpm * 1e-6;
+    const double residual = std::abs(needed - static_cast<double>(produced) / consumed) / needed * 1e6;
+    EXPECT_GT(residual, 150.0);                                  // ~200 ppm: peor que sin corregir (100 ppm)
 }
