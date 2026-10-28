@@ -123,6 +123,7 @@ class AudioTrackBufferPllTest {
         }
         assertTrue(pll.isDriftLocked)
         assertEquals(1_000.0, pll.measuredDriftPpm, 10.0)
+        consumed -= 12_012L // reuse the last presented frame position
         timeNs += 250_000_000L
         val correction = pll.observe(consumed + 5_000L, consumed, 10_000, timeNs)
         assertTrue(!pll.isDriftLocked)
