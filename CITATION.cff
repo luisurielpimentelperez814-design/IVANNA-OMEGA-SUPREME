@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "Si usas IVANNA OMEGA SUPREME en investigación o en un proyecto derivado, cítalo así."
 title: "IVANNA OMEGA SUPREME"
 type: software
-version: "2.5.16"
-date-released: "2026-10-14"
+# No fixed "version"/"date-released": they went stale (this file said 2.5.16 while releases were at 2.5.18x).
+# Cite the exact release tag from https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases
 repository-code: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME"
 url: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME"
 abstract: >-

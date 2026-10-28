@@ -6,7 +6,7 @@
 
 ### Una guía visual y honesta para entender el proyecto
 
-[README técnico](README.md) · [Arquitectura](docs/release_media/architecture-map.svg) · [Estado de compilación](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) · [Versiones](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases)
+[README técnico](README.md) · [English quick start](README.en.md) · [Arquitectura](docs/release_media/architecture-map.svg) · [Estado de compilación](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions) · [Versiones](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases)
 
 </div>
 

@@ -8,6 +8,7 @@
 
 <p>
   <a href="LEAME.md">Guía en español sencillo</a> ·
+  <a href="README.en.md">English quick start</a> ·
   <a href="docs/GUIA_CONTROLES_COMPLETA_ES.md">Guía completa de controles en español</a> ·
   <a href="docs/ENGINEERING.md">Ficha de ingeniería</a> ·
   <a href="docs/SAF_SAFMUS_UNIFIED_MATHEMATICAL_CONTRACT.md">Contrato matemático SAF/SAFMUS</a> ·
