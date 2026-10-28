@@ -43,3 +43,21 @@ No hardware mixer control or undocumented ASRC parameter is required or assumed 
 Ratio convention is explicit: `appliedRatio` means **input frames consumed per output frame** by `VariableAsrc`. Therefore positive measured source-clock drift requests a ratio above unity; the opposite sign would increase output production and worsen a producer-ahead buffer. A configurable deadband suppresses corrections below measurement resolution, and the ratio correction is bounded and slew-limited. Any disabled, invalid, uncorrelated, or faulted route reports unity ratio.
 
 The native daemon controller remains a separate telemetry/control-plane component. The app-owned path has its own rolling regression and buffer controller, driven exclusively by paired timestamps and frame positions from that same AudioTrack. Do not cross-feed PAL/daemon measurements into the app track. Device validation and explicit stream-identity wiring are still required before claiming system-wide or physical-clock correction.
+
+
+## Reference-model validation
+
+The repository root `sync_asrc.py` is the deterministic host reference for the
+SAFMUS FIFO-occupancy plant, bounded PI/anti-windup control, adaptive two-state
+clock estimator, Q0.32 phase stepping, Kaiser-windowed 64-tap/1024-phase ASRC,
+clock-loop bandwidth selection, and GCC-PHAT sign convention. CI runs both
+`python3 sync_asrc.py --self-test` and `tests/test_sync_asrc.py`.
+
+This reference model is not itself an Android runtime actuator. The app-owned
+`IvannaBridgePlayer` path remains controlled by `AudioTrackBufferPll` and
+`StereoAudioResampler`, whose measured queue is the output AudioTrack queue,
+not the ASRC input FIFO in the reference plant. Do not substitute one error
+signal for the other: their control signs and plant dynamics differ. The
+native `VariableAsrc` is separately tested and is not implicitly activated.
+A production wiring change requires a single stream-identity contract joining
+the measured input FIFO, its timestamp source, and the ASRC instance.
