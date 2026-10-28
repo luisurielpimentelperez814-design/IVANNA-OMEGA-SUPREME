@@ -176,7 +176,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             "Callback = cadencia software; hardware = válido solo con productor PCM correlacionado"
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LiveRow("Callback", if (effectClockTelemetry.callbackValid) "disponible" else "no disponible")
+                LiveRow("Callback", if (effectClockTelemetry.callbackValid) "disponible" else "sin datos (efecto no activo en audioserver o daemon sin conexión)")
                 LiveRow(
                     "Cadencia callback",
                     if (effectClockTelemetry.callbackValid) "%.2f Hz".format(effectClockTelemetry.callbackRateHz) else "—"
@@ -234,7 +234,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 LiveRow(
                     "Estado",
                     when {
-                        !metrics.clockTimestampAvailable -> "timestamp no disponible"
+                        !metrics.clockTimestampAvailable -> "sin AudioTrack propio activo (reproductor puente inactivo) o timestamp no disponible"
                         metrics.clockServoLocked -> "seguimiento estable"
                         else -> "adquiriendo muestras"
                     }
@@ -258,7 +258,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             "Observador de solo lectura sobre la salida del reproductor; no modifica el audio"
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LiveRow("Modelo", if (metrics.predictiveValid) "fiable" else "sin modelo fiable")
+                LiveRow("Modelo", if (metrics.predictiveValid) "fiable" else "sin modelo fiable (requiere reproductor puente activo)")
                 LiveRow("Confianza", if (metrics.predictiveValid) "%.0f %%".format(metrics.predictiveConfidence * 100f) else "—")
                 LiveRow("Ganancia de predicción", if (metrics.predictiveValid) "%.1f dB".format(metrics.predictiveGainDb) else "—")
                 LiveRow("Transitorio", if (metrics.predictiveValid && metrics.predictiveTransient) "detectado" else "—")
