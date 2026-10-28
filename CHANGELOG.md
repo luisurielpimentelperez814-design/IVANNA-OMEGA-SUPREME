@@ -1,3 +1,12 @@
+## v2.5.174 — SAFMUS sync/ASRC mathematical reference and release verification
+
+- Adds a deterministic host reference for the bounded clock/FIFO servo, Q0.32 fractional phase stepping, 64-tap Kaiser ASRC, clock-loop bandwidth feasibility, and GCC-PHAT fractional-delay polarity.
+- Adds regression gates for unit-DC phase kernels, unity-ratio frame advance, accumulated fractional phase, infeasible jitter headroom, bounded controller output/covariance, and GCC-PHAT delay sign.
+- Makes CI execute the reference self-test and its regression suite alongside the native DSP and Android packaging gates.
+- Evidence boundary: the reference model is not a runtime actuator. Live correction remains scoped to IVANNA's app-owned AudioTrack; no system-wide, PAL/HAL, DAC or Bluetooth sink-clock correction is claimed.
+- Release acceptance requires the current commit's Android build, staged ZIP/APK integrity checks, and publication workflow to pass.
+- Version metadata: v2.5.174 / versionCode 465.
+
 ## v2.5.173 — SAFMUS unified app-owned clock servo
 
 - Unifies the app player's clock-drift feed-forward and buffer-occupancy PI into one actuator path; removes the separate diagnostic estimator from the live correction loop.

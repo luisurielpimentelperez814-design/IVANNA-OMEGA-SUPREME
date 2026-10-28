@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.173
-versionCode=464
+version=v2.5.174
+versionCode=465
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.173: unified SAFMUS clock-drift and buffer servo
+description=v2.5.174: SAFMUS sync/ASRC reference model, regression gates and verified release bundle
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
