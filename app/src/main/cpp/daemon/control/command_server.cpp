@@ -7,6 +7,7 @@
 #include "../../include/omega_shared.h"
 #include "../../include/omega_control_bus.h"
 #include "../../include/omega_effect_beacon.h"
+#include "../../include/asrc_state_bridge.hpp"   // GET_CLOCK_TELEMETRY: el daemon (root) lee el canal ASRC que la app no puede abrir
 #include "../../include/omega_user_flags.hpp"   // v2.5.16: SET_USER_FLAGS (tabla blanca de bits)
 #include "../../spatial/SafmusLatentGuard.hpp" // valida el vector SAFMUS antes de publicarlo
 #include "../../ivanna_hires_config.hpp"
@@ -372,6 +373,28 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             static_cast<unsigned long long>(m_head_pose_generation),
             static_cast<unsigned long long>(ackReadable ? ack.generation : 0u),
             m_state.head_yaw_rad, m_state.head_pitch_rad);
+
+    } else if (strcmp(action,"GET_CLOCK_TELEMETRY")==0) {
+        // CAUSA RAIZ de los campos vacios del Profiler: el beacon (/data/local/tmp, shell_data_file) y el
+        // canal ASRC (/data/vendor/ivanna_audio, 0660 root) NO son legibles por untrusted_app (DAC/SELinux),
+        // asi que el JNI de la app devolvia siempre "no valido". El daemon es root y ya habla con la app por
+        // el socket abstracto: relevamos aqui los mismos datos reales (sin inventar ninguno).
+        ivanna::EffectCallbackClockStatus cb{};
+        ivanna::EffectHardwareClockStatus hw{};
+        const bool cbOk = ivanna::readEffectCallbackClockStatus(cb) && cb.valid;
+        const bool hwOk = ivanna::readEffectHardwareClockStatus(hw) && hw.valid;
+        ivanna::audio::AsrcStateReader asrcReader;
+        ivanna::audio::AsrcStateSample asrc{};
+        const bool asrcOk = asrcReader.open() && asrcReader.read(asrc);
+        n = snprintf(reply, reply_sz,
+            "{\"ok\":true,\"action\":\"GET_CLOCK_TELEMETRY\","
+            "\"callbackValid\":%s,\"callbackRateHz\":%.3f,\"callbackDriftPpm\":%d,"
+            "\"hardwareValid\":%s,\"hardwareRateHz\":%.3f,\"hardwareDriftPpm\":%d,"
+            "\"asrcValid\":%s,\"asrcState\":%d,\"asrcDriftPpm\":%.3f,\"asrcTargetPpm\":%.3f,\"asrcRatio\":%.9f}",
+            cbOk ? "true" : "false", cbOk ? cb.observedSampleRateHz : 0.0, cbOk ? (int)cb.driftPpm : 0,
+            hwOk ? "true" : "false", hwOk ? hw.measuredSampleRateHz : 0.0, hwOk ? (int)hw.driftPpm : 0,
+            asrcOk ? "true" : "false", asrcOk ? (int)asrc.state : 0,
+            asrcOk ? asrc.driftPpm : 0.0, asrcOk ? asrc.targetPpm : 0.0, asrcOk ? asrc.appliedRatio : 1.0);
 
     } else if (strcmp(action,"SET_SCENE_POSE")==0) {
         // Pose de la escena en Ruta B = azimut/elevación (yaw/pitch del bus v8, MISMO camino y ack que SET_HEAD_POSE)
