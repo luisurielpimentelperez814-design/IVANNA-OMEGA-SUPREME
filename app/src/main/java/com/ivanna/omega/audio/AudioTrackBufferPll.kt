@@ -29,6 +29,8 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         private const val REQUIRED_REGRESSION_POINTS = 4
         private const val MAX_MEASURED_DRIFT_PPM = 2_000.0
         private const val DRIFT_FILTER_ALPHA = 0.2
+        // Ignore sub-half-ppm estimator noise for actuator feed-forward.
+        private const val DRIFT_FEED_FORWARD_DEADBAND_PPM = 0.5
     }
 
     private var previousTimestampNs = 0L
@@ -130,16 +132,20 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         estimateClockDrift()
 
         // Drift feed-forward and buffer PI share one bounded actuator.
-        val driftFeedForward = if (isDriftLocked) filteredDriftPpm else 0.0
-        val candidateRawTarget = driftFeedForward -
+        val driftFeedForward = if (
+            isDriftLocked && abs(filteredDriftPpm) >= DRIFT_FEED_FORWARD_DEADBAND_PPM
+        ) filteredDriftPpm else 0.0
+        val currentRawTarget = driftFeedForward -
             (KP_PPM_PER_FULL_BUFFER * occupancyError +
-                KI_PPM_PER_FULL_BUFFER_SECOND * candidateIntegral)
+                KI_PPM_PER_FULL_BUFFER_SECOND * integralErrorSeconds)
 
-        // Conditional-integration anti-windup: do not integrate error that
-        // would drive an already saturated actuator farther into saturation.
+        // Conditional-integration anti-windup: test the actuator's current
+        // unsaturated demand, not the candidate integral. This lets one update
+        // reach the hard limit exactly; subsequent updates cannot wind farther
+        // into saturation. The final actuator remains clamped to ±500 ppm.
         val pushesFurtherIntoSaturation =
-            (candidateRawTarget > MAX_CORRECTION_PPM && occupancyError < 0.0) ||
-            (candidateRawTarget < -MAX_CORRECTION_PPM && occupancyError > 0.0)
+            (currentRawTarget >= MAX_CORRECTION_PPM && occupancyError < 0.0) ||
+            (currentRawTarget <= -MAX_CORRECTION_PPM && occupancyError > 0.0)
         if (!pushesFurtherIntoSaturation) integralErrorSeconds = candidateIntegral
 
         val occupancyCorrection = -(KP_PPM_PER_FULL_BUFFER * occupancyError +

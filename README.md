@@ -19,7 +19,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.186-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.187-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -42,12 +42,12 @@
 
 ## Sincronización del estado del código — 2026-10-28
 
-Esta ficha se mantiene deliberadamente alineada con `main`. La versión de esta revisión es **v2.5.186** (`versionCode=477`); el release solo se considera disponible cuando CI publica y verifica los artefactos versionados.
+Esta ficha se mantiene deliberadamente alineada con `main`. La versión de esta revisión es **v2.5.187** (`versionCode=478`); el release solo se considera disponible cuando CI publica y verifica los artefactos versionados.
 
 - **Interfaz adaptable:** los indicadores del encabezado OMNI se distribuyen en filas de hasta tres elementos para evitar recortes en pantallas estrechas y con fuente ampliada.
 - **Telemetría robusta:** el panel adaptativo rechaza muestras nativas incompletas o no finitas, limita las escalas de las barras y usa formato numérico independiente de la configuración regional. Si los datos no son válidos, lo indica en vez de simular una lectura.
 - **Lenguaje visual:** se conserva el sistema Aurora Obsidiana (fondo obsidiana, cian de señal, magenta de procesamiento, verde de estado y oro de acento); los colores no sustituyen el estado real del motor.
-- **SAFMUS:** el reproductor propio conecta AudioTrack.getTimestamp() → AudioTrackBufferPll (regresión OLS + PI con banda muerta y anti-windup) → StereoAudioResampler.setClockCorrectionPpm(). La telemetría HAL/PAL del daemon permanece separada para no mezclar relojes de streams distintos. Ver el contrato matemático SAF/SAFMUS.
+- **SAFMUS:** el reproductor propio conecta AudioTrack.getTimestamp() → AudioTrackBufferPll (regresión OLS validada + PI con banda muerta, anti-windup en el límite del actuador y feed-forward con umbral de ruido) → StereoAudioResampler.setClockCorrectionPpm(). La telemetría HAL/PAL del daemon permanece separada para no mezclar relojes de streams distintos. Ver el contrato matemático SAF/SAFMUS.
 - **Evidencia del audio:** la presencia de un indicador de ruta o de un panel de telemetría no certifica por sí misma que el audio se esté procesando ni que exista control del reloj físico del DAC/HAL/PAL.
 - **Puerta de publicación:** la CI debe pasar los tests nativos, el empaquetado Android, la comprobación de integridad del APK/ZIP y la publicación. La mejora visual no se presenta como una mejora acústica medida.
 - **Validación pendiente en hardware:** revisar el encabezado OMNI en el Moto G85 con tamaño de fuente estándar y ampliado, y comprobar que ningún indicador importante queda oculto al cambiar de ruta o activar módulos.

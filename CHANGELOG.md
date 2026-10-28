@@ -1,3 +1,10 @@
+## v2.5.187 — SAFMUS anti-windup saturation boundary and drift deadband
+
+- Fixes the PI anti-windup decision to evaluate the current unsaturated actuator demand, allowing the controller to reach the exact ±500 ppm clamp instead of freezing one integral step early.
+- Adds a 0.5 ppm feed-forward deadband so numerical OLS noise around a nominal clock cannot create non-zero resampler corrections while buffer occupancy is inside its deadband.
+- Keeps the ±500 ppm actuator clamp, bounded slew, clock-estimator validation and release JVM tests enabled.
+- Release candidate only: GitHub Actions must pass all JVM/native tests and verify APK/ZIP integrity before v2.5.187 is considered released.
+
 ## v2.5.186 — SAFMUS clock reacquisition and release metadata gate
 
 - Includes the clock-regression outlier fix: invalid OLS windows discard stale drift feed-forward and reacquire from a fresh monotonic pair.

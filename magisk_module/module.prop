@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.186
-versionCode=477
+version=v2.5.187
+versionCode=478
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.186: SAFMUS robust clock reacquisition and release metadata integrity
+description=v2.5.187: SAFMUS bounded anti-windup and drift deadband stability
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
