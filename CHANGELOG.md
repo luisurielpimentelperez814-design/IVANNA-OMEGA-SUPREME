@@ -1,3 +1,10 @@
+## v2.5.186 — SAFMUS clock reacquisition and release metadata gate
+
+- Includes the clock-regression outlier fix: invalid OLS windows discard stale drift feed-forward and reacquire from a fresh monotonic pair.
+- Adds release-time consistency checks across version.properties, module.prop, update.json version/versionCode and the canonical ZIP URL; publication fails closed on mismatch.
+- Aligns app, module, update manifest and README at v2.5.186 / versionCode 477.
+- CI must pass and publish/verify the exact commit artifacts before this version is considered released.
+
 ## v2.5.185 — SAFMUS rejects contaminated clock-regression windows
 
 - When an OLS clock-rate estimate exceeds the validated range, clear the contaminated rolling window and stale drift feed-forward, then reacquire from the newest monotonic frame/timestamp pair.

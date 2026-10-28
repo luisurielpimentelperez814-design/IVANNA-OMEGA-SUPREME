@@ -879,13 +879,25 @@ jobs:
           VERSION=$(grep -m1 '^version=' magisk_module/module.prop | cut -d= -f2)
           [ -n "$VERSION" ] || { echo "ERROR: module.prop sin campo version="; exit 1; }
           UPDATE_JSON_VERSION=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['version'])")
-          if [ "$VERSION" != "$UPDATE_JSON_VERSION" ]; then
-            echo "ERROR: module.prop dice $VERSION pero update.json dice $UPDATE_JSON_VERSION — desincronizados de nuevo."
-            echo "Actualiza magisk_module/update.json (version/versionCode/zipUrl) para que coincida con module.prop."
+          MODULE_CODE=$(grep -m1 '^versionCode=' magisk_module/module.prop | cut -d= -f2)
+          UPDATE_JSON_CODE=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['versionCode'])")
+          PROPERTIES_VERSION=$(grep -m1 '^versionName=' version.properties | cut -d= -f2)
+          PROPERTIES_CODE=$(grep -m1 '^versionCode=' version.properties | cut -d= -f2)
+          if [ "$VERSION" != "$UPDATE_JSON_VERSION" ] ||
+             [ "$VERSION" != "v$PROPERTIES_VERSION" ] ||
+             [ "$MODULE_CODE" != "$UPDATE_JSON_CODE" ] ||
+             [ "$MODULE_CODE" != "$PROPERTIES_CODE" ]; then
+            echo "::error::Version metadata mismatch: module.prop=$VERSION/$MODULE_CODE update.json=$UPDATE_JSON_VERSION/$UPDATE_JSON_CODE version.properties=$PROPERTIES_VERSION/$PROPERTIES_CODE"
+            exit 1
+          fi
+          EXPECTED_ZIP="https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/ivanna_omega_supreme_$VERSION.zip"
+          ACTUAL_ZIP=$(python3 -c "import json;print(json.load(open('magisk_module/update.json'))['zipUrl'])")
+          if [ "$EXPECTED_ZIP" != "$ACTUAL_ZIP" ]; then
+            echo "::error::update.json zipUrl does not match the canonical release asset: $ACTUAL_ZIP"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Versión detectada: $VERSION"
+          echo "Versión y metadatos detectados coherentes: $VERSION ($MODULE_CODE)"
 
       - name: Rename module zip al nombre canónico que espera update.json
         run: |

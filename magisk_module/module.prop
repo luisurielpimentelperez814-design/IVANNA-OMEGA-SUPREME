@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.185
-versionCode=476
+version=v2.5.186
+versionCode=477
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.185: SAFMUS clock-outlier rejection and regression reacquisition
+description=v2.5.186: SAFMUS robust clock reacquisition and release metadata integrity
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
