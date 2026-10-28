@@ -198,7 +198,13 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
             rate < nominalSampleRateHz * 0.5 ||
             rate > nominalSampleRateHz * 1.5 ||
             abs(drift) > MAX_MEASURED_DRIFT_PPM) {
-            return // retain last valid estimate; never turn one outlier into control
+            // The rejected point is already in the rolling window. Keeping it
+            // would bias every following OLS fit until it ages out, while the
+            // previous feed-forward estimate could remain active indefinitely.
+            // Fail closed for clock feed-forward and reacquire from the newest
+            // monotonic pair; the independent buffer PI may continue to operate.
+            resetClockEstimateToLatest()
+            return
         }
         measuredRateHz = rate
         measuredDriftPpm = drift
@@ -208,6 +214,27 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
             drift
         }
         hasDriftEstimate = true
+    }
+
+    private fun resetClockEstimateToLatest() {
+        val latest = if (historyCount == 0) -1 else
+            if (historyNext == 0) REGRESSION_WINDOW - 1 else historyNext - 1
+        val latestFrame = if (latest >= 0) frameHistory[latest] else previousConsumedFrames
+        val latestTime = if (latest >= 0) timeHistoryNs[latest] else previousTimestampNs
+        frameHistory.fill(0L)
+        timeHistoryNs.fill(0L)
+        historyCount = 0
+        historyNext = 0
+        filteredDriftPpm = 0.0
+        hasDriftEstimate = false
+        measuredRateHz = 0.0
+        measuredDriftPpm = 0.0
+        if (latestFrame >= 0L && latestTime > 0L) {
+            frameHistory[0] = latestFrame
+            timeHistoryNs[0] = latestTime
+            historyCount = 1
+            historyNext = 1
+        }
     }
 
     fun reset() {

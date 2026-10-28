@@ -1,3 +1,10 @@
+## v2.5.185 — SAFMUS rejects contaminated clock-regression windows
+
+- When an OLS clock-rate estimate exceeds the validated range, clear the contaminated rolling window and stale drift feed-forward, then reacquire from the newest monotonic frame/timestamp pair.
+- Keep the independently measured buffer-occupancy PI active; the rejected clock estimate no longer silently remains in control.
+- Add a JVM regression proving one impossible frame/timestamp sample drops drift lock and clears stale rate telemetry.
+- Version metadata aligned at v2.5.185 / versionCode 476. CI and device measurements remain the acceptance gates.
+
 ## v2.5.184 — SAFMUS buffer deadband and anti-windup on the live AudioTrack servo
 
 - Implements a continuous 2% normalized buffer-occupancy deadband in the existing single production controller, preventing small queue-measurement noise from hunting the resampler.
