@@ -182,4 +182,33 @@ class StereoAudioResamplerTest {
         val resetOutput = resampler.process(input)
         assertTrue(resetOutput.all { it.isFinite() })
     }
+
+    @Test fun positiveClockCorrectionProducesMoreOutputFramesThanNegativeCorrection() {
+        val inputRate = 48_000
+        val frames = 40_000
+        val input = FloatArray(frames * 2)
+        for (i in 0 until frames) {
+            val sample = (0.5 * sin(2.0 * PI * 997.0 * i / inputRate)).toFloat()
+            input[2 * i] = sample
+            input[2 * i + 1] = sample
+        }
+
+        val fasterOutput = StereoAudioResampler(inputRate).apply {
+            setInputSampleRate(inputRate)
+            setClockCorrectionPpm(500.0)
+        }.process(input)
+        val slowerOutput = StereoAudioResampler(inputRate).apply {
+            setInputSampleRate(inputRate)
+            setClockCorrectionPpm(-500.0)
+        }.process(input)
+
+        val fasterFrames = fasterOutput.size / 2
+        val slowerFrames = slowerOutput.size / 2
+        assertTrue("positive ppm must advance the output production rate: faster=$fasterFrames slower=$slowerFrames",
+            fasterFrames > slowerFrames)
+        assertTrue("a 1000 ppm correction span must produce a measurable frame-count difference",
+            fasterFrames - slowerFrames >= 20)
+        assertTrue(fasterOutput.all { it.isFinite() } && slowerOutput.all { it.isFinite() })
+    }
+
 }

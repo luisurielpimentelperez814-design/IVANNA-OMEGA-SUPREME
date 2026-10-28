@@ -1,3 +1,10 @@
+## v2.5.176 — SAFMUS ASRC actuator polarity regression
+
+- Adds an Android JVM regression proving that positive clock-correction ppm produces more output frames than negative ppm in the actual app-owned `StereoAudioResampler` path.
+- Exercises the bounded ±500 ppm actuator at 48 kHz with deterministic stereo audio and rejects a reversed correction sign or a correction that has no measurable output-rate effect.
+- This verifies the software resampler contract only; it does not certify USB DAC, Bluetooth sink-clock, PAL/HAL, or system-wide clock correction.
+- Version metadata: v2.5.176 / versionCode 467. Availability requires the current commit's native tests, JVM tests, Android build, artifact-integrity checks and release publication to pass.
+
 ## v2.5.175 — SAFMUS time-evolving acoustic regression and release candidate
 
 - Carries forward the SAFMUS bounded clock/FIFO servo, Q0.32 fractional phase stepping, 64-tap Kaiser ASRC reference, clock-loop feasibility checks, and GCC-PHAT delay-polarity regression gates.

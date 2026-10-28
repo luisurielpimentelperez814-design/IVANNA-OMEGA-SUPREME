@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.175
-versionCode=466
+version=v2.5.176
+versionCode=467
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.175: SAFMUS clock/ASRC reference, regression gates, time-evolving acoustic test and verified release bundle
+description=v2.5.176: SAFMUS app-owned ASRC correction-polarity regression and verified release bundle
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
