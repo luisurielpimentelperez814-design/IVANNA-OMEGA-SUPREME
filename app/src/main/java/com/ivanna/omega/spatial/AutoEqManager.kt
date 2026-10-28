@@ -62,6 +62,16 @@ object AutoEqManager {
             Band(7617.2f, -5.53f, 1.65f),
             Band(11759.8f, 8.0f, 1.41f),
         ),
+        // LIMITACIÓN CONOCIDA (verificada 2026-10-28): Data.IR en
+        // hpir_AKGK271MKII_nh719.sofa y hpir_AKGK272HD_nh719.sofa es
+        // bit-a-bit IDÉNTICO (np.array_equal == True) pese a ser archivos
+        // SOFA distintos para modelos distintos — no es un bug del
+        // extractor, es un problema de procedencia del corpus de origen.
+        // Este perfil NO es una medición independiente del K272 HD; es la
+        // misma medición del K271 MKII bajo otro nombre. No se puede
+        // corregir sin una medición real del K272 HD que hoy no existe en
+        // el repositorio — documentado aquí en vez de presentarlo como
+        // dato medido independiente.
         "AKG K272 HD" to listOf(
             Band(105.0f, 7.58f, 0.71f),
             Band(199.2f, 6.48f, 0.7f),

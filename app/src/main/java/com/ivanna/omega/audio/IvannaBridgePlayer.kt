@@ -644,6 +644,12 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // queue-phase correction. Never run a second controller on this resampler.
             val bufferPll = AudioTrackBufferPll(sampleRate)
             val outputTimestamp = AudioTimestamp()
+            // A one-step latency change from an AudioTrack reroute (Bluetooth
+            // connect/disconnect, output-device policy change mid-session) is
+            // NOT clock drift: it is a discontinuity in acoustic-path delay.
+            // Tracked so the poll below can distinguish the two causes instead
+            // of letting the rolling regression straddle the jump.
+            var lastRoutedDeviceId: Int? = null
             OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
             DSPBridge.init(sampleRate)
             val predictive = PredictiveAudioAnalyzer(sampleRate)
@@ -728,6 +734,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                     codec.start()
                     track.play()
                     AudioTrackRouteReadback.update(track, outputRoute.preferredDevice, sampleRate)
+                    lastRoutedDeviceId = runCatching { track.routedDevice?.id }.getOrNull()
                     Log.i(TAG, "AudioTrack route readback after play: ${AudioTrackRouteReadback.current()}")
                 }.onFailure {
                     Log.e(TAG, "codec.start/track.play falló (prev codecState=CONFIGURED): ${it.message}")
@@ -891,7 +898,23 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                 val nowNs = SystemClock.elapsedRealtimeNanos()
                                 if (lastClockPollNs == 0L || nowNs - lastClockPollNs >= 250_000_000L) {
                                     lastClockPollNs = nowNs
-                                    if (track.getTimestamp(outputTimestamp)) {
+                                    val routedId = runCatching { track.routedDevice?.id }.getOrNull()
+                                    val priorRoutedId = lastRoutedDeviceId
+                                    val rerouted = AudioTrackRerouteGuard.isReroute(priorRoutedId, routedId)
+                                    if (routedId != null) lastRoutedDeviceId = routedId
+                                    if (rerouted) {
+                                        // Android moved this SAME AudioTrack to a different output
+                                        // (e.g. a Bluetooth A2DP sink connecting/disconnecting) without
+                                        // the app recreating the track. The acoustic-path latency just
+                                        // took a one-time step, not a sustained clock-rate error: feeding
+                                        // that frame/timestamp pair into the rolling regression would be
+                                        // misread as drift. Fail closed to unity and let the servo relock
+                                        // from a clean window on the new route instead.
+                                        Log.i(TAG, "AudioTrack reroute detectado (routedDevice id $priorRoutedId -> $routedId); bufferPll reiniciado, no se interpreta como deriva de reloj")
+                                        bufferPll.reset()
+                                        resampler.setClockCorrectionPpm(0.0)
+                                        OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
+                                    } else if (track.getTimestamp(outputTimestamp)) {
                                         // One controller estimates clock slope by centered rolling OLS
                                         // and combines feed-forward drift with bounded queue PI.
                                         val correctionPpm = bufferPll.observe(

@@ -42,6 +42,8 @@ jobs:
         run: python3 scripts/validate_sofa_hdf5.py .
       - name: SOFA validator regression tests
         run: python3 -m unittest discover -s tests -p 'test_validate_sofa_hdf5.py' -v
+      - name: AutoEqManager Kotlin profiles match freshly measured HpIR corpus
+        run: python3 -m unittest discover -s tests -p 'test_autoeq_kotlin_matches_extractor.py' -v
       - name: SAFMUS transversal wiring contract
         run: python3 scripts/check_safmus_transversal_wiring.py
       - name: SAFMUS sync/ASRC numerical reference self-test
