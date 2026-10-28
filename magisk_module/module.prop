@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.171
-versionCode=462
+version=v2.5.172
+versionCode=463
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.171: fault-tolerant adaptive telemetry and locale-stable meters
+description=v2.5.171: bounded SAFMUS clock-drift estimation and ASRC ratio contract
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

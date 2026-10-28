@@ -35,3 +35,11 @@ Before claiming system-wide correction:
 - keep any path that lacks a valid clock/route in unity-ratio bypass.
 
 No hardware mixer control or undocumented ASRC parameter is required or assumed by this software design.
+
+## Native clock estimator — mathematical contract
+
+`AsrcClockController` now estimates the clock-rate slope from a fixed-size rolling window of paired cumulative frame positions and monotonic timestamps. It centers timestamps and frame positions before ordinary least squares to reduce numerical conditioning errors; it rejects regressing counters, impossible intervals, non-finite/out-of-range drift, and interval outliers. No allocation or I/O occurs in the update path.
+
+Ratio convention is explicit: `appliedRatio` means **input frames consumed per output frame** by `VariableAsrc`. Therefore positive measured source-clock drift requests a ratio above unity; the opposite sign would increase output production and worsen a producer-ahead buffer. A configurable deadband suppresses corrections below measurement resolution, and the ratio correction is bounded and slew-limited. Any disabled, invalid, uncorrelated, or faulted route reports unity ratio.
+
+This native controller is covered by host regression tests. It is not automatically the active player controller: `IvannaBridgePlayer` currently uses `AudioTrackBufferPll` and `StereoAudioResampler`. Do not connect both controllers to one actuator simultaneously. Device validation and explicit stream-identity wiring are still required before promoting the native controller into a live route.

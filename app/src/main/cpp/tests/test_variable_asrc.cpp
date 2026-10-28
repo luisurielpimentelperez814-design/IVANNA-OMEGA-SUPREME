@@ -12,3 +12,62 @@ TEST(VariableAsrc, InvalidSamplesDoNotPropagate){VariableAsrc::Config c;c.maxSle
 TEST(AsrcClockController, RouteMustBeValidated){ivanna::dsp::AsrcClockController c;EXPECT_EQ(c.update({48000,1000000000LL,48000},false,true).state,ivanna::dsp::AsrcState::WAITING_FOR_SAMPLES);}
 TEST(AsrcClockController, RegressionHolds){ivanna::dsp::AsrcClockController c;c.update({10,1000000000LL,48000},true,true);EXPECT_EQ(c.update({9,1010000000LL,48000},true,true).state,ivanna::dsp::AsrcState::HOLD);}
 TEST(AsrcClockController, DisabledBypasses){ivanna::dsp::AsrcClockController c;EXPECT_EQ(c.update({},false,false).state,ivanna::dsp::AsrcState::BYPASS);}
+
+TEST(AsrcClockController, RegressionEstimatesDriftAndUsesDocumentedRatioSign) {
+    ivanna::dsp::AsrcClockController c;
+    ivanna::dsp::AsrcControlSnapshot s{};
+    for (int i = 0; i <= 5; ++i) {
+        s = c.update({static_cast<uint64_t>(i) * 48002ULL,
+                      1000000000LL + static_cast<int64_t>(i) * 1000000000LL,
+                      48000}, true, true);
+    }
+    ASSERT_EQ(s.state, ivanna::dsp::AsrcState::TRACKING);
+    EXPECT_NEAR(s.driftPpm, 41.6667, 0.5);
+    // Ratio is input-frames consumed per output frame: positive source-clock
+    // drift must advance through input faster to keep output on nominal time.
+    EXPECT_GT(s.appliedRatio, 1.0);
+    EXPECT_LE(s.appliedRatio, 1.0005);
+}
+
+TEST(AsrcClockController, SmallDriftFallsInsideDeadband) {
+    ivanna::dsp::AsrcClockController::Config cfg{};
+    cfg.deadbandPpm = 2.0;
+    ivanna::dsp::AsrcClockController c(cfg);
+    ivanna::dsp::AsrcControlSnapshot s{};
+    for (int i = 0; i <= 5; ++i) {
+        s = c.update({static_cast<uint64_t>(i) * 48000ULL,
+                      1000000000LL + static_cast<int64_t>(i) * 1000000000LL,
+                      48000}, true, true);
+    }
+    ASSERT_EQ(s.state, ivanna::dsp::AsrcState::TRACKING);
+    EXPECT_NEAR(s.driftPpm, 0.0, 0.01);
+    EXPECT_DOUBLE_EQ(s.targetPpm, 0.0);
+    EXPECT_DOUBLE_EQ(s.appliedRatio, 1.0);
+}
+
+TEST(AsrcClockController, InvalidRouteAndClockRegressionFailClosedToUnity) {
+    ivanna::dsp::AsrcClockController c;
+    auto s = c.update({0, 1000000000LL, 48000}, true, true);
+    EXPECT_EQ(s.state, ivanna::dsp::AsrcState::WAITING_FOR_SAMPLES);
+    s = c.update({48000, 2000000000LL, 48000}, true, true);
+    s = c.update({47999, 3000000000LL, 48000}, true, true);
+    EXPECT_EQ(s.state, ivanna::dsp::AsrcState::HOLD);
+    EXPECT_DOUBLE_EQ(s.appliedRatio, 1.0);
+    EXPECT_DOUBLE_EQ(s.targetPpm, 0.0);
+}
+
+TEST(AsrcClockController, RatioCorrectionIsBoundedAndSlewLimited) {
+    ivanna::dsp::AsrcClockController::Config cfg{};
+    cfg.maxCorrectionPpm = 100.0;
+    cfg.maxSlewPpmPerSecond = 10.0;
+    ivanna::dsp::AsrcClockController c(cfg);
+    ivanna::dsp::AsrcControlSnapshot s{};
+    for (int i = 0; i <= 4; ++i) {
+        s = c.update({static_cast<uint64_t>(i) * 48048ULL,
+                      1000000000LL + static_cast<int64_t>(i) * 1000000000LL,
+                      48000}, true, true);
+    }
+    ASSERT_EQ(s.state, ivanna::dsp::AsrcState::TRACKING);
+    EXPECT_LE(s.appliedRatio, 1.000011);
+    EXPECT_GE(s.appliedRatio, 1.0);
+}
