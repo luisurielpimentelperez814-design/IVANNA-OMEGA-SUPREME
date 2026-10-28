@@ -22,6 +22,8 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         private const val KP_PPM_PER_FULL_BUFFER = 800.0
         private const val KI_PPM_PER_FULL_BUFFER_SECOND = 120.0
         private const val MAX_INTEGRAL_SECONDS = 4.0
+        // Suppress small queue-measurement noise; subtract the band for continuity.
+        private const val BUFFER_DEADBAND_FRACTION = 0.02
         private const val LOCK_SAMPLES = 5
         private const val REGRESSION_WINDOW = 8
         private const val REQUIRED_REGRESSION_POINTS = 4
@@ -114,7 +116,12 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         }
 
         val dtSeconds = elapsedNs / 1_000_000_000.0
-        integralErrorSeconds = (integralErrorSeconds + phaseErrorFraction * dtSeconds)
+        val occupancyError = when {
+            abs(phaseErrorFraction) <= BUFFER_DEADBAND_FRACTION -> 0.0
+            phaseErrorFraction > 0.0 -> phaseErrorFraction - BUFFER_DEADBAND_FRACTION
+            else -> phaseErrorFraction + BUFFER_DEADBAND_FRACTION
+        }
+        val candidateIntegral = (integralErrorSeconds + occupancyError * dtSeconds)
             .coerceIn(-MAX_INTEGRAL_SECONDS, MAX_INTEGRAL_SECONDS)
 
         previousTimestampNs = timestampNs
@@ -122,10 +129,20 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         addClockSample(consumedFrames, timestampNs)
         estimateClockDrift()
 
-        // Buffer PI corrects queue phase; regression feed-forward compensates
-        // the measured output-clock rate. Both terms share ONE actuator/limit.
+        // Drift feed-forward and buffer PI share one bounded actuator.
         val driftFeedForward = if (isDriftLocked) filteredDriftPpm else 0.0
-        val occupancyCorrection = -(KP_PPM_PER_FULL_BUFFER * phaseErrorFraction +
+        val candidateRawTarget = driftFeedForward -
+            (KP_PPM_PER_FULL_BUFFER * occupancyError +
+                KI_PPM_PER_FULL_BUFFER_SECOND * candidateIntegral)
+
+        // Conditional-integration anti-windup: do not integrate error that
+        // would drive an already saturated actuator farther into saturation.
+        val pushesFurtherIntoSaturation =
+            (candidateRawTarget > MAX_CORRECTION_PPM && occupancyError < 0.0) ||
+            (candidateRawTarget < -MAX_CORRECTION_PPM && occupancyError > 0.0)
+        if (!pushesFurtherIntoSaturation) integralErrorSeconds = candidateIntegral
+
+        val occupancyCorrection = -(KP_PPM_PER_FULL_BUFFER * occupancyError +
             KI_PPM_PER_FULL_BUFFER_SECOND * integralErrorSeconds)
         val target = (driftFeedForward + occupancyCorrection)
             .coerceIn(-MAX_CORRECTION_PPM, MAX_CORRECTION_PPM)

@@ -33,6 +33,29 @@ class AudioTrackBufferPllTest {
         assertTrue(pll.correctionPpm <= 125.0)
     }
 
+    @Test fun smallBufferErrorInsideDeadbandDoesNotHunt() {
+        val pll = AudioTrackBufferPll(48_000)
+        var timeNs = 1_000_000_000L
+        // Capacity 10,000; target 5,000; 5,100 is only 1% above target.
+        pll.observe(5_100, 0, 10_000, timeNs)
+        repeat(20) {
+            timeNs += 100_000_000L
+            val correction = pll.observe(5_100, 100, 10_000, timeNs)
+            assertEquals("deadband suppresses small occupancy noise", 0.0, correction, 0.0)
+        }
+    }
+
+    @Test fun sustainedSaturationRemainsBounded() {
+        val pll = AudioTrackBufferPll(48_000)
+        var timeNs = 1_000_000_000L
+        pll.observe(9_000, 0, 10_000, timeNs)
+        repeat(300) {
+            timeNs += 100_000_000L
+            assertTrue(pll.observe(9_000, 0, 10_000, timeNs) in -500.0..500.0)
+        }
+        assertEquals(-500.0, pll.correctionPpm, 0.0)
+    }
+
     @Test fun invalidQueueAndTimestampFailClosed() {
         val pll = AudioTrackBufferPll(48_000)
         pll.observe(8_000, 0, 10_000, 1_000_000_000L)

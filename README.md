@@ -10,6 +10,7 @@
   <a href="LEAME.md">Guía en español sencillo</a> ·
   <a href="docs/GUIA_CONTROLES_COMPLETA_ES.md">Guía completa de controles en español</a> ·
   <a href="docs/ENGINEERING.md">Ficha de ingeniería</a> ·
+  <a href="docs/SAF_SAFMUS_UNIFIED_MATHEMATICAL_CONTRACT.md">Contrato matemático SAF/SAFMUS</a> ·
   <a href="CHANGELOG.md">Registro de cambios</a> ·
   <a href="docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md">Aceptación Moto G85</a>
 </p>
@@ -18,7 +19,7 @@
 [![Android](https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white)](app/)
 [![Kotlin](https://img.shields.io/badge/app-Kotlin%20%2F%20Compose-7F52FF?logo=kotlin&logoColor=white)](app/src/main/)
 [![C++](https://img.shields.io/badge/motor-nativo%20C%2B%2B-00599C?logo=cplusplus&logoColor=white)](app/src/main/cpp/)
-[![Versión](https://img.shields.io/badge/versión-2.5.183-64748b)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.184-64748b)](version.properties)
 
 **Un proyecto de ingeniería en desarrollo.** Documentamos lo que existe en el código, qué evidencia hay y qué todavía requiere validación real.
 
@@ -41,12 +42,12 @@
 
 ## Sincronización del estado del código — 2026-10-28
 
-Esta ficha se mantiene deliberadamente alineada con `main`. La versión de esta revisión es **v2.5.183** (`versionCode=474`); el release solo se considera disponible cuando CI publica y verifica los artefactos versionados.
+Esta ficha se mantiene deliberadamente alineada con `main`. La versión de esta revisión es **v2.5.184** (`versionCode=475`); el release solo se considera disponible cuando CI publica y verifica los artefactos versionados.
 
 - **Interfaz adaptable:** los indicadores del encabezado OMNI se distribuyen en filas de hasta tres elementos para evitar recortes en pantallas estrechas y con fuente ampliada.
 - **Telemetría robusta:** el panel adaptativo rechaza muestras nativas incompletas o no finitas, limita las escalas de las barras y usa formato numérico independiente de la configuración regional. Si los datos no son válidos, lo indica en vez de simular una lectura.
 - **Lenguaje visual:** se conserva el sistema Aurora Obsidiana (fondo obsidiana, cian de señal, magenta de procesamiento, verde de estado y oro de acento); los colores no sustituyen el estado real del motor.
-- **SAFMUS:** el modelo numérico de deriva/ASRC y sus pruebas de regresión se ejecutan en CI; el modelo de referencia no equivale a un actuador PAL/HAL/DAC ni demuestra corrección del reloj físico Bluetooth.
+- **SAFMUS:** el reproductor propio conecta AudioTrack.getTimestamp() → AudioTrackBufferPll (regresión OLS + PI con banda muerta y anti-windup) → StereoAudioResampler.setClockCorrectionPpm(). La telemetría HAL/PAL del daemon permanece separada para no mezclar relojes de streams distintos. Ver el contrato matemático SAF/SAFMUS.
 - **Evidencia del audio:** la presencia de un indicador de ruta o de un panel de telemetría no certifica por sí misma que el audio se esté procesando ni que exista control del reloj físico del DAC/HAL/PAL.
 - **Puerta de publicación:** la CI debe pasar los tests nativos, el empaquetado Android, la comprobación de integridad del APK/ZIP y la publicación. La mejora visual no se presenta como una mejora acústica medida.
 - **Validación pendiente en hardware:** revisar el encabezado OMNI en el Moto G85 con tamaño de fuente estándar y ampliado, y comprobar que ningún indicador importante queda oculto al cambiar de ruta o activar módulos.

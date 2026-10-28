@@ -1,3 +1,11 @@
+## v2.5.184 — SAFMUS buffer deadband and anti-windup on the live AudioTrack servo
+
+- Implements a continuous 2% normalized buffer-occupancy deadband in the existing single production controller, preventing small queue-measurement noise from hunting the resampler.
+- Adds conditional integration anti-windup so persistent error cannot wind the integral farther into saturation of the ±500 ppm actuator.
+- Adds JVM regressions for deadband quietness and sustained saturation bounds. The live AudioTrackBufferPll → StereoAudioResampler.setClockCorrectionPpm() wiring remains the sole actuator path for IVANNA's owned player.
+- No second controller is introduced; daemon/PAL telemetry is not cross-fed into the app-owned AudioTrack. Physical DAC/HAL/PAL or remote Bluetooth clock control remains unclaimed.
+- Aligns version metadata at v2.5.184 / versionCode 475; CI publication and device validation remain required.
+
 ## v2.5.183 — ASRC telemetry expires when its producer stops
 
 - Adds a monotonic publication timestamp to the existing shared snapshot. Readers reject future or stale samples (default maximum age: 1 second), preventing persisted TRACKING state from masquerading as live control after producer failure.
