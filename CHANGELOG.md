@@ -1,3 +1,12 @@
+## v2.5.190 — debt closure: English quick start, device-evidence notes, citation metadata
+
+- Adds `README.en.md`, a one-page English orientation (what it is, Route A vs Route B, install from Releases, running the host test suite, how to file a device report, security reporting, licence status). Linked from `README.md` and `LEAME.md`. Closes #57.
+- Preserves three evidence notes for the Moto G85 USB path under `docs/audio/` (PAL clock evidence, ASRC actuator audit, USB route/mixer discrepancy; previously stranded in open PRs #162/#163). They record what was and was not demonstrated; the SAFMUS servo stays blocked and no PAL/ASRC actuator claim is made.
+- Fixes `CITATION.cff`, which still declared version 2.5.16 (about 170 releases stale). The fixed `version`/`date-released` fields are removed rather than re-pinned, so they cannot silently rot again; cite the exact release tag.
+- Aligns `module.prop`'s description, which still read "v2.5.188" while the module was v2.5.189.
+- Not merged on purpose: PR #170 (USB-C route readback) is 181 commits behind and its release-metadata files would roll the version back, so it needs a rebase; Dependabot PRs #164/#165/#168 fail the Android build in CI.
+- No native, Kotlin or DSP code changed. Version metadata: v2.5.190 / versionCode 481. Release remains contingent on CI passing and verifying the exact APK and Magisk ZIP.
+
 ## v2.5.189 — SAFMUS bidirectional clock-drift polarity proof
 
 - Adds a deterministic JVM regression for a consumer clock running 1,000 ppm slower than nominal, complementing the positive-drift test.

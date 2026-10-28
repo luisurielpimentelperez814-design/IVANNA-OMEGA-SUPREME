@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.189
-versionCode=480
+version=v2.5.190
+versionCode=481
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.188: SAFMUS validates signed clock-drift correction
+description=v2.5.190: debt closure - English quick start, Moto G85 evidence notes, citation metadata fix
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
