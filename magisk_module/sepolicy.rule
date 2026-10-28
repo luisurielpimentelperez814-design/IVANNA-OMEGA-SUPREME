@@ -387,3 +387,14 @@ allow audioserver unlabeled file { execute execute_no_trans }
 allow audioserver system_file file { execute execute_no_trans }
 allow audioserver same_process_hal_file file { read open getattr map execute execute_no_trans }
 allow audioserver same_process_hal_file dir { search getattr open read }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v3.4 — MLS: untrusted_app puede ESCRIBIR omega_shm (adb_data_file)
+#
+# Las reglas allow de v3.1 son necesarias pero NO suficientes: la app corre con
+# categorias MLS (s0:c146,c257,...) distintas a las del archivo (s0) y SELinux
+# aplica mlsconstrain aparte de las reglas allow. Sintoma: read OK, write
+# denegado en bucle. Verificado en campo: con este atributo los denials de
+# "denied { write } ... omega_shm" pasan de >100 por 10 s a 0.
+# ═══════════════════════════════════════════════════════════════════════════════
+typeattribute adb_data_file mlstrustedobject

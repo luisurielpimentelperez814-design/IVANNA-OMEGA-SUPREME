@@ -8,6 +8,23 @@ LOG="$STATE/daemon.log"
 
 mkdir -p "$STATE" || exit 1
 
+# FIX (omega_shm, causa raiz MLS): la app (untrusted_app:s0:cXXX,...) leia
+# /data/adb/ivanna_omega/omega_shm pero su write()/mmap(PROT_WRITE) era
+# denegado en bucle (>100 denials en 10 s, ver logcat "denied { write }
+# ... omega_shm"). Las reglas "allow untrusted_app adb_data_file file write"
+# no bastaban: aplicadas en vivo con rc=0 los denials seguian, porque el bloqueo
+# es una restriccion MLS (categorias distintas entre app y archivo s0), que es
+# independiente de las reglas allow. Verificado en Moto G85 (Android 15,
+# Magisk 30.7): marcar adb_data_file como mlstrustedobject llevo los denials a 0.
+# Se reaplica en cada arranque, antes de levantar el daemon.
+if command -v magiskpolicy >/dev/null 2>&1; then
+    if magiskpolicy --live "typeattribute adb_data_file mlstrustedobject" >/dev/null 2>&1; then
+        echo "$(date) SELINUX-BOOT: adb_data_file mlstrustedobject OK" >> "$LOG"
+    else
+        echo "$(date) SELINUX-BOOT: FALLO typeattribute adb_data_file mlstrustedobject" >> "$LOG"
+    fi
+fi
+
 # Load the decision engine if present; keep boot compatible with older packages.
 CORE="$MODDIR/core/ivanna_autonomous_core.sh"
 if [ -f "$CORE" ]; then
