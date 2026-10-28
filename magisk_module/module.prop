@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.181
-versionCode=472
+version=v2.5.182
+versionCode=473
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.181: make ASRC state IPC race-free and reject invalid snapshots
+description=v2.5.182: bound ASRC controller configuration to observable window and positive ratios
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

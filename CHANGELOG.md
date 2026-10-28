@@ -1,3 +1,10 @@
+## v2.5.182 — ASRC controller rejects untrackable and nonphysical configurations
+
+- The regression estimator has a fixed nine-anchor window. Configurations requesting nine or more intervals could never enter TRACKING; the constructor now rejects them fail-closed.
+- Correction and rejection thresholds must remain below 1,000,000 ppm so the documented inverse-ratio mapping cannot reach a zero or negative denominator. Invalid settings publish FAULT/unity instead of silently running an impossible controller.
+- Adds regression tests for an oversized observation window and a non-positive-ratio configuration.
+- Aligns version metadata at v2.5.182 / versionCode 473.
+
 ## v2.5.181 — ASRC shared-state IPC removes the non-atomic reason-string race
 
 - Replaces the shared-memory reason[24] character array with six lock-free atomic 32-bit words. A sequence counter alone does not make concurrent non-atomic string copies race-free.

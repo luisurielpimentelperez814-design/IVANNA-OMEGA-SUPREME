@@ -44,9 +44,15 @@ public:
         : AsrcClockController(Config{requiredIntervals < 2 ? 2U : requiredIntervals}) {}
 
     explicit AsrcClockController(const Config& config) noexcept : cfg_(config) {
+        // The regression window holds at most 9 anchors; requiring more intervals
+        // would leave the controller waiting forever. Keep every configured ppm
+        // correction strictly below 1e6 so 1 + ppm*1e-6 remains positive.
         validConfig_ = cfg_.requiredIntervals >= 2 &&
+            cfg_.requiredIntervals < kWindowCapacity &&
             std::isfinite(cfg_.maxCorrectionPpm) && cfg_.maxCorrectionPpm > 0.0 &&
-            std::isfinite(cfg_.rejectDriftPpm) && cfg_.rejectDriftPpm > cfg_.maxCorrectionPpm &&
+            cfg_.maxCorrectionPpm < 1.0e6 &&
+            std::isfinite(cfg_.rejectDriftPpm) &&
+            cfg_.rejectDriftPpm > cfg_.maxCorrectionPpm && cfg_.rejectDriftPpm < 1.0e6 &&
             std::isfinite(cfg_.maxIntervalOutlierPpm) && cfg_.maxIntervalOutlierPpm > 0.0 &&
             std::isfinite(cfg_.deadbandPpm) && cfg_.deadbandPpm >= 0.0 &&
             std::isfinite(cfg_.maxSlewPpmPerSecond) && cfg_.maxSlewPpmPerSecond >= 0.0;
