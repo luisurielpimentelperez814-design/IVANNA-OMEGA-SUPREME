@@ -319,6 +319,46 @@ int main() {
                "NaN/Inf: el motor se recupera (energía real tras el fallo)");
     }
 
+
+    // ── SAFMUS × 4D: la trayectoria debe evolucionar en el reloj de salida ──
+    // Mismo audio, misma posición inicial y misma sala; solo cambia la velocidad.
+    // La salida móvil debe divergir de la estática sin NaN/Inf ni discontinuidades
+    // debidas a reiniciar el historial. dt = frames/sampleRate en WfsRenderer.
+    {
+        WfsRenderer stationary, moving;
+        EXPECT(stationary.init(kSr, kFrames, 16), "4D: renderer estático inicializado");
+        EXPECT(moving.init(kSr, kFrames, 16), "4D: renderer móvil inicializado");
+        stationary.setObject4D(0, 0.0f, 2.0f, 0.1f, 0.0f, 0.0f, 0.0f, 1.0f, 0.2f);
+        moving.setObject4D(0, 0.0f, 2.0f, 0.1f, 0.75f, -0.10f, 0.05f, 1.0f, 0.2f);
+
+        std::vector<float> tone(kFrames), ls(kFrames, 0.f), rs(kFrames, 0.f);
+        std::vector<float> lm(kFrames, 0.f), rm(kFrames, 0.f);
+        double trajectoryDifference = 0.0;
+        for (int block = 0; block < 80; ++block) {
+            for (int n = 0; n < kFrames; ++n) {
+                const double t = static_cast<double>(block * kFrames + n) / kSr;
+                tone[static_cast<size_t>(n)] =
+                    0.35f * std::sin(static_cast<float>(2.0 * 3.14159265358979323846 * 440.0 * t));
+            }
+            const float* input[1] = {tone.data()};
+            std::fill(ls.begin(), ls.end(), 0.f);
+            std::fill(rs.begin(), rs.end(), 0.f);
+            std::fill(lm.begin(), lm.end(), 0.f);
+            std::fill(rm.begin(), rm.end(), 0.f);
+            stationary.process(input, 1, ls.data(), rs.data(), kFrames);
+            moving.process(input, 1, lm.data(), rm.data(), kFrames);
+            if (block >= 12) {
+                for (int n = 0; n < kFrames; ++n) {
+                    trajectoryDifference += std::fabs(static_cast<double>(lm[n] - ls[n]));
+                    trajectoryDifference += std::fabs(static_cast<double>(rm[n] - rs[n]));
+                }
+            }
+        }
+        EXPECT(allFinite(lm) && allFinite(rm), "4D: trayectoria móvil permanece finita");
+        EXPECT(trajectoryDifference > 1.0,
+               "4D: velocidad xyz modifica el campo acústico a lo largo del tiempo");
+    }
+
     std::printf("\n====================================================\n");
     if (g_failures == 0) { std::printf("TODOS LOS TESTS PASARON.\n"); return 0; }
     std::printf("%d TEST(S) FALLARON.\n", g_failures);
