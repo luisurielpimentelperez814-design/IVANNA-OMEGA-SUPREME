@@ -244,9 +244,10 @@ if [ -n "$ORIG_XML" ] && grep -q "<audio_effects_conf" "$ORIG_XML" 2>/dev/null; 
     # dos archivos distintos reales (vendor/etc estático + la partición real
     # recién fusionada) en vez de pisar silenciosamente el que sí se lee.
 else
-    TARGET_XML="$MODPATH/system/vendor/etc/audio_effects.xml"
-    mkdir -p "$(dirname "$TARGET_XML")"
-    ui_print "  ! Base del sistema no accesible — manteniendo configuración propia (fallback estático en vendor/etc)"
+    # Fail closed: never overlay a vendor audio_effects.xml fallback over an
+    # unreadable/unsupported OEM configuration. That could silently remove
+    # proprietary Dolby/Dirac/Qualcomm registrations while pretending success.
+    abort "ERROR: no se pudo leer una configuración OEM audio_effects.xml válida; se cancela para proteger el HAL y conservar sus efectos propietarios. No se sustituirá por el XML estático."
 fi
 
 # Ensure IVANNA is attached to the real postprocess chain in the detected OEM XML.
