@@ -33,3 +33,7 @@ gradlew.bat   text eol=crlf
 *.tflite -text -diff binary
 *.npy   -text -diff binary
 *.bpf   -text -diff binary
+
+# metadata.csv del modulo: siempre LF (el gate de build.yml rechaza CRLF en texto del modulo).
+# La copia en assets/ conserva su fin de linea; RirDataset::splitCsvLine tolera ambos (trimCr).
+magisk_module/**/*.csv text eol=lf
