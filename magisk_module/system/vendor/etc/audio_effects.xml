@@ -12,17 +12,17 @@
       desinstalado.
 
     Política de este archivo:
-      - Sólo declara la librería/efecto propios de IVANNA.
-      - NO redeclara post-processes de música/movie/game — el
-        motor Omega se aplica como INSERT_ANY vía el efecto
-        `omega_effect`. Con esto, cualquier post-proc OEM
-        existente (Dolby, Dirac...) permanece activo si el
-        vendor ya lo tenía cargado desde su propio XML.
-      - Prioridad NO se declara aquí; el efecto vive por su
-        UUID único y no compite con los OEM.
-      - El XML válido paralelo (magisk_module/system/etc/
-        audio_effects_ivanna.xml) sigue existiendo para el
-        canal legacy /system/etc.
+      - Registra la librería y el UUID de IVANNA y adjunta el efecto
+        a music/movie/game en el fallback estático.
+      - Cuando customize.sh puede leer la configuración OEM real,
+        fusiona el registro y los streams en una copia de esa base,
+        preservando las declaraciones OEM existentes.
+      - La presencia del XML no demuestra por sí sola que el HAL lo
+        haya cargado ni que esté procesando PCM; eso requiere evidencia
+        de ejecución en el dispositivo.
+      - No fuerza priority="1000": IVANNA debe coexistir con los OEM.
+      - audio_effects_ivanna.xml es legado, no la fuente canónica
+        del overlay vendor.
 ============================================================ -->
 <audio_effects_conf version="2.0"
                     xmlns="http://schemas.android.com/audio/audio_effects_conf/v2_0">
