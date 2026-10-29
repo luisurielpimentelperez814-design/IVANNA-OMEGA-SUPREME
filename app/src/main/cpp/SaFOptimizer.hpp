@@ -46,7 +46,7 @@ public:
     }
 
     float getErrorEnergy() const noexcept {
-        return m_lastE;
+        return m_lastE.load();
     }
 
     bool isConverged() const;
@@ -86,7 +86,7 @@ private:
         static_cast<int>(SaFDir::COUNT)
     ][SAF_K];
 
-    float m_lastE;
+    std::atomic<float> m_lastE;
 
     std::atomic<int> m_iter;
 

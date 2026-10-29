@@ -1,3 +1,4 @@
+import { apiHeaders } from '../lib/apiAccess';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, MicOff, Volume2, VolumeX, Trash2, Send, AlertCircle, CheckCircle2, Loader2, Brain, Activity, HeartPulse, ShieldCheck } from 'lucide-react';
 import {
@@ -39,7 +40,7 @@ CRÍTICO: Tu texto conversacional va directo a síntesis de voz.
 // ─── Emoción → color ──────────────────────────────────────────────────────────
 const EC: Record<EmotionClass, string> = {
   neutral:'#38BDF8', enthusiastic:'#F59E0B', humor:'#4ADE80',
-  empathic:'#EC4899', technical:'#A855F7', contemplative:'#64748B', assertive:'#F97316',
+  empathic:'#EC4899', technical:'#A855F7', contemplative:'#A8B6CA', assertive:'#F97316',
 };
 
 // ─── Orb visual ───────────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ const HealthBadge: React.FC<{health: SystemHealth}> = ({health}) => {
       <HeartPulse className="w-3 h-3" />
       <span>{label}</span>
       {health.issues.length > 0 && (
-        <span className="text-[#475569]" title={health.issues.join('\n')}>({health.issues.length})</span>
+        <span className="text-[#A8B6CA]" title={health.issues.join('\n')}>({health.issues.length})</span>
       )}
     </div>
   );
@@ -332,7 +333,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
 
       const res = await fetch('/api/chat', {
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:apiHeaders(),
         body:JSON.stringify({model:'gemini-2.5-pro', max_tokens:1000, system:systemPrompt, messages:history}),
       });
 
@@ -393,7 +394,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
               SUPER AGENT v2.0
             </span>
           </h2>
-          <p className="text-xs text-[#64748B] font-mono mt-0.5">
+          <p className="text-xs text-[#A8B6CA] font-mono mt-0.5">
             VIE · Adaptive Prosody · Emotion · Memory · Audio Knowledge · Self-Healing
           </p>
         </div>
@@ -404,7 +405,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
               <button key={lang}
                 onClick={()=>{setVoiceLang(lang); const b=selectBestVoice(voices,lang); if(b) setVoiceName(b.name);}}
                 className={`text-[10px] px-2 py-0.5 rounded border font-mono font-bold transition-all ${
-                  voiceLang===lang ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8]' : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#94A3B8]'
+                  voiceLang===lang ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8]' : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#94A3B8]'
                 }`}>
                 {lang==='es-MX'?'🇲🇽':lang==='es-ES'?'🇪🇸':'🇺🇸'} {lang.split('-')[0].toUpperCase()}
               </button>
@@ -419,7 +420,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
           <div className="bg-[#0D1117] border border-[#1E2330] rounded-xl p-6 flex flex-col items-center gap-4">
             <Orb listening={isListening} speaking={isSpeaking} thinking={isThinking} level={audioLevel} emotion={emotion} />
 
-            <p className="text-xs font-mono text-[#64748B] text-center min-h-8 leading-relaxed px-2 truncate w-full" title={stateText}>
+            <p className="text-xs font-mono text-[#A8B6CA] text-center min-h-8 leading-relaxed px-2 truncate w-full" title={stateText}>
               {stateText}
             </p>
 
@@ -436,7 +437,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
             )}
 
             <div className="flex items-center gap-3">
-              <button onClick={toggleMic} disabled={isSpeaking||isThinking}
+              <button aria-label={isListening ? "Detener micrófono" : "Activar micrófono"} onClick={toggleMic} disabled={isSpeaking||isThinking}
                 className={`w-14 h-14 rounded-full flex items-center justify-center transition-all border-2 ${
                   isListening
                     ? 'bg-[#18261E] border-[#4ADE80] text-[#4ADE80] shadow-lg shadow-[#4ADE80]/25 animate-pulse'
@@ -453,7 +454,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
               </button>
 
               <button onClick={handleReset}
-                className="w-10 h-10 rounded-full flex items-center justify-center border border-[#1E2330] text-[#64748B] hover:border-[#334155] hover:text-[#94A3B8] transition-all"
+                className="w-10 h-10 rounded-full flex items-center justify-center border border-[#1E2330] text-[#A8B6CA] hover:border-[#334155] hover:text-[#94A3B8] transition-all"
                 title="Nueva conversación">
                 <Trash2 className="w-4 h-4"/>
               </button>
@@ -468,7 +469,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
 
             {voices.length > 0 && (
               <div className="w-full">
-                <label className="text-[10px] text-[#64748B] font-mono uppercase mb-1 block">Voz del sistema</label>
+                <label className="text-[10px] text-[#A8B6CA] font-mono uppercase mb-1 block">Voz del sistema</label>
                 <select value={voiceName} onChange={e=>setVoiceName(e.target.value)}
                   className="w-full bg-[#12151C] border border-[#1E2330] text-[#94A3B8] text-xs font-mono rounded px-2 py-1.5 focus:outline-none focus:border-[#38BDF8]">
                   {voices.filter(v=>v.lang.toLowerCase().startsWith(voiceLang.split('-')[0].toLowerCase())).map(v=>(
@@ -483,7 +484,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
           <div className="bg-[#0D1117] border border-[#1E2330] rounded-xl p-4 font-mono text-xs space-y-2">
             <div className="flex items-center gap-1.5 mb-3">
               <ShieldCheck className="w-3.5 h-3.5 text-[#38BDF8]"/>
-              <span className="text-[#64748B] font-bold uppercase text-[10px] tracking-wider">Super Agent Status</span>
+              <span className="text-[#A8B6CA] font-bold uppercase text-[10px] tracking-wider">Super Agent Status</span>
             </div>
             {[
               {l:'Motor IA', v:'gemini-2.5-pro', c:'#38BDF8'},
@@ -496,7 +497,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
               {l:'Contexto', v:`${Math.min(messages.length,16)}/16 msgs`, c:'#F59E0B'},
             ].map(({l,v,c})=>(
               <div key={l} className="flex justify-between items-center">
-                <span className="text-[#475569]">{l}</span>
+                <span className="text-[#A8B6CA]">{l}</span>
                 <span className="text-right text-[10px]" style={{color:c}}>{v}</span>
               </div>
             ))}
@@ -521,7 +522,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
                   }`}>
                     <p>{msg.text}</p>
                     <div className="flex items-center justify-between mt-2 gap-2">
-                      <span className="text-[10px] text-[#475569] font-mono">
+                      <span className="text-[10px] text-[#A8B6CA] font-mono">
                         {msg.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
                         {msg.emotion && msg.emotion!=='neutral' && (
                           <span className="ml-2" style={{color:c}}>• {msg.emotion}</span>
@@ -558,7 +559,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
                 <div className="bg-[#141C2A] border border-[#1E3050] rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5 text-[#38BDF8] animate-pulse"/>
                   <Loader2 className="w-3 h-3 text-[#38BDF8] animate-spin"/>
-                  <span className="text-xs text-[#64748B] font-mono">IVANNA procesa...</span>
+                  <span className="text-xs text-[#A8B6CA] font-mono">IVANNA procesa...</span>
                 </div>
               </div>
             )}
@@ -572,7 +573,7 @@ export const IvannaVoicePanel: React.FC<IvannaVoicePanelProps> = ({ params }) =>
               placeholder="Escribe aquí o usa el micrófono..."
               disabled={isListening||isThinking}
               className="flex-1 bg-[#12151C] border border-[#1E2330] rounded-lg px-3 py-2 text-sm text-[#E2E8F0] placeholder-[#334155] font-mono focus:outline-none focus:border-[#38BDF8] disabled:opacity-40 transition-colors"/>
-            <button onClick={handleSend} disabled={!textInput.trim()||isListening||isThinking}
+            <button aria-label="Enviar mensaje" onClick={handleSend} disabled={!textInput.trim()||isListening||isThinking}
               className="px-3 py-2 bg-[#182230] border border-[#38BDF8] text-[#38BDF8] rounded-lg hover:bg-[#1E2F44] transition-all disabled:opacity-30 disabled:cursor-not-allowed">
               <Send className="w-4 h-4"/>
             </button>

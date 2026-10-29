@@ -142,14 +142,14 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center space-x-2">
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-[#23182E] text-[#A855F7] border border-[#352246]">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-[#23182E] text-[#C084FC] border border-[#352246]">
                 3D HRTF RAYLEIGH MATRIX
               </span>
               <h2 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide">
                 Binaural 3D Spatial Stage & Interaural Delay Engine
               </h2>
             </div>
-            <p className="text-xs text-[#64748B] mt-1.5 max-w-3xl">
+            <p className="text-xs text-[#A8B6CA] mt-1.5 max-w-3xl">
               2x2 crosstalk matrix convolution implementing Rayleigh spherical head model ITD (Interaural Time Delay) and ILD (Level Difference).
             </p>
           </div>
@@ -158,8 +158,8 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
             onClick={() => onParamChange('hrtfEnabled', !params.hrtfEnabled)}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${
               params.hrtfEnabled
-                ? 'bg-[#23182E] border-[#A855F7] text-[#A855F7]'
-                : 'bg-[#12151C] border-[#1E2330] text-[#64748B]'
+                ? 'bg-[#23182E] border-[#A855F7] text-[#C084FC]'
+                : 'bg-[#12151C] border-[#1E2330] text-[#A8B6CA]'
             }`}
           >
             {params.hrtfEnabled ? '3D HRTF ON' : '3D HRTF BYPASS'}
@@ -174,10 +174,10 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
         <div className="bg-[#10131A] border border-[#232936] rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-[#1E2330] pb-3">
             <div className="flex items-center gap-2">
-              <Compass className="w-4 h-4 text-[#A855F7]" />
+              <Compass className="w-4 h-4 text-[#C084FC]" />
               <h3 className="font-bold text-white uppercase text-xs">Acoustic Soundstage Polar Radar</h3>
             </div>
-            <span className="text-[10px] text-[#A855F7] font-bold">
+            <span className="text-[10px] text-[#C084FC] font-bold">
               Angle: {params.spatialAngleDeg}°
             </span>
           </div>
@@ -202,9 +202,9 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs">
               <span className="text-[#94A3B8]">Azimuth Angle:</span>
-              <span className="text-[#A855F7] font-bold">{params.spatialAngleDeg}°</span>
+              <span className="text-[#C084FC] font-bold">{params.spatialAngleDeg}°</span>
             </div>
-            <input
+            <input aria-label="Ángulo espacial"
               type="range"
               min="0"
               max="90"
@@ -219,9 +219,9 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs">
               <span className="text-[#94A3B8]">Direct Width Expansion:</span>
-              <span className="text-[#A855F7] font-bold">{params.spatialWidth.toFixed(2)}x</span>
+              <span className="text-[#C084FC] font-bold">{params.spatialWidth.toFixed(2)}x</span>
             </div>
-            <input
+            <input aria-label="Anchura espacial"
               type="range"
               min="0.0"
               max="2.0"
@@ -238,7 +238,7 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
               <span className="text-[#94A3B8]">Crosstalk Matrix Gain:</span>
               <span className="text-[#38BDF8] font-bold">{(params.crosstalkGain * 100).toFixed(0)}%</span>
             </div>
-            <input
+            <input aria-label="Crosstalk gain"
               type="range"
               min="0.0"
               max="0.6"
@@ -255,7 +255,7 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
               <span className="text-[#94A3B8]">Interaural Time Delay (ITD):</span>
               <span className="text-white font-bold">{params.hrtfDelayMs.toFixed(2)} ms</span>
             </div>
-            <input
+            <input aria-label="Hrtf delay ms"
               type="range"
               min="0.0"
               max="1.0"
@@ -270,9 +270,9 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
           <div className="space-y-1.5 pt-2 border-t border-[#1E2330]">
             <div className="flex justify-between text-xs">
               <span className="text-[#94A3B8]">Wet Mix Eta:</span>
-              <span className="text-[#A855F7] font-bold">{(params.spatialWetEta * 100).toFixed(0)}%</span>
+              <span className="text-[#C084FC] font-bold">{(params.spatialWetEta * 100).toFixed(0)}%</span>
             </div>
-            <input
+            <input aria-label="Mezcla espacial"
               type="range"
               min="0.0"
               max="1.0"
@@ -359,7 +359,7 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
                     </div>
                     <div className="text-[10px] text-[#94A3B8] mt-1">{room.route}</div>
                     <div className="flex flex-wrap gap-3 mt-2 text-[10px] font-mono text-[#CBD5E1]">
-                      <span>RT60: <strong className="text-[#A855F7]">{room.rt60.toFixed(3)}s</strong></span>
+                      <span>RT60: <strong className="text-[#C084FC]">{room.rt60.toFixed(3)}s</strong></span>
                       <span>DRR: <strong className="text-[#38BDF8]">{room.drr.toFixed(2)}dB</strong></span>
                       <span>C80: <strong className="text-emerald-400">{room.c80.toFixed(2)}dB</strong></span>
                       <span>IACC_E/L: <strong>{room.iaccEarly.toFixed(2)}/{room.iaccLate.toFixed(2)}</strong></span>
@@ -387,7 +387,7 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
             </div>
             <div className="flex justify-between">
               <span className="text-[#94A3B8]">SOFA Manifold Basis:</span>
-              <span className="text-[#A855F7]">214 Subj · 128-Tap C¹</span>
+              <span className="text-[#C084FC]">214 Subj · 128-Tap C¹</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#94A3B8]">Golden Latent q*[0..2]:</span>
@@ -401,7 +401,7 @@ export const SpatialHrtfPanel: React.FC<SpatialHrtfPanelProps> = ({ params, onPa
               <span className="text-[#94A3B8]">Late Allpass Decorrel:</span>
               <span className="text-white">0.642 (IACC_late={activeRoom.iaccLate.toFixed(3)})</span>
             </div>
-            <div className="pt-1 text-[10px] text-[#64748B] leading-relaxed">
+            <div className="pt-1 text-[10px] text-[#A8B6CA] leading-relaxed">
               Pre-seeded at <code className="text-[#94A3B8]">EffectCreate</code> &amp; <code className="text-[#94A3B8]">PersistedStateRestorer</code>: zero cold-boot silence, zero impulse spikes, bit-exact across Root &amp; Non-Root.
             </div>
           </div>

@@ -5,6 +5,7 @@ import android.content.Context
 /** Estado persistente del panel Spatial Audio (HRTF + RIR + SAF). */
 data class SpatialAudioState(
     val hrtfEnabled: Boolean = true,
+    val externalStereoLineOut: Boolean = false,
     val hrtfSubject: String = "kemar",
     val rirEnabled: Boolean = true,
     val rirRt60: Float = 0.34f,
@@ -37,6 +38,7 @@ object SpatialAudioPrefs {
         val d = SpatialAudioState()
         return SpatialAudioState(
             hrtfEnabled       = p.getBoolean("hrtfEnabled", d.hrtfEnabled),
+            externalStereoLineOut = p.getBoolean("externalStereoLineOut", false),
             hrtfSubject       = p.getString("hrtfSubject", d.hrtfSubject) ?: d.hrtfSubject,
             rirEnabled        = p.getBoolean("rirEnabled", d.rirEnabled),
             rirRt60           = p.getFloat("rirRt60", d.rirRt60),
@@ -54,6 +56,7 @@ object SpatialAudioPrefs {
         _stateFlow.value = s
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean("hrtfEnabled", s.hrtfEnabled)
+            .putBoolean("externalStereoLineOut", s.externalStereoLineOut)
             .putString("hrtfSubject", s.hrtfSubject)
             .putBoolean("rirEnabled", s.rirEnabled)
             .putFloat("rirRt60", s.rirRt60)

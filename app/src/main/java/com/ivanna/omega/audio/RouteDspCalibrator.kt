@@ -124,7 +124,9 @@ object RouteDspCalibrator {
     private fun applySynchronousInProcessStages(context: Context, route: OutputRoute) {
         if (!IvannaNativeLib.isLoaded) return
         val saPrefs = runCatching { SpatialAudioPrefs.load(context) }.getOrNull()
-        val hrtfAllowed = saPrefs?.hrtfEnabled ?: true
+        val hrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
+            route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
+        AudioEngine.nativeSetHrtfWetDryStatic(if (hrtfAllowed) 1f else 0f)
         when (route) {
             OutputRoute.SPEAKER -> {
                 runCatching {
@@ -135,7 +137,8 @@ object RouteDspCalibrator {
             OutputRoute.WIRED_AUX, OutputRoute.USB -> {
                 runCatching {
                     IvannaNativeLib.nativeSetHRTFEnabled(hrtfAllowed)
-                    NativeBridge.safeSetWarpedLatticeRouteArchetype(0)
+                    NativeBridge.safeSetWarpedLatticeRouteArchetype(
+                        if (saPrefs?.externalStereoLineOut == true) 2 else 0)
                 }.onFailure { Log.w(TAG, "HRTF on (aux/usb): ${it.message}") }
             }
             OutputRoute.BLUETOOTH -> {
@@ -153,9 +156,12 @@ object RouteDspCalibrator {
 
     private fun applyAsyncDaemonStages(context: Context, route: OutputRoute) {
         val saPrefs = runCatching { SpatialAudioPrefs.load(context) }.getOrNull()
-        val rirAllowed = saPrefs?.rirEnabled == true
-        val hrtfAllowed = saPrefs?.hrtfEnabled ?: true
-        val safAllowed = saPrefs?.safEnabled == true
+        val externalStereo = ExternalStereoPolicy.usesExternalSpeakers(route, saPrefs?.externalStereoLineOut == true)
+        // External amplifier owns surround/reverb; no unmeasured synthetic room on line-out.
+        val rirAllowed = saPrefs?.rirEnabled == true && !externalStereo
+        val hrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
+            route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
+        val safAllowed = saPrefs?.safEnabled == true && !externalStereo
 
         when (route) {
             OutputRoute.SPEAKER -> {

@@ -35,8 +35,14 @@ object AbxResultStore {
         }.getOrDefault(emptyList())
     }
 
+    // Preserve legacy history for export, but never mix non-independent old trials into v2 stats.
+    fun validTrials(context: Context): List<JSONObject> = loadAll(context).filter {
+        it.optInt("protocolVersion") == 2 && it.optBoolean("valid") &&
+            it.optString("protocol") == "ABX_Static_vs_DynamicHRTF"
+    }
+
     fun stats(context: Context): Triple<Int, Int, Double> {
-        val trials = loadAll(context)
+        val trials = validTrials(context)
         val hits = trials.count { it.optBoolean("correct") }
         val p = AbxStats.binomialTest(hits, trials.size)
         return Triple(trials.size, hits, p)
@@ -56,12 +62,14 @@ object AbxResultStore {
             val (ciLo, ciHi) = AbxStats.wilsonInterval95(hits, n)
             val out = JSONObject().apply {
                 put("protocol", "ABX_Static_vs_DynamicHRTF")
+                put("protocolVersion", 2)
+                put("legacyOrInvalidTrials", trials.size - n)
                 put("trials", n)
                 put("hits", hits)
                 put("pValueBinomialExact", p)
                 put("ci95Low", ciLo)
                 put("ci95High", ciHi)
-                put("verdict", if (n >= 10 && p < 0.05) "PERCEPTIBLE" else "NO DEMOSTRADO")
+                put("verdict", if (n >= 10 && p < 0.05) "DIFERENCIACION_REPORTADA_NO_CERTIFICADA" else "NO DEMOSTRADO")
                 put("exportedAtMs", System.currentTimeMillis())
                 put("history", JSONArray().apply { trials.forEach { put(it) } })
             }

@@ -1,7 +1,6 @@
 package com.ivanna.omega.saf
 
 import android.content.Context
-import android.content.res.AssetManager
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.spatial.SaFOptimizer
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +10,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -44,7 +46,10 @@ data class SaFState(
     val errorEnergy : Float      = 0f,
     val converged   : Boolean    = false,
     val jniLoaded   : Boolean    = false,
-    val modelLoaded : Boolean    = false
+    val modelLoaded : Boolean    = false,
+    val stimulusReady: Boolean   = false,
+    val message: String          = "",
+    val deliveryMessage: String  = "Ruta global sin confirmar"
 )
 
 // ── Engine ────────────────────────────────────────────────────────────────────
@@ -66,7 +71,9 @@ class SaFEngine(private val context: Context) {
     private val _state = MutableStateFlow(SaFState())
     val state: StateFlow<SaFState> = _state.asStateFlow()
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val feedbackPending = AtomicBoolean(false)
+    private val stimulusGeneration = AtomicInteger(0)
 
     // Reproductor de tonos binaurales de calibración HRTF (chirp 300Hz→8kHz
     // con ITD Woodworth + ILD por sombra de cabeza + rolloff pinnal para
@@ -77,7 +84,7 @@ class SaFEngine(private val context: Context) {
     // Scope dedicado para play() — SaFStimulusPlayer.play() es síncrono
     // pero el motor principal corre en IO; mezclar los dos podía encubrir
     // bloqueos del hardware bajo carga. Scope independiente y dedicado.
-    private val playerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val playerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
 
     // ── Init ─────────────────────────────────────────────────────────────
     fun initialize() {
@@ -105,15 +112,30 @@ class SaFEngine(private val context: Context) {
                 val nativeConv    = if (restored) snapshot { SaFBridge.nativeSaFIsConverged() } ?: false else false
                 // Resolución de divergencia: iteración más alta gana. En empate,
                 // el binario sellado (prefs) tiene prioridad sobre el TXT nativo.
-                val usePrefs       = prefsSnap.iteration > nativeIter
-                val iter   = if (usePrefs) prefsSnap.iteration else nativeIter
-                val params = if (usePrefs) prefsSnap.q        else nativeParams
-                val conv   = ((if (usePrefs) prefsSnap.converged else nativeConv)) && iter > 0
+                val usePrefs = prefsSnap.timestampMs > 0 && prefsSnap.iteration >= nativeIter
+                if (usePrefs) {
+                    // Import the checksum-validated snapshot through the native validator;
+                    // only readback from the optimizer may be displayed as active state.
+                    val pending = File(context.filesDir, "saf/restore-prefs.txt")
+                    runCatching {
+                        pending.parentFile?.mkdirs()
+                        pending.writeText("IVANNA_SAF_STATE_V1\n${prefsSnap.iteration}\n" +
+                            prefsSnap.q.joinToString(" ") + "\n")
+                        if (SaFBridge.nativeSaFLoadState(pending.absolutePath)) {
+                            SaFBridge.nativeSaFSaveState(statePath())
+                        }
+                    }.onFailure { android.util.Log.w(TAG, "Restauración SAF rechazada", it) }
+                    pending.delete()
+                }
+                val iter = snapshot { SaFBridge.nativeSaFGetIteration() } ?: nativeIter
+                val params = snapshot { SaFBridge.nativeSaFGetParams() } ?: nativeParams
+                val conv = (snapshot { SaFBridge.nativeSaFIsConverged() } ?: nativeConv) && iter > 0
                 _state.value = SaFState(
                     jniLoaded   = loaded,
                     modelLoaded = modelOk,
                     iteration   = iter,
                     params      = params,
+                    deliveryMessage = publishProfile(params),
                     converged   = conv,
                     phase       = if (conv) SaFPhase.DONE else SaFPhase.IDLE
                 )
@@ -127,54 +149,94 @@ class SaFEngine(private val context: Context) {
 
     // ── Start / reset calibration session ────────────────────────────────
     fun startCalibration() {
-        if (IvannaNativeLib.isLoaded) {
-            runCatching { SaFBridge.nativeSaFReset() }
-            // Reset también borra la calibración guardada — arrancamos limpio
-            // a propósito, no queremos que loadState() la reviva en el próximo init().
-            runCatching { SaFBridge.nativeSaFSaveState(statePath()) }
-            // FIX (persistencia Kotlin): borrar también la snapshot IVSF v2
-            // para que el binario sellado y el TXT nativo queden ambos en cero
-            // y la siguiente init() arranque consistentemente sin calibración.
-            runCatching { SaFCalibrationPrefs.clear(context) }
+        if (!_state.value.modelLoaded || !IvannaNativeLib.isLoaded ||
+            !feedbackPending.compareAndSet(false, true)) {
+            _state.update { it.copy(message = "Espera a que el modelo SAF esté disponible.") }
+            return
         }
-        _state.value = SaFState(
-            phase      = SaFPhase.CALIBRATING,
-            currentDir = SaFDirection.ordered[0],
-            jniLoaded  = IvannaNativeLib.isLoaded
-        )
-        publishLatestState()
-        // FIX (tonos): emitir el primer estímulo inmediatamente al entrar a
-        // CALIBRATING. Sin esto la pantalla renderiza la flecha y el hint pero
-        // no se oye nada — el botón CORRECTO/INCORRECTO se convierte en
-        // encuesta ciega y Φ_SAF^∞ converge sobre ruido humano.
-        playStimulus(SaFDirection.ordered[0])
+        stimulusGeneration.incrementAndGet()
+        player.stop()
+        scope.launch {
+            try {
+                SaFBridge.nativeSaFReset()
+                check(SaFBridge.nativeSaFGetIteration() == 0)
+                val params = SaFBridge.nativeSaFGetParams() ?: error("Sin lectura SAF")
+                check(params.size == 7 && params.all { it.isFinite() })
+                SaFBridge.nativeSaFSaveState(statePath())
+                SaFCalibrationPrefs.clear(context)
+                _state.value = SaFState(
+                    phase = SaFPhase.CALIBRATING, currentDir = SaFDirection.FRONT,
+                    params = params, jniLoaded = true, modelLoaded = _state.value.modelLoaded,
+                    deliveryMessage = publishProfile(params)
+                )
+                publishLatestState()
+                playStimulus(SaFDirection.FRONT)
+            } catch (e: Exception) {
+                _state.update { it.copy(phase = SaFPhase.IDLE, stimulusReady = false,
+                    message = "No se confirmó el reinicio del motor SAF.") }
+                publishLatestState()
+            } finally { feedbackPending.set(false) }
+        }
     }
 
-    /**
-     * Lanza la reproducción del estímulo binaural para la dirección dada en
-     * el scope dedicado. Idempotente: SaFStimulusPlayer.play() cancela el
-     * estímulo anterior si quedaba algo en vuelo (AtomicInteger de
-     * generación). Si el hardware no soporta float estéreo, el warning se
-     * loguea y el usuario sigue pudiendo responder — útil para diagnóstico.
-     */
-    /** Vuelve a reproducir el estímulo de [direction] (botón REPETIR TONO). No toca la calibración. */
-    fun replayStimulus(direction: SaFDirection) = playStimulus(direction)
+    /** Existing bridge publishes to the local control bus and requests daemon delivery.
+     * Its Boolean is transport acknowledgement, never proof that audio used the profile. */
+    private fun publishProfile(params: FloatArray): String {
+        val prefs = com.ivanna.omega.ui.SpatialAudioPrefs.load(context)
+        val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
+        if (!prefs.safEnabled || com.ivanna.omega.audio.ExternalStereoPolicy.usesExternalSpeakers(
+                route, prefs.externalStereoLineOut)) return "Perfil local; envío binaural global deshabilitado para esta configuración."
+        val accepted = runCatching {
+            com.ivanna.omega.magisk.OmegaEngineBridge.pushSafLatentQ(params, prefs.safIntensity)
+        }.getOrDefault(false)
+        return if (accepted) "Perfil enviado al control global; aplicación acústica pendiente de comprobar."
+            else "Perfil local actualizado; el daemon no confirmó la entrega global."
+    }
+
+    /** Replay does not count as feedback; only a completed track unlocks answers. */
+    fun replayStimulus(direction: SaFDirection) {
+        if (_state.value.phase == SaFPhase.CALIBRATING && !feedbackPending.get() &&
+            direction == _state.value.currentDir) playStimulus(direction)
+    }
 
     private fun playStimulus(direction: SaFDirection) {
+        val generation = stimulusGeneration.incrementAndGet()
+        _state.update { it.copy(stimulusReady = false, message = "Reproduciendo estímulo…") }
         playerScope.launch {
-            runCatching { player.play(direction) }
-                .onFailure {
-                    android.util.Log.w(TAG, "playStimulus(${direction.label}) → ${it.message}")
+            if (generation != stimulusGeneration.get()) return@launch
+            val started = runCatching {
+                player.play(direction) { completed ->
+                    if (generation == stimulusGeneration.get()) {
+                        _state.update { it.copy(stimulusReady = completed, message =
+                            if (completed) "Estímulo completado; responde solo si lo escuchaste por auriculares."
+                            else "Reproducción incompleta. Repite el tono antes de responder.") }
+                        publishLatestState()
+                    }
                 }
+            }.getOrDefault(false)
+            if (!started && generation == stimulusGeneration.get()) {
+                _state.update { it.copy(stimulusReady = false, message = "No se pudo reproducir. Comprueba la salida y repite.") }
+                publishLatestState()
+            }
         }
     }
-
 
     // ── Feed one feedback sample ──────────────────────────────────────────
     fun feedFeedback(direction: SaFDirection, correct: Boolean) {
+        val current = _state.value
+        if (current.phase != SaFPhase.CALIBRATING || direction != current.currentDir ||
+            !current.stimulusReady || !current.modelLoaded || !feedbackPending.compareAndSet(false, true)) return
+        _state.update { it.copy(stimulusReady = false) }
         scope.launch {
-            if (IvannaNativeLib.isLoaded) {
-                runCatching { SaFBridge.nativeSaFFeedback(direction.ordinal, correct) }
+          try {
+            val applied = runCatching {
+                check(IvannaNativeLib.isLoaded)
+                SaFBridge.nativeSaFFeedback(direction.ordinal, correct)
+                check(SaFBridge.nativeSaFGetIteration() == current.iteration + 1)
+            }.isSuccess
+            if (!applied) {
+                _state.update { it.copy(message = "SAF no confirmó el paso. Reinicia la calibración.") }
+                return@launch
             }
 
             // FIX: sincronizar con SaFRoomBridge — H_t real tras feedback.
@@ -233,7 +295,8 @@ class SaFEngine(private val context: Context) {
                 errorEnergy = energy,
                 converged   = conv,
                 jniLoaded   = IvannaNativeLib.isLoaded,
-                modelLoaded = modelOk
+                modelLoaded = modelOk,
+                deliveryMessage = publishProfile(params)
             )
             publishLatestState()
 
@@ -244,6 +307,7 @@ class SaFEngine(private val context: Context) {
             if (phase == SaFPhase.CALIBRATING) {
                 playStimulus(nextDir)
             }
+          } finally { feedbackPending.set(false) }
         }
     }
 
@@ -254,6 +318,7 @@ class SaFEngine(private val context: Context) {
      * JNI no impida liberar el player.
      */
     fun release() {
+        stimulusGeneration.incrementAndGet()
         runCatching { player.release() }
         runCatching { playerScope.cancel() }
         runCatching { scope.cancel() }

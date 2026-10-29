@@ -37,7 +37,7 @@ export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamC
         ctx.stroke();
 
         // Transfer curve plotting
-        ctx.strokeStyle = params.goldenEarEnabled ? '#F97316' : '#64748B';
+        ctx.strokeStyle = params.goldenEarEnabled ? '#F97316' : '#A8B6CA';
         ctx.lineWidth = 2.5;
         ctx.shadowBlur = params.goldenEarEnabled ? 10 : 0;
         ctx.shadowColor = '#F97316';
@@ -85,7 +85,7 @@ export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamC
                 Golden Ear GAN & Soft-Clipping Exciter Engine
               </h2>
             </div>
-            <p className="text-xs text-[#64748B] mt-1.5 max-w-3xl">
+            <p className="text-xs text-[#A8B6CA] mt-1.5 max-w-3xl">
               Non-linear polynomial harmonic generation H2(x)=2x^2-1 and H3(x)=4x^3-3x coupled with Newton-Raphson 1-iteration <code className="text-[#F97316]">fast_tanh_neon</code> soft saturation.
             </p>
           </div>
@@ -95,7 +95,7 @@ export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamC
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${
               params.goldenEarEnabled
                 ? 'bg-[#2D1B14] border-[#F97316] text-[#F97316]'
-                : 'bg-[#12151C] border-[#1E2330] text-[#64748B]'
+                : 'bg-[#12151C] border-[#1E2330] text-[#A8B6CA]'
             }`}
           >
             {params.goldenEarEnabled ? 'GOLDEN EAR ACTIVE' : 'BYPASS'}
@@ -140,7 +140,7 @@ export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamC
               <span className="text-[#94A3B8]">Harmonic Drive:</span>
               <span className="text-[#F97316] font-bold">{params.goldenEarDrive.toFixed(2)}x</span>
             </div>
-            <input
+            <input aria-label="Excitación armónica"
               type="range"
               min="1.0"
               max="3.0"
@@ -157,7 +157,7 @@ export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamC
               <span className="text-[#94A3B8]">Exciter Mix Ratio:</span>
               <span className="text-white font-bold">{(params.goldenEarMix * 100).toFixed(0)}%</span>
             </div>
-            <input
+            <input aria-label="Mezcla armónica"
               type="range"
               min="0.0"
               max="0.5"
@@ -174,7 +174,7 @@ export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamC
               <span className="text-[#94A3B8]">Harmonic Boost:</span>
               <span className="text-[#F97316] font-bold">{params.harmonicGain.toFixed(2)}x</span>
             </div>
-            <input
+            <input aria-label="Ganancia armónica"
               type="range"
               min="0.0"
               max="2.0"
@@ -187,9 +187,9 @@ export const GoldenEarPanel: React.FC<GoldenEarPanelProps> = ({ params, onParamC
 
           {/* Math details */}
           <div className="p-3 bg-[#0A0C10] rounded-lg border border-[#1A1D24] space-y-1.5 text-[11px]">
-            <span className="text-[#64748B] block font-bold">NEON FAST TANH MATH:</span>
+            <span className="text-[#A8B6CA] block font-bold">NEON FAST TANH MATH:</span>
             <code className="text-[#4ADE80] block text-[10px]">f(x) = x*(27 + x^2) / (27 + 9*x^2)</code>
-            <p className="text-[10px] text-[#64748B]">
+            <p className="text-[10px] text-[#A8B6CA]">
               Evaluated with <code className="text-[#38BDF8]">vrecpeq_f32</code> and 1 Newton-Raphson refinement <code className="text-[#38BDF8]">vrecpsq_f32</code>.
             </p>
           </div>

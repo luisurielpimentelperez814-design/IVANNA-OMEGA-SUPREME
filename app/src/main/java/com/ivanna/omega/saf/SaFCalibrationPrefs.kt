@@ -57,7 +57,7 @@ import java.security.MessageDigest
  *   nativo (`nativeSaFSaveState`) sigue existiendo como backend, y se
  *   sincroniza en ambas direcciones desde `SaFEngine`. Si el nativo y el
  *   archivo Kotlin divergen (p. ej. porque otra sesión escribió solo en
- *   uno), gana el que tenga timestamp más reciente.
+ *   uno), gana la iteración mayor; en empate gana la copia binaria íntegra.
  */
 object SaFCalibrationPrefs {
 

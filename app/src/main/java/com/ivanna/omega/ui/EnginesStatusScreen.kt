@@ -36,7 +36,7 @@ import kotlinx.coroutines.delay
  *
  * Motores antes invisibles en la UI (corrían en background sin ningún panel):
  *   • RouteDspCalibrator     — calibración DSP por ruta de audio (2s poll)
- *   • AudioBackendSelector   — Ruta A (daemon root) / B (DynamicsProcessing)
+ *   • AudioBackendSelector   — Backend root / fallback Android
  *   • UsbAudioProManager     — DAC USB OTG directo (384kHz/32bit)
  *   • IvannaSpatialManager   — HRTF renderer + head tracker
  *   • AdaptiveEngineModulator — suavizado y curvas no lineales del motor adaptativo
@@ -52,6 +52,7 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
     var routeCalib     by remember { mutableStateOf("—") }
     var hrtfReady      by remember { mutableStateOf(false) }
     var hrtfSubject    by remember { mutableStateOf("none") }
+    var controlRunning by remember { mutableStateOf(false) }
     var headTracking   by remember { mutableStateOf(false) }
     var usbStreaming   by remember { mutableStateOf(false) }
     var usbIso         by remember { mutableStateOf(false) }
@@ -65,6 +66,7 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         while (true) {
+            controlRunning = com.ivanna.omega.audio.IvannaControlLoop.isRunning
             backendMode  = AudioBackendSelector.mode.value
             nativeLoaded = IvannaNativeLib.isLoaded
             daemonAlive  = runCatching { OmegaEngineBridge.isConnected }.getOrDefault(false)
@@ -73,19 +75,14 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             runCatching {
                 val r = AudioRouteManager.detectOutputRoute()
                 activeRoute = r.name
-                routeCalib = when (r.name) {
-                    "SPEAKER"   -> "HRTF off · RIR sala activa (RT60 0.7s, wet 0.30)"
-                    "WIRED_AUX" -> "HRTF on · sala off"
-                    "USB"       -> "HRTF on · sala off · 384kHz disponible"
-                    "BLUETOOTH" -> "HRTF on · width 0.85 · RT60 0.4s (codec SBC/AAC)"
-                    else        -> "Sin calibración (UNKNOWN)"
-                }
+                routeCalib = "Salida detectada: ${r.name}. Perfil solicitado; aplicación y formato negociado deben verificarse con señal."
+
             }
 
             // HRTF / spatial
             hrtfReady    = IvannaSpatialManager.ready
             hrtfSubject  = IvannaSpatialManager.activeSubject
-            headTracking = IvannaSpatialManager.ready
+            headTracking = IvannaSpatialManager.isHeadTrackingFresh()
 
             // USB Pro
             val usbMgr: UsbAudioProManager = UsbAudioProManager.getInstance(ctx)
@@ -131,7 +128,7 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text("ESTADO DE MOTORES", color = AuroraCyan,
                     fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, letterSpacing = 1.5.sp)
-                Text("Todos los motores en background — estado real",
+                Text("Disponibilidad, conexión y actividad reportadas por separado",
                     color = TextMuted, fontSize = 10.sp)
             }
             // Indicador global
@@ -162,11 +159,11 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
                      backendMode == AudioBackendSelector.Mode.ROOT_NO_DAEMON,
                 detail  = when (backendMode) {
                     AudioBackendSelector.Mode.ROOT_DAEMON    ->
-                        "Ruta A: daemon ivanna_omega corriendo · SHM activa · latencia mínima"
+                        "Ruta B: daemon conectado; el socket no confirma procesamiento AudioEffect"
                     AudioBackendSelector.Mode.ROOT_NO_DAEMON ->
-                        "Ruta A degradada: raíz disponible pero daemon caído · reinicia el módulo Magisk"
+                        "Ruta B sin daemon: raíz disponible pero daemon caído · reinicia el módulo Magisk"
                     AudioBackendSelector.Mode.NO_ROOT        ->
-                        "Ruta B: DynamicsProcessing + AudioEffect · sin SHM · latencia ~20ms"
+                        "Sin root: fallback Android; latencia sin medir"
                     else -> "AudioBackendSelector aún evaluando la plataforma"
                 }
             )
@@ -238,9 +235,9 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
                          else "Caído o sin root",
                 ok     = daemonAlive,
                 detail = if (daemonAlive)
-                    "ivanna_daemon activo · shared memory disponible · Ruta A habilitada"
+                    "ivanna_daemon activo · shared memory disponible · Plano de control conectado"
                 else
-                    "Sin daemon: la app usa Ruta B (DynamicsProcessing).\n" +
+                    "Sin daemon: consultar la ruta activa; reproductor propio = Ruta A.\n" +
                     "Si el módulo está instalado, abre Magisk y verifica que el módulo esté activo."
             )
 
@@ -248,8 +245,8 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             EngineCard(
                 icon   = Icons.Default.AutoGraph,
                 title  = "ADAPTIVE ENGINE MODULATOR",
-                status = "Activo — suavizado exponencial α=0.20",
-                ok     = true,
+                status = "Modulación configurada — actividad no instrumentada",
+                ok     = false,
                 detail = "Mapea intensidad → parámetros con curvas Bézier/tanh según modo:\n" +
                          "  NATURAL: potencia 0.8 (curva suave)\n" +
                          "  STUDIO: lineal\n" +
@@ -261,8 +258,8 @@ fun EnginesStatusScreen(onBack: () -> Unit) {
             EngineCard(
                 icon   = Icons.Default.Loop,
                 title  = "IVANNA CONTROL LOOP",
-                status = "Watchdog activo (50ms)",
-                ok     = true,
+                status = if (controlRunning) "Loop ejecutándose (50ms)" else "Loop detenido",
+                ok     = controlRunning,
                 detail = "Comprueba coherencia de parámetros DSP cada 50ms.\n" +
                          "Reaplica ajustes si detecta drift entre el estado Kotlin y el engine nativo.\n" +
                          "Corre en Dispatchers.IO — no bloquea el hilo de audio."

@@ -124,7 +124,7 @@ class SaFStimulusPlayer(
      * @param direction dirección lógica de la calibración
      * @return true si se pudo iniciar, false si AudioTrack no está disponible
      */
-    fun play(direction: SaFDirection): Boolean {
+    fun play(direction: SaFDirection, onComplete: (Boolean) -> Unit = {}): Boolean {
         stop() // cancela cualquier reproducción previa; siempre seguro
         val myGen = generation.incrementAndGet()
 
@@ -192,6 +192,7 @@ class SaFStimulusPlayer(
 
         currentTrack = track
         currentJob = scope.launch {
+            var completed = false
             try {
                 track.play()
                 // Duración total con margen de flush del hardware.
@@ -203,6 +204,8 @@ class SaFStimulusPlayer(
                     kotlinx.coroutines.delay(20L)
                     elapsed += 20L
                 }
+                completed = generation.get() == myGen && isActive &&
+                    track.playbackHeadPosition.toLong() >= samples.size / 2L
             } catch (t: Throwable) {
                 Log.w(TAG, "play loop: ${t.message}")
             } finally {
@@ -211,6 +214,7 @@ class SaFStimulusPlayer(
                 if (generation.get() == myGen) {
                     track.releaseSafe()
                     currentTrack = null
+                    onComplete(completed)
                 }
             }
         }

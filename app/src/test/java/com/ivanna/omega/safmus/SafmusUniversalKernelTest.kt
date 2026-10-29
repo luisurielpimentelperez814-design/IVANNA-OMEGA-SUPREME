@@ -5,6 +5,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafmusUniversalKernelTest {
+    @Test fun packedVoxelsPreserveSignedAxesAndBoundaryCounts() {
+        val points = listOf(
+            SafmusUniversalKernel.SpatialPoint3(-1000f, 1000f, 0f),
+            SafmusUniversalKernel.SpatialPoint3(1000f, -1000f, 0f),
+            SafmusUniversalKernel.SpatialPoint3(0f, 1000f, -1000f),
+            SafmusUniversalKernel.SpatialPoint3(-.001f, 0f, 0f),
+            SafmusUniversalKernel.SpatialPoint3(0f, -.001f, 0f),
+            SafmusUniversalKernel.SpatialPoint3(0f, 0f, -.001f),
+            SafmusUniversalKernel.SpatialPoint3(0f, 0f, 0f))
+        val result = SafmusUniversalKernel.optimizeSpatialPointCloud(points + points, .005f, 3)
+        assertTrue(result.points == points.take(3))
+        assertTrue(result.reducedByVoxelCount == points.size)
+        assertTrue(result.truncatedCount == 4)
+        assertTrue(result.rejectedInvalidCount == 0)
+    }
+
     @Test fun spatialPointCloudOptimizationRejectsInvalidAndRedundantPointsAndBoundsOutput() {
         val result = SafmusUniversalKernel.optimizeSpatialPointCloud(
             listOf(

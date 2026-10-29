@@ -47,10 +47,15 @@ fun SpatialAudioPanel(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var state by remember { mutableStateOf(SpatialAudioPrefs.load(context)) }
+    val state by produceState(SpatialAudioPrefs.load(context)) {
+        SpatialAudioPrefs.init(context)
+        SpatialAudioPrefs.stateFlow.collect { value = it }
+    }
+    val lineOutActive = com.ivanna.omega.audio.ExternalStereoPolicy.usesExternalSpeakers(
+        com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute(), state.externalStereoLineOut)
+    val latestState by rememberUpdatedState(state)
     fun update(f: (SpatialAudioState) -> SpatialAudioState) {
-        state = f(state)
-        SpatialAudioPrefs.save(context, state)
+        SpatialAudioPrefs.save(context, f(state))
     }
 
     var supremeState by remember { mutableStateOf(SupremeAxesPrefs.load(context)) }
@@ -110,23 +115,18 @@ fun SpatialAudioPanel(
 
     // Restaurar controles nativos fuera de operaciones de disco/IPC; el estado Compose
     // y los parámetros híbridos se leen y aplican en el hilo UI.
-    LaunchedEffect(Unit) {
+    LaunchedEffect(state.externalStereoLineOut, lineOutActive) {
         pushHybridMagistral()
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            if (state.hrtfEnabled) {
+            IvannaSpatialEngine.enabled = state.hrtfEnabled && !lineOutActive
+            com.ivanna.omega.audio.RouteDspCalibrator.onRouteChanged(context, com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute())
+            if (state.hrtfEnabled && !lineOutActive) {
                 IvannaSpatialEngine.enabled = true
                 IvannaSpatialManager.setHrtfSubject(state.hrtfSubject)
             }
             IvannaSpatialManager.setReverbLevel(state.objectReverbLevel)
-            if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet) else OmegaEngineBridge.disableRoom()
-            if (state.safEnabled) {
-                runCatching { SaFBridge.nativeSaFInit(com.ivanna.omega.core.IvannaAssetProvider.safModelFile(context)?.absolutePath ?: "/data/adb/ivanna_omega/SAF_model.json") }
-                val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
-                OmegaEngineBridge.pushSafLatentQ(
-                    FloatArray(7) { i -> q.getOrElse(i) { 0f } * state.safIntensity },
-                    gain = state.safIntensity
-                )
-            }
+            if (state.rirEnabled && !lineOutActive) OmegaEngineBridge.setRoom(state.rirRt60, state.rirWet) else OmegaEngineBridge.disableRoom()
+            // Opening this panel must not reset a user's persisted personal SAF calibration.
             runCatching {
                 com.ivanna.omega.core.NativeBridge.safeSetCochlearInverseEnabled(state.cochlearInverseEnabled)
                 com.ivanna.omega.core.NativeBridge.safeSetCochlearIntensity(state.cochlearIntensity)
@@ -142,14 +142,15 @@ fun SpatialAudioPanel(
                     if (SaFBridge.nativeSaFIsConverged()) "convergido" else "iteración ${SaFBridge.nativeSaFGetIteration()} · error %.3f".format(SaFBridge.nativeSaFGetError())
                 }.getOrDefault("modelo no cargado")
 
-                if (state.safEnabled && state.safAutoMode) {
+                if (latestState.safEnabled && latestState.safAutoMode && !lineOutActive &&
+                    runCatching { SaFBridge.nativeSaFGetIteration() == 0 }.getOrDefault(false)) {
                     runCatching {
-                        com.ivanna.omega.saf.SaFRoomBridge.setRoomState(state.rirRt60, 0f, 0f)
+                        com.ivanna.omega.saf.SaFRoomBridge.setRoomState(latestState.rirRt60, 0f, 0f)
                         com.ivanna.omega.saf.SaFRoomBridge.step()
                         val qa = com.ivanna.omega.saf.SaFRoomBridge.getParams()
                         OmegaEngineBridge.pushSafLatentQ(
-                            FloatArray(7) { i -> qa.getOrElse(i) { 0f } * state.safIntensity },
-                            gain = state.safIntensity
+                            FloatArray(7) { i -> qa.getOrElse(i) { 0f } * latestState.safIntensity },
+                            gain = latestState.safIntensity
                         )
                     }
                 }
@@ -319,10 +320,12 @@ fun SpatialAudioPanel(
 
         // ── HRTF ──────────────────────────────────────────────────────────
         SpatialCard("HRTF BINAURAL", "Dataset IHR1 medido · deploy Magisk con SHA256") {
-            RowSwitch("HRTF activo", state.hrtfEnabled) { on ->
+            RowSwitch("HRTF de auriculares solicitado", state.hrtfEnabled && !lineOutActive) { requested ->
+                val on = requested && !lineOutActive
                 update { it.copy(hrtfEnabled = on) }
                 IvannaSpatialEngine.enabled = on
                 if (on) IvannaSpatialManager.setHrtfSubject(state.hrtfSubject)
+                com.ivanna.omega.audio.RouteDspCalibrator.onRouteChanged(context, com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute())
             }
             Text("Sujeto:", color = TextSecondary, fontSize = 11.sp)
             // FIX (descableado): los IDs anteriores (kemar_subject_165,
@@ -364,11 +367,11 @@ fun SpatialAudioPanel(
             }
             LabeledSlider("RT60 objetivo", state.rirRt60, 0.1f..1.5f, "%.2f s") { v ->
                 update { it.copy(rirRt60 = v) }
-                if (state.rirEnabled) OmegaEngineBridge.setRoom(v, state.rirWet)
+                if (state.rirEnabled && !lineOutActive) OmegaEngineBridge.setRoom(v, state.rirWet)
             }
             LabeledSlider("Mezcla wet/dry", state.rirWet, 0f..1f, "%.2f") { v ->
                 update { it.copy(rirWet = v) }
-                if (state.rirEnabled) OmegaEngineBridge.setRoom(state.rirRt60, v)
+                if (state.rirEnabled && !lineOutActive) OmegaEngineBridge.setRoom(state.rirRt60, v)
             }
             LabeledSlider("Reverb de objetos", state.objectReverbLevel, 0f..1f, "%.2f") { v ->
                 update { it.copy(objectReverbLevel = v) }
@@ -381,34 +384,19 @@ fun SpatialAudioPanel(
         SpatialCard("SAF · AJUSTE ESPECTRAL ADAPTATIVO", "Vector latente q[7] → ObjectRenderer.setSafLatent") {
             RowSwitch("SAF activo", state.safEnabled) { on ->
                 update { it.copy(safEnabled = on) }
-                if (on) {
-                    runCatching { SaFBridge.nativeSaFInit(com.ivanna.omega.core.IvannaAssetProvider.safModelFile(context)?.absolutePath ?: "/data/adb/ivanna_omega/SAF_model.json") }
-                    // FIX (descableado): el switch solo inicializaba el modelo local
-                    // pero nunca enviaba q[7] al daemon — omega_effect.cpp nunca
-                    // recibía la calibración real. SaFRoomBridge.getParams() es el
-                    // p_t real del optimizador Riemanniano; se envía escalado por
-                    // la intensidad actual.
-                    val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
-                    OmegaEngineBridge.pushSafLatentQ(
-                        FloatArray(7) { i -> q.getOrElse(i) { 0f } * state.safIntensity },
-                        gain = state.safIntensity
-                    )
+                if (on && !lineOutActive) {
+                    val q = runCatching { SaFBridge.nativeSaFGetParams() }.getOrNull()
+                    if (q != null) OmegaEngineBridge.pushSafLatentQ(q, gain = state.safIntensity)
                 } else {
-                    runCatching { SaFBridge.nativeSaFReset() }
+                    // Bypass changes gain, not the user's calibration state.
                     OmegaEngineBridge.pushSafLatentQ(FloatArray(7), gain = 0f)
                 }
             }
             LabeledSlider("Intensidad", state.safIntensity, 0f..1f, "%.2f") { v ->
                 update { it.copy(safIntensity = v) }
-                if (state.safEnabled) {
-                    runCatching { SaFOptimizer.syncToRoomBridge(state.rirRt60) }
-                    // Reenviar q[7] escalado por la nueva intensidad — antes este
-                    // slider solo guardaba el número en prefs sin efecto en audio.
-                    val q = com.ivanna.omega.saf.SaFRoomBridge.getParams()
-                    OmegaEngineBridge.pushSafLatentQ(
-                        FloatArray(7) { i -> q.getOrElse(i) { 0f } * v },
-                        gain = v
-                    )
+                if (state.safEnabled && !lineOutActive) {
+                    val q = runCatching { SaFBridge.nativeSaFGetParams() }.getOrNull()
+                    if (q != null) OmegaEngineBridge.pushSafLatentQ(q, gain = v)
                 }
             }
             RowSwitch("Modo automático", state.safAutoMode) { on -> update { it.copy(safAutoMode = on) } }

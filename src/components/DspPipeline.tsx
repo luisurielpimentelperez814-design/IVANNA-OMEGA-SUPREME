@@ -9,6 +9,7 @@ interface DspPipelineProps {
 export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
   return (
     <div className="space-y-6">
+      <p className="text-sm text-slate-300">Esquema de diseño y configuración local; no representa etapas activas ni mediciones del dispositivo.</p>
       
       {/* Intro Header */}
       <div className="bg-[#12141A] border border-[#2A2D35] rounded-xl p-5">
@@ -19,20 +20,20 @@ export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
               IVANNA-OMEGA-SUPREME — Arquitectura Integral de 7 Ejes Acústicos
             </h2>
             <p className="text-xs text-[#888] font-mono mt-1 max-w-3xl">
-              100% ARMv8 NEON SIMD (<code className="text-[#4ADE80]">float32x4_t</code>, <code className="text-[#4ADE80]">vfmaq_f32</code>). Zero heap allocations en el hot-path del kernel audio thread, latencia algorítmica cero añadida, garantía estricta de tiempo real RT-Safety y mitigación acústica anti-Dolby.
+              100% ARMv8 NEON SIMD (<code className="text-[#4ADE80]">float32x4_t</code>, <code className="text-[#4ADE80]">vfmaq_f32</code>). Zero heap allocations en el hot-path del kernel audio thread, objetivos de latencia y seguridad RT sujetos a validación del build y mitigación acústica anti-Dolby.
             </p>
           </div>
           <div className="flex items-center gap-3 font-mono text-xs">
             <div className="px-3 py-1.5 bg-[#0F1116] border border-[#1E2128] rounded">
-              <span className="text-[#555] block text-[9px] font-bold uppercase">SAMPLE RATE</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold uppercase">SAMPLE RATE</span>
               <span className="text-white font-bold">{params.sampleRate.toLocaleString()} Hz</span>
             </div>
             <div className="px-3 py-1.5 bg-[#0F1116] border border-[#1E2128] rounded">
-              <span className="text-[#555] block text-[9px] font-bold uppercase">CADENCIA / LATENCIA</span>
-              <span className="text-[#4ADE80] font-bold">{params.blockSize} fr / 0 ms added</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold uppercase">CADENCIA / LATENCIA</span>
+              <span className="text-[#4ADE80] font-bold">{params.blockSize} fr / sin medición</span>
             </div>
             <div className="px-3 py-1.5 bg-[#0F1116] border border-[#1E2128] rounded">
-              <span className="text-[#555] block text-[9px] font-bold uppercase">ALINEACIÓN L1 CACHE</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold uppercase">ALINEACIÓN L1 CACHE</span>
               <span className="text-[#FB923C] font-bold">alignas(16) / 64B</span>
             </div>
           </div>
@@ -75,10 +76,10 @@ export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
         {/* EJE 2: HrtfPersonalizer */}
         <div className="bg-[#12141A] border border-[#2A2D35] rounded-xl p-3.5 space-y-2.5 relative hover:border-[#A855F7] transition-colors">
           <div className="flex items-center justify-between">
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#1A1D23] text-[#A855F7] border border-[#2A2D35]">
+            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#1A1D23] text-[#C084FC] border border-[#2A2D35]">
               EJE 2
             </span>
-            <Headphones className="w-3.5 h-3.5 text-[#A855F7]" />
+            <Headphones className="w-3.5 h-3.5 text-[#C084FC]" />
           </div>
           <h3 className="text-xs font-bold font-mono text-white">
             HRTF Personalizer
@@ -89,7 +90,7 @@ export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
           <div className="pt-2 border-t border-[#1E2128] font-mono text-[10px] space-y-1">
             <div className="flex justify-between text-[#888]">
               <span>Pinna Notches:</span>
-              <span className="text-[#A855F7] font-bold">6k - 9kHz</span>
+              <span className="text-[#C084FC] font-bold">6k - 9kHz</span>
             </div>
             <div className="flex justify-between text-[#888]">
               <span>Interpolación:</span>
@@ -97,7 +98,7 @@ export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
             </div>
             <div className="flex justify-between text-[#888]">
               <span>ITD Head Radius:</span>
-              <span className="text-[#A855F7] font-bold">8.75 cm</span>
+              <span className="text-[#C084FC] font-bold">8.75 cm</span>
             </div>
           </div>
         </div>
@@ -239,15 +240,15 @@ export const DspPipeline: React.FC<DspPipelineProps> = ({ params }) => {
           <div className="pt-2 border-t border-[#1E2128] font-mono text-[10px] space-y-1">
             <div className="flex justify-between text-[#888]">
               <span>Latencia Añadida:</span>
-              <span className="text-[#4ADE80] font-bold">0.000 ms</span>
+              <span className="text-[#4ADE80] font-bold">Sin medir</span>
             </div>
             <div className="flex justify-between text-[#888]">
               <span>Heap Mallocs:</span>
-              <span className="text-[#4ADE80] font-bold">0 en RT</span>
+              <span className="text-[#4ADE80] font-bold">Verificar build</span>
             </div>
             <div className="flex justify-between text-[#888]">
               <span>Host Suite:</span>
-              <span className="text-[#4ADE80] font-bold">PASS 100%</span>
+              <span className="text-[#4ADE80] font-bold">Sin ejecución</span>
             </div>
           </div>
         </div>

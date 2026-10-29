@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -5,6 +6,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    define: { __PRODUCT_VERSION__: JSON.stringify(readFileSync('version.properties', 'utf8').match(/^versionName=(.+)$/m)![1].trim()) },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

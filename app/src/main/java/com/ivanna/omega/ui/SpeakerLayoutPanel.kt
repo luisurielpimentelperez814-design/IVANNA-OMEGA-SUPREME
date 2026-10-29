@@ -42,6 +42,8 @@ import com.ivanna.omega.spatial.WfsCalibrationManager
 @Composable
 fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
     val context: Context = LocalContext.current
+    var lineOut by remember { mutableStateOf(SpatialAudioPrefs.load(context).externalStereoLineOut) }
+    var routeStatus by remember { mutableStateOf("Perfil solicitado; la ruta física debe comprobarse reproduciendo audio.") }
     var mode by remember { mutableStateOf(FotoHoloEngine.speakerLayout.mode) }
     var satellites by remember { mutableIntStateOf(FotoHoloEngine.speakerLayout.satelliteCount) }
     var subwoofer by remember { mutableStateOf(FotoHoloEngine.speakerLayout.subwooferActive) }
@@ -49,10 +51,10 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
     LaunchedEffect(mode, satellites, subwoofer) {
         FotoHoloEngine.setSpeakerLayout(context, SpeakerLayout(mode, satellites, subwoofer))
     }
-    LaunchedEffect(mode) {
+    LaunchedEffect(mode, lineOut) {
         // Reutiliza el layout WFS 7ch de referencia y la posición del oyente persistida; no
         // genera coordenadas ficticias a partir del simple conteo de satélites.
-        if (mode == SpeakerMode.SURROUND) {
+        if (mode == SpeakerMode.SURROUND && !lineOut) {
             val published = WfsCalibrationManager.restore(context)
             if (!published) {
                 android.util.Log.w("SpeakerLayoutPanel", "Layout WFS no publicado; se conserva la ruta de audio previa")
@@ -66,9 +68,26 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
         modifier.fillMaxWidth().background(Color(0x1A6FF3FF), RoundedCornerShape(14.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
+        Text("DESTINO DEL DAC / AUXILIAR", color = Color.White, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Equipo estéreo externo (Sony u otro)", modifier = Modifier.weight(1f), color = Color.White)
+            Switch(checked = lineOut, onCheckedChange = { selected ->
+                lineOut = selected
+                SpatialAudioPrefs.save(context, SpatialAudioPrefs.load(context).copy(externalStereoLineOut = selected))
+                val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
+                com.ivanna.omega.audio.RouteDspCalibrator.onRouteChanged(context, route)
+                routeStatus = "Perfil solicitado para ${route.name}; no certifica salida acústica ni efecto global."
+            })
+        }
+        Text("Moto G85 → DAC USB-C → AUX L/R → amplificador. AUX transporta dos canales. " +
+            "Surround y subwoofer se activan físicamente en el Sony; esta pantalla no controla sus botones. " +
+            "YouTube/Spotify requieren verificar la ruta global Magisk; la captura Android depende de los permisos de cada aplicación.",
+            color = Color(0xFFB5C2D4), fontSize = 12.sp)
+        Text(routeStatus, color = Color(0xFFB5C2D4), fontSize = 11.sp)
         Text("BOCINAS DECLARADAS", color = Color(0xFF65E7F2), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
         Text(
-            "Surround reutiliza las coordenadas WFS de referencia y las publica al motor. El conteo solo matiza " +
+            (if (lineOut) "Auxiliar estéreo: no se publica una disposición WFS multicanal. El conteo solo matiza "
+             else "Surround reutiliza las coordenadas WFS de referencia y las publica al motor. El conteo solo matiza ") +
             "el ancho perceptual (±15 % máx.); no crea canales físicos ni gestiona graves/LFE reales.",
             color = Color(0xFF9AA4B2), fontSize = 11.sp
         )
@@ -88,7 +107,7 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Subwoofer activo", color = Color.White, fontSize = 12.sp)
+            Text("Subwoofer activado en el equipo", color = Color.White, fontSize = 12.sp)
             Switch(checked = subwoofer, onCheckedChange = { subwoofer = it })
         }
         Text(

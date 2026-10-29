@@ -29,6 +29,8 @@ object IvannaControlLoop {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var job: Job? = null
 
+    val isRunning: Boolean get() = job?.isActive == true
+
     fun start() {
         if (job?.isActive == true) return
         job = scope.launch {

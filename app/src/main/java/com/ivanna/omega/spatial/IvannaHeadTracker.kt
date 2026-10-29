@@ -64,6 +64,8 @@ class IvannaHeadTracker(private val context: Context) : SensorEventListener {
             return isRunning && nativeHandle != 0L && last > 0L && age in 0L..250_000_000L
         }
 
+    val isTrackingRegistered: Boolean get() = isRunning && nativeHandle != 0L
+
     // Callback para notificar a la UI de cambios de orientación
     var onOrientationChanged: ((pitch: Float, yaw: Float, roll: Float) -> Unit)? = null
 

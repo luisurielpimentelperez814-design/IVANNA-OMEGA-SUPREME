@@ -177,7 +177,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
       <div className="bg-[#12141A] border border-[#2A2D35] rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
         
         {/* Signal Selector */}
-        <div className="flex items-center space-x-2 overflow-x-auto text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-[#888] font-bold mr-2 uppercase text-[11px]">Signal Input:</span>
           {(['harmonics', 'sine', 'impulse', 'noise'] as const).map((type) => (
             <button
@@ -195,10 +195,10 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ params }) => {
         </div>
 
         {/* Fundamental Freq Slider & Audio Toggle */}
-        <div className="flex items-center space-x-4 text-xs">
+        <div className="flex flex-wrap items-center gap-3 text-xs">
           <div className="flex items-center space-x-2">
             <span className="text-[#888]">Fundamental:</span>
-            <input
+            <input aria-label="Fundamental freq"
               type="range"
               min="100"
               max="2000"

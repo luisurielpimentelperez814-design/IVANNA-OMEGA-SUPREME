@@ -223,7 +223,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
 
           <div className="flex items-center space-x-3">
             <div className="px-3 py-1.5 rounded-xl bg-[#0A0C10] border border-[#1E293B] text-xs">
-              <span className="text-[#64748B]">Ciclos Seqlock: </span>
+              <span className="text-[#A8B6CA]">Ciclos Seqlock: </span>
               <span className="text-[#4ADE80] font-bold">{cycleCount.toLocaleString()}</span>
             </div>
             <button
@@ -254,7 +254,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
               key={kpi.label}
               className="bg-[#0A0C10]/90 border border-[#1E293B] rounded-xl p-3 flex flex-col justify-between"
             >
-              <span className="text-[10px] text-[#64748B] font-bold">{kpi.label}</span>
+              <span className="text-[10px] text-[#A8B6CA] font-bold">{kpi.label}</span>
               <span className={`text-base font-extrabold mt-1 ${kpi.color}`}>{kpi.val}</span>
             </div>
           ))}
@@ -272,7 +272,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                 Fase 5 & 8: Modelo Auditivo Personal y Control
               </h3>
             </div>
-            <Sliders className="w-4 h-4 text-[#64748B]" />
+            <Sliders className="w-4 h-4 text-[#A8B6CA]" />
           </div>
 
           {/* Sliders */}
@@ -284,7 +284,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                   {Math.round(config.realityIntensity * 100)}%
                 </span>
               </div>
-              <input
+              <input aria-label="Intensidad de reconstrucción"
                 type="range"
                 min={0}
                 max={1}
@@ -302,7 +302,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                   {Math.round(config.microIntelligibilityBoost * 100)}%
                 </span>
               </div>
-              <input
+              <input aria-label="Realce de inteligibilidad"
                 type="range"
                 min={0}
                 max={1}
@@ -322,7 +322,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                   {config.headCircumferenceCm.toFixed(1)} cm (ITD ×{itdScale.toFixed(2)})
                 </span>
               </div>
-              <input
+              <input aria-label="Circunferencia de cabeza"
                 type="range"
                 min={50}
                 max={64}
@@ -340,7 +340,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                   {Math.round(config.canalResonanceHz)} Hz
                 </span>
               </div>
-              <input
+              <input aria-label="Resonancia del canal"
                 type="range"
                 min={2200}
                 max={3600}
@@ -356,7 +356,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                 <span className="text-[#94A3B8]">Escala Geométrica del Recinto (Fase 1 & 4)</span>
                 <span className="text-[#38BDF8] font-bold">×{config.roomScaleFactor.toFixed(2)}</span>
               </div>
-              <input
+              <input aria-label="Escala visual de sala"
                 type="range"
                 min={0.5}
                 max={2.5}
@@ -386,7 +386,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                     className={`py-2 px-2 rounded-xl text-[10px] font-bold border transition-all ${
                       config.transducerType === t.id
                         ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8]'
-                        : 'bg-[#0A0C10] border-[#1E2433] text-[#64748B] hover:text-white'
+                        : 'bg-[#0A0C10] border-[#1E2433] text-[#A8B6CA] hover:text-white'
                     }`}
                   >
                     {t.label}
@@ -425,7 +425,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                     style={{ width: `${Math.round(mc.existence * 100)}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-[10px] text-[#64748B]">
+                <div className="flex justify-between text-[10px] text-[#A8B6CA]">
                   <span>Existencia: {(mc.existence * 100).toFixed(0)}%</span>
                   <span>Confianza: {(mc.confidence * 100).toFixed(0)}%</span>
                 </div>
@@ -449,17 +449,17 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
           {/* Room Geometry Fingerprint */}
           <div className="bg-[#0A0C10] border border-[#1E2433] rounded-xl p-3 text-xs space-y-1">
             <div className="flex justify-between">
-              <span className="text-[#64748B]">Geometría Inferida (W×D×H):</span>
+              <span className="text-[#A8B6CA]">Geometría Inferida (W×D×H):</span>
               <span className="text-[#38BDF8] font-bold">
                 {roomWidth}m × {roomDepth}m × {roomHeight}m
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">RT60 Sabine-Eyring / 6 Paredes:</span>
+              <span className="text-[#A8B6CA]">RT60 Sabine-Eyring / 6 Paredes:</span>
               <span className="text-[#4ADE80] font-bold">{roomRt60} s (6 taps activos)</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">Trayectoria Física:</span>
+              <span className="text-[#A8B6CA]">Trayectoria Física:</span>
               <span className="text-[#F59E0B] font-bold">SOURCE → ROOM → AIR → EAR</span>
             </div>
           </div>
@@ -484,7 +484,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                   <span>Elev: {src.elev}°</span>
                   <span>Vel: {src.vel}</span>
                 </div>
-                <div className="flex justify-between text-[10px] text-[#64748B] pt-1 border-t border-[#161B26]">
+                <div className="flex justify-between text-[10px] text-[#A8B6CA] pt-1 border-t border-[#161B26]">
                   <span>ISO 9613-1 Air LPF: {src.airCutoff} Hz</span>
                   <span className="text-[#4ADE80]">DRR: {src.drr}</span>
                 </div>
@@ -574,11 +574,11 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
 
           <div className="bg-[#0A0C10] border border-[#1E2433] rounded-xl p-3 text-[11px] space-y-1">
             <div className="flex justify-between">
-              <span className="text-[#64748B]">Arbitraje ExecutiveBrain:</span>
+              <span className="text-[#A8B6CA]">Arbitraje ExecutiveBrain:</span>
               <span className="text-[#4ADE80] font-bold">Equilibrio Homeostático</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">Veto Anti-Espectacularidad:</span>
+              <span className="text-[#A8B6CA]">Veto Anti-Espectacularidad:</span>
               <span className="text-[#38BDF8] font-bold">ACTIVO (94.2% Coherencia)</span>
             </div>
           </div>
@@ -628,7 +628,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
                   <span className={`font-bold ${sp.accent}`}>{sp.agent}</span>
                 </div>
                 <div className="text-[10px] text-[#94A3B8]">Controla: {sp.controls}</div>
-                <div className="text-[10px] text-[#64748B]">{sp.evals}</div>
+                <div className="text-[10px] text-[#A8B6CA]">{sp.evals}</div>
               </div>
             ))}
           </div>
@@ -727,27 +727,27 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 bg-[#0A0C10] border border-[#1E2433] rounded-xl p-3 text-center">
             <div>
-              <div className="text-[10px] text-[#64748B]">WFS SPREAD</div>
+              <div className="text-[10px] text-[#A8B6CA]">WFS SPREAD</div>
               <div className="text-sm font-bold text-[#38BDF8]">{activeAtlas.spread.toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-[10px] text-[#64748B]">HRTF DEPTH</div>
+              <div className="text-[10px] text-[#A8B6CA]">HRTF DEPTH</div>
               <div className="text-sm font-bold text-[#38BDF8]">{activeAtlas.depth.toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-[10px] text-[#64748B]">ENV DEPTH</div>
+              <div className="text-[10px] text-[#A8B6CA]">ENV DEPTH</div>
               <div className="text-sm font-bold text-[#4ADE80]">{activeAtlas.env.toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-[10px] text-[#64748B]">WARMTH T2/T3</div>
+              <div className="text-[10px] text-[#A8B6CA]">WARMTH T2/T3</div>
               <div className="text-sm font-bold text-[#F59E0B]">{activeAtlas.warmth.toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-[10px] text-[#64748B]">ELEVACIÓN Z</div>
+              <div className="text-[10px] text-[#A8B6CA]">ELEVACIÓN Z</div>
               <div className="text-sm font-bold text-[#A855F7]">+{activeAtlas.elev.toFixed(2)}m</div>
             </div>
             <div>
-              <div className="text-[10px] text-[#64748B]">TARGET IACC</div>
+              <div className="text-[10px] text-[#A8B6CA]">TARGET IACC</div>
               <div className="text-sm font-bold text-[#22D3EE]">{activeAtlas.iacc.toFixed(2)}</div>
             </div>
           </div>
@@ -758,7 +758,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
               className={`p-3 rounded-xl border text-left text-xs transition-all ${
                 useStatDereverb
                   ? 'bg-[#132A20] border-[#4ADE80]/60 text-[#4ADE80]'
-                  : 'bg-[#0A0C10] border-[#1E2433] text-[#64748B]'
+                  : 'bg-[#0A0C10] border-[#1E2433] text-[#A8B6CA]'
               }`}
             >
               <div className="font-bold">Lebart/Habets M5</div>
@@ -769,7 +769,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
               className={`p-3 rounded-xl border text-left text-xs transition-all ${
                 usePhysicalEr
                   ? 'bg-[#111C2D] border-[#38BDF8]/60 text-[#38BDF8]'
-                  : 'bg-[#0A0C10] border-[#1E2433] text-[#64748B]'
+                  : 'bg-[#0A0C10] border-[#1E2433] text-[#A8B6CA]'
               }`}
             >
               <div className="font-bold">6-Wall Sabine ER M7</div>
@@ -780,7 +780,7 @@ export const AcousticRealityPanel: React.FC<AcousticRealityPanelProps> = ({
               className={`p-3 rounded-xl border text-left text-xs transition-all ${
                 chebShaperActive
                   ? 'bg-[#281E12] border-[#F59E0B]/60 text-[#F59E0B]'
-                  : 'bg-[#0A0C10] border-[#1E2433] text-[#64748B]'
+                  : 'bg-[#0A0C10] border-[#1E2433] text-[#A8B6CA]'
               }`}
             >
               <div className="font-bold">Chebyshev T2+T3 M9</div>

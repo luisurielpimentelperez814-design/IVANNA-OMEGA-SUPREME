@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { usePersist } from '../usePersist';
 import { DspParameters } from '../types';
 import { Activity, Zap, CheckCircle2, RefreshCw, BarChart2, Sliders, Target, Wifi, WifiOff, Layers, Volume2 } from 'lucide-react';
@@ -129,7 +129,7 @@ const CurveChart: React.FC<CurveChartProps> = ({ listenPhon, refPhon, compensati
         return (
           <g key={f}>
             <line x1={x} y1={PAD.t} x2={x} y2={H - PAD.b} stroke="#1E2330" strokeWidth="0.5" />
-            <text x={x} y={H - 4} fill="#475569" fontSize="7" textAnchor="middle">
+            <text x={x} y={H - 4} fill="#A8B6CA" fontSize="7" textAnchor="middle">
               {f >= 1000 ? `${f / 1000}k` : f}
             </text>
           </g>
@@ -142,13 +142,13 @@ const CurveChart: React.FC<CurveChartProps> = ({ listenPhon, refPhon, compensati
         return (
           <g key={db}>
             <line x1={PAD.l} y1={y} x2={W - PAD.r} y2={y} stroke="#1E2330" strokeWidth="0.5" />
-            <text x={PAD.l - 4} y={y + 3} fill="#475569" fontSize="7" textAnchor="end">{db}</text>
+            <text x={PAD.l - 4} y={y + 3} fill="#A8B6CA" fontSize="7" textAnchor="end">{db}</text>
           </g>
         );
       })}
 
       {/* eje Y label */}
-      <text x={8} y={H / 2} fill="#475569" fontSize="7" textAnchor="middle"
+      <text x={8} y={H / 2} fill="#A8B6CA" fontSize="7" textAnchor="middle"
         transform={`rotate(-90, 8, ${H / 2})`}>dB SPL</text>
 
       {/* Curvas ISO 226 (fijas) */}
@@ -190,22 +190,15 @@ interface Iso226CalibrationPanelProps {
 }
 
 export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
-  params, onParamChange
+  onParamChange
 }) => {
   // ── Controles con persistencia (Calibración Magistral 62→82 Phon activa por defecto) ─
   const [listenPhon, setListenPhon] = usePersist<number>('iso226_listenPhon', 62);
   const [refPhon, setRefPhon]       = usePersist<number>('iso226_refPhon', 82);
-  const [applied, setApplied]       = usePersist<boolean>('iso226_applied', true);
-  const [log, setLog]               = usePersist<string[]>('iso226_log', [
-    '✓ Calibración Magistral de Fábrica (ISO 226:2003 @ 62→82 Phon) activa en todos los sub-entornos.',
-    '✓ Tres capas sincronizadas: Android Equalizer + DSPBridge JNI + OmegaDaemon SHM.',
-  ]);
-  const [layerStatus, setLayerStatus] = usePersist<{ eq: boolean; dsp: boolean; socket: boolean }>(
-    'iso226_layerStatus',
-    { eq: true, dsp: true, socket: true }
-  );
-  // calibrating es transitorio — no persiste (reinicia en false al recargar)
-  const [calibrating, setCalibrating] = usePersist<boolean>('iso226_calibrating', false);
+  const [applied, setApplied] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+  const layerStatus = { eq: false, dsp: false, socket: false };
+  const calibrating = false;
 
   // Compensaciones en todos los índices de frecuencia
   const compAll = useMemo(() => computeCompensation(listenPhon, refPhon), [listenPhon, refPhon]);
@@ -216,58 +209,12 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
     [compAll]
   );
 
-  const handleCalibrate = useCallback(() => {
-    setCalibrating(true);
-    setApplied(false);
-    setLog([]);
-
-    setTimeout(() => setLog(l => [...l, `→ Calculando curvas ISO 226:2003 @ ${listenPhon}→${refPhon} Phon...`]), 200);
-    setTimeout(() => setLog(l => [...l, `→ αf[29] + Lu[29] + Tf[29] verificados — tabla completa OK`]), 500);
-    setTimeout(() => setLog(l => [...l, `→ Fórmula Annex A Eq.(1): Af = 4.47×10⁻³ × (10^0.025Ln − 1.15) + (0.4×10^((Tf+Lu)/10−9))^αf`]), 900);
-    setTimeout(() => setLog(l => [...l, `→ Δgain(31 Hz)  = ${bandGains[0] >= 0 ? '+' : ''}${bandGains[0].toFixed(1)} dB`]), 1200);
-    setTimeout(() => setLog(l => [...l, `→ Δgain(125 Hz) = ${bandGains[2] >= 0 ? '+' : ''}${bandGains[2].toFixed(1)} dB`]), 1400);
-    setTimeout(() => setLog(l => [...l, `→ Δgain(1 kHz)  = ${bandGains[5] >= 0 ? '+' : ''}${bandGains[5].toFixed(1)} dB`]), 1600);
-    setTimeout(() => setLog(l => [...l, `→ Δgain(8 kHz)  = ${bandGains[8] >= 0 ? '+' : ''}${bandGains[8].toFixed(1)} dB`]), 1800);
-
-    setTimeout(() => {
-      // Mapear bandas a parámetros disponibles en DspParameters
-      // iirAlpha ← compensación de baja frecuencia (31 Hz)
-      // masterGain ← compensación general de loudness
-      // La curva de compensación principal: bass boost y treble adjust
-      const bassComp   = bandGains[0]; // 31 Hz
-      const midComp    = bandGains[5]; // 1 kHz (debería ser ~0 en la mayoría de casos)
-      const trebleComp = bandGains[8]; // 8 kHz
-
-      // Actualizar params: masterGain ajustado por el offset de loudness general,
-      // iirAlpha refleja la atenuación de fatiga espectral post-compensación
-      const newMasterGain = parseFloat((Math.max(0.5, Math.min(2.0, params.masterGain + (midComp / 20)))).toFixed(2));
-
-      const newIirAlpha = parseFloat((Math.max(0.70, Math.min(0.99, 0.94 - (bassComp / 200)))).toFixed(3));
-
-      // NHO Alpha refleja el perfil de bajos de la curva de compensación
-      const newNhoAlpha = parseFloat((Math.max(0.5, Math.min(1.0, params.nhoAlpha + (bassComp / 120)))).toFixed(3));
-
-      // Spatialidad levemente modulada por el perfil de agudos
-      const newCrosstalk = parseFloat((Math.max(0.1, Math.min(0.6, params.crosstalkGain + (trebleComp / 100)))).toFixed(3));
-
-      onParamChange('masterGain',   newMasterGain);
-      onParamChange('iirAlpha',     newIirAlpha);
-      onParamChange('nhoAlpha',     newNhoAlpha);
-      onParamChange('crosstalkGain',newCrosstalk);
-
-      setLayerStatus({ eq: true, dsp: true, socket: Math.random() > 0.3 });
-      setLog(l => [...l,
-        `→ Aplicando al DSP:`,
-        `   masterGain   = ${newMasterGain}x`,
-        `   iirAlpha     = ${newIirAlpha}`,
-        `   nhoAlpha     = ${newNhoAlpha}`,
-        `   crosstalkGain= ${newCrosstalk}`,
-        `✅ Calibración ISO 226 aplicada @ ${new Date().toLocaleTimeString()}`,
-      ]);
-      setApplied(true);
-      setCalibrating(false);
-    }, 2200);
-  }, [listenPhon, refPhon, bandGains, params, onParamChange]);
+  const handleCalibrate = () => {
+    setLog([`Curvas calculadas: ${listenPhon} → ${refPhon} phon.`,
+      'Resultado de referencia local. No se ha enviado EQ a Android ni al daemon.',
+      'Usa la calibración de sala Android para medir y aplicar una corrección verificada.']);
+    setApplied(true);
+  };
 
   const phonDescription = (p: number) => {
     if (p < 40) return 'Muy bajo (dormitorio, noche)';
@@ -278,7 +225,7 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
   };
 
   const gainColor = (g: number) => {
-    if (Math.abs(g) < 0.5) return '#64748B';
+    if (Math.abs(g) < 0.5) return '#A8B6CA';
     if (g > 0) return g > 6 ? '#F97316' : '#4ADE80';
     return g < -6 ? '#FF6188' : '#38BDF8';
   };
@@ -299,13 +246,13 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
               <span className="text-[10px] px-2 py-0.5 rounded bg-[#182230] text-[#38BDF8] border border-[#243346] font-bold">
                 ISO 226:2003
               </span>
-              <span className="text-[10px] text-[#64748B]">Equal-Loudness Contours • Annex A Formula</span>
+              <span className="text-[10px] text-[#A8B6CA]">Equal-Loudness Contours • Annex A Formula</span>
             </div>
             <h2 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide mt-1">
               <Activity className="w-4 h-4 text-[#38BDF8]" />
               Calibración de Loudness Igual — Curvas Isofonicas
             </h2>
-            <p className="text-xs text-[#64748B] mt-1 max-w-3xl">
+            <p className="text-xs text-[#A8B6CA] mt-1 max-w-3xl">
               Compensación espectral según{' '}
               <code className="text-[#38BDF8]">ISO 226:2003 §A.1</code> —
               29 frecuencias, tabla αf + Lu + Tf oficial. Corrige la percepción
@@ -315,7 +262,7 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
           {applied && (
             <div className="flex items-center gap-2 px-3 py-2 bg-[#18261E] border border-[#4ADE80] rounded-lg">
               <CheckCircle2 className="w-4 h-4 text-[#4ADE80]" />
-              <span className="text-[#4ADE80] font-bold text-xs">CALIBRADO</span>
+              <span className="text-[#4ADE80] font-bold text-xs">CURVA CALCULADA</span>
             </div>
           )}
         </div>
@@ -326,7 +273,7 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
         <div className="flex items-center gap-2 mb-3">
           <BarChart2 className="w-4 h-4 text-[#38BDF8]" />
           <h3 className="font-bold text-white uppercase text-xs">Curvas ISO 226 — Contornos de Igual Loudness</h3>
-          <span className="ml-auto text-[10px] text-[#64748B]">
+          <span className="ml-auto text-[10px] text-[#A8B6CA]">
             dB SPL vs Frecuencia (Hz) — 20/40/60/80 Phon
           </span>
         </div>
@@ -349,10 +296,10 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
           </div>
 
           <div className="space-y-2">
-            <input type="range" min="20" max="90" step="1" value={listenPhon}
+            <input aria-label="Nivel de escucha de referencia" type="range" min="20" max="90" step="1" value={listenPhon}
               onChange={e => { setListenPhon(+e.target.value); setApplied(false); }}
               className="w-full accent-[#F59E0B] bg-[#1A1D24] rounded h-2 cursor-pointer" />
-            <div className="flex justify-between text-[10px] text-[#64748B]">
+            <div className="flex justify-between text-[10px] text-[#A8B6CA]">
               <span>20 Phon (mínimo)</span><span>90 Phon (máximo)</span>
             </div>
           </div>
@@ -368,10 +315,10 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
                 className={`w-full text-left px-2.5 py-1.5 rounded border transition-all ${
                   listenPhon === +p
                     ? 'bg-[#2D1B14] border-[#F59E0B] text-[#F59E0B]'
-                    : 'bg-[#0A0C10] border-[#1E2330] text-[#64748B] hover:border-[#334155]'
+                    : 'bg-[#0A0C10] border-[#1E2330] text-[#A8B6CA] hover:border-[#334155]'
                 }`}>
                 <span className="font-bold">{p} Phon</span>
-                <span className="ml-2 text-[#64748B]">— {d}</span>
+                <span className="ml-2 text-[#A8B6CA]">— {d}</span>
               </button>
             ))}
           </div>
@@ -390,38 +337,38 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
           </div>
 
           <div className="space-y-2">
-            <input type="range" min="20" max="90" step="1" value={refPhon}
+            <input aria-label="Nivel objetivo de referencia" type="range" min="20" max="90" step="1" value={refPhon}
               onChange={e => { setRefPhon(+e.target.value); setApplied(false); }}
               className="w-full accent-[#4ADE80] bg-[#1A1D24] rounded h-2 cursor-pointer" />
-            <div className="flex justify-between text-[10px] text-[#64748B]">
+            <div className="flex justify-between text-[10px] text-[#A8B6CA]">
               <span>20 Phon</span><span>90 Phon</span>
             </div>
           </div>
 
-          <p className="text-[11px] text-[#64748B]">
+          <p className="text-[11px] text-[#A8B6CA]">
             Nivel al que se mezcló/masterizó el contenido. 80 Phon ≈ 85 dB SPL es el estándar
             de mezcla cinematográfico (SMPTE RP 200) y de estudio (ITU-R BS.1770).
           </p>
 
           <div className="p-2.5 bg-[#0A0C10] border border-[#1E2330] rounded space-y-1 text-[10px]">
             <div className="flex justify-between">
-              <span className="text-[#64748B]">Δ Loudness total:</span>
+              <span className="text-[#A8B6CA]">Δ Loudness total:</span>
               <span className="text-white font-bold">{(refPhon - listenPhon) >= 0 ? '+' : ''}{refPhon - listenPhon} Phon</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">ISO 226 Δ a 31 Hz:</span>
+              <span className="text-[#A8B6CA]">ISO 226 Δ a 31 Hz:</span>
               <span className="font-bold" style={{ color: gainColor(bandGains[0]) }}>
                 {bandGains[0] >= 0 ? '+' : ''}{bandGains[0].toFixed(1)} dB
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">ISO 226 Δ a 1 kHz:</span>
+              <span className="text-[#A8B6CA]">ISO 226 Δ a 1 kHz:</span>
               <span className="font-bold" style={{ color: gainColor(bandGains[5]) }}>
                 {bandGains[5] >= 0 ? '+' : ''}{bandGains[5].toFixed(1)} dB
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">ISO 226 Δ a 8 kHz:</span>
+              <span className="text-[#A8B6CA]">ISO 226 Δ a 8 kHz:</span>
               <span className="font-bold" style={{ color: gainColor(bandGains[8]) }}>
                 {bandGains[8] >= 0 ? '+' : ''}{bandGains[8].toFixed(1)} dB
               </span>
@@ -439,7 +386,7 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
               Corrección EQ por Banda — ISO 226:2003
             </h3>
           </div>
-          <span className="text-[10px] text-[#64748B]">
+          <span className="text-[10px] text-[#A8B6CA]">
             {listenPhon} → {refPhon} Phon
           </span>
         </div>
@@ -450,7 +397,7 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
             const color = gainColor(g);
             return (
               <div key={band.label} className="bg-[#0A0C10] border border-[#1E2330] rounded-lg p-2.5 space-y-2">
-                <div className="text-[10px] text-[#64748B] font-bold text-center">{band.label}</div>
+                <div className="text-[10px] text-[#A8B6CA] font-bold text-center">{band.label}</div>
                 <div className="text-center font-black text-sm" style={{ color }}>
                   {g >= 0 ? '+' : ''}{g.toFixed(1)} dB
                 </div>
@@ -465,7 +412,7 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
                     }}
                   />
                 </div>
-                <div className="text-[9px] text-[#475569] text-center">
+                <div className="text-[9px] text-[#A8B6CA] text-center">
                   {Math.abs(g) < 0.3 ? 'flat' : g > 0 ? 'boost' : 'cut'}
                 </div>
               </div>
@@ -495,20 +442,20 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
                   : 'bg-[#0A0C10] border-[#1E2330]'
               }`}>
                 <div className="flex items-center gap-2 mb-1">
-                  <Icon className="w-3.5 h-3.5" style={{ color: active ? color : '#475569' }} />
-                  <span className="font-bold text-xs" style={{ color: active ? color : '#64748B' }}>{label}</span>
+                  <Icon className="w-3.5 h-3.5" style={{ color: active ? color : '#A8B6CA' }} />
+                  <span className="font-bold text-xs" style={{ color: active ? color : '#A8B6CA' }}>{label}</span>
                   <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                    active ? 'bg-green-900/40 text-green-400' : 'bg-[#1E2330] text-[#475569]'
-                  }`}>{active ? 'ACTIVO' : 'INACTIVO'}</span>
+                    active ? 'bg-green-900/40 text-green-400' : 'bg-[#1E2330] text-[#A8B6CA]'
+                  }`}>{active ? 'ACTIVO' : 'SIN CONFIRMAR'}</span>
                 </div>
-                <div className="text-[10px] text-[#475569]">{sub}</div>
+                <div className="text-[10px] text-[#A8B6CA]">{sub}</div>
               </div>
             );
           })}
         </div>
         {!applied && (
-          <p className="text-[10px] text-[#475569] italic">
-            Presiona "Aplicar Calibración ISO 226" para activar la cadena completa.
+          <p className="text-[10px] text-[#A8B6CA] italic">
+            El cálculo local no activa estas capas.
             El socket Magisk requiere módulo instalado y daemon corriendo.
           </p>
         )}
@@ -531,8 +478,8 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
             {calibrating
               ? <><RefreshCw className="w-4 h-4 animate-spin" /> Calibrando ISO 226...</>
               : applied
-                ? <><CheckCircle2 className="w-4 h-4" /> Recalibrar</>
-                : <><Zap className="w-4 h-4 fill-current" /> Aplicar Calibración ISO 226</>
+                ? <><CheckCircle2 className="w-4 h-4" /> Recalcular curva</>
+                : <><Zap className="w-4 h-4 fill-current" /> Calcular curva de referencia</>
             }
           </button>
 
@@ -545,12 +492,12 @@ export const Iso226CalibrationPanel: React.FC<Iso226CalibrationPanelProps> = ({
               setApplied(false);
               setLog(['↩ Parámetros DSP restaurados a valores por defecto.']);
             }}
-            className="px-4 py-2.5 rounded-lg border border-[#1E2330] text-[#64748B] hover:text-white hover:border-[#334155] text-xs font-bold transition-all"
+            className="px-4 py-2.5 rounded-lg border border-[#1E2330] text-[#A8B6CA] hover:text-white hover:border-[#334155] text-xs font-bold transition-all"
           >
-            Resetear DSP
+            Restablecer borrador local
           </button>
 
-          <div className="ml-auto text-[10px] text-[#64748B]">
+          <div className="ml-auto text-[10px] text-[#A8B6CA]">
             Fórmula: <code className="text-[#38BDF8]">Lp = (10/αf)·log₁₀(Af) − Lu + 94</code>
           </div>
         </div>

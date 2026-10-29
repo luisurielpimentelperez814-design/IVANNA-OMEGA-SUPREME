@@ -100,13 +100,7 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
   const handleToggleEvo = () => {
     const next = !isEvoRunning;
     setIsEvoRunning(next);
-    if (window.cefQuery) {
-      window.cefQuery({
-        request: JSON.stringify({ action: 'toggle_cma_es', enabled: next }),
-        onSuccess: () => console.log('CMA-ES toggled:', next),
-        onFailure: (code, msg) => console.warn('cefQuery error', code, msg),
-      });
-    }
+
   };
 
   return (
@@ -124,7 +118,7 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
                 LM-CMA-ES Evolutionary FIR Equalizer
               </h2>
             </div>
-            <p className="text-xs text-[#64748B] mt-1.5 max-w-3xl">
+            <p className="text-xs text-[#A8B6CA] mt-1.5 max-w-3xl">
               256-Tap time-domain FIR filter driven by covariance matrix adaptation evolutionary strategy with smooth phase penalization constraints.
             </p>
           </div>
@@ -151,7 +145,7 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
             <h3 className="font-bold text-white uppercase text-xs">512-Band Evolutionary Magnitude Response</h3>
           </div>
           <div className="flex items-center space-x-4 text-[11px]">
-            <span className="text-[#64748B]">Best Fitness:</span>
+            <span className="text-[#A8B6CA]">Best Fitness:</span>
             <span className="text-[#4ADE80] font-bold">{bestFitness.toFixed(5)}</span>
           </div>
         </div>
@@ -160,7 +154,7 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
           <canvas ref={canvasRef} width={800} height={260} className="w-full h-60 object-cover" />
         </div>
 
-        <div className="flex justify-between text-[10px] text-[#64748B] pt-1 font-bold">
+        <div className="flex justify-between text-[10px] text-[#A8B6CA] pt-1 font-bold">
           <span>20 Hz (Bass)</span>
           <span>250 Hz</span>
           <span>1,000 Hz (Mid)</span>
@@ -177,19 +171,19 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
             <span className="text-[#94A3B8] font-semibold">CMA-ES Step Size (σ):</span>
             <span className="text-[#4ADE80] font-bold">{params.eqMutationRate.toFixed(2)}</span>
           </div>
-          <input
+          <input aria-label="Eq mutation rate"
             type="range" min="0.02" max="0.30" step="0.01"
             value={params.eqMutationRate}
             onChange={(e) => onParamChange('eqMutationRate', parseFloat(e.target.value))}
             className="w-full accent-[#4ADE80] bg-[#1A1D24] rounded h-1.5 cursor-pointer"
           />
-          <p className="text-[10px] text-[#64748B] leading-relaxed">
+          <p className="text-[10px] text-[#A8B6CA] leading-relaxed">
             Controls mutation distance per generation step. Lower values produce fine-grain acoustic calibration.
           </p>
         </div>
 
         <div className="bg-[#10131A] border border-[#232936] rounded-xl p-5 space-y-2 text-xs">
-          <span className="text-[#64748B] font-bold uppercase text-[10px] block">FIR Filter Taps</span>
+          <span className="text-[#A8B6CA] font-bold uppercase text-[10px] block">FIR Filter Taps</span>
           <div className="text-lg font-bold text-white">256 Time-Domain Taps</div>
           <div className="text-[11px] text-[#4ADE80] font-semibold">
             NEON 4-Tap Vector Unroll (<code className="text-[#4ADE80]">vmlaq_f32</code>)
@@ -197,7 +191,7 @@ export const EvolutionaryEqPanel: React.FC<EvolutionaryEqPanelProps> = ({
         </div>
 
         <div className="bg-[#10131A] border border-[#232936] rounded-xl p-5 space-y-2 text-xs">
-          <span className="text-[#64748B] font-bold uppercase text-[10px] block">CMA-ES Genome Population</span>
+          <span className="text-[#A8B6CA] font-bold uppercase text-[10px] block">CMA-ES Genome Population</span>
           <div className="text-lg font-bold text-white">λ = 4 Candidates</div>
           <div className="text-[11px] text-[#38BDF8] font-semibold">
             Smooth Phase Penalization Active

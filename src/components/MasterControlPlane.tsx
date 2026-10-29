@@ -1,14 +1,13 @@
 import React from 'react';
 import { DspParameters, BenchmarkMetrics } from '../types';
 import { MagiskIntegrationPanel } from './MagiskIntegrationPanel';
-import { Sliders, ShieldAlert, Cpu, Waves, Sparkles, RotateCcw, Activity, Zap, CheckCircle2, Terminal, RefreshCw, Layers } from 'lucide-react';
+import { Sliders, ShieldAlert, Cpu, Waves, Sparkles, Activity, CheckCircle2, Terminal, Layers } from 'lucide-react';
 
 interface MasterControlPlaneProps {
   params: DspParameters;
   metrics: BenchmarkMetrics;
   onParamChange: <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => void;
-  onResetClipCount: () => void;
-  onRunAutoCalibration: () => void;
+  demo: boolean;
   onApplyPreset: (preset: DspParameters['activePreset']) => void;
 }
 
@@ -16,8 +15,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
   params,
   metrics,
   onParamChange,
-  onResetClipCount,
-  onRunAutoCalibration,
+  demo,
   onApplyPreset,
 }) => {
   return (
@@ -32,12 +30,12 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] px-2 py-0.5 rounded bg-[#182230] text-[#38BDF8] border border-[#243346] font-bold">
-                JNI C++ HARDWARE KERNEL
+                CONFIGURACIÓN LOCAL
               </span>
               {metrics.lastCalibratedAt && (
                 <span className="text-[10px] text-[#4ADE80] font-semibold flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3 text-[#4ADE80]" />
-                  SIMD Calibrated {metrics.lastCalibratedAt}
+                  Ejemplo {metrics.lastCalibratedAt}
                 </span>
               )}
             </div>
@@ -45,56 +43,29 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <Sliders className="w-4 h-4 text-[#38BDF8]" />
               Master Control Plane & SIMD Buffer Optimizer
             </h2>
-            <p className="text-xs text-[#64748B] mt-1 max-w-3xl">
-              Lock-free kernel controls linked to <code className="text-[#38BDF8]">IvannaNativeLib</code>. Auto-calibrate SIMD buffers to optimize ARM NEON vector unroll and reduce audio thread jitter.
+            <p className="text-xs text-[#A8B6CA] mt-1 max-w-3xl">
+              Prepara parámetros y presets. La selección local no confirma su aplicación al DSP Android.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Auto-Calibration Button */}
-            <button
-              onClick={onRunAutoCalibration}
-              disabled={metrics.isCalibrating}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-xs shadow-md transition-all border ${
-                metrics.isCalibrating
-                  ? 'bg-[#18261E] border-[#4ADE80] text-[#4ADE80] animate-pulse cursor-not-allowed'
-                  : 'bg-gradient-to-r from-[#38BDF8] to-[#0284C7] hover:from-[#0284C7] hover:to-[#0369A1] text-[#0A0C10] border-[#38BDF8] shadow-[#38BDF8]/20 hover:scale-[1.02]'
-              }`}
-            >
-              {metrics.isCalibrating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#4ADE80]" />
-                  <span>Measuring Kernel Throughput ({metrics.calibrationProgress}%)...</span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-4 h-4 fill-current" />
-                  <span>Auto-Calibración SIMD</span>
-                </>
-              )}
-            </button>
-
+            <p className="max-w-sm text-slate-300">La calibración SIMD requiere ejecutar
+              el benchmark Android. No hay calibración de hardware desde este panel.</p>
             {/* Meters & Latency display */}
             <div className="flex items-center gap-2">
               <div className="px-3 py-1.5 bg-[#0A0C10] border border-[#1A1D24] rounded-lg flex items-center gap-2">
                 <div>
-                  <span className="text-[#64748B] block text-[9px] font-bold uppercase">CLIPS</span>
+                  <span className="text-[#A8B6CA] block text-[9px] font-bold uppercase">CLIPS</span>
                   <span className={`text-xs font-bold ${metrics.clipCount > 0 ? 'text-[#FF6188]' : 'text-[#4ADE80]'}`}>
-                    {metrics.clipCount}
+                    {demo ? metrics.clipCount : '—'}
                   </span>
                 </div>
-                <button
-                  onClick={onResetClipCount}
-                  className="p-1 bg-[#1E2330] hover:bg-[#2A3142] text-[#94A3B8] hover:text-white rounded transition-colors"
-                  title="Reset Clip Meter"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                </button>
+
               </div>
 
               <div className="px-3 py-1.5 bg-[#0A0C10] border border-[#1A1D24] rounded-lg">
-                <span className="text-[#64748B] block text-[9px] font-bold uppercase">LATENCY</span>
-                <span className="text-[#38BDF8] font-bold text-xs">{metrics.blockLatencyMicroseconds.toFixed(1)} µs</span>
+                <span className="text-[#A8B6CA] block text-[9px] font-bold uppercase">LATENCY</span>
+                <span className="text-[#38BDF8] font-bold text-xs">{demo ? `${metrics.blockLatencyMicroseconds.toFixed(1)} µs (ejemplo)` : 'Sin medición'}</span>
               </div>
             </div>
           </div>
@@ -137,13 +108,13 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
             <Layers className="w-4 h-4 text-[#F59E0B]" />
             <h3 className="font-bold text-white uppercase text-xs">Presets Evolutivos & Adaptive Profiles</h3>
           </div>
-          <span className="text-[10px] text-[#64748B]">Active Profile: <strong className="text-white uppercase">{params.activePreset.replace(/_/g, ' ')}</strong></span>
+          <span className="text-[10px] text-[#A8B6CA]">Perfil local: <strong className="text-white uppercase">{params.activePreset.replace(/_/g, ' ')}</strong></span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
           {[
-            { id: 'anti_dolby_extreme', name: 'Anti-Dolby Max', desc: '100% Phase Neutralization', color: 'hover:border-[#38BDF8] text-[#38BDF8]' },
-            { id: 'audiophile', name: 'Audiophile 3D', desc: '3D HRTF + Smooth Alpha', color: 'hover:border-[#A855F7] text-[#A855F7]' },
+            { id: 'anti_dolby_extreme', name: 'Anti-Dolby Max', desc: 'Perfil intenso', color: 'hover:border-[#38BDF8] text-[#38BDF8]' },
+            { id: 'audiophile', name: 'Audiophile 3D', desc: '3D HRTF + Smooth Alpha', color: 'hover:border-[#A855F7] text-[#C084FC]' },
             { id: 'bass_head', name: 'Bass Harmonic', desc: 'Chebyshev 2x Drive Boost', color: 'hover:border-[#F97316] text-[#F97316]' },
             { id: 'vocal_protect', name: 'Vocal Protect', desc: 'Fatigue Suppression & Comp', color: 'hover:border-[#4ADE80] text-[#4ADE80]' },
             { id: 'gaming_spatial', name: 'Gaming Spatial', desc: 'Ultra Low-Latency Spatial', color: 'hover:border-[#F59E0B] text-[#F59E0B]' },
@@ -155,11 +126,11 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               className={`p-2.5 rounded-lg border text-left transition-all ${
                 params.activePreset === preset.id
                   ? 'bg-[#1E2330] border-[#38BDF8] shadow-md'
-                  : 'bg-[#0A0C10] border-[#1E2330] text-[#64748B] hover:bg-[#141822]'
+                  : 'bg-[#0A0C10] border-[#1E2330] text-[#A8B6CA] hover:bg-[#141822]'
               } ${preset.color}`}
             >
               <div className="font-bold text-[11px] text-white truncate">{preset.name}</div>
-              <div className="text-[9px] text-[#64748B] truncate mt-0.5">{preset.desc}</div>
+              <div className="text-[9px] text-[#A8B6CA] truncate mt-0.5">{preset.desc}</div>
             </button>
           ))}
         </div>
@@ -194,7 +165,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
                   className={`py-1 rounded text-[10px] font-bold border transition-colors ${
                     params.blockSize === size
                       ? 'bg-[#38BDF8] text-[#0A0C10] border-[#38BDF8]'
-                      : 'bg-[#0A0C10] border-[#1E2330] text-[#64748B] hover:text-white'
+                      : 'bg-[#0A0C10] border-[#1E2330] text-[#A8B6CA] hover:text-white'
                   }`}
                 >
                   {size}
@@ -217,7 +188,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
                   className={`py-1 rounded text-[10px] font-bold border transition-colors ${
                     params.sampleRate === rate
                       ? 'bg-white text-[#0A0C10] border-white'
-                      : 'bg-[#0A0C10] border-[#1E2330] text-[#64748B] hover:text-white'
+                      : 'bg-[#0A0C10] border-[#1E2330] text-[#A8B6CA] hover:text-white'
                   }`}
                 >
                   {rate / 1000}k
@@ -229,16 +200,16 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
           {/* SIMD Telemetry Badge */}
           <div className="p-2.5 bg-[#0A0C10] rounded border border-[#1E2330] space-y-1 text-[10px]">
             <div className="flex justify-between">
-              <span className="text-[#64748B]">SIMD Vector Efficiency:</span>
+              <span className="text-[#A8B6CA]">SIMD Vector Efficiency:</span>
               <span className="text-[#4ADE80] font-bold">{metrics.simdEfficiencyPercent}%</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">GFLOPS Throughput:</span>
+              <span className="text-[#A8B6CA]">GFLOPS Throughput:</span>
               <span className="text-[#38BDF8] font-bold">{metrics.gflopsThroughput.toFixed(1)} GFLOPS</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#64748B]">Active Vector Registers:</span>
-              <span className="text-[#A855F7] font-bold">{metrics.registersActiveCount} Q-Registers</span>
+              <span className="text-[#A8B6CA]">Active Vector Registers:</span>
+              <span className="text-[#C084FC] font-bold">{metrics.registersActiveCount} Q-Registers</span>
             </div>
           </div>
         </div>
@@ -261,7 +232,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <span className="text-[#94A3B8] font-semibold">Anti-Dolby Intensity:</span>
               <span className="text-[#38BDF8] font-bold text-sm">{(params.antiDolbyIntensity * 100).toFixed(0)}%</span>
             </div>
-            <input
+            <input aria-label="Intensidad Anti-Dolby"
               type="range"
               min="0.0"
               max="1.0"
@@ -270,7 +241,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               onChange={(e) => onParamChange('antiDolbyIntensity', parseFloat(e.target.value))}
               className="w-full accent-[#38BDF8] bg-[#1A1D24] rounded h-1.5 cursor-pointer"
             />
-            <div className="flex justify-between text-[10px] text-[#64748B]">
+            <div className="flex justify-between text-[10px] text-[#A8B6CA]">
               <span>0% (Bypass)</span>
               <span>100% (Full Neutralization)</span>
             </div>
@@ -282,7 +253,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <span className="text-[#94A3B8] font-semibold">Master Gain Output:</span>
               <span className="text-white font-bold">{params.masterGain.toFixed(2)}x</span>
             </div>
-            <input
+            <input aria-label="Ganancia principal"
               type="range"
               min="0.0"
               max="2.0"
@@ -291,7 +262,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               onChange={(e) => onParamChange('masterGain', parseFloat(e.target.value))}
               className="w-full accent-white bg-[#1A1D24] rounded h-1.5 cursor-pointer"
             />
-            <div className="flex justify-between text-[10px] text-[#64748B]">
+            <div className="flex justify-between text-[10px] text-[#A8B6CA]">
               <span>0.0x (Mute)</span>
               <span>2.0x (+6dB Boost)</span>
             </div>
@@ -316,7 +287,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <span className="text-[#94A3B8]">NHO Alpha (Filter Damping):</span>
               <span className="text-[#4ADE80] font-bold">{params.nhoAlpha.toFixed(2)}</span>
             </div>
-            <input
+            <input aria-label="NHO alpha"
               type="range"
               min="0.0"
               max="1.0"
@@ -333,7 +304,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <span className="text-[#94A3B8]">NHO Beta (Spectral Slope):</span>
               <span className="text-[#4ADE80] font-bold">{params.nhoBeta.toFixed(2)}</span>
             </div>
-            <input
+            <input aria-label="NHO beta"
               type="range"
               min="0.0"
               max="1.0"
@@ -350,7 +321,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <span className="text-[#94A3B8]">NHO Wet Eta (Mix Ratio):</span>
               <span className="text-white font-bold">{(params.spatialWetEta * 100).toFixed(0)}%</span>
             </div>
-            <input
+            <input aria-label="Mezcla espacial"
               type="range"
               min="0.0"
               max="1.0"
@@ -366,10 +337,10 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
         <div className="bg-[#10131A] border border-[#232936] rounded-xl p-5 space-y-4 hover:border-[#A855F7]/50 transition-colors">
           <div className="flex items-center justify-between border-b border-[#1E2330] pb-2.5">
             <div className="flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-[#A855F7]" />
+              <Cpu className="w-4 h-4 text-[#C084FC]" />
               <h3 className="font-bold text-white uppercase text-xs">3D Spatial Matrix</h3>
             </div>
-            <span className="text-[10px] px-2 py-0.5 bg-[#23182E] text-[#A855F7] border border-[#352246] rounded font-bold">
+            <span className="text-[10px] px-2 py-0.5 bg-[#23182E] text-[#C084FC] border border-[#352246] rounded font-bold">
               Rayleigh Head
             </span>
           </div>
@@ -378,9 +349,9 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
           <div className="space-y-1.5">
             <div className="flex justify-between items-center text-xs">
               <span className="text-[#94A3B8]">Spatial Angle Azimuth:</span>
-              <span className="text-[#A855F7] font-bold">{params.spatialAngleDeg.toFixed(0)}°</span>
+              <span className="text-[#C084FC] font-bold">{params.spatialAngleDeg.toFixed(0)}°</span>
             </div>
-            <input
+            <input aria-label="Ángulo espacial"
               type="range"
               min="0"
               max="90"
@@ -395,9 +366,9 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
           <div className="space-y-1.5">
             <div className="flex justify-between items-center text-xs">
               <span className="text-[#94A3B8]">Direct Width Expansion:</span>
-              <span className="text-[#A855F7] font-bold">{params.spatialWidth.toFixed(2)}x</span>
+              <span className="text-[#C084FC] font-bold">{params.spatialWidth.toFixed(2)}x</span>
             </div>
-            <input
+            <input aria-label="Anchura espacial"
               type="range"
               min="0.0"
               max="2.0"
@@ -415,8 +386,8 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               onClick={() => onParamChange('hrtfEnabled', !params.hrtfEnabled)}
               className={`px-3 py-1 rounded text-[10px] font-bold transition-all border ${
                 params.hrtfEnabled
-                  ? 'bg-[#23182E] border-[#A855F7] text-[#A855F7]'
-                  : 'bg-[#12151C] border-[#1E2330] text-[#64748B]'
+                  ? 'bg-[#23182E] border-[#A855F7] text-[#C084FC]'
+                  : 'bg-[#12151C] border-[#1E2330] text-[#A8B6CA]'
               }`}
             >
               {params.hrtfEnabled ? 'ENABLED' : 'DISABLED'}
@@ -436,10 +407,10 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${
                 params.goldenEarEnabled
                   ? 'bg-[#2D1B14] border-[#F97316] text-[#F97316]'
-                  : 'bg-[#12151C] border-[#1E2330] text-[#64748B]'
+                  : 'bg-[#12151C] border-[#1E2330] text-[#A8B6CA]'
               }`}
             >
-              {params.goldenEarEnabled ? 'GAN ON' : 'GAN OFF'}
+              {params.goldenEarEnabled ? 'EXCITER ON' : 'EXCITER OFF'}
             </button>
           </div>
 
@@ -449,7 +420,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <span className="text-[#94A3B8]">Harmonic Chebyshev Drive:</span>
               <span className="text-[#F97316] font-bold">{params.goldenEarDrive.toFixed(2)}x</span>
             </div>
-            <input
+            <input aria-label="Excitación armónica"
               type="range"
               min="1.0"
               max="3.0"
@@ -466,7 +437,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               <span className="text-[#94A3B8]">Harmonic Gain Boost:</span>
               <span className="text-[#F97316] font-bold">{params.harmonicGain.toFixed(2)}x</span>
             </div>
-            <input
+            <input aria-label="Ganancia armónica"
               type="range"
               min="0.0"
               max="2.0"
@@ -490,7 +461,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
               className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all border ${
                 params.adaptEnabled
                   ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8]'
-                  : 'bg-[#12151C] border-[#1E2330] text-[#64748B]'
+                  : 'bg-[#12151C] border-[#1E2330] text-[#A8B6CA]'
               }`}
             >
               {params.adaptEnabled ? 'ADAPTIVE COMP ON' : 'ADAPTIVE COMP OFF'}
@@ -503,7 +474,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
                 <span className="text-[#94A3B8]">Threshold:</span>
                 <span className="text-[#38BDF8] font-bold">{params.compThresholdDb.toFixed(1)} dB</span>
               </div>
-              <input
+              <input aria-label="Umbral del compresor"
                 type="range"
                 min="-60"
                 max="0"
@@ -519,7 +490,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
                 <span className="text-[#94A3B8]">Ratio:</span>
                 <span className="text-[#38BDF8] font-bold">{params.compRatio.toFixed(1)}:1</span>
               </div>
-              <input
+              <input aria-label="Ratio del compresor"
                 type="range"
                 min="1.0"
                 max="10.0"
@@ -535,7 +506,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
                 <span className="text-[#94A3B8]">Attack Time:</span>
                 <span className="text-white font-bold">{params.compAttackMs.toFixed(1)} ms</span>
               </div>
-              <input
+              <input aria-label="Ataque del compresor"
                 type="range"
                 min="0.1"
                 max="50.0"
@@ -551,7 +522,7 @@ export const MasterControlPlane: React.FC<MasterControlPlaneProps> = ({
                 <span className="text-[#94A3B8]">Release Time:</span>
                 <span className="text-white font-bold">{params.compReleaseMs.toFixed(0)} ms</span>
               </div>
-              <input
+              <input aria-label="Relajación del compresor"
                 type="range"
                 min="10"
                 max="500"

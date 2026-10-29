@@ -114,6 +114,8 @@ fun SaFCalibrationScreen(
 
         // ── Status pill ───────────────────────────────────────────────────
         PhaseBadge(state.phase, state.iteration, state.modelLoaded)
+        if (state.message.isNotBlank()) Text(state.message, color = TextSecondary, fontSize = 12.sp)
+        Text(state.deliveryMessage, color = TextSecondary, fontSize = 11.sp)
 
         // ── Geometría de pinna (TAREA 4): solo antes de calibrar ──────────
         // 3 medidas del oído → sujeto HRTF más cercano del dataset SOFA.
@@ -127,6 +129,7 @@ fun SaFCalibrationScreen(
             SaFPhase.CALIBRATING -> CalibPanel (
                 direction = state.currentDir,
                 iteration = state.iteration,
+                ready = state.stimulusReady,
                 onCorrect = { engine.feedFeedback(state.currentDir, true) },
                 onWrong   = { engine.feedFeedback(state.currentDir, false) },
                 onReplay  = { engine.replayStimulus(state.currentDir) }
@@ -134,6 +137,7 @@ fun SaFCalibrationScreen(
             SaFPhase.DONE        -> DonePanel(
                 params      = state.params,
                 iteration   = state.iteration,
+                converged   = state.converged,
                 onRestart   = { engine.startCalibration() }
             )
         }
@@ -152,7 +156,7 @@ private fun PhaseBadge(phase: SaFPhase, iter: Int, modelLoaded: Boolean = false)
     val (text, color) = when (phase) {
         SaFPhase.IDLE        -> (if (rirOk || modelLoaded) "LISTO · SAF:${if (modelLoaded) "OK" else "--"} · RIR:${if (rirOk) "OK" else "--"}" else "EN ESPERA") to TextMuted
         SaFPhase.CALIBRATING -> "CALIBRANDO · iter $iter"  to AmberSignal
-        SaFPhase.DONE        -> "CONVERGIDO ✓ · SAF:${if (modelLoaded) "OK" else "--"}" to PhosphorGreen
+        SaFPhase.DONE        -> "SESIÓN FINALIZADA · SAF:${if (modelLoaded) "OK" else "--"}" to PhosphorGreen
     }
     Surface(
         color  = color.copy(alpha = 0.10f),
@@ -222,6 +226,7 @@ private fun IdlePanel(onStart: () -> Unit) {
 private fun CalibPanel(
     direction : SaFDirection,
     iteration : Int,
+    ready : Boolean,
     onCorrect : () -> Unit,
     onWrong   : () -> Unit,
     onReplay  : () -> Unit = {}
@@ -313,6 +318,7 @@ private fun CalibPanel(
                 // INCORRECT
                 OutlinedButton(
                     onClick  = onWrong,
+                    enabled = ready,
                     modifier = Modifier.weight(1f).height(52.dp),
                     colors   = ButtonDefaults.outlinedButtonColors(contentColor = CoralWarn),
                     border   = BorderStroke(1.5.dp, CoralWarn)
@@ -322,6 +328,7 @@ private fun CalibPanel(
                 // CORRECT
                 Button(
                     onClick  = onCorrect,
+                    enabled = ready,
                     modifier = Modifier.weight(1f).height(52.dp),
                     colors   = ButtonDefaults.buttonColors(containerColor = PhosphorGreen)
                 ) {
@@ -339,7 +346,7 @@ private fun CalibPanel(
 
 // ── DONE panel ────────────────────────────────────────────────────────────────
 @Composable
-private fun DonePanel(params: FloatArray, iteration: Int, onRestart: () -> Unit) {
+private fun DonePanel(params: FloatArray, iteration: Int, converged: Boolean, onRestart: () -> Unit) {
     Surface(
         color  = ObsidianSoft,
         shape  = RoundedCornerShape(16.dp),
@@ -352,7 +359,7 @@ private fun DonePanel(params: FloatArray, iteration: Int, onRestart: () -> Unit)
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "✓  HRTF PERSONALIZADO",
+                "PERFIL SAF ACTUALIZADO",
                 color      = PhosphorGreen,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
@@ -360,8 +367,8 @@ private fun DonePanel(params: FloatArray, iteration: Int, onRestart: () -> Unit)
                 letterSpacing = 1.sp
             )
             Text(
-                "Φ_SAF^∞ convergió en $iteration iteraciones.\n" +
-                "Tu perfil HRTF ha sido ajustado a tu anatomía auditiva.",
+                (if (converged) "Criterio numérico alcanzado" else "Límite de iteraciones alcanzado") +
+                " tras $iteration respuestas.\nLa localización percibida requiere validación auditiva; este estado no la certifica.",
                 color     = TextSecondary,
                 fontSize  = 12.sp,
                 textAlign = TextAlign.Center

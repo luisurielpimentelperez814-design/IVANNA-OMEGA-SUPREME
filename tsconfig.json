@@ -28,5 +28,17 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": false
-  }
+  },
+  "include": [
+    "src/**/*",
+    "server.ts",
+    "vite.config.ts",
+    "vite.fotoholo.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "app/build"
+  ]
 }

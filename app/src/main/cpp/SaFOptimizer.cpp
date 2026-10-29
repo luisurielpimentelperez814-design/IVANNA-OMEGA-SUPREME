@@ -10,6 +10,9 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
+#include <limits>
+#include <cstdio>
 
 #define SAF_TAG "SaFOptimizer"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  SAF_TAG, __VA_ARGS__)
@@ -95,6 +98,7 @@ void SaFOptimizer::init() {
 }
 
 bool SaFOptimizer::initFromJson(const char* path) {
+    if (!path || !*path) return false;
     std::ifstream f(path);
     const bool ok = f.good();
     if (ok) LOGI("SAF_model.json found at %s — baked constants validated", path);
@@ -129,34 +133,20 @@ void SaFOptimizer::step(const float delta[SAF_K], float Et) {
     const float denom = Et + normG + m_lambda * normM + m_epsilon;
     const float alpha = (denom > m_epsilon) ? (Et / denom) : 0.0f;
 
-    // ── FIX (2026-08-29): trust region Riemanniana ────────────────────────
-    // Sin ella, el paso natural-gradient α·G^{-1}·Δ tiene norma-G
-    //   ‖α·G^{-1}·Δ‖_G = α·√normG  ≈  0.5·√normG  (cuando E_t ≈ normG)
-    // y Δ viene de (target−q) con componentes ~ σ_i = √G[i] → normG ~ K.
-    // Resultado medido: el primer feedback "incorrecto" movía q ~2.5·σ en
-    // TODAS las dimensiones a la vez — contra un espacio válido de ±3σ por
-    // dimensión, eso es satura el borde y la calibración degenera en
-    // bang-bang (rebotar entre paredes) en vez de converger.
-    //
-    // Trust region clásica (Conn–Gould–Toint, adaptada a la métrica G):
-    // limitar la norma riemanniana del paso a un radio que garantice
-    // movimiento fraccionario de σ por iteración. El paso mantiene la
-    // DIRECCIÓN del gradiente natural (G^{-1}·Δ) intacta — solo se recorta
-    // la magnitud. Convergencia suave, sin oscilación en el borde.
-    //
-    // Radio: 0.5 en unidades de la norma-G ≈ 0.5/√K · σ por dimensión
-    // ≈ 0.19·σ — cada iteración de feedback mueve ~1/5 de la desviación
-    // estándar fisiológica. Suficiente para converger en ~10-15 iteraciones
-    // de calibración (el protocolo SAF completo), sin reventar el espacio.
-    constexpr float kTrustRadiusG = 0.5f;
-    float trustScale = 1.0f;
-    if (normG > m_epsilon) {
-        // norma-G del paso propuesto = alpha · √normG
-        const float stepNormG = alpha * std::sqrt(normG);
-        if (stepNormG > kTrustRadiusG) {
-            trustScale = kTrustRadiusG / stepNormG;
-        }
+    // Bound the ACTUAL natural-gradient step in standardized PCA coordinates.
+    // sigma_i = sqrt(G_i); sum((alpha * delta_i / G_i / sigma_i)^2)
+    // must not exceed 0.5^2. The former alpha*sqrt(sum(G_i*delta_i^2))
+    // measured the unpreconditioned gradient and did not constrain this update.
+    constexpr double kTrustRadiusSigma = 0.5;
+    double stepNormSquared = 0.0;
+    for (int i = 0; i < SAF_K; ++i) {
+        const double standardizedStep = static_cast<double>(alpha) * delta[i] /
+            (static_cast<double>(m_G[i]) * std::sqrt(static_cast<double>(m_G[i])));
+        stepNormSquared += standardizedStep * standardizedStep;
     }
+    const double stepNorm = std::sqrt(stepNormSquared);
+    const float trustScale = stepNorm > kTrustRadiusSigma
+        ? static_cast<float>(kTrustRadiusSigma / stepNorm) : 1.0f;
     const float alphaEff = alpha * trustScale;
 
     // p_{t+1} = p_t + α_eff · G^{-1} · Δ
@@ -220,7 +210,7 @@ void SaFOptimizer::feedFeedback(int dirIdx, bool correct) {
     }
 
     step(delta, Et);
-    m_iter.fetch_add(1);
+    if (m_iter.load() < std::numeric_limits<int>::max()) m_iter.fetch_add(1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -252,24 +242,33 @@ bool SaFOptimizer::isConverged() const {
 // SAF_model.json reference model, and needs zero parsing dependencies.
 bool SaFOptimizer::saveState(const char* path) const {
     std::lock_guard<std::mutex> lk(m_mtx);
-    std::ofstream f(path, std::ios::trunc);
+    if (!path || !*path) return false;
+    const std::string pending = std::string(path) + ".tmp";
+    std::ofstream f(pending, std::ios::trunc);
     if (!f.good()) {
         LOGE("saveState: cannot open %s for write", path);
         return false;
     }
+    f << std::setprecision(std::numeric_limits<float>::max_digits10);
     f << "IVANNA_SAF_STATE_V1\n";
     f << m_iter.load() << "\n";
     for (int i = 0; i < SAF_K; ++i) {
         f << m_q[i];
         f << (i + 1 < SAF_K ? ' ' : '\n');
     }
-    const bool ok = f.good();
+    f.flush();
+    bool ok = f.good();
+    f.close();
+    ok = ok && !f.fail();
+    if (ok) ok = std::rename(pending.c_str(), path) == 0;
+    if (!ok) std::remove(pending.c_str());
     if (ok) LOGI("saveState: q saved at iter=%d -> %s", m_iter.load(), path);
     else    LOGE("saveState: write failed -> %s", path);
     return ok;
 }
 
 bool SaFOptimizer::loadState(const char* path) {
+    if (!path || !*path) return false;
     std::ifstream f(path);
     if (!f.good()) {
         LOGI("loadState: no saved state at %s (fresh install or first calibration)", path);
@@ -284,15 +283,17 @@ bool SaFOptimizer::loadState(const char* path) {
     }
 
     int iter = 0;
-    float q[SAF_K];
-    f >> iter;
-    for (int i = 0; i < SAF_K; ++i) f >> q[i];
-    if (!f.good() && !f.eof()) {
-        LOGE("loadState: malformed data in %s — keeping mean HRTF", path);
-        return false;
+    float q[SAF_K]{};
+    if (!(f >> iter) || iter < 0) return false;
+    for (int i = 0; i < SAF_K; ++i) {
+        if (!(f >> q[i]) || !std::isfinite(q[i]) ||
+            q[i] < kPMin[i] || q[i] > kPMax[i]) return false;
     }
+    f >> std::ws;
+    if (!f.eof()) return false;
 
     std::lock_guard<std::mutex> lk(m_mtx);
+    m_lastE = 0.0f; // No feedback energy is persisted in the V1 format.
     m_iter.store(iter);
     std::memcpy(m_q, q, sizeof(m_q));
     LOGI("loadState: restored q at iter=%d from %s", iter, path);

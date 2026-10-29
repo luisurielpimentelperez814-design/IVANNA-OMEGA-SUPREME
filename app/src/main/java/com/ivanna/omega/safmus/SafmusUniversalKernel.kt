@@ -58,7 +58,7 @@ object SafmusUniversalKernel {
         val voxel = sanitizeControlValue(voxelSizeMeters, 0.005f, 0.25f) ?: 0.02f
         val limit = maxOutputPoints.coerceIn(1, 250_000)
         val output = ArrayList<SpatialPoint3>(minOf(input.size, limit))
-        val occupied = HashSet<String>(minOf(input.size, limit))
+        val occupied = HashSet<Long>(minOf(input.size, limit))
         var invalid = 0
         var reduced = 0
         var truncated = 0
@@ -74,7 +74,10 @@ object SafmusUniversalKernel {
             val gx = kotlin.math.floor(point.x / voxel).toLong()
             val gy = kotlin.math.floor(point.y / voxel).toLong()
             val gz = kotlin.math.floor(point.z / voxel).toLong()
-            val key = "$gx:$gy:$gz"
+            // Domain ±1000 m / voxel >= .005 m fits signed 19 bits.
+            // Pack three independent 21-bit fields: collision-free, no string allocation.
+            val mask = 0x1fffffL
+            val key = ((gx and mask) shl 42) or ((gy and mask) shl 21) or (gz and mask)
             if (!occupied.add(key)) {
                 reduced++
                 continue

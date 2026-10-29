@@ -1484,3 +1484,9 @@ target_link_libraries(test_wfs_spread_governor PRIVATE GTest::gtest_main)
 target_include_directories(test_wfs_spread_governor PRIVATE ../ ../spatial ../include)
 target_compile_options(test_wfs_spread_governor PRIVATE -Wall -Wextra)
 gtest_discover_tests(test_wfs_spread_governor)
+
+# Production SAF update and persistence regression coverage.
+add_executable(test_saf_optimizer_state test_saf_optimizer_state.cpp)
+target_link_libraries(test_saf_optimizer_state PRIVATE ivanna_unified_pipeline_under_test GTest::gtest_main Threads::Threads m dl)
+target_include_directories(test_saf_optimizer_state PRIVATE .. host_stubs)
+gtest_discover_tests(test_saf_optimizer_state)

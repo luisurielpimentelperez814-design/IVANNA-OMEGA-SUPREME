@@ -9,6 +9,7 @@
 #define SAF_JNI_TAG "SaFJni"
 
 // ── Singleton optimizer instance ─────────────────────────────────────────────
+static std::atomic<bool> g_modelLoaded{false};
 static Ivanna::SaFOptimizer& g_saf = Ivanna::getGlobalSaF();
 
 // Cable SAF → FusionCore (definida en omega_effect.cpp).
@@ -24,6 +25,7 @@ Java_com_ivanna_omega_saf_SaFBridge_nativeSaFInit(JNIEnv* env, jobject, jstring 
     const char* path = env->GetStringUTFChars(jPath, nullptr);
     const bool  ok   = g_saf.initFromJson(path);
     env->ReleaseStringUTFChars(jPath, path);
+    g_modelLoaded.store(ok);
 
     // Publicar q_0 al snapshot global aún antes del primer feedback:
     // así el renderer arranca con el latente medido, no con ceros.
@@ -60,7 +62,7 @@ Java_com_ivanna_omega_saf_SaFBridge_nativeSaFGetStatus(JNIEnv* env, jobject) {
     if (!arr) return nullptr;
     float buf[Ivanna::SAF_K + 1];
     g_saf.getParams(buf);
-    buf[Ivanna::SAF_K] = 1.0f; // cargado tras initFromJson vía este bridge
+    buf[Ivanna::SAF_K] = g_modelLoaded.load() ? 1.0f : 0.0f;
     env->SetFloatArrayRegion(arr, 0, Ivanna::SAF_K + 1, buf);
     return arr;
 }
@@ -85,6 +87,9 @@ Java_com_ivanna_omega_saf_SaFBridge_nativeSaFGetIteration(JNIEnv*, jobject) {
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_saf_SaFBridge_nativeSaFReset(JNIEnv*, jobject) {
     g_saf.reset();
+    float q[Ivanna::SAF_K];
+    g_saf.getParams(q);
+    ivanna_saf_apply_latent(q);
 }
 
 // boolean nativeSaFIsConverged()
@@ -114,6 +119,11 @@ Java_com_ivanna_omega_saf_SaFBridge_nativeSaFLoadState(JNIEnv* env, jobject, jst
     const char* path = env->GetStringUTFChars(jPath, nullptr);
     const bool  ok   = g_saf.loadState(path);
     env->ReleaseStringUTFChars(jPath, path);
+    if (ok) {
+        float q[Ivanna::SAF_K];
+        g_saf.getParams(q);
+        ivanna_saf_apply_latent(q);
+    }
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 

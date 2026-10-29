@@ -47,8 +47,8 @@ export const MagiskIntegrationPanel: React.FC = () => {
       <div className="flex items-center justify-between border-b border-[#1E2330] pb-2.5">
         <div className="flex items-center gap-2">
           <Shield className={`w-4 h-4 ${status === 'granted' ? 'text-green-500' : status === 'denied' ? 'text-red-500' : 'text-[#EF4444]'}`} />
-          <h3 className="font-bold text-white uppercase text-xs">Kernel & Magisk IPC</h3>
-          <span className="text-[9px] text-[#475569] italic">(simulación ilustrativa)</span>
+          <h2 className="font-bold text-white uppercase text-xs">Kernel & Magisk IPC</h2>
+          <span className="text-[9px] text-[#A8B6CA] italic">(simulación ilustrativa)</span>
         </div>
         <div className="flex items-center gap-2">
           {status === 'granted' && <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">HOOKED</span>}
@@ -84,7 +84,7 @@ export const MagiskIntegrationPanel: React.FC = () => {
         <div className="flex-1 bg-[#0A0C10] border border-[#1E2330] rounded-lg p-3 relative overflow-hidden h-[100px] flex flex-col justify-end font-mono text-[10px]">
           <AnimatePresence>
             {logs.length === 0 && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[#475569] italic">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[#A8B6CA] italic">
                 Awaiting kernel IPC commands...
               </motion.div>
             )}

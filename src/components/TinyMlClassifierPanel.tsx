@@ -28,18 +28,18 @@ export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({
                 TinyML ConvNeXt 1D INT8 Classifier & Lock-Free SPSC Ring Buffer
               </h2>
             </div>
-            <p className="text-xs text-[#64748B] mt-1.5 max-w-3xl">
+            <p className="text-xs text-[#A8B6CA] mt-1.5 max-w-3xl">
               Native C++17 <code className="text-[#38BDF8]">IvannaTinyML</code> executing 32-band Log-Mel filterbanks, depthwise-separable 1D convolutions, and quantized INT8 softmax in under 8.2 microseconds.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="px-3 py-2 bg-[#0A0C10] border border-[#1A1D24] rounded-lg">
-              <span className="text-[#64748B] block text-[9px] font-bold uppercase">SPSC RING BUFFER</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold uppercase">SPSC RING BUFFER</span>
               <span className="text-[#38BDF8] font-bold text-sm">{classification.spscDepth} / 2048 Samples</span>
             </div>
             <div className="px-3 py-2 bg-[#0A0C10] border border-[#1A1D24] rounded-lg">
-              <span className="text-[#64748B] block text-[9px] font-bold uppercase">INFERENCE LATENCY</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold uppercase">INFERENCE LATENCY</span>
               <span className="text-[#4ADE80] font-bold text-sm">{classification.inferenceTimeUs.toFixed(1)} µs</span>
             </div>
           </div>
@@ -57,7 +57,7 @@ export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({
               <h3 className="font-bold text-white uppercase text-xs">Real-time Scene Softmax Probabilities</h3>
             </div>
             <div className="flex items-center space-x-2">
-              <span className="text-[#64748B] text-[11px]">Dominant:</span>
+              <span className="text-[#A8B6CA] text-[11px]">Dominant:</span>
               <span className="text-[10px] px-2.5 py-0.5 rounded bg-[#18261E] text-[#4ADE80] border border-[#23382B] font-bold uppercase">
                 {classification.dominantClass}
               </span>
@@ -135,19 +135,19 @@ export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({
           {/* Quantization Specs */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[#1E2330] text-[11px]">
             <div>
-              <span className="text-[#64748B] block text-[9px] font-bold">MEL BANDS</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold">MEL BANDS</span>
               <span className="text-white font-bold">32 Bands Log2</span>
             </div>
             <div>
-              <span className="text-[#64748B] block text-[9px] font-bold">QUANT SCALE</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold">QUANT SCALE</span>
               <span className="text-[#38BDF8] font-bold">Q.7 / Q.8 Fixed</span>
             </div>
             <div>
-              <span className="text-[#64748B] block text-[9px] font-bold">CONV CHANNELS</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold">CONV CHANNELS</span>
               <span className="text-white font-bold">16 Depthwise</span>
             </div>
             <div>
-              <span className="text-[#64748B] block text-[9px] font-bold">MUTEX STATUS</span>
+              <span className="text-[#A8B6CA] block text-[9px] font-bold">MUTEX STATUS</span>
               <span className="text-[#4ADE80] font-bold">Lock-Free SPSC</span>
             </div>
           </div>
@@ -167,7 +167,7 @@ export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({
               <span className="text-[#94A3B8] font-semibold">Fatigue Index:</span>
               <span className="text-[#38BDF8] font-bold text-sm">{(params.fatigueIndex * 100).toFixed(0)}%</span>
             </div>
-            <input
+            <input aria-label="Fatigue index"
               type="range"
               min="0.0"
               max="1.0"
@@ -185,10 +185,10 @@ export const TinyMlClassifierPanel: React.FC<TinyMlClassifierPanelProps> = ({
 
             <div className="p-3 bg-[#0A0C10] rounded-lg border border-[#1A1D24] space-y-2">
               <div className="flex justify-between text-[11px]">
-                <span className="text-[#64748B]">Dynamic IIR Alpha:</span>
+                <span className="text-[#A8B6CA]">Dynamic IIR Alpha:</span>
                 <span className="text-[#4ADE80] font-bold">{params.iirAlpha.toFixed(2)}</span>
               </div>
-              <p className="text-[10px] text-[#64748B] leading-relaxed">
+              <p className="text-[10px] text-[#A8B6CA] leading-relaxed">
                 Automatically adjusts 1st-order high-frequency rolloff to prevent ear fatigue during extended listening sessions without muddying vocal clarity.
               </p>
             </div>

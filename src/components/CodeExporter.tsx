@@ -64,7 +64,7 @@ export const CodeExporter: React.FC = () => {
         </div>
 
         {/* Command Preview Box */}
-        <div className="relative bg-slate-950/90 border border-slate-800 rounded-xl p-4 font-mono text-xs text-amber-200/90 overflow-x-auto max-h-28 scrollbar-thin">
+        <div tabIndex={0} role="region" aria-label="Comandos de instalación" className="relative bg-slate-950/90 border border-slate-800 rounded-xl p-4 font-mono text-xs text-amber-200/90 overflow-x-auto max-h-28 scrollbar-thin">
           <pre>{fullTermuxScript.slice(0, 320)}...\n# [... All C++ headers, sources, CMakeLists.txt & build_and_release.sh included ...]</pre>
         </div>
       </div>
@@ -137,7 +137,7 @@ export const CodeExporter: React.FC = () => {
             </div>
           </div>
 
-          <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-4 font-mono text-xs text-slate-200 max-h-[500px] overflow-y-auto scrollbar-thin">
+          <div tabIndex={0} role="region" aria-label="Código del archivo seleccionado" className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-4 font-mono text-xs text-slate-200 max-h-[500px] overflow-y-auto scrollbar-thin">
             <pre className="whitespace-pre">{selectedFile.content}</pre>
           </div>
 

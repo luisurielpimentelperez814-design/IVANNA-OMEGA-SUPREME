@@ -1,3 +1,4 @@
+import { PRODUCT_VERSION } from '../version';
 import React from 'react';
 import { Cpu, Zap, Activity, ShieldCheck, Terminal, Layers, Sliders, Waves, Sparkles, Power, Radio, BarChart2, Mic } from 'lucide-react';
 import { DspParameters } from '../types';
@@ -18,7 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   onApplyPreset,
 }) => {
   return (
-    <header id="header-container" className="border-b border-[#2A2D35] bg-[#101217] sticky top-0 z-50 text-[#E0E0E0] shadow-2xl">
+    <header id="header-container" className="border-b border-[#2A2D35] bg-[#101217] relative z-50 text-[#E0E0E0] shadow-2xl">
       {/* Top Engineering Status Bar */}
       <div className="flex flex-col lg:flex-row items-center justify-between px-4 sm:px-6 py-2 bg-[#0A0C10] border-b border-[#1A1D24] gap-2 text-xs font-mono">
         
@@ -28,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="w-3 h-3 rounded-full bg-[#FF5F56] shadow-sm shadow-[#FF5F56]/50"></div>
             <div className="w-3 h-3 rounded-full bg-[#FFBD2E] shadow-sm shadow-[#FFBD2E]/50"></div>
             <div className="w-3 h-3 rounded-full bg-[#27C93F] shadow-sm shadow-[#27C93F]/50"></div>
-            <span className="ml-2 text-[10px] text-[#7E8B9B] tracking-widest uppercase font-semibold">
+            <span className="ml-2 text-[10px] text-[#A8B6CA] tracking-widest uppercase font-semibold">
               IVANNA-OMEGA-SUPREME // ANTI-DOLBY_NEURAL_KERNEL
             </span>
           </div>
@@ -43,22 +44,22 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Power className="w-3 h-3" />
-            <span>DSP KERNEL: {!params.masterBypass ? 'ACTIVE' : 'BYPASS'}</span>
+            <span>BORRADOR: {!params.masterBypass ? 'DSP ON' : 'BYPASS'}</span>
           </button>
         </div>
 
         {/* Preset Selector Badges */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto py-1 lg:py-0 text-[11px]">
-          <span className="text-[#64748B] font-bold text-[10px] uppercase mr-1">Preset:</span>
+        <div className="flex w-full min-w-0 lg:w-auto items-center space-x-1.5 overflow-x-auto py-1 lg:py-0 text-[11px]">
+          <span className="text-[#A8B6CA] font-bold text-[10px] uppercase mr-1">Preset:</span>
           {(
             [
               { id: 'anti_dolby_extreme', label: 'Anti-Dolby Max', color: 'border-[#38BDF8] text-[#38BDF8]' },
-              { id: 'audiophile', label: 'Audiophile 3D', color: 'border-[#A855F7] text-[#A855F7]' },
+              { id: 'audiophile', label: 'Audiophile 3D', color: 'border-[#A855F7] text-[#C084FC]' },
               { id: 'bass_head', label: 'Bass Harmonic', color: 'border-[#F97316] text-[#F97316]' },
               { id: 'vocal_protect', label: 'Vocal Protect', color: 'border-[#4ADE80] text-[#4ADE80]' },
               { id: 'gaming_spatial', label: 'Gaming 3D', color: 'border-[#F59E0B] text-[#F59E0B]' },
               { id: 'evo_cma_es', label: 'Evolutive CMA', color: 'border-[#EC4899] text-[#EC4899]' },
-              { id: 'custom', label: 'Custom', color: 'border-[#64748B] text-[#94A3B8]' },
+              { id: 'custom', label: 'Custom', color: 'border-[#A8B6CA] text-[#94A3B8]' },
             ] as const
           ).map((p) => (
             <button
@@ -67,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
               className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all border shrink-0 ${
                 params.activePreset === p.id
                   ? 'bg-[#1E2330] font-black underline shadow-sm'
-                  : 'bg-[#12151C] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1]'
+                  : 'bg-[#12151C] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1]'
               } ${params.activePreset === p.id ? p.color : ''}`}
             >
               {p.label}
@@ -78,14 +79,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Target Specs & Heap Zero Monitor */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-1.5 text-[11px] text-[#A0AEC0]">
-            <span className="text-[#64748B]">ARCH:</span>
+            <span className="text-[#A8B6CA]">DESTINO:</span>
             <span className="text-[#38BDF8] font-bold">aarch64-v8a</span>
           </div>
 
           <div className="flex items-center space-x-1.5 px-2.5 py-0.5 bg-[#141822] border border-[#232936] rounded text-[11px]">
             <ShieldCheck className="w-3.5 h-3.5 text-[#4ADE80]" />
-            <span className="text-[#64748B]">Heap Alloc:</span>
-            <span className="text-[#4ADE80] font-bold">0.0 B</span>
+            <span className="text-[#A8B6CA]">Medición:</span>
+            <span className="text-[#4ADE80] font-bold">sin dato</span>
           </div>
 
           <button
@@ -109,27 +110,27 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-base font-bold text-white font-mono tracking-wide flex items-center gap-2">
-                IVANNA-OMEGA-SUPREME <span className="text-[#38BDF8] text-xs">v2.4.0</span>
+                IVANNA-OMEGA-SUPREME <span className="text-[#38BDF8] text-xs">v{PRODUCT_VERSION}</span>
               </h1>
               <span className="text-[10px] px-2 py-0.5 rounded bg-[#182230] text-[#38BDF8] border border-[#243346] font-mono font-bold">
-                Lock-Free SPSC DSP Kernel
+                Configuración local
               </span>
             </div>
-            <p className="text-[11px] text-[#64748B] font-mono">
-              TinyML ConvNeXt Audio Classifier • 512-Band CMA-ES FIR EQ • 3D HRTF Stage
+            <p className="text-[11px] text-[#A8B6CA] font-mono">
+              Audio · Espacio · Diagnóstico
             </p>
           </div>
         </div>
 
         {/* Primary Tab Navigation */}
-        <nav id="header-nav-tabs" className="flex items-center space-x-1 overflow-x-auto font-mono text-xs pb-1 md:pb-0 scrollbar-none">
+        <nav id="header-nav-tabs" className="flex min-w-0 w-full md:flex-1 items-center space-x-1 overflow-x-auto font-mono text-xs pb-1 md:pb-0 scrollbar-none">
           
           <button
             onClick={() => setActiveTab('master')}
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'master'
                 ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
@@ -141,7 +142,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'reality_hyperengine'
                 ? 'bg-[#10242C] border-[#38BDF8] text-[#38BDF8] font-bold shadow-sm shadow-[#38BDF8]/25'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-[#38BDF8]" />
@@ -153,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'tinyml'
                 ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Activity className="w-3.5 h-3.5 text-[#38BDF8]" />
@@ -165,7 +166,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'evo_eq'
                 ? 'bg-[#182230] border-[#4ADE80] text-[#4ADE80] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Waves className="w-3.5 h-3.5 text-[#4ADE80]" />
@@ -176,11 +177,11 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('spatial')}
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'spatial'
-                ? 'bg-[#182230] border-[#A855F7] text-[#A855F7] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                ? 'bg-[#182230] border-[#A855F7] text-[#C084FC] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
-            <Layers className="w-3.5 h-3.5 text-[#A855F7]" />
+            <Layers className="w-3.5 h-3.5 text-[#C084FC]" />
             <span>3D HRTF Stage</span>
           </button>
 
@@ -189,7 +190,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'golden_ear'
                 ? 'bg-[#182230] border-[#F97316] text-[#F97316] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-[#F97316]" />
@@ -201,7 +202,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'visualizer'
                 ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Radio className="w-3.5 h-3.5" />
@@ -213,7 +214,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'benchmarks'
                 ? 'bg-[#182230] border-[#38BDF8] text-[#38BDF8] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
@@ -225,7 +226,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'code'
                 ? 'bg-[#182230] border-[#F59E0B] text-[#F59E0B] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Terminal className="w-3.5 h-3.5 text-[#F59E0B]" />
@@ -236,11 +237,11 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('iso226')}
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'iso226'
-                ? 'bg-[#1A1230] border-[#A855F7] text-[#A855F7] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                ? 'bg-[#1A1230] border-[#A855F7] text-[#C084FC] font-bold'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
-            <BarChart2 className="w-3.5 h-3.5 text-[#A855F7]" />
+            <BarChart2 className="w-3.5 h-3.5 text-[#C084FC]" />
             <span>ISO 226 Calibr.</span>
           </button>
 
@@ -250,7 +251,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'pipeline'
                 ? 'bg-[#1A1A10] border-[#F59E0B] text-[#F59E0B] font-bold'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Zap className="w-3.5 h-3.5 text-[#F59E0B]" />
@@ -262,7 +263,7 @@ export const Header: React.FC<HeaderProps> = ({
             className={`flex items-center space-x-1.5 px-3 py-2 rounded text-xs transition-all border shrink-0 ${
               activeTab === 'ivanna_voice'
                 ? 'bg-[#0F1A1F] border-[#4ADE80] text-[#4ADE80] font-bold shadow-sm shadow-[#4ADE80]/20'
-                : 'bg-[#101217] border-[#1E2330] text-[#64748B] hover:text-[#CBD5E1] hover:bg-[#141822]'
+                : 'bg-[#101217] border-[#1E2330] text-[#A8B6CA] hover:text-[#CBD5E1] hover:bg-[#141822]'
             }`}
           >
             <Mic className={`w-3.5 h-3.5 ${activeTab === 'ivanna_voice' ? 'text-[#4ADE80] animate-pulse' : 'text-[#4ADE80]'}`} />

@@ -34,7 +34,8 @@ object SafmusAdapterPolicy {
             Load.CONSERVATIVE -> 6
             Load.SAFE -> 8
         }
-        return maxOf(minBytes, bytesPerBlock.coerceAtLeast(1) * blocks)
+        return maxOf(minBytes.toLong(), bytesPerBlock.coerceAtLeast(1).toLong() * blocks)
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     /**

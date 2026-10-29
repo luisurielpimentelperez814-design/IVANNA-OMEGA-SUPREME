@@ -349,8 +349,8 @@ object AudioRouteManager {
                 // una rotacion posterior (dentro de la ventana de 150ms).
                 if (currentRoute == OutputRoute.USB &&
                     hrtfRestoreToken.get() == myToken) {
-                    AudioEngine.nativeSetHrtfWetDryStatic(1f)
-                    Log.i(TAG, "HRTF restaurado a wet=1.0 tras flush DAC USB-C (token=$myToken)")
+                    AudioEngine.nativeSetHrtfWetDryStatic(requestedHrtfWet(route))
+                    Log.i(TAG, "HRTF restaurado según destino declarado tras flush USB (token=$myToken)")
                 }
                 pendingHrtfRestore = null
             }
@@ -362,9 +362,15 @@ object AudioRouteManager {
             // ventana en la que el runnable viejo podria haberse ejecutado
             // *entre* este set y una siguiente rotacion.
             cancelPendingHrtfRestore()
-            AudioEngine.nativeSetHrtfWetDryStatic(1f)
-            Log.i(TAG, "HRTF restaurado a wet=1.0 al salir de ruta USB")
+            AudioEngine.nativeSetHrtfWetDryStatic(requestedHrtfWet(route))
+            Log.i(TAG, "HRTF restaurado según destino declarado al salir de USB")
         }
+    }
+
+    private fun requestedHrtfWet(route: OutputRoute): Float {
+        val prefs = appContextRef?.let { com.ivanna.omega.ui.SpatialAudioPrefs.load(it) }
+        return if (ExternalStereoPolicy.allowHeadphoneHrtf(route,
+                prefs?.externalStereoLineOut == true, prefs?.hrtfEnabled ?: true)) 1f else 0f
     }
 
     /**

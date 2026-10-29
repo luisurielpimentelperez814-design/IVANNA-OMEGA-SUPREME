@@ -1,19 +1,23 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { RuntimeRealityControls } from './components/RuntimeRealityControls';
+import { applyRuntimeControl } from './lib/runtimeControl';
+import { useState, lazy, Suspense } from 'react';
+import { ApiAccess } from './components/ApiAccess';
+import { PRODUCT_VERSION } from './version';
 import { Header } from './components/Header';
 import { MasterControlPlane } from './components/MasterControlPlane';
-import { TinyMlClassifierPanel } from './components/TinyMlClassifierPanel';
-import { EvolutionaryEqPanel } from './components/EvolutionaryEqPanel';
-import { SpatialHrtfPanel } from './components/SpatialHrtfPanel';
-import { GoldenEarPanel } from './components/GoldenEarPanel';
-import { NeonProfiler } from './components/NeonProfiler';
+const TinyMlClassifierPanel = lazy(() => import('./components/TinyMlClassifierPanel').then(m => ({ default: m.TinyMlClassifierPanel })));
+const EvolutionaryEqPanel = lazy(() => import('./components/EvolutionaryEqPanel').then(m => ({ default: m.EvolutionaryEqPanel })));
+const SpatialHrtfPanel = lazy(() => import('./components/SpatialHrtfPanel').then(m => ({ default: m.SpatialHrtfPanel })));
+const GoldenEarPanel = lazy(() => import('./components/GoldenEarPanel').then(m => ({ default: m.GoldenEarPanel })));
+const NeonProfiler = lazy(() => import('./components/NeonProfiler').then(m => ({ default: m.NeonProfiler })));
 import { DspParameters, BenchmarkMetrics, TinyMlClassification } from './types';
-import { Iso226CalibrationPanel } from './components/Iso226CalibrationPanel';
-import { DspPipeline } from './components/DspPipeline';
-import { ParameterControls } from './components/ParameterControls';
+const Iso226CalibrationPanel = lazy(() => import('./components/Iso226CalibrationPanel').then(m => ({ default: m.Iso226CalibrationPanel })));
+const DspPipeline = lazy(() => import('./components/DspPipeline').then(m => ({ default: m.DspPipeline })));
+const ParameterControls = lazy(() => import('./components/ParameterControls').then(m => ({ default: m.ParameterControls })));
 import { usePersist } from './usePersist';
-import { IvannaVoicePanel } from './components/IvannaVoicePanel';
-import { AcousticRealityPanel } from './components/AcousticRealityPanel';
-import { FotoHolo3DGenerator } from './components/FotoHolo3DGenerator';
+const IvannaVoicePanel = lazy(() => import('./components/IvannaVoicePanel').then(m => ({ default: m.IvannaVoicePanel })));
+const AcousticRealityPanel = lazy(() => import('./components/AcousticRealityPanel').then(m => ({ default: m.AcousticRealityPanel })));
+const FotoHolo3DGenerator = lazy(() => import('./components/FotoHolo3DGenerator').then(m => ({ default: m.FotoHolo3DGenerator })));
 
 // Code-splitting: estos dos tabs se cargan bajo demanda.
 // CodeExporter arrastra todas las fuentes C++ del DSP (imports ?raw) y
@@ -28,7 +32,7 @@ const CodeExporter = lazy(() =>
 
 // Fallback mínimo mientras se descarga el chunk diferido.
 const TabFallback = () => (
-  <div className="flex items-center justify-center py-16 text-[#64748B] font-mono text-xs animate-pulse">
+  <div className="flex items-center justify-center py-16 text-[#A8B6CA] font-mono text-xs">
     Cargando módulo...
   </div>
 );
@@ -76,7 +80,7 @@ const DEFAULT_METRICS: BenchmarkMetrics = {
   isCalibrating: false,
   calibrationProgress: 0,
   calibrationLog: [],
-  lastCalibratedAt: new Date().toLocaleTimeString(),
+  lastCalibratedAt: undefined,
 };
 
 type ActiveTab = 'master' | 'reality_hyperengine' | 'tinyml' | 'evo_eq' | 'spatial' | 'golden_ear' | 'visualizer' | 'benchmarks' | 'code' | 'iso226' | 'pipeline' | 'ivanna_voice';
@@ -88,107 +92,27 @@ export default function App() {
   // ── Persistencia completa de parámetros DSP ─────────────────────────────────
   const [params, setParams] = usePersist<DspParameters>('params', DEFAULT_PARAMS);
 
-  // ── Métricas runtime (clip count y calibración persisten; telemetría no) ────
-  const [clipCount, setClipCount] = usePersist<number>('clipCount', 0);
-  const [lastCalibratedAt, setLastCalibratedAt] = usePersist<string>(
-    'lastCalibratedAt',
-    DEFAULT_METRICS.lastCalibratedAt ?? ''
-  );
-  const [calibrationLog, setCalibrationLog] = usePersist<string[]>('calibrationLog', []);
-
-  const [metrics, setMetrics] = useState<BenchmarkMetrics>({
-    ...DEFAULT_METRICS,
-    clipCount,
-    lastCalibratedAt,
-    calibrationLog,
-  });
-
-  // Sincroniza los campos persisted cuando cambia el state runtime
-  useEffect(() => {
-    setClipCount(metrics.clipCount);
-  }, [metrics.clipCount, setClipCount]);
-
-  useEffect(() => {
-    if (metrics.lastCalibratedAt) setLastCalibratedAt(metrics.lastCalibratedAt);
-  }, [metrics.lastCalibratedAt, setLastCalibratedAt]);
-
-  useEffect(() => {
-    if (metrics.calibrationLog.length > 0) setCalibrationLog(metrics.calibrationLog);
-  }, [metrics.calibrationLog, setCalibrationLog]);
-
-  // ── Clasificación TinyML (no persiste — live-only) ──────────────────────────
-  const [classification, setClassification] = useState<TinyMlClassification>({
-    speech: 0.42,
-    music: 0.38,
-    transient: 0.12,
-    ambient: 0.08,
-    dominantClass: 'Speech / Vocal',
-    spscDepth: 512,
-    inferenceTimeUs: 8.2,
-  });
-
-  // ── Telemetría en tiempo real ───────────────────────────────────────────────
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setMetrics((prev) => {
-        if (prev.isCalibrating) return prev;
-
-        const baseLatencyUs = (params.blockSize / params.sampleRate) * 1_000_000;
-        const ratio = params.masterBypass ? 0.002 : 0.012;
-        const finalLatencyUs = Math.max(4.2, baseLatencyUs * ratio + (Math.random() - 0.5) * 0.4);
-
-        const baseGflops = (params.sampleRate / 48000) * (params.blockSize / 512) * 90;
-        const intensityBonus = params.antiDolbyIntensity * 35;
-        const hrtfBonus = params.hrtfEnabled ? 25 : 0;
-        const goldenEarBonus = params.goldenEarEnabled ? 15 : 0;
-        const computedGflops = Math.min(
-          240,
-          Math.max(45, baseGflops + intensityBonus + hrtfBonus + goldenEarBonus + (Math.random() - 0.5) * 2)
-        );
-
-        const totalGainDrive = params.masterGain * (1 + (params.goldenEarEnabled ? params.goldenEarDrive * 0.15 : 0));
-        const newClipInc = totalGainDrive > 1.80 && !params.masterBypass ? Math.floor(Math.random() * 2) : 0;
-
-        return {
-          ...prev,
-          blockLatencyMicroseconds: parseFloat(finalLatencyUs.toFixed(1)),
-          sampleLatencyNanoseconds: parseFloat(((finalLatencyUs / params.blockSize) * 1000).toFixed(1)),
-          gflopsThroughput: parseFloat(computedGflops.toFixed(1)),
-          clipCount: prev.clipCount + newClipInc,
-          evolutionFitness: parseFloat((prev.evolutionFitness + (Math.random() - 0.49) * 0.0001).toFixed(5)),
-        };
-      });
-
-      setClassification((prev) => {
-        const speechShift = (Math.random() - 0.5) * 0.02;
-        const musicShift = (Math.random() - 0.5) * 0.02;
-        const newSpeech = Math.min(0.9, Math.max(0.1, prev.speech + speechShift));
-        const newMusic = Math.min(0.9, Math.max(0.1, prev.music + musicShift));
-        const newTransient = Math.min(0.3, Math.max(0.05, prev.transient + (Math.random() - 0.5) * 0.01));
-        const newAmbient = Math.max(0.01, 1 - (newSpeech + newMusic + newTransient));
-
-        let dominant = 'Speech / Vocal';
-        if (newMusic > newSpeech && newMusic > newTransient) dominant = 'Music / Polyphonic';
-        else if (newTransient > newSpeech && newTransient > newMusic) dominant = 'Transient / Impact';
-
-        return {
-          ...prev,
-          speech: parseFloat(newSpeech.toFixed(2)),
-          music: parseFloat(newMusic.toFixed(2)),
-          transient: parseFloat(newTransient.toFixed(2)),
-          ambient: parseFloat(newAmbient.toFixed(2)),
-          dominantClass: dominant,
-          inferenceTimeUs: parseFloat((7.8 + (Math.random() - 0.5) * 0.6).toFixed(1)),
-        };
-      });
-    }, 900);
-
-    return () => clearInterval(timer);
-  }, [params]);
+  // Demonstration is opt-in and never persisted as device state.
+  const [demo, setDemo] = useState(false);
+  const [controlStatus, setControlStatus] = useState("Ningún control enviado al motor.");
+  const metrics = DEFAULT_METRICS;
+  const classification: TinyMlClassification = {
+    speech: 0.42, music: 0.38, transient: 0.12, ambient: 0.08,
+    dominantClass: 'Ejemplo: voz', spscDepth: 512, inferenceTimeUs: 8.2,
+  };
+  const unavailable = <section role="status" className="rounded-xl border border-slate-600 p-6 text-slate-200">
+    Sin medición nativa para este panel. Abre el diagnóstico Android para medir el motor,
+    o activa la demostración para explorar datos de ejemplo.
+  </section>;
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   const handleParamChange = <K extends keyof DspParameters>(key: K, value: DspParameters[K]) => {
     setParams((prev) => ({ ...prev, [key]: value, activePreset: 'custom' }));
+    if (demo) { setControlStatus('Demostración: configuración local; no se envían comandos.'); return; }
+    const bridge = window.IvannaFotoHoloBridge;
+    setControlStatus(applyRuntimeControl(bridge?.applyRuntimeControl ? {
+      applyRuntimeControl: (name, next) => bridge.applyRuntimeControl!(name, next),
+    } : undefined, key, value).message);
   };
 
   const handleApplyPreset = (presetName: DspParameters['activePreset']) => {
@@ -221,76 +145,12 @@ export default function App() {
       },
     };
 
+    setControlStatus("Preset guardado localmente. Ajusta los controles compatibles individualmente para enviarlos al motor.");
     if (presetName in presets) {
       setParams((prev) => ({ ...prev, ...presets[presetName], activePreset: presetName }));
     } else {
       setParams((prev) => ({ ...prev, activePreset: 'custom' }));
     }
-  };
-
-  const handleResetClipCount = () => {
-    setMetrics((prev) => ({ ...prev, clipCount: 0 }));
-    setClipCount(0);
-  };
-
-  const handleRunAutoCalibration = () => {
-    if (metrics.isCalibrating) return;
-
-    setMetrics((prev) => ({
-      ...prev,
-      isCalibrating: true,
-      calibrationProgress: 5,
-      calibrationLog: [
-        'Iniciando rutina de auto-calibración SIMD en aarch64-v8a...',
-        'Inicializando pruebas de latencia de bloque de audio JNI...',
-      ],
-    }));
-
-    setTimeout(() => setMetrics((prev) => ({
-      ...prev, calibrationProgress: 30,
-      calibrationLog: [...prev.calibrationLog,
-        'Paso 1/4: Probando bloque de 128 muestras (2.67ms frame)...',
-        'Resultado: Latencia 6.8 µs, mayor tasa de interrupciones L1 cache (3.8%).',
-      ],
-    })), 400);
-
-    setTimeout(() => setMetrics((prev) => ({
-      ...prev, calibrationProgress: 55,
-      calibrationLog: [...prev.calibrationLog,
-        'Paso 2/4: Evaluando desempaquetado de vectores ARM NEON float32x4...',
-        'Análisis vmlaq_f32: 118 GFLOPS sostenidos con 16 registros Q activos.',
-      ],
-    })), 900);
-
-    setTimeout(() => setMetrics((prev) => ({
-      ...prev, calibrationProgress: 85,
-      calibrationLog: [...prev.calibrationLog,
-        'Paso 3/4: Probando bloque óptimo de 512 muestras...',
-        'Punto dulce detectado: 100% vectorización SIMD | 148.5 GFLOPS | 0% jitter SPSC lock-free.',
-      ],
-    })), 1400);
-
-    setTimeout(() => {
-      const nowStr = new Date().toLocaleTimeString();
-      setParams((prev) => ({ ...prev, blockSize: 512 }));
-      setMetrics((prev) => ({
-        ...prev,
-        isCalibrating: false,
-        calibrationProgress: 100,
-        blockLatencyMicroseconds: 12.4,
-        sampleLatencyNanoseconds: 24.2,
-        simdEfficiencyPercent: 100,
-        l1CacheHitRatePercent: 99.98,
-        gflopsThroughput: 148.5,
-        registersActiveCount: 32,
-        optimalBlockSize: 512,
-        lastCalibratedAt: nowStr,
-        calibrationLog: [
-          ...prev.calibrationLog,
-          `✅ Auto-calibración completada a las ${nowStr}. Bloque óptimo: 512 muestras.`,
-        ],
-      }));
-    }, 1900);
   };
 
   return (
@@ -303,28 +163,40 @@ export default function App() {
         onApplyPreset={handleApplyPreset}
       />
 
+      <section className="mx-auto max-w-7xl px-4 pt-4 space-y-3" aria-label="Origen de datos y acceso">
+        <div className="rounded-xl border border-amber-300/40 bg-slate-950 p-4 text-sm text-slate-200">
+          <strong>{demo ? 'DEMOSTRACIÓN · DATOS DE EJEMPLO' : 'CONFIGURACIÓN LOCAL · SIN TELEMETRÍA DSP GLOBAL'}</strong>
+          <p>Anchura, ángulo e intensidad Anti-Dolby pueden enviarse mediante el puente Android con lectura de retorno. Los demás controles preparan una configuración local. FotoHolo informa por separado
+          si su puente Android está conectado. Los gráficos de diseño no son mediciones acústicas.</p>
+          <p role="status" className="mt-2">Último cambio: {controlStatus}</p>
+          <label className="mt-3 flex items-center gap-2"><input type="checkbox" checked={demo}
+            onChange={e => setDemo(e.target.checked)} /> Mostrar demostraciones con datos sintéticos</label>
+        </div>
+        <ApiAccess />
+      </section>
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <Suspense fallback={<TabFallback />}>
         {activeTab === 'master' && (
           <MasterControlPlane
             params={params}
             metrics={metrics}
             onParamChange={handleParamChange}
-            onResetClipCount={handleResetClipCount}
-            onRunAutoCalibration={handleRunAutoCalibration}
+            demo={demo}
             onApplyPreset={handleApplyPreset}
           />
         )}
         {activeTab === 'reality_hyperengine' && (
           <div className="space-y-6">
-            <FotoHolo3DGenerator params={params} onParamChange={handleParamChange} />
-            <AcousticRealityPanel params={params} onParamChange={handleParamChange} />
+            <FotoHolo3DGenerator allowNative={!demo} params={params} onParamChange={handleParamChange} />
+            {!demo && <RuntimeRealityControls />}
+            {demo && <AcousticRealityPanel params={params} onParamChange={handleParamChange} />}
           </div>
         )}
-        {activeTab === 'tinyml' && (
-          <TinyMlClassifierPanel params={params} classification={classification} onParamChange={handleParamChange} />
+        {activeTab === 'tinyml' && (demo ?
+          <TinyMlClassifierPanel params={params} classification={classification} onParamChange={handleParamChange} /> : unavailable
         )}
-        {activeTab === 'evo_eq' && (
-          <EvolutionaryEqPanel params={params} metrics={metrics} onParamChange={handleParamChange} />
+        {activeTab === 'evo_eq' && (demo ?
+          <EvolutionaryEqPanel params={params} metrics={metrics} onParamChange={handleParamChange} /> : unavailable
         )}
         {activeTab === 'spatial' && (
           <SpatialHrtfPanel params={params} onParamChange={handleParamChange} />
@@ -332,12 +204,12 @@ export default function App() {
         {activeTab === 'golden_ear' && (
           <GoldenEarPanel params={params} onParamChange={handleParamChange} />
         )}
-        {activeTab === 'visualizer' && (
+        {activeTab === 'visualizer' && (demo ?
           <Suspense fallback={<TabFallback />}>
             <AudioVisualizer params={params} />
-          </Suspense>
+          </Suspense> : unavailable
         )}
-        {activeTab === 'benchmarks' && <NeonProfiler metrics={metrics} />}
+        {activeTab === 'benchmarks' && (demo ? <NeonProfiler metrics={metrics} /> : unavailable)}
         {activeTab === 'code' && (
           <Suspense fallback={<TabFallback />}>
             <CodeExporter />
@@ -355,17 +227,18 @@ export default function App() {
         {activeTab === 'ivanna_voice' && (
           <IvannaVoicePanel />
         )}
+      </Suspense>
       </main>
 
-      <footer className="border-t border-[#1E2330] bg-[#0A0C10]/90 py-6 mt-12 font-mono text-xs text-[#64748B]">
+      <footer className="border-t border-[#1E2330] bg-[#0A0C10]/90 py-6 mt-12 font-mono text-xs text-[#A8B6CA]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            <span>IVANNA-OMEGA-SUPREME v2.4.0 • Android Magisk Neural Audio DSP Engine</span>
+            <span>IVANNA-OMEGA-SUPREME v{PRODUCT_VERSION} · Dashboard de configuración</span>
           </div>
           <div className="flex items-center space-x-4">
-            <span className="text-[#4ADE80]">● Zero-Alloc Heap</span>
-            <span className="text-[#38BDF8]">● Lock-Free SPSC</span>
-            <span className="text-[#F59E0B]">● Termux & Magisk Ready</span>
+            <span className="text-[#4ADE80]">● Estado local</span>
+            <span className="text-[#38BDF8]">● Medición: Android</span>
+            <span className="text-[#F59E0B]">● Capacidades según dispositivo</span>
           </div>
         </div>
       </footer>

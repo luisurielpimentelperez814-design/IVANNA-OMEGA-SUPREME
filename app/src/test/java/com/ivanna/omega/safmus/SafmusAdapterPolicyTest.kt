@@ -5,6 +5,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SafmusAdapterPolicyTest {
+    @Test fun captureBufferArithmeticNeverWrapsToASmallerAllocation() {
+        for (load in SafmusAdapterPolicy.Load.entries) {
+            assertEquals(Int.MAX_VALUE, SafmusAdapterPolicy.captureBufferBytes(1024, Int.MAX_VALUE, load))
+            assertEquals(1024, SafmusAdapterPolicy.captureBufferBytes(1024, -1, load))
+        }
+    }
+
     @Test fun pressureReducesAdapterInventoryCadenceAndOptionalProbes() {
         val normal = SafmusAdapterPolicy.cadence(SafmusAdapterPolicy.Load.NORMAL)
         val conservative = SafmusAdapterPolicy.cadence(SafmusAdapterPolicy.Load.CONSERVATIVE)

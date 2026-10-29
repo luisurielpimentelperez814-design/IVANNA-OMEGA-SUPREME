@@ -55,6 +55,7 @@ export function usePersist<T>(
         typeof action === 'function'
           ? (action as (prev: T) => T)(prev)
           : action;
+      stateRef.current = next;
       write(key, next); // side effect FUERA del updater — se ejecuta una sola vez
       setStateRaw(next);
     },

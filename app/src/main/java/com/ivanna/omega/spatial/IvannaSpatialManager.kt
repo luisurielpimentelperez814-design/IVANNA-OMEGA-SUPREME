@@ -113,6 +113,8 @@ object IvannaSpatialManager {
     }
 
     /** true only when the Android rotation-vector sensor is registered and fresh data reached JNI. */
+    fun isHeadTrackingRegistered(): Boolean = headTracker?.isTrackingRegistered == true
+
     fun isHeadTrackingFresh(): Boolean = headTracker?.isTrackingFresh == true
 
     fun reverbReadback(): ReverbReadback {

@@ -273,6 +273,48 @@ class FotoHoloTelemetryBridge(context: Context) {
         }.getOrDefault(false)
     }
 
+    /** Restricted commands with control-plane readback; not proof of audible application. */
+    @JavascriptInterface
+    fun applyRuntimeControl(name: String, value: Float): String {
+        val result = JSONObject().put("accepted", false)
+        if (!value.isFinite() || !IvannaNativeLib.isLoaded) return result.toString()
+        return runCatching {
+            val readback = when (name) {
+                "spatialWidth" -> {
+                    require(value in 0f..1.5f)
+                    check(setSpatialWidth(value))
+                    IvannaNativeLib.nativeGetSpatialWidthDirect()
+                }
+                "spatialAngleDeg" -> {
+                    require(value in -180f..180f)
+                    check(setSpatialAngleDeg(value))
+                    Math.toDegrees(IvannaNativeLib.nativeGetSpatialAngleRad().toDouble()).toFloat()
+                }
+                "antiDolbyIntensity" -> {
+                    require(value in 0f..1f)
+                    IvannaNativeLib.nativeSetAntiDolbyIntensity(value)
+                    IvannaNativeLib.nativeGetAntiDolbyIntensity()
+                }
+                "realityIntensity" -> {
+                    require(value in 0f..1f)
+                    com.ivanna.omega.core.NativeBridge.setRealityIntensity(value)
+                    com.ivanna.omega.core.NativeBridge.getRealityIntensity()
+                }
+                "realityEnabled" -> {
+                    require(value == 0f || value == 1f)
+                    com.ivanna.omega.core.NativeBridge.setRealityReconstructionEnabled(value == 1f)
+                    if (com.ivanna.omega.core.NativeBridge.isRealityReconstructionEnabled()) 1f else 0f
+                }
+                else -> return result.toString()
+            }
+            if (readback.isFinite()) {
+                result.put("readback", readback.toDouble())
+                result.put("accepted", kotlin.math.abs(readback - value) < 0.001f)
+            }
+            result.toString()
+        }.getOrElse { result.toString() }
+    }
+
     @JavascriptInterface
     fun getSnapshotJson(): String = runCatching {
         val tel = FotoHoloEngine.telemetry.value
@@ -320,7 +362,7 @@ class FotoHoloTelemetryBridge(context: Context) {
             put("hrtfSubject", hrtfSubject)
             put("hrtfRuntime", when {
                 !IvannaNativeLib.isLoaded -> "native-library-unavailable"
-                nativeState.contains("HRTF_ON", ignoreCase = true) -> "reported-active"
+                // nativeGetSpatialState returns scene JSON, not an HRTF activation flag.
                 hrtfLoaded -> "dataset-loaded-active-path-unconfirmed"
                 nativeState.isBlank() -> "unavailable"
                 else -> "not-loaded"

@@ -29,7 +29,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             </span>
             <span className="text-[#FB923C] font-bold">{params.goldenEarDrive.toFixed(2)}x</span>
           </div>
-          <input
+          <input aria-label="Excitación armónica"
             type="range"
             min="1.0"
             max="3.0"
@@ -38,7 +38,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             onChange={(e) => onParamChange('goldenEarDrive', parseFloat(e.target.value))}
             className="w-full accent-[#FB923C] bg-[#1A1D23] rounded h-1.5 cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-[#555]">
+          <div className="flex justify-between text-[10px] text-[#A8B6CA]">
             <span>1.0x (Clean)</span>
             <span>3.0x (Saturated)</span>
           </div>
@@ -48,7 +48,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
               <span className="text-[#888]">Harmonic Mix:</span>
               <span className="text-white font-bold">{(params.goldenEarMix * 100).toFixed(0)}%</span>
             </div>
-            <input
+            <input aria-label="Mezcla armónica"
               type="range"
               min="0.0"
               max="0.5"
@@ -69,7 +69,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             </span>
             <span className="text-[#78DCE8] font-bold">{(params.fatigueIndex * 100).toFixed(0)}%</span>
           </div>
-          <input
+          <input aria-label="Fatigue index"
             type="range"
             min="0.0"
             max="1.0"
@@ -82,7 +82,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             }}
             className="w-full accent-[#78DCE8] bg-[#1A1D23] rounded h-1.5 cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-[#555]">
+          <div className="flex justify-between text-[10px] text-[#A8B6CA]">
             <span>0% (Fresh)</span>
             <span>100% (Fatigued)</span>
           </div>
@@ -102,7 +102,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             </span>
             <span className="text-[#3B82F6] font-bold">{(params.crosstalkGain * 100).toFixed(0)}%</span>
           </div>
-          <input
+          <input aria-label="Crosstalk gain"
             type="range"
             min="0.0"
             max="0.6"
@@ -111,7 +111,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             onChange={(e) => onParamChange('crosstalkGain', parseFloat(e.target.value))}
             className="w-full accent-[#3B82F6] bg-[#1A1D23] rounded h-1.5 cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-[#555]">
+          <div className="flex justify-between text-[10px] text-[#A8B6CA]">
             <span>0% (Stereo Isolated)</span>
             <span>60% (3D Spatial Stage)</span>
           </div>
@@ -131,7 +131,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             </span>
             <span className="text-[#4ADE80] font-bold">{params.eqMutationRate.toFixed(2)}</span>
           </div>
-          <input
+          <input aria-label="Eq mutation rate"
             type="range"
             min="0.02"
             max="0.30"
@@ -140,7 +140,7 @@ export const ParameterControls: React.FC<ParameterControlsProps> = ({ params, on
             onChange={(e) => onParamChange('eqMutationRate', parseFloat(e.target.value))}
             className="w-full accent-[#4ADE80] bg-[#1A1D23] rounded h-1.5 cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-[#555]">
+          <div className="flex justify-between text-[10px] text-[#A8B6CA]">
             <span>0.02 (Precision)</span>
             <span>0.30 (Aggressive)</span>
           </div>
