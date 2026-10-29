@@ -257,8 +257,9 @@ if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
     # OEM XML may place <stream>...</stream> on one line. Normalize those
     # tags onto separate lines first so AWK inserts <apply> INSIDE the stream,
     # never before the whole one-line stream element.
-    sed 's#<stream[[:space:]]#\
-<stream #g; s#</stream>#</stream>\
+    sed 's#<stream[[:space:]][^>]*>#&\
+#g; s#</stream>#\
+</stream>\
 #g' "$TARGET_XML" > "$PP_INPUT" || {
         rm -f "$PP_INPUT" "$PP_TMP"
         ui_print "  ! No se pudo normalizar XML OEM; se conserva la base"
