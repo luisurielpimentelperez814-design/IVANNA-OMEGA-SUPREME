@@ -235,8 +235,8 @@ if [ -n "$ORIG_XML" ] && grep -q "<audio_effects_conf" "$ORIG_XML" 2>/dev/null; 
         grep -q '<effects>' "$TARGET_XML" || abort "ERROR: XML OEM sin sección <effects>; no se puede registrar IVANNA con seguridad"
         sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$TARGET_XML" || abort "ERROR: no se pudo registrar el efecto IVANNA"
     fi
-    grep -q '<library[^>]*name="omega_effect"[^>]*path="libomega_effect.so"' "$TARGET_XML" || abort "ERROR: falta registro de librería IVANNA validado"
-    grep -q '<effect[^>]*name="omega_effect"[^>]*library="omega_effect"[^>]*uuid="4956414e-4e41-4f4d-4547-415355505245"' "$TARGET_XML" || abort "ERROR: falta registro UUID de IVANNA validado"
+    grep '<library[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'path="libomega_effect.so"' || abort "ERROR: falta registro de librería IVANNA validado"
+    grep '<effect[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'library="omega_effect".*uuid="4956414e-4e41-4f4d-4547-415355505245"\|uuid="4956414e-4e41-4f4d-4547-415355505245".*library="omega_effect"' || abort "ERROR: falta registro UUID de IVANNA validado"
     ui_print "  ✓ Registro de librería y UUID de IVANNA validados por separado"
     # Si ORIG_XML NO era el vendor/etc por defecto que ya trae el módulo
     # empaquetado (fallback estático), ese fallback queda intacto y no
