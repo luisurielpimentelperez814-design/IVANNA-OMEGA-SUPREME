@@ -233,6 +233,68 @@ else
     ui_print "  ! Base del sistema no accesible — manteniendo configuración propia (fallback estático en vendor/etc)"
 fi
 
+# Ensure IVANNA is attached to the real postprocess chain in the detected OEM XML.
+# This runs after the OEM file is copied, so it preserves the device's other effects.
+if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
+    PP_TMP="$TARGET_XML.ivanna.$$"
+    awk '
+    function supported(t) { return t=="music" || t=="movie" || t=="game" }
+    {
+        line[NR]=$0
+    }
+    END {
+        in_pp=0; pp_found=0
+        for (i=1; i<=NR; i++) {
+            if (line[i] ~ /<postprocess([ >])/ ) { in_pp=1; pp_found=1 }
+            if (in_pp && line[i] ~ /<stream[[:space:]]+type="[[:alnum:]_-]+"/) {
+                t=line[i]
+                sub(/^.*type="/,"",t); sub(/".*$/,"",t)
+                if (supported(t)) {
+                    found[t]=1
+                    has_apply=0; close_at=0
+                    for (j=i; j<=NR; j++) {
+                        if (line[j] ~ /<apply[[:space:]]+effect="omega_effect"/) has_apply=1
+                        if (line[j] ~ /<\/stream>/) { close_at=j; break }
+                    }
+                    if (!has_apply && close_at>0) add_before[close_at]="        <apply effect=\"omega_effect\"/>"
+                }
+            }
+            if (in_pp && line[i] ~ /<\/postprocess>/) {
+                for (tidx=1; tidx<=3; tidx++) {
+                    t=(tidx==1 ? "music" : (tidx==2 ? "movie" : "game"))
+                    if (!found[t]) {
+                        add_before[i]="        <stream type=\"" t "\">\n            <apply effect=\"omega_effect\"/>\n        </stream>\n" add_before[i]
+                    }
+                }
+                in_pp=0
+            }
+        }
+        if (!pp_found) {
+            root_close=0
+            for (i=1; i<=NR; i++) if (line[i] ~ /<\/audio_effects_conf>/) root_close=i
+            if (root_close>0) {
+                add_before[root_close]="    <postprocess>\n        <stream type=\"music\"><apply effect=\"omega_effect\"/></stream>\n        <stream type=\"movie\"><apply effect=\"omega_effect\"/></stream>\n        <stream type=\"game\"><apply effect=\"omega_effect\"/></stream>\n    </postprocess>\n" add_before[root_close]
+            }
+        }
+        for (i=1; i<=NR; i++) {
+            if (i in add_before) printf "%s\n", add_before[i]
+            print line[i]
+        }
+    }' "$TARGET_XML" > "$PP_TMP" || {
+        rm -f "$PP_TMP"
+        ui_print "  ! No se pudo fusionar postprocess; se conserva XML OEM original"
+        exit 1
+    }
+    if grep -q '<audio_effects_conf' "$PP_TMP" && grep -q 'apply effect="omega_effect"' "$PP_TMP"; then
+        mv -f "$PP_TMP" "$TARGET_XML"
+        ui_print "  ✓ IVANNA añadido al postprocess de music/movie/game preservando OEM"
+    else
+        rm -f "$PP_TMP"
+        ui_print "  ! Merge de postprocess no validado; se conserva XML OEM original"
+        exit 1
+    fi
+fi
+
 ui_print "- Setting permissions on DSP libraries..."
 set_perm_recursive "$MODPATH/system" root root 0755 0644
 set_perm_recursive "$MODPATH/core" root root 0755 0755
