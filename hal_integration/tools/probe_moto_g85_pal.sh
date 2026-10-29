@@ -183,6 +183,26 @@ else
   done
 fi
 
+hdr "7b. Substreams ALSA activos (solo lectura; glob expandido por shell)"
+# No guardar el patrón literal: en POSIX sh los glob sin coincidencia quedan
+# sin expandir. Comprobar cada resultado evita falsos positivos y recoge todos
+# los PCM/substreams existentes sin asumir número de tarjeta o dispositivo.
+FOUND_SUBSTREAM=0
+for f in /proc/asound/card*/pcm*p/sub*/status; do
+  [ -r "$f" ] || continue
+  FOUND_SUBSTREAM=1
+  say "### $f"
+  sed -n '1,80p' "$f" >> "$R" 2>/dev/null
+done
+if [ "$FOUND_SUBSTREAM" -eq 0 ]; then
+  say "(no se encontraron status de substream legibles; puede que no haya reproducción activa)"
+fi
+say "--- Directorios PCM disponibles (solo nombres)"
+for d in /proc/asound/card*/pcm*p /proc/asound/card*/pcm*c; do
+  [ -d "$d" ] || continue
+  say "$d"
+done
+
 hdr "8. Resumen automático (lo que decide el siguiente paso)"
 N_TS=0; N_MMAP=0; N_ASRC=0
 if have strings; then
