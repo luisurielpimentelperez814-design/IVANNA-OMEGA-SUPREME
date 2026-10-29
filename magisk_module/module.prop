@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.194
-versionCode=485
+version=v2.5.195
+versionCode=486
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.194: bounded SAF calibration, SAFMUS robustness and explicit external stereo routing
+description=v2.5.195: multiline OEM audio-effect registration repair; preserves OEM effects and validates music/movie/game
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

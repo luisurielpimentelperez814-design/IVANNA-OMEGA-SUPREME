@@ -20,6 +20,7 @@ on:
       - 'LÉAME.md'
       - 'telemetry/**'
       - 'magisk_module/module.prop'
+      - 'magisk_module/customize.sh'
       - 'research/deh6_optics/**'
       - '.github/workflows/tests-host.yml'
   pull_request:
@@ -32,6 +33,7 @@ on:
       - 'LÉAME.md'
       - 'telemetry/**'
       - 'magisk_module/module.prop'
+      - 'magisk_module/customize.sh'
       - 'research/deh6_optics/**'
       - '.github/workflows/tests-host.yml'
   # TSan no cabe en la puerta por-push: 2 cancelaciones medidas (corridas
@@ -120,6 +122,7 @@ jobs:
           run_check docs_claims           python3 scripts/check_docs_claims.py
           run_check datasets_deploy       python3 scripts/check_datasets_deploy.py
           run_check arcore_manifest       python3 scripts/check_arcore_manifest.py
+          run_check magisk_install        python3 scripts/check_magisk_install.py
           if command -v cppcheck >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck; }; then
             run_check cppcheck cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
               app/src/main/cpp/omega_effect.cpp \

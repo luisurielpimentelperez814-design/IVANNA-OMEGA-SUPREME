@@ -177,19 +177,23 @@ set_perm_recursive "$SOFA_STAGE" root root 0755 0644 || abort "ERROR: no se pudi
 activate_staged_dir "$SOFA_STAGE" "$SOFA_DEST" || abort "ERROR: no se pudo activar SOFA; se restauró el dataset previo si existía"
 ui_print "  ✓ SOFA validado y desplegado: $SOFA_DEST ($SOFA_STAGE_COUNT total, $SOFA_ARI_STAGE_COUNT ARI)"
 # ── Fusión dinámica de audio_effects.xml ──────────────────────────────────────
-# FIX (candidato #1 del diagnóstico diferencial "¿por qué Ruta B no engancha"):
-# ANTES, TARGET_XML estaba hardcodeado a system/vendor/etc SIN IMPORTAR en qué
-# partición se encontró el XML real del dispositivo. Un G85 (u otro device)
-# donde audioserver cargue de verdad desde /system/etc/ (no vendor) recibía el
-# merge en la partición equivocada: el mirror de Magisk en vendor/etc existía
-# y parecía correcto, pero audioserver seguía leyendo el /system/etc/
-# original sin omega_effect — EACCES/vacío en dumpsys sin ningún error visible,
-# porque técnicamente no hay error: el XML fusionado simplemente nunca se lee.
-# AHORA: TARGET_XML sigue la MISMA partición que ORIG_XML detectó en el
-# dispositivo real, en vez de asumir vendor siempre. El fallback estático
-# pre-empaquetado en magisk_module/system/vendor/etc/audio_effects.xml (caso
-# "Base del sistema no accesible") se mantiene sin cambios — sigue siendo la
-# base razonable cuando el installer no puede leer el XML real del device.
+# Keep the OEM file intact. Only the registration validation view joins XML
+# tags across lines; comments cannot count as an installed registration.
+audio_registration_view() {
+    awk '
+    { xml = xml $0 "\n" }
+    END {
+        while ((start = index(xml, "<!--")) > 0) {
+            tail = substr(xml, start + 4)
+            finish = index(tail, "-->")
+            if (!finish) exit 1
+            xml = substr(xml, 1, start - 1) substr(tail, finish + 3)
+        }
+        gsub(/[[:space:]]+/, " ", xml)
+        gsub(/>/, ">\n", xml)
+        print xml
+    }' "$1"
+}
 ui_print "- Configurando audio_effects.xml..."
 ORIG_XML=""
 for P in /system/vendor/etc/audio_effects.xml /vendor/etc/audio_effects.xml /system/etc/audio_effects.xml; do
@@ -216,33 +220,36 @@ if [ -n "$ORIG_XML" ] && grep -q "<audio_effects_conf" "$ORIG_XML" 2>/dev/null; 
     mkdir -p "$(dirname "$TARGET_XML")"
     ui_print "  ✓ Base detectada: $ORIG_XML"
     ui_print "  ✓ Destino del merge alineado a la misma partición: $TARGET_XML"
-    cp -f "$ORIG_XML" "$TARGET_XML"
+    cp -f "$ORIG_XML" "$TARGET_XML" || abort "ERROR: no se pudo copiar XML OEM"
+    REG_XML=$(audio_registration_view "$TARGET_XML") || abort "ERROR: comentarios XML OEM incompletos"
     # Registration is checked independently: an OEM file may contain the
     # UUID/effect but lack the library declaration (or vice versa).
-    if grep -q '<library[^>]*name="omega_effect"' "$TARGET_XML" 2>/dev/null; then
-        if ! grep '<library[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'path="libomega_effect.so"'; then
+    if printf '%s\n' "$REG_XML" | grep -Eq '<library[[:space:]]([^>]*[[:space:]])?name="omega_effect"'; then
+        if printf '%s\n' "$REG_XML" | grep -E '<library[[:space:]]([^>]*[[:space:]])?name="omega_effect"' | grep -qv '[[:space:]]path="libomega_effect[.]so"'; then
             abort "ERROR: omega_effect ya existe con una ruta de librería distinta; se rechaza el merge ambiguo"
         fi
     else
         grep -q '<libraries>' "$TARGET_XML" || abort "ERROR: XML OEM sin sección <libraries>; no se puede registrar IVANNA con seguridad"
         sed -i '/<libraries>/a \        <library name="omega_effect" path="libomega_effect.so"/>' "$TARGET_XML" || abort "ERROR: no se pudo registrar la librería IVANNA"
     fi
-    if grep -q '<effect[^>]*name="omega_effect"' "$TARGET_XML" 2>/dev/null; then
-        if ! grep '<effect[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'uuid="4956414e-4e41-4f4d-4547-415355505245"'; then
+    if printf '%s\n' "$REG_XML" | grep -Eq '<effect[[:space:]]([^>]*[[:space:]])?name="omega_effect"'; then
+        if printf '%s\n' "$REG_XML" | grep -E '<effect[[:space:]]([^>]*[[:space:]])?name="omega_effect"' | grep -qv '[[:space:]]uuid="4956414e-4e41-4f4d-4547-415355505245"'; then
             abort "ERROR: existe omega_effect con UUID distinto; se rechaza el merge ambiguo"
         fi
     else
         grep -q '<effects>' "$TARGET_XML" || abort "ERROR: XML OEM sin sección <effects>; no se puede registrar IVANNA con seguridad"
         sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$TARGET_XML" || abort "ERROR: no se pudo registrar el efecto IVANNA"
     fi
-    grep '<library[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'path="libomega_effect.so"' || abort "ERROR: falta registro de librería IVANNA validado"
-    grep '<effect[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'library="omega_effect".*uuid="4956414e-4e41-4f4d-4547-415355505245"\|uuid="4956414e-4e41-4f4d-4547-415355505245".*library="omega_effect"' || abort "ERROR: falta registro UUID de IVANNA validado"
+    REG_XML=$(audio_registration_view "$TARGET_XML") || abort "ERROR: comentarios XML OEM incompletos"
+    printf '%s\n' "$REG_XML" | grep -E '<library[[:space:]]([^>]*[[:space:]])?name="omega_effect"' | grep -q '[[:space:]]path="libomega_effect[.]so"' || abort "ERROR: falta registro de librería IVANNA validado"
+    # Portable separate checks: attributes may appear in either order and on
+    # different lines. Do not rely on non-POSIX basic-regex \| alternation.
+    REG_EFFECT=$(printf '%s\n' "$REG_XML" | grep -E '<effect[[:space:]]([^>]*[[:space:]])?name="omega_effect"') || abort "ERROR: falta registro UUID de IVANNA validado"
+    if printf '%s\n' "$REG_EFFECT" | grep -qv '[[:space:]]library="omega_effect"' ||
+       printf '%s\n' "$REG_EFFECT" | grep -qv '[[:space:]]uuid="4956414e-4e41-4f4d-4547-415355505245"'; then
+        abort "ERROR: falta registro UUID de IVANNA validado"
+    fi
     ui_print "  ✓ Registro de librería y UUID de IVANNA validados por separado"
-    # Si ORIG_XML NO era el vendor/etc por defecto que ya trae el módulo
-    # empaquetado (fallback estático), ese fallback queda intacto y no
-    # colisiona: Magisk solo monta lo que existe bajo $MODPATH/, y ahora hay
-    # dos archivos distintos reales (vendor/etc estático + la partición real
-    # recién fusionada) en vez de pisar silenciosamente el que sí se lee.
 else
     # Fail closed: never overlay a vendor audio_effects.xml fallback over an
     # unreadable/unsupported OEM configuration. That could silently remove

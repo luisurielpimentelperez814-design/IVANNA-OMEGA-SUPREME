@@ -6,7 +6,7 @@
 
 **Audio Android · procesamiento espacial · herramientas de medición**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.194-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.195-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -21,14 +21,14 @@
 
 IVANNA reúne un reproductor Android, un motor DSP nativo, controles de efectos, herramientas de calibración y exploración espacial. El repositorio incluye también un módulo Magisk y un dashboard web. Cada ruta tiene su propio alcance y sus requisitos.
 
-**Estado documental · 29 de octubre de 2026 · v2.5.194 / código 485.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
+**Estado documental · 29 de octubre de 2026 · v2.5.195 / código 486.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
 
 | 01 · Escuchar | 02 · Medir | 03 · Explorar |
 |:---|:---|:---|
 | Reproductor propio, DSP y ajuste de efectos según la ruta disponible. | Tonos, captura de micrófono y comparación de ajustes con criterios internos. | Captura AR, nube de puntos, geometría configurada y renderizado espacial. |
 | [Cadena de reproducción](app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt) | [Medición de sala](app/src/main/java/com/ivanna/omega/audio/RoomMeasurement.kt) | [Captura AR](app/src/main/java/com/ivanna/omega/fotoholo/RoomArCaptureActivity.kt) |
 
-**En esta página** · [Arquitectura](#arquitectura) · [Capacidades](#capacidades-y-límites) · [Cambios actuales](#qué-cambia-en-v25194) · [Ejecutar](#compilar-y-ejecutar) · [Verificación](#verificación-y-evidencia) · [Documentación](#biblioteca-del-proyecto)
+**En esta página** · [Arquitectura](#arquitectura) · [Capacidades](#capacidades-y-límites) · [Cambios actuales](#qué-cambia-en-v25195) · [Ejecutar](#compilar-y-ejecutar) · [Verificación](#verificación-y-evidencia) · [Documentación](#biblioteca-del-proyecto)
 
 ## Arquitectura
 
@@ -75,7 +75,11 @@ flowchart LR
 
 El criterio interno permite decidir sobre un ajuste bajo esas condiciones de captura. La mejora audible y la seguridad de la ruta requieren pruebas físicas adicionales.
 
-## Qué cambia en v2.5.194
+## Qué cambia en v2.5.195
+
+- **Instalación Magisk:** la validación de librería y UUID reconoce atributos repartidos entre líneas, conserva la configuración OEM y rechaza registros incompatibles. Las pruebas de instalación usan XML sintético; la aceptación del HAL y el procesamiento en el teléfono siguen pendientes de verificación física.
+
+### Base funcional de v2.5.194
 
 - **SAF:** calibración ligada a reproducción efectiva, rechazo de captura insuficiente, pasos de corrección acotados y lectura estricta de registros persistidos. Los registros antiguos parciales se rechazan y requieren recalibración.
 - **Controles de audio:** perfiles adaptados a las bandas reales del dispositivo y composición de ajustes sin acumular repetidamente la misma corrección.

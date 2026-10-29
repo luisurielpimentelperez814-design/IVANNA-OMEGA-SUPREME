@@ -1,3 +1,10 @@
+## v2.5.195 — multiline OEM audio-effect registration repair
+
+- Fixes Magisk installation rejecting a valid IVANNA effect when its name, library and UUID span multiple XML lines, including the reported “falta registro UUID de IVANNA validado” failure.
+- Builds a comment-free validation view without rewriting the OEM registrations; checks library and UUID independently of attribute order and avoids basic-regex alternation.
+- Preserves incompatible-registration rejection and OEM postprocess effects. Adds isolated installer regression checks under POSIX sh and BusyBox when available.
+- Release metadata advances together to v2.5.195 / versionCode 486. Host fixtures do not establish HAL acceptance or PCM processing on the physical device.
+
 ## v2.5.194 — SAF calibration, SAFMUS and verified audio controls
 
 - Refines all named stock-effect profiles with hardware-frequency EQ mapping and independent profile/ISO/manual/SAF composition, one combined target headroom calculation and usable width control across its full range.
