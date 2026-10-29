@@ -217,11 +217,27 @@ if [ -n "$ORIG_XML" ] && grep -q "<audio_effects_conf" "$ORIG_XML" 2>/dev/null; 
     ui_print "  ✓ Base detectada: $ORIG_XML"
     ui_print "  ✓ Destino del merge alineado a la misma partición: $TARGET_XML"
     cp -f "$ORIG_XML" "$TARGET_XML"
-    if ! grep -q "omega_effect" "$TARGET_XML"; then
-        sed -i '/<libraries>/a \        <library name="omega_effect" path="libomega_effect.so"/>' "$TARGET_XML"
-        sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$TARGET_XML"
-        ui_print "  ✓ omega_effect fusionado preservando efectos OEM"
+    # Registration is checked independently: an OEM file may contain the
+    # UUID/effect but lack the library declaration (or vice versa).
+    if grep -q '<library[^>]*name="omega_effect"' "$TARGET_XML" 2>/dev/null; then
+        if ! grep '<library[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'path="libomega_effect.so"'; then
+            abort "ERROR: omega_effect ya existe con una ruta de librería distinta; se rechaza el merge ambiguo"
+        fi
+    else
+        grep -q '<libraries>' "$TARGET_XML" || abort "ERROR: XML OEM sin sección <libraries>; no se puede registrar IVANNA con seguridad"
+        sed -i '/<libraries>/a \        <library name="omega_effect" path="libomega_effect.so"/>' "$TARGET_XML" || abort "ERROR: no se pudo registrar la librería IVANNA"
     fi
+    if grep -q '<effect[^>]*name="omega_effect"' "$TARGET_XML" 2>/dev/null; then
+        if ! grep '<effect[^>]*name="omega_effect"' "$TARGET_XML" | grep -q 'uuid="4956414e-4e41-4f4d-4547-415355505245"'; then
+            abort "ERROR: existe omega_effect con UUID distinto; se rechaza el merge ambiguo"
+        fi
+    else
+        grep -q '<effects>' "$TARGET_XML" || abort "ERROR: XML OEM sin sección <effects>; no se puede registrar IVANNA con seguridad"
+        sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$TARGET_XML" || abort "ERROR: no se pudo registrar el efecto IVANNA"
+    fi
+    grep -q '<library[^>]*name="omega_effect"[^>]*path="libomega_effect.so"' "$TARGET_XML" || abort "ERROR: falta registro de librería IVANNA validado"
+    grep -q '<effect[^>]*name="omega_effect"[^>]*library="omega_effect"[^>]*uuid="4956414e-4e41-4f4d-4547-415355505245"' "$TARGET_XML" || abort "ERROR: falta registro UUID de IVANNA validado"
+    ui_print "  ✓ Registro de librería y UUID de IVANNA validados por separado"
     # Si ORIG_XML NO era el vendor/etc por defecto que ya trae el módulo
     # empaquetado (fallback estático), ese fallback queda intacto y no
     # colisiona: Magisk solo monta lo que existe bajo $MODPATH/, y ahora hay
@@ -297,9 +313,28 @@ if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
         exit 1
     }
     rm -f "$PP_INPUT"
-    if grep -q '<audio_effects_conf' "$PP_TMP" && grep -q 'apply effect="omega_effect"' "$PP_TMP"; then
+    # Do not accept a single matching apply as proof for all target streams.
+    PP_VALID=1
+    for PP_STREAM in music movie game; do
+        if ! awk -v want="$PP_STREAM" '
+            /<stream[[:space:]]+type="/ {
+                t=$0; sub(/^.*type="/,"",t); sub(/".*$/,"",t)
+                active=(t==want); has_apply=0
+            }
+            active && /<apply[[:space:]]+effect="omega_effect"/ { has_apply=1 }
+            /<\/stream>/ {
+                if (active) { if (!has_apply) exit 1; found=1 }
+                active=0
+            }
+            END { if (!found) exit 1 }
+        ' "$PP_TMP"; then
+            PP_VALID=0
+            ui_print "  ! Postprocess incompleto: falta apply dentro del stream $PP_STREAM"
+        fi
+    done
+    if grep -q '<audio_effects_conf' "$PP_TMP" && [ "$PP_VALID" -eq 1 ]; then
         mv -f "$PP_TMP" "$TARGET_XML"
-        ui_print "  ✓ IVANNA añadido al postprocess de music/movie/game preservando OEM"
+        ui_print "  ✓ Registro y apply de music/movie/game validados; efectos OEM preservados"
     else
         rm -f "$PP_TMP"
         ui_print "  ! Merge de postprocess no validado; se conserva XML OEM original"
