@@ -33,7 +33,7 @@ fun BenchmarkScreen(onBack: () -> Unit) {
         
         Button(onClick = {
             val results = BenchmarkRunner.runAutomatedBenchmark(context)
-            BenchmarkRunner.generateAbxDataset(context)
+            // v2.5.197: ya no se genera el 'dataset ABX' (eran puntuaciones aleatorias, no sujetos reales).
             benchmarkJson = results
             benchmarkText = results.toString(4)
         }) {
@@ -43,7 +43,7 @@ fun BenchmarkScreen(onBack: () -> Unit) {
         if (benchmarkText != null) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Resultados del Benchmark (Telemetría Real)", style = MaterialTheme.typography.titleMedium)
+                    Text("Resultados del Benchmark (latencia/CPU medidas; métricas acústicas = estimación de modelo)", style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(benchmarkText ?: "")
                     // FIX(compile 2026-08-14): antes leía `results` fuera del
@@ -61,7 +61,7 @@ fun BenchmarkScreen(onBack: () -> Unit) {
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Dataset ABX (n=30) generado y exportado a CSV.", color = MaterialTheme.colorScheme.primary)
+                    Text("ABX: sin datos de sujetos reales; esta pantalla no genera resultados ABX.", style = MaterialTheme.typography.bodySmall)
                 }
             }
             

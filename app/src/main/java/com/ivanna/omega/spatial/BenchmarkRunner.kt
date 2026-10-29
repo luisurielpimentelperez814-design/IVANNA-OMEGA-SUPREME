@@ -17,24 +17,13 @@ object BenchmarkRunner {
         Log.i(TAG, "Starting Automated Benchmark...")
         val result = JSONObject()
         
-        // 1. Latency & CPU Overhead (Synthetic)
-        // FIX (unidad imposible): antes se publicaba el tiempo TOTAL del bucle
-        // sintético de 100k iteraciones (~69 ms) como 'cpu_overhead_ms' — eso
-        // es físicamente imposible contra latency_ms=2.45 con xruns=0: un
-        // bloque que tarda 69 ms en procesarse no puede convivir con 2.45 ms
-        // de latencia sin underruns masivos. El overhead significativo de un
-        // benchmark DSP es por BLOQUE/operación, no el agregado del bucle de
-        // calentamiento. Se reporta por iteración y en microsegundos.
-        val iterations = 100000
-        val startTime = SystemClock.elapsedRealtimeNanos()
-        var dummySum = 0.0
-        for (i in 0 until iterations) {
-            dummySum += kotlin.math.sin(i.toDouble()) * kotlin.math.cos(i.toDouble())
-        }
-        val endTime = SystemClock.elapsedRealtimeNanos()
-        // ns totales → µs totales (/1e3) → µs por operación (/iterations)
-        val cpuOverheadUs = (endTime - startTime) / 1000.0 / iterations
-        
+        // 1. Latency & CPU Overhead
+        // FIX (cpu_overhead cuantizado, v2.5.197): antes se cronometraba un bucle sin(i)*cos(i)
+        // cuyo resultado nunca se usaba. ART lo eliminaba como codigo muerto tras la primera
+        // corrida y el "overhead" pasaba a ser 52 ns / 1e5 = 5.2E-7, 1.04E-6, 1.56E-6 ...
+        // (multiplos exactos de 52 ns = resolucion del reloj), ademas de no medir el DSP.
+        // Ahora se cronometra nativeProcessBlock real (ver measureProcessBlockUs, mas abajo).
+
         // Latencia DSP round-trip REAL: 100 corridas JNI CLOCK_MONOTONIC.
         // Esta es la fuente de verdad — sustituye el 2.45 ms hardcodeado.
         val (rtMedian, rtP99) = measureDspRoundTrip(context)
@@ -44,11 +33,14 @@ object BenchmarkRunner {
         result.put("dsp_roundtrip_us", rtMedian)          // clave para benchmark_device.sh
         result.put("dsp_roundtrip_median_us", rtMedian)
         result.put("dsp_roundtrip_p99_us", rtP99)
-        result.put("cpu_overhead_us", cpuOverheadUs)
-        result.put("cpu_overhead_ms", cpuOverheadUs / 1000.0)
-        result.put("xruns", 0)
+        // cpu_overhead_*: se completan tras inicializar el motor (seccion 3).
+        // xruns / bateria: este benchmark no los mide. Antes se publicaban 0 y 0.1 fijos como si
+        // fueran telemetria; ahora -1 + fuente explicita (regla: nunca fabricar metricas).
+        result.put("xruns", -1)
+        result.put("xruns_source", "not_measured_by_benchmark")
         result.put("memory_mb", Runtime.getRuntime().totalMemory() / (1024 * 1024))
-        result.put("battery_impact_percent", 0.1) // Nominal, sin sensor de consumo
+        result.put("battery_impact_percent", -1.0)
+        result.put("battery_impact_source", "no_power_sensor")
 
         // 2. Acoustic Suite — estimaciones basadas en modelo, no en medición directa
         // (requeriría señal de referencia + micrófono calibrado externo).
@@ -80,6 +72,17 @@ object BenchmarkRunner {
             val outL = FloatArray(benchFrames)
             val outR = FloatArray(benchFrames)
             runCatching { IvannaNativeLib.nativeProcessBlock(inL, inR, outL, outR, benchFrames) }
+            val (blkMedianUs, blkP99Us) = measureProcessBlockUs(inL, inR, outL, outR, benchFrames)
+            result.put("cpu_overhead_us", blkMedianUs)                       // us por bloque de 256 frames
+            result.put("cpu_overhead_ms", if (blkMedianUs >= 0.0) blkMedianUs / 1000.0 else -1.0)
+            result.put("cpu_overhead_p99_us", blkP99Us)
+            val budgetUs = benchFrames * 1_000_000.0 / 48000.0              // presupuesto de tiempo real por bloque
+            result.put("dsp_cpu_load_percent", if (blkMedianUs >= 0.0) blkMedianUs / budgetUs * 100.0 else -1.0)
+            result.put("cpu_overhead_source", "nativeProcessBlock_256f_x200_median")
+        } else {
+            result.put("cpu_overhead_us", -1.0)
+            result.put("cpu_overhead_ms", -1.0)
+            result.put("cpu_overhead_source", "native_not_loaded")
         }
         val dspVersion = com.ivanna.omega.dsp.DSPBridge.version()
         com.ivanna.omega.dsp.DSPBridge.reset()
@@ -105,6 +108,29 @@ object BenchmarkRunner {
         return result
     }
     
+    /** Mediana y p99 (us) de 200 llamadas a nativeProcessBlock tras 20 de calentamiento.
+     *  Mide el DSP real; devuelve (-1,-1) si falla. */
+    private fun measureProcessBlockUs(
+        inL: FloatArray, inR: FloatArray, outL: FloatArray, outR: FloatArray, frames: Int
+    ): Pair<Double, Double> {
+        return try {
+            repeat(20) { IvannaNativeLib.nativeProcessBlock(inL, inR, outL, outR, frames) }
+            val n = 200
+            val us = DoubleArray(n)
+            for (i in 0 until n) {
+                val t0 = SystemClock.elapsedRealtimeNanos()
+                IvannaNativeLib.nativeProcessBlock(inL, inR, outL, outR, frames)
+                us[i] = (SystemClock.elapsedRealtimeNanos() - t0) / 1000.0
+            }
+            us.sort()
+            us[n / 2] to us[minOf((n * 0.99).toInt(), n - 1)]
+        } catch (t: Throwable) {
+            Log.w(TAG, "measureProcessBlockUs fallo: ${t.javaClass.simpleName}")
+            -1.0 to -1.0
+        }
+    }
+
+    @Deprecated("LEGACY: genera puntuaciones ALEATORIAS (no son sujetos reales) y ademas escribia '$i'/'${...}' literales. No se invoca desde la UI; conservado por la regla de no borrar codigo.")
     fun generateAbxDataset(context: Context) {
         val file = File(context.filesDir, "ivanna_abx_dataset.csv")
         file.bufferedWriter().use { out ->
