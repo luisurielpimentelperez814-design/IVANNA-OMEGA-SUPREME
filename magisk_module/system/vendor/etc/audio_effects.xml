@@ -39,4 +39,19 @@
                 uuid="4956414e-4e41-4f4d-4547-415355505245"/>
     </effects>
 
+    <!-- Route B: attach IVANNA to the vendor post-processing chain for
+         supported music/movie/game streams. This is the actual activation
+         declaration; library registration alone does not instantiate DSP. -->
+    <postprocess>
+        <stream type="music">
+            <apply effect="omega_effect"/>
+        </stream>
+        <stream type="movie">
+            <apply effect="omega_effect"/>
+        </stream>
+        <stream type="game">
+            <apply effect="omega_effect"/>
+        </stream>
+    </postprocess>
+
 </audio_effects_conf>
