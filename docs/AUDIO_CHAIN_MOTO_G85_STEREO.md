@@ -2,7 +2,22 @@
 
 ## Contrato de salida
 
-La entrada auxiliar analógica transporta L/R. Un conjunto de seis bocinas más subwoofer no transforma esa conexión en siete canales independientes. El surround, la amplificación y el filtro del subwoofer pertenecen al Sony. Modelo comunicado: «ghzp1d», pendiente de confirmar en la etiqueta; también faltan modelo del DAC y estado root/Magisk del teléfono. No se infieren capacidades a partir de ese nombre.
+Manual aportado por el propietario: **Sony MHC-PZ1D**, documento `4-277-663-33(1)`, archivo `42776633M.pdf` (115 páginas). Consultadas las páginas 1, 11–12, 17–19, 24, 67–69, 79–80 y 97–99. No hace falta inferir el modelo a partir del nombre escrito anteriormente.
+
+La entrada **VIDEO/SAT AUDIO IN L/R** transporta audio analógico estéreo (p.79). El conjunto de fábrica tiene **dos delanteros, dos satélites y un subwoofer** (pp.17,99). El manual aclara que los satélites emiten el mismo sonido que los delanteros (p.69): no son canales surround discretos independientes. Si se han añadido otras bocinas, su conexión e impedancia requieren confirmación; no se modelan como nuevas salidas del DAC.
+
+### Controles reales del Sony
+
+| Control | Función documentada |
+|---|---|
+| VIDEO/SAT o FUNCTION | Selecciona la entrada analógica VIDEO/SAT (p.80). |
+| SOUND FIELD: 2CH STEREO | Para funciones distintas de DVD conserva el sonido original (p.68). |
+| SOUND FIELD: 2CH SURR | Añade el efecto envolvente del Sony también fuera de DVD (p.68). |
+| VIRTUAL A / VIRTUAL B | El manual limita su eficacia a fuentes multicanal; no se prescriben como reconstrucción multicanal desde AUX L/R (pp.68–69). |
+| SUBWOOFER | Enciende/apaga el subwoofer; el indicador muestra su estado físico (pp.12,67). |
+| GROOVE / Z-GROOVE | Cambian refuerzo, volumen y curva EQ (p.67). Para comparación inicial: GROOVE OFF y PRESET EQ FLAT, manteniendo nivel igualado. Esta última elección es un protocolo de comparación, no una promesa de mejor sonido. |
+
+La entrada se especifica con **250/450 mV y 47 kΩ** (p.98). Sony indica cambiar de VIDEO a SAT si la señal resulta demasiado alta o distorsiona (p.80); el cambio se realiza manteniendo VIDEO/SAT y pulsando STOP. El modelo y nivel de salida del DAC siguen pendientes: no se prescribe un porcentaje fijo de volumen ni un techo digital que garantice evitar saturación analógica sin medirlo.
 
 ```mermaid
 flowchart LR
@@ -27,7 +42,7 @@ Esto no es una calibración del Sony ni una certificación de todos los renderer
 
 ## Aceptación física pendiente
 
-1. Identificar DAC/Sony y confirmar entrada AUX, altavoces conectados y disponibilidad de Magisk.
+1. Identificar el DAC y confirmar VIDEO/SAT AUDIO IN L/R del MHC-PZ1D, altavoces conectados y disponibilidad de Magisk.
 2. Confirmar el endpoint USB en reproducción; L/R correctos y canales sin invertir.
 3. Confirmar inserción del efecto con cada aplicación y ausencia de captura duplicada.
 4. Comparar bypass frente a procesamiento con volumen igualado: primero surround Sony apagado y luego encendido; no atribuir al software el efecto del Sony.

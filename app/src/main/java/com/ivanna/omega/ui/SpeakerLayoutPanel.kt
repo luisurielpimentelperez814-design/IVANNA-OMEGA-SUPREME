@@ -70,7 +70,7 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
     ) {
         Text("DESTINO DEL DAC / AUXILIAR", color = Color.White, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Equipo estéreo externo (Sony u otro)", modifier = Modifier.weight(1f), color = Color.White)
+            Text("DAC → Sony MHC-PZ1D / equipo estéreo", modifier = Modifier.weight(1f), color = Color.White)
             Switch(checked = lineOut, onCheckedChange = { selected ->
                 lineOut = selected
                 SpatialAudioPrefs.save(context, SpatialAudioPrefs.load(context).copy(externalStereoLineOut = selected))
@@ -79,8 +79,10 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
                 routeStatus = "Perfil solicitado para ${route.name}; no certifica salida acústica ni efecto global."
             })
         }
-        Text("Moto G85 → DAC USB-C → AUX L/R → amplificador. AUX transporta dos canales. " +
-            "Surround y subwoofer se activan físicamente en el Sony; esta pantalla no controla sus botones. " +
+        Text("Moto G85 → DAC USB-C → VIDEO/SAT AUDIO IN L/R del Sony MHC-PZ1D. Son dos canales. " +
+            "El manual indica 2 frontales + 2 satélites que duplican el sonido frontal + subwoofer. " +
+            "SOUND FIELD selecciona 2CH STEREO o 2CH SURR; SUBWOOFER es un botón físico. " +
+            "Estos controles del Sony no se accionan desde esta pantalla. " +
             "YouTube/Spotify requieren verificar la ruta global Magisk; la captura Android depende de los permisos de cada aplicación.",
             color = Color(0xFFB5C2D4), fontSize = 12.sp)
         Text(routeStatus, color = Color(0xFFB5C2D4), fontSize = 11.sp)
@@ -97,7 +99,7 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
         }
         if (mode == SpeakerMode.SURROUND) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Bocinas satélite: $satellites", color = Color.White, fontSize = 12.sp)
+                Text("Bocinas sin subwoofer: $satellites", color = Color.White, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { satellites = (satellites - 1).coerceAtLeast(2) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF26323E))) { Text("−") }

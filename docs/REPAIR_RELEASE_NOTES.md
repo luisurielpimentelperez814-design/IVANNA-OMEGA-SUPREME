@@ -16,3 +16,5 @@ Sin nueva versión publicada ni sustitución del release existente. La entrega s
 Prueba en Moto G85/DAC/Sony, cobertura por aplicación y perceptual; CSI sin proveedor; actuador HAL/reloj sin conexión verificada; loader SOFA crudo usa PCA, no lectura completa de mediciones; IA genérica permanece passthrough. Estos puntos no se declaran resueltos por cambios de interfaz.
 
 El panel espacial deja de reinicializar SAF al abrirse o al desactivarlo: bypass envía ganancia cero y conserva la calibración. El modo de sala automático no sobreescribe una calibración personal con iteraciones registradas; para una sesión nueva se usa el reinicio explícito de calibración. El restore de HRTF tras reconexión USB consulta de nuevo el destino declarado en vez de imponer wet=1 sobre un equipo estéreo externo.
+
+Manual del propietario incorporado: Sony MHC-PZ1D, VIDEO/SAT AUDIO IN L/R, 2CH STEREO/2CH SURR, subwoofer físico y satélites que duplican delanteros (pp.68–69,79–80,98–99). Interfaz y protocolo no presentan esos altavoces como canales AUX independientes.
