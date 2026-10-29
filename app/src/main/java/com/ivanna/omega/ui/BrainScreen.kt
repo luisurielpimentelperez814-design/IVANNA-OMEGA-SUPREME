@@ -654,7 +654,7 @@ private fun CognitiveEvolutionTab() {
             "Coherencia Digital Twin (Fase 14)" to fmtPct(cogPct(13)),
             "Fitness CMA-ES / Q-Learning (Fase 15)" to (cogPct(14)?.let { "%.3f".format(it) } ?: "—"),
             "Consolidaciones Memoria (Fase 12)" to (cogPct(15)?.let { "${it.toInt()} estados" } ?: "—"),
-            "Sala Inferida (W×D×H)" to roomDimensions,
+            "Sala Inferida (volumen estimado · proporciones fijas 1:1.4:1.9)" to roomDimensions,
             "Realismo Perceptual Compuesto" to fmtPct(realPct(5))
         )
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

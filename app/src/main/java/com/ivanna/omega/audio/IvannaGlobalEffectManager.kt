@@ -377,6 +377,14 @@ class IvannaGlobalEffectManager(
     }
 
     val activeSessionCount: Int get() = activeSessions.size
+    /** Sesiones acopladas al efecto nativo omega: ahi los efectos stock van en bypass (ver openSession). */
+    val omegaSessionCount: Int get() = activeSessions.values.count { it.omega != null }
+    /** Sesiones donde un perfil (EQ/bajos/virtualizador/loudness/dinamica) SI actua via efectos stock. */
+    val stockEffectSessionCount: Int
+        get() = activeSessions.values.count {
+            it.equalizer != null || it.bassBoost != null || it.virtualizer != null ||
+                it.loudness != null || it.dynamics != null
+        }
 
     fun isVideoStreamingPackage(pkg: String?): Boolean {
         if (pkg == null) {

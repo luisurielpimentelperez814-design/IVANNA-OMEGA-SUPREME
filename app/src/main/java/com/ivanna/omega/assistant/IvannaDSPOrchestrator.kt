@@ -91,6 +91,20 @@ class IvannaDSPOrchestrator(
 
         applied = profileApplied && extraApplied
 
+        // v2.5.197: aplicar un perfil solo toca los efectos stock de cada sesion. Con el efecto
+        // nativo acoplado (omega) esos efectos van en bypass y el perfil no llega al audio; antes
+        // se respondia "aplicado" igual. No se cambia `applied` (el perfil si se guardo), pero se
+        // informa con lo que de verdad ocurre.
+        val mgr = (appContext as? IVANNAApplication)?.globalEffectManager
+        val audibleCaveat = when {
+            !profileApplied || mgr == null -> ""
+            mgr.activeSessionCount == 0 ->
+                " Ahora no hay una sesion de audio abierta: el perfil queda guardado y se aplicara cuando una app reproduzca."
+            mgr.stockEffectSessionCount == 0 && mgr.omegaSessionCount > 0 ->
+                " Aviso: la sesion activa usa el efecto nativo y los efectos stock van en bypass, asi que este perfil no cambia el audio de esa sesion."
+            else -> ""
+        }
+
         // 3. Registrar en el núcleo conversacional
         if (applied) {
             IvannaConversationalCore.recordAdjustment(
@@ -105,7 +119,7 @@ class IvannaDSPOrchestrator(
         } ?: ""
 
         val spokenReply = if (applied) {
-            "${preset.explanation}${ if (songRef.isNotBlank()) " He guardado el perfil$songRef." else "" }"
+            "${preset.explanation}${ if (songRef.isNotBlank()) " He guardado el perfil$songRef." else "" }$audibleCaveat"
         } else {
             "Intenté aplicar el perfil ${preset.name}, pero el motor de audio no está disponible ahora mismo."
         }
@@ -114,7 +128,7 @@ class IvannaDSPOrchestrator(
             applied = applied,
             presetName = preset.name,
             spokenReply = spokenReply,
-            technicalDetail = preset.technicalDetail
+            technicalDetail = preset.technicalDetail + audibleCaveat
         )
     }
 
