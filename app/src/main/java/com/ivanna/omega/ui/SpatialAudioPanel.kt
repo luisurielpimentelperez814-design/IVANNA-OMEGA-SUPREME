@@ -136,8 +136,16 @@ fun SpatialAudioPanel(
                 hrtfLoaded    = IvannaSpatialManager.isHrtfDatasetLoaded()
                 activeSubject = IvannaSpatialManager.currentHrtfSubject()
                 val cochlearNat = IvannaSpatialManager.isCochlearActive()
-                roomStatus    = (OmegaEngineBridge.getRoomStatus()?.toString() ?: "Studio BRIR procedimental activo") +
-                                (if (cochlearNat) " · PINN ON" else "")
+                // v2.5.197: antes se mostraba el JSON crudo del demonio ("idx":-1 = indice PEDIDO, no la
+                // sala elegida) o, sin demonio, "Studio BRIR procedimental activo" sin comprobar nada.
+                val roomNow = latestState
+                val assigned = if (roomNow.rirEnabled && !lineOutActive)
+                    OmegaEngineBridge.resolveRoomAssignment(roomNow.rirRt60) else null
+                roomStatus    = (when {
+                    !roomNow.rirEnabled || lineOutActive -> "RIR desactivado"
+                    assigned != null -> "Sala asignada por el motor: ${assigned.describe()} · wet %.2f".format(roomNow.rirWet)
+                    else -> "RIR activado pero dataset de salas NO cargado (sin sala asignada)"
+                }) + (if (cochlearNat) " · PINN ON" else "")
                 safStatus     = runCatching {
                     if (SaFBridge.nativeSaFIsConverged()) "convergido" else "iteración ${SaFBridge.nativeSaFGetIteration()} · error %.3f".format(SaFBridge.nativeSaFGetError())
                 }.getOrDefault("modelo no cargado")

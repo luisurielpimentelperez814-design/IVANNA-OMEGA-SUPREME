@@ -3919,12 +3919,13 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeGetRirRoomInfo(JNIEnv* env,
     Ivanna::RirDataset* ds = g_rirDataset.load(std::memory_order_acquire);
     if (!ds || !ds->isLoaded() || idx < 0 || (size_t)idx >= ds->roomCount()) return nullptr;
     const Ivanna::RirRoomMeta& m = ds->meta((size_t)idx);
-    // Formato compacto: nombre|rt60_s|volumen_m3|distancia_m|WxHxD
-    char buf[320];
-    std::snprintf(buf, sizeof(buf), "%s|%.3f|%.1f|%.2f|%.1fx%.1fx%.1f",
+    // Formato compacto: nombre|rt60_nominal_s|volumen_m3|distancia_m|WxHxD|rt60_medido_T20_s
+    // (6o campo agregado en v2.5.197; 0.000 = columna ausente en metadata.csv antiguo)
+    char buf[352];
+    std::snprintf(buf, sizeof(buf), "%s|%.3f|%.1f|%.2f|%.1fx%.1fx%.1f|%.3f",
                   m.filename.c_str(), (double)m.rt60S, (double)m.volumeM3(),
                   (double)m.distanceM, (double)m.roomWidthM, (double)m.roomHeightM,
-                  (double)m.roomDepthM);
+                  (double)m.roomDepthM, (double)m.rt60MeasuredS);
     return env->NewStringUTF(buf);
 }
 

@@ -293,6 +293,45 @@ object OmegaEngineBridge {
         return sendCommand(JSONObject().apply { put("action","SET_ROOM_RT60"); put("rt60",rt60); put("wet",safeWet); put("idx",safeIdx) })
     }
     fun disableRoom(): Boolean = setRoom(0f,0f)
+
+    /** Sala RIR que el motor asigna para un RT60 objetivo (lectura del dataset cargado, no el comando). */
+    data class RoomAssignment(
+        val idx: Int, val name: String, val nominalRt60S: Float,
+        val measuredRt60S: Float?, val volumeM3: Float, val dimsM: String
+    ) {
+        fun describe(): String = "sala #$idx $name · RT60 nominal %.2f s".format(nominalRt60S) +
+            (measuredRt60S?.let { " (medido T20 %.2f s)".format(it) } ?: "") +
+            " · %.0f m³ · %s".format(volumeM3, dimsM)
+    }
+
+    /**
+     * Replica RirDataset::findNearestByRT60 (|rt60_nominal - objetivo| mínimo, primer empate) sobre
+     * la tabla ya cargada en el motor; con índice explícito >= 0 devuelve esa sala.
+     * null = dataset no cargado (la UI debe decir que NO hay sala asignada, no inventar una).
+     */
+    fun resolveRoomAssignment(targetRt60S: Float, explicitIdx: Int = -1): RoomAssignment? {
+        if (!isRirDatasetLoaded()) return null
+        val n = rirRoomCount()
+        if (n <= 0) return null
+        fun parse(i: Int): RoomAssignment? {
+            val f = rirRoomInfo(i)?.split('|') ?: return null
+            val nominal = f.getOrNull(1)?.toFloatOrNull() ?: return null
+            return RoomAssignment(
+                idx = i, name = f[0].removeSuffix(".wav"), nominalRt60S = nominal,
+                measuredRt60S = f.getOrNull(5)?.toFloatOrNull()?.takeIf { it > 0f },
+                volumeM3 = f.getOrNull(2)?.toFloatOrNull() ?: 0f, dimsM = f.getOrNull(4) ?: "?"
+            )
+        }
+        if (explicitIdx in 0 until n) return parse(explicitIdx)
+        if (!targetRt60S.isFinite() || targetRt60S <= 0.01f) return null
+        var best = -1; var bestDiff = Float.MAX_VALUE
+        for (i in 0 until n) {
+            val nominal = rirRoomInfo(i)?.split('|')?.getOrNull(1)?.toFloatOrNull() ?: continue
+            val d = kotlin.math.abs(nominal - targetRt60S)
+            if (d < bestDiff) { bestDiff = d; best = i }
+        }
+        return if (best >= 0) parse(best) else null
+    }
     fun getRoomStatus(): JSONObject? = requestCommand(JSONObject().apply { put("action","GET_ROOM_STATUS") })
     /**
      * FIX (botón TELEMETRY muerto): antes reutilizaba el canal persistente con
