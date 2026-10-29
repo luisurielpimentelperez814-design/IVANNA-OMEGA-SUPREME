@@ -1,4 +1,11 @@
-## v2.5.192 — system-wide Route B audio-effect attachment
+## v2.5.193 — verified release trigger and hardened OEM audio-effect merge
+
+- Advances release metadata atomically to v2.5.193 / versionCode 484 so the main-branch version-bump detector actually runs the publish-release job after the green CI build.
+- Preserves the OEM `audio_effects.xml` and independently validates IVANNA library/effect registration plus music, movie, and game postprocess attachments.
+- Fails closed if a readable, valid OEM configuration cannot be found; it will not overlay the static fallback and risk removing proprietary Qualcomm/Dolby/Dirac effects.
+- Release availability is not assumed from a green CI badge: the APK and Magisk ZIP must be uploaded to the non-draft GitHub Release and verified against the build before the release is considered published.
+- Runtime HAL acceptance and actual PCM processing still require device-side confirmation.
+
 
 - Adds IVANNA `omega_effect` to the detected OEM `audio_effects.xml` postprocess chain for music, movie, and game streams during Magisk installation, preserving the existing OEM configuration rather than replacing it when the base XML is readable.
 - Retains the static vendor XML as a fallback only when the installer cannot read the device's base configuration; actual loading and processing still require device-side confirmation.
