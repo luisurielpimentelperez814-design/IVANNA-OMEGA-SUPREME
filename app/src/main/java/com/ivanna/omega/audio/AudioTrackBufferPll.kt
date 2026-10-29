@@ -25,8 +25,15 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         // Suppress small queue-measurement noise; subtract the band for continuity.
         private const val BUFFER_DEADBAND_FRACTION = 0.02
         private const val LOCK_SAMPLES = 5
-        private const val REGRESSION_WINDOW = 8
+        // Ventana de 120 muestras a ~250 ms = ~30 s. Con el jitter de timestamp MEDIDO en la salida USB
+        // (AudioFlinger: sigma ~0.137 ms, picos de hasta 109 ms) una ventana de 8 puntos (~2 s) da una deriva con
+        // desviacion de ~36-54 ppm, mayor que la deriva real (decenas de ppm): el feedforward inyectaba ruido.
+        // Con 30 s y estimador robusto baja a ~2 ppm (tools/safmus/usb_drift_estimator_sim.py).
+        private const val REGRESSION_WINDOW = 120
         private const val REQUIRED_REGRESSION_POINTS = 4
+        private const val MAX_PAIR_POINTS = 40                       // submuestreo: <= 40*39/2 = 780 pendientes
+        private const val MAX_PAIR_SLOPES = MAX_PAIR_POINTS * (MAX_PAIR_POINTS - 1) / 2
+        private const val FEEDFORWARD_FULL_WEIGHT_SECONDS = 20.0     // el feedforward crece con la ventana
         private const val MAX_MEASURED_DRIFT_PPM = 2_000.0
         private const val DRIFT_FILTER_ALPHA = 0.2
         // Ignore sub-half-ppm estimator noise for actuator feed-forward.
@@ -43,6 +50,8 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
     private var historyNext = 0
     private var filteredDriftPpm = 0.0
     private var hasDriftEstimate = false
+    private var windowSpanSeconds = 0.0
+    private val pairSlopes = DoubleArray(MAX_PAIR_SLOPES)   // preasignado: sin allocs en el hilo del reproductor
 
     var correctionPpm: Double = 0.0
         private set
@@ -122,6 +131,15 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         // keep the independent buffer PI alive so queue control can still recover.
         if (consumedFrames == previousConsumedFrames) {
             resetClockEstimateAt(consumedFrames, timestampNs)
+        } else {
+            // Compuerta de plausibilidad POR MUESTRA: el ritmo instantaneo entre dos observaciones consecutivas debe
+            // ser fisicamente creible (0.7x..1.3x nominal; una deriva real es ~0.1 %). Un salto mayor es una discontinuidad del HAL/ruta, no una
+            // pendiente de reloj: se descarta la ventana y se readquiere. La mediana de Theil-Sen ya soporta atipicos
+            // pequenos; esta compuerta cubre los saltos que desplazarian toda la ventana.
+            val instantRate = (consumedFrames - previousConsumedFrames) * 1.0e9 / elapsedNs.toDouble()
+            if (instantRate < nominalSampleRateHz * 0.7 || instantRate > nominalSampleRateHz * 1.3) {
+                resetClockEstimateAt(consumedFrames, timestampNs)
+            }
         }
 
         val dtSeconds = elapsedNs / 1_000_000_000.0
@@ -139,9 +157,12 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         estimateClockDrift()
 
         // Drift feed-forward and buffer PI share one bounded actuator.
+        // El peso crece con la duracion de la ventana: con pocos segundos de baseline la pendiente es ruidosa
+        // (error ~ jitter/baseline), asi que no se confia plenamente en ella hasta ~20 s.
+        val feedForwardWeight = (windowSpanSeconds / FEEDFORWARD_FULL_WEIGHT_SECONDS).coerceIn(0.0, 1.0)
         val driftFeedForward = if (
             isDriftLocked && abs(filteredDriftPpm) >= DRIFT_FEED_FORWARD_DEADBAND_PPM
-        ) filteredDriftPpm else 0.0
+        ) filteredDriftPpm * feedForwardWeight else 0.0
         val currentRawTarget = driftFeedForward -
             (KP_PPM_PER_FULL_BUFFER * occupancyError +
                 KI_PPM_PER_FULL_BUFFER_SECOND * integralErrorSeconds)
@@ -180,32 +201,40 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         if (historyCount < REGRESSION_WINDOW) historyCount++
     }
 
-    /** Centered OLS on paired frame/timestamp samples avoids large-epoch precision loss. */
+    /**
+     * Theil-Sen sobre pares frame/timestamp: mediana de las pendientes de todos los pares de una submuestra
+     * (<= 40 puntos) de la ventana. Tolera hasta ~29 % de puntos atipicos (picos de jitter de timestamp,
+     * discontinuidades del HAL). El tiempo se centra en la muestra mas antigua para no perder precision.
+     */
     private fun estimateClockDrift() {
         if (historyCount < REQUIRED_REGRESSION_POINTS) return
         val oldest = if (historyCount == REGRESSION_WINDOW) historyNext else 0
         val t0 = timeHistoryNs[oldest]
         val f0 = frameHistory[oldest]
-        var meanT = 0.0
-        var meanF = 0.0
-        for (i in 0 until historyCount) {
-            val idx = (oldest + i) % REGRESSION_WINDOW
-            meanT += (timeHistoryNs[idx] - t0).toDouble() * 1.0e-9
-            meanF += (frameHistory[idx] - f0).toDouble()
+        val newestIdx = (oldest + historyCount - 1) % REGRESSION_WINDOW
+        windowSpanSeconds = (timeHistoryNs[newestIdx] - t0) * 1.0e-9
+
+        val stride = (historyCount + MAX_PAIR_POINTS - 1) / MAX_PAIR_POINTS
+        var m = 0
+        var i = 0
+        while (i < historyCount) {
+            val ia = (oldest + i) % REGRESSION_WINDOW
+            val ta = (timeHistoryNs[ia] - t0) * 1.0e-9
+            val fa = (frameHistory[ia] - f0).toDouble()
+            var j = i + stride
+            while (j < historyCount) {
+                val ib = (oldest + j) % REGRESSION_WINDOW
+                val dt = (timeHistoryNs[ib] - t0) * 1.0e-9 - ta
+                if (dt > 1.0e-6 && m < MAX_PAIR_SLOPES) {
+                    pairSlopes[m++] = ((frameHistory[ib] - f0).toDouble() - fa) / dt
+                }
+                j += stride
+            }
+            i += stride
         }
-        meanT /= historyCount
-        meanF /= historyCount
-        var covariance = 0.0
-        var variance = 0.0
-        for (i in 0 until historyCount) {
-            val idx = (oldest + i) % REGRESSION_WINDOW
-            val t = (timeHistoryNs[idx] - t0).toDouble() * 1.0e-9 - meanT
-            val f = (frameHistory[idx] - f0).toDouble() - meanF
-            covariance += t * f
-            variance += t * t
-        }
-        if (variance <= 1.0e-12 || !variance.isFinite()) return
-        val rate = covariance / variance
+        if (m == 0) return
+        java.util.Arrays.sort(pairSlopes, 0, m)
+        val rate = if (m % 2 == 1) pairSlopes[m / 2] else 0.5 * (pairSlopes[m / 2 - 1] + pairSlopes[m / 2])
         val drift = (rate / nominalSampleRateHz.toDouble() - 1.0) * 1_000_000.0
         if (!rate.isFinite() || !drift.isFinite() ||
             rate < nominalSampleRateHz * 0.5 ||
@@ -244,6 +273,7 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         historyNext = 0
         filteredDriftPpm = 0.0
         hasDriftEstimate = false
+        windowSpanSeconds = 0.0
         measuredRateHz = 0.0
         measuredDriftPpm = 0.0
         if (framePosition >= 0L && timestampNs > 0L) {
@@ -263,6 +293,7 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         historyNext = 0
         filteredDriftPpm = 0.0
         hasDriftEstimate = false
+        windowSpanSeconds = 0.0
         correctionPpm = 0.0
         occupancyFrames = 0L
         targetOccupancyFrames = 0L

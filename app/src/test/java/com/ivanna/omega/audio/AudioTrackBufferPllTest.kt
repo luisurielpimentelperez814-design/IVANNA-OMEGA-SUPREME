@@ -1,5 +1,6 @@
 package com.ivanna.omega.audio
 
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -172,5 +173,73 @@ class AudioTrackBufferPllTest {
             assertTrue(value in -500.0..500.0)
         }
         assertEquals(-500.0, pll.correctionPpm, 0.0)
+    }
+
+    // ── Jitter de timestamp REAL de la salida USB (AudioFlinger, captura Moto G85 + DAC USB full-speed) ──
+    // sigma ~0.137 ms; picos de hasta 109 ms (dump: jitterMs std=0.137 max=109). Generador determinista.
+    private class UsbTimestampModel(private val trueDriftPpm: Double, seed: Long) {
+        private var state = seed
+        private fun u(): Double { state = state * 6364136223846793005L + 1442695040888963407L
+            return ((state ushr 11).toDouble() / (1L shl 53).toDouble()) }
+        private fun gauss(): Double { var a = 0.0; repeat(12) { a += u() }; return a - 6.0 }
+        fun jitterNs(): Long {
+            var j = gauss() * 0.137e-3
+            if (u() < 5.0e-4) j += 0.002 + u() * 0.107        // pico atipico positivo (2..109 ms)
+            return (j * 1.0e9).toLong()
+        }
+        fun framesAt(tSeconds: Double): Long = (tSeconds * 48_000.0 * (1.0 + trueDriftPpm * 1.0e-6)).toLong()
+    }
+
+    private fun runUsbSession(trueDriftPpm: Double, polls: Int, seed: Long): Pair<DoubleArray, DoubleArray> {
+        val pll = AudioTrackBufferPll(48_000)
+        val model = UsbTimestampModel(trueDriftPpm, seed)
+        val measured = DoubleArray(polls); val corr = DoubleArray(polls)
+        for (k in 0 until polls) {
+            val t = 1.0 + k * 0.25
+            val consumed = model.framesAt(t)
+            pll.observe(consumed + 5_000L, consumed, 10_000, (t * 1.0e9).toLong() + model.jitterNs())
+            measured[k] = pll.measuredDriftPpm; corr[k] = pll.correctionPpm
+        }
+        return measured to corr
+    }
+
+    @Test fun usbTimestampJitterAndSpikesDoNotCorruptDriftEstimate() {
+        for ((trueDrift, seed) in listOf(10.0 to 1L, -18.0 to 2L, 0.0 to 3L)) {
+            val (measured, corr) = runUsbSession(trueDrift, polls = 480, seed = seed)   // 120 s
+            val tail = measured.copyOfRange(380, 480)
+            val worst = tail.maxOf { abs(it - trueDrift) }
+            assertTrue("deriva real $trueDrift ppm: error maximo de la estimacion $worst ppm (limite 12 ppm)", worst < 12.0)
+            val corrWorst = corr.copyOfRange(380, 480).maxOf { abs(it - trueDrift) }
+            assertTrue("la correccion debe seguir la deriva real $trueDrift ppm (error $corrWorst ppm, limite 15 ppm)", corrWorst < 15.0)
+        }
+    }
+
+    @Test fun naiveEightPointOlsWouldFailTheSameJitterNegativeControl() {
+        // Caso negativo: el estimador ANTERIOR (OLS de 8 puntos) sobre exactamente los mismos datos debe superar
+        // el limite que el estimador actual cumple; demuestra que la prueba anterior detecta el defecto.
+        val model = UsbTimestampModel(10.0, 1L)
+        val tNs = LongArray(480); val f = LongArray(480)
+        for (k in 0 until 480) { val t = 1.0 + k * 0.25; f[k] = model.framesAt(t); tNs[k] = (t * 1.0e9).toLong() + model.jitterNs() }
+        var worst = 0.0
+        for (end in 388..480) {
+            val n = 8; var mt = 0.0; var mf = 0.0
+            for (i in end - n until end) { mt += (tNs[i] - tNs[end - n]) * 1e-9; mf += (f[i] - f[end - n]).toDouble() }
+            mt /= n; mf /= n
+            var cov = 0.0; var v = 0.0
+            for (i in end - n until end) { val a = (tNs[i] - tNs[end - n]) * 1e-9 - mt; val b = (f[i] - f[end - n]).toDouble() - mf; cov += a * b; v += a * a }
+            worst = maxOf(worst, abs((cov / v / 48_000.0 - 1.0) * 1.0e6 - 10.0))
+        }
+        assertTrue("el OLS de 8 puntos debia fallar el limite de 12 ppm (peor error $worst ppm)", worst > 12.0)
+    }
+
+    @Test fun singleHugeTimestampSpikeDoesNotMoveTheEstimate() {
+        val pll = AudioTrackBufferPll(48_000)
+        for (k in 0 until 200) {
+            val t = 1.0 + k * 0.25
+            val consumed = (t * 48_000.0 * (1.0 + 10.0e-6)).toLong()
+            val spike = if (k == 150) 109_000_000L else 0L
+            pll.observe(consumed + 5_000L, consumed, 10_000, (t * 1.0e9).toLong() + spike)
+        }
+        assertEquals(10.0, pll.measuredDriftPpm, 3.0)
     }
 }
