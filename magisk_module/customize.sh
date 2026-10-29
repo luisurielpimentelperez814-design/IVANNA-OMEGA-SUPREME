@@ -236,8 +236,8 @@ fi
 # Ensure IVANNA is attached to the real postprocess chain in the detected OEM XML.
 # This runs after the OEM file is copied, so it preserves the device's other effects.
 if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
-    PP_TMP="$TARGET_XML.ivanna.$"
-    PP_INPUT="$TARGET_XML.input.$"
+    PP_TMP="$TARGET_XML.ivanna.${PPID:-0}"
+    PP_INPUT="$TARGET_XML.input.${PPID:-0}"
     # OEM XML may place <stream>...</stream> on one line. Normalize those
     # tags onto separate lines first so AWK inserts <apply> INSIDE the stream,
     # never before the whole one-line stream element.
