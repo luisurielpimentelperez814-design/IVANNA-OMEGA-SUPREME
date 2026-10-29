@@ -1,5 +1,8 @@
 ## v2.5.194 — SAF calibration, SAFMUS and verified audio controls
 
+- Refines all named stock-effect profiles with hardware-frequency EQ mapping and independent profile/ISO/manual/SAF composition, one combined target headroom calculation and usable width control across its full range.
+- Persists the base effect profile; startup preserves user choices, restores validated SAF, obeys declared external stereo routing and does not mark factory ISO values as a measured calibration. Adds 15 JVM regression tests (41 selected JVM tests pass locally).
+
 - Bounds the actual SAF natural-gradient step, validates state transactionally and synchronizes restored profiles with the existing native control bus.
 - Requires completed calibration stimuli before feedback and separates numerical convergence, transport acknowledgement and physical audio verification.
 - Hardens SAFMUS voxel keys and capture-buffer arithmetic; adds explicit USB DAC to external stereo routing and preserves calibration during bypass.

@@ -47,6 +47,7 @@ import java.util.UUID
 import com.ivanna.omega.safmus.SafmusUniversalKernel
 import java.util.concurrent.ConcurrentHashMap
 
+@kotlinx.serialization.Serializable
 data class IvannaEffectProfile(
     // EQ: 10 bandas @ 31/63/125/250/500/1k/2k/4k/8k/16kHz, milliBels (-1500..+1500)
     // TUNED v3.3: default es la curva "IVANNA signature" — enhancement balanceado
@@ -249,14 +250,11 @@ class IvannaGlobalEffectManager(
     private val TAG = "IvannaNPE.GlobalFX"
 
     companion object {
-        // Gain staging (ver eqPreampMb): BassBoost stock empuja picos de bombo sobre
+        // Gain staging (ver EffectTuningPolicy): BassBoost stock empuja picos de bombo sobre
         // 0 dBFS; Virtualizer stock fuerte da voces huecas/robotizadas.
         private const val BASS_STRENGTH_CAP: Short = 300
         private const val VIRT_STRENGTH_CAP: Short = 220
         private const val LOUDNESS_CAP_WITH_LIMITER_MB = 150
-
-        /** Preamp (mB) = boost maximo de banda, para que el EQ nunca sume sobre 0 dBFS. */
-        private fun eqPreampMb(maxBoostMb: Int): Int = maxBoostMb.coerceAtLeast(0)
 
         // AUDIT FIX (no-root omite el motor Omega): UUID real del efecto
         // compilado en omega_effect.cpp (effect_uuid_t layout AOSP:
@@ -313,7 +311,10 @@ class IvannaGlobalEffectManager(
     private val activeSessions = ConcurrentHashMap<Int, SessionEffects>()
 
     // Perfil activo (se aplica a todas las sesiones nuevas y actualiza las existentes)
-    @Volatile var activeProfile: IvannaEffectProfile = IvannaEffectProfile.WARM
+    @Volatile var activeProfile: IvannaEffectProfile = validateProfileWithSafmus(
+        EffectProfileStore.load(context) ?: IvannaEffectProfile.IVANNA_OMEGA)
+        private set
+    @Volatile private var tuning = EffectTuningPolicy.State()
         private set
 
     val isVideoStreamingActive: Boolean
@@ -355,8 +356,7 @@ class IvannaGlobalEffectManager(
     // ── ISO 226 Calibración ──────────────────────────────────────────────────
 
     /**
-     * Devuelve el perfil activo actual (para que Iso226Calibrator pueda
-     * hacer .copy(eqBands = ...) sin romper el preset activo).
+     * Base profile, excluding independently composed ISO and transient controls.
      */
     fun currentProfile(): IvannaEffectProfile = activeProfile
 
@@ -368,21 +368,12 @@ class IvannaGlobalEffectManager(
      * @param gainsDb FloatArray[10] — compensación en dB por banda EQ
      *                Bandas: 31/63/125/250/500/1k/2k/4k/8k/16k Hz
      */
+    @Synchronized
     fun applyIso226Compensation(gainsDb: FloatArray) {
-        val clamped = IntArray(10) { i ->
-            (gainsDb.getOrElse(i) { 0f }.coerceIn(-12f, 12f) * 100f).toInt()
-        }
-        val baseEq   = activeProfile.eqBands
-        val mergedEq = IntArray(10) { i ->
-            (baseEq.getOrElse(i) { 0 } + clamped[i]).coerceIn(-1500, 1500)
-        }
-        val isoProfile = activeProfile.copy(eqBands = mergedEq)
-        applyProfile(isoProfile)
-        // FIX: persistir automáticamente para que la calibración sobreviva reinicios.
-        // Iso226Calibrator.persist() guarda listenPhon+refPhon en SharedPreferences;
-        // IVANNAApplication.restoreIfSaved() la recupera al arrancar.
-        runCatching { com.ivanna.omega.audio.Iso226Calibrator.persist(context) }
-        android.util.Log.i("IvannaGlobalFX", "ISO 226 EQ aplicado: ${clamped.map { "${it/100f}dB" }}")
+        val next = EffectTuningPolicy.iso(gainsDb)
+        if (next == tuning.isoMb) return
+        tuning = tuning.copy(isoMb = next)
+        reapplySessions(spatialOnly = true)
     }
 
     val activeSessionCount: Int get() = activeSessions.size
@@ -505,67 +496,30 @@ class IvannaGlobalEffectManager(
         )
     }
 
+    @Synchronized
     fun applyProfile(profile: IvannaEffectProfile) {
-        val approved = validateProfileWithSafmus(profile)
-        activeProfile = approved
-        activeSessions.keys.forEach { applyProfileToSession(it, approved) }
+        activeProfile = validateProfileWithSafmus(profile)
+        // Selecting a preset clears transient controls, preserving independent ISO compensation.
+        tuning = tuning.copy(live = null, safSigma = null, trebleMb = 0, bassStrength = null, loudnessReliefMb = 0)
+        runCatching { EffectProfileStore.save(context, activeProfile) }
+            .onFailure { Log.w(TAG, "No se pudo guardar el perfil", it) }
+        reapplySessions()
     }
 
-    /**
-     * Ajusta efectos en vivo desde los sliders de la UI SIN cambiar el preset.
-     * Opera sobre el perfil activo: suma eqGainDb a las bandas, actualiza
-     * virtualizer (width) y compresor (threshold/ratio) con los valores actuales.
-     *
-     * Llamado desde DSPState.pushToNative() — unico punto de entrada real de
-     * cambios de parametro en toda la app. Con esto, mover cualquier slider
-     * afecta en tiempo real a Spotify, YouTube y cualquier app con sesion abierta,
-     * identico al mecanismo de Wavelet EQ y Poweramp Equalizer.
-     */
-    fun adjustLiveParams(
-        eqGainDb: Float,        // -18..18 dB, offset sobre las bandas del perfil activo
-        stereoWidth: Float,     // 0..1.5 → virtualizer strength 0..1000
-        compThresholdDb: Float, // dBFS (usualmente -24..0)
-        compRatio: Float        // 1.0..20.0
-    ) {
-        val prof = activeProfile
-        val offsetMb = (eqGainDb * 100f).toInt()  // dB → milliBels
-        activeSessions.forEach { (sessionId, fx) ->
-            runCatching {
-                // EQ: offset sobre las bandas del perfil activo con auto-headroom
-                // para que subir sliders por encima de 0 dB no sature el mixer de Android
-                val maxBandMb = (0 until prof.eqBands.size).maxOfOrNull { b ->
-                    prof.eqBands[b] + offsetMb
-                } ?: 0
-                val headroomMb = eqPreampMb(maxBandMb)
-                fx.equalizer?.let { eq ->
-                    if (!eq.enabled) return@let
-                    val numBands = eq.numberOfBands.toInt()
-                    val range = runCatching { eq.bandLevelRange }.getOrNull()
-                    val minMb = range?.getOrNull(0)?.toInt() ?: -1500
-                    val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
-                    for (band in 0 until numBands) {
-                        val baseMb = if (band < prof.eqBands.size) prof.eqBands[band] else 0
-                        val targetMb = (baseMb + offsetMb - headroomMb).coerceIn(minMb, maxMb)
-                        eq.setBandLevel(
-                            band.toShort(),
-                            targetMb.toShort()
-                        )
-                    }
-                }
-                // Virtualizer: width 0..1.5 → strength 0..1000
-                fx.virtualizer?.let { v ->
-                    if (v.strengthSupported)
-                        v.setStrength(
-                            (stereoWidth / 1.5f * 1000f).toInt().coerceIn(0, VIRT_STRENGTH_CAP.toInt()).toShort()
-                        )
-                }
-                // Compressor: reemplaza threshold/ratio del perfil activo
-                applyDynamicsProfile(
-                    fx.dynamics,
-                    prof.copy(compThresholdDb = compThresholdDb, compRatio = compRatio)
-                )
-            }.onFailure { Log.w(TAG, "adjustLiveParams sesion $sessionId: ${it.message}") }
-        }
+    @Synchronized
+    fun adjustLiveParams(eqGainDb: Float, stereoWidth: Float, compThresholdDb: Float, compRatio: Float) {
+        val next = EffectTuningPolicy.live(eqGainDb, stereoWidth, compThresholdDb, compRatio)
+        if (next == tuning.live) return
+        tuning = tuning.copy(live = next)
+        reapplySessions()
+    }
+
+    /** Called on output changes as well as parameter changes; stock virtualization obeys line-out. */
+    @Synchronized
+    fun refreshOutputRoute() = reapplySessions(spatialOnly = true)
+
+    private fun reapplySessions(spatialOnly: Boolean = false) {
+        activeSessions.keys.forEach { applyProfileToSession(it, activeProfile, spatialOnly) }
     }
 
     // ── Ajustes puntuales de voz sin cambiar de perfil completo ────────────────
@@ -583,12 +537,10 @@ class IvannaGlobalEffectManager(
      * misma auditoría (fx.bassBoost confirmado sin ningún .setStrength()
      * real en todo el archivo antes de este fix).
      */
+    @Synchronized
     fun boostBass(strength: Short = 700) {
-        activeSessions.forEach { (sessionId, fx) ->
-            runCatching {
-                fx.bassBoost?.let { if (it.strengthSupported) it.setStrength(strength) }
-            }.onFailure { Log.w(TAG, "boostBass sesion $sessionId: ${it.message}") }
-        }
+        tuning = tuning.copy(bassStrength = strength.toInt().coerceIn(0, BASS_STRENGTH_CAP.toInt()))
+        reapplySessions()
     }
 
     /**
@@ -604,122 +556,37 @@ class IvannaGlobalEffectManager(
      *                     suficiente margen para absorber el boost de
      *                     graves sin percibirse como un "bajón" de volumen.
      */
+    @Synchronized
     fun relieveClipping(reductionMb: Int = 300) {
-        activeSessions.forEach { (sessionId, fx) ->
-            runCatching {
-                fx.loudness?.let { le ->
-                    val current = runCatching { le.targetGain.toInt() }.getOrDefault(0)
-                    val next = (current - reductionMb).coerceAtLeast(0)
-                    le.setTargetGain(next)
-                }
-            }.onFailure { Log.w(TAG, "relieveClipping sesion $sessionId: ${it.message}") }
-        }
+        tuning = tuning.copy(loudnessReliefMb =
+            (tuning.loudnessReliefMb + reductionMb.coerceIn(0, 1000)).coerceAtMost(1000))
+        reapplySessions()
     }
 
     /** Android no tiene un efecto "Treble" dedicado equivalente a BassBoost
      *  — se usa el Equalizer real ya abierto, con offset negativo en las
      *  últimas 2 bandas (agudas) del perfil activo, sin tocar el resto. */
+    @Synchronized
     fun reduceTreble(offsetDb: Float = -6f) {
-        val offsetMb = (offsetDb * 100f).toInt()
-        activeSessions.forEach { (sessionId, fx) ->
-            runCatching {
-                fx.equalizer?.let { eq ->
-                    if (!eq.enabled) return@let
-                    val numBands = eq.numberOfBands.toInt()
-                    if (numBands < 2) return@let
-                    for (band in maxOf(0, numBands - 2) until numBands) {
-                        val baseMb = if (band < activeProfile.eqBands.size) activeProfile.eqBands[band] else 0
-                        val range = eq.getBandLevelRange()
-                        eq.setBandLevel(band.toShort(), (baseMb + offsetMb).coerceIn(range[0].toInt(), range[1].toInt()).toShort())
-                    }
-                }
-            }.onFailure { Log.w(TAG, "reduceTreble sesion $sessionId: ${it.message}") }
-        }
+        val cut = if (offsetDb.isFinite()) (offsetDb.coerceIn(-18f, 0f) * 100f).toInt() else 0
+        tuning = tuning.copy(trebleMb = cut)
+        reapplySessions()
     }
 
-    /** "Optimiza el audio": vuelve al perfil activo sin ajustes en vivo
-     *  acumulados — equivalente honesto a "reset a lo que el preset ya
-     *  define como óptimo", no un análisis de IA nuevo. */
+    /** Reset transient adjustments without baking them into the base profile. */
+    @Synchronized
     fun autoOptimize() {
-        applyProfile(activeProfile)
-        Log.i(TAG, "Auto-optimize: perfil '${activeProfile}' reaplicado sin offsets acumulados")
+        tuning = tuning.copy(live = null, safSigma = null, trebleMb = 0, bassStrength = null, loudnessReliefMb = 0)
+        reapplySessions()
     }
 
-    // ── SAF sin root: modulador continuo de espacialidad ──────────────────────
-    /**
-     * Convierte el estado del optimizador Φ_SAF-Room^∞ en un pequeño ajuste
-     * continuo sobre los efectos Android stock ya abiertos (Virtualizer/EQ),
-     * para las sesiones que no tienen el módulo Magisk (sin root).
-     *
-     * FIX (discrepancia verificada contra la API real): el diagnóstico
-     * original de esta tarea pedía leer "q[7]" de getDiagnostics(). Se
-     * verificó SaFRoomBridge.getDiagnostics() — devuelve FloatArray(5):
-     * [0]=α* [1]=E_t [2]=λ_t [3]=σ(R,H,S) [4]=iteration. No existe índice 7
-     * en ningún array real de SaFRoomBridge ni SaFBridge (el "vector q[7]"
-     * documentado en SaFBridge.kt se refiere al vector de 7 ELEMENTOS
-     * [0..6] de getParams()/nativeSaFGetParams(), no a una posición 7).
-     * Leer diagnostics[7] aquí sería un ArrayIndexOutOfBoundsException real
-     * la primera vez que se llame. Se usa diagnostics[3] (σ — acoplamiento
-     * sala/HRTF/campo, [0,1] por su propia documentación): es la única señal
-     * de las 5 que representa literalmente "cuánta optimización espacial
-     * está en juego ahora mismo", que es lo que esta función necesita.
-     *
-     * FIX (colisión de parámetro — mismo patrón ya encontrado y corregido
-     * dos veces en este repo: compresor y widening por correlación): si esta
-     * función escribiera un valor ABSOLUTO de Virtualizer/EQ, competiría
-     * directamente con adjustLiveParams() (que ya escribe ambos desde los
-     * sliders de la UI) — quien corra último gana y el otro se pierde en
-     * silencio. adjustLiveParams() corre on-demand (slider tocado);
-     * applySafState() corre cada 500ms desde OemViewModel.poll(). Sin
-     * coordinación, la posición del slider del usuario podía revertirse
-     * sola cada medio segundo. Solución: applySafState() NUNCA fija un
-     * valor absoluto — lee el valor EN VIVO del efecto (getStrength()/
-     * getBandLevel()) y aplica un desplazamiento pequeño y acotado sobre
-     * ese valor, siempre relativo a lo último que el usuario o el perfil
-     * activo hayan fijado.
-     *
-     * No modifica activeProfile ni llama a applyProfile*() — solo toca las
-     * instancias AudioEffect ya abiertas de cada sesión, igual que
-     * adjustLiveParams().
-     *
-     * @param diagnostics FloatArray de SaFRoomBridge.getDiagnostics(). Se
-     *                    tolera cualquier tamaño (incluido vacío si SaF no
-     *                    cargó) — si no trae al menos 4 elementos, no-op.
-     */
+    /** Absolute SAF overlay: repeated polling cannot accumulate gain or undo the user's controls. */
+    @Synchronized
     fun applySafState(diagnostics: FloatArray) {
-        if (diagnostics.size < 4) return
-        val sigma = diagnostics[3].takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: return
-        // Rango de nudge deliberadamente pequeño: esto es modulación de
-        // fondo, no un control directo. ±80 sobre 1000 (Virtualizer) y
-        // ±1.2 dB (EQ) son inaudibles como salto pero perceptibles como
-        // "aire" cuando el optimizador detecta más acoplamiento espacial.
-        val virtNudge = ((sigma - 0.5f) * 160f)          // -80..+80 (short range)
-        val eqNudgeMb = ((sigma - 0.5f) * 240f).toInt()  // -120..+120 mB ≈ ±1.2 dB
-
-        val prof = activeProfile
-        activeSessions.forEach { (sessionId, fx) ->
-            runCatching {
-                fx.virtualizer?.let { v ->
-                    if (!v.strengthSupported) return@let
-                    val base = prof.virtualizerStrength.toInt()
-                    val next = (base + virtNudge).toInt().coerceIn(0, VIRT_STRENGTH_CAP.toInt())
-                    v.setStrength(next.toShort())
-                }
-                fx.equalizer?.let { eq ->
-                    if (!eq.enabled) return@let
-                    val numBands = eq.numberOfBands.toInt()
-                    // FIX: este camino reescribia las bandas SIN el preamp del perfil
-                    // (deshacia el headroom y sumaba hasta +1.2 dB mas) -> clipping.
-                    val preampMb = eqPreampMb(prof.eqBands.maxOrNull()?.coerceAtLeast(0) ?: 0)
-                    val limitMb = eqNudgeMb.coerceAtLeast(0)
-                    for (band in 0 until numBands) {
-                        val baseMb = if (band < prof.eqBands.size) prof.eqBands[band] else 0
-                        val nextMb = (baseMb - preampMb + eqNudgeMb - limitMb).coerceIn(-1500, 1500)
-                        eq.setBandLevel(band.toShort(), nextMb.toShort())
-                    }
-                }
-            }.onFailure { Log.w(TAG, "applySafState sesion $sessionId: ${it.message}") }
-        }
+        val sigma = diagnostics.getOrNull(3)?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: return
+        if (sigma == tuning.safSigma) return
+        tuning = tuning.copy(safSigma = sigma)
+        reapplySessions(spatialOnly = true)
     }
 
     // ── Cierra todas las sesiones ─────────────────────────────────────────────
@@ -740,70 +607,60 @@ class IvannaGlobalEffectManager(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    private fun applyProfileToSession(sessionId: Int, profile: IvannaEffectProfile) {
+    @Synchronized
+    private fun applyProfileToSession(sessionId: Int, profile: IvannaEffectProfile, spatialOnly: Boolean = false) {
         val fx = activeSessions[sessionId] ?: return
-        runCatching {
-            // FIX (distorsion al subir volumen en Amazon/Tidal): auto-preamp REAL.
-            // Antes solo se restaba headroom si la banda maxima pasaba de +3 dB, asi
-            // que con el perfil por defecto (hasta +1.2 dB) + BassBoost + Loudness
-            // + Virtualizer apilados, el mixer de Android saturaba (clip duro) en
-            // cuanto el volumen de la app subia. Ahora ninguna banda queda por
-            // encima de 0 dB netos: el preamp resta el realce maximo completo.
-            val maxBoostMb = profile.eqBands.maxOrNull()?.coerceAtLeast(0) ?: 0
-            val headroomMb = eqPreampMb(maxBoostMb)
-
-            if (fx.isVideo) {
-                // Diálogo cinematográfico ultra-nítido para streaming (Amazon Prime / Netflix):
-                // Cero reverberación parásita, cero desfase de Virtualizer.
-                fx.reverb?.enabled = false
-                fx.virtualizer?.enabled = false
-                fx.equalizer?.let { eq ->
-                    if (eq.enabled) {
-                        val numBands = eq.numberOfBands.toInt()
-                        val range = runCatching { eq.bandLevelRange }.getOrNull()
-                        val minMb = range?.getOrNull(0)?.toInt() ?: -1500
-                        val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
-                        // Curva Cinema Intelligibility: atenuar retumbes (<125Hz) y realzar presencia vocal (1k-4kHz)
-                        val speechOffsets = intArrayOf(-200, -150, 0, 50, 150, 250, 250, 150, 50, 0)
-                        for (band in 0 until minOf(numBands, profile.eqBands.size)) {
-                            val boost = speechOffsets.getOrElse(band) { 0 }
-                            val levelMb = (profile.eqBands[band] + boost - headroomMb).coerceIn(minMb, maxMb)
-                            eq.setBandLevel(band.toShort(), levelMb.toShort())
-                        }
-                    }
-                }
-            } else {
-                fx.equalizer?.let { eq ->
-                    if (eq.enabled) {
-                        val numBands = eq.numberOfBands.toInt()
-                        val range = runCatching { eq.bandLevelRange }.getOrNull()
-                        val minMb = range?.getOrNull(0)?.toInt() ?: -1500
-                        val maxMb = range?.getOrNull(1)?.toInt() ?: 1500
-                        for (band in 0 until minOf(numBands, profile.eqBands.size)) {
-                            val levelMb = (profile.eqBands[band] - headroomMb).coerceIn(minMb, maxMb)
-                            eq.setBandLevel(band.toShort(), levelMb.toShort())
-                        }
-                    }
-                }
-                fx.bassBoost?.let { bb ->
-                    if (bb.strengthSupported) bb.setStrength(profile.bassStrength.coerceAtMost(BASS_STRENGTH_CAP))
-                }
-                fx.virtualizer?.let { v ->
-                    if (v.strengthSupported) v.setStrength(profile.virtualizerStrength.coerceAtMost(VIRT_STRENGTH_CAP))
-                }
-                fx.reverb?.let { rev ->
-                    rev.setRoomLevel(profile.reverbRoomLevelMb.toShort())
-                    rev.setDecayTime(profile.reverbDecayTimeMs)
-                    rev.setReflectionsLevel(profile.reverbReflectionsLevelMb.toShort())
+        val state = tuning
+        val route = AudioRouteManager.detectOutputRoute()
+        val lineOut = runCatching {
+            ExternalStereoPolicy.usesExternalSpeakers(route,
+                com.ivanna.omega.ui.SpatialAudioPrefs.load(context).externalStereoLineOut)
+        }.getOrDefault(false)
+        val virtualAllowed = !fx.isVideo && !lineOut && route != OutputRoute.SPEAKER && route != OutputRoute.UNKNOWN
+        // Each effect is independent: an unsupported EQ band must not skip the final limiter.
+        fun apply(name: String, action: () -> Unit) {
+            runCatching(action).onFailure { Log.w(TAG, "$name en sesión $sessionId: ${it.message}") }
+        }
+        apply("EQ") {
+            fx.equalizer?.let { eq ->
+                if (!eq.enabled) return@let
+                val centers = IntArray(eq.numberOfBands.toInt()) { eq.getCenterFreq(it.toShort()) }
+                val range = eq.bandLevelRange
+                val curve = EffectTuningPolicy.curve(profile.eqBands, state, fx.isVideo)
+                val targets = EffectTuningPolicy.deviceBands(curve, centers,
+                    range[0].toInt(), range[1].toInt())
+                targets.forEachIndexed { i, gain -> eq.setBandLevel(i.toShort(), gain.toShort()) }
+            }
+        }
+        apply("Virtualizer") {
+            fx.virtualizer?.let {
+                it.enabled = virtualAllowed
+                if (it.strengthSupported) it.setStrength(EffectTuningPolicy.virtualizer(
+                    profile.virtualizerStrength.toInt(), state, virtualAllowed, VIRT_STRENGTH_CAP.toInt()))
+            }
+        }
+        if (!spatialOnly) {
+            apply("BassBoost") {
+                fx.bassBoost?.let { if (it.strengthSupported) it.setStrength(
+                    EffectTuningPolicy.bass(profile.bassStrength.toInt(), state, BASS_STRENGTH_CAP.toInt())) }
+            }
+            apply("Reverb") {
+                fx.reverb?.let {
+                    // Existing stock reverb stays disabled; native/physical room stages own reverberation.
+                    it.enabled = false
+                    it.setRoomLevel(profile.reverbRoomLevelMb.toShort())
+                    it.setDecayTime(profile.reverbDecayTimeMs)
+                    it.setReflectionsLevel(profile.reverbReflectionsLevelMb.toShort())
                 }
             }
-            // LoudnessEnhancer de Android suma ganancia ANTES de cualquier limitador
-            // de la sesion: sin DynamicsProcessing-limiter detras es un clip duro.
-            val loudCapMb = if (fx.dynamics != null) LOUDNESS_CAP_WITH_LIMITER_MB else 0
-            val safeLoudnessMb = profile.loudnessGainMb.coerceIn(0, loudCapMb)
-            fx.loudness?.setTargetGain(safeLoudnessMb)
-            applyDynamicsProfile(fx.dynamics, profile)
-        }.onFailure { Log.w(TAG, "Error aplicando perfil a sesión $sessionId", it) }
+            apply("Loudness") {
+                fx.loudness?.setTargetGain(EffectTuningPolicy.loudness(profile.loudnessGainMb, state,
+                    fx.dynamics != null, LOUDNESS_CAP_WITH_LIMITER_MB))
+            }
+            val live = state.live
+            applyDynamicsProfile(fx.dynamics, if (live == null) profile else profile.copy(
+                compThresholdDb = live.thresholdDb, compRatio = live.ratio))
+        }
     }
 
     private fun applyDynamicsProfile(dyn: DynamicsProcessing?, profile: IvannaEffectProfile) {

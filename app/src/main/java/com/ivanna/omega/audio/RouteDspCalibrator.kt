@@ -122,10 +122,13 @@ object RouteDspCalibrator {
     }
 
     private fun applySynchronousInProcessStages(context: Context, route: OutputRoute) {
+        (context.applicationContext as? com.ivanna.omega.core.IVANNAApplication)
+            ?.globalEffectManager?.refreshOutputRoute()
         if (!IvannaNativeLib.isLoaded) return
         val saPrefs = runCatching { SpatialAudioPrefs.load(context) }.getOrNull()
         val hrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
             route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
+        com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = hrtfAllowed
         AudioEngine.nativeSetHrtfWetDryStatic(if (hrtfAllowed) 1f else 0f)
         when (route) {
             OutputRoute.SPEAKER -> {
@@ -161,7 +164,20 @@ object RouteDspCalibrator {
         val rirAllowed = saPrefs?.rirEnabled == true && !externalStereo
         val hrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
             route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
-        val safAllowed = saPrefs?.safEnabled == true && !externalStereo
+        val hasPersonalSaf = runCatching { com.ivanna.omega.saf.SaFBridge.nativeSaFGetIteration() > 0 }.getOrDefault(false)
+        val safAllowed = saPrefs?.safEnabled == true && !externalStereo && !hasPersonalSaf
+        // Route changes must publish or bypass the saved profile, not leave the previous
+        // route's latent gain active or replace a personal calibration with a room preset.
+        runCatching {
+            if (externalStereo || saPrefs?.safEnabled != true) {
+                OmegaEngineBridge.pushSafLatentQ(FloatArray(7), gain = 0f)
+            } else if (hasPersonalSaf) {
+                val q = com.ivanna.omega.saf.SaFBridge.nativeSaFGetParams()
+                    ?.takeIf { it.size == 7 && it.all(Float::isFinite) }
+                OmegaEngineBridge.pushSafLatentQ(q ?: FloatArray(7),
+                    gain = if (hrtfAllowed && q != null) saPrefs.safIntensity else 0f)
+            }
+        }.onFailure { Log.w(TAG, "SAF route delivery: ${it.message}") }
 
         when (route) {
             OutputRoute.SPEAKER -> {

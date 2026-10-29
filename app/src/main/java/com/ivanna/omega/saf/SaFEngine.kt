@@ -87,63 +87,63 @@ class SaFEngine(private val context: Context) {
     private val playerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
 
     // ── Init ─────────────────────────────────────────────────────────────
-    fun initialize() {
-        scope.launch {
-            val jsonPath = resolveJsonPath()
-            val loaded   = IvannaNativeLib.isLoaded
-            if (loaded) {
-                runCatching { SaFBridge.nativeSaFInit(jsonPath) }
-                // FIX (persistencia): restaurar calibración previa si existe.
-                // Sin esto, initFromJson() siempre deja q=0 (HRTF promedio)
-                // aunque el usuario ya hubiera calibrado en una sesión anterior.
-                val restored = runCatching { SaFBridge.nativeSaFLoadState(statePath()) }
-                    .getOrDefault(false)
-                // FIX (persistencia Kotlin): cargar también desde SaFCalibrationPrefs
-                // (formato binario IVSF v2 con SHA-256 sobre magic+version+ts+iter
-                // +converged+q[7]). Si prefs.iter > native.iter, ganamos con la
-                // versión checksum-protegida — sella contra truncado/bit-flip y
-                // es recuperable aunque el TXT nativo quede a medias.
-                val prefsSnap = SaFCalibrationPrefs.load(context)
-                val safStatus     = snapshot { SaFBridge.nativeSaFGetStatus() }
-                val statusParams  = if (safStatus != null && safStatus.size >= 7) safStatus.copyOfRange(0, 7) else null
-                val modelOk       = safStatus != null && safStatus.size >= 8 && safStatus[7] >= 0.5f
-                val nativeIter    = if (restored) snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0 else 0
-                val nativeParams  = if (restored) (snapshot { SaFBridge.nativeSaFGetParams() } ?: statusParams ?: FloatArray(7)) else (statusParams ?: FloatArray(7))
-                val nativeConv    = if (restored) snapshot { SaFBridge.nativeSaFIsConverged() } ?: false else false
-                // Resolución de divergencia: iteración más alta gana. En empate,
-                // el binario sellado (prefs) tiene prioridad sobre el TXT nativo.
-                val usePrefs = prefsSnap.timestampMs > 0 && prefsSnap.iteration >= nativeIter
-                if (usePrefs) {
-                    // Import the checksum-validated snapshot through the native validator;
-                    // only readback from the optimizer may be displayed as active state.
-                    val pending = File(context.filesDir, "saf/restore-prefs.txt")
-                    runCatching {
-                        pending.parentFile?.mkdirs()
-                        pending.writeText("IVANNA_SAF_STATE_V1\n${prefsSnap.iteration}\n" +
-                            prefsSnap.q.joinToString(" ") + "\n")
-                        if (SaFBridge.nativeSaFLoadState(pending.absolutePath)) {
-                            SaFBridge.nativeSaFSaveState(statePath())
-                        }
-                    }.onFailure { android.util.Log.w(TAG, "Restauración SAF rechazada", it) }
-                    pending.delete()
-                }
-                val iter = snapshot { SaFBridge.nativeSaFGetIteration() } ?: nativeIter
-                val params = snapshot { SaFBridge.nativeSaFGetParams() } ?: nativeParams
-                val conv = (snapshot { SaFBridge.nativeSaFIsConverged() } ?: nativeConv) && iter > 0
-                _state.value = SaFState(
-                    jniLoaded   = loaded,
-                    modelLoaded = modelOk,
-                    iteration   = iter,
-                    params      = params,
-                    deliveryMessage = publishProfile(params),
-                    converged   = conv,
-                    phase       = if (conv) SaFPhase.DONE else SaFPhase.IDLE
-                )
-                publishLatestState()
-            } else {
-                _state.value = SaFState(jniLoaded = loaded)
-                publishLatestState()
+    fun initialize() = scope.launch {
+        val jsonPath = resolveJsonPath()
+        val loaded   = IvannaNativeLib.isLoaded
+        if (loaded) {
+            val hasLiveCalibration = (snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0) > 0 &&
+                (snapshot { SaFBridge.nativeSaFGetStatus() }?.getOrNull(7) ?: 0f) >= 0.5f
+            if (!hasLiveCalibration) runCatching { SaFBridge.nativeSaFInit(jsonPath) }
+            // FIX (persistencia): restaurar calibración previa si existe.
+            // Sin esto, initFromJson() siempre deja q=0 (HRTF promedio)
+            // aunque el usuario ya hubiera calibrado en una sesión anterior.
+            val restored = hasLiveCalibration || runCatching { SaFBridge.nativeSaFLoadState(statePath()) }
+                .getOrDefault(false)
+            // FIX (persistencia Kotlin): cargar también desde SaFCalibrationPrefs
+            // (formato binario IVSF v2 con SHA-256 sobre magic+version+ts+iter
+            // +converged+q[7]). Si prefs.iter > native.iter, ganamos con la
+            // versión checksum-protegida — sella contra truncado/bit-flip y
+            // es recuperable aunque el TXT nativo quede a medias.
+            val prefsSnap = SaFCalibrationPrefs.load(context)
+            val safStatus     = snapshot { SaFBridge.nativeSaFGetStatus() }
+            val statusParams  = if (safStatus != null && safStatus.size >= 7) safStatus.copyOfRange(0, 7) else null
+            val modelOk       = safStatus != null && safStatus.size >= 8 && safStatus[7] >= 0.5f
+            val nativeIter    = if (restored) snapshot { SaFBridge.nativeSaFGetIteration() } ?: 0 else 0
+            val nativeParams  = if (restored) (snapshot { SaFBridge.nativeSaFGetParams() } ?: statusParams ?: FloatArray(7)) else (statusParams ?: FloatArray(7))
+            val nativeConv    = if (restored) snapshot { SaFBridge.nativeSaFIsConverged() } ?: false else false
+            // Resolución de divergencia: iteración más alta gana. En empate,
+            // el binario sellado (prefs) tiene prioridad sobre el TXT nativo.
+            val usePrefs = prefsSnap.timestampMs > 0 && prefsSnap.iteration >= nativeIter
+            if (usePrefs) {
+                // Import the checksum-validated snapshot through the native validator;
+                // only readback from the optimizer may be displayed as active state.
+                val pending = File(context.filesDir, "saf/restore-prefs.txt")
+                runCatching {
+                    pending.parentFile?.mkdirs()
+                    pending.writeText("IVANNA_SAF_STATE_V1\n${prefsSnap.iteration}\n" +
+                        prefsSnap.q.joinToString(" ") + "\n")
+                    if (SaFBridge.nativeSaFLoadState(pending.absolutePath)) {
+                        SaFBridge.nativeSaFSaveState(statePath())
+                    }
+                }.onFailure { android.util.Log.w(TAG, "Restauración SAF rechazada", it) }
+                pending.delete()
             }
+            val iter = snapshot { SaFBridge.nativeSaFGetIteration() } ?: nativeIter
+            val params = snapshot { SaFBridge.nativeSaFGetParams() } ?: nativeParams
+            val conv = (snapshot { SaFBridge.nativeSaFIsConverged() } ?: nativeConv) && iter > 0
+            _state.value = SaFState(
+                jniLoaded   = loaded,
+                modelLoaded = modelOk,
+                iteration   = iter,
+                params      = params,
+                deliveryMessage = publishProfile(params),
+                converged   = conv,
+                phase       = if (conv) SaFPhase.DONE else SaFPhase.IDLE
+            )
+            publishLatestState()
+        } else {
+            _state.value = SaFState(jniLoaded = loaded)
+            publishLatestState()
         }
     }
 
@@ -184,8 +184,8 @@ class SaFEngine(private val context: Context) {
     private fun publishProfile(params: FloatArray): String {
         val prefs = com.ivanna.omega.ui.SpatialAudioPrefs.load(context)
         val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
-        if (!prefs.safEnabled || com.ivanna.omega.audio.ExternalStereoPolicy.usesExternalSpeakers(
-                route, prefs.externalStereoLineOut)) return "Perfil local; envío binaural global deshabilitado para esta configuración."
+        if (!prefs.safEnabled || !com.ivanna.omega.audio.ExternalStereoPolicy.allowHeadphoneHrtf(
+                route, prefs.externalStereoLineOut, prefs.hrtfEnabled)) return "Perfil local; envío binaural global deshabilitado para esta configuración."
         val accepted = runCatching {
             com.ivanna.omega.magisk.OmegaEngineBridge.pushSafLatentQ(params, prefs.safIntensity)
         }.getOrDefault(false)

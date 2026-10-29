@@ -158,16 +158,21 @@ class ParameterStore(context: Context) {
      * IVANNA_OMEGA_SIGNATURE — Calibración Magistral de primer arranque en todos los sub-entornos.
      *
      * Se aplica UNA sola vez (flag KEY_SIGNATURE_APPLIED): jamás sobrescribe
-     * la configuración de un usuario que ya ajustó algo. Activa todos los motores
+     * la configuración de un usuario que ya ajustó algo. Prepara los motores
      * y sub-entornos (DSP Core, Anti-Dolby, NPE Neuromórfico, Volterra H2 Manifold,
      * Binaural 32 objetos, HOA 4º orden Upmixing, WFS 7 canales, ISO 226, Protección
      * Vocal para cine/diálogo y Modo Auto IA) con una calibración magistral lista
-     * para música y películas sin intervención manual.
+     * para música y películas. Los valores de fábrica no son una medición acústica.
      *
      * @return true si se aplicó (primer inicio), false si ya existía.
      */
     fun applySignaturePresetIfFirstRun(): Boolean {
         if (safeGetBoolean(KEY_SIGNATURE_APPLIED, false)) return false
+        // Upgrade/backup without the old first-run flag must retain the user's values.
+        if (prefs.all.keys.any { it != KEY_SIGNATURE_APPLIED && it != KEY_NATIVE_SR }) {
+            prefs.edit().putBoolean(KEY_SIGNATURE_APPLIED, true).apply()
+            return false
+        }
         prefs.edit()
             .putFloat(KEY_WIDTH, 1.32f)
             .putFloat(KEY_EQ_GAIN, 1.8f)
@@ -201,7 +206,7 @@ class ParameterStore(context: Context) {
             .putFloat(KEY_WFS_SPREAD, 1.18f)
             .putFloat(KEY_ISO226_LISTEN_PHON, 62f)
             .putFloat(KEY_ISO226_REF_PHON, 82f)
-            .putBoolean(KEY_ISO226_CALIBRATED, true)
+            .putBoolean(KEY_ISO226_CALIBRATED, false)
             .putString(KEY_PRESET, "IVANNA OMEGA")
             .putBoolean(KEY_SIGNATURE_APPLIED, true)
             .apply()
@@ -329,7 +334,7 @@ class ParameterStore(context: Context) {
 
     fun loadIso226ListenPhon(): Float  = safeGetFloat(KEY_ISO226_LISTEN_PHON,  62f)
     fun loadIso226RefPhon(): Float     = safeGetFloat(KEY_ISO226_REF_PHON,     82f)
-    fun loadIso226Calibrated(): Boolean = safeGetBoolean(KEY_ISO226_CALIBRATED, true)
+    fun loadIso226Calibrated(): Boolean = safeGetBoolean(KEY_ISO226_CALIBRATED, false)
     fun loadIso226Gains(): FloatArray {
         val s = safeGetString(KEY_ISO226_GAINS, "") ?: return FloatArray(10)
         return if (s.isBlank()) FloatArray(10)

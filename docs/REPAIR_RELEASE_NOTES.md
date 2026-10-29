@@ -18,3 +18,15 @@ Prueba en Moto G85/DAC/Sony, cobertura por aplicación y perceptual; CSI sin pro
 El panel espacial deja de reinicializar SAF al abrirse o al desactivarlo: bypass envía ganancia cero y conserva la calibración. El modo de sala automático no sobreescribe una calibración personal con iteraciones registradas; para una sesión nueva se usa el reinicio explícito de calibración. El restore de HRTF tras reconexión USB consulta de nuevo el destino declarado en vez de imponer wet=1 sobre un equipo estéreo externo.
 
 Manual del propietario incorporado: Sony MHC-PZ1D, VIDEO/SAT AUDIO IN L/R, 2CH STEREO/2CH SURR, subwoofer físico y satélites que duplican delanteros (pp.68–69,79–80,98–99). Interfaz y protocolo no presentan esos altavoces como canales AUX independientes.
+
+## Efectos y arranque refinados
+
+- Los 15 perfiles AudioEffect usan las frecuencias que reporta el Equalizer del dispositivo: interpolación logarítmica de la curva de diez bandas a las bandas disponibles. Antes se usaban los primeros índices, incluso con cinco bandas de frecuencias diferentes.
+- Perfil base, compensación ISO, ajuste manual, voz y SAF se componen sin acumular curvas ni sustituirse en cada sondeo. El margen se calcula tras la suma: los objetivos de banda no superan 0 mB. Esto no demuestra el pico real de un ecualizador OEM ni de la salida analógica.
+- El control de ancho usa todo su intervalo [0,2] dentro del límite stock existente. Los sondeos SAF no vuelven a configurar la dinámica ni anulan el alivio de clipping/graves. Un fallo en EQ no impide intentar el limitador de la sesión.
+- El perfil base personalizado se guarda y restaura; los offsets temporales no se incorporan al perfil guardado. El perfil inicial global coincide con IVANNA OMEGA; una instalación actualizada sin el antiguo flag conserva los ajustes existentes.
+- Un primer arranque no aplica ni marca una curva ISO de fábrica como calibración medida. Las calibraciones ya guardadas se conservan; el formato antiguo no permite distinguir una curva de fábrica marcada anteriormente de una calibración introducida por el usuario.
+- El restaurador reemplaza el segundo envío de parámetros fijos al daemon. Respeta la salida declarada DAC→estéreo, evita enviar un layout WFS multicanal de referencia a esa salida, mantiene bypass de HRTF/sala sintética y recupera SAF validado sin reiniciarlo ni multiplicar dos veces su intensidad.
+- En un cambio de salida se solicita restaurar o poner en bypass el perfil SAF personal según la ruta. Permanece pendiente comprobar la aplicación acústica, todos los renderers activables por otras pantallas y la política real de audio de Android en el teléfono.
+
+Validación local adicional: 41 pruebas JVM seleccionadas (15 nuevas), APK Android y puertas estáticas. Las 605 pruebas nativas previas se reutilizan porque no se cambió C++; las pruebas web previas corresponden a entradas web sin cambios. Ningún resultado acredita potencia acústica máxima, percepción 4D universal ni superioridad frente a productos de terceros.

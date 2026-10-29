@@ -115,15 +115,11 @@ object Iso226Calibrator {
     // ── Aplicar al Android Equalizer (todas las apps del sistema) ────────────
     /**
      * Aplica los gains (dB) al Android Equalizer en millibeliqs (dB × 100).
-     * Se llama desde IvannaGlobalEffectManager.applyIso226Compensation().
+     * Uses the manager's independent ISO overlay, preserving the selected base profile.
      */
     fun applyToEqualizer(gains: FloatArray, effectManager: IvannaGlobalEffectManager) {
-        val millibel = IntArray(10) { i ->
-            (clampDbForEq(gains.getOrElse(i) { 0f }) * 100f).toInt()
-        }
-        val profile = effectManager.currentProfile().copy(eqBands = millibel)
-        effectManager.applyProfile(profile)
-        Log.i(TAG, "ISO 226 → Equalizer: ${millibel.map { "${it/100f}dB" }}")
+        effectManager.applyIso226Compensation(gains)
+        Log.i(TAG, "ISO 226 → Equalizer: compensación independiente actualizada")
     }
 
     // ── Aplicar al DSPBridge (libivanna_omega.so) ─────────────────────────────
@@ -311,16 +307,8 @@ object Iso226Calibrator {
      */
     fun restoreIfSaved(context: Context, effectManager: IvannaGlobalEffectManager): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (!prefs.contains(KEY_CALIBRATED)) {
-            // Primer lanzamiento: sembrar y aplicar Calibración Magistral ISO 226 (62 → 82 Phon)
-            val defaultListen = 62f
-            val defaultRef    = 82f
-            Log.i(TAG, "Sembrando calibración magistral ISO 226 inicial: ${defaultListen}→${defaultRef} Phon")
-            val result = applyAll(context, defaultListen, defaultRef, effectManager)
-            persist(context)
-            return result.anyApplied
-        }
-        if (!prefs.getBoolean(KEY_CALIBRATED, true)) return false
+        // Factory phon values are a reference curve, never evidence of measured listening level.
+        if (!prefs.getBoolean(KEY_CALIBRATED, false)) return false
         val savedListen = prefs.getFloat(KEY_LISTEN, 62f)
         val savedRef    = prefs.getFloat(KEY_REF, 82f)
         Log.i(TAG, "Restaurando calibración ISO 226: ${savedListen}→${savedRef} Phon")

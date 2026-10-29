@@ -7,15 +7,19 @@ import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.ui.AdaptiveControlsPrefs
 import com.ivanna.omega.ui.SpatialAudioPrefs
-import com.ivanna.omega.saf.SaFBridge
-import com.ivanna.omega.saf.SaFRoomBridge
 
 object PersistedStateRestorer {
     private const val TAG = "PersistedStateRestorer"
 
-    fun restore(context: Context) {
+    suspend fun restore(context: Context) {
         runCatching { com.ivanna.omega.audio.HiResAudioManager.restore(context) }
         val ctx = context.applicationContext
+        val saPrefs = SpatialAudioPrefs.load(ctx)
+        val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
+        val externalStereo = com.ivanna.omega.audio.ExternalStereoPolicy.usesExternalSpeakers(
+            route, saPrefs.externalStereoLineOut)
+        val hrtfAllowed = com.ivanna.omega.audio.ExternalStereoPolicy.allowHeadphoneHrtf(
+            route, saPrefs.externalStereoLineOut, saPrefs.hrtfEnabled)
 
         // 1. Restaurar AdaptiveControlsPrefs
         val acPrefs = AdaptiveControlsPrefs.load(ctx)
@@ -23,13 +27,13 @@ object PersistedStateRestorer {
         // Restaurarlo aquí evita que dependa de abrir SoundScreen/SpatialAudioPanel.
         NativeBridge.safeSetHybridMagistralParams(
             enabled = acPrefs.hybridMagistralEnabled,
-            binauralWet = acPrefs.hybridBinauralWet,
+            binauralWet = if (hrtfAllowed) acPrefs.hybridBinauralWet else 0f,
             virtualAzimuthDeg = acPrefs.binauralAzimuth.takeIf { kotlin.math.abs(it) > 1f } ?: 30f,
             virtualElevationDeg = acPrefs.binauralElevation,
             roomSize = acPrefs.hybridRoomSize,
             roomAbsorption = acPrefs.hybridRoomAbsorption,
             roomDampening = acPrefs.hybridRoomDampening,
-            roomWetMix = acPrefs.hybridRoomWetMix
+            roomWetMix = if (externalStereo) 0f else acPrefs.hybridRoomWetMix
         )
         if (IvannaNativeLib.isLoaded) {
             runCatching { IvannaNativeLib.nativeSetEta(acPrefs.nhoEta) }
@@ -60,12 +64,12 @@ object PersistedStateRestorer {
             
             // Intelligent Upmixing (HOA)
             val paramStore = com.ivanna.omega.core.ParameterStore(ctx)
-            runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(paramStore.isHoaUpmixingEnabled()) }
+            runCatching { IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(paramStore.isHoaUpmixingEnabled() && hrtfAllowed) }
             runCatching { IvannaNativeLib.nativeSetUpmixingImmersivity(paramStore.getHoaImmersivity()) }
-            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (paramStore.isHoaUpmixingEnabled()) 1.0f else 0.0f},\"upmixingImmersivity\":${paramStore.getHoaImmersivity()}}") }
+            runCatching { com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"SET_PERCEPTUAL_STATE\",\"upmixingEnabled\":${if (paramStore.isHoaUpmixingEnabled() && hrtfAllowed) 1.0f else 0.0f},\"upmixingImmersivity\":${paramStore.getHoaImmersivity()}}") }
 
             // Wave Field Synthesis (WFS) & SPSC Ring Buffer
-            runCatching { IvannaNativeLib.nativeSetWfsEnabled(paramStore.isWfsEnabled()) }
+            runCatching { IvannaNativeLib.nativeSetWfsEnabled(paramStore.isWfsEnabled() && !externalStereo) }
             runCatching { IvannaNativeLib.nativeSetWfsSpread(paramStore.getWfsSpread()) }
             // Modo AUX/altavoces: restaura estado, crossover y coherencia (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetAuxField(paramStore.isAuxFieldEnabled(), paramStore.getAuxXoverHz(), paramStore.getAuxCoherence()) }
@@ -118,7 +122,6 @@ object PersistedStateRestorer {
         }
 
         // 3. Restaurar SpatialAudioPrefs (HRTF, RIR, SAF — Root y Non-Root)
-        val saPrefs = SpatialAudioPrefs.load(ctx)
 
         // Eje Supremo: Inversión Biomecánica Coclear (Cochlear-PINN)
         runCatching {
@@ -126,32 +129,27 @@ object PersistedStateRestorer {
             NativeBridge.setCochlearIntensity(saPrefs.cochlearIntensity)
         }
         
-        IvannaSpatialEngine.enabled = saPrefs.hrtfEnabled
-        if (saPrefs.hrtfEnabled) {
+        IvannaSpatialEngine.enabled = hrtfAllowed
+        if (hrtfAllowed) {
             IvannaSpatialManager.setHrtfSubject(saPrefs.hrtfSubject)
         }
 
         // Asegurar dataset RIR extraído y registrado tanto en Non-Root como en Root
         runCatching { OmegaEngineBridge.ensureRirDataset(ctx) }
 
-        if (saPrefs.safEnabled) {
-            runCatching { SaFBridge.nativeSaFInit("/data/adb/ivanna_omega/SAF_model.json") }
-            val activeRt60 = if (saPrefs.rirEnabled) saPrefs.rirRt60 else 0.34f
-            runCatching {
-                SaFRoomBridge.optimiseForCurrentRoom(rt60 = activeRt60, drr = 10.31f, steps = 32)
-            }
-            val q = SaFRoomBridge.getParams()
-            val qScaled = FloatArray(7) { i ->
-                val base = q.getOrElse(i) { 0f }
-                base * saPrefs.safIntensity
-            }
-            OmegaEngineBridge.pushSafLatentQ(qScaled, gain = saPrefs.safIntensity)
-        } else {
-            runCatching { SaFBridge.nativeSaFReset() }
+        // Restore the same validated personal snapshot used by calibration UI. No synthetic
+        // room optimization, double intensity scaling or destructive reset during startup/bypass.
+        val saf = com.ivanna.omega.saf.SaFEngine(ctx)
+        try {
+            saf.initialize().join()
+        } finally {
+            saf.release()
+        }
+        if (!saPrefs.safEnabled || !hrtfAllowed) {
             OmegaEngineBridge.pushSafLatentQ(FloatArray(7), gain = 0f)
         }
 
-        if (saPrefs.rirEnabled) {
+        if (saPrefs.rirEnabled && !externalStereo) {
             OmegaEngineBridge.setRoom(saPrefs.rirRt60, saPrefs.rirWet)
         } else {
             OmegaEngineBridge.disableRoom()
@@ -165,7 +163,7 @@ object PersistedStateRestorer {
 
         // 5. Restaurar calibración de layout de altavoces WFS (7 altavoces virtuales)
         runCatching {
-            com.ivanna.omega.spatial.WfsCalibrationManager.restore(ctx)
+            if (!externalStereo) com.ivanna.omega.spatial.WfsCalibrationManager.restore(ctx)
         }.onFailure { Log.w(TAG, "Fallo al restaurar WfsCalibrationManager: ${it.message}") }
 
         // 6. Cadena 4D (arco, háptica, diafonía, dosímetro). La superficie nativa retiene los valores y

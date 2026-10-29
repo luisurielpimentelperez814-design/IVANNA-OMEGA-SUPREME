@@ -62,7 +62,7 @@ class IVANNAApplication : Application() {
 
     // FIX: expuesto como propiedad de instancia (no companion) para que
     // AudioSessionReceiver lo acceda via (context.applicationContext as IVANNAApplication)
-    val globalEffectManager = IvannaGlobalEffectManager(this)
+    val globalEffectManager by lazy { IvannaGlobalEffectManager(this) }
 
     // FIX (build, log CI 84498918857): había DOS declaraciones de paramStore
     // en conflicto — la lateinit de la línea 34 (core.ParameterStore, mismo
@@ -105,7 +105,7 @@ class IVANNAApplication : Application() {
         // antes de cualquier restore — el restoreToNative() posterior lo empuja al DSP nativo.
         // Si el usuario ya tenía configuración, no se toca nada (flag).
         if (paramStore.applySignaturePresetIfFirstRun()) {
-            Log.i(TAG, "✨ Preset IVANNA_OMEGA_SIGNATURE aplicado (primer inicio — Calibración Magistral total)")
+            Log.i(TAG, "Preset IVANNA_OMEGA_SIGNATURE preparado (primer inicio; sin medición acústica)")
             runCatching {
                 com.ivanna.omega.ui.AdaptiveControlsPrefs.save(this, com.ivanna.omega.ui.AdaptiveControlsState())
                 com.ivanna.omega.ui.SpatialAudioPrefs.save(this, com.ivanna.omega.ui.SpatialAudioState())
@@ -116,18 +116,12 @@ class IVANNAApplication : Application() {
                     .putFloat("harmonicGain", 0.78f)
                     .putFloat("antiDolby", 0.85f)
                     .apply()
-                getSharedPreferences("ivanna_iso226", MODE_PRIVATE).edit()
-                    .putFloat("listen_phon", 62f)
-                    .putFloat("ref_phon", 82f)
-                    .putBoolean("calibrated", true)
-                    .apply()
                 getSharedPreferences("ivanna_hires", MODE_PRIVATE).edit()
                     .putInt("rate", 96000)
                     .putInt("depth", 24)
                     .apply()
                 com.ivanna.omega.audio.VolterraSwitch.enabled = true
                 com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = true
-                globalEffectManager.applyProfile(com.ivanna.omega.audio.IvannaEffectProfile.IVANNA_OMEGA)
             }.onFailure { Log.w(TAG, "Sembrado inicial sub-entornos: ${it.message}") }
         }
 
@@ -459,37 +453,10 @@ class IVANNAApplication : Application() {
                 runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication) }
                 runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.startKeepalive() }
 
-                // ── PRIMER LANZAMIENTO: preset magistral de entrada ──────────────
-                // En el primer uso (o si el usuario nunca guardó preferencias),
-                // enviar los parámetros de experiencia óptima al daemon. Esto
-                // asegura que desde el primer segundo el audio ya esté calibrado
-                // con la curva completa: spatial, harmonic, bass, widener, ISO 226.
-                // Después de este envío el daemon publica el snapshot en el SHM
-                // y omega_effect.cpp lo aplica en el siguiente frame de audio.
+                // The persisted restorer is the single startup owner. Do not send a second
+                // hard-coded preset that enables cochlear/WFS/room stages over saved choices.
                 if (omegaBridge.isConnected && !paramStore.hasAppliedFirstLaunchPreset()) {
-                    launch(Dispatchers.IO) {
-                        try {
-                            // Parámetros perceptuales magistrales + Upmixing HOA activo
-                            MagiskBridge.sendCommand("""{"action":"SET_PERCEPTUAL_STATE","compressor":-5.5,"exciterReduction":0.15,"highCutHz":19500,"spatialWidth":1.55,"loudnessTargetLuFS":-16.0,"harmonicGain":0.78,"antiDolbyIntensity":0.85,"upmixingEnabled":1.0,"upmixingImmersivity":1.25}""")
-                            // Intensidad global
-                            MagiskBridge.sendCommand("""{"action":"SET_INTENSITY","intensity":0.92}""")
-                            // Route profile: sub-graves + presencia vocal + ensanchamiento
-                            MagiskBridge.sendCommand("""{"action":"SET_ROUTE_PROFILE","bassBoostDb":2.5,"dialogBoostDb":1.5,"widenerMult":1.38}""")
-                            // Upmixing HOA 4º orden + WFS 7 altavoces activos por defecto
-                            MagiskBridge.sendCommand("""{"action":"SET_UPMIXING","upmixingEnabled":1.0,"upmixingImmersivity":1.25}""")
-                            MagiskBridge.sendCommand("""{"action":"SET_WFS","wfsEnabled":1.0,"wfsSpread":1.18}""")
-                            // Inversión Biomecánica Coclear Activa + Reconstrucción de Realidad Acústica
-                            MagiskBridge.sendCommand("""{"action":"SET_COCHLEAR_INVERSE_ENABLED","enabled":true}""")
-                            MagiskBridge.sendCommand("""{"action":"SET_COCHLEAR_INTENSITY","intensity":0.78}""")
-                            MagiskBridge.sendCommand("""{"action":"SET_REALITY_RECONSTRUCTION","enabled":true,"intensity":0.85}""")
-                            // Preset adaptativo — se aplica "IVANNA OMEGA" para el arranque magistral
-                            MagiskBridge.setPreset("IVANNA OMEGA")
-                            paramStore.markFirstLaunchPresetApplied()
-                            Log.i(TAG, "✅ Preset magistral de primer lanzamiento aplicado en todos los sub-entornos")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Preset primer lanzamiento: ${e.message}")
-                        }
-                    }
+                    paramStore.markFirstLaunchPresetApplied()
                 }
 
                 // Loop de reconexión: reintenta cada 5s si el daemon sube tarde
