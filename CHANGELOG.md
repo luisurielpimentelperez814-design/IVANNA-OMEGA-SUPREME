@@ -1,3 +1,9 @@
+## v2.5.192 — system-wide Route B audio-effect attachment
+
+- Adds IVANNA `omega_effect` to the detected OEM `audio_effects.xml` postprocess chain for music, movie, and game streams during Magisk installation, preserving the existing OEM configuration rather than replacing it when the base XML is readable.
+- Retains the static vendor XML as a fallback only when the installer cannot read the device's base configuration; actual loading and processing still require device-side confirmation.
+- Builds and release artifacts remain gated on GitHub Actions success and artifact verification.
+
 ## v2.5.190 — debt closure: English quick start, device-evidence notes, citation metadata
 
 - Adds `README.en.md`, a one-page English orientation (what it is, Route A vs Route B, install from Releases, running the host test suite, how to file a device report, security reporting, licence status). Linked from `README.md` and `LEAME.md`. Closes #57.
