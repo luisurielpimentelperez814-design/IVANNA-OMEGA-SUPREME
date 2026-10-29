@@ -6,7 +6,7 @@
 
 **Audio Android · procesamiento espacial · herramientas de medición**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.195-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.196-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -21,7 +21,7 @@
 
 IVANNA reúne un reproductor Android, un motor DSP nativo, controles de efectos, herramientas de calibración y exploración espacial. El repositorio incluye también un módulo Magisk y un dashboard web. Cada ruta tiene su propio alcance y sus requisitos.
 
-**Estado documental · 29 de octubre de 2026 · v2.5.195 / código 486.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
+**Estado documental · 29 de octubre de 2026 · v2.5.196 / código 487.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
 
 | 01 · Escuchar | 02 · Medir | 03 · Explorar |
 |:---|:---|:---|
@@ -75,7 +75,15 @@ flowchart LR
 
 El criterio interno permite decidir sobre un ajuste bajo esas condiciones de captura. La mejora audible y la seguridad de la ruta requieren pruebas físicas adicionales.
 
-## Qué cambia en v2.5.195
+## Qué cambia en v2.5.196
+
+- **Reloj de salida USB:** el estimador de deriva del AudioTrack pasa de una regresión de ~2 s a la mediana de pendientes por pares sobre ~30 s. Con el jitter de timestamp medido en la captura del Moto G85 + DAC USB, la simulación muestra desviación de 34–54 ppm (anterior) frente a ~2 ppm (actual); en el dispositivo falta una captura larga que lo confirme.
+- **ABI:** los binarios nativos propios se enlazan con alineación de 16 KB (Android 15+); el CI mide ahora la alineación en los artefactos publicados y el Release incluye `SHA256SUMS.txt`.
+- **RIR:** nueva columna `RT60_T20_measured_s` medida sobre los 200 WAV. El `RT60_s` histórico es nominal: el WAV mide 2,28 veces ese valor (sin cambiar la selección de salas).
+- **SELinux:** `adb_data_file` como `mlstrustedobject` para que la app pueda escribir `omega_shm` (validado en campo por el usuario).
+- **Telemetría:** el Profiler recibe beacon y estado ASRC por el daemon (la app no puede leer esos archivos) y la razón ASRC nativa corrige su signo (razón = 1/(1 + deriva)).
+
+### Cambios de v2.5.195
 
 - **Instalación Magisk:** la validación de librería y UUID reconoce atributos repartidos entre líneas, conserva la configuración OEM y rechaza registros incompatibles. Las pruebas de instalación usan XML sintético; la aceptación del HAL y el procesamiento en el teléfono siguen pendientes de verificación física.
 

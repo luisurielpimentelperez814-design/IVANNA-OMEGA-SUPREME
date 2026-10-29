@@ -37,7 +37,13 @@ struct RirRoomMeta {
     float srcXM = 0.f, srcYM = 0.f, srcZM = 0.f;
     float micXM = 0.f, micYM = 0.f, micZM = 0.f;
     float distanceM = 0.f;
+    // RT60 NOMINAL del dataset (col. 12). OJO: no es el tiempo de caida de los WAV; el WAV mide ~2.28x este valor
+    // (2.284 +/- 0.022 en las 200 salas, tools/rir/measure_rt60.py). Se conserva sin cambios porque la seleccion
+    // y el afinado del motor estan calibrados contra el.
     float rt60S      = 0.f;
+    // RT60 MEDIDO sobre el WAV (T20, Schroeder, -5..-25 dB extrapolado a -60 dB), col. 13 `RT60_T20_measured_s`.
+    // 0 si el metadata no trae la columna (datasets antiguos).
+    float rt60MeasuredS = 0.f;
 
     float volumeM3() const { return roomWidthM * roomHeightM * roomDepthM; }
 };

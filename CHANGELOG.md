@@ -1,3 +1,13 @@
+## v2.5.196 — USB clock-drift estimator, 16 KB ABI alignment, measured RIR RT60
+
+- **USB AudioTrack clock servo:** `AudioTrackBufferPll` estimates sink drift with a Theil-Sen median of pair slopes over a ~30 s window (<= 40 sub-sampled points, pre-allocated buffers), a per-sample plausibility gate (0.7x..1.3x nominal) and a feed-forward weight that ramps over the first 20 s. Basis: AudioFlinger dump from the Moto G85 + USB DAC (timestamp jitter sigma ~0.137 ms, spikes to 109 ms). Synthetic model (`tools/safmus/usb_drift_estimator_sim.py`, thresholds fixed before running): previous 8-point OLS std 34-54 ppm / max error 105-368 ppm; current std 1.3-1.9 ppm / max error <= 5 ppm. JVM tests include a negative control (the old estimator misses the 12 ppm bound by 208 ppm). Not validated on a real device over time.
+- **ABI:** `libivanna_omega.so`, `libomega_effect.so`, `ivanna_daemon` and `ivanna_client` link with `-Wl,-z,max-page-size=16384` (the v2.5.177 artifacts measured p_align=0x1000). `verify-release` now fails if any LOAD segment of those binaries is below 0x4000; the Release publishes `SHA256SUMS.txt` (ZIP + APK).
+- **RIR dataset:** new `RT60_T20_measured_s` column (T20 Schroeder from the 200 WAVs; estimator checked against synthetic decays, error < 1 %). The historical `RT60_s` is nominal: measured/nominal = 2.284 +/- 0.022 (n=200), kept as-is because selection and tuning are calibrated against it; UI says "nominal". `RirDataset` exposes `rt60MeasuredS`; native and Python tests include negative controls.
+- **SELinux/MLS:** `typeattribute adb_data_file mlstrustedobject` (policy + `service.sh` live apply) fixes the `omega_shm` write denials from the app domain (231 denials in the captured log tail). Broadens MLS trust for that file type.
+- **Clock telemetry:** daemon command `GET_CLOCK_TELEMETRY` relays beacon and ASRC state that the app cannot read under DAC/SELinux; the native ASRC ratio sign is corrected (`rho = 1/(1 + drift*1e-6)`), verified closed-loop (residual <= 1.4 ppm vs 100-300 ppm uncorrected).
+- **Diagnostics:** `tools/diag/capture_usb_clock.sh` v2 (the v1 glob matched nothing on this kernel; adds AudioFlinger timestamp stats and filters the `omega_shm` log flood) and `hook_pal_agm.js`.
+- Evidence limits: host/synthetic validation plus one captured session; the 16 KB alignment and Android build are verified only by CI. No physical USB-DAC or Bluetooth drift validation. Release metadata advances to v2.5.196 / versionCode 487.
+
 ## v2.5.195 — multiline OEM audio-effect registration repair
 
 - Fixes Magisk installation rejecting a valid IVANNA effect when its name, library and UUID span multiple XML lines, including the reported “falta registro UUID de IVANNA validado” failure.

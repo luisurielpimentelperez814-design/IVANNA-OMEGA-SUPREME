@@ -40,7 +40,7 @@ import java.io.File
  *  RIR on/wet    → OmegaEngineBridge.setRoom / MagiskBridge SET_REVERB
  *                  (no re-use of DSPBridge.setParams: that API controls the exciter,
  *                   and resetting it from a spatial slider overwrote unrelated DSP controls)
- *  Sala RIR      → metadata.csv real en /data/adb/ivanna_omega/rir/ (RT60 real)
+ *  Sala RIR      → metadata.csv real en /data/adb/ivanna_omega/rir/ (RT60 NOMINAL col. 12; el RT60 medido T20 del WAV va en la col. 13)
  *  SAF on/int    → daemon SET_SAF_STATE (command_server lo procesa de verdad)
  *  Persistencia  → SpatialControlStore (SharedPreferences) en cada cambio
  *  Bidireccional → OmegaMetrics.shared (hrtfActive, rms, sampleRate) + estado
@@ -251,7 +251,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                     TextButton(onClick = {
                         apply(cfg.copy(rirRoom = (cfg.rirRoom - 1 + rooms.size) % rooms.size))
                     }) { Text("◀", fontSize = 12.sp) }
-                    Text("${room.first} · RT60 ${"%.2f".format(room.second)}s",
+                    Text("${room.first} · RT60 nominal ${"%.2f".format(room.second)}s",
                         color = AuroraCyan, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     TextButton(onClick = {
                         apply(cfg.copy(rirRoom = (cfg.rirRoom + 1) % rooms.size))

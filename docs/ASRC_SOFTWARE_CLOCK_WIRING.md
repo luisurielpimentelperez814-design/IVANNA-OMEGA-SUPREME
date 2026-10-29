@@ -61,3 +61,33 @@ signal for the other: their control signs and plant dynamics differ. The
 native `VariableAsrc` is separately tested and is not implicitly activated.
 A production wiring change requires a single stream-identity contract joining
 the measured input FIFO, its timestamp source, and the ASRC instance.
+
+## USB output clock link — what was measured on the Moto G85 (capture 2026-10-28)
+
+Evidence: `ivanna_capture_20261028_171142` (USB DAC "JieLi Technology USB Audio", full speed, ALSA card 0 / `pcm0p`,
+Android 15, kernel 6.1.128). All figures below come from that dump; nothing here is simulated except where marked.
+
+| Fact | Value | Consequence |
+|---|---|---|
+| Playback path | AudioFlinger `AudioOut_D` MIXER + FastMixer -> primary HAL -> `AUDIO_DEVICE_OUT_USB_HEADSET`, 48 kHz, PCM16, HAL frame count 192 | The stream owner is the audio HAL process, not PAL/AGM DSP |
+| `/proc/asound/card*/pcm*p/sub*/status` | **absent on this kernel** (glob matched nothing on any card) | The kernel `owner_pid`/`hw_ptr`+`tstamp` route is not available; the daemon must stay fail-closed. Do not open `/dev/snd` PCM nodes |
+| FastMixer timestamps | n=2,622,524, writeErrors=0, underruns=17, overruns=95 (~5.2 M cycles); jitter sigma ~0.137 ms, max 109 ms | The HAL timestamp is usable but has rare large spikes |
+| AudioFlinger sink-rate statistics | `localSR` 48000.3 / 48000.5 Hz (+6..+10 ppm) vs `rate=0.999982` (-18 ppm) | The two AF estimators disagree in sign: USB sink drift is at most a few tens of ppm; no stronger claim is supported |
+| `omega_shm` | 231 SELinux `write` denials in the 600-line tail | Fixed by the `adb_data_file mlstrustedobject` rule (v3.4) |
+
+**Authoritative link for the USB clock = the app-owned AudioTrack timestamp** (`AudioTrack.getTimestamp`, which the HAL
+fills from the USB stream position) feeding `AudioTrackBufferPll` -> `StereoAudioResampler.setClockCorrectionPpm`. That is
+the only paired frames+timestamp source on this device that is bound to the stream the app owns. It is an app-side
+measurement of the HAL presentation clock; it is **not** a reading of the DAC crystal. For an asynchronous USB DAC the host
+sends frames at the rate fed back by the device, so the position tracks the device clock; for an adaptive DAC (probable for
+this full-speed dongle, **not verified**: `stream0` was not captured) the device follows the host and there is nothing to
+correct. `capture_usb_clock.sh` v2 now records `stream0` to settle this.
+
+Estimator identification (reproducible: `tools/safmus/usb_drift_estimator_sim.py`, threshold fixed before running:
+std < 5 ppm, max error < 12 ppm in steady state; observation model = the measured jitter above, **synthetic**):
+the previous 8-point OLS (~2 s window) had std 34-54 ppm / max error 105-368 ppm, i.e. larger than the drift itself. The
+current Theil-Sen median-of-pair-slopes over a ~30 s window (<= 40 sub-sampled points, <= 780 pair slopes, pre-allocated
+buffers) gives std 1.3-1.9 ppm / max error <= 5 ppm. The feed-forward weight ramps from 0 to 1 over the first 20 s of window.
+`AudioTrackBufferPllTest` pins this (including a negative control that the old estimator fails with 208 ppm error).
+Not validated: behaviour on a real USB DAC over time (needs a new capture with the v2 script).
+
