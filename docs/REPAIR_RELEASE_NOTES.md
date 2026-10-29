@@ -1,6 +1,6 @@
-# Candidato de reparación sobre v2.5.193 (484)
+# v2.5.194 (485) — reparación SAF, SAFMUS y controles de audio
 
-Sin nueva versión publicada ni sustitución del release existente. La entrega se prepara en la rama de trabajo; integración a main y release requieren el mecanismo de publicación autorizado.
+Versión preparada para publicación mediante el flujo verificado de GitHub Actions. Los resultados locales y los pendientes físicos se detallan por separado; la disponibilidad del release debe comprobarse en GitHub.
 
 - SAF: limita el paso natural real en coordenadas normalizadas a 0.5 sigma de norma conjunta; conserva dominio ±3 sigma y dirección del gradiente. Corrige la norma anterior que medía el gradiente sin precondicionar. Puede cambiar la trayectoria y velocidad de adaptación; no implica convergencia perceptual demostrada.
 - Persistencia SAF: rechazo transaccional de datos truncados, no finitos, negativos/fuera del modelo; roundtrip float exacto; reemplazo por rename. No se afirma durabilidad ante corte eléctrico (sin fsync nativo).

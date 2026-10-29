@@ -1,6 +1,6 @@
 # Estado maestro — IVANNA OMEGA SUPREME
 
-Revisado el 2026-10-29. Baseline: `44a03973f0a725d1ea161d0efd020279295b169c`, v2.5.193 (484). La rama de reparación mantiene esa versión; no hay un nuevo release publicado desde esta tarea.
+Revisado el 2026-10-29. Baseline: `44a03973f0a725d1ea161d0efd020279295b169c`, v2.5.193 (484). Los cambios de reparación preparan v2.5.194 (485) para publicación mediante CI; comprueba su disponibilidad y artefactos en GitHub Releases.
 
 ## Implementación y límites
 

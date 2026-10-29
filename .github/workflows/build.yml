@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      broadcast_release:
+        description: "Send release announcements to configured social channels"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -982,6 +987,7 @@ jobs:
           echo "Release $TAG publicado con el asset que magisk_module/update.json espera."
 
       - name: Difundir lanzamiento en redes sociales y webhooks
+        if: github.event_name == 'workflow_dispatch' && inputs.broadcast_release == true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

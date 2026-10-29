@@ -1,3 +1,13 @@
+## v2.5.194 — SAF calibration, SAFMUS and verified audio controls
+
+- Bounds the actual SAF natural-gradient step, validates state transactionally and synchronizes restored profiles with the existing native control bus.
+- Requires completed calibration stimuli before feedback and separates numerical convergence, transport acknowledgement and physical audio verification.
+- Hardens SAFMUS voxel keys and capture-buffer arithmetic; adds explicit USB DAC to external stereo routing and preserves calibration during bypass.
+- Repairs ABX trial validity, native control readback, web authentication, reproducible installation and accessible navigation.
+- Documents the supplied Sony MHC-PZ1D manual: analog L/R input, 2CH STEREO / 2CH SURR and satellite duplication. No discrete multichannel AUX or guaranteed perceptual result is claimed.
+- Local validation: 605 native tests, 26 focused JVM tests, 4 web tests, Android debug packaging and static wiring gates. Physical Moto G85 / DAC / Sony validation remains outstanding.
+- Release metadata advances together to v2.5.194 / versionCode 485; see [repair notes](docs/REPAIR_RELEASE_NOTES.md) for remaining integration limits.
+
 ## v2.5.193 — verified release trigger and hardened OEM audio-effect merge
 
 - Advances release metadata atomically to v2.5.193 / versionCode 484 so the main-branch version-bump detector actually runs the publish-release job after the green CI build.

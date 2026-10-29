@@ -1,8 +1,9 @@
 {
-  "passed": 491,
+  "passed": 605,
   "failed": 0,
-  "total": 491,
+  "total": 605,
   "pass_rate_percent": 100,
-  "duration_sec": 23.87,
-  "badge_label": "491/491"
+  "duration_sec": 21.78,
+  "badge_label": "605/605",
+  "scope": "Local Linux host, GCC 15.2 Release; no device acoustic measurement"
 }

@@ -300,6 +300,8 @@ Los hallazgos del analizador pueden ser `CRITICAL`, `WARNING` o inexistentes, y 
 
 ## Estado de CI, versiones y pruebas físicas
 
+Validación local de la reparación v2.5.194 (2026-10-29): 605/605 pruebas CTest en host Linux con GCC 15.2, 26 pruebas JVM seleccionadas y 4 pruebas web. Alcance y pendientes: [notas de reparación](docs/REPAIR_RELEASE_NOTES.md). Estos resultados no son mediciones acústicas del dispositivo.
+
 - [Ver ejecuciones de CI](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions)
 - [Ver versiones publicadas](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases)
 - [Ver código de la versión indicada](version.properties)
