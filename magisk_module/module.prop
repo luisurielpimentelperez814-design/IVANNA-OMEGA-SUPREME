@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.192
-versionCode=483
+version=v2.5.193
+versionCode=484
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.192: IVANNA system-wide audio effect postprocess integration
+description=v2.5.193: hardened OEM audio-effect merge for system-wide IVANNA processing
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
