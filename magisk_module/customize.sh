@@ -236,7 +236,18 @@ fi
 # Ensure IVANNA is attached to the real postprocess chain in the detected OEM XML.
 # This runs after the OEM file is copied, so it preserves the device's other effects.
 if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
-    PP_TMP="$TARGET_XML.ivanna.$$"
+    PP_TMP="$TARGET_XML.ivanna.$"
+    PP_INPUT="$TARGET_XML.input.$"
+    # OEM XML may place <stream>...</stream> on one line. Normalize those
+    # tags onto separate lines first so AWK inserts <apply> INSIDE the stream,
+    # never before the whole one-line stream element.
+    sed 's#<stream[[:space:]]#\
+<stream #g; s#</stream>#</stream>\
+#g' "$TARGET_XML" > "$PP_INPUT" || {
+        rm -f "$PP_INPUT" "$PP_TMP"
+        ui_print "  ! No se pudo normalizar XML OEM; se conserva la base"
+        exit 1
+    }
     awk '
     function supported(t) { return t=="music" || t=="movie" || t=="game" }
     {
@@ -280,11 +291,12 @@ if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
             if (i in add_before) printf "%s\n", add_before[i]
             print line[i]
         }
-    }' "$TARGET_XML" > "$PP_TMP" || {
-        rm -f "$PP_TMP"
+    }' "$PP_INPUT" > "$PP_TMP" || {
+        rm -f "$PP_INPUT" "$PP_TMP"
         ui_print "  ! No se pudo fusionar postprocess; se conserva XML OEM original"
         exit 1
     }
+    rm -f "$PP_INPUT"
     if grep -q '<audio_effects_conf' "$PP_TMP" && grep -q 'apply effect="omega_effect"' "$PP_TMP"; then
         mv -f "$PP_TMP" "$TARGET_XML"
         ui_print "  ✓ IVANNA añadido al postprocess de music/movie/game preservando OEM"
