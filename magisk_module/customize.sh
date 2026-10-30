@@ -418,18 +418,20 @@ else
         # Validar arquitectura AArch64 — si el zip trae un binario de otra
         # arquitectura (build cruzado mal configurado), service.sh recibirá
         # ENOEXEC del kernel Android.
-        ARCH_OK=1
-        if command -v file >/dev/null 2>&1; then
-            file "$DAEMON" 2>/dev/null | grep -q "aarch64\|ARM aarch64" || ARCH_OK=0
-        fi
+        # Se lee la cabecera ELF directamente (EI_CLASS=2 → 64 bit; e_machine@18 = 0xB7 → AArch64).
+        # El `file` de toybox en Android no imprime la arquitectura, y daba un falso aviso.
+        ARCH_OK=0
+        ELF_CLASS=$(head -c5 "$DAEMON" 2>/dev/null | tail -c1 | od -An -tx1 | tr -d " \n")
+        ELF_MACH=$(dd if="$DAEMON" bs=1 skip=18 count=2 2>/dev/null | od -An -tx1 | tr -d " \n")
+        [ "$ELF_CLASS" = "02" ] && [ "$ELF_MACH" = "b700" ] && ARCH_OK=1
         set_perm "$DAEMON" root root 0755
         DAEMON_SIZE=$(stat -c%s "$DAEMON" 2>/dev/null || echo "?")
         if [ "$ARCH_OK" -eq 1 ]; then
             ui_print "  ✓ ivanna_daemon validado (ELF AArch64, ${DAEMON_SIZE} bytes, 0755)"
         else
-            ui_print "  ⚠ ivanna_daemon validado como ELF pero \`file\` no pudo"
-            ui_print "    confirmar AArch64. Si el arranque falla, verifica en"
-            ui_print "    /data/adb/ivanna_omega/daemon.log."
+            ui_print "  ✗ ivanna_daemon NO es ELF AArch64 de 64 bits (clase=$ELF_CLASS máquina=$ELF_MACH)"
+            ui_print "    → Binario de otra arquitectura: el arranque fallará con ENOEXEC."
+            ui_print "    → Reinstala el zip del CI; revisa /data/adb/ivanna_omega/daemon.log."
         fi
 
         # Diagnóstico proactivo: si el binario depende de libc++_shared.so,
@@ -445,5 +447,9 @@ else
     fi
 fi
 
+ui_print "- Reloj de hardware / ASRC (Ruta B)"
+ui_print "  ✓ El daemon publica el reloj HAL solo con pares frames+timestamp del propietario y ejecuta el ASRC por software"
+ui_print "  ℹ No hay actuador ASRC físico identificado en este equipo: no se corrige el reloj del DAC (fail-closed)"
+ui_print "  ℹ Estado real: ivanna_control.sh clock · evidencia del dispositivo: ivanna_control.sh hal-probe"
 ui_print "- IVANNA OMEGA SUPREME installed successfully"
 ui_print "  Φ_SAF^∞ Riemannian HRTF optimiser ready"

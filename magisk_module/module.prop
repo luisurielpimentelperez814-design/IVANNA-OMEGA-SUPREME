@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.200
-versionCode=491
+version=v2.5.201
+versionCode=492
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.200: limiter saturator knee fix (hot-master harmonic distortion 0.87%->0.00% at 0 dBFS, measured); profile/ISO/SAF reach the daemon EQ
+description=v2.5.201: installer validates AArch64 from the ELF header (no false warning); ivanna_control.sh clock/hal-probe expose the real clock/ASRC state; no physical ASRC actuator is claimed
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

@@ -145,6 +145,36 @@ MODPATH="$1"
         self.run_merge(oem() + '<!--', succeeds=False)
 
 
+class DaemonArchCheck(unittest.TestCase):
+    """The installer reads the ELF header itself (toybox `file` does not print the arch)."""
+    A = '        ARCH_OK=0'
+    B = '        set_perm "$DAEMON" root root 0755'
+    SNIPPET = SOURCE[SOURCE.index(A):SOURCE.index(B)]
+
+    def verdict(self, binary):
+        script = 'DAEMON="$1"\n' + self.SNIPPET + 'echo "$ARCH_OK"\n'
+        out = subprocess.run(['sh', '-c', script, '_', str(binary)], capture_output=True, text=True, check=True)
+        return out.stdout.strip()
+
+    def test_shipped_daemon_is_accepted_as_aarch64(self):
+        self.assertEqual(self.verdict(ROOT / 'magisk_module/system/bin/ivanna_daemon'), '1')
+
+    def test_foreign_architecture_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            x86 = Path(d) / 'x86'
+            x86.write_bytes(b'\x7fELF\x02\x01\x01' + b'\0' * 11 + b'\x3e\x00' + b'\0' * 64)
+            self.assertEqual(self.verdict(x86), '0')
+
+    def test_installer_does_not_depend_on_file_utility(self):
+        self.assertNotIn('file "$DAEMON"', SOURCE)
+
+    def test_hal_probe_is_shipped_and_exposed_by_the_cli(self):
+        self.assertTrue((ROOT / 'magisk_module/system/bin/ivanna_hal_probe').is_file())
+        cli = (ROOT / 'magisk_module/ivanna_control.sh').read_text()
+        self.assertIn('GET_CLOCK_TELEMETRY', cli)
+        self.assertIn('hal-probe)', cli)
+
+
 if __name__ == '__main__':
     print('Magisk merge engines: POSIX sh' + (' + BusyBox' if shutil.which('busybox') else ' (BusyBox unavailable)'), flush=True)
     unittest.main()

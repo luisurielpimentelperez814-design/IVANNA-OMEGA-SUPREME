@@ -97,6 +97,8 @@ case "$COMMAND" in
                     *)   echo "Uso: $0 concert on|off"; exit 1 ;;
                 esac ;;
     telemetry)  send_command "GET_TELEMETRY" ;;
+    clock)      send_command '{"action":"GET_CLOCK_TELEMETRY"}' ;;   # callback / reloj HAL / ASRC software (mismo JSON que la app)
+    hal-probe)  exec "$(dirname "$0")/system/bin/ivanna_hal_probe" ;;  # evidencia PAL/ASRC del dispositivo, solo lectura
     reload)     send_command "RELOAD_PARAMS" ;;
     probe)      # Estado del transport, sin efecto lateral
                 if socket_alive; then
@@ -120,6 +122,8 @@ Uso:
   $0 bypass on|off        Bypass DSP
   $0 concert on|off       Modo Concierto (Spatial + reverb)
   $0 telemetry            Métricas
+  $0 clock                Reloj: callback, hardware HAL y estado ASRC software (JSON)
+  $0 hal-probe            Evidencia PAL/ASRC del dispositivo (solo lectura)
   $0 reload               Releer parámetros
   $0 probe                Estado transport (alive|socket_open_no_nc|no_daemon)
 HELP
