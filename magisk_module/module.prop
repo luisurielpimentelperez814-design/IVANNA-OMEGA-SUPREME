@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.199
-versionCode=490
+version=v2.5.200
+versionCode=491
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.199: profile/ISO/SAF/live EQ now reach the daemon EQ (omega_effect); build + CI repairs and honest benchmark/room readback since v2.5.196
+description=v2.5.200: limiter saturator knee fix (hot-master harmonic distortion 0.87%->0.00% at 0 dBFS, measured); profile/ISO/SAF reach the daemon EQ
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
