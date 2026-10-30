@@ -1,3 +1,9 @@
+## v2.5.202 (493) — 2026-10-30
+
+- **Control sin efecto ya no se disfraza de funcional:** `RouteModeBanner` (en el panel de control) muestra, segun el modo real de `AudioBackendSelector`, que funciones solo llegan al audio con el daemon Magisk. Sin root y con root sin daemon aparece el aviso; con root+daemon no aparece nada. Lista y logica en `RouteCapabilities` con 4 pruebas JVM; fuente en `docs/ROOT_VS_NOROOT_CAPABILITIES.md`.
+- **No se hizo (a proposito):** espejar al motor local las acciones solo-daemon. Cada setter local tiene otra escala/destino (p. ej. armonico 0–0.65 sobre `nho_harmonic` frente a 0–2 sobre `IvannaFusionCore`); enlazarlos por nombre cambiaria el sonido sin aviso. Cada una requiere equivalencia comprobada y prueba.
+- **Verificacion:** compilacion y pruebas Kotlin solo las corre CI (sin Android SDK local); no probado en dispositivo.
+
 ## v2.5.201 (492) — 2026-10-30
 
 - **Aviso falso del instalador:** "`file` no pudo confirmar AArch64" salia porque el `file` de toybox en Android no imprime la arquitectura. Ahora `customize.sh` lee la cabecera ELF (clase 64 bit y `e_machine` 0xB7) y, si el binario es de otra arquitectura, lo dice como error en vez de avisar de forma ambigua. Probado con el `ivanna_daemon` real (acepta) y con una cabecera x86 (rechaza) en `scripts/check_magisk_install.py` (20 pruebas).

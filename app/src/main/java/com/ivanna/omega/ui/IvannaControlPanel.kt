@@ -524,6 +524,7 @@ fun IvannaControlPanel(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        RouteModeBanner()
         OmniHeroHeader(
             omegaMode = omegaMode,
             npeActive = !npeBypass,

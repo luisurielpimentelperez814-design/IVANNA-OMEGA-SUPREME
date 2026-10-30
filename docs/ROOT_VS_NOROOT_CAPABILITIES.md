@@ -26,7 +26,10 @@ Handlers en `daemon/control/command_server.cpp`. "Local" = también llega al mot
 ## Por qué no se espejaron en bloque
 Cada setter local tiene escala y significado propios. Ejemplo: `nativeSetHarmonicGain` limita a 0–0.65 y escribe `g_pd.nho_harmonic`, mientras el daemon acepta 0–2 sobre `IvannaFusionCore::setHarmonicGain`. Son parámetros distintos con el mismo nombre; enlazarlos por nombre cambiaría el sonido sin que nadie lo notara. Cada acción exige comprobar equivalencia (rango, unidad, motor destino) y una prueba antes de espejarla.
 
+## Ya implementado
+- `RouteModeBanner` / `RouteCapabilities` (v2.5.202): aviso en la UI con la lista de funciones que no llegan al audio sin daemon.
+
 ## Siguiente trabajo (en orden)
 1. Por acción: identificar el parámetro local equivalente, documentar rango/unidad y espejar solo si coincide, con prueba JVM.
-2. En la UI, marcar como "requiere root" toda acción sin equivalente local.
+2. Marcar junto a cada control concreto (no solo en el aviso general) los que no tengan equivalente local.
 3. Variantes Gradle `free` / `premium` (Play: sin módulo Magisk).
