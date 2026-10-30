@@ -1,3 +1,10 @@
+## v2.5.199 (490) — 2026-10-30
+
+- **Efectos perdidos (causa):** con el efecto nativo `omega_effect` acoplado, los efectos stock de la sesion van en bypass, y elegir un perfil (o mover ISO/SAF/EQ en vivo) solo actualizaba esos efectos stock. El unico escritor de `SET_EQ_BANDS` hacia el daemon era el calibrador ISO, asi que el perfil no cambiaba el audio. `IvannaGlobalEffectManager.republishOmegaEq()` publica ahora, en cada reapply, la misma curva compuesta que recibe el Equalizer stock (`EffectTuningPolicy.curve`, politica de headroom sin banda positiva via `omegaBandsDb`). `Iso226Calibrator.applyAll` republica la curva compuesta tras su envio crudo para no pisar perfil/SAF. Sin daemon conectado no se afirma nada (devuelve false y deja log).
+- **Pruebas:** 2 tests JVM de `omegaBandsDb` (forma relativa conservada, sin bandas positivas, curva plana/solo-corte intacta). No pude ejecutar Gradle en este entorno (sin SDK/R8 offline): la verificacion de compilacion es la del CI; la matematica de la curva se replico a mano.
+- **Contenido acumulado de esta serie (ya en main):** compuertas de CI reparadas (CRLF de `rir/metadata.csv`, `typeattribute` en sepolicy), benchmark con CPU medida y sin xruns/bateria inventados, panel RIR con la sala asignada (indice, RT60 nominal y medido), presets que avisan cuando no llegan al audio.
+- **Limites conocidos, sin cambiar aqui:** (1) `sepolicy.rule` concede lectura/escritura sobre `adb_data_file`/`system_data_file`/`magisk_file` a `untrusted_app*` y marca `adb_data_file` como `mlstrustedobject` (v2.5.196): es una ampliacion amplia de privilegios; quitarla exige probar antes el camino por descriptor `SCM_RIGHTS` en el Moto G85. (2) Con el efecto global activo, SAFMUS bloquea la modulacion Bark de Fotoholo y la Ruta B solo recibe el ancho declarado estatico: no hay captura para analizar. (3) La carga real de `libomega_effect.so` en AudioFlinger y el audio procesado siguen sin validarse en el dispositivo.
+
 ## v2.5.198 (489) — 2026-10-30
 
 **Build rojo reparado en su causa raiz.** `:app:compileReleaseKotlin` fallaba en
