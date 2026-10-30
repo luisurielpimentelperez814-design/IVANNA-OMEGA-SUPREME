@@ -130,7 +130,11 @@ object BenchmarkRunner {
         }
     }
 
-    @Deprecated("LEGACY: genera puntuaciones ALEATORIAS (no son sujetos reales) y ademas escribia '$i'/'${...}' literales. No se invoca desde la UI; conservado por la regla de no borrar codigo.")
+    @Deprecated(
+        "LEGACY: genera puntuaciones ALEATORIAS (no son sujetos reales) y escribia " +
+        "las variables sin interpolar (el CSV contenia los simbolos literales en vez " +
+        "de los valores). No se invoca desde la UI; se conserva por la regla de no borrar codigo."
+    )
     fun generateAbxDataset(context: Context) {
         val file = File(context.filesDir, "ivanna_abx_dataset.csv")
         file.bufferedWriter().use { out ->
@@ -138,14 +142,14 @@ object BenchmarkRunner {
             // Generate 30 users dataset
             for (i in 1..30) {
                 // Bypass
-                out.write("\$i,bypass,\${Random.nextInt(2, 5)},\${Random.nextInt(3, 6)},0\n")
+                out.write("$i,bypass,${Random.nextInt(2, 5)},${Random.nextInt(3, 6)},0\n")
                 // Static HRTF
-                out.write("\$i,static_hrtf,\${Random.nextInt(5, 8)},\${Random.nextInt(5, 8)},0\n")
+                out.write("$i,static_hrtf,${Random.nextInt(5, 8)},${Random.nextInt(5, 8)},0\n")
                 // Dynamic HRTF
-                out.write("\$i,dynamic_hrtf,\${Random.nextInt(8, 11)},\${Random.nextInt(7, 10)},1\n")
+                out.write("$i,dynamic_hrtf,${Random.nextInt(8, 11)},${Random.nextInt(7, 10)},1\n")
             }
         }
-        Log.i(TAG, "ABX Dataset generated at \${file.absolutePath}")
+        Log.i(TAG, "ABX Dataset generated at ${file.absolutePath}")
     }
 
     /** Mediana y p99 de nativeMeasureRoundTripLatencyUs() en 100 corridas.

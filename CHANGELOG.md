@@ -1,3 +1,18 @@
+## v2.5.198 (489) — 2026-10-30
+
+**Build rojo reparado en su causa raiz.** `:app:compileReleaseKotlin` fallaba en
+`spatial/BenchmarkRunner.kt:133`: el mensaje de `@Deprecated` interpolaba `$i` y
+`${...}`, y una anotacion exige constante en tiempo de compilacion
+(`error: Annotation argument must be a compile-time constant` + `Unresolved reference 'i'`).
+Se reescribio el mensaje concatenando literales, sin interpolacion.
+
+**Deuda de la misma funcion.** El generador ABX legacy escribia `\$i` y
+`\${Random...}`: el CSV salia con los simbolos literales en vez de los valores, es decir,
+un dataset que parecia valido y no lo era. Ahora interpola de verdad. La funcion sigue
+`@Deprecated` y sin llamadores desde la UI.
+
+**Sin cambios funcionales en audio.** No se toca DSP, HRTF, WFS, 4D ni el ABI del efecto.
+
 ## v2.5.197 (488) — 2026-10-30
 
 **IPC: el descriptor de omega_shm ya no se pierde por una señal.** El receptor

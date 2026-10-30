@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.197
-versionCode=488
+version=v2.5.198
+versionCode=489
 author=Luis Uriel Pimentel Pérez (Gore TNS)
 description=v2.5.196: USB clock-drift estimator (robust 30 s), 16 KB ABI alignment, measured RIR RT60, omega_shm MLS fix
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
