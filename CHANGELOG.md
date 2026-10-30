@@ -1,3 +1,21 @@
+## v2.5.197 (488) — 2026-10-30
+
+**IPC: el descriptor de omega_shm ya no se pierde por una señal.** El receptor
+`receiveExactlyOneFd()` (include/omega_control_bus.h) llamaba `recvmsg()` una sola vez;
+si Android entregaba SIGCHLD/SIGTERM durante la espera, `errno == EINTR` se convertía en
+`kRecvError` y el cliente caía al modo por ruta creyendo que el daemon no entrega el fd.
+Ahora reintenta mientras sea EINTR. El resto del contrato ya era estricto: `MSG_CMSG_CLOEXEC`,
+rechazo de `MSG_CTRUNC|MSG_TRUNC`, payload de exactamente 1 byte, `SCM_RIGHTS` obligatorio,
+exactamente 1 descriptor y cierre de cualquier fd recibido en un mensaje rechazado.
+
+**Cortex: cada fila vacía dice su causa.** Las etiquetas del panel dejan de ser un
+"no disponible" mudo y nombran el motivo concreto (sin publicación del daemon, nadie abrió
+el PCM, observador sin muestras, AudioTrack sin timestamp). Sigue sin inventarse ningún
+valor: si no hay productor, la fila lo dice.
+
+**Sin cambios en ABI del efecto.** El símbolo `AELI`, el tag `0x41454C54` y el vtable de
+7 campos ya estaban corregidos y con regresión en host; este release no los toca.
+
 ## v2.5.196 — USB clock-drift estimator, 16 KB ABI alignment, measured RIR RT60
 
 - **USB AudioTrack clock servo:** `AudioTrackBufferPll` estimates sink drift with a Theil-Sen median of pair slopes over a ~30 s window (<= 40 sub-sampled points, pre-allocated buffers), a per-sample plausibility gate (0.7x..1.3x nominal) and a feed-forward weight that ramps over the first 20 s. Basis: AudioFlinger dump from the Moto G85 + USB DAC (timestamp jitter sigma ~0.137 ms, spikes to 109 ms). Synthetic model (`tools/safmus/usb_drift_estimator_sim.py`, thresholds fixed before running): previous 8-point OLS std 34-54 ppm / max error 105-368 ppm; current std 1.3-1.9 ppm / max error <= 5 ppm. JVM tests include a negative control (the old estimator misses the 12 ppm bound by 208 ppm). Not validated on a real device over time.

@@ -106,7 +106,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
         GlassCard("CPU DEL DISPOSITIVO", AuroraCyan, "Detectado en tiempo de ejecución (/proc/cpuinfo)") {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (cpuFeatures == null) {
-                    FlagRow("Features", "no disponible")
+                    FlagRow("Features", "no disponible · sin publicacion del daemon")
                 } else {
                     FlagRow("NEON / ASIMD", if (neon == true) "sí" else "no")
                     FlagRow("FP16 aritmético (asimdhp)", if (cpuFeatures.contains("asimdhp")) "sí" else "no")
@@ -185,7 +185,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                     "Deriva callback",
                     if (effectClockTelemetry.callbackValid) "%+.1f ppm".format(effectClockTelemetry.callbackDriftPpm) else "—"
                 )
-                LiveRow("Reloj hardware", if (effectClockTelemetry.hardwareClockValid) "medición correlacionada disponible" else "sin productor validado")
+                LiveRow("Reloj hardware", if (effectClockTelemetry.hardwareClockValid) "medición correlacionada disponible" else "sin productor validado · nadie abrio el PCM")
                 LiveRow(
                     "Tasa hardware",
                     if (effectClockTelemetry.hardwareClockValid) "%.2f Hz".format(effectClockTelemetry.hardwareRateHz) else "—"
@@ -204,7 +204,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LiveRow(
                     "Estado",
-                    if (!asrcTelemetry.valid) "no disponible (daemon sin --hal-clock o Ruta A sin Magisk)"
+                    if (!asrcTelemetry.valid) "no disponible · daemon sin --hal-clock o Ruta A sin Magisk"
                     else when (asrcTelemetry.state) {
                         AsrcSoftwareState.TRACKING -> "corrigiendo activamente"
                         AsrcSoftwareState.HOLD -> "en espera (muestra fuera de rango seguro)"

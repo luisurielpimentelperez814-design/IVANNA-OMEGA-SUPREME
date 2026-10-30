@@ -64,7 +64,14 @@ inline ReceiveFdResult receiveExactlyOneFd(int socket_fd, int* out_fd, int* out_
     alignas(cmsghdr) unsigned char control[CMSG_SPACE(sizeof(int) * kMaxRights)]{};
     msghdr msg{}; msg.msg_iov = &io; msg.msg_iovlen = 1;
     msg.msg_control = control; msg.msg_controllen = sizeof(control);
-    const ssize_t received = ::recvmsg(socket_fd, &msg, MSG_CMSG_CLOEXEC);
+    // recvmsg() puede fallar con EINTR si una senal llega mientras se espera el
+    // descriptor (Android entrega SIGCHLD/SIGTERM a audioserver con frecuencia).
+    // Sin reintento, el cliente interpretaba esa carrera como "el daemon no
+    // entrega el fd" y caia al modo por ruta, perdiendo el handshake por SCM_RIGHTS.
+    ssize_t received;
+    do {
+        received = ::recvmsg(socket_fd, &msg, MSG_CMSG_CLOEXEC);
+    } while (received < 0 && errno == EINTR);
     const int receive_error = received < 0 ? errno : 0;
     if (out_errno) *out_errno = receive_error;
 
