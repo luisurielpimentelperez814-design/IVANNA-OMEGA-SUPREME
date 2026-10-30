@@ -243,6 +243,9 @@ object Iso226Calibrator {
 
         runCatching {
             socketOk = applyToOmegaBridge(gains, listenPhon, refPhon)
+            // applyToOmegaBridge manda la curva ISO cruda y pisaba perfil/SAF/EQ en vivo en el daemon:
+            // se republica la curva compuesta (ISO ya va incluida en tuning.isoMb).
+            effectManager.republishOmegaEq()
         }.onFailure { Log.w(TAG, "Socket ISO 226 error: ${it.message}") }
 
         this.listenPhon   = listenPhon

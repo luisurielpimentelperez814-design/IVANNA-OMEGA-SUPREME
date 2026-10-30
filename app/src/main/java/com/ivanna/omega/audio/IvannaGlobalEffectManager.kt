@@ -528,6 +528,26 @@ class IvannaGlobalEffectManager(
 
     private fun reapplySessions(spatialOnly: Boolean = false) {
         activeSessions.keys.forEach { applyProfileToSession(it, activeProfile, spatialOnly) }
+        republishOmegaEq()
+    }
+
+    /**
+     * v2.5.198: con el efecto nativo (omega) los efectos stock van en bypass, asi que elegir un perfil o
+     * mover ISO/SAF/EQ en vivo no cambiaba nada audible: solo el calibrador ISO escribia SET_EQ_BANDS.
+     * Ahora la MISMA curva compuesta que recibe el Equalizer stock se publica al daemon. Si el daemon no
+     * esta conectado no se afirma nada (devuelve false y queda en el log); el EQ stock sigue como antes.
+     */
+    @Synchronized
+    fun republishOmegaEq(): Boolean {
+        if (!com.ivanna.omega.magisk.OmegaEngineBridge.isConnected) return false
+        val curve = EffectTuningPolicy.curve(activeProfile.eqBands, tuning, video = isVideoStreamingActive)
+        val gains = EffectTuningPolicy.omegaBandsDb(curve)
+        val arr = org.json.JSONArray().apply { gains.forEach { put(it.toDouble()) } }
+        val ok = com.ivanna.omega.magisk.OmegaEngineBridge.sendCommand(org.json.JSONObject().apply {
+            put("action", "SET_EQ_BANDS"); put("gains", arr); put("timestamp", System.currentTimeMillis())
+        })
+        Log.i(TAG, "Perfil -> daemon SET_EQ_BANDS ${if (ok) "enviado" else "FALLO"}: ${gains.joinToString { "%.1f".format(it) }}")
+        return ok
     }
 
     // ── Ajustes puntuales de voz sin cambiar de perfil completo ────────────────

@@ -38,6 +38,18 @@ object EffectTuningPolicy {
         }
     }
 
+    /**
+     * Curva para el EQ de 10 bandas del daemon/omega_effect (31 Hz..16 kHz, igual que [frequenciesHz]).
+     * Misma politica de headroom que [deviceBands]: no hay banda objetivo positiva (el boost mayor se
+     * resta de todas), asi el perfil no puede llevar al limitador. Salida en dB, acotada a +-12 dB.
+     */
+    fun omegaBandsDb(curveMb: IntArray): FloatArray {
+        val headroom = (curveMb.maxOrNull() ?: 0).coerceAtLeast(0)
+        return FloatArray(10) { i ->
+            ((curveMb.getOrElse(i) { 0 } - headroom) / 100f).coerceIn(-12f, 0f)
+        }
+    }
+
     /** Millihertz is the unit returned by Equalizer.getCenterFreq(). No positive target band. */
     fun deviceBands(curveMb: IntArray, centersMilliHz: IntArray, minMb: Int, maxMb: Int): IntArray {
         val low = minOf(minMb, maxMb, 0)

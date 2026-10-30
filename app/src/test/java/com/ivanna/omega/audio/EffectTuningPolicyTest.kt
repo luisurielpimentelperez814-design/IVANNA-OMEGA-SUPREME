@@ -73,4 +73,18 @@ class EffectTuningPolicyTest {
             assertTrue(name, actual.all { it in -1200..0 })
         }
     }
+    @Test fun omegaBandsKeepTheCurveShapeWithoutAnyPositiveBand() {
+        val curve = intArrayOf(300, 200, 100, 0, -100, 0, 150, 250, 300, 100)
+        val db = EffectTuningPolicy.omegaBandsDb(curve)
+        assertEquals(10, db.size)
+        assertTrue(db.all { it <= 0f && it >= -12f })
+        assertEquals(0f, db.maxOrNull()!!, 0.001f)               // el boost mayor queda en 0 dB
+        assertEquals(-4f, db[4], 0.001f)                  // -100 mB - 300 mB de headroom
+        assertEquals(db[0] - db[2], 2f, 0.001f)           // la forma relativa se conserva
+    }
+    @Test fun omegaBandsOfFlatOrCutOnlyCurveAreUntouched() {
+        assertArrayEquals(FloatArray(10), EffectTuningPolicy.omegaBandsDb(IntArray(10)), 0.0001f)
+        val cut = IntArray(10) { -200 }
+        assertEquals(-2f, EffectTuningPolicy.omegaBandsDb(cut)[3], 0.0001f)
+    }
 }
