@@ -19,8 +19,17 @@ namespace {
 // Saturacion suave hacia el techo: identidad por debajo del 90 % del ceiling,
 // curva racional (continua en valor y pendiente) por encima, y nunca supera
 // el ceiling. Sustituye al recorte duro del final de process().
+//
+// v2.5.199 (distorsion armonica al subir volumen, medida en host): el codo estaba al 90 % del techo
+// (0.8897) pero la curva estatica de computeGainForPeak() deja los picos de un master caliente entre
+// threshold (-1 dBFS) y el techo (0.89..0.99). Todo pico estable caia, pues, DENTRO del tramo
+// saturado -> la cresta del seno se aplanaba de forma permanente: THD 0.87 % a 0 dBFS y 1.98 % a
+// +3/+6 dBFS (seno 100 Hz y 1 kHz, 48 kHz, bloques de 256). Con el codo al 97 % del techo el
+// regimen estable queda lineal (THD 0.00 % a 0 dBFS, 0.50 % a +3/+6 dBFS) sin cambiar el nivel,
+// la reduccion de ganancia ni el techo (la saturacion sigue acotada por ceil_). La saturacion queda
+// reservada a lo que si es excepcional: el sobrepico durante la rampa de ataque de 1.5 ms.
 inline float softCeil(float x, float ceil_) {
-    const float knee = ceil_ * 0.9f;
+    const float knee = ceil_ * 0.97f;
     const float ax = x < 0.f ? -x : x;
     if (ax <= knee) return x;
     const float range = ceil_ - knee;          // > 0

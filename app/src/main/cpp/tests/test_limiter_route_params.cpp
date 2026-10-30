@@ -12,6 +12,7 @@
  */
 #include <gtest/gtest.h>
 #include "SafetyLimiter.h"
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -102,4 +103,51 @@ TEST(LimiterRouteParams, ReleasesAfterLoudPassage) {
         if (b >= 140) for (int i = 0; i < BLOCK; ++i) pk = std::fmax(pk, std::fabs(L[i]));
     }
     EXPECT_NEAR(db(pk / 0.25f), 0.f, 0.1f);
+}
+
+// ── Distorsion armonica en regimen estable (v2.5.199) ─────────────────────────────────────────
+// Medida en host con los parametros reales de ruta: el codo de softCeil al 90 % del techo aplanaba
+// la cresta de cualquier master caliente (THD 0.87 % a 0 dBFS, 1.98 % a +3/+6 dBFS). Con el codo al
+// 97 % el regimen estable es lineal. THD = residuo tras ajustar por minimos cuadrados el seno
+// fundamental, sobre la ventana final (el limiter ya convergio).
+namespace {
+double steadyThdPercent(float ampDb, double f) {
+    ivanna::SafetyLimiter lim; configureRoute(lim);
+    const int N = 96000;
+    std::vector<float> L(N);
+    const float amp = std::pow(10.f, ampDb / 20.f);
+    for (int i = 0; i < N; ++i) {
+        const float a = (i < 6400) ? 0.1f : amp;            // arranque bajo -> burst, como la musica real
+        L[i] = a * (float)std::sin(2.0 * M_PI * f * i / SR);
+    }
+    std::vector<float> R = L;
+    for (int i = 0; i < N; i += 256) lim.process(&L[i], &R[i], std::min(256, N - i));
+    const int s = 60000, e = N;
+    double sc = 0, ss = 0;
+    for (int i = s; i < e; ++i) {
+        sc += L[i] * std::cos(2.0 * M_PI * f * i / SR);
+        ss += L[i] * std::sin(2.0 * M_PI * f * i / SR);
+    }
+    const double n = e - s, a = 2 * sc / n, b = 2 * ss / n;
+    double fund = 0, res = 0;
+    for (int i = s; i < e; ++i) {
+        const double fv = a * std::cos(2.0 * M_PI * f * i / SR) + b * std::sin(2.0 * M_PI * f * i / SR);
+        fund += fv * fv; res += (L[i] - fv) * (L[i] - fv);
+    }
+    return 100.0 * std::sqrt(res / fund);
+}
+} // namespace
+
+TEST(LimiterRouteParams, HotMasterIsLinearInSteadyState) {
+    for (double f : {100.0, 1000.0}) {
+        EXPECT_LT(steadyThdPercent(-1.f, f), 0.01) << f << " Hz";
+        EXPECT_LT(steadyThdPercent( 0.f, f), 0.05) << f << " Hz";   // antes 0.87 %
+    }
+}
+
+TEST(LimiterRouteParams, OverhotInputStaysBelowOnePercentThd) {
+    for (double f : {100.0, 1000.0}) {
+        EXPECT_LT(steadyThdPercent(3.f, f), 1.0) << f << " Hz";     // antes 1.98 %
+        EXPECT_LT(steadyThdPercent(6.f, f), 1.0) << f << " Hz";
+    }
 }
