@@ -825,9 +825,17 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
 
     } else if (strcmp(action,"GET_STATUS")==0 || strcmp(action,"STATUS")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+        uint64_t dspFrames = 0, dspAppliedGeneration = 0;
+        const auto dspEvidence = ivanna::readEffectBeacon(2000ull, ivanna::OMEGA_EFFECT_BEACON_PATH, &dspFrames, &dspAppliedGeneration);
+        const bool dspApplied = gen > 0 && dspEvidence == ivanna::EffectBeaconState::Processing && dspAppliedGeneration >= gen;
+        const char* dspStatus = dspApplied ? "dsp_block_applied" :
+            (dspEvidence == ivanna::EffectBeaconState::Processing ? "awaiting_dsp_generation" :
+             (dspEvidence == ivanna::EffectBeaconState::EnabledIdle ? "effect_enabled_idle" :
+              (dspEvidence == ivanna::EffectBeaconState::NoEffect ? "no_active_effect" : "effect_evidence_unavailable")));
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":false,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u,\"aux_field\":%s,\"aux_xover_hz\":%.0f,\"aux_coherence\":%.3f,\"temporal_field\":%s,\"temporal_amount\":%.3f,\"temporal_auto\":%s,\"room_corr\":%s}",
-            (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"effect_state\":%d,\"dsp_applied_generation\":%llu,\"dsp_frames\":%llu,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u,\"aux_field\":%s,\"aux_xover_hz\":%.0f,\"aux_coherence\":%.3f,\"temporal_field\":%s,\"temporal_amount\":%.3f,\"temporal_auto\":%s,\"room_corr\":%s}",
+            dspApplied?"true":"false", dspStatus, (unsigned long long)gen, hasActiveConsumer()?"\"omega_effect\"":"null",
+            static_cast<int>(dspEvidence), (unsigned long long)dspAppliedGeneration, (unsigned long long)dspFrames,
             m_state.intensity, m_state.eq_calibrated?"true":"false",
             m_state.listen_phon, m_state.ref_phon, m_state.compressor, m_state.spatial_width,
             m_state.harmonic_gain, m_state.anti_dolby,
