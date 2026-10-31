@@ -52,6 +52,13 @@ class HardwareSovereigntyReleaseGateTests(unittest.TestCase):
         phases["HWS-02"]["evidence"] = ["evidence/does-not-exist.txt"]
         self.assertEqual(self.run_manifest(phases).returncode, 1)
 
+    def test_unknown_manifest_schema_blocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "approval.json"
+            manifest.write_text(json.dumps({"schema_version": 99, "phases": self.approved_phases()}), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(SCRIPT), str(manifest)], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
