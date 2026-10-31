@@ -96,16 +96,25 @@ A restoration model may estimate missing harmonic structure, transient envelopes
 
 A failed gate blocks the corresponding capability claim. It is not bypassed by changing a dashboard color or raising a parameter.
 
-## Current implementation status at v2.5.210
+## Current implementation status at v2.5.211
 
-The repository already contains route detection, SAFMUS resource budgeting, thermal policy, DSP engines, HRTF/RIR code, FotoHolo assets and a shared-memory control path. Their presence in source does not prove every path is active on the Moto G85. The Genezi policy uses a bounded minimax route multiplier and a low external-line-out HRTF blend; both remain listening/measurement hypotheses pending physical acceptance tests.
+The repository contains route detection, SAFMUS resource budgeting, thermal policy, DSP engines, HRTF/RIR code, FotoHolo assets and a shared-memory control path. Their presence in source does not prove every path is active on the Moto G85. The Genezi policy uses a bounded minimax route multiplier and a low external-line-out HRTF blend; both remain listening/measurement hypotheses pending physical acceptance tests.
+
+### Implemented in this increment: control-plane evidence
+
+- The daemon's consumer state now comes from the AudioEffect beacon, not from `OmegaControlBus::isWriterOpen()` (which only reports the daemon writer).
+- The beacon ABI is 72 bytes and carries `applied_control_generation`. `omega_effect` publishes that generation only after completing the DSP block.
+- `GET_STATUS` and rich command replies report the published generation, last DSP-applied generation, processed frames and effect state. `applied=true` requires a processing beacon and an applied generation at least as new as the published snapshot.
+- The app exposes this data through `OmegaEngineBridge.requestControlPlaneEvidence()`.
+- The app/daemon HELLO mismatch is corrected: the app negotiates protocol v2, matching `OMEGA_PROTO_VERSION=2`, and sends its version in the handshake.
+
+This is evidence of snapshot consumption and completed DSP blocks. It is not an acoustic measurement, DAC clock read-back, or proof of perceptual improvement. The new native regression checks the beacon generation counter; full CI and on-device verification remain required.
 
 Next implementation slices, each as a separate testable change:
-1. End-to-end capability/evidence telemetry (requested → daemon ACK → DSP read-back).
-2. Timestamp/frame-counter drift estimator and ASRC closed-loop validation.
-3. Immutable DSP parameter-frame publication with callback WCET/underrun instrumentation.
-4. Calibration-aware external-speaker eligibility; WFS/ANC stay disabled until measured.
-5. Opt-in FotoHolo room model with uncertainty propagation.
-6. Bounded, confidence-weighted lossy restoration with bypass and hallucination tests.
+1. Timestamp/frame-counter drift estimator and ASRC closed-loop validation.
+2. Immutable DSP parameter-frame publication with callback WCET/underrun instrumentation.
+3. Calibration-aware external-speaker eligibility; WFS/ANC stay disabled until measured.
+4. Opt-in FotoHolo room model with uncertainty propagation.
+5. Bounded, confidence-weighted lossy restoration with bypass and hallucination tests.
 
 No release may claim the complete vision until each slice is implemented, wired, tested and verified on hardware.
