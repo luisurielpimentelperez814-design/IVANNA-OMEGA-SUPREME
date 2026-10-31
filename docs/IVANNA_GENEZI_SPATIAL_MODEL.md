@@ -81,6 +81,19 @@ Para dos objetivos escalares, el minimizador exacto es su punto medio: $w^*=1.04
 
 Este es un compromiso robusto entre dos consignas de control, no una optimización sobre transferencias de sala desconocidas. No aprende la respuesta del Genezi, no reconstruye stems y no promete localización física fuera del punto de escucha.
 
+## 4.2 Motores espaciales en salida estéreo externa
+
+Cuando el usuario declara explícitamente `externalStereoLineOut=true` y mantiene HRTF solicitado, la ruta AUX/USB ya no apaga el motor HRTF: publica un wet conservador de **0.15**. En auriculares, el wet solicitado conserva 1.0; en altavoz integrado o ruta desconocida permanece en 0. El control se restaura tanto en el cambio de ruta como en la restauración de preferencias.
+
+Este blend externo conserva la etapa HRTF como contribución espectral/espacial de baja intensidad. **No es cancelación transaural**: no hay cuatro transferencias altavoz-oído medidas, ni inversión de matriz, ni garantía de sweet spot. El usuario puede desactivar HRTF desde sus preferencias.
+
+Los motores que requieren una geometría física que AUX no transporta no se fuerzan artificialmente:
+- WFS multialtavoz no se declara como salida física de dos canales; permanece fuera de la ruta de salida AUX.
+- RIR sintético y SAF binaural personal no se inyectan como si fueran la respuesta de los altavoces/sala externos. Se conservan sus datos y controles, pero el plano global queda neutral para esa ruta.
+- HOA/espacialización estéreo puede permanecer habilitada con el HRTF de baja mezcla. Esto no convierte L/R en canales discretos.
+
+Así se mantiene disponible el motor compatible sin sumar reverberación artificial a la sala real ni aplicar calibraciones de auriculares a altavoces.
+
 ## 5. Diferencia confirmada entre el modelo y el DSP nativo actual
 
 **No afirmar equivalencia exacta entre el modelo ideal y el procesamiento nativo actual.** La inspección de `app/src/main/cpp/dsp/StereoWidener.cpp` confirma que el DSP real:
