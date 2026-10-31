@@ -246,7 +246,7 @@ static int pfIndexForName(const std::string& k) {
     for (int i=0;i<13;i++) if (k==names[i]) return i;
     return -1;
 }
-static bool hasActiveConsumer() noexcept { return ivanna::controlBus().isWriterOpen(); }
+static bool hasActiveConsumer() noexcept { const auto s = ivanna::readEffectBeacon(); return s == ivanna::EffectBeaconState::Processing || s == ivanna::EffectBeaconState::EnabledIdle; }
 static int buildRichReply(char* buf, int sz, bool ok, const char* command, const char* status, uint64_t generation, const char* route, const char* errorMsg) noexcept {
     bool applied = ok && (generation>0) && (strcmp(status,"applied")==0);
     return snprintf(buf,(size_t)sz,
