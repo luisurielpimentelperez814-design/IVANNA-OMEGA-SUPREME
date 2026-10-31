@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.204
-versionCode=495
+version=v2.5.205
+versionCode=496
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.204: Moto G85 HAL/PAL symbol evidence recorded and a read-only MMAP-position probe added; ASRC correction still disabled (no verified actuator)
+description=v2.5.205: read-only Moto G85 shell probes added and MMAP verdict criterion corrected; ASRC correction still disabled (no verified actuator)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/main/magisk_module/update.json

@@ -1,3 +1,9 @@
+## v2.5.205 (496) — 2026-10-31
+
+- **Sondas de shell del Moto G85 incorporadas:** `hal_integration/tools/ivanna_hal_mmap_shell_probe.js` (simbolos, runtime de AudioOut_D/AudioOut_15 y logcat) y `ivanna_hal_usb_probe.js` (muestras de la salida USB-C, handle 21). Son de solo lectura.
+- **Correccion del criterio:** el texto original decia que `pal_stream_get_mmap_position` con retorno 0 y frames avanzando significaba "no hay mmap valido"; en PAL 0 es exito. Ahora dice: rc==0 con frames que avanzan y tiempo monotonico = candidato a enlace; rc!=0 o sin llamadas = no es MMAP, no cablear.
+- **Limite:** estas sondas no llaman ni enganchan `pal_stream_get_mmap_position`, asi que no miden pares frames+timestamp; la medicion real es `ivanna_hal_mmap_bounded.js` (Frida, v2.5.204). No hay resultados de dispositivo todavia; el enlace fisico y el actuador ASRC siguen sin verificar y la correccion sigue deshabilitada.
+
 ## v2.5.204 (495) — 2026-10-31
 
 - **Evidencia nueva del Moto G85 (auditorias HAL/PAL del 2026-10-31):** `audio.primary.blair.so` importa `pal_stream_get_mmap_position` y define `StreamOutPrimary::GetMmapPosition` y `GetFramesWritten(timespec*)`; `libar-pal.so` tiene la cadena `GetMmapPosition -> pcm_mmap_get_hw_ptr`. Registrado en `hal_integration/MOTO_G85_PAL_CLOCK_INTEGRATION.md` con lo que prueba y lo que no.
