@@ -37,6 +37,10 @@ using ivanna::PILSTMMilenioEngine;
 // Dedicated engine for the PiLstmBridge Kotlin surface.
 static PILSTMMilenioEngine     g_piLstmBridge;
 static std::atomic<bool>       g_piLstmBridge_ready{false};
+// The bridge is process-global and has two native audio entry points. Never
+// let concurrent callbacks mutate the same RK4 state; a contending callback
+// skips this auxiliary stage rather than blocking the real-time thread.
+static std::atomic_flag g_piLstmBridge_owner = ATOMIC_FLAG_INIT;
 
 // Residual telemetry is published atomically to JNI readers; its mutable
 // estimator state remains exclusively owned by the audio callback.
@@ -140,6 +144,7 @@ static void update_residual_rt(float dt) noexcept {
 // owner: this callback. UI/JNI reads are atomic snapshots; writes are mailboxes.
 void ivanna_pilstm_bridge_tick_block(const float* inL, const float* inR, int frames, float sampleRate) noexcept {
     if (!g_piLstmBridge_ready.load(std::memory_order_acquire) || !inL || !inR || frames <= 0) return;
+    if (g_piLstmBridge_owner.test_and_set(std::memory_order_acquire)) return;
     apply_pending_controls();
     const float sr = (std::isfinite(sampleRate) && sampleRate >= 8000.0f) ? sampleRate : 48000.0f;
     const int step = std::max(1, frames / 16);
@@ -151,6 +156,7 @@ void ivanna_pilstm_bridge_tick_block(const float* inL, const float* inR, int fra
         ++steps;
     }
     update_residual_rt(static_cast<float>(steps) * dt);
+    g_piLstmBridge_owner.clear(std::memory_order_release);
 }
 
 JNIEXPORT void JNICALL
