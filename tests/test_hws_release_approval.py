@@ -20,14 +20,14 @@ class HardwareSovereigntyReleaseGateTests(unittest.TestCase):
             )
 
     def approved_phases(self):
-        return {phase: {"status": "APPROVED", "evidence": ["tests/device-evidence.txt"]} for phase in PHASES}
+        return {phase: {"status": "APPROVED", "evidence": ["scripts/check_hws_release_approval.py"]} for phase in PHASES}
 
     def test_current_manifest_blocks_production(self):
         result = self.run_manifest({
             "HWS-01": {"status": "IN_PROGRESS", "evidence": ["audit.md"]},
             "HWS-02": {"status": "NOT_APPROVED", "evidence": ["audit.md"]},
             "HWS-03": {"status": "PARTIAL", "evidence": ["thermal_governor.hpp"]},
-            "HWS-04": {"status": "NOT_APPROVED", "evidence": ["pi_lstm_bridge_jni.cpp"]},
+            "HWS-04": {"status": "PARTIAL", "evidence": ["app/src/main/cpp/pi_lstm_bridge_jni.cpp"]},
         })
         self.assertEqual(result.returncode, 1)
         self.assertIn("BLOCKED", result.stdout)
