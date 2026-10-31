@@ -44,11 +44,15 @@ No device-clock or Bluetooth/PCM timing capability is claimed here.
 
 ## HWS-03 — Adaptive SoC Control
 
-**Status: NOT APPROVED.** Existing thermal governor and adaptive engine are
-present. Missing sensor data must not be represented as a safe temperature.
-Realtime-path initialization, polling isolation, latency budgets, and thermal
-degradation require targeted tests before approval. No kernel frequency,
-voltage, or policy controls are assumed.
+**Status: PARTIAL IMPLEMENTATION — NOT APPROVED.** Existing thermal governor
+and adaptive engine are present. This change removes the fabricated 35 °C
+fallback: missing/unreadable sensors now publish NaN/unavailable and retain
+the conservative PROTECTED tier. The governor thread is started from
+EFFECT_CMD_SET_CONFIG, not lazily from omega_process, so singleton access in
+the audio callback no longer creates a thread. Targeted host tests, thermal
+sensor-path validation on Moto G85, callback-budget measurements, and
+long-duration throttling tests remain required. No kernel frequency, voltage,
+or policy controls are assumed.
 
 ## HWS-04 — Neural Low-Level Engine
 
