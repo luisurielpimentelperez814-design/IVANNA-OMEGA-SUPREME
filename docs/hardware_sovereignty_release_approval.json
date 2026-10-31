@@ -26,8 +26,7 @@
       "status": "PARTIAL",
       "evidence": [
         "app/src/main/cpp/pi_lstm_bridge_jni.cpp",
-        "docs/HARDWARE_SOVEREIGNTY_01-04.md",
-        "ThreadSanitizer/concurrent-stress validation pending"
+        "docs/HARDWARE_SOVEREIGNTY_01-04.md"
       ]
     }
   }
