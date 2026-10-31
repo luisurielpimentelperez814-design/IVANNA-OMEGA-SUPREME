@@ -1,3 +1,13 @@
+## v2.5.211 (502) — 2026-10-31
+
+- **Read-back real del efecto:** `omega_effect` amplía el beacon de 64 a 72 bytes y publica `applied_control_generation` únicamente al finalizar un bloque DSP. Se mantienen los contadores de frames y el estado enabled/processing.
+- **Daemon sin falsas confirmaciones:** `hasActiveConsumer()` consulta el beacon del efecto; ya no confunde el writer del daemon con un consumidor AudioEffect activo.
+- **Telemetría de extremo a extremo:** `GET_STATUS` y las respuestas ricas exponen generación publicada, generación consumida por un bloque DSP, frames procesados y estado del beacon. `applied=true` exige read-back de una generación vigente.
+- **API Kotlin:** `OmegaEngineBridge.requestControlPlaneEvidence()` entrega un modelo tipado de evidencia para la app/dashboard.
+- **Handshake:** corregido el desacuerdo app/daemon (la app exigía proto 3 y el daemon ofrecía proto 2); HELLO ahora envía la versión negociada.
+- **Regresión nativa:** el test del beacon verifica que el read-back de generación avanza únicamente con la finalización de bloques.
+- **Alcance:** el read-back acredita consumo del snapshot por el efecto y procesamiento de bloques; no acredita respuesta acústica, precisión del DAC ni mejora perceptual. Pendiente CI y validación en Moto G85.
+
 ## v2.5.210 (501) — 2026-10-31
 
 - **Ω-ATOMIC Genezi AUX policy:** añade una solución minimax determinista que equilibra el objetivo de foco (multiplicador 1.00) y la referencia de inmersión (1.08). El compromiso exacto es 1.04 y se publica desde `AudioRouteManager` hacia las rutas de control existentes.
