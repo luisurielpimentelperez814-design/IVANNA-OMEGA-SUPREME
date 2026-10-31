@@ -57,12 +57,29 @@ El perfil Kotlin de `OutputRoute.WIRED_AUX` declara:
 ```kotlin
 bassBoostDb = 0f
 dialogBoostDb = 0f
-widenerMult = 1.08f
+widenerMult = AtomicSpatialPolicy.geneziSpatialMultiplier() // 1.04f
 ```
 
 Los ceros declaran que el perfil no solicita boost de graves ni de diálogo. No prueban que toda la cadena mantenga inalterado el bajo o el diálogo.
 
 El propósito es entregar una señal estéreo a la entrada AUX del Sony Genezi MHC-PZ1D y permitir que el equipo aplique su propio procesamiento Surround. IVANNA no genera cinco canales discretos por AUX, no controla los botones Surround/subwoofer del Sony y no presume conocer su transferencia electroacústica.
+
+## 4.1 Compromiso minimax Ω-ATOMIC
+
+La política de ruta combina dos objetivos de control, sin tratarlos como mediciones de sala:
+
+- Foco: multiplicador objetivo $w_F=1.00$ (ancla central/unity).
+- Inmersión: multiplicador de referencia $w_I=1.08$ (propuesta AUX anterior).
+
+Se elige el multiplicador que minimiza el peor error cuadrático frente a ambos objetivos:
+
+\\[
+w^*=\\arg\\min_{w\\in[1.00,1.08]}\\max\\{(w-w_F)^2,(w-w_I)^2\\}.
+\\]
+
+Para dos objetivos escalares, el minimizador exacto es su punto medio: $w^*=1.04$. La implementación está en `AtomicSpatialPolicy.kt`; el resultado se proyecta al intervalo permitido y los datos no finitos/intervalos inválidos fallan de forma conservadora a unity. Las pruebas JVM verifican el minimax, el peor error, la proyección y los casos inválidos.
+
+Este es un compromiso robusto entre dos consignas de control, no una optimización sobre transferencias de sala desconocidas. No aprende la respuesta del Genezi, no reconstruye stems y no promete localización física fuera del punto de escucha.
 
 ## 5. Diferencia confirmada entre el modelo y el DSP nativo actual
 
@@ -73,7 +90,7 @@ El propósito es entregar una señal estéreo a la entrada AUX del Sony Genezi M
 - aplica bloqueadores de DC por canal;
 - conserva estados de filtros durante el camino transparente de unidad.
 
-Además, `audio_control_plane.cpp` calcula `combined_width` a partir de varios factores, incluido `route_widener_mult`. Por tanto, que el perfil solicite `widenerMult=1.08f` no demuestra que el ancho efectivo final sea exactamente 1.08 en todos los estados, ni que la salida sea la matriz constante de la sección 1. El comportamiento de producción tiene memoria y respuesta dependiente de frecuencia.
+Además, `audio_control_plane.cpp` calcula `combined_width` a partir de varios factores, incluido `route_widener_mult`. Por tanto, el perfil solicita ahora `widenerMult=1.04f`, resultado del compromiso minimax entre el objetivo de foco (1.00) y la referencia de inmersión (1.08). Este valor multiplica la intensidad espacial publicada al plano de control; no es el ancho acústico final ni demuestra que la salida sea la matriz constante de la sección 1. El comportamiento de producción tiene memoria y respuesta dependiente de frecuencia.
 
 Para afirmar que el perfil ejecuta exactamente $S\mapsto1.08S$ habría que cambiar/aislar el camino nativo y demostrarlo con pruebas específicas; esta documentación no declara que eso ya se haya hecho.
 
@@ -81,7 +98,7 @@ Para afirmar que el perfil ejecuta exactamente $S\mapsto1.08S$ habría que cambi
 
 1. Inspeccionar la ruta completa desde `OutputRoute.WIRED_AUX` hasta `StereoWidener::setWidth/process`, incluyendo factores combinados, prioridades HOA/WFS y suavizado.
 2. Crear pruebas unitarias separadas para (a) la matriz ideal de referencia y (b) el DSP nativo real. No usar las pruebas matemáticas para afirmar que el DSP filtrado es idéntico.
-3. Para el modelo ideal, probar mono puro invariante, Side puro escalado por 1.08, suma mono conservada y resultados finitos.
+3. Para el modelo ideal, probar mono puro invariante, Side puro escalado por 1.08, suma mono conservada y resultados finitos. La política minimax de ruta tiene su propia suite JVM y no se usa como sustituto de estas pruebas del DSP.
 4. Para el DSP real, probar convergencia, transición del ancho, respuesta por frecuencia, graves, bloqueo de DC y ausencia de NaN/Inf. La tolerancia de float32 debe fijarse según el camino medido; no prometer 1 ULP antes de medir el código real.
 5. Comparar AUX neutro y beta con el mismo programa y ganancia calibrada. Registrar true peak, RMS/LUFS, correlación L/R, señal mono, espectro de diferencia y posibles artefactos.
 6. En el MHC-PZ1D, mantener geometría, volumen y ecualización constantes en Stereo/Sub OFF, Stereo/Sub ON, Surround/Sub OFF y Surround/Sub ON. Medir cada estado; una prueba ABX aleatorizada puede evaluar preferencia perceptual.
