@@ -337,6 +337,16 @@ jobs:
           echo "Keystores provisioned:"
           ls -la "$HOME/.android/debug.keystore" "$HOME/.config/.android/debug.keystore"
 
+      # HAL/PAL HWS-01: inspect the exact staged AudioFlinger effect ELF.
+      # A successful link is insufficient: EffectsFactory resolves AELI via dlsym().
+      - name: Verify AELI dynamic export in libomega_effect.so
+        run: |
+          set -euo pipefail
+          EFFECT_ELF="magisk_module/system/vendor/lib64/soundfx/libomega_effect.so"
+          test -s "$EFFECT_ELF" || { echo "ERROR: staged libomega_effect.so missing/empty"; exit 1; }
+          READELF="$(command -v llvm-readelf || command -v readelf)"
+          python3 scripts/check_aeli_elf.py "$EFFECT_ELF" --readelf "$READELF"
+
       - name: Build APK (Gradle provisionado)
         run: |
           chmod +x gradlew
