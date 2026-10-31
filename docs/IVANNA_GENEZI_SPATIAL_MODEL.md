@@ -73,9 +73,9 @@ La política de ruta combina dos objetivos de control, sin tratarlos como medici
 
 Se elige el multiplicador que minimiza el peor error cuadrático frente a ambos objetivos:
 
-\\[
+\[
 w^*=\\arg\\min_{w\\in[1.00,1.08]}\\max\\{(w-w_F)^2,(w-w_I)^2\\}.
-\\]
+\]
 
 Para dos objetivos escalares, el minimizador exacto es su punto medio: $w^*=1.04$. La implementación está en `AtomicSpatialPolicy.kt`; el resultado se proyecta al intervalo permitido y los datos no finitos/intervalos inválidos fallan de forma conservadora a unity. Las pruebas JVM verifican el minimax, el peor error, la proyección y los casos inválidos.
 
