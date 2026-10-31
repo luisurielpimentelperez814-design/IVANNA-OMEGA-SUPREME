@@ -255,7 +255,7 @@ static int buildRichReply(char* buf, int sz, bool ok, const char* command, const
     const char* evidenceStatus = applied ? "dsp_block_applied" :
         (state == ivanna::EffectBeaconState::Processing ? "awaiting_dsp_generation" :
          (state == ivanna::EffectBeaconState::EnabledIdle ? "effect_enabled_idle" :
-          (generation > 0 ? "snapshot_published_no_active_effect" : status)));
+          (generation > 0 ? "accepted_pending_consumer" : status)));
     return snprintf(buf,(size_t)sz,
         "{\"ok\":%s,\"command\":\"%s\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"%s\",\"consumer\":%s,\"effect_state\":%d,\"dsp_applied_generation\":%llu,\"dsp_frames\":%llu,\"error\":%s}",
         ok?"true":"false", command, applied?"true":"false", evidenceStatus,
