@@ -36,7 +36,7 @@ Las rutas global y captura no deben procesar simultáneamente la misma señal. U
 
 ## Perfil añadido
 
-En **Bocinas declaradas**, seleccionar **Equipo estéreo externo (Sony u otro)**. Se guarda la declaración independientemente del número de bocinas. En USB/AUX, RouteDspCalibrator desactiva la HRTF del procesador legacy, elige el arquetipo de altavoces y no añade la sala sintética/optimización de sala por defecto. La pantalla deja de publicar un layout WFS multicanal al activar el surround declarado sobre esta conexión estéreo.
+En **Bocinas declaradas**, seleccionar **Equipo estéreo externo (Sony u otro)**. Se guarda la declaración independientemente del número de bocinas. Con HRTF solicitado, AUX/USB mantiene el motor activo con wet=0.15 (en lugar de 1.0 para auriculares); es una contribución espectral/espacial conservadora, no cancelación transaural ni calibración del Genezi. El perfil Genezi usa el compromiso minimax Ω-ATOMIC (multiplicador de control 1.04 entre foco 1.00 e inmersión 1.08), sin boost de graves ni diálogo. No se añade RIR sintético ni SAF binaural personal a la ruta de altavoces sin transferencias compatibles. La pantalla no publica un layout WFS multicanal como si AUX L/R transportara canales discretos; el Surround y el subwoofer siguen bajo control físico del Sony.
 
 Esto no es una calibración del Sony ni una certificación de todos los renderers. Los otros paneles permiten configurar motores adicionales; hay que verificar el estado efectivo del pipeline global antes de escuchar. El subwoofer declarado no crea LFE, crossover ni control remoto del equipo. El perfil de auriculares sigue siendo independiente.
 
