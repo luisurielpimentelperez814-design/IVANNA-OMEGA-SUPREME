@@ -11,6 +11,51 @@ class FotoHoloRouteBTest {
         assertTrue(j.contains("\"action\":\"SET_PERCEPTUAL_STATE\""))
         assertTrue(j.contains("\"spatialWidth\":1.2000"))
         assertFalse(j.contains("compressor") || j.contains("exciter") || j.contains("harmonic"))
+        assertTrue(FotoHoloRouteB.json(0f).contains("\"spatialWidth\":0.0000"))
+    }
+
+    @Test fun activeSpatialOwnersReceiveOnlyTheirOwnParameter() {
+        val wfs = FotoHoloRouteB.wfsJson(1.25f)
+        assertTrue(wfs.contains("\"action\":\"SET_WFS\""))
+        assertTrue(wfs.contains("\"wfsSpread\":1.2500"))
+        assertFalse(wfs.contains("wfsEnabled"))
+
+        val hoa = FotoHoloRouteB.upmixJson(0.75f)
+        assertTrue(hoa.contains("\"action\":\"SET_UPMIXING\""))
+        assertTrue(hoa.contains("\"upmixingImmersivity\":0.7500"))
+        assertFalse(hoa.contains("upmixingEnabled"))
+    }
+
+    @Test fun spatialOwnerFollowsNativeWfsHoaMsPriority() {
+        fun evidence(wfs: Boolean, hoa: Boolean, known: Boolean = true) =
+            com.ivanna.omega.magisk.OmegaEngineBridge.ControlPlaneEvidence(
+                daemonReachable = true,
+                snapshotGeneration = 10L,
+                dspAppliedGeneration = 10L,
+                processedFrames = 100L,
+                effectState = 2,
+                status = "dsp_block_applied",
+                effectConsumerPresent = true,
+                spatialArbitrationKnown = known,
+                upmixingEnabled = hoa,
+                upmixingImmersivity = 0.75f,
+                wfsEnabled = wfs,
+                wfsSpread = 1.2f
+            )
+        assertEquals("WFS", evidence(wfs = true, hoa = true).spatialOwner)
+        assertEquals("HOA", evidence(wfs = false, hoa = true).spatialOwner)
+        assertEquals("MS", evidence(wfs = false, hoa = false).spatialOwner)
+        assertTrue(evidence(wfs = false, hoa = false, known = false).spatialOwner == null)
+    }
+
+    @Test fun ownerChangeAndUnknownArbitrationRequireReapplication() {
+        assertFalse(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; generación confirmada"))
+        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; spread WFS consumido"))
+        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; inmersividad HOA consumida"))
+        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; anchura M/S activa"))
+        assertFalse(FotoHoloRouteB.isDeliveryConfirmed("bloque DSP completado; verificando propietario espacial"))
+        assertTrue(FotoHoloRouteB.shouldRetryCommand("propietario cambió; reaplicación necesaria"))
+        assertTrue(FotoHoloRouteB.shouldRetryCommand("arbitraje espacial no verificable"))
     }
 
     @Test fun pendingAndIdleStatesAreNotMistakenForDspDelivery() {
@@ -23,7 +68,10 @@ class FotoHoloRouteBTest {
     }
 
     @Test fun onlyDspBlockReadbackConfirmsDeliveryAndPendingStateIsPolled() {
-        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; generación confirmada"))
+        assertFalse(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; generación confirmada"))
+        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; spread WFS consumido"))
+        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; inmersividad HOA consumida"))
+        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; anchura M/S activa"))
         assertFalse(FotoHoloRouteB.isDeliveryConfirmed("publicado en Ruta B; esperando generación DSP"))
         assertFalse(FotoHoloRouteB.isDeliveryConfirmed("aceptado; sin consumidor activo"))
         assertFalse(FotoHoloRouteB.shouldRetryCommand("aceptado; sin consumidor activo"))

@@ -24,9 +24,10 @@ data class FotoHoloFeatures(
 /**
  * Lógica pura (sin Android) de la capa Fotoholografía·Nanotomix.
  *
- * Qué hace de verdad: convierte el espectro Bark medido en (1) una modulación ACOTADA del ancho
- * estéreo —el único parámetro de audio que gobierna— y (2) la geometría de la escena paramétrica.
- * No es holografía óptica: es una visualización 3D proyectada y un control adaptativo de ancho.
+ * Qué hace de verdad: convierte el espectro Bark medido en una intención ACOTADA de anchura
+ * espacial y en la geometría de la escena paramétrica. Ruta A aplica el ancho al motor local;
+ * Ruta B traduce la misma desviación al propietario espacial vigente (WFS, HOA o Mid/Side).
+ * No es holografía óptica: es una visualización 3D proyectada y control espacial adaptativo.
  */
 object FotoHoloMath {
     const val BANDS = 64

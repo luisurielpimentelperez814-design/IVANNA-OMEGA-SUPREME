@@ -1,110 +1,265 @@
 package com.ivanna.omega.fotoholo
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.abs
 
 /**
- * Lleva el ancho que decide Fotoholografía a la Ruta B (demonio Magisk → libomega_effect.so), igual que
- * [com.ivanna.omega.core.FourDRouteB] hace con la cadena 4D. Antes el lazo de ancho solo movía la Ruta A
- * (`nativeSetSpatialWidthDirect` en proceso): con el efecto global activo no cambiaba nada.
+ * FotoHolo's single system-wide spatial adapter.
  *
- * Usa SET_PERCEPTUAL_STATE solo con `spatialWidth`: el demonio conserva el resto del estado cuando falta
- * un campo. El socket es bloqueante → hilo propio y envío COALESCIDO (solo sale el último ancho).
- * El resultado real (aplicado / pendiente / demonio ausente) se publica en [status]; no se asume.
+ * The active spatial owner is selected from the daemon's live snapshot:
+ * WFS > HOA > Mid/Side. FotoHolo modulates the active owner only, preserves
+ * the user's baseline, and restores the previous owner when arbitration changes.
+ * All socket work runs on this serial control executor, never on an audio callback.
  */
 object FotoHoloRouteB {
     private const val TAG = "FotoHoloRouteB"
-    private val pending = AtomicReference<Float?>(null)
+    private const val PREFS = "ivanna_fotoholo"
+    private const val BASE_WFS = "routeb_base_wfs_spread"
+    private const val LAST_WFS = "routeb_last_wfs_spread"
+    private const val BASE_HOA = "routeb_base_hoa_immersivity"
+    private const val LAST_HOA = "routeb_last_hoa_immersivity"
+    private const val OWNER = "routeb_spatial_owner"
+    private const val DELTA = "routeb_last_delta"
+
+    private val pending = AtomicReference<Pair<Float, Float>?>(null)
     private val expectedGeneration = AtomicLong(0L)
-    private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "fotoholo-routeb").apply { isDaemon = true } }
+    private val io = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "fotoholo-routeb").apply { isDaemon = true }
+    }
+
+    @Volatile private var prefs: SharedPreferences? = null
+    @Volatile private var baseWfsSpread = Float.NaN
+    @Volatile private var lastAppliedWfsSpread = Float.NaN
+    @Volatile private var baseHoaImmersivity = Float.NaN
+    @Volatile private var lastAppliedHoaImmersivity = Float.NaN
+    @Volatile private var lastOwner = "UNKNOWN"
+    @Volatile private var lastDelta = 0f
 
     @Volatile var status: String = "sin enviar"
         private set
 
+    fun initialize(context: Context) {
+        val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs = p
+        baseWfsSpread = p.getString(BASE_WFS, null)?.toFloatOrNull() ?: Float.NaN
+        lastAppliedWfsSpread = p.getString(LAST_WFS, null)?.toFloatOrNull() ?: Float.NaN
+        baseHoaImmersivity = p.getString(BASE_HOA, null)?.toFloatOrNull() ?: Float.NaN
+        lastAppliedHoaImmersivity = p.getString(LAST_HOA, null)?.toFloatOrNull() ?: Float.NaN
+        lastOwner = p.getString(OWNER, "UNKNOWN") ?: "UNKNOWN"
+        lastDelta = p.getFloat(DELTA, 0f).takeIf { it.isFinite() } ?: 0f
+    }
+
+    private fun persistState() {
+        val p = prefs ?: return
+        p.edit()
+            .putString(BASE_WFS, baseWfsSpread.takeIf { it.isFinite() }?.toString())
+            .putString(LAST_WFS, lastAppliedWfsSpread.takeIf { it.isFinite() }?.toString())
+            .putString(BASE_HOA, baseHoaImmersivity.takeIf { it.isFinite() }?.toString())
+            .putString(LAST_HOA, lastAppliedHoaImmersivity.takeIf { it.isFinite() }?.toString())
+            .putString(OWNER, lastOwner)
+            .putFloat(DELTA, lastDelta)
+            .apply()
+    }
+
     fun json(width: Float): String =
         String.format(Locale.US, "{\"action\":\"SET_PERCEPTUAL_STATE\",\"spatialWidth\":%.4f}", width)
+
+    fun wfsJson(spread: Float): String =
+        String.format(Locale.US, "{\"action\":\"SET_WFS\",\"wfsSpread\":%.4f}", spread)
+
+    fun upmixJson(immersivity: Float): String =
+        String.format(Locale.US, "{\"action\":\"SET_UPMIXING\",\"upmixingImmersivity\":%.4f}", immersivity)
 
     private fun jsonLong(reply: String, key: String): Long? =
         runCatching { JSONObject(reply).optLong(key, 0L).takeIf { it > 0L } }.getOrNull()
 
-    /** Extrae un booleano JSON de forma estricta; evita confundir status con aplicación real. */
-    private fun jsonBoolean(reply: String, key: String): Boolean? {
-        val match = Regex("\\\""+Regex.escape(key)+"\\\"\\s*:\\s*(true|false)", RegexOption.IGNORE_CASE)
-            .find(reply) ?: return null
-        return match.groupValues[1].equals("true", ignoreCase = true)
-    }
+    private fun jsonBoolean(reply: String, key: String): Boolean? =
+        runCatching {
+            val json = JSONObject(reply)
+            if (!json.has(key) || json.isNull(key)) null else json.optBoolean(key)
+        }.getOrNull()
 
-    /** status=applied no basta: exigimos applied=true en la respuesta del comando. */
     fun statusFromReply(reply: String): String {
         if (reply.isBlank()) return "demonio no disponible"
-        val ok = jsonBoolean(reply, "ok")
-        if (ok == false) return "rechazado por el demonio"
-        if (ok != true) return "respuesta sin confirmación válida del demonio"
-        val dspBlockApplied = Regex("\\\"status\\\"\\s*:\\s*\\\"dsp_block_applied\\\"").containsMatchIn(reply)
-        val statusApplied = Regex("\\\"status\\\"\\s*:\\s*\\\"applied\\\"").containsMatchIn(reply)
-        val pendingConsumer = Regex("\\\"status\\\"\\s*:\\s*\\\"accepted_pending_consumer\\\"").containsMatchIn(reply)
-        val awaitingGeneration = Regex("\\\"status\\\"\\s*:\\s*\\\"awaiting_dsp_generation\\\"").containsMatchIn(reply)
-        val noActiveEffect = Regex("\\\"status\\\"\\s*:\\s*\\\"no_active_effect\\\"").containsMatchIn(reply)
-        val enabledIdle = Regex("\\\"status\\\"\\s*:\\s*\\\"effect_enabled_idle\\\"").containsMatchIn(reply)
-        val consumerDeclared = Regex("\\\"consumer\\\"\\s*:\\s*\\\"omega_effect\\\"").containsMatchIn(reply)
-        return when {
-            pendingConsumer || noActiveEffect -> "aceptado; sin consumidor activo"
-            dspBlockApplied && jsonBoolean(reply, "applied") == true && consumerDeclared ->
-                "aplicado por bloque DSP; generación confirmada"
-            dspBlockApplied && jsonBoolean(reply, "applied") == true ->
-                "aplicado por bloque DSP; consumidor confirmado"
-            enabledIdle -> "efecto habilitado; esperando bloque de audio"
-            awaitingGeneration -> "publicado en Ruta B; esperando generación DSP"
-            dspBlockApplied -> "respuesta DSP inconsistente; read-back no confirmado"
-            statusApplied && jsonBoolean(reply, "applied") == true && consumerDeclared ->
-                "publicado en Ruta B; consumidor declarado, audio no verificado"
-            statusApplied && jsonBoolean(reply, "applied") == true ->
-                "publicado en Ruta B; sin consumidor DSP declarado"
-            jsonBoolean(reply, "applied") == false ->
+        val json = runCatching { JSONObject(reply) }.getOrNull()
+            ?: return "respuesta sin confirmación válida del demonio"
+        if (!json.has("ok")) return "respuesta sin confirmación válida del demonio"
+        if (!json.optBoolean("ok", false)) return "rechazado por el demonio"
+        val statusValue = json.optString("status", "")
+        val applied = jsonBoolean(reply, "applied")
+        val consumerDeclared = json.optString("consumer", "null") == "omega_effect"
+        return when (statusValue) {
+            "accepted_pending_consumer", "no_active_effect" ->
+                "aceptado; sin consumidor activo"
+            "dsp_block_applied" -> if (applied == true) {
+                "bloque DSP completado; verificando propietario espacial"
+            } else {
+                "respuesta DSP inconsistente; read-back no confirmado"
+            }
+            "effect_enabled_idle" -> "efecto habilitado; esperando bloque de audio"
+            "awaiting_dsp_generation" -> "publicado en Ruta B; esperando generación DSP"
+            "applied" -> when {
+                applied == true && consumerDeclared ->
+                    "publicado en Ruta B; consumidor declarado, audio no verificado"
+                applied == true -> "publicado en Ruta B; sin consumidor DSP declarado"
+                applied == false -> "no aplicado: el consumidor DSP no confirmó la aplicación"
+                else -> "estado sin confirmación explícita de aplicación"
+            }
+            else -> if (applied == false) {
                 "no aplicado: el consumidor DSP no confirmó la aplicación"
-            statusApplied -> "estado sin confirmación explícita de aplicación"
-            else -> "respuesta no reconocida"
+            } else {
+                "respuesta no reconocida"
+            }
         }
     }
 
-    /** Delivery is complete only after the effect reports consuming this generation in a DSP block. */
     fun isDeliveryConfirmed(value: String): Boolean =
-        value.startsWith("aplicado por bloque DSP;")
+        value.startsWith("aplicado por bloque DSP; spread WFS consumido") ||
+            value.startsWith("aplicado por bloque DSP; inmersividad HOA consumida") ||
+            value.startsWith("aplicado por bloque DSP; anchura M/S activa")
 
-    /** Retry SET only on transport/protocol failure; pending consumers are polled, not republished. */
     fun shouldRetryCommand(value: String): Boolean =
         value == "demonio no disponible" ||
             value.startsWith("error:") ||
-            value == "respuesta sin confirmación válida del demonio"
+            value == "respuesta sin confirmación válida del demonio" ||
+            value == "arbitraje espacial no verificable" ||
+            value == "propietario cambió; reaplicación necesaria"
 
-    /** Seguro desde cualquier hilo; ancho no finito se ignora. */
-    fun push(width: Float) {
-        if (!width.isFinite()) return
-        pending.set(width.coerceIn(0f, 1.5f))
-        io.execute {
-            val w = pending.getAndSet(null) ?: return@execute
-            try {
-                val reply = MagiskBridge.sendCommand(json(w))
-                expectedGeneration.set(jsonLong(reply, "generation") ?: 0L)
+    private fun updateBaselinesFromExternalChanges(e: OmegaEngineBridge.ControlPlaneEvidence): Boolean {
+        var changed = false
+        if (e.wfsSpread.isFinite()) {
+            if (!baseWfsSpread.isFinite()) {
+                baseWfsSpread = e.wfsSpread
+                changed = true
+            } else if ((lastAppliedWfsSpread.isFinite() &&
+                    abs(e.wfsSpread - lastAppliedWfsSpread) > 0.01f) ||
+                (!lastAppliedWfsSpread.isFinite() && lastOwner == "WFS" &&
+                    abs(e.wfsSpread - baseWfsSpread) > 0.01f)) {
+                // A real WFS slider change becomes the new user baseline, not accumulated FotoHolo drift.
+                baseWfsSpread = e.wfsSpread
+                lastAppliedWfsSpread = Float.NaN
+                changed = true
+            }
+        }
+        if (e.upmixingImmersivity.isFinite()) {
+            val current = e.upmixingImmersivity
+            if (!baseHoaImmersivity.isFinite()) {
+                baseHoaImmersivity = current
+                changed = true
+            } else if ((lastAppliedHoaImmersivity.isFinite() &&
+                    abs(current - lastAppliedHoaImmersivity) > 0.01f) ||
+                (!lastAppliedHoaImmersivity.isFinite() && lastOwner == "HOA" &&
+                    abs(current - baseHoaImmersivity) > 0.01f)) {
+                baseHoaImmersivity = current
+                lastAppliedHoaImmersivity = Float.NaN
+                changed = true
+            }
+        }
+        if (changed) persistState()
+        return changed
+    }
+
+    private fun restorePreviousOwnerIfNeeded(owner: String): Boolean {
+        if (lastOwner == "WFS" && owner != "WFS" && baseWfsSpread.isFinite()) {
+            val reply = MagiskBridge.sendCommand(wfsJson(baseWfsSpread.coerceIn(0f, 2f)))
+            if (jsonBoolean(reply, "ok") != true) {
                 status = statusFromReply(reply)
+                return false
+            }
+            lastAppliedWfsSpread = baseWfsSpread.coerceIn(0f, 2f)
+            expectedGeneration.set(jsonLong(reply, "generation") ?: 0L)
+        }
+        if (lastOwner == "HOA" && owner != "HOA" && baseHoaImmersivity.isFinite()) {
+            val reply = MagiskBridge.sendCommand(upmixJson(baseHoaImmersivity))
+            if (jsonBoolean(reply, "ok") != true) {
+                status = statusFromReply(reply)
+                return false
+            }
+            lastAppliedHoaImmersivity = baseHoaImmersivity
+            expectedGeneration.set(jsonLong(reply, "generation") ?: 0L)
+        }
+        return true
+    }
+
+    /** Coalesced system-wide update; the route owner is read from the daemon, not guessed. */
+    fun push(width: Float, baseWidth: Float) {
+        if (!width.isFinite() || !baseWidth.isFinite()) return
+        pending.set(width.coerceIn(0f, 1.5f) to baseWidth.coerceIn(0f, 1.5f))
+        io.execute {
+            val (safeWidth, safeBase) = pending.getAndSet(null) ?: return@execute
+            try {
+                val evidence = OmegaEngineBridge.requestControlPlaneEvidence()
+                if (evidence == null) {
+                    expectedGeneration.set(0L)
+                    status = "demonio no disponible"
+                    return@execute
+                }
+                val owner = evidence.spatialOwner
+                if (owner == null ||
+                    (owner == "WFS" && !evidence.wfsSpread.isFinite()) ||
+                    (owner == "HOA" && !evidence.upmixingImmersivity.isFinite())) {
+                    expectedGeneration.set(0L)
+                    status = "arbitraje espacial no verificable"
+                    return@execute
+                }
+
+                updateBaselinesFromExternalChanges(evidence)
+                if (!restorePreviousOwnerIfNeeded(owner)) return@execute
+
+                val delta = (safeWidth - safeBase).coerceIn(-0.25f, 0.25f)
+                val payload = when (owner) {
+                    "WFS" -> {
+                        if (!baseWfsSpread.isFinite()) {
+                            status = "arbitraje espacial no verificable"
+                            return@execute
+                        }
+                        val target = if (abs(delta) < 0.001f) baseWfsSpread.coerceIn(0f, 2f)
+                            else (baseWfsSpread + delta * 0.5f).coerceIn(0.5f, 2f)
+                        wfsJson(target).also { lastAppliedWfsSpread = target }
+                    }
+                    "HOA" -> {
+                        if (!baseHoaImmersivity.isFinite()) {
+                            status = "arbitraje espacial no verificable"
+                            return@execute
+                        }
+                        val effectiveBase = baseHoaImmersivity.coerceIn(0f, 1f)
+                        val target = if (abs(delta) < 0.001f) baseHoaImmersivity
+                            else (effectiveBase + delta * 0.25f).coerceIn(0f, 1f)
+                        upmixJson(target).also { lastAppliedHoaImmersivity = target }
+                    }
+                    else -> json(safeWidth)
+                }
+
+                val reply = MagiskBridge.sendCommand(payload)
+                if (jsonBoolean(reply, "ok") != true) {
+                    expectedGeneration.set(0L)
+                    status = statusFromReply(reply)
+                    persistState()
+                    return@execute
+                }
+                expectedGeneration.set(jsonLong(reply, "generation") ?: 0L)
+                lastOwner = owner
+                lastDelta = delta
+                status = statusFromReply(reply)
+                persistState()
             } catch (e: Exception) {
                 expectedGeneration.set(0L)
-                status = "error: ${e.javaClass.simpleName}"
+                status = "error: " + e.javaClass.simpleName
                 Log.w(TAG, "envío a Ruta B falló", e)
             }
         }
     }
 
-    /**
-     * Polls GET_STATUS without publishing another SET generation. This prevents a
-     * slow AudioEffect consumer from being starved by repeated identical commands.
-     */
+    /** Polls the effect beacon without publishing a new generation. */
     fun refreshEvidence() {
         io.execute {
             try {
@@ -118,22 +273,35 @@ object FotoHoloRouteB {
                     status = "demonio no disponible"
                     return@execute
                 }
+                val owner = evidence.spatialOwner
+                if (owner == null ||
+                    (owner == "WFS" && !evidence.wfsSpread.isFinite()) ||
+                    (owner == "HOA" && !evidence.upmixingImmersivity.isFinite())) {
+                    status = "arbitraje espacial no verificable"
+                    return@execute
+                }
+                val baselineChanged = updateBaselinesFromExternalChanges(evidence)
+                if (owner != lastOwner || (baselineChanged && abs(lastDelta) > 0.001f)) {
+                    status = "propietario cambió; reaplicación necesaria"
+                    return@execute
+                }
                 status = when {
-                    evidence.effectConsumerPresent && evidence.effectState in 1..2 &&
-                        evidence.snapshotGeneration >= expected &&
-                        evidence.dspAppliedGeneration >= expected ->
-                        "aplicado por bloque DSP; generación confirmada" +
-                            if (evidence.effectState == 1) " (efecto ahora inactivo)" else ""
-                    evidence.effectState == 2 ->
-                        "publicado en Ruta B; esperando generación DSP"
-                    evidence.effectState == 1 ->
-                        "efecto habilitado; esperando bloque de audio"
-                    evidence.effectState < 0 ->
-                        "evidencia del efecto no disponible"
+                    evidence.snapshotGeneration >= expected &&
+                        evidence.dspAppliedGeneration >= expected -> {
+                        val ownerLabel = when (owner) {
+                            "WFS" -> "spread WFS consumido"
+                            "HOA" -> "inmersividad HOA consumida"
+                            else -> "anchura M/S activa"
+                        }
+                        "aplicado por bloque DSP; " + ownerLabel +
+                            if (evidence.effectState == 2) "" else " (último bloque ya finalizó)"
+                    }
+                    evidence.effectState == 2 -> "publicado en Ruta B; esperando generación DSP"
+                    evidence.effectState == 1 -> "efecto habilitado; esperando bloque de audio"
                     else -> "aceptado; sin consumidor activo"
                 }
             } catch (e: Exception) {
-                status = "error: ${e.javaClass.simpleName}"
+                status = "error: " + e.javaClass.simpleName
                 Log.w(TAG, "consulta de evidencia Ruta B falló", e)
             }
         }

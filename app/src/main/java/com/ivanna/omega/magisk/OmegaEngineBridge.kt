@@ -352,8 +352,20 @@ object OmegaEngineBridge {
         val processedFrames: Long,
         val effectState: Int,
         val status: String,
-        val effectConsumerPresent: Boolean
+        val effectConsumerPresent: Boolean,
+        val spatialArbitrationKnown: Boolean,
+        val upmixingEnabled: Boolean,
+        val upmixingImmersivity: Float,
+        val wfsEnabled: Boolean,
+        val wfsSpread: Float
     ) {
+        /** Spatial priority used by omega_apply_snapshot: WFS, then HOA, then M/S. */
+        val spatialOwner: String?
+            get() = if (!spatialArbitrationKnown) null else when {
+                wfsEnabled -> "WFS"
+                upmixingEnabled -> "HOA"
+                else -> "MS"
+            }
         val dspHasAppliedCurrentSnapshot: Boolean
             get() = snapshotGeneration > 0L && dspAppliedGeneration >= snapshotGeneration &&
                 effectState == 2 && status == "dsp_block_applied"
@@ -371,7 +383,17 @@ object OmegaEngineBridge {
             processedFrames = json.optLong("dsp_frames", 0L),
             effectState = json.optInt("effect_state", -1),
             status = json.optString("status", "unknown"),
-            effectConsumerPresent = json.optString("consumer", "null") == "omega_effect"
+            effectConsumerPresent = json.optString("consumer", "null") == "omega_effect",
+            spatialArbitrationKnown = json.has("upmixing_enabled") &&
+                json.has("upmixing_immersivity") && json.has("wfs_enabled") && json.has("wfs_spread") &&
+                json.optDouble("upmixing_enabled", Double.NaN).isFinite() &&
+                json.optDouble("upmixing_immersivity", Double.NaN).isFinite() &&
+                json.optDouble("wfs_enabled", Double.NaN).isFinite() &&
+                json.optDouble("wfs_spread", Double.NaN).isFinite(),
+            upmixingEnabled = json.optDouble("upmixing_enabled", 0.0) >= 0.5,
+            upmixingImmersivity = json.optDouble("upmixing_immersivity", Double.NaN).toFloat(),
+            wfsEnabled = json.optDouble("wfs_enabled", 0.0) >= 0.5,
+            wfsSpread = json.optDouble("wfs_spread", Double.NaN).toFloat()
         )
     }
 
@@ -391,6 +413,9 @@ object OmegaEngineBridge {
             append(" effectState=").append(evidence.effectState)
             append(" consumer=").append(evidence.effectConsumerPresent)
             append(" status=").append(evidence.status)
+            append(" spatialOwner=").append(evidence.spatialOwner ?: "UNKNOWN")
+            append(" wfsSpread=").append(evidence.wfsSpread)
+            append(" hoaImmersivity=").append(evidence.upmixingImmersivity)
             append(" currentSnapshotApplied=").append(evidence.dspHasAppliedCurrentSnapshot)
         }
     }

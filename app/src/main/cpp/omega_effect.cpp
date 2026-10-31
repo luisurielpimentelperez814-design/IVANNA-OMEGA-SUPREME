@@ -378,7 +378,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     // para no alterar la física del frente de onda ni introducir filtro de peine.
     if (upmixOn || wfsOn) {
         fc->setSpatialWidth(1.0f);
-    } else if (std::isfinite(s.spatial_width) && s.spatial_width > 0.f) {
+    } else if (std::isfinite(s.spatial_width) && s.spatial_width >= 0.f) {
         fc->setSpatialWidth(s.spatial_width);
     }
 

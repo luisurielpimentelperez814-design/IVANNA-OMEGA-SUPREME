@@ -123,7 +123,7 @@ struct Harness {
 TEST(SpatialPoseDaemon, SetHeadPosePublishesClampedPoseThroughSnapshot) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_HEAD_POSE\",\"yawRad\":9.0,\"pitchRad\":-2.0}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
     EXPECT_NE(std::string(reply).find("\"applied\":false"), std::string::npos) << reply;
@@ -139,7 +139,7 @@ TEST(SpatialPoseDaemon, SetHeadPosePublishesClampedPoseThroughSnapshot) {
 TEST(SafmusDaemon, RejectsMalformedLatentWithoutCorruptingLastValidVector) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
 
     ASSERT_GT(cs.handleJsonCommand(
         "{\"action\":\"SET_SAF_STATE\",\"q\":[0.1,0.2,0.3,0.4,0.5,0.6,0.7]}",
@@ -179,7 +179,7 @@ TEST(SafmusDaemon, RejectsMalformedLatentWithoutCorruptingLastValidVector) {
 TEST(SpatialPoseDaemon, StatusNeverClaimsAppliedWithoutConsumerAck) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_HEAD_POSE\",\"yawRad\":0.25,\"pitchRad\":0.10}", reply, sizeof reply), 0);
     ASSERT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
     ASSERT_NE(std::string(reply).find("\"applied\":false"), std::string::npos) << reply;
@@ -192,17 +192,50 @@ TEST(SpatialPoseDaemon, StatusNeverClaimsAppliedWithoutConsumerAck) {
 
 TEST(ControlPlaneProtocol, HelloNegotiatesTheDaemonProtocolVersion) {
     CommandServer cs;
-    char reply[1024]{};
+    char reply[4096]{};
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"HELLO\",\"proto\":2}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"proto\":2"), std::string::npos) << reply;
     EXPECT_NE(std::string(reply).find("\"compatible\":true"), std::string::npos) << reply;
     EXPECT_NE(std::string(reply).find("\"status\":\"ready\""), std::string::npos) << reply;
 }
 
+TEST(ControlPlaneStatus, ExposesFotoHoloSpatialOwnerState) {
+    Harness h;
+    CommandServer cs;
+    char reply[4096]{};
+
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    std::string status(reply);
+    EXPECT_NE(status.find("\"upmixing_enabled\""), std::string::npos) << status;
+    EXPECT_NE(status.find("\"upmixing_immersivity\""), std::string::npos) << status;
+    EXPECT_NE(status.find("\"wfs_enabled\""), std::string::npos) << status;
+    EXPECT_NE(status.find("\"wfs_spread\""), std::string::npos) << status;
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":0.62}",
+        reply, sizeof reply), 0);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"upmixing_enabled\":1.000"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\"upmixing_immersivity\":0.620"), std::string::npos) << reply;
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_WFS\",\"wfsEnabled\":1,\"wfsSpread\":0.83}",
+        reply, sizeof reply), 0);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"wfs_enabled\":1.000"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\"wfs_spread\":0.830"), std::string::npos) << reply;
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_PERCEPTUAL_STATE\",\"spatialWidth\":0.0}",
+        reply, sizeof reply), 0);
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"spatial_width\":0.000"), std::string::npos) << reply;
+}
+
 TEST(UserFlagsDaemon, SetUserFlagsReachesSnapshotAndSurvivesOtherCommands) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply), 0);
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1.2}", reply, sizeof reply);
     const uint32_t base = h.latestFlags();
@@ -228,7 +261,7 @@ TEST(UserFlagsDaemon, SetUserFlagsReachesSnapshotAndSurvivesOtherCommands) {
 TEST(UserFlagsDaemon, RejectsCommandsWithoutWhitelistedKeys) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1.0}", reply, sizeof reply);
     const uint32_t before = h.latestFlags();
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_USER_FLAGS\",\"cochlear\":1,\"flags\":4294967295}", reply, sizeof reply), 0);
@@ -245,7 +278,7 @@ TEST(UserFlagsDaemon, RejectsCommandsWithoutWhitelistedKeys) {
 TEST(MagiskTextCommands, EveryControlReachesTheSnapshotAndUnknownIsRejected) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
 
     ASSERT_GT(cs.handleTextCommand("SET_BYPASS:1", reply, sizeof reply), 0);
@@ -295,7 +328,7 @@ TEST(MagiskTextCommands, EveryControlReachesTheSnapshotAndUnknownIsRejected) {
 TEST(MagiskTextCommands, PfSlidersReachEffectFieldsButBootDefaultsDoNot) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
     cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
     cs.handleJsonCommand("{\"action\":\"SET_USER_FLAGS\",\"unityOff\":0}", reply, sizeof reply);
@@ -319,7 +352,7 @@ TEST(MagiskTextCommands, PfSlidersReachEffectFieldsButBootDefaultsDoNot) {
 TEST(MagiskTextCommands, WfsLayoutReachesSnapshotWithoutTouchingEnableOrSpread) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
     cs.handleJsonCommand("{\"action\":\"SET_WFS\",\"wfsEnabled\":1,\"wfsSpread\":1.18}", reply, sizeof reply);
     snap();
@@ -358,7 +391,7 @@ TEST(AuxFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
 
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
     cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
@@ -401,7 +434,7 @@ TEST(TemporalFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
 
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
     cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
@@ -440,7 +473,7 @@ TEST(RoomCorrectionChannel, DaemonPublishesMeasuredCorrectionAndItSurvivesOtherC
     EXPECT_LE(sizeof(OmegaDspSnapshot), 512u);
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
     cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
@@ -470,7 +503,7 @@ TEST(RoomCorrectionChannel, DaemonPublishesMeasuredCorrectionAndItSurvivesOtherC
 TEST(NpeChannel, DaemonPublishesNpeStateToTheModule) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
     cs.handleJsonCommand("{\"action\":\"GET_STATUS\"}", reply, sizeof reply);
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":0,\"upmixingImmersivity\":1}", reply, sizeof reply);
@@ -517,7 +550,7 @@ TEST(PunchChannel, EncodeDecodeRoundTripsAllFifteenLevelsAndTouchesNothingElse) 
 TEST(PunchChannel, SetPunchReachesTheSnapshotAndSurvivesOtherCommands) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     cs.handleJsonCommand("{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":1.0}", reply, sizeof reply);
     OmegaDspSnapshot s{};
     ASSERT_TRUE(h.reader.readLatest(s, h.seen));
@@ -546,7 +579,7 @@ TEST(PunchChannel, SetPunchReachesTheSnapshotAndSurvivesOtherCommands) {
 TEST(CrosstalkChannel, DaemonPublishesCrosstalkBitWithoutDisturbingTheTemporalField) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     auto snap = [&]() { OmegaDspSnapshot s{}; EXPECT_TRUE(h.reader.readLatest(s, h.seen)); return s; };
     cs.handleJsonCommand("{\"action\":\"SET_TEMPORAL_FIELD\",\"temporalEnabled\":1,\"temporalAmount\":0.5}", reply, sizeof reply);
     const OmegaDspSnapshot a = snap();
@@ -582,7 +615,7 @@ TEST(Omega4DExt, EncodeDecodeRoundTripAndDefaultsOff) {
 TEST(FourDChannel, Set4DReachesTheSnapshotWithoutTouchingPunch) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":0.6}", reply, sizeof reply);
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_4D\",\"fourdOn\":1,\"arcOn\":1,\"arcDepth\":0.5,\"depth\":1,\"leadMs\":9}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
@@ -623,7 +656,7 @@ TEST(ScenePoseChannel, DistanceWordRoundTripRejectsOutOfRangeAndKeepsNpeBits) {
 TEST(ScenePoseChannel, DaemonPublishesPoseAndDistanceRejectsInvalidAndClears) {
     Harness h;
     CommandServer cs;
-    char reply[1024];
+    char reply[4096];
     cs.handleJsonCommand("{\"action\":\"SET_PUNCH\",\"punchAmount\":0.6}", reply, sizeof reply);
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"SET_SCENE_POSE\",\"azimuthRad\":0.5,\"elevationRad\":0.2,\"distance\":1.5}", reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;

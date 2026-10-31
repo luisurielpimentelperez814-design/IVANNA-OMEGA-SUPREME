@@ -69,10 +69,10 @@ object FotoHoloEngine {
     /** Conteo de bocinas/modo declarado por el usuario (SpeakerLayoutPanel). STEREO_NO_SUB = sin efecto. */
     @Volatile var speakerLayout: SpeakerLayout = SpeakerLayout.STEREO_NO_SUB; private set
 
-    // Adaptación acotada del ancho estéreo para el perfil Genezy Y para cualquier disposición de
-    // bocinas que el usuario declare (SpeakerLayoutPolicy). Se componen (ambos son factores acotados
-    // de ±8-15%), no se suman valores absolutos. NO es enrutamiento discreto por canal/satélite: el
-    // único actuador real al final es spatial_width -> StereoWidener (ver SpeakerLayoutPolicy.kt).
+    // Intención de anchura acotada para Genezy y la disposición declarada por el usuario.
+    // Ruta A aplica spatial_width -> StereoWidener; Ruta B entrega la desviación al propietario
+    // espacial activo mediante FotoHoloRouteB (WFS/HOA/Mid-Side), sin escribir en dos rutas a la vez.
+    // Los factores de Genezy y SpeakerLayoutPolicy se componen; no se suman como offsets absolutos.
     private fun declaredWidth(base: Float): Float {
         val genezy = (base * if (genezyProfileEnabled && genezyLateralExtension) 1.08f else 1f)
         return SpeakerLayoutPolicy.apply(genezy, speakerLayout).let { if (it.isFinite()) it.coerceIn(0f, 1.5f) else base }
@@ -179,6 +179,7 @@ object FotoHoloEngine {
             started = true
         }
         load(context)
+        FotoHoloRouteB.initialize(context)
         val job = scope.launch(Dispatchers.Default) {
             try {
             val buf = FloatArray(FotoHoloMath.BANDS)
@@ -193,8 +194,9 @@ object FotoHoloEngine {
             var systemWideRouteActive = false
             var nextRouteProbeMs = 0L
             var lastRouteBCommanded = Float.NaN
+            var lastRouteBBase = Float.NaN
             var lastRouteBPushMs = 0L
-            var routeARestorePending = false
+            var routeARestorePending = true
 
             while (true) {
                 try {
@@ -313,21 +315,31 @@ object FotoHoloEngine {
                     if (routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_B) {
                         val routeBWidth = if (enabled && !bypass) declaredWidth(base) else base
                         val routeBChanged = !lastRouteBCommanded.isFinite() ||
-                            FotoHoloMath.changed(routeBWidth, lastRouteBCommanded)
+                            !lastRouteBBase.isFinite() ||
+                            FotoHoloMath.changed(routeBWidth, lastRouteBCommanded) ||
+                            FotoHoloMath.changed(base, lastRouteBBase)
+                        val routeBWriteDue = nowMs - lastRouteBPushMs >= 200L
                         val routeBCheckDue = nowMs - lastRouteBPushMs >= 1_500L
-                        if (routeBChanged ||
-                            (routeBCheckDue && FotoHoloRouteB.shouldRetryCommand(FotoHoloRouteB.status))) {
-                            FotoHoloRouteB.push(routeBWidth)
+                        val routeBWaitingForConsumer =
+                            FotoHoloRouteB.status == "aceptado; sin consumidor activo" ||
+                                FotoHoloRouteB.status == "efecto habilitado; esperando bloque de audio" ||
+                                FotoHoloRouteB.status == "publicado en Ruta B; sin consumidor DSP declarado"
+                        if (routeBWriteDue && !routeBWaitingForConsumer && (routeBChanged ||
+                            (routeBCheckDue && FotoHoloRouteB.shouldRetryCommand(FotoHoloRouteB.status)))) {
+                            FotoHoloRouteB.push(routeBWidth, base)
                             lastRouteBCommanded = routeBWidth
+                            lastRouteBBase = base
                             lastRouteBPushMs = nowMs
                         } else if (routeBCheckDue &&
                             !FotoHoloRouteB.isDeliveryConfirmed(FotoHoloRouteB.status)) {
-                            // Wait for DSP consumption without moving the target generation.
+                            // Poll the applied generation and current spatial owner; do not
+                            // republish unchanged SETs while the DSP consumes the snapshot.
                             FotoHoloRouteB.refreshEvidence()
                             lastRouteBPushMs = nowMs
                         }
                     } else {
                         lastRouteBCommanded = Float.NaN
+                        lastRouteBBase = Float.NaN
                     }
 
                     // Refrescar read-back en cada tick de control tras una escritura
