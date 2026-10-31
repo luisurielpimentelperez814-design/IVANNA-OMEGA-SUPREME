@@ -257,10 +257,10 @@ static int buildRichReply(char* buf, int sz, bool ok, const char* command, const
          (state == ivanna::EffectBeaconState::EnabledIdle ? "effect_enabled_idle" :
           (generation > 0 ? "snapshot_published_no_active_effect" : status)));
     return snprintf(buf,(size_t)sz,
-        "{\\"ok\\":%s,\\"command\\":\\"%s\\",\\"applied\\":%s,\\"status\\":\\"%s\\",\\"generation\\":%llu,\\"route\\":\\"%s\\",\\"consumer\\":%s,\\"effect_state\\":%d,\\"dsp_applied_generation\\":%llu,\\"dsp_frames\\":%llu,\\"error\\":%s}",
+        "{\"ok\":%s,\"command\":\"%s\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"%s\",\"consumer\":%s,\"effect_state\":%d,\"dsp_applied_generation\":%llu,\"dsp_frames\":%llu,\"error\":%s}",
         ok?"true":"false", command, applied?"true":"false", evidenceStatus,
         (unsigned long long)generation, route,
-        hasActiveConsumer()?"\\"omega_effect\\"":"null", static_cast<int>(state),
+        hasActiveConsumer()?"\"omega_effect\"":"null", static_cast<int>(state),
         (unsigned long long)appliedGeneration, (unsigned long long)frames,
         errorMsg?errorMsg:"null");
 }
