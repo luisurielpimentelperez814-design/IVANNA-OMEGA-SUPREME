@@ -79,6 +79,7 @@ El criterio interno permite decidir sobre un ajuste bajo esas condiciones de cap
 
 - **Ω-ATOMIC Genezi AUX:** la política de ruta equilibra foco central (1.00) e inmersión (1.08) mediante un compromiso minimax exacto (1.04). El valor se publica a través de los dos caminos de control existentes; es un multiplicador de intensidad espacial, no una medida de ancho acústico ni una calibración de sala.
 - **Pruebas:** cuatro regresiones JVM cubren el minimax, una búsqueda exhaustiva del intervalo, los límites duros y el fail-closed ante valores inválidos. La prueba de ruta Genezi fija el valor 1.04.
+- **HRTF externo:** AUX/USB conserva HRTF solicitado con wet 0.15 cuando se declara salida de línea; auriculares mantienen wet 1.0. No se presenta como cancelación transaural. WFS multialtavoz, SAF binaural personal y RIR sintético no se inyectan a ciegas en una ruta L/R.
 - **Actualizador Magisk:** las URLs de `module.prop` y `update.json` apuntan al repositorio real y al asset versionado v2.5.210. La publicación solo se considera disponible tras CI, validación de APK/ZIP y verificación de los assets.
 - **Límite físico:** no se declara teletransportación acústica, WFS físico ni cancelación transaural calibrada sin medición de las transferencias altavoz-oído. La prueba de escucha Genezi en sus cuatro estados sigue siendo una aceptación en hardware.
 
