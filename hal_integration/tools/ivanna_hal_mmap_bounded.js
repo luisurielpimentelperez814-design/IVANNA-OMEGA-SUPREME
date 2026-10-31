@@ -1,10 +1,11 @@
 'use strict';
 
 // Bounded, passive capture of the HAL's StreamOutPrimary::GetMmapPosition().
-// v2.5.206: hooks a real 244-byte HAL function instead of the 4-byte PAL thunk
-// (a trampoline over a tiny thunk can corrupt neighbouring code and crash the
-// audio HAL). It refuses to hook any target smaller than MIN_BYTES, never calls
-// PAL itself and detaches after LIMIT returns.
+// v2.5.206: hooks a real 244-byte HAL function and refuses targets under
+// MIN_BYTES as a precaution (tiny thunks cannot hold a trampoline safely). It
+// never calls PAL itself and detaches after LIMIT returns. NOTE: frida-inject
+// 17.25.0 aborts inside the agent on this build before any hook matters (see
+// MOTO_G85_PAL_CLOCK_INTEGRATION.md).
 const MODULE = 'audio.primary.blair.so';
 const SYMBOL = '_ZN16StreamOutPrimary15GetMmapPositionEP19audio_mmap_position';
 const MIN_BYTES = 32;

@@ -1,3 +1,8 @@
+## v2.5.207 (498) — 2026-10-31
+
+- **Correccion de la v2.5.206:** la hipotesis de que el hook sobre el thunk de 4 bytes tumbo el HAL de audio queda retirada. El tombstone del Moto G85 muestra `SIGABRT` con `Abort message: 'Unable to locate the libc; please file a bug'` y todos los frames dentro de `frida-agent-64.so`: es un fallo del agente de Frida 17.25.0 en esta build (Android 15, V1UOS35H.74-16-4-16), no de la sonda. Cada caida reinicia el HAL y audioserver. No inyectar Frida 17.25.0 en el HAL de audio en esta build.
+- **Sin cambios de comportamiento:** la sonda sigue enganchando una funcion grande y rechazando objetivos < 32 bytes, ahora solo como precaucion. Sigue sin haber medicion de la ruta USB-C; enlace fisico y actuador ASRC sin verificar; correccion deshabilitada. Solo documentacion y comentario.
+
 ## v2.5.206 (497) — 2026-10-31
 
 - **Sonda MMAP: se dejo de enganchar un thunk de 4 bytes.** Con la v2.5.204, `frida-inject` en el HAL de audio (pid 1433, Moto G85) termino con `The connection is closed` y el proceso desaparecio. La causa no esta confirmada; la hipotesis es que el trampolin de Frida sobre `pal_stream_get_mmap_position` (4 bytes segun la auditoria) pisa codigo vecino. `ivanna_hal_mmap_bounded.js` ahora engancha `StreamOutPrimary::GetMmapPosition` (244 bytes), se niega a enganchar objetivos de menos de 32 bytes, lee la estructura Android `audio_mmap_position` y se limita a 300 retornos.
