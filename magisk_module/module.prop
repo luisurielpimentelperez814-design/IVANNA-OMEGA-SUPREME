@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.212
-versionCode=503
+version=v2.5.213
+versionCode=504
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.212: DSP control-generation readback, live evidence UI, FotoHolo confirmation and protocol handshake fix
+description=v2.5.213: FotoHolo Route B ACK parsing JVM-safe; validated Android and native build
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

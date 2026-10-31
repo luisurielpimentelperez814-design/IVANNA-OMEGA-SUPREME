@@ -1,12 +1,9 @@
-## Candidato FotoHolo Nanotomix — cableado espacial y control de audio (sin versión/release)
+## v2.5.213 (504) — 2026-10-31
 
-- Bark64 fecha el bloque PCM al terminar su consumo JNI; las muestras sin productor, futuras o con más de 1 s se rechazan. SAFMUS falla cerrado si no puede determinar la propiedad del AudioEffect global.
-- Ruta B conserva la generación del ACK y consulta `GET_STATUS` sin volver a publicar el mismo SET mientras espera al consumidor. Las escrituras se limitan a 5 Hz.
-- FotoHolo sigue la jerarquía espacial real del efecto: WFS → HOA → Mid/Side. Modula `wfsSpread`, `upmixingImmersivity` o `spatialWidth` según el propietario activo; conserva/restaura valores base y detecta cambios externos del usuario.
-- `GET_STATUS` expone flags y valores WFS/HOA. La confirmación exige generación consumida y propietario espacial identificado; un ACK de socket no se presenta como audio aplicado.
-- Mid/Side acepta anchura cero como mono válido. Se añaden regresiones JVM para selección de actuador y una prueba C++ de read-back WFS/HOA.
-- Alcance honesto: la adaptación espectral Bark sigue en Ruta A. Ruta B ya actúa sobre el propietario espacial usando el offset Genezy/disposición; el observador Bark read-only para Ruta B sigue pendiente y no se atribuye modulación espectral global todavía.
-- No se incrementa `version.properties` ni se publica release: HWS-01..04 mantiene fases sin aprobación y el gate de producción debe permanecer cerrado hasta aportar evidencia real por fase.
+- **FotoHolo Route B: robustez JVM:** el parser de ACK ya no depende de org.json Android stubs; interpreta únicamente escalares JSON permitidos y conserva la validación estricta de ok, applied, status y consumer.
+- **Regresión corregida:** las pruebas JVM que fallaban por el runtime JSON quedan cubiertas por el build verificado.
+- **Validación CI:** compilación APK y binarios nativos, pruebas JVM, CTest, integridad del módulo y validación de artefactos.
+- **Alcance:** este release no declara calibración acústica física ni aprobación OEM/HWS de fases que requieran mediciones en hardware real.
 
 ## v2.5.212 (503) — 2026-10-31
 
