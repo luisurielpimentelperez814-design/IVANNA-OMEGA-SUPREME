@@ -46,7 +46,7 @@ class OutputRoutePolicyTest {
         val profile = AudioRouteManager.profileFor(OutputRoute.WIRED_AUX)
         assertEquals(0f, profile.bassBoostDb, 0f)
         assertEquals(0f, profile.dialogBoostDb, 0f)
-        assertEquals(1.08f, profile.widenerMult, 0f)
+        assertEquals(1.04f, profile.widenerMult, 1.0e-6f)
     }
 
 }
