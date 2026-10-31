@@ -38,9 +38,8 @@ using ivanna::PILSTMMilenioEngine;
 static PILSTMMilenioEngine     g_piLstmBridge;
 static std::atomic<bool>       g_piLstmBridge_ready{false};
 
-// Estado del estimador de residual — declarado aquí (antes del extern "C")
-// para que nativeSetNPMax (que invalida g_residual_seed) pueda usarlo sin
-// necesidad de forward-declaration.
+// Residual telemetry is published atomically to JNI readers; its mutable
+// estimator state remains exclusively owned by the audio callback.
 static std::atomic<float> g_residual_ema{0.0f};
 static std::atomic<float> g_published_np_sat{0.0f};
 
