@@ -73,9 +73,14 @@ require measured functional evidence before approval.
 
 ## Release policy
 
-Release enforcement note: the ledger is an evidence record, not itself a CI
-publication gate. Until publish-release consumes a machine-verifiable approval
-manifest for HWS-01 through HWS-04, production approval requires an explicit
-manual engineering review of every phase and its device evidence. Do not claim
-that this document alone blocks publication. Preserve OEM/Dolby paths and
-transparent bypass.
+Production publication is fail-closed by `scripts/check_hws_release_approval.py`.
+The machine-readable `docs/hardware_sovereignty_release_approval.json` manifest
+must mark **all four phases APPROVED** and include non-empty evidence for each.
+Any `NOT_APPROVED`, `PARTIAL`, `IN_PROGRESS`, `BLOCKED`, missing status,
+missing evidence, or malformed manifest blocks `publish-release`.
+
+The staging/build-validation jobs remain available so engineering can produce
+and inspect candidate APK/Magisk artifacts without claiming production approval.
+Do not bypass the gate by changing only this document: phase status changes
+require independent evidence (including Moto G85 runtime evidence where stated).
+Preserve OEM/Dolby paths and transparent bypass.
