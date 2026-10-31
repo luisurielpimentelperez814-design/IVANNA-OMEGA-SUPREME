@@ -6,7 +6,7 @@
 
 **Audio Android · procesamiento espacial · herramientas de medición**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.211-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.212-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -21,7 +21,7 @@
 
 IVANNA reúne un reproductor Android, un motor DSP nativo, controles de efectos, herramientas de calibración y exploración espacial. El repositorio incluye también un módulo Magisk y un dashboard web. Cada ruta tiene su propio alcance y sus requisitos.
 
-**Estado documental · 31 de octubre de 2026 · v2.5.211 / código 502.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
+**Estado documental · 31 de octubre de 2026 · v2.5.212 / código 503.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
 
 | 01 · Escuchar | 02 · Medir | 03 · Explorar |
 |:---|:---|:---|
@@ -79,7 +79,7 @@ flowchart LR
 
 El criterio interno permite decidir sobre un ajuste bajo esas condiciones de captura. La mejora audible y la seguridad de la ruta requieren pruebas físicas adicionales.
 
-## Qué cambia en v2.5.211
+## Qué cambia en v2.5.212
 
 - **Read-back real de Ruta B:** el daemon deja de inferir que el efecto está conectado por el simple hecho de que su propio writer SHM esté abierto. Consulta el beacon que publica `omega_effect` tras completar un bloque DSP.
 - **Generación aplicada:** el beacon pasa a ABI de 72 bytes e incluye `applied_control_generation`; cada bloque procesado registra la generación de snapshot que consumió. `GET_STATUS` expone generación publicada, generación aplicada, frames procesados y estado del efecto.
@@ -94,7 +94,7 @@ El criterio interno permite decidir sobre un ajuste bajo esas condiciones de cap
 - **Ω-ATOMIC Genezi AUX:** la política de ruta equilibra foco central (1.00) e inmersión (1.08) mediante un compromiso minimax exacto (1.04). El valor se publica a través de los dos caminos de control existentes; es un multiplicador de intensidad espacial, no una medida de ancho acústico ni una calibración de sala.
 - **Pruebas:** cuatro regresiones JVM cubren el minimax, una búsqueda exhaustiva del intervalo, los límites duros y el fail-closed ante valores inválidos. La prueba de ruta Genezi fija el valor 1.04.
 - **HRTF externo:** AUX/USB conserva HRTF solicitado con wet 0.15 cuando se declara salida de línea; auriculares mantienen wet 1.0. No se presenta como cancelación transaural. WFS multialtavoz, SAF binaural personal y RIR sintético no se inyectan a ciegas en una ruta L/R.
-- **Actualizador Magisk:** las URLs de `module.prop` y `update.json` apuntan al repositorio real y al asset versionado v2.5.211. La publicación solo se considera disponible tras CI, validación de APK/ZIP y verificación de los assets.
+- **Actualizador Magisk:** las URLs de `module.prop` y `update.json` apuntan al repositorio real y al asset versionado v2.5.212. La publicación solo se considera disponible tras CI, validación de APK/ZIP y verificación de los assets.
 - **Límite físico:** no se declara teletransportación acústica, WFS físico ni cancelación transaural calibrada sin medición de las transferencias altavoz-oído. La prueba de escucha Genezi en sus cuatro estados sigue siendo una aceptación en hardware.
 
 ### Contexto heredado de v2.5.196
