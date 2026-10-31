@@ -25,6 +25,7 @@
 #include <cstring>
 #include <dirent.h>
 #include <thread>
+#include <pthread.h>
 #include <chrono>
 #include <cstdlib>
 #include <limits>
@@ -58,7 +59,7 @@ public:
 
     ~ThermalGovernor() {
         running_.store(false, std::memory_order_release);
-        if (pollerThread_.joinable()) pollerThread_.join();
+        if (pollerStarted_) pthread_join(pollerThread_, nullptr);
     }
 
     // Debe llamarse desde EFFECT_CMD_SET_CONFIG (hilo de control), nunca
@@ -67,15 +68,17 @@ public:
     bool start() noexcept {
         std::lock_guard<std::mutex> lock(startMutex_);
         if (running_.load(std::memory_order_acquire)) return true;
-        try {
-            running_.store(true, std::memory_order_release);
-            pollerThread_ = std::thread([this] { thermalPollerLoop(); });
-            return true;
-        } catch (...) {
+        if (pollerStarted_) return true;
+        running_.store(true, std::memory_order_release);
+        const int rc = pthread_create(&pollerThread_, nullptr, &ThermalGovernor::pollerEntry, this);
+        if (rc != 0) {
             running_.store(false, std::memory_order_release);
+            // pthread_create informa el fallo sin excepciones ni terminación.
             // Se conserva el tier PROTECTED y la temperatura como desconocida.
             return false;
         }
+        pollerStarted_ = true;
+        return true;
     }
 
     bool hasValidTemperature() const noexcept {
@@ -136,7 +139,13 @@ private:
     std::atomic<bool>  sensorAvailable_{false};
     std::atomic<bool>  running_{false};
     std::mutex         startMutex_;
-    std::thread        pollerThread_;
+    pthread_t          pollerThread_{};
+    bool               pollerStarted_{false};
+
+    static void* pollerEntry(void* opaque) noexcept {
+        static_cast<ThermalGovernor*>(opaque)->thermalPollerLoop();
+        return nullptr;
+    }
 
     // Tabla de paths de temperatura del SoC conocidos (Snapdragon / Exynos / Tensor)
     static constexpr const char* THERMAL_PATHS[] = {
