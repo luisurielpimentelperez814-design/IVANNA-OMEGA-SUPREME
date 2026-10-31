@@ -1564,7 +1564,7 @@ if (ctx->adaptive) {
     }
     // Beacon (RT-safe): un bloque paso por TODO el DSP. Es la unica senal que la app puede
     // usar para saber que Ruta B realmente suena (isDaemonRunning solo prueba el daemon).
-    ivanna::effectBeacon().onBlock(static_cast<uint32_t>(frames));
+    ivanna::effectBeacon().onBlock(static_cast<uint32_t>(frames), ctx->pendingSnap.generation);
     // Ack solo tras consumir la generación, llamar updateHeadPose y completar el bloque DSP.
     const auto& appliedPose = ctx->pendingSnap;
     if (appliedPose.generation > 0u &&
