@@ -332,3 +332,32 @@ A bounded Frida capture of `audio.primary.blair.so`'s `astream_out_get_presentat
 This is stronger evidence that the HAL callback returns a stable, nominal-48-kHz presentation counter during the tested playback route. It does not prove that the returned timespec is the physical DAC clock, that two streams share the same clock, that the active route is Bluetooth or USB unless that route is explicitly recorded in the same capture, or that an ASRC correction is enabled. Do not combine the two stream pointers or infer drift from nominal cadence alone.
 
 Reproduce with `hal_integration/tools/ivanna_hal_bounded.js`; the script caps the capture at 1,200 callback returns and emits per-stream counts. Keep the route and active tracks documented alongside the log. The PAL shared-snapshot binding remains report-only until the actual vendor HAL source/build binds it to the active stream owner and SELinux/shared-memory access is verified. The physical ASRC callback remains intentionally disabled because its target actuator and ratio units are not yet verified.
+
+
+## HAL/PAL symbol audit of the installed build — 2026-10-31
+
+Source: `IVANNA_MOTO_G85_HAL_AUDIT`, `IVANNA_MOTO_G85_PAL_AUDIT` and `IVANNA_MOTO_G85_PAL_AUDIT_COMPLETA` (device `moto g85 5G`, read-only `readelf`/symbol listing). These are **static ELF facts**, not playback measurements.
+
+### What the symbols show
+
+- `/vendor/lib64/hw/audio.primary.blair.so` (arm64, stripped, BuildID `ff49eb05aa17808870f6226949761faf`) imports `pal_stream_get_mmap_position`, `pal_stream_create_mmap_buffer`, `pal_get_timestamp` and `clock_gettime`.
+- The same HAL defines `StreamOutPrimary::GetMmapPosition(audio_mmap_position*)` (`0x58d40`, 244 B), `StreamOutPrimary::CreateMmapBuffer` (`0x58e34`), `StreamInPrimary::GetMmapPosition`, and `StreamOutPrimary::GetFramesWritten(timespec*)` (`0x547fc`, 816 B).
+- `/vendor/lib64/libar-pal.so` defines `SessionAlsaPcm::GetMmapPosition` (`0x24e3ac`, 632 B) and `StreamPCM::GetMmapPosition`, and imports `pcm_mmap_get_hw_ptr`; `pal_stream_get_mmap_position` (`0x2ec180`) is a 4-byte thunk. `StreamACDB::GetMmapPosition` is an 8-byte stub.
+- Present-in-device chain, by symbol only: `StreamOutPrimary::GetMmapPosition -> pal_stream_get_mmap_position -> StreamPCM/SessionAlsaPcm::GetMmapPosition -> pcm_mmap_get_hw_ptr`.
+- `SessionAlsaPcm::getTimestamp` (`0x24adc4`, 344 B) and `SessionAlsaCompress::getTimestamp` (`0x2667b4`, 116 B) exist, consistent with the six-word timestamp path documented above (no frame field).
+- No PAL headers are installed on the phone (`CABECERAS PAL DISPONIBLES` is empty), so `pal_mmap_position` layout cannot be read from the device.
+
+### What this does and does not settle
+
+- It confirms the installed HAL *can* ask PAL for a paired (frames, `CLOCK_MONOTONIC` ns) position, but only for streams the HAL opens as MMAP. Public PAL returns `-ENOSYS` for other stream types; the audit does not show which type carries music playback.
+- `GetFramesWritten(timespec*)` is the likely implementation behind the `astream_out_get_presentation_position` callback already captured with Frida on 2026-10-26. That naming match is an inference, not verified.
+- The symbol filter was MMAP/PAL/clock only. Its silence about resamplers is **not** evidence that no ASRC actuator exists, and none has been identified. Correction stays disabled; the daemon stays fail-closed.
+
+### Next discriminating capture
+
+`hal_integration/tools/ivanna_hal_mmap_bounded.js` hooks `pal_stream_get_mmap_position` passively (no calls of its own, no writes) and records return status and the raw 16 bytes returned, bounded to 600 returns, per caller stream pointer. Run it during normal playback on speaker, Bluetooth and USB-C separately, together with `ivanna_hal_bounded.js`:
+
+- all returns non-zero (or no calls) -> the active music stream is not MMAP; the pair must come from the HAL's presentation-position path inside the stream owner;
+- returns of 0 with advancing frames and monotonic time -> `ivanna_pal_mmap_position_adapter.hpp` is a valid query for that route.
+
+The raw bytes are logged next to a provisional decode under the *public* `pal_mmap_position` layout (`int64 time_nanoseconds`, `uint32 position_frames`); do not rely on the decode until the delta against nominal 48 kHz agrees.

@@ -1,3 +1,9 @@
+## v2.5.204 (495) — 2026-10-31
+
+- **Evidencia nueva del Moto G85 (auditorias HAL/PAL del 2026-10-31):** `audio.primary.blair.so` importa `pal_stream_get_mmap_position` y define `StreamOutPrimary::GetMmapPosition` y `GetFramesWritten(timespec*)`; `libar-pal.so` tiene la cadena `GetMmapPosition -> pcm_mmap_get_hw_ptr`. Registrado en `hal_integration/MOTO_G85_PAL_CLOCK_INTEGRATION.md` con lo que prueba y lo que no.
+- **Sonda nueva, solo lectura:** `hal_integration/tools/ivanna_hal_mmap_bounded.js` engancha pasivamente `pal_stream_get_mmap_position` (maximo 600 retornos, sin llamar a PAL ni escribir) para saber si el stream de musica activo es MMAP en altavoz, Bluetooth y USB-C.
+- **Lo que NO cambia ni se afirma:** el eslabon fisico (llamada dentro del HAL propietario) sigue sin enlazar y no hay actuador ASRC identificado; el daemon sigue en fail-closed y la correccion deshabilitada. Son hechos ELF estaticos: no hay medicion de reproduccion. La sonda solo se comprobo por sintaxis (`node --check`), no en dispositivo.
+
 ## v2.5.203 (494) — 2026-10-31
 
 - **Enlace de actualizacion tras el traslado del producto:** `magisk_module/update.json`, `module.prop` (`updateJson`), `CITATION.cff`, la plantilla de issues y el enlace del panel Magisk apuntaban a `IVANNA-OMEGA-SUPREME`; ahora apuntan a `IVANNA-OMGA-SUPREME-`. Sin esto la compuerta de `publish-release` (que exige `zipUrl == github.com/$GITHUB_REPOSITORY/releases/download/<version>/...`) fallaba en este repositorio y Magisk buscaba el zip en el repo anterior.
