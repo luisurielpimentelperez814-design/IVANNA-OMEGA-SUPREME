@@ -18,8 +18,12 @@ object PersistedStateRestorer {
         val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
         val externalStereo = com.ivanna.omega.audio.ExternalStereoPolicy.usesExternalSpeakers(
             route, saPrefs.externalStereoLineOut)
-        val hrtfAllowed = com.ivanna.omega.audio.ExternalStereoPolicy.allowHeadphoneHrtf(
+        val hrtfWet = com.ivanna.omega.audio.ExternalStereoPolicy.hrtfWetForRoute(
             route, saPrefs.externalStereoLineOut, saPrefs.hrtfEnabled)
+        val hrtfAllowed = hrtfWet > 0f
+        val safAllowed = saPrefs.safEnabled &&
+            com.ivanna.omega.audio.ExternalStereoPolicy.allowHeadphoneHrtf(
+                route, saPrefs.externalStereoLineOut, saPrefs.hrtfEnabled)
 
         // 1. Restaurar AdaptiveControlsPrefs
         val acPrefs = AdaptiveControlsPrefs.load(ctx)
@@ -27,7 +31,7 @@ object PersistedStateRestorer {
         // Restaurarlo aquí evita que dependa de abrir SoundScreen/SpatialAudioPanel.
         NativeBridge.safeSetHybridMagistralParams(
             enabled = acPrefs.hybridMagistralEnabled,
-            binauralWet = if (hrtfAllowed) acPrefs.hybridBinauralWet else 0f,
+            binauralWet = if (hrtfAllowed) acPrefs.hybridBinauralWet * hrtfWet else 0f,
             virtualAzimuthDeg = acPrefs.binauralAzimuth.takeIf { kotlin.math.abs(it) > 1f } ?: 30f,
             virtualElevationDeg = acPrefs.binauralElevation,
             roomSize = acPrefs.hybridRoomSize,
@@ -145,7 +149,7 @@ object PersistedStateRestorer {
         } finally {
             saf.release()
         }
-        if (!saPrefs.safEnabled || !hrtfAllowed) {
+        if (!safAllowed) {
             OmegaEngineBridge.pushSafLatentQ(FloatArray(7), gain = 0f)
         }
 
