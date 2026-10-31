@@ -86,6 +86,7 @@ El criterio interno permite decidir sobre un ajuste bajo esas condiciones de cap
 - **Estados honestos:** `applied=true` solo cuando el efecto está procesando y su generación aplicada alcanza la publicada. Sin beacon, el sistema informa evidencia no disponible; no inventa confirmación.
 - **Handshake reparado:** la app exigía protocolo 3 mientras el daemon declaraba protocolo 2. La app ahora negocia v2 y envía su versión en HELLO; sin ese dato el daemon respondía incompatible.
 - **Pruebas del beacon:** comprueban que la generación reportada solo avanza al completar bloques DSP.
+- **Interfaz cableada:** el panel Magisk presenta generación publicada/aplicada, frames procesados y estado del efecto; FotoHolo interpreta la confirmación `dsp_block_applied`.
 - **Límite:** esta evidencia demuestra consumo de snapshot por el efecto y finalización de un bloque DSP; no demuestra por sí sola una mejora acústica ni una medición del DAC.
 
 ### Base Genezi integrada en v2.5.210
