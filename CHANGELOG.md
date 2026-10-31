@@ -1,3 +1,12 @@
+## Candidato FotoHolo Nanotomix — integración de audio y telemetría (sin versión/release)
+
+- Bark64 fecha el bloque PCM al terminar su consumo JNI; las muestras sin productor, futuras o con más de 1 s se rechazan. El dashboard ya no puede convertir un buffer congelado en una lectura aparentemente actual.
+- SAFMUS usa presencia triestado del AudioEffect. Un fallo de Binder/query se trata como propiedad global desconocida y bloquea la reinyección Ruta A para evitar doble procesamiento.
+- Ruta B conserva la generación del ACK y consulta `GET_STATUS` hasta que `dsp_applied_generation` alcanza esa generación; no publica SET idénticos repetidamente mientras espera al consumidor.
+- La cancelación de FotoHolo no restaura el ancho local si Ruta B está activa o su propiedad es desconocida. Read-back y telemetría se mantienen dentro de rangos finitos y limpian bandas obsoletas.
+- Se corrige la documentación: el host WebView local y el puente ya existen; queda pendiente la verificación física de la ruta acústica.
+- No se incrementa `version.properties` ni se publica release: el manifiesto HWS-01..04 mantiene fases sin aprobación y el gate de producción debe permanecer cerrado hasta aportar evidencia real por fase.
+
 ## v2.5.212 (503) — 2026-10-31
 
 - **Integración completa de evidencia:** el panel Magisk presenta generación publicada/aplicada, frames y estado de AudioEffect; FotoHoloRouteB reconoce la confirmación `dsp_block_applied`.

@@ -485,18 +485,15 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // efectos que el sistema tiene registrados desde
             // /system|vendor/etc/audio_effects*.xml, incluido el nuestro si
             // el módulo Magisk lo instaló correctamente en este dispositivo.
-            val omegaSystemEffectActive = runCatching {
-                android.media.audiofx.AudioEffect.queryEffects()?.any { d ->
-                    d.uuid == OMEGA_SYSTEM_EFFECT_UUID
-                } ?: false
-            }.getOrDefault(false)
-            if (omegaSystemEffectActive) {
-                Log.w(TAG, "omega_effect YA está activo como postprocess de sistema " +
-                        "sobre el stream music — se aborta la captura+reproceso propia " +
-                        "para no duplicar el procesamiento (causa real del eco digital " +
-                        "reportado, independiente de bocina/audífonos).")
-                onError("El procesamiento de sistema ya está activo para este audio; " +
-                        "no se necesita (ni se debe) capturar por software.")
+            val omegaSystemEffectPresence = RouteArbiter.systemWideEffectPresence()
+            if (omegaSystemEffectPresence != false) {
+                val reason = if (omegaSystemEffectPresence == true) {
+                    "omega_effect está registrado como postprocess global"
+                } else {
+                    "no se pudo verificar la propiedad global del audio"
+                }
+                Log.w(TAG, "$reason — se aborta la captura+reproceso propia para evitar doble procesamiento.")
+                onError("$reason; se mantiene la salida segura sin reinyección por software.")
                 return
             }
             if (!setupHardware()) {
@@ -926,7 +923,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         systemWideRefreshing.compareAndSet(false, true)) {
                         systemWideCheckedAtMs = nowSwMs
                         Thread({
-                            try { systemWideCached = RouteArbiter.isSystemWideEffectActive() }
+                            try { systemWideCached = RouteArbiter.systemWideEffectPresence() ?: true }
                             finally { systemWideRefreshing.set(false) }
                         }, "ivanna-routecheck").apply { isDaemon = true }.start()
                     }
@@ -1333,10 +1330,6 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // propias de la app (effect_uuid_t compilado en omega_effect.cpp:
             // timeLow=0x4956414e "IVAN", timeMid=0x4e41 "NA", timeHi=0x4f4d
             // "OM", clockSeq=0x4547 "EG", node=0x415355505245 "ASUPRE").
-            // No se define un UUID nuevo — se reutiliza el real para poder
-            // detectarlo con AudioEffect.queryEffects().
-            private val OMEGA_SYSTEM_EFFECT_UUID: java.util.UUID =
-                java.util.UUID.fromString("4956414e-4e41-4f4d-4547-415355505245")
         }
     }
 }

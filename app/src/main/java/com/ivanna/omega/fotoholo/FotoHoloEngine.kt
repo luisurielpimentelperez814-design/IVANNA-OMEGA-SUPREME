@@ -43,7 +43,10 @@ data class FotoHoloTelemetry(
     val sampleTimestampMonotonicNs: Long = 0L,
 ) {
     /** true si el motor reporta un ancho finito y coherente con el último comando (puede ser menor por recorte térmico). */
-    val readbackConfirmed: Boolean get() = dspWidth.isFinite() && nativeCallReturned && dspWidth <= appliedWidth + 0.01f
+    val readbackConfirmed: Boolean get() =
+        dspWidth.isFinite() && dspWidth in 0f..1.5f &&
+            appliedWidth.isFinite() && appliedWidth in 0f..1.5f &&
+            nativeCallReturned && dspWidth <= appliedWidth + 0.01f
     val offset: Float get() = appliedWidth - baseWidth
 }
 
@@ -199,7 +202,8 @@ object FotoHoloEngine {
                     // AudioEffect.queryEffects hace Binder IPC: sondear en hilo de control,
                     // con caché de 1 s; nunca desde el callback de audio ni cada tick de 50 ms.
                     if (nowMs >= nextRouteProbeMs) {
-                        systemWideRouteActive = RouteArbiter.isSystemWideEffectActive()
+                        // UNKNOWN must not authorize Route A beside a possibly active global effect.
+                        systemWideRouteActive = RouteArbiter.systemWideEffectPresence() ?: true
                         nextRouteProbeMs = nowMs + 1_000L
                     }
                     val wantsModulation = enabled && !bypass
@@ -226,7 +230,9 @@ object FotoHoloEngine {
 
                     if (!shouldSample && !modulating && !systemWideRouteActive) {
                         _telemetry.value = _telemetry.value.copy(
-                            enabled = enabled, bypass = bypass, baseWidth = base,
+                            enabled = enabled, bypass = bypass, hasSignal = false,
+                            baseWidth = base, bands = FloatArray(FotoHoloMath.BANDS),
+                            features = FotoHoloFeatures.NONE, sampleTimestampMonotonicNs = 0L,
                             nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
                             nativeCallReturned = lastReturned, dspWidth = lastDspWidth,
                             routeB = FotoHoloRouteB.status, activeRoute = "NONE",
@@ -236,15 +242,21 @@ object FotoHoloEngine {
                         continue
                     }
 
-                    val ready = shouldSample && IvannaVisualizerBark64Bridge.isReady
-                    val features = if (ready) {
-                        IvannaVisualizerBark64Bridge.sampleInto(buf)
+                    val analyzerReady = shouldSample && IvannaVisualizerBark64Bridge.isReady
+                    val sampleFresh = analyzerReady && IvannaVisualizerBark64Bridge.sampleInto(buf)
+                    val features = if (sampleFresh) {
                         FotoHoloMath.features(buf, prev).also {
-                            if (prev == null) prev = FloatArray(FotoHoloMath.BANDS)
-                            buf.copyInto(prev!!)
+                            if (it.valid) {
+                                if (prev == null) prev = FloatArray(FotoHoloMath.BANDS)
+                                buf.copyInto(prev!!)
+                            } else {
+                                prev = null
+                            }
                         }
                     } else {
+                        // A frozen Bark buffer must never be re-labelled as a fresh sample.
                         buf.fill(0f)
+                        prev = null
                         FotoHoloFeatures.NONE
                     }
 
@@ -300,13 +312,18 @@ object FotoHoloEngine {
                     // Reintento limitado si no hay confirmación explícita de aplicación.
                     if (routeDecision.route == SafmusRouteSupervisor.Route.ROUTE_B) {
                         val routeBWidth = if (enabled && !bypass) declaredWidth(base) else base
-                        val routeBPublished = FotoHoloRouteB.status.startsWith("publicado en Ruta B")
-                        val routeBRetryDue = nowMs - lastRouteBPushMs >= 1_500L &&
-                            !routeBPublished
-                        if (!lastRouteBCommanded.isFinite() ||
-                            FotoHoloMath.changed(routeBWidth, lastRouteBCommanded) || routeBRetryDue) {
+                        val routeBChanged = !lastRouteBCommanded.isFinite() ||
+                            FotoHoloMath.changed(routeBWidth, lastRouteBCommanded)
+                        val routeBCheckDue = nowMs - lastRouteBPushMs >= 1_500L
+                        if (routeBChanged ||
+                            (routeBCheckDue && FotoHoloRouteB.shouldRetryCommand(FotoHoloRouteB.status))) {
                             FotoHoloRouteB.push(routeBWidth)
                             lastRouteBCommanded = routeBWidth
+                            lastRouteBPushMs = nowMs
+                        } else if (routeBCheckDue &&
+                            !FotoHoloRouteB.isDeliveryConfirmed(FotoHoloRouteB.status)) {
+                            // Wait for DSP consumption without moving the target generation.
+                            FotoHoloRouteB.refreshEvidence()
                             lastRouteBPushMs = nowMs
                         }
                     } else {
@@ -331,7 +348,8 @@ object FotoHoloEngine {
                         nativeWriteError = lastError, nativeWriteAttempted = lastAttempted,
                         nativeCallReturned = lastReturned, dspWidth = lastDspWidth, routeB = FotoHoloRouteB.status,
                         activeRoute = routeDecision.route.name, safmusDecision = routeDecision.reason,
-                        sampleTimestampMonotonicNs = if (ready && features.valid) SystemClock.elapsedRealtimeNanos() else _telemetry.value.sampleTimestampMonotonicNs,
+                        sampleTimestampMonotonicNs = if (shouldSample)
+                            IvannaVisualizerBark64Bridge.lastSampleTimestampMonotonicNs else 0L,
                     )
                     delay(TICK_MS)
                 } catch (cancel: CancellationException) {
@@ -341,7 +359,9 @@ object FotoHoloEngine {
                     lastReturned = false
                     Log.e(TAG, "Fallo recuperable en lazo de Fotoholo", t)
                     _telemetry.value = _telemetry.value.copy(
-                        enabled = enabled, bypass = bypass,
+                        enabled = enabled, bypass = bypass, hasSignal = false,
+                        bands = FloatArray(FotoHoloMath.BANDS), features = FotoHoloFeatures.NONE,
+                        sampleTimestampMonotonicNs = 0L,
                         nativeWriteError = lastError, nativeCallReturned = false
                     )
                     delay(IDLE_MS)
@@ -352,8 +372,16 @@ object FotoHoloEngine {
                 // Restaurar desde un hilo de control, nunca desde el callback de audio.
                 val rawBase = IvannaSpatialEngine.shared.widthFactor
                 val safeBase = if (rawBase.isFinite()) rawBase.coerceIn(0f, 1.5f) else 1f
-                val restoreError = writeWidth(safeBase)
-                if (restoreError != null) Log.w(TAG, "No se pudo restaurar el ancho al cancelar: $restoreError")
+                // Route B owns the global output. If ownership is UNKNOWN, do not touch Route A.
+                val routeBOwnsOutput = RouteArbiter.systemWideEffectPresence() ?: true
+                if (routeBOwnsOutput) {
+                    Log.d(TAG, "Cancelación: Ruta B activa o propiedad desconocida; se omite escritura local")
+                } else {
+                    val restoreError = writeWidth(safeBase)
+                    if (restoreError != null) {
+                        Log.w(TAG, "No se pudo restaurar el ancho al cancelar: $restoreError")
+                    }
+                }
                 // Permitir que una futura llamada a start() vuelva a levantar el lazo.
                 synchronized(this@FotoHoloEngine) { started = false }
             }

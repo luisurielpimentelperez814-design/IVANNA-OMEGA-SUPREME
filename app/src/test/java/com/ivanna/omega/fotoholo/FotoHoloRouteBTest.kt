@@ -13,6 +13,25 @@ class FotoHoloRouteBTest {
         assertFalse(j.contains("compressor") || j.contains("exciter") || j.contains("harmonic"))
     }
 
+    @Test fun pendingAndIdleStatesAreNotMistakenForDspDelivery() {
+        assertEquals("publicado en Ruta B; esperando generación DSP",
+            FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"awaiting_dsp_generation\",\"generation\":9}"))
+        assertEquals("efecto habilitado; esperando bloque de audio",
+            FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"effect_enabled_idle\",\"generation\":9}"))
+        assertEquals("aceptado; sin consumidor activo",
+            FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"no_active_effect\",\"generation\":9}"))
+    }
+
+    @Test fun onlyDspBlockReadbackConfirmsDeliveryAndPendingStateIsPolled() {
+        assertTrue(FotoHoloRouteB.isDeliveryConfirmed("aplicado por bloque DSP; generación confirmada"))
+        assertFalse(FotoHoloRouteB.isDeliveryConfirmed("publicado en Ruta B; esperando generación DSP"))
+        assertFalse(FotoHoloRouteB.isDeliveryConfirmed("aceptado; sin consumidor activo"))
+        assertFalse(FotoHoloRouteB.shouldRetryCommand("aceptado; sin consumidor activo"))
+        assertFalse(FotoHoloRouteB.shouldRetryCommand("efecto habilitado; esperando bloque de audio"))
+        assertTrue(FotoHoloRouteB.shouldRetryCommand("demonio no disponible"))
+        assertTrue(FotoHoloRouteB.shouldRetryCommand("error: IOException"))
+    }
+
     @Test fun responseRequiresExplicitApplicationConfirmation() {
         assertEquals("demonio no disponible", FotoHoloRouteB.statusFromReply(""))
         assertEquals("rechazado por el demonio", FotoHoloRouteB.statusFromReply("{\"ok\":false}"))

@@ -44,6 +44,12 @@ object FotoHoloMath {
 
     private const val SILENCE_SUM = 1e-3f
 
+    /** Accept only real, non-future producer timestamps inside the monotonic freshness budget. */
+    fun isFreshSample(nowNs: Long, sampleNs: Long, maxAgeNs: Long): Boolean =
+        nowNs > 0L && sampleNs > 0L && maxAgeNs >= 0L &&
+            nowNs >= sampleNs && nowNs - sampleNs <= maxAgeNs
+
+
     fun features(bands: FloatArray, prev: FloatArray?): FotoHoloFeatures {
         val n = minOf(bands.size, BANDS)
         if (n < BANDS) return FotoHoloFeatures.NONE

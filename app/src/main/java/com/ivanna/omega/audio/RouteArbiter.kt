@@ -65,9 +65,16 @@ object RouteArbiter {
      * CaptureEngine.start(). Segura de llamar desde un hilo de control
      * (hace binder call, no debe llamarse desde el hilo de audio).
      */
-    fun isSystemWideEffectActive(): Boolean = runCatching {
-        AudioEffect.queryEffects()?.any { it.uuid == OMEGA_SYSTEM_EFFECT_UUID } ?: false
-    }.getOrDefault(false)
+    /**
+     * null means AudioEffect enumeration was unavailable. Callers controlling output
+     * ownership must treat UNKNOWN as occupied by Route B (fail closed).
+     */
+    fun systemWideEffectPresence(): Boolean? = runCatching {
+        AudioEffect.queryEffects()?.any { it.uuid == OMEGA_SYSTEM_EFFECT_UUID }
+    }.getOrNull()
+
+    /** Legacy convenience only; safety-critical route owners must use the tri-state API. */
+    fun isSystemWideEffectActive(): Boolean = systemWideEffectPresence() ?: false
 
     /**
      * Reevalua el estado combinando la presencia de Ruta B con si Ruta A
@@ -78,17 +85,16 @@ object RouteArbiter {
      * @return el RouteState resultante.
      */
     fun evaluate(routeARunning: Boolean): RouteState {
-        val systemWide = isSystemWideEffectActive()
-        val newState = when {
-            systemWide && routeARunning  -> RouteState.LOOPBACK_PROCESSING
-            systemWide && !routeARunning -> RouteState.SYSTEM_WIDE_ONLY
-            !systemWide && routeARunning -> RouteState.CAPTURE_ONLY
-            else                         -> RouteState.DISABLED
+        val presence = systemWideEffectPresence()
+        val newState = when (presence) {
+            true -> if (routeARunning) RouteState.LOOPBACK_PROCESSING else RouteState.SYSTEM_WIDE_ONLY
+            false -> if (routeARunning) RouteState.CAPTURE_ONLY else RouteState.DISABLED
+            null -> if (routeARunning) RouteState.LOOPBACK_PROCESSING else RouteState.SYSTEM_WIDE_ONLY
         }
         val prev = currentState.getAndSet(newState)
         if (prev != newState) {
             Log.i(TAG, "[ROUTE_ARBITER] state=$prev -> $newState " +
-                "system_wide=$systemWide route_a_running=$routeARunning")
+                "system_wide=${presence ?: "UNKNOWN"} route_a_running=$routeARunning")
         }
         return newState
     }

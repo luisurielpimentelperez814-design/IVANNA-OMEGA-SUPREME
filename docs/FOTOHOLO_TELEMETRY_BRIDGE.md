@@ -2,9 +2,13 @@
 
 ## Estado real del cableado
 
-El dashboard web ahora comparte `DspParameters` con el generador WebGL: anchura espacial y ángulo visual actualizan los controles DSP de la interfaz, y los cambios externos de esos dos parámetros se reflejan en la escena. El panel muestra explícitamente que estos valores son **solicitados por la UI**, no confirmaciones del motor nativo.
+El dashboard FotoHolo se construye como bundle local de Vite/WebGL y se carga dentro de `SpatialAudioPanel` mediante `WebViewAssetLoader`. El host instala `FotoHoloTelemetryBridge` antes de navegar a `fotoholo-embed.html`, limita los recursos a assets empaquetados y no expone la interfaz a contenido remoto. El bundle consulta snapshots nativos; no comparte memoria directamente con el motor DSP.
 
-Los activos SOFA/HRTF, el índice IHR1, los RIR y el motor SAF existen en la aplicación Android. Eso no implica que el dashboard web reciba telemetría de esa ejecución: la escena React y el motor Android están en procesos/plataformas separados y no se ha encontrado un canal de runtime entre ellos. El esquema `research/deh6_optics/interfaces/acoustic_bridge.schema.json` es para registros offline, no para control en vivo.
+Las 64 bandas Bark se alimentan desde bloques PCM mono reales de `PlaybackCaptureService`. El timestamp de muestra representa el momento en que JNI termina de consumir ese bloque, no el momento posterior en que el dashboard lee el buffer. La captura y el motor de control corren en hilos distintos; el puente rechaza datos ausentes, futuros o vencidos antes de publicar características como actuales.
+
+FotoHolo tiene dos caminos de control excluyentes: Ruta A escribe en el motor nativo de la app cuando SAFMUS confirma captura válida y no detecta el efecto global; Ruta B publica únicamente `spatialWidth` al daemon cuando el AudioEffect global posee la salida. La publicación del comando no prueba que el bloque DSP lo haya consumido: la confirmación final debe correlacionar la generación enviada con `dsp_applied_generation` del beacon.
+
+Los activos SOFA/HRTF, RIR y SAF disponibles en la app no son por sí solos prueba de que estén cargados o aplicados a la ruta activa. El snapshot debe seguir separando disponibilidad de archivo, carga del dataset, comando, read-back y evidencia acústica.
 
 ## Contrato aproximado necesario
 
@@ -30,14 +34,13 @@ El puente Android → dashboard/escena debe publicar un snapshot versionado y co
 - No enviar audio crudo, nombres de archivos personales ni identificadores del dispositivo en el snapshot por defecto.
 - La escena visual debe mapear únicamente campos válidos: geometría espacial desde parámetros efectivos; envolventes/energía desde métricas medidas; reverberación desde RIR activa y validada. Datos ausentes se presentan como no disponibles, no se sustituyen por números simulados.
 
-## Alcance estimado
+## Alcance y validación
 
-1. **Ya conectado en el dashboard:** controles espaciales de UI ↔ anchura/ángulo mostrados en FotoHolo.
-2. **Siguiente tramo:** exponer un `AcousticTelemetrySnapshot` desde el servicio nativo y poblarlo desde HRTF/RIR/SAF/DSP reales; añadir pruebas de unidad para campos válidos, datos ausentes y snapshots obsoletos.
-3. **Puente de transporte:** preferir un flujo local tipado entre la app Android y su propia pantalla Compose. Si la visualización web se sirve dentro de Android, usar un puente WebView explícito con allowlist y validación de esquema; si es un dashboard remoto, requiere un canal autenticado aparte. No se debe asumir que el dashboard web actual comparte memoria con Android.
-4. **Validación final:** instrumentar y probar en dispositivo con auriculares y AUX por separado; comparar comandos y readback; verificar que la escena cambia solo cuando cambia la telemetría efectiva. Sin ese dispositivo y el canal nativo, no es honesto afirmar conexión acústica extremo a extremo.
-
-Este contrato es una propuesta de interfaz y alcance; no afirma que todos estos campos estén implementados actualmente.
+1. **Ya conectado:** WebView local y aislado en `SpatialAudioPanel`, puente Android instalado antes de cargar el bundle, snapshot de solo lectura y escena WebGL que consume la telemetría.
+2. **Cableado de audio endurecido en este candidato:** timestamp monotónico desde el productor PCM, TTL de 1 s, descarte de muestras vencidas y exclusión de Ruta A/Ruta B cuando la propiedad global no puede determinarse.
+3. **Entrega de Ruta B:** el ACK conserva la generación publicada y el hilo de control consulta `GET_STATUS` hasta observar `dsp_applied_generation` suficiente. No se reenvía el mismo SET para simular progreso.
+4. **Pendiente de dispositivo:** demostrar en Moto G85 que las bandas avanzan con reproducción real y caducan al detener la captura; correlacionar generación publicada/aplicada y frames; comprobar por separado altavoz, USB-C, cable y Bluetooth.
+5. **Pendiente de acústica:** A/B nivelado, clipping, polaridad, latencia y underruns. El read-back de generación confirma consumo de un bloque, no mejora perceptual ni respuesta medida en DAC/recinto.
 
 ## Implementación añadida en la rama de integración
 
@@ -46,17 +49,17 @@ Este contrato es una propuesta de interfaz y alcance; no afirma que todos estos 
 - `FotoHolo3DGenerator.tsx` consulta `window.IvannaFotoHoloBridge.getSnapshotJson()` cada 250 ms si el host la expone. Ajusta las superficies de onda a energía y transitorios Bark reales, y deja de mostrar esas lecturas como vivas cuando la muestra tiene más de 1 segundo.
 - El panel distingue disponibilidad de archivos, dataset cargado y aplicación efectiva. HRTF separa perfil cargado de la bandera activa nativa; RIR expone carga y número de salas, pero no confirma qué IR está convolucionándose ni el wet aplicado; SAF expone el último estado real publicado por una instancia de `SaFEngine`, y se mantiene como no inicializado si no hay instancia.
 
-## Límite de integración que sigue abierto
+## Límite de integración y pruebas de aceptación
 
-La aplicación Android actual usa Compose y la escena web React se construye por separado; no existe una instancia WebView que cargue este dashboard en `MainActivity`. Por ello, la clase Kotlin y el consumidor web ya comparten un contrato, pero **el puente Android→WebGL no queda operativo dentro de la app hasta que el host confiable instale `FotoHoloTelemetryBridge` con `WebView.addJavascriptInterface(..., "IvannaFotoHoloBridge")` antes de cargar el bundle web local**. No exponer esta interfaz a contenido remoto. El panel nativo `FotoHoloCard` sí consume el flujo Bark real de `FotoHoloEngine`; no debe confundirse con el dashboard WebGL.
+El puente Android→WebGL ya está integrado en `SpatialAudioPanel.kt`; no debe describirse como una tarea pendiente. El límite restante es demostrar que cada dato representa el estado acústico de la ruta que realmente está reproduciendo. En particular, el WebView local y el snapshot de Kotlin no prueban por sí solos que `libomega_effect.so` esté insertada en AudioFlinger ni que el DAC haya recibido el procesamiento.
 
 ### Pruebas de aceptación pendientes
-1. Build Android y web en CI.
-2. Cargar el bundle web local en un WebView de la app y registrar el puente antes de cargar la página.
-3. Confirmar que `sampleAgeMs` permanece por debajo de 1000 ms con señal real y aumenta si se detiene la captura.
-4. Confirmar que la escena vuelve a la visualización no medida cuando el dato caduca.
-5. Añadir read-back nativo de carga/aplicación RIR y estado SAF antes de declarar ambos activos.
-
+1. Build Android, bundle WebGL y pruebas JVM en CI.
+2. En Moto G85, comprobar que `sampleTimestampMonotonicNs` avanza al ingerir bloques PCM reales y envejece al detener la captura.
+3. Confirmar que `sampleAgeMs` supera el TTL y que bandas/características se ponen a cero cuando el dato caduca.
+4. Con Ruta B, correlacionar `generation`, `dsp_applied_generation`, `dsp_frames` y estado del beacon durante reproducción real.
+5. Verificar audible A/B, clipping, polaridad, latencia y underruns por altavoz, USB, cable y Bluetooth.
+6. HWS-01..04 y su evidencia física siguen siendo puertas independientes para cualquier release de producción.
 
 ## Refinación visual asistida por IA y render HD/4K
 

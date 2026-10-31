@@ -12,6 +12,18 @@ class FotoHoloMathTest {
     private val highHeavy = bands { if (it >= 40) 0.9f else 0.05f }
     private val flat = bands { 0.5f }
 
+    @Test fun `freshness accepts only real monotonic samples inside the TTL`() {
+        val now = 5_000_000_000L
+        val budget = 1_000_000_000L
+        assertTrue(FotoHoloMath.isFreshSample(now, now, budget))
+        assertTrue(FotoHoloMath.isFreshSample(now, now - budget, budget))
+        assertFalse(FotoHoloMath.isFreshSample(now, now - budget - 1L, budget))
+        assertFalse(FotoHoloMath.isFreshSample(now, now + 1L, budget))
+        assertFalse(FotoHoloMath.isFreshSample(now, 0L, budget))
+        assertFalse(FotoHoloMath.isFreshSample(now, now, -1L))
+        assertFalse(FotoHoloMath.isFreshSample(0L, now, budget))
+    }
+
     @Test fun `silencio o bandas cortas no generan rasgos validos`() {
         assertFalse(FotoHoloMath.features(FloatArray(64), null).valid)
         assertFalse(FotoHoloMath.features(FloatArray(10) { 1f }, null).valid)
