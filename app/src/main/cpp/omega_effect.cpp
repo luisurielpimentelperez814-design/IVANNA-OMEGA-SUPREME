@@ -1597,6 +1597,12 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             break;
         case EFFECT_CMD_SET_CONFIG:
             if (pCmdData && cmdSize == sizeof(effect_config_t)) {
+                // Start the thermal poller on this non-RT control thread.
+                // If thread creation fails, the governor remains PROTECTED.
+                if (!ivanna::getThermalGovernor().start()) {
+                    __android_log_print(ANDROID_LOG_WARN, "IVANNA-Thermal",
+                                        "poller unavailable; retaining PROTECTED tier");
+                }
                 ctx->config = *reinterpret_cast<effect_config_t *>(pCmdData);
                 // HAL may create the shared snapshot after effect construction.
                 // Retry mapping on this control-plane command, never in the RT callback.

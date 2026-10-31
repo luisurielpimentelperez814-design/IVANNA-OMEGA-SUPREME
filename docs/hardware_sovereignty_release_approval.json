@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "policy": "production-release-requires-all-phases-approved-with-unique-phase-scoped-evidence",
+  "phases": {
+    "HWS-01": {
+      "status": "IN_PROGRESS",
+      "evidence": []
+    },
+    "HWS-02": {
+      "status": "NOT_APPROVED",
+      "evidence": []
+    },
+    "HWS-03": {
+      "status": "PARTIAL",
+      "evidence": []
+    },
+    "HWS-04": {
+      "status": "PARTIAL",
+      "evidence": []
+    }
+  }
+}

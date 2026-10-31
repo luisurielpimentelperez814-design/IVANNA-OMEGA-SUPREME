@@ -25,8 +25,11 @@
 #include <cstring>
 #include <dirent.h>
 #include <thread>
+#include <pthread.h>
 #include <chrono>
 #include <cstdlib>
+#include <limits>
+#include <mutex>
 
 namespace ivanna {
 
@@ -52,15 +55,34 @@ struct ThermalProfile {
 
 class ThermalGovernor {
 public:
-    ThermalGovernor() {
-        // Arrancar hilo de polling térmico (baja prioridad, no RT)
-        running_.store(true);
-        pollerThread_ = std::thread([this] { thermalPollerLoop(); });
-    }
+    ThermalGovernor() = default;
 
     ~ThermalGovernor() {
-        running_.store(false);
-        if (pollerThread_.joinable()) pollerThread_.join();
+        running_.store(false, std::memory_order_release);
+        if (pollerStarted_) pthread_join(pollerThread_, nullptr);
+    }
+
+    // Debe llamarse desde EFFECT_CMD_SET_CONFIG (hilo de control), nunca
+    // desde omega_process. La construcción del singleton queda libre de
+    // creación de hilos y efectos laterales en el callback RT.
+    bool start() noexcept {
+        std::lock_guard<std::mutex> lock(startMutex_);
+        if (running_.load(std::memory_order_acquire)) return true;
+        if (pollerStarted_) return true;
+        running_.store(true, std::memory_order_release);
+        const int rc = pthread_create(&pollerThread_, nullptr, &ThermalGovernor::pollerEntry, this);
+        if (rc != 0) {
+            running_.store(false, std::memory_order_release);
+            // pthread_create informa el fallo sin excepciones ni terminación.
+            // Se conserva el tier PROTECTED y la temperatura como desconocida.
+            return false;
+        }
+        pollerStarted_ = true;
+        return true;
+    }
+
+    bool hasValidTemperature() const noexcept {
+        return sensorAvailable_.load(std::memory_order_relaxed);
     }
 
     // Llamado desde el audio thread — O(1), solo lee atómica
@@ -110,10 +132,20 @@ public:
     }
 
 private:
-    std::atomic<int>   tier_{0};
-    std::atomic<float> tempC_{25.0f};
+    // Sin muestra válida no se presupone una temperatura segura: se aplica
+    // PROTECTED y se expone NaN, nunca un valor térmico inventado.
+    std::atomic<int>   tier_{static_cast<int>(ThermalTier::PROTECTED)};
+    std::atomic<float> tempC_{std::numeric_limits<float>::quiet_NaN()};
+    std::atomic<bool>  sensorAvailable_{false};
     std::atomic<bool>  running_{false};
-    std::thread        pollerThread_;
+    std::mutex         startMutex_;
+    pthread_t          pollerThread_{};
+    bool               pollerStarted_{false};
+
+    static void* pollerEntry(void* opaque) noexcept {
+        static_cast<ThermalGovernor*>(opaque)->thermalPollerLoop();
+        return nullptr;
+    }
 
     // Tabla de paths de temperatura del SoC conocidos (Snapdragon / Exynos / Tensor)
     static constexpr const char* THERMAL_PATHS[] = {
@@ -129,7 +161,7 @@ private:
         nullptr
     };
 
-    float readSocTempC() noexcept {
+    bool readSocTempC(float& outTempC) noexcept {
         for (int i = 0; THERMAL_PATHS[i] != nullptr; ++i) {
             FILE* f = fopen(THERMAL_PATHS[i], "r");
             if (!f) continue;
@@ -140,11 +172,14 @@ private:
                 // sysfs devuelve milli-grados en la mayoría de kernels
                 float temp = (raw > 1000) ? raw / 1000.0f : (float)raw;
                 // Sanity: rango plausible de SoC: 20..120°C
-                if (temp >= 20.0f && temp <= 120.0f) return temp;
+                if (temp >= 20.0f && temp <= 120.0f) {
+                    outTempC = temp;
+                    return true;
+                }
             }
         }
-        // No se pudo leer — asumir temperatura segura
-        return 35.0f;
+        // Sensor ausente/ilegible: no fabricar una temperatura segura.
+        return false;
     }
 
     ThermalTier tempToTier(float t) const noexcept {
@@ -157,11 +192,18 @@ private:
 
     void thermalPollerLoop() {
         // Hilo de baja prioridad — no interfiere con el audio thread RT
-        while (running_.load()) {
-            float t = readSocTempC();
-            tempC_.store(t, std::memory_order_relaxed);
-            tier_.store(static_cast<int>(tempToTier(t)), std::memory_order_relaxed);
-            // Polling cada 2s — suficiente para la dinámica térmica de un SoC
+        while (running_.load(std::memory_order_acquire)) {
+            float t = std::numeric_limits<float>::quiet_NaN();
+            if (readSocTempC(t)) {
+                tempC_.store(t, std::memory_order_relaxed);
+                sensorAvailable_.store(true, std::memory_order_relaxed);
+                tier_.store(static_cast<int>(tempToTier(t)), std::memory_order_release);
+            } else {
+                tempC_.store(std::numeric_limits<float>::quiet_NaN(), std::memory_order_relaxed);
+                sensorAvailable_.store(false, std::memory_order_relaxed);
+                tier_.store(static_cast<int>(ThermalTier::PROTECTED), std::memory_order_release);
+            }
+            // Polling cada 2s — suficiente para la dinámica térmica de un SoC.
             std::this_thread::sleep_for(std::chrono::seconds(2));
         }
     }

@@ -53,6 +53,8 @@ jobs:
         run: python3 scripts/check_safmus_transversal_wiring.py
       - name: SAFMUS sync/ASRC numerical reference self-test
         run: python3 sync_asrc.py --self-test
+      - name: Hardware Sovereignty release approval gate tests
+        run: python3 -m unittest discover -s tests -p 'test_hws_release_approval.py' -v
       - name: SAFMUS sync/ASRC regression tests
         run: python3 -m unittest discover -s tests -p 'test_sync_asrc.py' -v
       - name: Adversarial audio measurement regression suite
@@ -469,6 +471,16 @@ jobs:
           echo "$EFFECT_NEEDED" | grep -qi "libc++_shared" && { echo "ERROR: libomega_effect.so depende de libc++_shared.so — audioserver no la puede resolver en /system/vendor/lib64/soundfx"; exit 1; }
           echo "OK: libomega_effect.so no depende de libc++_shared.so"
 
+      # HWS-01 gate runs AFTER the final Gradle -> Magisk staging copy.
+      - name: Verify staged AELI dynamic export
+        run: |
+          set -euo pipefail
+          EFFECT_ELF="magisk_module/system/vendor/lib64/soundfx/libomega_effect.so"
+          test -s "$EFFECT_ELF" || { echo "ERROR: final staged libomega_effect.so missing/empty"; exit 1; }
+          READELF=readelf
+          command -v "$READELF" >/dev/null 2>&1 || READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          python3 scripts/check_aeli_elf.py "$EFFECT_ELF" --readelf "$READELF"
+
       # ── MANIFIESTO DE ARTEFACTOS ───────────────────────────────────────
       - name: Generate BUILD_INFO manifest
         run: |
@@ -801,6 +813,8 @@ jobs:
           elf_align_gate extracted_daemon ivanna_daemon
           unzip -p "$ZIPNAME" system/vendor/lib64/soundfx/libomega_effect.so > extracted_effect.so
           readelf -h extracted_effect.so | grep -q "AArch64" || { echo "ERROR: libomega_effect.so no es AArch64"; exit 1; }
+          # Verify the exact library extracted from the final distributable ZIP.
+          python3 scripts/check_aeli_elf.py extracted_effect.so --readelf readelf
           elf_align_gate extracted_effect.so libomega_effect.so
           unzip -p "$APK_NAME" lib/arm64-v8a/libivanna_omega.so > extracted_jni.so
           readelf -h extracted_jni.so | grep -q "AArch64" || { echo "ERROR: libivanna_omega.so no es AArch64"; exit 1; }
@@ -892,6 +906,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+      - name: Enforce Hardware Sovereignty approval manifest
+        run: python3 scripts/check_hws_release_approval.py docs/hardware_sovereignty_release_approval.json
+
 
       - name: Download verified bundle from draft GitHub Release
         env:
