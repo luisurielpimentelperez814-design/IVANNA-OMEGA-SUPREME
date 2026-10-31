@@ -361,3 +361,27 @@ Source: `IVANNA_MOTO_G85_HAL_AUDIT`, `IVANNA_MOTO_G85_PAL_AUDIT` and `IVANNA_MOT
 - returns of 0 with advancing frames and monotonic time -> `ivanna_pal_mmap_position_adapter.hpp` is a valid query for that route.
 
 The raw bytes are logged next to a provisional decode under the *public* `pal_mmap_position` layout (`int64 time_nanoseconds`, `uint32 position_frames`); do not rely on the decode until the delta against nominal 48 kHz agrees.
+
+
+## USB-C DAC playback measured through AudioFlinger — 2026-10-31 03:27
+
+Passive capture (`dumpsys media.audio_flinger`, no injection) with music playing, `AUDIO_DEVICE_OUT_USB_HEADSET`, two samples 5 s apart. AudioFlinger builds this estimate from the HAL's own presentation position (frames + `CLOCK_MONOTONIC` time returned together); no IVANNA code is involved.
+
+| Thread | Type | HAL frames | Timestamps (n) | disc / err | localSR (Hz, variance) | Tracks |
+|---|---|---|---|---|---|---|
+| `AudioOut_D` | MIXER | 192 | 17804 -> 18062 | 2 / 3 | 48000 (2.4e-9) -> 47999.5 (3.8e-9) | 2, underruns 0, overruns 1 |
+| `AudioOut_D` FastMixer | - | - | 89033 -> 90320 | 0 / 0 | 47999.8 -> 48001.6 (~9e-8) | - |
+| `AudioOut_15` | MIXER | 1920 | 8929 | 5 / 0 | 48000.3 (3.3e-9) | - |
+| third USB thread | MIXER | 1024 | 16706 | 4 / 0 | 48000 (1.5e-7) | - |
+| `AudioOut_5D` | MIXER | 640 | 0 | 0 / 1 | nan | 0 (idle) |
+
+### What this supports
+
+- On the USB-C route the HAL returns valid, advancing, correlated (frames, time) pairs for normal MIXER output threads: tens of thousands of timestamps with few discontinuities/errors. This is the legacy `get_presentation_position` path already captured with Frida on 2026-10-26, **not** an MMAP path. Nothing here shows `GetMmapPosition` being used for music, so the MMAP probe is not required for this route.
+- The estimated rate stays within about +/-35 ppm of 48000 Hz across threads (mean of the regression, short window, 5 s apart). That is estimator noise-level, not a drift figure.
+
+### What this does not establish
+
+- Whether the pair reflects the DAC's own oscillator or the USB host's frame timing. The estimate is relative to `CLOCK_MONOTONIC`; it does not show a DAC-clock offset.
+- Any ASRC actuator, or any way for IVANNA to read this pair itself. The pair lives inside AudioFlinger/HAL; the daemon still has no call site there. Correction stays disabled.
+- Per-sample pairs: `dumpsys` only exposes aggregated statistics.

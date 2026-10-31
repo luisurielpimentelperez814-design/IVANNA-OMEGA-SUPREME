@@ -1,3 +1,8 @@
+## v2.5.208 (499) — 2026-10-31
+
+- **Primera medicion real de la ruta USB-C (Moto G85):** captura pasiva con `dumpsys media.audio_flinger`, musica sonando por `AUDIO_DEVICE_OUT_USB_HEADSET`. El HAL devuelve pares (frames, tiempo) validos y correlacionados en hilos MIXER (decenas de miles de timestamps, `err`/`disc` bajos), con `localSR` entre 47999.5 y 48001.6 Hz. Es la ruta de posicion de presentacion del HAL, no MMAP: la sonda MMAP no hace falta para esta ruta. Tabla y limites en `hal_integration/MOTO_G85_PAL_CLOCK_INTEGRATION.md`.
+- **Lo que no se afirma:** no demuestra deriva del reloj del DAC (el estimador es contra `CLOCK_MONOTONIC` y no distingue oscilador del DAC de temporizacion del host USB), ni un actuador ASRC, ni un punto de lectura propio para IVANNA. Correccion deshabilitada. Solo documentacion.
+
 ## v2.5.207 (498) — 2026-10-31
 
 - **Correccion de la v2.5.206:** la hipotesis de que el hook sobre el thunk de 4 bytes tumbo el HAL de audio queda retirada. El tombstone del Moto G85 muestra `SIGABRT` con `Abort message: 'Unable to locate the libc; please file a bug'` y todos los frames dentro de `frida-agent-64.so`: es un fallo del agente de Frida 17.25.0 en esta build (Android 15, V1UOS35H.74-16-4-16), no de la sonda. Cada caida reinicia el HAL y audioserver. No inyectar Frida 17.25.0 en el HAL de audio en esta build.

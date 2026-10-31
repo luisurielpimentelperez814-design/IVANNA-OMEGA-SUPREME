@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.207
-versionCode=498
+version=v2.5.208
+versionCode=499
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.207: corrects the HAL-crash diagnosis (Frida agent abort, not the probe); ASRC correction still disabled
+description=v2.5.208: first measured USB-C playback clock estimate recorded (HAL presentation position valid on MIXER threads); ASRC correction still disabled
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/main/magisk_module/update.json
