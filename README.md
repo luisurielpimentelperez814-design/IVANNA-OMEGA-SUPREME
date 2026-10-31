@@ -28,6 +28,10 @@ IVANNA reúne un reproductor Android, un motor DSP nativo, controles de efectos,
 | Reproductor propio, DSP y ajuste de efectos según la ruta disponible. | Tonos, captura de micrófono y comparación de ajustes con criterios internos. | Captura AR, nube de puntos, geometría configurada y renderizado espacial. |
 | [Cadena de reproducción](app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt) | [Medición de sala](app/src/main/java/com/ivanna/omega/audio/RoomMeasurement.kt) | [Captura AR](app/src/main/java/com/ivanna/omega/fotoholo/RoomArCaptureActivity.kt) |
 
+## Contrato de ingeniería para la arquitectura acústica avanzada
+
+La visión de control adaptativo, reconstrucción espacial y procesamiento generativo se desarrolla con capacidades verificables y límites explícitos. Consulta el [contrato de ingeniería de soberanía acústica](docs/IVANNA_ACOUSTIC_SOVEREIGNTY_ENGINEERING_CONTRACT.md): define los planos de observación/decisión/actuación/evidencia, los requisitos de WFS/ANC, privacidad, reloj/ASRC y las puertas de superprueba. No declara implementadas funciones que todavía requieren calibración o validación física.
+
 **En esta página** · [Arquitectura](#arquitectura) · [Capacidades](#capacidades-y-límites) · [Cambios actuales](#qué-cambia-en-v25195) · [Ejecutar](#compilar-y-ejecutar) · [Verificación](#verificación-y-evidencia) · [Documentación](#biblioteca-del-proyecto)
 
 ## Arquitectura
