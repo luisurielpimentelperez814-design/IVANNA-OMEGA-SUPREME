@@ -398,6 +398,12 @@ target_include_directories(omega_effect PRIVATE
 
 target_link_options(omega_effect PRIVATE
     -Wl,-z,max-page-size=16384
+    # Android EffectsFactory resolves the legacy library entry point with
+    # dlsym(handle, "AELI"). Keep it in .dynsym even if toolchain defaults or
+    # archive-export policies change; source visibility alone is not the
+    # runtime contract. The device audit found AELI in .symtab but no
+    # matching exported dynamic symbol.
+    -Wl,--export-dynamic-symbol=AELI
     -Wl,-z,relro
     -Wl,-z,now
     -Wl,--enable-new-dtags
