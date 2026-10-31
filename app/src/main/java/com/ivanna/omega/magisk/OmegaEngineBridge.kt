@@ -116,7 +116,7 @@ object OmegaEngineBridge {
      */
     fun handshake(): Boolean {
         return try {
-            val resp = requestCommand(JSONObject().apply { put("action", "HELLO") })
+            val resp = requestCommand(JSONObject().apply { put("action", "HELLO"); put("proto", MIN_PROTO_VERSION) })
             val proto = resp?.optInt("proto", -1) ?: -1
             val okProto = proto >= MIN_PROTO_VERSION
             if (!okProto) {
