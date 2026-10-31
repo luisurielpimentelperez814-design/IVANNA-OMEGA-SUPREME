@@ -1,3 +1,9 @@
+## v2.5.203 (494) — 2026-10-31
+
+- **Enlace de actualizacion tras el traslado del producto:** `magisk_module/update.json`, `module.prop` (`updateJson`), `CITATION.cff`, la plantilla de issues y el enlace del panel Magisk apuntaban a `IVANNA-OMEGA-SUPREME`; ahora apuntan a `IVANNA-OMGA-SUPREME-`. Sin esto la compuerta de `publish-release` (que exige `zipUrl == github.com/$GITHUB_REPOSITORY/releases/download/<version>/...`) fallaba en este repositorio y Magisk buscaba el zip en el repo anterior.
+- **No cambia:** audio, DSP, daemon ni ASRC. Solo metadatos de enlace y version (2.5.202 -> 2.5.203, 493 -> 494).
+- **Verificacion:** coherencia module.prop / update.json / version.properties comprobada por script local; la publicacion del release la hace el CI al detectar el bump.
+
 ## v2.5.202 (493) — 2026-10-30
 
 - **Control sin efecto ya no se disfraza de funcional:** `RouteModeBanner` (en el panel de control) muestra, segun el modo real de `AudioBackendSelector`, que funciones solo llegan al audio con el daemon Magisk. Sin root y con root sin daemon aparece el aviso; con root+daemon no aparece nada. Lista y logica en `RouteCapabilities` con 4 pruebas JVM; fuente en `docs/ROOT_VS_NOROOT_CAPABILITIES.md`.

@@ -3,9 +3,9 @@ message: "Si usas IVANNA OMEGA SUPREME en investigación o en un proyecto deriva
 title: "IVANNA OMEGA SUPREME"
 type: software
 # No fixed "version"/"date-released": they went stale (this file said 2.5.16 while releases were at 2.5.18x).
-# Cite the exact release tag from https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases
-repository-code: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME"
-url: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME"
+# Cite the exact release tag from https://github.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/releases
+repository-code: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-"
+url: "https://github.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-"
 abstract: >-
   Motor de audio para Android (C++26 nativo, Kotlin/Compose) con procesado DSP en tiempo real, HRTF binaural,
   respuestas al impulso de sala, síntesis de campo de ondas y un coordinador acústico en lazo cerrado,

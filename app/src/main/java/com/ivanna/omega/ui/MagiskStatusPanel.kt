@@ -183,7 +183,7 @@ fun MagiskStatusPanel(
                     "corriendo y reporta su versión vieja (esta alerta). Reinicia " +
                     "el teléfono y la alerta desaparece sola.\n\n" +
                     "Si NO lo has flasheado, instala el ZIP de esta versión desde Magisk:\n" +
-                    "github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME" +
+                    "github.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-" +
                     "/releases/download/v${com.ivanna.omega.BuildConfig.VERSION_NAME}" +
                     "/ivanna_omega_supreme_v${com.ivanna.omega.BuildConfig.VERSION_NAME}.zip",
                     color = AmberSignal,

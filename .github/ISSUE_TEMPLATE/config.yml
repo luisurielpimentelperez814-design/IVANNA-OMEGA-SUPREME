@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Preguntas, ideas y casos de uso (Discussions)
-    url: https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/discussions
+    url: https://github.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/discussions
     about: Para dudas de uso, ideas y mostrar tu configuración. Los issues son para errores y tareas concretas.
   - name: Vulnerabilidad de seguridad (reporte privado)
-    url: https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/security/advisories/new
+    url: https://github.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/security/advisories/new
     about: No abras un issue público para vulnerabilidades; usa el reporte privado.
