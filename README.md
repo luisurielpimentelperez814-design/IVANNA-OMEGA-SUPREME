@@ -88,6 +88,8 @@ El criterio interno permite decidir sobre un ajuste bajo esas condiciones de cap
 - **Pruebas del beacon:** comprueban que la generación reportada solo avanza al completar bloques DSP.
 - **Límite:** esta evidencia demuestra consumo de snapshot por el efecto y finalización de un bloque DSP; no demuestra por sí sola una mejora acústica ni una medición del DAC.
 
+### Base Genezi integrada en v2.5.210
+
 - **Ω-ATOMIC Genezi AUX:** la política de ruta equilibra foco central (1.00) e inmersión (1.08) mediante un compromiso minimax exacto (1.04). El valor se publica a través de los dos caminos de control existentes; es un multiplicador de intensidad espacial, no una medida de ancho acústico ni una calibración de sala.
 - **Pruebas:** cuatro regresiones JVM cubren el minimax, una búsqueda exhaustiva del intervalo, los límites duros y el fail-closed ante valores inválidos. La prueba de ruta Genezi fija el valor 1.04.
 - **HRTF externo:** AUX/USB conserva HRTF solicitado con wet 0.15 cuando se declara salida de línea; auriculares mantienen wet 1.0. No se presenta como cancelación transaural. WFS multialtavoz, SAF binaural personal y RIR sintético no se inyectan a ciegas en una ruta L/R.
