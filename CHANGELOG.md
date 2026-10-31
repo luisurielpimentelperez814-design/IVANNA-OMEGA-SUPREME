@@ -1,3 +1,8 @@
+## v2.5.209 (500) — 2026-10-31
+
+- **Tipo de sincronizacion del DAC USB medido:** `/proc/asound/card*/stream0` del "JieLi Technology USB Audio" (full speed) muestra el endpoint de reproduccion 0x03 OUT como `(SYNC)`: sincrono, sin endpoint de retroalimentacion. Cierra la pregunta pendiente de `docs/ASRC_SOFTWARE_CLOCK_WIRING.md` (no era asincrono ni adaptativo como se suponia).
+- **Consecuencia (solo para este DAC):** un DAC sincrono toma su reloj del SOF del host, asi que no hay discrepancia DAC-contra-host que un ASRC pueda quitar; el servo de `AudioTrackBufferPll` solo ve el residuo dentro del telefono, que la medicion del mismo dia deja a nivel de ruido (47999.5..48001.6 Hz) y se espera que permanezca en ~0 ppm por la banda muerta. El servo se conserva como lazo acotado y seguro. No se afirma nada de otros DAC ni de Bluetooth. Solo documentacion; nada cambia en codigo.
+
 ## v2.5.208 (499) — 2026-10-31
 
 - **Primera medicion real de la ruta USB-C (Moto G85):** captura pasiva con `dumpsys media.audio_flinger`, musica sonando por `AUDIO_DEVICE_OUT_USB_HEADSET`. El HAL devuelve pares (frames, tiempo) validos y correlacionados en hilos MIXER (decenas de miles de timestamps, `err`/`disc` bajos), con `localSR` entre 47999.5 y 48001.6 Hz. Es la ruta de posicion de presentacion del HAL, no MMAP: la sonda MMAP no hace falta para esta ruta. Tabla y limites en `hal_integration/MOTO_G85_PAL_CLOCK_INTEGRATION.md`.

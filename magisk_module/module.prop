@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.208
-versionCode=499
+version=v2.5.209
+versionCode=500
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.208: first measured USB-C playback clock estimate recorded (HAL presentation position valid on MIXER threads); ASRC correction still disabled
+description=v2.5.209: USB DAC measured as synchronous (SYNC endpoint), so no DAC-versus-host drift to correct on it; software servo kept as a safe no-op
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/main/magisk_module/update.json

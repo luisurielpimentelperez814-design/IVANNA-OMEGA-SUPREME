@@ -91,3 +91,19 @@ buffers) gives std 1.3-1.9 ppm / max error <= 5 ppm. The feed-forward weight ram
 `AudioTrackBufferPllTest` pins this (including a negative control that the old estimator fails with 208 ppm error).
 Not validated: behaviour on a real USB DAC over time (needs a new capture with the v2 script).
 
+
+
+## USB DAC synchronization type — `stream0` captured 2026-10-31
+
+`/proc/asound/card*/stream0` for the connected DAC (`JieLi Technology USB Audio`, `usb-xhci-hcd.2.auto-1`, full speed):
+
+- Playback: Interface 1, Altset 1 `S24_3LE` and Altset 2 `S16_LE`, 2 channels, rates 44100/48000, **Endpoint 0x03 OUT `(SYNC)`**.
+- Capture: Endpoint 0x83 IN `(SYNC)`, 48000 Hz, S16_LE.
+
+This closes the open item above (`stream0` not captured). The endpoint is **synchronous**, not asynchronous and not adaptive as previously guessed: a synchronous USB audio device derives its sample clock from the USB start-of-frame (SOF) clock of the host and has no feedback endpoint. Consequences, as far as this single capture supports:
+
+- There is no independent DAC-crystal rate that the phone must follow through feedback; the DAC is slaved to the host's USB frame clock. A software ASRC cannot remove a DAC-versus-host mismatch because the design leaves none to remove.
+- The residual that `AudioTrackBufferPll` can observe is between the HAL presentation clock and `CLOCK_MONOTONIC` inside the phone. The 2026-10-31 AudioFlinger capture shows that residual at noise level (`localSR` 47999.5..48001.6 Hz). With the controller's deadband, correction is expected to stay at about 0 ppm on this DAC.
+- Not established: whether the SoC's USB host clock and the audio clock share an oscillator (so even the in-phone residual may be structurally zero), and any behaviour of other DACs. An asynchronous DAC, or a Bluetooth sink, would need a separate measurement before any claim.
+
+The software servo stays in the code as a safe, bounded loop (unity on any invalid input); this capture is a reason to expect it to be a no-op on this DAC, not a reason to remove it.
