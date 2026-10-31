@@ -126,10 +126,11 @@ object RouteDspCalibrator {
             ?.globalEffectManager?.refreshOutputRoute()
         if (!IvannaNativeLib.isLoaded) return
         val saPrefs = runCatching { SpatialAudioPrefs.load(context) }.getOrNull()
-        val hrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
+        val hrtfWet = ExternalStereoPolicy.hrtfWetForRoute(
             route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
+        val hrtfAllowed = hrtfWet > 0f
         com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = hrtfAllowed
-        AudioEngine.nativeSetHrtfWetDryStatic(if (hrtfAllowed) 1f else 0f)
+        AudioEngine.nativeSetHrtfWetDryStatic(hrtfWet)
         when (route) {
             OutputRoute.SPEAKER -> {
                 runCatching {
