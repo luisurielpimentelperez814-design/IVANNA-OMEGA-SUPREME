@@ -193,10 +193,10 @@ TEST(SpatialPoseDaemon, StatusNeverClaimsAppliedWithoutConsumerAck) {
 TEST(ControlPlaneProtocol, HelloNegotiatesTheDaemonProtocolVersion) {
     CommandServer cs;
     char reply[1024]{};
-    ASSERT_GT(cs.handleJsonCommand("{\\"action\\":\\"HELLO\\",\\"proto\\":2}", reply, sizeof reply), 0);
-    EXPECT_NE(std::string(reply).find("\\"proto\\":2"), std::string::npos) << reply;
-    EXPECT_NE(std::string(reply).find("\\"compatible\\":true"), std::string::npos) << reply;
-    EXPECT_NE(std::string(reply).find("\\"status\\":\\"ready\\""), std::string::npos) << reply;
+    ASSERT_GT(cs.handleJsonCommand("{\"action\":\"HELLO\",\"proto\":2}", reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"proto\":2"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\"compatible\":true"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\"status\":\"ready\""), std::string::npos) << reply;
 }
 
 TEST(UserFlagsDaemon, SetUserFlagsReachesSnapshotAndSurvivesOtherCommands) {
