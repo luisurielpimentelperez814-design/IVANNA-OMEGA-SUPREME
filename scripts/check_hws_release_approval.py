@@ -24,7 +24,7 @@ def validate(data: object, repo_root: Path) -> list[str]:
         return ["manifest must contain an object named 'phases'"]
 
     root = repo_root.resolve()
-    used_evidence: set[str] = set()
+    used_evidence: set[Path] = set()
     for phase in PHASES:
         entry = phases.get(phase)
         if not isinstance(entry, dict):
@@ -49,16 +49,16 @@ def validate(data: object, repo_root: Path) -> list[str]:
             if rel.is_absolute() or ".." in rel.parts or not normalized.startswith(expected_dir):
                 failures.append(f"{phase}: evidence must be inside {expected_dir}: {item!r}")
                 continue
-            if normalized in used_evidence:
-                failures.append(f"{phase}: evidence file is reused by multiple phases: {item!r}")
-                continue
-            used_evidence.add(normalized)
             target = (root / rel).resolve()
             try:
                 target.relative_to(root)
             except ValueError:
                 failures.append(f"{phase}: evidence resolves outside repository root: {item!r}")
                 continue
+            if target in used_evidence:
+                failures.append(f"{phase}: evidence file resolves to evidence already used by another phase: {item!r}")
+                continue
+            used_evidence.add(target)
             if not target.is_file() or target.stat().st_size <= 0:
                 failures.append(f"{phase}: evidence file missing or empty: {item!r}")
     return failures
