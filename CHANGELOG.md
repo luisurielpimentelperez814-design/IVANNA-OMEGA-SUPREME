@@ -4,6 +4,7 @@
 - **Daemon sin falsas confirmaciones:** `hasActiveConsumer()` consulta el beacon del efecto; ya no confunde el writer del daemon con un consumidor AudioEffect activo.
 - **Telemetría de extremo a extremo:** `GET_STATUS` y las respuestas ricas exponen generación publicada, generación consumida por un bloque DSP, frames procesados y estado del beacon. `applied=true` exige read-back de una generación vigente.
 - **API Kotlin:** `OmegaEngineBridge.requestControlPlaneEvidence()` entrega un modelo tipado de evidencia para la app/dashboard.
+- **Panel y FotoHolo:** `MagiskStatusPanel` muestra las generaciones y frames confirmados; `FotoHoloRouteB` reconoce `dsp_block_applied` sin confundir publicación con procesamiento.
 - **Handshake:** corregido el desacuerdo app/daemon (la app exigía proto 3 y el daemon ofrecía proto 2); HELLO ahora envía la versión negociada.
 - **Regresión nativa:** el test del beacon verifica que el read-back de generación avanza únicamente con la finalización de bloques.
 - **Alcance:** el read-back acredita consumo del snapshot por el efecto y procesamiento de bloques; no acredita respuesta acústica, precisión del DAC ni mejora perceptual. Pendiente CI y validación en Moto G85.
