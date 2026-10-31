@@ -29,7 +29,7 @@ namespace ivanna {
 
 inline constexpr const char* OMEGA_EFFECT_BEACON_PATH = "/data/local/tmp/omega_effect_beacon";
 inline constexpr uint32_t    OMEGA_EFFECT_BEACON_MAGIC = 0x4F454246u;  // "OEBF"
-inline constexpr size_t      OMEGA_EFFECT_BEACON_SIZE  = 64;
+inline constexpr size_t      OMEGA_EFFECT_BEACON_SIZE  = 72;
 
 struct alignas(8) EffectBeacon {
     std::atomic<uint32_t> magic;          // OMEGA_EFFECT_BEACON_MAGIC cuando es válido
@@ -44,8 +44,9 @@ struct alignas(8) EffectBeacon {
     std::atomic<int32_t> callback_drift_ppm;     // diagnóstico del callback
     std::atomic<uint32_t> hardware_rate_millihz; // solo desde timestamp/posición HAL real
     std::atomic<int32_t> hardware_drift_ppm;    // estimación del reloj físico de salida
+    std::atomic<uint64_t> applied_control_generation; // última generación usada por un bloque DSP completo
 };
-static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 64 B");
+static_assert(sizeof(EffectBeacon) <= OMEGA_EFFECT_BEACON_SIZE, "EffectBeacon excede 72 B");
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "se requieren atómicos de 64 bit lock-free");
 
 struct EffectHeadPoseAck {
@@ -182,7 +183,8 @@ inline EffectBeaconState classifyEffectBeacon(uint32_t enabledCount, uint64_t la
 // ── Lado lector (proceso app). Abre/cierra por llamada: se invoca a baja frecuencia. ──
 inline EffectBeaconState readEffectBeacon(uint64_t idleMs = 2000ull,
                                           const char* path = OMEGA_EFFECT_BEACON_PATH,
-                                          uint64_t* outFrames = nullptr) noexcept {
+                                          uint64_t* outFrames = nullptr,
+                                          uint64_t* outAppliedGeneration = nullptr) noexcept {
     const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) return EffectBeaconState::Unavailable;
     struct stat st{};
@@ -197,6 +199,7 @@ inline EffectBeaconState readEffectBeacon(uint64_t idleMs = 2000ull,
     EffectBeaconState res = EffectBeaconState::Unavailable;
     if (b->magic.load(std::memory_order_acquire) == OMEGA_EFFECT_BEACON_MAGIC) {
         if (outFrames) *outFrames = b->frames.load(std::memory_order_relaxed);
+        if (outAppliedGeneration) *outAppliedGeneration = b->applied_control_generation.load(std::memory_order_acquire);
         res = classifyEffectBeacon(b->enabled_count.load(std::memory_order_relaxed),
                                    b->last_block_ms.load(std::memory_order_relaxed),
                                    b->stamp_ms.load(std::memory_order_relaxed),
@@ -237,6 +240,7 @@ public:
         b->callback_drift_ppm.store(0, std::memory_order_relaxed);
         b->hardware_rate_millihz.store(0u, std::memory_order_relaxed);
         b->hardware_drift_ppm.store(0, std::memory_order_relaxed);
+        b->applied_control_generation.store(0ull, std::memory_order_relaxed);
         b->magic.store(OMEGA_EFFECT_BEACON_MAGIC, std::memory_order_release);
         m_beacon.store(b, std::memory_order_release);
         return true;
@@ -291,11 +295,13 @@ public:
     }
 
     // RT-safe: un bloque pasó por TODO el DSP.
-    void onBlock(uint32_t frames) noexcept {
+    void onBlock(uint32_t frames, uint64_t appliedGeneration = 0u) noexcept {
         EffectBeacon* b = m_beacon.load(std::memory_order_acquire);
         if (!b) return;
         const uint64_t now = effectBeaconNowMs();
         b->frames.fetch_add(frames, std::memory_order_relaxed);
+        if (appliedGeneration > 0u)
+            b->applied_control_generation.store(appliedGeneration, std::memory_order_release);
         b->last_block_ms.store(now, std::memory_order_relaxed);
         b->stamp_ms.store(now, std::memory_order_relaxed);
     }
