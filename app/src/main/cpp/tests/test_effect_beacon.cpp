@@ -47,11 +47,16 @@ int main() {
     CHECK(readEffectBeacon(2000, path.c_str()) == EffectBeaconState::NoEffect, "abierto sin enable -> NoEffect");
     w.onEnable();
     CHECK(readEffectBeacon(2000, path.c_str()) == EffectBeaconState::EnabledIdle, "enable sin audio -> EnabledIdle");
-    w.onBlock(480);
-    w.onBlock(480);
+    w.onBlock(480, 17u);
+    w.onBlock(480, 19u);
     uint64_t frames = 0;
-    CHECK(readEffectBeacon(2000, path.c_str(), &frames) == EffectBeaconState::Processing, "onBlock -> Processing");
+    uint64_t appliedGeneration = 0;
+    CHECK(readEffectBeacon(2000, path.c_str(), &frames, &appliedGeneration) == EffectBeaconState::Processing, "onBlock -> Processing");
     CHECK(frames == 960, "frames acumulados == 960");
+    CHECK(appliedGeneration == 19u, "read-back refleja la última generación aplicada tras bloque DSP completo");
+    w.onBlock(480, 20u);
+    CHECK(readEffectBeacon(2000, path.c_str(), nullptr, &appliedGeneration) == EffectBeaconState::Processing && appliedGeneration == 20u,
+          "generación aplicada avanza solo con un bloque DSP completado");
 
     // 3. Instancias multiples y sin underflow
     w.onEnable();
