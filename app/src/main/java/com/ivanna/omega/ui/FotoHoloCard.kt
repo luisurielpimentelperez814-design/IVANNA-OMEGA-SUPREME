@@ -129,7 +129,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
                     geminiBusy = false
                 }
             }) { Text(if (geminiBusy) "GEMINI…" else "SUGERIR CON GEMINI", color = AuroraCyan) }
-            TextButton(onClick = { FotoHoloRouteB.push(tel.baseWidth) }) { Text("SINCRONIZAR RUTA B", color = AuroraCyan) }
+            TextButton(onClick = { FotoHoloRouteB.push(tel.baseWidth, tel.baseWidth) }) { Text("SINCRONIZAR RUTA B", color = AuroraCyan) }
         }
         if (geminiStatus.isNotEmpty()) Text(geminiStatus, color = Color(0xFF9AA4B2), fontSize = 11.sp)
 
