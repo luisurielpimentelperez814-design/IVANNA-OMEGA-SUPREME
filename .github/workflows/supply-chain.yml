@@ -200,7 +200,7 @@ jobs:
       # ── SLSA Attestation (GitHub nativo) ─────────────────────────────────────
       - name: Attest APK provenance (SLSA L2)
         if: steps.mode.outputs.dry == '0'
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             artifacts/apk/*.apk
