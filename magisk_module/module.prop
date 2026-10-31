@@ -4,4 +4,4 @@ version=v2.5.202
 versionCode=493
 author=Luis Uriel Pimentel Pérez (Gore TNS)
 description=v2.5.202: the app now tells you, per mode (root+daemon / root without daemon / no root), which controls do not reach the audio; capability matrix documented
-updateJson=https://raw.githubusercontent.com/GORE-TNS/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
+updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
