@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.210
-versionCode=501
+version=v2.5.211
+versionCode=502
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.210: bounded minimax Genezi AUX scene policy; CI-gated APK and ARM64 Magisk release
+description=v2.5.211: DSP control-generation readback, verified AudioEffect processing beacon, and protocol handshake fix
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
