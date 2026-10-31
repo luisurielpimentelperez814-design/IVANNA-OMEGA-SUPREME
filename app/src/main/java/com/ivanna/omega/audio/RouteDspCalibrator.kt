@@ -163,7 +163,9 @@ object RouteDspCalibrator {
         val externalStereo = ExternalStereoPolicy.usesExternalSpeakers(route, saPrefs?.externalStereoLineOut == true)
         // External amplifier owns surround/reverb; no unmeasured synthetic room on line-out.
         val rirAllowed = saPrefs?.rirEnabled == true && !externalStereo
-        val hrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
+        val hrtfWet = ExternalStereoPolicy.hrtfWetForRoute(
+            route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
+        val headphoneHrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
             route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
         val hasPersonalSaf = runCatching { com.ivanna.omega.saf.SaFBridge.nativeSaFGetIteration() > 0 }.getOrDefault(false)
         val safAllowed = saPrefs?.safEnabled == true && !externalStereo && !hasPersonalSaf
@@ -176,7 +178,7 @@ object RouteDspCalibrator {
                 val q = com.ivanna.omega.saf.SaFBridge.nativeSaFGetParams()
                     ?.takeIf { it.size == 7 && it.all(Float::isFinite) }
                 OmegaEngineBridge.pushSafLatentQ(q ?: FloatArray(7),
-                    gain = if (hrtfAllowed && q != null) saPrefs.safIntensity else 0f)
+                    gain = if (headphoneHrtfAllowed && q != null) saPrefs.safIntensity else 0f)
             }
         }.onFailure { Log.w(TAG, "SAF route delivery: ${it.message}") }
 
@@ -222,7 +224,7 @@ object RouteDspCalibrator {
                         OmegaEngineBridge.disableRoom()
                     }
                 }.onFailure { Log.w(TAG, "room aux/usb: ${it.message}") }
-                Log.i(TAG, "Ruta ${route.name} → HRTF=$hrtfAllowed + RIR=${if (rirAllowed && effectiveWet > 0.001f) "#51" else "OFF"} + Arquetipo Bark #0")
+                Log.i(TAG, "Ruta ${route.name} → HRTF_wet=$hrtfWet + SAF_personal=$headphoneHrtfAllowed + RIR=${if (rirAllowed && effectiveWet > 0.001f) "#51" else "OFF"} + Arquetipo Bark #0")
             }
 
             OutputRoute.BLUETOOTH -> {
@@ -246,7 +248,7 @@ object RouteDspCalibrator {
                 }.onFailure { Log.w(TAG, "room bt: ${it.message}") }
                 runCatching { MagiskBridge.setMid(1.12f) }
                 runCatching { MagiskBridge.setMaster(0.91f) }
-                Log.i(TAG, "Ruta BLUETOOTH GRADO MAGISTRAL → HRTF=$hrtfAllowed + RIR=${if (rirAllowed && effectiveWet > 0.001f) "#63" else "OFF"}, presencia +mid")
+                Log.i(TAG, "Ruta BLUETOOTH → HRTF_wet=$hrtfWet + SAF_personal=$headphoneHrtfAllowed + RIR=${if (rirAllowed && effectiveWet > 0.001f) "#63" else "OFF"}, presencia +mid")
             }
 
             OutputRoute.UNKNOWN -> Unit
