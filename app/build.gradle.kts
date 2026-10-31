@@ -186,7 +186,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:35.0.2"))
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-appcheck-debug:19.4.0") {
+    implementation("com.google.firebase:firebase-appcheck-debug:20.0.0") {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-android")
