@@ -37,10 +37,15 @@ Known limits:
 
 ## HWS-02 — Clock Master
 
-**Status: NOT APPROVED.** Existing HAL clock producer, PAL adapters, hardware
-clock estimator, PLL, and variable ASRC are present. Corrections must remain
-fail-closed until a stream-owner timestamp/frame-position source is verified.
-No device-clock or Bluetooth/PCM timing capability is claimed here.
+**Status: NOT APPROVED — production ASRC path is not closed.** The HAL clock
+snapshot reader/tracker in `omega_effect.cpp` currently feeds clock diagnostics;
+`VariableAsrc::setTargetRatio()` has no production call site. The daemon's
+`HalClockProducer` deliberately has no owner-side source (`ensureSource()`
+returns `kNoSource` unless a test source is injected). Therefore there is no
+verified PAL-owned correlated frame/timestamp publisher and no demonstrated
+ASRC actuator in the live audio route. Keep ASRC ratio at unity/bypass until
+that owner-side callback and the complete consumer path are implemented and
+probed. No device-clock or Bluetooth/PCM timing capability is claimed here.
 
 ## HWS-03 — Adaptive SoC Control
 
@@ -56,10 +61,15 @@ or policy controls are assumed.
 
 ## HWS-04 — Neural Low-Level Engine
 
-**Status: NOT APPROVED.** Pi-LSTM and TinyML/classifier code are present.
-The separate JNI Pi-LSTM instance requires ownership/consumer reconciliation.
-INT8 inference, deterministic execution, NEON equivalence, preallocation, and
-audio-thread isolation require measured functional evidence before approval.
+**Status: NOT APPROVED.** The Pi-LSTM bridge is called from the native audio
+processing path and advances RK4 state there; JNI setters and telemetry getters
+also access that state from the Java/control side without a demonstrated
+single-owner or synchronization contract. Treat this as a data-race risk until
+ownership is serialized or parameter/state publication is made RT-safe and
+covered by concurrency tests. TinyML/classifier presence is not proof of a
+connected low-level inference stage. INT8 inference, deterministic execution,
+NEON equivalence, preallocation, callback-budget and audio-thread isolation
+require measured functional evidence before approval.
 
 ## Release policy
 
