@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.209
-versionCode=500
+version=v2.5.210
+versionCode=501
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.209: USB DAC measured as synchronous (SYNC endpoint), so no DAC-versus-host drift to correct on it; software servo kept as a safe no-op
-updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/main/magisk_module/update.json
+description=v2.5.210: bounded minimax Genezi AUX scene policy; CI-gated APK and ARM64 Magisk release
+updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
