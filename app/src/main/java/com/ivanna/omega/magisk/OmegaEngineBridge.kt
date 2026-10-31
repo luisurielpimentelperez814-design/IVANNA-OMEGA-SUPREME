@@ -376,6 +376,26 @@ object OmegaEngineBridge {
     }
 
     /**
+     * Compatibilidad para las pantallas que todavía consumen telemetría como texto.
+     * Usa exclusivamente el read-back de GET_STATUS; no convierte ausencia de datos
+     * en una confirmación de procesamiento DSP.
+     */
+    fun requestTelemetry(): String {
+        val evidence = requestControlPlaneEvidence()
+            ?: return "Control plane: telemetry unavailable"
+        return buildString {
+            append("daemon=").append(if (evidence.daemonReachable) "OK" else "OFFLINE")
+            append(" snapshotGen=").append(evidence.snapshotGeneration)
+            append(" dspAppliedGen=").append(evidence.dspAppliedGeneration)
+            append(" frames=").append(evidence.processedFrames)
+            append(" effectState=").append(evidence.effectState)
+            append(" consumer=").append(evidence.effectConsumerPresent)
+            append(" status=").append(evidence.status)
+            append(" currentSnapshotApplied=").append(evidence.dspHasAppliedCurrentSnapshot)
+        }
+    }
+
+    /**
      * Abre una conexión NUEVA (Unix abstracto, luego TCP fallback), envía un
      * comando JSON y lee la respuesta completa balanceando llaves. Sin canal
      * persistente → imposible que quede stale. Cierra siempre.
