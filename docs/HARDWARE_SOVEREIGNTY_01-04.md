@@ -63,5 +63,9 @@ audio-thread isolation require measured functional evidence before approval.
 
 ## Release policy
 
-Do not merge or publish a production release while any required gate is red,
-unknown, or unverified. Preserve OEM/Dolby paths and transparent bypass.
+Release enforcement note: the ledger is an evidence record, not itself a CI
+publication gate. Until publish-release consumes a machine-verifiable approval
+manifest for HWS-01 through HWS-04, production approval requires an explicit
+manual engineering review of every phase and its device evidence. Do not claim
+that this document alone blocks publication. Preserve OEM/Dolby paths and
+transparent bypass.
