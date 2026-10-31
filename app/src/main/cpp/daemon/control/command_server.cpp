@@ -260,7 +260,7 @@ static int buildRichReply(char* buf, int sz, bool ok, const char* command, const
         "{\"ok\":%s,\"command\":\"%s\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"%s\",\"consumer\":%s,\"effect_state\":%d,\"dsp_applied_generation\":%llu,\"dsp_frames\":%llu,\"error\":%s}",
         ok?"true":"false", command, applied?"true":"false", evidenceStatus,
         (unsigned long long)generation, route,
-        hasActiveConsumer()?"\"omega_effect\"":"null", static_cast<int>(state),
+        (state == ivanna::EffectBeaconState::Processing || state == ivanna::EffectBeaconState::EnabledIdle)?"\"omega_effect\"":"null", static_cast<int>(state),
         (unsigned long long)appliedGeneration, (unsigned long long)frames,
         errorMsg?errorMsg:"null");
 }
