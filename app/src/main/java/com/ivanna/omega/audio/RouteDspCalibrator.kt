@@ -35,9 +35,9 @@ import kotlinx.coroutines.launch
  *     SPEAKER    → HRTF off, sala RIR activa (RT60 0.7s, wet 0.30):
  *                  el altavoz suena EN una habitación, la reverb de sala
  *                  es la herramienta correcta; el HRTF de oreja no aplica.
- *     WIRED_AUX  → HRTF on, sin sala (auricular cableado = canal directo,
- *                  sala cero; la "sala" del usuario ya es la real).
- *     USB        → igual que AUX (DAC externo, canal limpio).
+ *     WIRED_AUX/USB → HRTF wet=1.0 para auriculares; si el usuario declara
+ *                  line-out a amplificador, HRTF conserva wet=0.15 (beta
+ *                  reversible). Sin RIR sintético sobre la sala física.
  *     BLUETOOTH  → HRTF on, ancho contenido (0.85) y sala moderada
  *                  (0.4s/0.20): los codecs con pérdida (SBC/AAC) colapsan
  *                  la banda de presencia y un campo demasiado ancho se
