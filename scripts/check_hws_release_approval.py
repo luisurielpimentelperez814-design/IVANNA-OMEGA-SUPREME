@@ -17,7 +17,10 @@ def main() -> int:
     except (OSError, json.JSONDecodeError) as exc:
         print(f"BLOCKED: cannot read approval manifest: {exc}", file=sys.stderr)
         return 2
-    phases = data.get("phases") if isinstance(data, dict) else None
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        print("BLOCKED: unsupported or missing approval manifest schema_version", file=sys.stderr)
+        return 1
+    phases = data.get("phases")
     if not isinstance(phases, dict):
         print("BLOCKED: manifest must contain an object named 'phases'", file=sys.stderr)
         return 1
