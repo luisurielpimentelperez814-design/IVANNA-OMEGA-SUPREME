@@ -78,7 +78,7 @@ object OmegaEngineBridge {
         // Un connect() exitoso solo prueba que el kernel aceptó el socket;
         // no prueba autorización SO_PEERCRED ni compatibilidad de protocolo.
         // Exigir respuesta HELLO real antes de anunciar CONECTADO.
-        val ex = exchange(JSONObject().apply { put("action", "HELLO") })
+        val ex = exchange(JSONObject().apply { put("action", "HELLO"); put("proto", MIN_PROTO_VERSION) })
         val reply = ex.reply?.let { runCatching { JSONObject(it) }.getOrNull() }
         val proto = reply?.optInt("proto", -1) ?: -1
         val ok = ex.reached && proto >= MIN_PROTO_VERSION
@@ -345,6 +345,38 @@ object OmegaEngineBridge {
      * bucle hasta '}' balanceado o EOF, timeout generoso, y fallback a PING si
      * GET_STATUS no parsea. Devuelve SIEMPRE una cadena legible con la causa.
      */
+    data class ControlPlaneEvidence(
+        val daemonReachable: Boolean,
+        val snapshotGeneration: Long,
+        val dspAppliedGeneration: Long,
+        val processedFrames: Long,
+        val effectState: Int,
+        val status: String,
+        val effectConsumerPresent: Boolean
+    ) {
+        val dspHasAppliedCurrentSnapshot: Boolean
+            get() = snapshotGeneration > 0L && dspAppliedGeneration >= snapshotGeneration &&
+                effectState == 2 && status == "dsp_block_applied"
+    }
+
+    /** Read-back real: el daemon informa la generación del último snapshot usado por un bloque DSP completo. */
+    fun requestControlPlaneEvidence(): ControlPlaneEvidence? {
+        val raw = queryDaemonEphemeral(JSONObject().apply { put("action", "GET_STATUS") }) ?: return null
+        return runCatching {
+            val json = JSONObject(raw)
+            if (!json.optBoolean("ok", false)) return null
+            ControlPlaneEvidence(
+                daemonReachable = true,
+                snapshotGeneration = json.optLong("generation", 0L),
+                dspAppliedGeneration = json.optLong("dsp_applied_generation", 0L),
+                processedFrames = json.optLong("dsp_frames", 0L),
+                effectState = json.optInt("effect_state", -1),
+                status = json.optString("status", "unknown"),
+                effectConsumerPresent = json.optString("consumer", "null") == "omega_effect"
+            )
+        }.getOrNull()
+    }
+
     fun requestTelemetry(): String {
         val reply = queryDaemonEphemeral(JSONObject().apply { put("action","GET_STATUS") })
             ?: queryDaemonEphemeral(JSONObject().apply { put("action","PING") })
