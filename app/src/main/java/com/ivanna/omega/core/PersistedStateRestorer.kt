@@ -40,6 +40,7 @@ object PersistedStateRestorer {
             roomWetMix = if (externalStereo) 0f else acPrefs.hybridRoomWetMix
         )
         if (IvannaNativeLib.isLoaded) {
+            runCatching { com.ivanna.omega.audio.AudioEngine.nativeSetHrtfWetDryStatic(hrtfWet) }
             runCatching { IvannaNativeLib.nativeSetEta(acPrefs.nhoEta) }
             runCatching { IvannaNativeLib.nativeSetHarmonicGain(acPrefs.nhoHarmonicGain) }
             runCatching { IvannaNativeLib.nativeSetBeta(acPrefs.nhoLateralInhib) }
