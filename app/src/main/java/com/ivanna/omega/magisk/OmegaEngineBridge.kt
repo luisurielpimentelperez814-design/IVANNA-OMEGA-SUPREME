@@ -362,33 +362,17 @@ object OmegaEngineBridge {
     /** Read-back real: el daemon informa la generación del último snapshot usado por un bloque DSP completo. */
     fun requestControlPlaneEvidence(): ControlPlaneEvidence? {
         val raw = queryDaemonEphemeral(JSONObject().apply { put("action", "GET_STATUS") }) ?: return null
-        return runCatching {
-            val json = JSONObject(raw)
-            if (!json.optBoolean("ok", false)) return null
-            ControlPlaneEvidence(
-                daemonReachable = true,
-                snapshotGeneration = json.optLong("generation", 0L),
-                dspAppliedGeneration = json.optLong("dsp_applied_generation", 0L),
-                processedFrames = json.optLong("dsp_frames", 0L),
-                effectState = json.optInt("effect_state", -1),
-                status = json.optString("status", "unknown"),
-                effectConsumerPresent = json.optString("consumer", "null") == "omega_effect"
-            )
-        }.getOrNull()
-    }
-
-    fun requestTelemetry(): String {
-        val reply = queryDaemonEphemeral(JSONObject().apply { put("action","GET_STATUS") })
-            ?: queryDaemonEphemeral(JSONObject().apply { put("action","PING") })
-        return if (reply != null) {
-            isConnected = true
-            "Omega OK latency=${"%.1f".format(lastLatencyMs)}ms $reply"
-        } else {
-            isConnected = false
-            // Diagnóstico honesto: distingue daemon-sin-bind de rechazo SELinux
-            // para que el usuario sepa qué mirar, en vez del genérico "OFFLINE".
-            "Omega OFFLINE — " + runCatching { MagiskBridge.diagnoseSocket() }.getOrDefault("sin diagnóstico")
-        }
+        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        if (!json.optBoolean("ok", false)) return null
+        return ControlPlaneEvidence(
+            daemonReachable = true,
+            snapshotGeneration = json.optLong("generation", 0L),
+            dspAppliedGeneration = json.optLong("dsp_applied_generation", 0L),
+            processedFrames = json.optLong("dsp_frames", 0L),
+            effectState = json.optInt("effect_state", -1),
+            status = json.optString("status", "unknown"),
+            effectConsumerPresent = json.optString("consumer", "null") == "omega_effect"
+        )
     }
 
     /**
