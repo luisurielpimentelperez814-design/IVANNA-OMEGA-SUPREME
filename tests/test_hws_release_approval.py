@@ -47,6 +47,11 @@ class HardwareSovereigntyReleaseGateTests(unittest.TestCase):
         phases["HWS-03"]["evidence"] = []
         self.assertEqual(self.run_manifest(phases).returncode, 1)
 
+    def test_missing_evidence_file_blocks(self):
+        phases = self.approved_phases()
+        phases["HWS-02"]["evidence"] = ["evidence/does-not-exist.txt"]
+        self.assertEqual(self.run_manifest(phases).returncode, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
