@@ -194,8 +194,8 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetEta(JNIEnv*, jobject, j
 // Faltaba: Kotlin declara nativeSetNPMax() en PiLstmBridge pero no había símbolo.
 // NP_max define el rango de saturación del estado oculto h ∈ [-NP_max, NP_max].
 // También es el denominador de la saturación normalizada publicada por nativeGetNpSat.
-// Al cambiarlo se invalida la semilla del estimador de residual (dt grande próxima
-// consulta → guarda automáticamente un nuevo punto de referencia).
+// Al cambiarlo se solicita al propietario RT reiniciar la semilla del residual
+// en el siguiente bloque, sin tocar estado mutable desde el hilo JNI.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeSetNPMax(JNIEnv*, jobject, jfloat v) {
     if (!g_piLstmBridge_ready.load(std::memory_order_acquire)) return;
