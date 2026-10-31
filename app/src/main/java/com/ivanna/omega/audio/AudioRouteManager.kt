@@ -158,7 +158,7 @@ object AudioRouteManager {
         OutputRoute.WIRED_AUX -> RouteProfile(
             bassBoostDb = 0f,
             dialogBoostDb = 0f,
-            widenerMult = 1.08f
+            widenerMult = AtomicSpatialPolicy.geneziSpatialMultiplier()
         )
         // USB-C DAC: ruta de línea limpia, sin boost de graves.
         OutputRoute.USB -> RouteProfile(bassBoostDb = 0f, dialogBoostDb = 0.5f, widenerMult = 1.0f)
