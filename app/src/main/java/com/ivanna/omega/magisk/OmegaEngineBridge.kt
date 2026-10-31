@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 object OmegaEngineBridge {
     private const val TAG = "OmegaEngineBridge"
     private const val SOCKET_PRIMARY = "omega_daemon_socket"
-    private const val MIN_PROTO_VERSION = 3   // exigido en el handshake HELLO al conectar
+    private const val MIN_PROTO_VERSION = 2   // coincide con OMEGA_PROTO_VERSION del daemon (command_server.h)
     private const val CONNECT_TIMEOUT = 2000
     @Volatile var isConnected = false; private set
     // Versión REAL del módulo reportada por el daemon en el handshake HELLO
