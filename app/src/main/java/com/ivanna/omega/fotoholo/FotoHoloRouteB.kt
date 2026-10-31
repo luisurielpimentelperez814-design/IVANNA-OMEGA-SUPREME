@@ -5,7 +5,6 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.ivanna.omega.magisk.MagiskBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
-import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -79,24 +78,41 @@ object FotoHoloRouteB {
     fun upmixJson(immersivity: Float): String =
         String.format(Locale.US, "{\"action\":\"SET_UPMIXING\",\"upmixingImmersivity\":%.4f}", immersivity)
 
+    // Parse only scalar ACK fields. This is deterministic in local JVM tests too:
+    // android.jar org.json stubs are not a reliable test runtime.
+    private fun jsonScalar(reply: String, key: String): String? {
+        val pattern = Regex("\"" + Regex.escape(key) +
+            "\"\\s*:\\s*(true|false|null|\"((?:\\\\.|[^\"\\\\])*)\"|(-?\\d+))")
+        val match = pattern.find(reply) ?: return null
+        val token = match.groupValues[1]
+        return when {
+            token == "null" -> null
+            token == "true" || token == "false" -> token
+            match.groupValues[2].isNotEmpty() ->
+                match.groupValues[2].replace("\\\\\"", "\"").replace("\\\\\\\\", "\\\\")
+            else -> token
+        }
+    }
+
     private fun jsonLong(reply: String, key: String): Long? =
-        runCatching { JSONObject(reply).optLong(key, 0L).takeIf { it > 0L } }.getOrNull()
+        jsonScalar(reply, key)?.toLongOrNull()?.takeIf { it > 0L }
 
     private fun jsonBoolean(reply: String, key: String): Boolean? =
-        runCatching {
-            val json = JSONObject(reply)
-            if (!json.has(key) || json.isNull(key)) null else json.optBoolean(key)
-        }.getOrNull()
+        when (jsonScalar(reply, key)) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
 
     fun statusFromReply(reply: String): String {
         if (reply.isBlank()) return "demonio no disponible"
-        val json = runCatching { JSONObject(reply) }.getOrNull()
-            ?: return "respuesta sin confirmación válida del demonio"
-        if (!json.has("ok")) return "respuesta sin confirmación válida del demonio"
-        if (!json.optBoolean("ok", false)) return "rechazado por el demonio"
-        val statusValue = json.optString("status", "")
+        if (jsonScalar(reply, "ok") == null) {
+            return "respuesta sin confirmación válida del demonio"
+        }
+        if (jsonBoolean(reply, "ok") != true) return "rechazado por el demonio"
+        val statusValue = jsonScalar(reply, "status").orEmpty()
         val applied = jsonBoolean(reply, "applied")
-        val consumerDeclared = json.optString("consumer", "null") == "omega_effect"
+        val consumerDeclared = jsonScalar(reply, "consumer") == "omega_effect"
         return when (statusValue) {
             "accepted_pending_consumer", "no_active_effect" ->
                 "aceptado; sin consumidor activo"
