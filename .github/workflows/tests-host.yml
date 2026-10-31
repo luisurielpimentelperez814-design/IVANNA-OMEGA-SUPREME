@@ -74,7 +74,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: ${{ matrix.san }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Instalar cmake (verificación explícita de versión)
         run: |
@@ -151,7 +151,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: 'tsan'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Instalar cmake
         run: |
@@ -178,7 +178,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # FIX (corrida 34543348492): la versión vigente de verify_dataset.py
       # (del relevo HRTF-tools) usa numpy a nivel de módulo y el runner
@@ -218,7 +218,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configurar Python
         uses: actions/setup-python@v7
         with:
