@@ -369,8 +369,8 @@ object AudioRouteManager {
 
     private fun requestedHrtfWet(route: OutputRoute): Float {
         val prefs = appContextRef?.let { com.ivanna.omega.ui.SpatialAudioPrefs.load(it) }
-        return if (ExternalStereoPolicy.allowHeadphoneHrtf(route,
-                prefs?.externalStereoLineOut == true, prefs?.hrtfEnabled ?: true)) 1f else 0f
+        return ExternalStereoPolicy.hrtfWetForRoute(
+            route, prefs?.externalStereoLineOut == true, prefs?.hrtfEnabled ?: true)
     }
 
     /**
