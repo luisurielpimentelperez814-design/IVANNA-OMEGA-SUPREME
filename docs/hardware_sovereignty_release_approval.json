@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "policy": "production-release-requires-all-phases-approved",
+  "phases": {
+    "HWS-01": {
+      "status": "IN_PROGRESS",
+      "evidence": [
+        "scripts/check_aeli_elf.py",
+        "docs/HARDWARE_SOVEREIGNTY_01-04.md"
+      ]
+    },
+    "HWS-02": {
+      "status": "NOT_APPROVED",
+      "evidence": [
+        "docs/HARDWARE_SOVEREIGNTY_01-04.md"
+      ]
+    },
+    "HWS-03": {
+      "status": "PARTIAL",
+      "evidence": [
+        "app/src/main/cpp/thermal_governor.hpp",
+        "docs/HARDWARE_SOVEREIGNTY_01-04.md"
+      ]
+    },
+    "HWS-04": {
+      "status": "NOT_APPROVED",
+      "evidence": [
+        "app/src/main/cpp/pi_lstm_bridge_jni.cpp",
+        "docs/HARDWARE_SOVEREIGNTY_01-04.md"
+      ]
+    }
+  }
+}
