@@ -150,7 +150,7 @@ dependencies {
     // ARCore: seguimiento de cámara y profundidad ambiental para capturas espaciales.
     implementation("com.google.ar:core:1.49.0")
 
-    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
