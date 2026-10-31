@@ -6,7 +6,7 @@
 
 **Audio Android · procesamiento espacial · herramientas de medición**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.196-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.210-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -21,7 +21,7 @@
 
 IVANNA reúne un reproductor Android, un motor DSP nativo, controles de efectos, herramientas de calibración y exploración espacial. El repositorio incluye también un módulo Magisk y un dashboard web. Cada ruta tiene su propio alcance y sus requisitos.
 
-**Estado documental · 29 de octubre de 2026 · v2.5.196 / código 487.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
+**Estado documental · 31 de octubre de 2026 · v2.5.210 / código 501.** La versión se declara en [version.properties](version.properties). Los artefactos disponibles se consultan en [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases); la versión del código, por sí sola, no confirma una publicación.
 
 | 01 · Escuchar | 02 · Medir | 03 · Explorar |
 |:---|:---|:---|
@@ -75,7 +75,14 @@ flowchart LR
 
 El criterio interno permite decidir sobre un ajuste bajo esas condiciones de captura. La mejora audible y la seguridad de la ruta requieren pruebas físicas adicionales.
 
-## Qué cambia en v2.5.196
+## Qué cambia en v2.5.210
+
+- **Ω-ATOMIC Genezi AUX:** la política de ruta equilibra foco central (1.00) e inmersión (1.08) mediante un compromiso minimax exacto (1.04). El valor se publica a través de los dos caminos de control existentes; es un multiplicador de intensidad espacial, no una medida de ancho acústico ni una calibración de sala.
+- **Pruebas:** cuatro regresiones JVM cubren el minimax, una búsqueda exhaustiva del intervalo, los límites duros y el fail-closed ante valores inválidos. La prueba de ruta Genezi fija el valor 1.04.
+- **Actualizador Magisk:** las URLs de `module.prop` y `update.json` apuntan al repositorio real y al asset versionado v2.5.210. La publicación solo se considera disponible tras CI, validación de APK/ZIP y verificación de los assets.
+- **Límite físico:** no se declara teletransportación acústica, WFS físico ni cancelación transaural calibrada sin medición de las transferencias altavoz-oído. La prueba de escucha Genezi en sus cuatro estados sigue siendo una aceptación en hardware.
+
+### Contexto heredado de v2.5.196
 
 - **Reloj de salida USB:** el estimador de deriva del AudioTrack pasa de una regresión de ~2 s a la mediana de pendientes por pares sobre ~30 s. Con el jitter de timestamp medido en la captura del Moto G85 + DAC USB, la simulación muestra desviación de 34–54 ppm (anterior) frente a ~2 ppm (actual); en el dispositivo falta una captura larga que lo confirme.
 - **ABI:** los binarios nativos propios se enlazan con alineación de 16 KB (Android 15+); el CI mide ahora la alineación en los artefactos publicados y el Release incluye `SHA256SUMS.txt`.
