@@ -57,17 +57,32 @@ class HardwareSovereigntyReleaseGateTests(unittest.TestCase):
         phases["HWS-02"]["evidence"] = ["evidence/hws-02/missing.txt"]
         self.assertEqual(self.run_manifest(phases).returncode, 1)
 
-    def test_evidence_cannot_be_reused_across_phases(self):
+    def test_evidence_cannot_be_reused_through_symlink(self):
         phases = self.approved_phases()
-        phases["HWS-02"]["evidence"] = phases["HWS-01"]["evidence"]
-        result = self.run_manifest(phases)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for phase in PHASES:
+                evidence = root / "evidence" / phase.lower() / "ci-proof.txt"
+                evidence.parent.mkdir(parents=True, exist_ok=True)
+                evidence.write_text(f"{phase} PASS\\n", encoding="utf-8")
+            alias = root / "evidence" / "hws-02" / "shared-proof.txt"
+            alias.symlink_to(root / "evidence" / "hws-01" / "ci-proof.txt")
+            phases["HWS-02"]["evidence"] = ["evidence/hws-02/shared-proof.txt"]
+            manifest = root / "approval.json"
+            manifest.write_text(json.dumps({"schema_version": 1, "phases": phases}), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), str(manifest), "--root", str(root)],
+                text=True, capture_output=True, check=False,
+            )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("reused by multiple phases", result.stdout)
+        self.assertIn("resolves to evidence already used", result.stdout)
 
     def test_evidence_must_be_phase_scoped(self):
         phases = self.approved_phases()
         phases["HWS-03"]["evidence"] = ["evidence/hws-02/ci-proof.txt"]
-        self.assertEqual(self.run_manifest(phases).returncode, 1)
+        result = self.run_manifest(phases)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must be inside evidence/hws-03/", result.stdout)
 
     def test_boolean_or_float_schema_version_blocks(self):
         self.assertEqual(self.run_manifest(self.approved_phases(), True).returncode, 1)
