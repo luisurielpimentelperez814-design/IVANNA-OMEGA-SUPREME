@@ -811,6 +811,8 @@ jobs:
           elf_align_gate extracted_daemon ivanna_daemon
           unzip -p "$ZIPNAME" system/vendor/lib64/soundfx/libomega_effect.so > extracted_effect.so
           readelf -h extracted_effect.so | grep -q "AArch64" || { echo "ERROR: libomega_effect.so no es AArch64"; exit 1; }
+          # Verify the exact library extracted from the final distributable ZIP.
+          python3 scripts/check_aeli_elf.py extracted_effect.so --readelf readelf
           elf_align_gate extracted_effect.so libomega_effect.so
           unzip -p "$APK_NAME" lib/arm64-v8a/libivanna_omega.so > extracted_jni.so
           readelf -h extracted_jni.so | grep -q "AArch64" || { echo "ERROR: libivanna_omega.so no es AArch64"; exit 1; }
