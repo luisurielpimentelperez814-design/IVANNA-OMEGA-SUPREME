@@ -248,11 +248,21 @@ static int pfIndexForName(const std::string& k) {
 }
 static bool hasActiveConsumer() noexcept { const auto s = ivanna::readEffectBeacon(); return s == ivanna::EffectBeaconState::Processing || s == ivanna::EffectBeaconState::EnabledIdle; }
 static int buildRichReply(char* buf, int sz, bool ok, const char* command, const char* status, uint64_t generation, const char* route, const char* errorMsg) noexcept {
-    bool applied = ok && (generation>0) && (strcmp(status,"applied")==0);
+    uint64_t frames = 0, appliedGeneration = 0;
+    const auto state = ivanna::readEffectBeacon(2000ull, ivanna::OMEGA_EFFECT_BEACON_PATH, &frames, &appliedGeneration);
+    const bool applied = ok && generation > 0 &&
+        state == ivanna::EffectBeaconState::Processing && appliedGeneration >= generation;
+    const char* evidenceStatus = applied ? "dsp_block_applied" :
+        (state == ivanna::EffectBeaconState::Processing ? "awaiting_dsp_generation" :
+         (state == ivanna::EffectBeaconState::EnabledIdle ? "effect_enabled_idle" :
+          (generation > 0 ? "snapshot_published_no_active_effect" : status)));
     return snprintf(buf,(size_t)sz,
-        "{\"ok\":%s,\"command\":\"%s\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"%s\",\"consumer\":%s,\"error\":%s}",
-        ok?"true":"false", command, applied?"true":"false", status, (unsigned long long)generation, route,
-        hasActiveConsumer()?"\"omega_effect\"": "null", errorMsg?errorMsg:"null");
+        "{\\"ok\\":%s,\\"command\\":\\"%s\\",\\"applied\\":%s,\\"status\\":\\"%s\\",\\"generation\\":%llu,\\"route\\":\\"%s\\",\\"consumer\\":%s,\\"effect_state\\":%d,\\"dsp_applied_generation\\":%llu,\\"dsp_frames\\":%llu,\\"error\\":%s}",
+        ok?"true":"false", command, applied?"true":"false", evidenceStatus,
+        (unsigned long long)generation, route,
+        hasActiveConsumer()?"\\"omega_effect\\"":"null", static_cast<int>(state),
+        (unsigned long long)appliedGeneration, (unsigned long long)frames,
+        errorMsg?errorMsg:"null");
 }
 
 int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz) {
