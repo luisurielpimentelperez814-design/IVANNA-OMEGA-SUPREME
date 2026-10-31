@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.211
-versionCode=502
+version=v2.5.212
+versionCode=503
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.211: DSP control-generation readback, verified AudioEffect processing beacon, and protocol handshake fix
+description=v2.5.212: DSP control-generation readback, live evidence UI, FotoHolo confirmation and protocol handshake fix
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
