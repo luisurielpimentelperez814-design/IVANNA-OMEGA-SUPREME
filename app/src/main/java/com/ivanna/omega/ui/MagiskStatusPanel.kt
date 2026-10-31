@@ -268,8 +268,20 @@ fun MagiskStatusPanel(
                 actionInFlight = true
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
-                        val fromDaemon = runCatching { MagiskBridge.getTelemetry() }.getOrDefault("")
-                        if (fromDaemon.isNotBlank()) fromDaemon else omegaBridge.requestTelemetry()
+                        val evidence = runCatching { omegaBridge.requestControlPlaneEvidence() }.getOrNull()
+                        if (evidence != null) {
+                            "Control plane: daemon=" + (if (evidence.daemonReachable) "OK" else "OFFLINE") +
+                                " snapshotGen=" + evidence.snapshotGeneration +
+                                " dspAppliedGen=" + evidence.dspAppliedGeneration +
+                                " frames=" + evidence.processedFrames +
+                                " effectState=" + evidence.effectState +
+                                " consumer=" + evidence.effectConsumerPresent +
+                                " status=" + evidence.status +
+                                " currentSnapshotApplied=" + evidence.dspHasAppliedCurrentSnapshot
+                        } else {
+                            val fromDaemon = runCatching { MagiskBridge.getTelemetry() }.getOrDefault("")
+                            if (fromDaemon.isNotBlank()) fromDaemon else omegaBridge.requestTelemetry()
+                        }
                     }
                     lastCommandOutput = result
                     actionInFlight = false
