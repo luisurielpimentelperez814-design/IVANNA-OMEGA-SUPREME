@@ -1,3 +1,11 @@
+## v2.5.210 (501) — 2026-10-31
+
+- **Ω-ATOMIC Genezi AUX policy:** añade una solución minimax determinista que equilibra el objetivo de foco (multiplicador 1.00) y la referencia de inmersión (1.08). El compromiso exacto es 1.04 y se publica desde `AudioRouteManager` hacia las rutas de control existentes.
+- **Pruebas JVM:** verifica el minimax frente a una barrida del intervalo, el peor error, la proyección a límites y el fail-closed ante NaN/intervalos inválidos. La prueba de perfil AUX queda alineada a 1.04.
+- **Límite explícito:** 1.04 es un multiplicador de intensidad espacial del plano de control, no el ancho acústico medido ni una inversa de sala. No cambia el DSP nativo ni certifica HRTF transaural, WFS físico, respuesta del Genezi o teletransportación perceptual. La validación auditiva/ABX y la medición física siguen pendientes.
+- **Updater corregido:** `module.prop` y `update.json` apuntan al repositorio real `IVANNA-OMEGA-SUPREME`; el release espera el asset canónico `ivanna_omega_supreme_v2.5.210.zip`.
+- **Release:** v2.5.210 / versionCode 501. Publicación condicionada a CI, pruebas JVM/nativas, compilación Android, integridad APK/ZIP y verificación posterior de los assets.
+
 ## v2.5.209 (500) — 2026-10-31
 
 - **Tipo de sincronizacion del DAC USB medido:** `/proc/asound/card*/stream0` del "JieLi Technology USB Audio" (full speed) muestra el endpoint de reproduccion 0x03 OUT como `(SYNC)`: sincrono, sin endpoint de retroalimentacion. Cierra la pregunta pendiente de `docs/ASRC_SOFTWARE_CLOCK_WIRING.md` (no era asincrono ni adaptativo como se suponia).
