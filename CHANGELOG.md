@@ -1,3 +1,9 @@
+## v2.5.212 (503) — 2026-10-31
+
+- **Integración completa de evidencia:** el panel Magisk presenta generación publicada/aplicada, frames y estado de AudioEffect; FotoHoloRouteB reconoce la confirmación `dsp_block_applied`.
+- **Negociación probada:** test nativo confirma HELLO proto 2 (`compatible=true`, `ready`).
+- **Release:** v2.5.212 / versionCode 503. Incluye el read-back de generación DSP, API Kotlin, panel de evidencia y estado FotoHolo. Su publicación depende de CI y verificación de artefactos.
+
 ## v2.5.211 (502) — 2026-10-31
 
 - **Read-back real del efecto:** `omega_effect` amplía el beacon de 64 a 72 bytes y publica `applied_control_generation` únicamente al finalizar un bloque DSP. Se mantienen los contadores de frames y el estado enabled/processing.
