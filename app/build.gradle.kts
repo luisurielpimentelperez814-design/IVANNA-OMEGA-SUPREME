@@ -175,13 +175,13 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.12.0")
     implementation("com.google.code.gson:gson:2.14.0")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.12.0")
 
     implementation(platform("com.google.firebase:firebase-bom:35.0.2"))
     implementation("com.google.firebase:firebase-firestore")
@@ -232,11 +232,11 @@ configurations.all {
         force(
             "org.jetbrains.kotlin:kotlin-stdlib:2.4.21",
             "org.jetbrains.kotlin:kotlin-stdlib-common:2.4.21",
-            "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0",
-            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0",
-            "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0",
-            "org.jetbrains.kotlinx:kotlinx-serialization-core:1.11.0",
-            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0"
+            "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.12.0",
+            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.12.0",
+            "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.12.0",
+            "org.jetbrains.kotlinx:kotlinx-serialization-core:1.12.0",
+            "org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0"
         )
     }
 }
