@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.205
-versionCode=496
+version=v2.5.206
+versionCode=497
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.205: read-only Moto G85 shell probes added and MMAP verdict criterion corrected; ASRC correction still disabled (no verified actuator)
+description=v2.5.206: MMAP probe no longer hooks a 4-byte PAL thunk (audio HAL died under the previous probe); ASRC correction still disabled
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMGA-SUPREME-/main/magisk_module/update.json

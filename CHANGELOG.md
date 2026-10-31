@@ -1,3 +1,8 @@
+## v2.5.206 (497) — 2026-10-31
+
+- **Sonda MMAP: se dejo de enganchar un thunk de 4 bytes.** Con la v2.5.204, `frida-inject` en el HAL de audio (pid 1433, Moto G85) termino con `The connection is closed` y el proceso desaparecio. La causa no esta confirmada; la hipotesis es que el trampolin de Frida sobre `pal_stream_get_mmap_position` (4 bytes segun la auditoria) pisa codigo vecino. `ivanna_hal_mmap_bounded.js` ahora engancha `StreamOutPrimary::GetMmapPosition` (244 bytes), se niega a enganchar objetivos de menos de 32 bytes, lee la estructura Android `audio_mmap_position` y se limita a 300 retornos.
+- **Pendiente:** el log/tombstone del cierre del HAL para confirmar la causa. No hay medicion de la ruta USB-C todavia; enlace fisico y actuador ASRC siguen sin verificar y la correccion sigue deshabilitada. Solo comprobado por sintaxis, no en dispositivo.
+
 ## v2.5.205 (496) — 2026-10-31
 
 - **Sondas de shell del Moto G85 incorporadas:** `hal_integration/tools/ivanna_hal_mmap_shell_probe.js` (simbolos, runtime de AudioOut_D/AudioOut_15 y logcat) y `ivanna_hal_usb_probe.js` (muestras de la salida USB-C, handle 21). Son de solo lectura.

@@ -355,7 +355,7 @@ Source: `IVANNA_MOTO_G85_HAL_AUDIT`, `IVANNA_MOTO_G85_PAL_AUDIT` and `IVANNA_MOT
 
 ### Next discriminating capture
 
-`hal_integration/tools/ivanna_hal_mmap_bounded.js` hooks `pal_stream_get_mmap_position` passively (no calls of its own, no writes) and records return status and the raw 16 bytes returned, bounded to 600 returns, per caller stream pointer. Run it during normal playback on speaker, Bluetooth and USB-C separately, together with `ivanna_hal_bounded.js`:
+`hal_integration/tools/ivanna_hal_mmap_bounded.js` (v2.5.206) hooks `StreamOutPrimary::GetMmapPosition` in the HAL passively (no calls of its own, no writes), refuses targets under 32 bytes, and records return status and the raw 16 bytes returned, bounded to 300 returns, per stream pointer. The v2.5.204 version hooked the 4-byte `pal_stream_get_mmap_position` thunk; on 2026-10-31 `frida-inject` into the audio HAL (pid 1433) was followed by the process disappearing. The cause is not confirmed (thunk overwrite is a hypothesis); do not reuse that version. Run it during normal playback on speaker, Bluetooth and USB-C separately, together with `ivanna_hal_bounded.js`:
 
 - all returns non-zero (or no calls) -> the active music stream is not MMAP; the pair must come from the HAL's presentation-position path inside the stream owner;
 - returns of 0 with advancing frames and monotonic time -> `ivanna_pal_mmap_position_adapter.hpp` is a valid query for that route.
