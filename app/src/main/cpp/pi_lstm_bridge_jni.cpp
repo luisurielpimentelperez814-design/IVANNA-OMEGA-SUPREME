@@ -102,6 +102,7 @@ static void update_residual_rt(float dt) noexcept {
     auto& cell = g_piLstmBridge.lstm;
     if (g_telemetry_reset_requested.exchange(false, std::memory_order_acq_rel)) {
         g_residual_ema.store(0.0f, std::memory_order_relaxed);
+        g_published_np_sat.store(0.0f, std::memory_order_relaxed);
         g_prev_h = cell.h;
         g_prev_c = cell.c;
         g_residual_seed = true;
@@ -161,9 +162,8 @@ void ivanna_pilstm_bridge_tick_block(const float* inL, const float* inR, int fra
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeInit(JNIEnv*, jobject) {
-    g_published_np_sat.store(0.0f, std::memory_order_relaxed);
-    g_residual_ema.store(0.0f, std::memory_order_relaxed);
     g_reset_requested.store(true, std::memory_order_release);
+    g_telemetry_reset_requested.store(true, std::memory_order_release);
     g_piLstmBridge_ready.store(true, std::memory_order_release);
     LOGI("PiLstmBridge.nativeInit: PI-LSTM Milenio engine ready");
 }
@@ -271,8 +271,6 @@ Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeGetError(JNIEnv*, jobject)
  */
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_neuromorphic_PiLstmBridge_nativeResetTelemetry(JNIEnv*, jobject) {
-    g_residual_ema.store(0.0f, std::memory_order_relaxed);
-    g_published_np_sat.store(0.0f, std::memory_order_relaxed);
     g_telemetry_reset_requested.store(true, std::memory_order_release);
     LOGI("PiLstmBridge.nativeResetTelemetry: reset queued for audio-thread owner");
 }
