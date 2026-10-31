@@ -61,15 +61,21 @@ or policy controls are assumed.
 
 ## HWS-04 — Neural Low-Level Engine
 
-**Status: NOT APPROVED.** The Pi-LSTM bridge is called from the native audio
-processing path and advances RK4 state there; JNI setters and telemetry getters
-also access that state from the Java/control side without a demonstrated
-single-owner or synchronization contract. Treat this as a data-race risk until
-ownership is serialized or parameter/state publication is made RT-safe and
-covered by concurrency tests. TinyML/classifier presence is not proof of a
-connected low-level inference stage. INT8 inference, deterministic execution,
-NEON equivalence, preallocation, callback-budget and audio-thread isolation
-require measured functional evidence before approval.
+**Status: PARTIAL — NOT APPROVED.** The Pi-LSTM bridge now stages JNI/control
+writes in lock-free atomic mailboxes; the audio callback is the sole owner that
+applies parameters, advances RK4 state, and updates residual state. JNI
+telemetry getters read atomic snapshots rather than the mutable engine. Reset
+requests are deferred to the audio owner and clear preallocated state without
+rebuilding filter coefficients. This removes the previously identified direct
+JNI/audio-thread data race in this bridge's access path.
+
+Acceptance still requires Android/NDK build evidence, ThreadSanitizer or an
+equivalent concurrent stress test for the bridge contract, callback-budget
+measurements on Moto G85, and an audit of every other Pi-LSTM engine instance
+and caller. TinyML/classifier presence is not proof of a connected low-level
+inference stage. INT8 inference, deterministic execution, NEON equivalence,
+preallocation, callback-budget and audio-thread isolation require measured
+functional evidence before approval.
 
 ## Release policy
 
