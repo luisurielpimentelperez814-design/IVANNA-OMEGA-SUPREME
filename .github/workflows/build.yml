@@ -39,7 +39,7 @@ jobs:
       CC: clang-18
       CXX: clang++-18
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: Install HDF5 validator
         run: python3 -m pip install --disable-pip-version-check h5py numpy
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [test-native-dsp]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
 
       - name: Setup Java 17
@@ -726,7 +726,7 @@ jobs:
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
@@ -757,7 +757,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-apk]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Download staged bundle from GitHub Release
         env:
@@ -905,7 +905,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Enforce Hardware Sovereignty approval manifest
         run: python3 scripts/check_hws_release_approval.py docs/hardware_sovereignty_release_approval.json
 
