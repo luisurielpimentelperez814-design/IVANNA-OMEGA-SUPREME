@@ -31,10 +31,20 @@ def main() -> int:
         evidence = entry.get("evidence")
         if status != "APPROVED":
             failures.append(f"{phase}: status={status!r}, required 'APPROVED'")
-        if not isinstance(evidence, list) or not evidence or any(
-            not isinstance(item, str) or not item.strip() for item in evidence
-        ):
-            failures.append(f"{phase}: evidence must be a non-empty list of references")
+        if not isinstance(evidence, list) or not evidence:
+            failures.append(f"{phase}: evidence must be a non-empty list of repository files")
+        else:
+            for item in evidence:
+                if not isinstance(item, str) or not item.strip():
+                    failures.append(f"{phase}: evidence contains an empty/non-string reference")
+                    continue
+                rel = Path(item)
+                if rel.is_absolute() or ".." in rel.parts:
+                    failures.append(f"{phase}: evidence path must stay inside the repository: {item!r}")
+                    continue
+                target = Path(__file__).resolve().parents[1] / rel
+                if not target.is_file() or target.stat().st_size <= 0:
+                    failures.append(f"{phase}: evidence file missing or empty: {item!r}")
     if failures:
         print("BLOCKED: Hardware Sovereignty production approval incomplete:")
         for failure in failures:
