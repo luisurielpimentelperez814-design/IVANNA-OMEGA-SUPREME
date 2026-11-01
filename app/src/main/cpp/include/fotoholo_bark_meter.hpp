@@ -20,7 +20,9 @@ public:
         inputSampleRate_ = std::isfinite(inputSampleRate) && inputSampleRate >= 8000.0f
             ? inputSampleRate : 48000.0f;
         stride_ = static_cast<std::size_t>(std::max(1.0f, std::ceil(inputSampleRate_ / 48000.0f)));
-        constexpr float sr = 48000.0f;
+        // Filters run at the effective post-decimation rate. This keeps the Bark
+        // centers correct for 44.1 kHz devices while 96/192 kHz routes decimate to 48 kHz.
+        const float sr = inputSampleRate_ / static_cast<float>(stride_);
         for (std::size_t i = 0; i < kBands; ++i) {
             const float bark = 0.2f + (23.5f * static_cast<float>(i) / 63.0f);
             const float center = std::clamp(600.0f * std::sinh(bark / 6.0f), 25.0f, 0.44f * sr);
