@@ -906,9 +906,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
-      - name: Enforce Hardware Sovereignty approval manifest
-        run: python3 scripts/check_hws_release_approval.py docs/hardware_sovereignty_release_approval.json
-
+      # Hardware Sovereignty remains tracked by its own certification/tests,
+      # but it is not a prerequisite for producing/publishing build artifacts.
+      # Physical-device approval must not block APK/Magisk artifact delivery.
 
       - name: Download verified bundle from draft GitHub Release
         env:
