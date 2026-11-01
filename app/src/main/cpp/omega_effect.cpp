@@ -1505,8 +1505,12 @@ static int32_t omega_process(effect_handle_t self,
         float fotoHoloIntensity = 0.0f;
         ivanna::omega_fotoholo_decode(ctx->pendingSnap.temporal_field,
                                       fotoHoloEnabled, fotoHoloIntensity);
+        // Observe the dry input captured before DSP: this avoids a closed-loop
+        // spectral feedback path in which the widener analyzes its own output.
+        fotoHoloEnabled = fotoHoloEnabled &&
+            static_cast<ivanna::RouteMode>(ctx->pendingSnap.active_route) == ivanna::RouteMode::SYSTEM_WIDE;
         ctx->fotoHoloDelta = ctx->fotoHoloBarkMeter.processBlock(
-            L, R, (size_t)chunk, fotoHoloEnabled, fotoHoloIntensity);
+            dryBufL, dryBufR, (size_t)chunk, fotoHoloEnabled, fotoHoloIntensity);
         bandAccum.low  += chunkBands.low;
         bandAccum.mid  += chunkBands.mid;
         bandAccum.high += chunkBands.high;
