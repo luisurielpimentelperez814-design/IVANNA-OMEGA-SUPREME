@@ -19,7 +19,7 @@ public:
     void prepare(float inputSampleRate) noexcept {
         inputSampleRate_ = std::isfinite(inputSampleRate) && inputSampleRate >= 8000.0f
             ? inputSampleRate : 48000.0f;
-        stride_ = static_cast<std::size_t>(std::max(1.0f, std::floor(inputSampleRate_ / 48000.0f)));
+        stride_ = static_cast<std::size_t>(std::max(1.0f, std::ceil(inputSampleRate_ / 48000.0f)));
         constexpr float sr = 48000.0f;
         for (std::size_t i = 0; i < kBands; ++i) {
             const float bark = 0.2f + (23.5f * static_cast<float>(i) / 63.0f);
