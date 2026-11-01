@@ -215,6 +215,13 @@ GateVerdict CorrelationGate::evaluate(const PairedSample& s) noexcept {
         return v;
     }
 
+    if (s.streamId != prev_.streamId || s.routeGeneration != prev_.routeGeneration) {
+        prev_ = s;
+        streak_ = 0;
+        v.reason = "cambio de stream/ruta: nueva ancla";
+        return v;
+    }
+
     const int64_t dNs = s.timestampNs - prev_.timestampNs;
     if (dNs <= cfg_.minDeltaNs) { v.reason = "delta de tiempo no positivo o nulo"; goto reject; }
     if (dNs > cfg_.maxDeltaNs)  { v.reason = "delta de tiempo excesivo (PCM parado)"; goto reject; }
