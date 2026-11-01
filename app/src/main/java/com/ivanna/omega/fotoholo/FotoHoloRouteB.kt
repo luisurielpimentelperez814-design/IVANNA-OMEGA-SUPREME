@@ -72,6 +72,30 @@ object FotoHoloRouteB {
     fun json(width: Float): String =
         String.format(Locale.US, "{\"action\":\"SET_PERCEPTUAL_STATE\",\"spatialWidth\":%.4f}", width)
 
+    /** Publishes the Route B spectral observer state; audio analysis itself runs in omega_effect. */
+    fun setFotoHoloState(enabled: Boolean, intensity: Float) {
+        val safeIntensity = if (intensity.isFinite()) intensity.coerceIn(0f, 1f) else 0f
+        io.execute {
+            try {
+                val payload = String.format(
+                    Locale.US,
+                    "{\"action\":\"SET_FOTOHOLO_STATE\",\"enabled\":%s,\"intensity\":%.4f}",
+                    if (enabled) "1" else "0",
+                    safeIntensity
+                )
+                val reply = MagiskBridge.sendCommand(payload)
+                status = if (jsonBoolean(reply, "ok") == true) {
+                    statusFromReply(reply)
+                } else {
+                    "FotoHolo Ruta B: " + statusFromReply(reply)
+                }
+            } catch (e: Exception) {
+                status = "FotoHolo Ruta B: error " + e.javaClass.simpleName
+                Log.w(TAG, "no se pudo publicar estado FotoHolo Ruta B", e)
+            }
+        }
+    }
+
     fun wfsJson(spread: Float): String =
         String.format(Locale.US, "{\"action\":\"SET_WFS\",\"wfsSpread\":%.4f}", spread)
 
