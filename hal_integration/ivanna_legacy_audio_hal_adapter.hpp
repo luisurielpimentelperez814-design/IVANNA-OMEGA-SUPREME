@@ -17,10 +17,14 @@ class LegacyAudioHalClockAdapter {
 public:
     LegacyAudioHalClockAdapter(audio_stream_out* stream,
                                uint32_t nominalSampleRateHz,
+                               uint64_t streamId,
+                               uint64_t routeGeneration,
                                HalOutputRateControl::ApplyRatio applyRatio,
                                void* asrcContext) noexcept
         : stream_(stream),
           nominalSampleRateHz_(nominalSampleRateHz),
+          streamId_(streamId),
+          routeGeneration_(routeGeneration),
           control_(&queryPresentationPosition, this, applyRatio, asrcContext) {}
 
     LegacyAudioHalClockAdapter(const LegacyAudioHalClockAdapter&) = delete;
@@ -69,11 +73,16 @@ private:
             static_cast<uint64_t>(timestamp.tv_sec) * 1000000000ull +
             static_cast<uint64_t>(timestamp.tv_nsec);
         out->nominalSampleRateHz = self->nominalSampleRateHz_;
-        return out->hardwareTimestampNs != 0;
+        out->streamId = self->streamId_;
+        out->routeGeneration = self->routeGeneration_;
+        return out->hardwareTimestampNs != 0 && out->streamId != 0 &&
+               out->routeGeneration != 0;
     }
 
     audio_stream_out* stream_ = nullptr;
     uint32_t nominalSampleRateHz_ = 0;
+    uint64_t streamId_ = 0;
+    uint64_t routeGeneration_ = 0;
     HalOutputStreamClockControl control_;
 };
 
