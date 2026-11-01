@@ -380,6 +380,8 @@ int main(int argc, char* argv[]) {
             ivanna::audio::HardwareClockReader clockReader;
             ivanna::dsp::AsrcState lastAsrcState = ivanna::dsp::AsrcState::INIT;
             std::string lastAsrcReason;
+            uint64_t lastClockStreamId = 0;
+            uint64_t lastClockRouteGeneration = 0;
 
             for (;;) {
                 const auto s = producer.poll();
@@ -415,6 +417,12 @@ int main(int argc, char* argv[]) {
                                 static_cast<uint64_t>(now.tv_sec) * 1000000000ull +
                                 static_cast<uint64_t>(now.tv_nsec);
                             if (ivanna::audio::isFreshMonotonicHardwareClockSample(hcs, nowNs)) {
+                                if (hcs.streamId != lastClockStreamId ||
+                                    hcs.routeGeneration != lastClockRouteGeneration) {
+                                    asrcController.reset();
+                                    lastClockStreamId = hcs.streamId;
+                                    lastClockRouteGeneration = hcs.routeGeneration;
+                                }
                                 cs.presentedFrames = hcs.presentedFrames;
                                 cs.timestampNs = static_cast<int64_t>(hcs.hardwareTimestampNs);
                                 cs.nominalRateHz = hcs.nominalSampleRateHz;
@@ -424,7 +432,11 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 const bool routeValidated = haveSample;
-                if (!routeValidated) asrcController.reset();
+                if (!routeValidated) {
+                    asrcController.reset();
+                    lastClockStreamId = 0;
+                    lastClockRouteGeneration = 0;
+                }
                 const auto asrcSnap = asrcController.update(
                     cs, routeValidated, hal_clock_enabled);
                 if (asrcSnap.state != lastAsrcState || std::string(asrcSnap.reason) != lastAsrcReason) {
