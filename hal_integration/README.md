@@ -39,7 +39,9 @@ static bool queryPresentationPosition(void* context,
         static_cast<uint64_t>(timestamp.tv_sec) * 1000000000ull +
         static_cast<uint64_t>(timestamp.tv_nsec);
     out->nominalSampleRateHz = stream->activeOutputSampleRate();
-    return true;
+    out->streamId = stream->stableStreamId();
+    out->routeGeneration = stream->routeGeneration();
+    return out->streamId != 0 && out->routeGeneration != 0;
 }
 
 static bool applyExistingAsrcRatio(void* context, double ratio) noexcept {
@@ -56,10 +58,8 @@ For a HAL that exposes `<hardware/audio.h>` and `audio_stream_out::get_presentat
 
 ```cpp
 ivanna::audio::LegacyAudioHalClockAdapter clockAdapter(
-    &streamOut,
-    outputSampleRateHz,
-    &applyExistingAsrcRatio, // must command the real converter
-    asrcContext);
+    &streamOut, outputSampleRateHz, stableStreamId, routeGeneration,
+    &applyExistingAsrcRatio, asrcContext);
 ```
 
 Call `clockAdapter.controlTick()` from the HAL's serialized low-rate control task, and `clockAdapter.reset()` on standby, reopen, route change, or discontinuity. The adapter reads the paired frame/timestamp result from `get_presentation_position`; it does not guess timestamps. This header is intentionally not included in the app/host build because Android vendor HAL headers are not available there.
