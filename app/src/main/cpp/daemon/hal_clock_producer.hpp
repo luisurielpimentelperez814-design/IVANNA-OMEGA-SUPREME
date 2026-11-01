@@ -48,6 +48,8 @@ struct PairedSample {
     uint64_t presentedFrames = 0;
     int64_t timestampNs = 0;      // CLOCK_MONOTONIC
     uint32_t nominalRateHz = 0;
+    uint64_t streamId = 0;
+    uint64_t routeGeneration = 0;
 };
 
 // ── Descubrimiento ALSA conservador ─────────────────────────────────────────
