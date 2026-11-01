@@ -73,7 +73,7 @@ TEST(PalMmapPositionClockQuery, ResetsOnBadTimestampOrPalFailure) {
         {3, 1020000000, false},
         {4, 1030000000}
     };
-    PalMmapPositionClockQuery query(&FakePalMmap::query, &fake, 48000);
+    PalMmapPositionClockQuery query(&FakePalMmap::query, &fake, 48000, 7, 1);
     HardwareClockSample sample{};
     ASSERT_TRUE(query.query(&sample));
     EXPECT_FALSE(query.query(&sample));
