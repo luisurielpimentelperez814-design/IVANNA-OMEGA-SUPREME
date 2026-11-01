@@ -92,6 +92,15 @@ TEST(HalClockProducer, DiscoversPlaybackPcmAndParsesRate) {
     EXPECT_EQ(devs[0].devPath, root + "/dev/pcmC0D0p");
 }
 
+TEST(HalClockProducer, RouteGenerationChangeReanchorsCorrelationGate) {
+    CorrelationGate gate;
+    EXPECT_FALSE(gate.evaluate(mk(0, 1'000'000'000, 48000)).accepted);
+    const auto changed = gate.evaluate(PairedSample{4800, 1'100'000'000, 48000, 7, 2});
+    EXPECT_FALSE(changed.accepted);
+    EXPECT_STREQ(changed.reason, "cambio de stream/ruta: nueva ancla");
+    EXPECT_FALSE(gate.evaluate(PairedSample{9600, 1'200'000'000, 48000, 7, 2}).accepted);
+}
+
 TEST(HalClockProducer, NoPcmMeansNoDevice) {
     const std::string root = tmpRoot("empty");
     mkdirs(root + "/proc");
