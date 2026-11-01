@@ -148,6 +148,9 @@ struct OmegaDspState {
     // ABI v8: azimut/elevación para HRTF Ruta B, expresados en radianes.
     float head_yaw_rad = 0.f, head_pitch_rad = 0.f;
     uint32_t scene_distance_word = 0u;   // omega_scene_distance_encode() (ya desplazada a bits 16..31 de npe_ctl); 0 = no publicada
+    // FotoHolo Route B: análisis espectral del PCM real en omega_effect; apagado por defecto.
+    bool fotoholo_enabled = false;
+    float fotoholo_intensity = 0.6f;
 };
 
 class CommandServer {
