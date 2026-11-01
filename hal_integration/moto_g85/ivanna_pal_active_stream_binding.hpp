@@ -35,7 +35,10 @@ public:
     // Call from the output stream's serialized, non-real-time control task
     // at 10–20 Hz. Never call from the audio render/write callback.
     bool poll() noexcept {
-        if (!context_.stream) return false;
+        if (!context_.stream) {
+            publisher_.reset();
+            return false;
+        }
         return publisher_.poll();
     }
 
