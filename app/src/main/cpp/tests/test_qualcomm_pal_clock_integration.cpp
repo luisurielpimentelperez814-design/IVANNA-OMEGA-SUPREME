@@ -54,6 +54,8 @@ struct FakePal {
         ++self->queries;
         if (!self->queryOk || !out) return false;
         *out = self->sample;
+        out->streamId = 7;
+        out->routeGeneration = 1;
         return true;
     }
 };
@@ -170,7 +172,7 @@ TEST(QualcommPalClockIntegration, PublishesTheSameSampleItControlsWith) {
     std::remove(path.c_str());
 }
 
-TEST(QualcommPalClockIntegration, InvalidSampleNeverOverwritesPublishedSnapshot) {
+TEST(QualcommPalClockIntegration, InvalidSampleInvalidatesPublishedSnapshot) {
     const std::string path = testPath("keep");
     std::remove(path.c_str());
     FakePal hal;
@@ -185,8 +187,7 @@ TEST(QualcommPalClockIntegration, InvalidSampleNeverOverwritesPublishedSnapshot)
     HardwareClockReader reader;
     ASSERT_TRUE(reader.open(path.c_str()));
     HardwareClockSample got{};
-    ASSERT_TRUE(reader.read(got));
-    EXPECT_EQ(got.presentedFrames, 48000u) << "la muestra inválida no debe fabricarse ni publicarse";
+    EXPECT_FALSE(reader.read(got)) << "una ruta inválida no puede dejar un snapshot previo como activo";
     reader.close();
     std::remove(path.c_str());
 }
