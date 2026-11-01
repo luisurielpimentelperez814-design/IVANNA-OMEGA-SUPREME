@@ -38,13 +38,15 @@ TEST(PalMmapPositionClockQuery, ExtendsUnsigned32BitFrameWrap) {
         {-256, 1000000000},
         {256, 1010000000}
     };
-    PalMmapPositionClockQuery query(&FakePalMmap::query, &fake, 48000);
+    PalMmapPositionClockQuery query(&FakePalMmap::query, &fake, 48000, 7, 1);
     HardwareClockSample a{}, b{};
     ASSERT_TRUE(query.query(&a));
     ASSERT_TRUE(query.query(&b));
     EXPECT_EQ(a.presentedFrames, 0xffffff00ull);
     EXPECT_EQ(b.presentedFrames, 0x100000100ull);
     EXPECT_EQ(b.presentedFrames - a.presentedFrames, 512ull);
+    EXPECT_EQ(b.streamId, 7ull);
+    EXPECT_EQ(b.routeGeneration, 1ull);
     EXPECT_EQ(b.hardwareTimestampNs - a.hardwareTimestampNs, 10000000ull);
 }
 
@@ -82,12 +84,12 @@ TEST(PalMmapPositionClockQuery, ResetsOnBadTimestampOrPalFailure) {
 
 TEST(PalMmapPositionClockQuery, RejectsMissingCallbackAndInvalidRate) {
     HardwareClockSample sample{};
-    PalMmapPositionClockQuery noCallback(nullptr, nullptr, 48000);
+    PalMmapPositionClockQuery noCallback(nullptr, nullptr, 48000, 7, 1);
     EXPECT_FALSE(noCallback.query(&sample));
 
     FakePalMmap fake;
     fake.positions = {{1, 1000000000}};
-    PalMmapPositionClockQuery badRate(&FakePalMmap::query, &fake, 7999);
+    PalMmapPositionClockQuery badRate(&FakePalMmap::query, &fake, 7999, 7, 1);
     EXPECT_FALSE(badRate.query(&sample));
 }
 } // namespace
