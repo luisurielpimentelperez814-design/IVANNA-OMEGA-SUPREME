@@ -98,7 +98,10 @@ TEST(HalClockProducer, RouteGenerationChangeReanchorsCorrelationGate) {
     const auto changed = gate.evaluate(PairedSample{4800, 1'100'000'000, 48000, 7, 2});
     EXPECT_FALSE(changed.accepted);
     EXPECT_STREQ(changed.reason, "cambio de stream/ruta: nueva ancla");
-    EXPECT_FALSE(gate.evaluate(PairedSample{9600, 1'200'000'000, 48000, 7, 2}).accepted);
+    const auto firstCoherent = gate.evaluate(PairedSample{9600, 1'200'000'000, 48000, 7, 2});
+    EXPECT_TRUE(firstCoherent.accepted);
+    EXPECT_STREQ(firstCoherent.reason, "correlacionada");
+    EXPECT_EQ(gate.streak(), 1);
 }
 
 TEST(HalClockProducer, NoPcmMeansNoDevice) {
@@ -375,6 +378,8 @@ TEST(HalClockProducer, PublishesCorrelatedSampleIntoSharedSnapshot) {
     out.presentedFrames = 1440;
     out.hardwareTimestampNs = 1'030'000'000ull;
     out.nominalSampleRateHz = 48000;
+    out.streamId = 7;
+    out.routeGeneration = 1;
     ASSERT_TRUE(pub.publish(out));
 
     ivanna::audio::HardwareClockReader rd;
