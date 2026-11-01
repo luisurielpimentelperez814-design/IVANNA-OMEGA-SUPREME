@@ -32,7 +32,8 @@ public:
             return false;
         }
         HardwareClockSample sample{};
-        if (!query_(queryContext_, &sample)) {
+        if (!query_(queryContext_, &sample) || sample.streamId == 0 ||
+            sample.routeGeneration == 0) {
             rateControl_.reset();
             return false;
         }
