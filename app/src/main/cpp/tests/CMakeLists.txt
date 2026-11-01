@@ -1494,3 +1494,7 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_saf_optimizer_state PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_saf_optimizer_state)
+
+
+# FotoHolo Route B: 64-band Bark observer, fail-closed silence and bounded modulation.
+ivanna_add_test(test_fotoholo_bark_meter)
