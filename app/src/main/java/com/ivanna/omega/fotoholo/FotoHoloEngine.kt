@@ -191,6 +191,8 @@ object FotoHoloEngine {
         }
         load(context)
         FotoHoloRouteB.initialize(context)
+        // Rehydrate the persistent FotoHolo state into the system-wide DSP after daemon reconnect.
+        FotoHoloRouteB.setFotoHoloState(enabled && !bypass, intensity)
         val job = scope.launch(Dispatchers.Default) {
             try {
             val buf = FloatArray(FotoHoloMath.BANDS)
