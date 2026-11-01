@@ -74,7 +74,8 @@ private:
 
         // Reporting is best-effort; failure to publish must not fabricate or
         // replace the hardware sample used by the local controller.
-        if (self->reporterOpen_) (void)self->publisher_.publish(sample);
+        if (self->reporterOpen_ && !self->publisher_.publish(sample))
+            self->publisher_.invalidate();
         *out = sample;
         return true;
     }
