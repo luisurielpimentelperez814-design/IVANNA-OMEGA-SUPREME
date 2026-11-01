@@ -35,8 +35,18 @@ public:
     // before stream close or route teardown.
     bool controlTick() noexcept { return control_.controlTick(); }
 
-    // Invoke after standby/reopen, route changes, or stream discontinuity.
+    // Invoke on standby or a discontinuity. Rebind with a new generation
+    // after the HAL replaces the stream or changes its physical route.
     void reset() noexcept { control_.reset(); }
+
+    void rebind(audio_stream_out* stream, uint32_t nominalSampleRateHz,
+                uint64_t streamId, uint64_t routeGeneration) noexcept {
+        control_.reset();
+        stream_ = stream;
+        nominalSampleRateHz_ = nominalSampleRateHz;
+        streamId_ = streamId;
+        routeGeneration_ = routeGeneration;
+    }
 
     bool correctionEnabled() const noexcept { return control_.correctionEnabled(); }
     bool hasKnownAppliedRatio() const noexcept {
