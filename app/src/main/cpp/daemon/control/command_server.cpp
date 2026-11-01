@@ -180,6 +180,8 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     // v2.5.44: dinamica espacial temporal.
     snap.temporal_field = ivanna::omega_temporal_field_encode(s.temporal_field_enabled, s.temporal_field_amount, s.temporal_field_auto)
                         | (s.xtc_enabled ? ivanna::OMEGA_TEMPORAL_FIELD_XTC_BIT : 0u);
+    // FotoHolo's Route B observer settings share the unused high bits of temporal_field (ABI v8).
+    snap.temporal_field |= ivanna::omega_fotoholo_encode(s.fotoholo_enabled, s.fotoholo_intensity);
     // v2.5.49: corrección acústica de sala.
     for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) snap.room_corr_db[i] = s.room_corr_db[i];
     snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db) | s.scene_distance_word;   // distancia en bits 16..31
@@ -285,6 +287,12 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.listen_phon,m_state.ref_phon,
             m_state.eq_gains[0],m_state.eq_gains[1],m_state.eq_gains[2],m_state.eq_gains[3],m_state.eq_gains[4],
             m_state.eq_gains[5],m_state.eq_gains[6],m_state.eq_gains[7],m_state.eq_gains[8],m_state.eq_gains[9]);
+
+    } else if (strcmp(action,"SET_FOTOHOLO_STATE")==0) {
+        m_state.fotoholo_enabled = _jsonFloat(json,"enabled",m_state.fotoholo_enabled ? 1.f : 0.f) >= 0.5f;
+        m_state.fotoholo_intensity = _clamp(_jsonFloat(json,"intensity",m_state.fotoholo_intensity),0.f,1.f);
+        const uint64_t gen = publishCurrentState(m_state);
+        n = buildRichReply(reply,reply_sz,true,action,gen>0?"applied":"accepted_pending_consumer",gen,"SYSTEM_WIDE",nullptr);
 
     } else if (strcmp(action,"SET_PERCEPTUAL_STATE")==0 || strcmp(action,"SEND_PERCEPTUAL_STATE")==0) {
         m_state.compressor = _jsonFloat(json,"compressor", m_state.compressor);
