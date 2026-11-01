@@ -40,7 +40,10 @@ public:
     bool controlTick() noexcept { return control_.controlTick(); }
 
     // Call on standby, reopen, route change, or timestamp discontinuity.
-    void reset() noexcept { control_.reset(); }
+    void reset() noexcept {
+        control_.reset();
+        if (reporterOpen_) publisher_.invalidate();
+    }
 
     bool correctionEnabled() const noexcept {
         return control_.correctionEnabled();
@@ -61,9 +64,11 @@ private:
 
         HardwareClockSample sample{};
         if (!self->query_(self->queryContext_, &sample) ||
+            sample.streamId == 0 || sample.routeGeneration == 0 ||
             sample.hardwareTimestampNs == 0 ||
             sample.nominalSampleRateHz < 8000 ||
             sample.nominalSampleRateHz > 768000) {
+            if (self->reporterOpen_) self->publisher_.invalidate();
             return false;
         }
 
