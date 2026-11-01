@@ -184,7 +184,9 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
 
         val status = when {
             tel.nativeWriteError != null -> "ERROR DE CONTROL: ${tel.nativeWriteError}"
-            tel.activeRoute == "ROUTE_B" -> "SAFMUS: Ruta B global detectada; Ruta A inhibida para evitar doble procesamiento. Control global: ${tel.routeB}. Modulación Bark local en abstención."
+            tel.activeRoute == "ROUTE_B" && !enabled -> "Ruta B global detectada; observador Bark nativo de 64 bandas desactivado."
+            tel.activeRoute == "ROUTE_B" && bypass -> "Ruta B global detectada; FotoHolo en bypass, se conserva el ancho base."
+            tel.activeRoute == "ROUTE_B" -> "Ruta B global: el PCM seco de AudioFlinger alimenta el observador Bark nativo de 64 bandas. Control: ${tel.routeB}."
             !tel.hasSignal -> "Sin señal válida de Ruta A: se conserva el ancho seguro; no se inventan datos acústicos."
             !enabled -> "Espectro en vivo · modulación apagada."
             bypass -> "Bypass: suena el ancho que fijaste."
@@ -195,7 +197,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
         }
         Text(status, color = if (tel.nativeWriteError != null) Color(0xFFFF6B6B) else AuroraCyan, fontSize = 11.sp)
         Text("Ruta activa: ${tel.activeRoute} · ${tel.safmusDecision}", color = Color(0xFF9AA4B2), fontSize = 11.sp)
-        Text("Ruta B (efecto global): ${tel.routeB}", color = if (tel.routeB.contains("aplicado en Ruta B")) AuroraCyan else Color(0xFFFFC36B), fontSize = 11.sp)
+        Text("Ruta B (efecto global): ${tel.routeB}", color = if (tel.routeB.contains("aplicado por bloque DSP")) AuroraCyan else Color(0xFFFFC36B), fontSize = 11.sp)
         Text(
             "Ancho tuyo %.2f → comando %.2f (Δ %+.3f) · motor %s · graves %d %% · agudos %d %%".format(
                 tel.baseWidth, tel.appliedWidth, tel.offset,
