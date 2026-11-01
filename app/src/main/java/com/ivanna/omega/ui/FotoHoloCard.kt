@@ -46,10 +46,11 @@ import com.ivanna.omega.ui.theme.ObsidianDeep
 /**
  * FOTOHOLOGRAFÍA · NANOTOMIX — control + escena paramétrica.
  *
- * Qué es: (1) una escena 3D proyectada dibujada con las 64 bandas Bark REALES de la captura y
- * (2) una modulación acotada del ancho estéreo que llega al StereoWidener por el mismo camino que el
- * slider de ancho. Qué NO es: un holograma óptico (una pantalla convencional no lo genera).
- * Necesita señal de la captura de audio (Ruta A); sin ella la escena queda plana y el ancho no se toca.
+ * Ruta A: la escena muestra las 64 bandas Bark de PlaybackCaptureService y el motor local modula
+ * StereoWidener. Ruta B: omega_effect analiza sus propios PCM de AudioFlinger con 64 bandas Bark y
+ * modula el propietario espacial activo (WFS, HOA o M/S); no depende de PlaybackCaptureService.
+ * La visualización de bandas en esta tarjeta corresponde a A, no es un read-back espectral de B.
+ * Qué NO es: un holograma óptico (una pantalla convencional no lo genera).
  */
 @Composable
 fun FotoHoloCard(modifier: Modifier = Modifier) {
@@ -129,7 +130,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
                     geminiBusy = false
                 }
             }) { Text(if (geminiBusy) "GEMINI…" else "SUGERIR CON GEMINI", color = AuroraCyan) }
-            TextButton(onClick = { FotoHoloRouteB.push(tel.baseWidth, tel.baseWidth) }) { Text("SINCRONIZAR RUTA B", color = AuroraCyan) }
+            TextButton(onClick = { FotoHoloRouteB.refreshEvidence() }) { Text("VERIFICAR RUTA B", color = AuroraCyan) }
         }
         if (geminiStatus.isNotEmpty()) Text(geminiStatus, color = Color(0xFF9AA4B2), fontSize = 11.sp)
 
