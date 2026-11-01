@@ -186,6 +186,12 @@ std::vector<PcmDevice> discoverPlaybackDevices(const std::string& procRoot,
 
 GateVerdict CorrelationGate::evaluate(const PairedSample& s) noexcept {
     GateVerdict v{};
+    if (s.streamId == 0 || s.routeGeneration == 0) {
+        v.reason = "muestra sin identidad de stream/ruta";
+        havePrev_ = false;
+        streak_ = 0;
+        return v;
+    }
     if (s.nominalRateHz < 8000 || s.nominalRateHz > 768000) {
         v.reason = s.nominalRateHz == 0 ? "sin rate nominal" : "tasa nominal fuera de rango";
         havePrev_ = false;
@@ -362,6 +368,8 @@ ProducerStatus HalClockProducer::poll() noexcept {
     sample.presentedFrames = s.presentedFrames;
     sample.hardwareTimestampNs = s.timestampNs;
     sample.nominalSampleRateHz = s.nominalRateHz;
+    sample.streamId = s.streamId;
+    sample.routeGeneration = s.routeGeneration;
     if (!pub->publish(sample)) {
         st_.state = ProducerState::kPublishFailed;
         st_.reason = "publish() rechazo la muestra";
