@@ -16,7 +16,9 @@ inline bool publishHalPresentationPosition(
         uint64_t presentedFrames,
         int64_t timestampSeconds,
         int64_t timestampNanoseconds,
-        uint32_t nominalSampleRateHz) noexcept {
+        uint32_t nominalSampleRateHz,
+        uint64_t streamId,
+        uint64_t routeGeneration) noexcept {
     if (timestampSeconds < 0 || timestampNanoseconds < 0 ||
         timestampNanoseconds >= 1000000000ll) return false;
     const uint64_t seconds = static_cast<uint64_t>(timestampSeconds);
@@ -24,7 +26,8 @@ inline bool publishHalPresentationPosition(
                   1000000000ull) return false;
     const uint64_t timestampNs = seconds * 1000000000ull +
                                  static_cast<uint64_t>(timestampNanoseconds);
-    return publisher.publish({presentedFrames, timestampNs, nominalSampleRateHz});
+    return publisher.publish({presentedFrames, timestampNs, nominalSampleRateHz,
+                               streamId, routeGeneration});
 }
 
 } // namespace ivanna::audio
