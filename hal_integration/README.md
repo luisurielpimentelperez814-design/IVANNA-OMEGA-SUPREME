@@ -62,7 +62,7 @@ ivanna::audio::LegacyAudioHalClockAdapter clockAdapter(
     &applyExistingAsrcRatio, asrcContext);
 ```
 
-Call `clockAdapter.controlTick()` from the HAL's serialized low-rate control task, and `clockAdapter.reset()` on standby, reopen, route change, or discontinuity. The adapter reads the paired frame/timestamp result from `get_presentation_position`; it does not guess timestamps. This header is intentionally not included in the app/host build because Android vendor HAL headers are not available there.
+Call `clockAdapter.controlTick()` from the HAL's serialized low-rate control task, and `clockAdapter.reset()` on standby or discontinuity. After a stream reopen or physical route change, call `clockAdapter.rebind()` with the new stream pointer, nominal rate, non-zero stream identity, and incremented route generation. The adapter reads the paired frame/timestamp result from `get_presentation_position`; it does not guess timestamps. This header is intentionally not included in the app/host build because Android vendor HAL headers are not available there.
 
 This is the concrete integration code for the legacy HAL API, not a binary patch to a proprietary vendor module. Qualcomm PAL or HIDL/AIDL implementations must use the generic hook and their own real presentation-position and ASRC APIs.
 
