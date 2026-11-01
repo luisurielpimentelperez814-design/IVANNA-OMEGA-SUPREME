@@ -19,6 +19,8 @@ inline constexpr const char* kHardwareClockSnapshotPath =
         "/data/vendor/ivanna_audio/clock_snapshot";
 inline constexpr uint32_t kHardwareClockSnapshotMagic = 0x49564843u; // "IVHC"
 inline constexpr size_t kHardwareClockSnapshotBytes = 64;
+inline constexpr uint32_t kHardwareClockSnapshotVersion = 2;
+inline constexpr uint32_t kHardwareClockSnapshotActive = 1u;
 
 // A shared snapshot can outlive the output route/process that published it.
 // Consumers must reject future timestamps and stale snapshots before treating
@@ -27,7 +29,8 @@ inline bool isFreshMonotonicHardwareClockSample(
         const HardwareClockSample& sample,
         uint64_t nowMonotonicNs,
         uint64_t maxAgeNs = 1000000000ull) noexcept {
-    if (sample.hardwareTimestampNs == 0 ||
+    if (sample.streamId == 0 || sample.routeGeneration == 0 ||
+        sample.hardwareTimestampNs == 0 ||
         sample.hardwareTimestampNs > nowMonotonicNs ||
         sample.nominalSampleRateHz < 8000 ||
         sample.nominalSampleRateHz > 768000) return false;
@@ -36,7 +39,11 @@ inline bool isFreshMonotonicHardwareClockSample(
 
 struct alignas(8) HardwareClockSnapshot {
     std::atomic<uint32_t> magic{0};
+    std::atomic<uint32_t> version{0};
     std::atomic<uint32_t> sequence{0};
+    std::atomic<uint32_t> flags{0};
+    std::atomic<uint64_t> streamId{0};
+    std::atomic<uint64_t> routeGeneration{0};
     std::atomic<uint64_t> presentedFrames{0};
     std::atomic<uint64_t> hardwareTimestampNs{0};
     std::atomic<uint32_t> nominalSampleRateHz{0};
@@ -70,31 +77,50 @@ public:
         ::close(fd);
         if (memory == MAP_FAILED) return false;
         snapshot_ = static_cast<HardwareClockSnapshot*>(memory);
+        snapshot_->version.store(kHardwareClockSnapshotVersion, std::memory_order_relaxed);
+        snapshot_->sequence.store(0, std::memory_order_relaxed);
+        snapshot_->flags.store(0, std::memory_order_relaxed);
+        snapshot_->streamId.store(0, std::memory_order_relaxed);
+        snapshot_->routeGeneration.store(0, std::memory_order_relaxed);
         snapshot_->presentedFrames.store(0, std::memory_order_relaxed);
         snapshot_->hardwareTimestampNs.store(0, std::memory_order_relaxed);
         snapshot_->nominalSampleRateHz.store(0, std::memory_order_relaxed);
-        snapshot_->sequence.store(0, std::memory_order_relaxed);
         snapshot_->magic.store(kHardwareClockSnapshotMagic, std::memory_order_release);
         return true;
     }
 
     bool publish(const HardwareClockSample& sample) noexcept {
         auto* s = snapshot_;
-        if (!s || sample.hardwareTimestampNs == 0 ||
+        if (!s || sample.streamId == 0 || sample.routeGeneration == 0 ||
+            sample.hardwareTimestampNs == 0 ||
             sample.nominalSampleRateHz < 8000 ||
             sample.nominalSampleRateHz > 768000) return false;
         uint32_t seq = s->sequence.load(std::memory_order_relaxed);
         if (seq & 1u) ++seq;
         s->sequence.store(seq + 1u, std::memory_order_release); // write in progress
+        s->streamId.store(sample.streamId, std::memory_order_relaxed);
+        s->routeGeneration.store(sample.routeGeneration, std::memory_order_relaxed);
         s->presentedFrames.store(sample.presentedFrames, std::memory_order_relaxed);
         s->hardwareTimestampNs.store(sample.hardwareTimestampNs, std::memory_order_relaxed);
         s->nominalSampleRateHz.store(sample.nominalSampleRateHz, std::memory_order_relaxed);
-        s->sequence.store(seq + 2u, std::memory_order_release); // committed snapshot
+        s->flags.store(kHardwareClockSnapshotActive, std::memory_order_relaxed);
+        s->sequence.store(seq + 2u, std::memory_order_release);
         return true;
+    }
+
+    void invalidate() noexcept {
+        auto* s = snapshot_;
+        if (!s) return;
+        uint32_t seq = s->sequence.load(std::memory_order_relaxed);
+        if (seq & 1u) ++seq;
+        s->sequence.store(seq + 1u, std::memory_order_release);
+        s->flags.store(0, std::memory_order_relaxed);
+        s->sequence.store(seq + 2u, std::memory_order_release);
     }
 
     void close() noexcept {
         if (snapshot_) {
+            invalidate();
             ::munmap(snapshot_, kHardwareClockSnapshotBytes);
             snapshot_ = nullptr;
         }
@@ -128,7 +154,8 @@ public:
         ::close(fd);
         if (memory == MAP_FAILED) return false;
         snapshot_ = static_cast<const HardwareClockSnapshot*>(memory);
-        if (snapshot_->magic.load(std::memory_order_acquire) != kHardwareClockSnapshotMagic) {
+        if (snapshot_->magic.load(std::memory_order_acquire) != kHardwareClockSnapshotMagic ||
+            snapshot_->version.load(std::memory_order_acquire) != kHardwareClockSnapshotVersion) {
             // Do not retain a mapped-but-invalid snapshot: callers must be able to
             // retry after the HAL publisher initializes the shared-memory contract.
             ::munmap(const_cast<HardwareClockSnapshot*>(snapshot_), kHardwareClockSnapshotBytes);
@@ -140,18 +167,24 @@ public:
 
     bool read(HardwareClockSample& out) const noexcept {
         const auto* s = snapshot_;
-        if (!s || s->magic.load(std::memory_order_acquire) != kHardwareClockSnapshotMagic)
+        if (!s || s->magic.load(std::memory_order_acquire) != kHardwareClockSnapshotMagic ||
+            s->version.load(std::memory_order_acquire) != kHardwareClockSnapshotVersion)
             return false;
         for (int attempt = 0; attempt < 3; ++attempt) {
             const uint32_t before = s->sequence.load(std::memory_order_acquire);
             if (before == 0 || (before & 1u)) continue;
+            if (s->flags.load(std::memory_order_relaxed) != kHardwareClockSnapshotActive)
+                return false;
             HardwareClockSample sample;
+            sample.streamId = s->streamId.load(std::memory_order_relaxed);
+            sample.routeGeneration = s->routeGeneration.load(std::memory_order_relaxed);
             sample.presentedFrames = s->presentedFrames.load(std::memory_order_relaxed);
             sample.hardwareTimestampNs = s->hardwareTimestampNs.load(std::memory_order_relaxed);
             sample.nominalSampleRateHz = s->nominalSampleRateHz.load(std::memory_order_relaxed);
             const uint32_t after = s->sequence.load(std::memory_order_acquire);
             if (before == after && !(after & 1u)) {
-                if (!sample.hardwareTimestampNs || sample.nominalSampleRateHz < 8000 ||
+                if (!sample.streamId || !sample.routeGeneration ||
+                    !sample.hardwareTimestampNs || sample.nominalSampleRateHz < 8000 ||
                     sample.nominalSampleRateHz > 768000) return false;
                 out = sample;
                 return true;
