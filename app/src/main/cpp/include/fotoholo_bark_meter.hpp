@@ -46,8 +46,10 @@ public:
     // Invalid/silent blocks return zero and cannot leave a stale modulation latched.
     float processBlock(const float* left, const float* right, std::size_t frames,
                        bool enabled, float intensity) noexcept {
-        if (!enabled || !left || !right || frames == 0) {
-            lastDelta_ = 0.0f;
+        const float k = std::isfinite(intensity) ? std::clamp(intensity, 0.0f, 1.0f) : 0.0f;
+        if (!enabled || k <= 0.0f || !left || !right || frames == 0) {
+            // Clear filter history as well as the output so re-enable never inherits stale PCM.
+            reset();
             return lastDelta_;
         }
         float energy[kBands]{};
@@ -95,7 +97,6 @@ public:
         const float lowShare = low / sum;
         const float highShare = high / sum;
         const float flux = std::clamp(rise / sum, 0.0f, 1.0f);
-        const float k = std::isfinite(intensity) ? std::clamp(intensity, 0.0f, 1.0f) : 0.0f;
         const float transientStability = 1.0f - 0.35f * flux;
         lastDelta_ = std::clamp(0.25f * k * (highShare - lowShare) * transientStability,
                                 -0.25f, 0.25f);
