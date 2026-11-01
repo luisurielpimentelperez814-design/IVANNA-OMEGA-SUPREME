@@ -68,6 +68,8 @@ struct FakeHal {
         auto* self = static_cast<FakeHal*>(p);
         if (!self->queryOk || !out) return false;
         *out = self->sample;
+        out->streamId = 7;
+        out->routeGeneration = 1;
         return true;
     }
 };
