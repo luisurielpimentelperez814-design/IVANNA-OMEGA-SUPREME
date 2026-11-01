@@ -11,8 +11,10 @@
 
 namespace ivanna::audio {
 
-// Cross-process contract between the actual output HAL/PCM owner and the
-// AudioFlinger effect. The producer MUST publish a hardware-correlated
+// Cross-process contract between one authoritative output HAL/PCM owner and
+// the AudioFlinger effect. Exactly one publisher may own this path at a time;
+// concurrent output streams must be arbitrated by the HAL before publication.
+// The producer MUST publish a hardware-correlated
 // presentation timestamp and the matching presented-frame position.
 // Never publish CLOCK_MONOTONIC sampled at effect callback entry.
 inline constexpr const char* kHardwareClockSnapshotPath =
@@ -49,7 +51,8 @@ struct alignas(8) HardwareClockSnapshot {
     std::atomic<uint32_t> nominalSampleRateHz{0};
     std::atomic<uint32_t> reserved{0};
 };
-static_assert(sizeof(HardwareClockSnapshot) <= kHardwareClockSnapshotBytes);
+static_assert(sizeof(HardwareClockSnapshot) == 56,
+              "IVHC v2 shared-memory layout changed unexpectedly");
 static_assert(std::atomic<uint64_t>::is_always_lock_free,
               "hardware clock IPC requires lock-free 64-bit atomics");
 
@@ -77,6 +80,9 @@ public:
         ::close(fd);
         if (memory == MAP_FAILED) return false;
         snapshot_ = static_cast<HardwareClockSnapshot*>(memory);
+        // Invalidate the old ABI before touching fields so v1 readers cannot
+        // interpret the v2 layout while a publisher is being initialized.
+        snapshot_->magic.store(0, std::memory_order_release);
         snapshot_->version.store(kHardwareClockSnapshotVersion, std::memory_order_relaxed);
         snapshot_->sequence.store(0, std::memory_order_relaxed);
         snapshot_->flags.store(0, std::memory_order_relaxed);
