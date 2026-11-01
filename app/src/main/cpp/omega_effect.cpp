@@ -481,14 +481,15 @@ static inline void omega_apply_fotoholo_modulation(omega_effect_context_t* ctx,
     ivanna::omega_fotoholo_decode(s.temporal_field, enabled, intensity);
     const float delta = enabled && std::isfinite(ctx->fotoHoloDelta)
         ? std::clamp(ctx->fotoHoloDelta, -0.25f, 0.25f) : 0.0f;
-    if (s.upmixing_enabled != 0u) {
-        const float base = std::isfinite(s.upmixing_immersivity)
-            ? std::clamp(s.upmixing_immersivity, 0.0f, 1.0f) : 0.0f;
-        fc->setImmersivity(std::clamp(base + delta * 0.25f, 0.0f, 1.0f));
-    } else if (s.wfs_enabled != 0u) {
+    // Match omega_apply_snapshot / ControlPlaneEvidence priority exactly: WFS > HOA > M/S.
+    if (s.wfs_enabled != 0u) {
         float base = std::isfinite(s.wfs_spread) ? std::clamp(s.wfs_spread, 0.0f, 2.0f) : 1.0f;
         if (ad) base *= std::clamp(ad->currentSpreadMultiplier(), 0.0f, 2.0f);
         fc->setWfsSpread(std::clamp(base + delta * 0.5f, 0.0f, 2.0f));
+    } else if (s.upmixing_enabled != 0u) {
+        const float base = std::isfinite(s.upmixing_immersivity)
+            ? std::clamp(s.upmixing_immersivity, 0.0f, 1.0f) : 0.0f;
+        fc->setImmersivity(std::clamp(base + delta * 0.25f, 0.0f, 1.0f));
     } else {
         const float base = std::isfinite(s.spatial_width)
             ? std::clamp(s.spatial_width, 0.0f, 3.0f) : 1.0f;
