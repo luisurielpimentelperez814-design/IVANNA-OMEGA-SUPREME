@@ -23,6 +23,11 @@ public:
         // Filters run at the effective post-decimation rate. This keeps the Bark
         // centers correct for 44.1 kHz devices while 96/192 kHz routes decimate to 48 kHz.
         const float sr = inputSampleRate_ / static_cast<float>(stride_);
+        if (stride_ > 1u) {
+            const float cutoff = std::min(21000.0f, 0.45f * sr);
+            configureLowpass(antiAliasL_, cutoff, 0.70710678f, inputSampleRate_);
+            configureLowpass(antiAliasR_, cutoff, 0.70710678f, inputSampleRate_);
+        }
         for (std::size_t i = 0; i < kBands; ++i) {
             const float bark = 0.2f + (23.5f * static_cast<float>(i) / 63.0f);
             const float center = std::clamp(600.0f * std::sinh(bark / 6.0f), 25.0f, 0.44f * sr);
@@ -38,6 +43,8 @@ public:
 
     void reset() noexcept {
         for (auto& f : filters_) f.z1 = f.z2 = 0.0f;
+        antiAliasL_.z1 = antiAliasL_.z2 = 0.0f;
+        antiAliasR_.z1 = antiAliasR_.z2 = 0.0f;
         for (float& v : previous_) v = 0.0f;
         lastDelta_ = 0.0f;
     }
@@ -54,9 +61,16 @@ public:
         }
         float energy[kBands]{};
         std::size_t samples = 0;
-        for (std::size_t n = 0; n < frames; n += stride_) {
-            const float l = std::isfinite(left[n]) ? left[n] : 0.0f;
-            const float r = std::isfinite(right[n]) ? right[n] : 0.0f;
+        for (std::size_t n = 0; n < frames; ++n) {
+            float l = std::isfinite(left[n]) ? left[n] : 0.0f;
+            float r = std::isfinite(right[n]) ? right[n] : 0.0f;
+            // Anti-alias both channels before rate reduction. Sampling every Nth
+            // raw frame without this filter would fold USB ultrasonic content into Bark bands.
+            if (stride_ > 1u) {
+                l = antiAliasL_.process(l);
+                r = antiAliasR_.process(r);
+            }
+            if ((n % stride_) != 0u) continue;
             const float mid = 0.5f * (l + r);
             const float side = 0.5f * (l - r);
             const float x = std::fabs(mid) >= std::fabs(side) ? mid : side;
@@ -118,6 +132,20 @@ private:
         }
     };
 
+    static void configureLowpass(Biquad& q, float cutoff, float quality, float sr) noexcept {
+        const float w = 6.2831853071795864769f * cutoff / sr;
+        const float sn = std::sin(w), cs = std::cos(w);
+        const float alpha = sn / (2.0f * quality);
+        const float a0 = 1.0f + alpha;
+        const float oneMinusCos = 1.0f - cs;
+        q.b0 = 0.5f * oneMinusCos / a0;
+        q.b1 = oneMinusCos / a0;
+        q.b2 = 0.5f * oneMinusCos / a0;
+        q.a1 = -2.0f * cs / a0;
+        q.a2 = (1.0f - alpha) / a0;
+        q.z1 = q.z2 = 0.0f;
+    }
+
     static void configure(Biquad& q, float center, float quality, float sr) noexcept {
         const float w = 6.2831853071795864769f * center / sr;
         const float sn = std::sin(w), cs = std::cos(w);
@@ -129,6 +157,7 @@ private:
     }
 
     Biquad filters_[kBands]{};
+    Biquad antiAliasL_{}, antiAliasR_{};
     float previous_[kBands]{};
     float inputSampleRate_{48000.0f};
     std::size_t stride_{1};
