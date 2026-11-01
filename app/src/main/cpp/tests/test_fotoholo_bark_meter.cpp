@@ -2,6 +2,7 @@
 #include <cmath>
 #include <vector>
 #include "../include/fotoholo_bark_meter.hpp"
+#include "../include/omega_control_bus.h"
 
 namespace {
 std::vector<float> tone(float hz, float sampleRate, std::size_t frames, float amplitude = 0.5f) {
@@ -50,4 +51,29 @@ TEST(FotoHoloBarkMeter, IntensityScalesTheModulationAndNeverExceedsContract) {
     EXPECT_GT(full, 0.0f);
     EXPECT_LE(std::fabs(half), std::fabs(full) + 0.01f);
     EXPECT_LE(std::fabs(full), 0.25f);
+}
+
+
+TEST(FotoHoloControlCodec, PreservesTemporalAndCrosstalkBits) {
+    const uint32_t legacy = ivanna::omega_temporal_field_encode(true, 0.8f, true) |
+                            ivanna::OMEGA_TEMPORAL_FIELD_XTC_BIT;
+    const uint32_t packed = legacy | ivanna::omega_fotoholo_encode(true, 0.75f);
+    bool enabled = false;
+    float intensity = 0.0f;
+    ivanna::omega_fotoholo_decode(packed, enabled, intensity);
+    EXPECT_TRUE(enabled);
+    EXPECT_NEAR(intensity, 0.75f, 1.0f / 511.0f);
+    EXPECT_EQ(packed & 0x3Fu, legacy & 0x3Fu);
+}
+
+TEST(FotoHoloControlCodec, DisabledStatePreservesIntensityAndLegacyBits) {
+    const uint32_t legacy = ivanna::omega_temporal_field_encode(true, 0.4f, false) |
+                            ivanna::OMEGA_TEMPORAL_FIELD_XTC_BIT;
+    const uint32_t packed = legacy | ivanna::omega_fotoholo_encode(false, 0.5f);
+    bool enabled = true;
+    float intensity = 0.0f;
+    ivanna::omega_fotoholo_decode(packed, enabled, intensity);
+    EXPECT_FALSE(enabled);
+    EXPECT_NEAR(intensity, 0.5f, 1.0f / 511.0f);
+    EXPECT_EQ(packed & 0x3Fu, legacy & 0x3Fu);
 }
