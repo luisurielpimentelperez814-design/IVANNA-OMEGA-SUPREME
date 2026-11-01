@@ -126,9 +126,20 @@ object FotoHoloEngine {
         }
     }
 
-    fun setEnabled(context: Context, on: Boolean) { enabled = on; save(context) }
-    fun setIntensity(context: Context, v: Float) { intensity = if (v.isFinite()) v.coerceIn(0f, 1f) else 0.6f; save(context) }
-    fun setBypass(on: Boolean) { bypass = on }
+    fun setEnabled(context: Context, on: Boolean) {
+        enabled = on
+        save(context)
+        FotoHoloRouteB.setFotoHoloState(enabled && !bypass, intensity)
+    }
+    fun setIntensity(context: Context, v: Float) {
+        intensity = if (v.isFinite()) v.coerceIn(0f, 1f) else 0.6f
+        save(context)
+        FotoHoloRouteB.setFotoHoloState(enabled && !bypass, intensity)
+    }
+    fun setBypass(on: Boolean) {
+        bypass = on
+        FotoHoloRouteB.setFotoHoloState(enabled && !bypass, intensity)
+    }
     fun viewerAttached() { viewers++ }
     fun viewerDetached() { viewers = (viewers - 1).coerceAtLeast(0) }
 
