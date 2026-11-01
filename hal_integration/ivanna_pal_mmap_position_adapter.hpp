@@ -24,8 +24,11 @@ public:
 
     PalMmapPositionClockQuery(QueryPosition query,
                               void* queryContext,
-                              uint32_t nominalRateHz) noexcept
-        : query_(query), queryContext_(queryContext), nominalRateHz_(nominalRateHz) {}
+                              uint32_t nominalRateHz,
+                              uint64_t streamId,
+                              uint64_t routeGeneration) noexcept
+        : query_(query), queryContext_(queryContext), nominalRateHz_(nominalRateHz),
+          streamId_(streamId), routeGeneration_(routeGeneration) {}
 
     PalMmapPositionClockQuery(const PalMmapPositionClockQuery&) = delete;
     PalMmapPositionClockQuery& operator=(const PalMmapPositionClockQuery&) = delete;
@@ -38,7 +41,7 @@ public:
 
     bool query(HardwareClockSample* out) noexcept {
         if (!out || !query_ || nominalRateHz_ < 8000 ||
-            nominalRateHz_ > 768000) {
+            nominalRateHz_ > 768000 || streamId_ == 0 || routeGeneration_ == 0) {
             reset();
             return false;
         }
@@ -59,7 +62,7 @@ public:
             lastRawFrames_ = raw;
             extendedFrames_ = raw;
             lastTimestampNs_ = static_cast<uint64_t>(timeNs);
-            *out = {extendedFrames_, lastTimestampNs_, nominalRateHz_};
+            *out = {extendedFrames_, lastTimestampNs_, nominalRateHz_, streamId_, routeGeneration_};
             return true;
         }
 
@@ -81,8 +84,16 @@ public:
         extendedFrames_ += delta;
         lastRawFrames_ = raw;
         lastTimestampNs_ = timestamp;
-        *out = {extendedFrames_, timestamp, nominalRateHz_};
+        *out = {extendedFrames_, timestamp, nominalRateHz_, streamId_, routeGeneration_};
         return true;
+    }
+
+    void rebind(uint32_t nominalRateHz, uint64_t streamId,
+                uint64_t routeGeneration) noexcept {
+        reset();
+        nominalRateHz_ = nominalRateHz;
+        streamId_ = streamId;
+        routeGeneration_ = routeGeneration;
     }
 
     void reset() noexcept {
@@ -96,6 +107,8 @@ private:
     QueryPosition query_ = nullptr;
     void* queryContext_ = nullptr;
     uint32_t nominalRateHz_ = 0;
+    uint64_t streamId_ = 0;
+    uint64_t routeGeneration_ = 0;
     bool initialized_ = false;
     uint32_t lastRawFrames_ = 0;
     uint64_t extendedFrames_ = 0;
