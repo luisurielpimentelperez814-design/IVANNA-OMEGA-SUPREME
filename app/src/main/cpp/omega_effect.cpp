@@ -307,6 +307,7 @@ struct omega_effect_context_t {
     ivanna::rt::RtBandMeter bandMeter;
     ivanna::rt::FotoHoloBarkMeter fotoHoloBarkMeter;
     float fotoHoloDelta{0.0f};
+    float fotoHoloAppliedDelta{0.0f};
     ivanna::audio::CallbackClockMonitor* callbackClock; // solo diagnóstico de cadencia del callback
     ivanna::audio::HardwareClockReader* hardwareClockReader; // snapshot publicado por HAL/PCM
     ivanna::audio::HardwareClockTracker* hardwareClockTracker; // estima frecuencia física; no altera PCM
@@ -469,18 +470,27 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
 // The observer itself is read-only; this function only adjusts the selected actuator.
 static inline void omega_apply_fotoholo_modulation(omega_effect_context_t* ctx,
                                                    IvannaFusionEngine* fc,
-                                                   AntiDolbyState* ad) noexcept {
+                                                   AntiDolbyState* ad,
+                                                   int frames) noexcept {
     if (!ctx || !fc || ctx->lastAppliedGen == 0u) return;
     const auto& s = ctx->pendingSnap;
     if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::IN_PROCESS) {
         ctx->fotoHoloDelta = 0.0f;
+        ctx->fotoHoloAppliedDelta = 0.0f;
         return;
     }
     bool enabled = false;
     float intensity = 0.0f;
     ivanna::omega_fotoholo_decode(s.temporal_field, enabled, intensity);
-    const float delta = enabled && std::isfinite(ctx->fotoHoloDelta)
+    const float targetDelta = enabled && std::isfinite(ctx->fotoHoloDelta)
         ? std::clamp(ctx->fotoHoloDelta, -0.25f, 0.25f) : 0.0f;
+    const uint32_t sr = ctx->lastConfiguredSr >= 8000u ? ctx->lastConfiguredSr : 48000u;
+    // Match Route A's 0.01 per 50 ms slew, scaled to this callback duration.
+    const float maxStep = std::clamp(0.2f * static_cast<float>(std::max(frames, 0)) /
+                                    static_cast<float>(sr), 0.00001f, 0.01f);
+    const float delta = ctx->fotoHoloAppliedDelta +
+        std::clamp(targetDelta - ctx->fotoHoloAppliedDelta, -maxStep, maxStep);
+    ctx->fotoHoloAppliedDelta = delta;
     // Match omega_apply_snapshot / ControlPlaneEvidence priority exactly: WFS > HOA > M/S.
     if (s.wfs_enabled != 0u) {
         float base = std::isfinite(s.wfs_spread) ? std::clamp(s.wfs_spread, 0.0f, 2.0f) : 1.0f;
@@ -1023,7 +1033,7 @@ static int32_t omega_process(effect_handle_t self,
 
     // FotoHolo Route B: use the most recent analysis of this effect's own PCM.
     // This runs on every callback, not only when a control generation changes.
-    omega_apply_fotoholo_modulation(ctx, fc, ctx->antiDolby);
+    omega_apply_fotoholo_modulation(ctx, fc, ctx->antiDolby, frames);
 
     // ── Thermal Governor & Master Bypass — transición suave Zero-Pop ────────
     // NUNCA realizar bypass duro en el hilo de audio mientras masterBypassEnv > 0.
@@ -1669,6 +1679,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 ctx->bandMeter.prepare((float)sr);
                 ctx->fotoHoloBarkMeter.prepare((float)sr);
                 ctx->fotoHoloDelta = 0.0f;
+                ctx->fotoHoloAppliedDelta = 0.0f;
                 // AUDIT FIX (session isolation): DSP se instancia POR CONTEXTO.
                 // Cada sesión AudioFlinger llega aquí y crea su propio
                 // IvannaFusionCore; ya no se pisa el global entre sesiones.
@@ -2168,6 +2179,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->bandMeter.prepare(48000.0f);
     ctx->fotoHoloBarkMeter.prepare(48000.0f);
     ctx->fotoHoloDelta = 0.0f;
+    ctx->fotoHoloAppliedDelta = 0.0f;
     ctx->callbackClock = new (std::nothrow) ivanna::audio::CallbackClockMonitor();
     ctx->hardwareClockReader = new (std::nothrow) ivanna::audio::HardwareClockReader();
     ctx->hardwareClockTracker = new (std::nothrow) ivanna::audio::HardwareClockTracker();
