@@ -502,8 +502,9 @@ static inline void omega_apply_fotoholo_modulation(omega_effect_context_t* ctx,
         fc->setImmersivity(std::clamp(base + delta * 0.25f, 0.0f, 1.0f));
     } else {
         const float base = std::isfinite(s.spatial_width)
-            ? std::clamp(s.spatial_width, 0.0f, 3.0f) : 1.0f;
-        fc->setSpatialWidth(std::clamp(base + delta, 0.0f, 3.0f));
+            ? std::clamp(s.spatial_width, 0.0f, 1.5f) : 1.0f;
+        const float ceiling = std::max(1.2f, base);
+        fc->setSpatialWidth(std::clamp(base + delta, 0.0f, ceiling));
     }
     (void)intensity; // Intensity is applied by the Route B meter when it computes fotoHoloDelta.
 }
