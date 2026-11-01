@@ -683,3 +683,32 @@ TEST(ScenePoseChannel, DaemonPublishesPoseAndDistanceRejectsInvalidAndClears) {
     EXPECT_EQ(s.head_yaw_rad, 0.f); EXPECT_EQ(s.head_pitch_rad, 0.f);
     EXPECT_TRUE(s.isCrcValid());
 }
+
+
+TEST(FotoHoloDaemon, RouteBControlReachesSnapshotWithoutChangingAbi) {
+    Harness h;
+    CommandServer cs;
+    char reply[4096]{};
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_FOTOHOLO_STATE\",\"enabled\":1,\"intensity\":0.75}",
+        reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":true"), std::string::npos) << reply;
+
+    OmegaDspSnapshot snap{};
+    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    ASSERT_TRUE(snap.isValid());
+    bool enabled = false;
+    float intensity = 0.0f;
+    omega_fotoholo_decode(snap.temporal_field, enabled, intensity);
+    EXPECT_TRUE(enabled);
+    EXPECT_NEAR(intensity, 0.75f, 1.0f / 511.0f);
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_FOTOHOLO_STATE\",\"enabled\":0,\"intensity\":0.75}",
+        reply, sizeof reply), 0);
+    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    omega_fotoholo_decode(snap.temporal_field, enabled, intensity);
+    EXPECT_FALSE(enabled);
+    EXPECT_NEAR(intensity, 0.75f, 1.0f / 511.0f);
+    EXPECT_EQ(OMEGA_CTRL_VERSION, 8u);
+}
