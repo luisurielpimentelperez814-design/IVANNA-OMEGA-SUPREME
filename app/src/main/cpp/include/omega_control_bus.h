@@ -281,6 +281,21 @@ constexpr uint32_t OMEGA_FLAG_AUX_COH_MASK           = (0x7u << 29u);
 // bit 5 de la MISMA palabra = cancelación de diafonía para altavoces (CrosstalkCanceller en omega_effect). El snapshot está
 // al tope de tamaño; los bits 5.. de temporal_field estaban libres y los lectores antiguos los ignoran (máscaras 1/0xE/16).
 constexpr uint32_t OMEGA_TEMPORAL_FIELD_XTC_BIT = 32u;
+// FotoHolo Route B occupies previously unused temporal_field bits 6..15.
+// bit 6 = observer enabled; bits 7..15 = intensity quantized to 9 bits.
+// Existing 4D/XTC readers mask only bits 0..5, so ABI v8 remains unchanged.
+constexpr uint32_t OMEGA_FOTOHOLO_ON_BIT = (1u << 6u);
+constexpr uint32_t OMEGA_FOTOHOLO_INTENSITY_SHIFT = 7u;
+constexpr uint32_t OMEGA_FOTOHOLO_INTENSITY_MASK = (0x1FFu << OMEGA_FOTOHOLO_INTENSITY_SHIFT);
+inline uint32_t omega_fotoholo_encode(bool enabled, float intensity) noexcept {
+    const float v = std::isfinite(intensity) ? std::clamp(intensity, 0.0f, 1.0f) : 0.0f;
+    const uint32_t q = static_cast<uint32_t>(v * 511.0f + 0.5f);
+    return (enabled ? OMEGA_FOTOHOLO_ON_BIT : 0u) | (q << OMEGA_FOTOHOLO_INTENSITY_SHIFT);
+}
+inline void omega_fotoholo_decode(uint32_t field, bool& enabled, float& intensity) noexcept {
+    enabled = (field & OMEGA_FOTOHOLO_ON_BIT) != 0u;
+    intensity = static_cast<float>((field & OMEGA_FOTOHOLO_INTENSITY_MASK) >> OMEGA_FOTOHOLO_INTENSITY_SHIFT) / 511.0f;
+}
 inline uint32_t omega_temporal_field_encode(bool on, float amount, bool autoMode) noexcept {
     const float a = (amount == amount) ? amount : 0.6f;
     int lv = static_cast<int>(a * 7.f + 0.5f); lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
