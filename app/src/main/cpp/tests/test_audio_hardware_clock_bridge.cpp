@@ -17,14 +17,14 @@ std::string testPath() {
 TEST(HardwareClockBridge, RejectsStaleFutureAndOutOfRangeSnapshotAsLiveRoute) {
     using ivanna::audio::HardwareClockSample;
     using ivanna::audio::isFreshMonotonicHardwareClockSample;
-    const HardwareClockSample fresh{48000, 9'500'000'000ull, 48000};
+    const HardwareClockSample fresh{48000, 9'500'000'000ull, 48000, 11, 1};
     EXPECT_TRUE(isFreshMonotonicHardwareClockSample(fresh, 10'000'000'000ull));
     EXPECT_FALSE(isFreshMonotonicHardwareClockSample(fresh, 11'000'000'001ull));
     EXPECT_FALSE(isFreshMonotonicHardwareClockSample(fresh, 9'499'999'999ull));
     EXPECT_FALSE(isFreshMonotonicHardwareClockSample(
-        HardwareClockSample{48000, 9'500'000'000ull, 7999}, 10'000'000'000ull));
+        HardwareClockSample{48000, 9'500'000'000ull, 7999, 11, 1}, 10'000'000'000ull));
     EXPECT_FALSE(isFreshMonotonicHardwareClockSample(
-        HardwareClockSample{48000, 0, 48000}, 10'000'000'000ull));
+        HardwareClockSample{48000, 0, 48000, 11, 1}, 10'000'000'000ull));
 }
 
 TEST(HardwareClockBridge, InvalidSnapshotCanBeRetriedAfterPublisherInitializesIt) {
@@ -45,7 +45,7 @@ TEST(HardwareClockBridge, InvalidSnapshotCanBeRetriedAfterPublisherInitializesIt
     ivanna::audio::HardwareClockPublisher publisher;
     ASSERT_TRUE(publisher.open(path.c_str()));
     ASSERT_TRUE(reader.open(path.c_str()));
-    ASSERT_TRUE(publisher.publish({480, 1000000000ull, 48000}));
+    ASSERT_TRUE(publisher.publish({480, 1000000000ull, 48000, 11, 1}));
 
     ivanna::audio::HardwareClockSample sample;
     ASSERT_TRUE(reader.read(sample));
@@ -65,13 +65,15 @@ TEST(HardwareClockBridge, PublishesAndReadsDriverSnapshot) {
     ASSERT_TRUE(publisher.open(path.c_str()));
     ASSERT_TRUE(reader.open(path.c_str()));
 
-    const ivanna::audio::HardwareClockSample sent{96000, 3000000000ull, 48000};
+    const ivanna::audio::HardwareClockSample sent{96000, 3000000000ull, 48000, 11, 1};
     ASSERT_TRUE(publisher.publish(sent));
     ivanna::audio::HardwareClockSample received;
     ASSERT_TRUE(reader.read(received));
     EXPECT_EQ(received.presentedFrames, sent.presentedFrames);
     EXPECT_EQ(received.hardwareTimestampNs, sent.hardwareTimestampNs);
     EXPECT_EQ(received.nominalSampleRateHz, sent.nominalSampleRateHz);
+    EXPECT_EQ(received.streamId, sent.streamId);
+    EXPECT_EQ(received.routeGeneration, sent.routeGeneration);
     reader.close();
     publisher.close();
     std::remove(path.c_str());
@@ -83,15 +85,19 @@ TEST(HardwareClockBridge, HalAdapterConvertsAssociatedTimespec) {
     ivanna::audio::HardwareClockPublisher publisher;
     ASSERT_TRUE(publisher.open(path.c_str()));
     ASSERT_TRUE(ivanna::audio::publishHalPresentationPosition(
-        publisher, 48000, 2, 500000000, 48000));
+        publisher, 48000, 2, 500000000, 48000, 11, 1));
     ivanna::audio::HardwareClockReader reader;
     ASSERT_TRUE(reader.open(path.c_str()));
     ivanna::audio::HardwareClockSample sample;
     ASSERT_TRUE(reader.read(sample));
     EXPECT_EQ(sample.hardwareTimestampNs, 2500000000ull);
     EXPECT_EQ(sample.presentedFrames, 48000ull);
+    EXPECT_EQ(sample.streamId, 11ull);
+    EXPECT_EQ(sample.routeGeneration, 1ull);
+    publisher.invalidate();
+    EXPECT_FALSE(reader.read(sample));
     EXPECT_FALSE(ivanna::audio::publishHalPresentationPosition(
-        publisher, 49000, 2, 1000000000, 48000));
+        publisher, 49000, 2, 1000000000, 48000, 11, 1));
     reader.close();
     publisher.close();
     std::remove(path.c_str());
@@ -102,8 +108,9 @@ TEST(HardwareClockBridge, RejectsInvalidSamples) {
     std::remove(path.c_str());
     ivanna::audio::HardwareClockPublisher publisher;
     ASSERT_TRUE(publisher.open(path.c_str()));
-    EXPECT_FALSE(publisher.publish({10, 0, 48000}));
-    EXPECT_FALSE(publisher.publish({10, 1000000, 1000}));
+    EXPECT_FALSE(publisher.publish({10, 0, 48000, 11, 1}));
+    EXPECT_FALSE(publisher.publish({10, 1000000, 1000, 11, 1}));
+    EXPECT_FALSE(publisher.publish({10, 1000000, 48000, 0, 1}));
     publisher.close();
     std::remove(path.c_str());
 }
@@ -117,7 +124,7 @@ TEST(HalOutputClockReporter, PublishesAssociatedFrameAndTimestamp) {
     ASSERT_TRUE(reporter.start(path.c_str()));
 
     const timespec timestamp{2, 500000000};
-    ASSERT_TRUE(reporter.report(48000, timestamp, 48000));
+    ASSERT_TRUE(reporter.report(48000, timestamp, 48000, 11, 1));
 
     ivanna::audio::HardwareClockReader reader;
     ASSERT_TRUE(reader.open(path.c_str()));
@@ -126,9 +133,11 @@ TEST(HalOutputClockReporter, PublishesAssociatedFrameAndTimestamp) {
     EXPECT_EQ(sample.presentedFrames, 48000ull);
     EXPECT_EQ(sample.hardwareTimestampNs, 2500000000ull);
     EXPECT_EQ(sample.nominalSampleRateHz, 48000u);
+    EXPECT_EQ(sample.streamId, 11u);
+    EXPECT_EQ(sample.routeGeneration, 1u);
 
     const timespec invalidTimestamp{2, 1000000000};
-    EXPECT_FALSE(reporter.report(49000, invalidTimestamp, 48000));
+    EXPECT_FALSE(reporter.report(49000, invalidTimestamp, 48000, 11, 1));
 
     reader.close();
     reporter.stop();
