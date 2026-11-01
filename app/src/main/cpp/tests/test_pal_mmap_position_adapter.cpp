@@ -57,7 +57,7 @@ TEST(PalMmapPositionClockQuery, RejectsCounterResetOrImplausibleJump) {
         {5000, 1010000000}, // reset/backwards jump is not a 2-second delta
         {64, 1020000000}    // next query safely re-anchors
     };
-    PalMmapPositionClockQuery query(&FakePalMmap::query, &fake, 48000);
+    PalMmapPositionClockQuery query(&FakePalMmap::query, &fake, 48000, 7, 1);
     HardwareClockSample sample{};
     ASSERT_TRUE(query.query(&sample));
     EXPECT_FALSE(query.query(&sample));
