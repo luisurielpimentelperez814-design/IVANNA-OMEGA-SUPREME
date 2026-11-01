@@ -69,6 +69,8 @@ PairedSample mk(uint64_t frames, int64_t ns, uint32_t rate = 48000) {
     s.presentedFrames = frames;
     s.timestampNs = ns;
     s.nominalRateHz = rate;
+    s.streamId = 7;
+    s.routeGeneration = 1;
     return s;
 }
 
@@ -335,6 +337,8 @@ TEST(HalClockProducer, PublishesOnlyAfterThreeCoherentPairs) {
     ASSERT_TRUE(rd.read(got));
     EXPECT_EQ(got.presentedFrames, 1440u);
     EXPECT_EQ(got.hardwareTimestampNs, 1'030'000'000ull);
+    EXPECT_EQ(got.streamId, 7ull);
+    EXPECT_EQ(got.routeGeneration, 1ull);
     EXPECT_EQ(got.nominalSampleRateHz, 48000u);
     rd.close();
 }
