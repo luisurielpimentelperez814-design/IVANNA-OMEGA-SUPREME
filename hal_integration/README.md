@@ -125,7 +125,8 @@ static bool queryActivePalPosition(void* opaque, int32_t* frames,
 // serialized control/lifecycle path, never from the hard-real-time write path.
 ActivePalContext context{existingPalStreamHandle};
 ivanna::audio::PalMmapActiveStreamClockPublisher clock(
-    &queryActivePalPosition, &context, activeSampleRateHz);
+    &queryActivePalPosition, &context, activeSampleRateHz,
+    stableStreamId, routeGeneration);
 const bool reporterReady = clock.start();
 // At ~10–20 Hz: if (reporterReady) (void)clock.poll();
 // On standby/reopen/route change: clock.reset();
