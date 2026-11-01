@@ -470,7 +470,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
 static inline void omega_apply_fotoholo_modulation(omega_effect_context_t* ctx,
                                                    IvannaFusionEngine* fc,
                                                    AntiDolbyState* ad) noexcept {
-    if (!ctx || !fc) return;
+    if (!ctx || !fc || ctx->lastAppliedGen == 0u) return;
     const auto& s = ctx->pendingSnap;
     if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::IN_PROCESS) {
         ctx->fotoHoloDelta = 0.0f;
@@ -2161,6 +2161,8 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
     ctx->bandMeter.prepare(48000.0f);
+    ctx->fotoHoloBarkMeter.prepare(48000.0f);
+    ctx->fotoHoloDelta = 0.0f;
     ctx->callbackClock = new (std::nothrow) ivanna::audio::CallbackClockMonitor();
     ctx->hardwareClockReader = new (std::nothrow) ivanna::audio::HardwareClockReader();
     ctx->hardwareClockTracker = new (std::nothrow) ivanna::audio::HardwareClockTracker();
