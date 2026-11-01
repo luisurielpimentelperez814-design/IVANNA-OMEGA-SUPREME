@@ -85,10 +85,13 @@ object FotoHoloRouteB {
                 )
                 val reply = MagiskBridge.sendCommand(payload)
                 status = if (jsonBoolean(reply, "ok") == true) {
+                    expectedGeneration.set(jsonLong(reply, "generation") ?: 0L)
                     statusFromReply(reply)
                 } else {
+                    expectedGeneration.set(0L)
                     "FotoHolo Ruta B: " + statusFromReply(reply)
                 }
+                if (expectedGeneration.get() > 0L) refreshEvidence()
             } catch (e: Exception) {
                 status = "FotoHolo Ruta B: error " + e.javaClass.simpleName
                 Log.w(TAG, "no se pudo publicar estado FotoHolo Ruta B", e)
