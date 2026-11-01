@@ -42,6 +42,7 @@
 #include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
 #include "include/SafetyLimiter.h"  // FIX distorsion: limiter de Ruta A reusado en Ruta B
 #include "include/rt_band_meter.hpp"
+#include "include/fotoholo_bark_meter.hpp"
 #include <cmath>
 #include <mutex>
 #include <time.h>
@@ -304,6 +305,8 @@ struct omega_effect_context_t {
     ivanna::experimental::AdaptiveDecisionEngine* adaptive;
     uint64_t lastAdaptiveSeq;
     ivanna::rt::RtBandMeter bandMeter;
+    ivanna::rt::FotoHoloBarkMeter fotoHoloBarkMeter;
+    float fotoHoloDelta{0.0f};
     ivanna::audio::CallbackClockMonitor* callbackClock; // solo diagnóstico de cadencia del callback
     ivanna::audio::HardwareClockReader* hardwareClockReader; // snapshot publicado por HAL/PCM
     ivanna::audio::HardwareClockTracker* hardwareClockTracker; // estima frecuencia física; no altera PCM
@@ -459,6 +462,39 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         ivanna::omega_npe_ctl_decode(s.npe_ctl, npeOn, npeMasterDb);
         fc->setNpe(npeOn, s.harmonic_gain, s.npe_lateral_inhib, s.npe_ohc_compression, npeMasterDb);
     }
+}
+
+// Route B FotoHolo: apply the previous real-PCM Bark frame to the current
+// spatial owner. Called once per AudioFlinger callback, outside the analyzer loop.
+// The observer itself is read-only; this function only adjusts the selected actuator.
+static inline void omega_apply_fotoholo_modulation(omega_effect_context_t* ctx,
+                                                   IvannaFusionEngine* fc,
+                                                   AntiDolbyState* ad) noexcept {
+    if (!ctx || !fc) return;
+    const auto& s = ctx->pendingSnap;
+    if (static_cast<ivanna::RouteMode>(s.active_route) == ivanna::RouteMode::IN_PROCESS) {
+        ctx->fotoHoloDelta = 0.0f;
+        return;
+    }
+    bool enabled = false;
+    float intensity = 0.0f;
+    ivanna::omega_fotoholo_decode(s.temporal_field, enabled, intensity);
+    const float delta = enabled && std::isfinite(ctx->fotoHoloDelta)
+        ? std::clamp(ctx->fotoHoloDelta, -0.25f, 0.25f) : 0.0f;
+    if (s.upmixing_enabled != 0u) {
+        const float base = std::isfinite(s.upmixing_immersivity)
+            ? std::clamp(s.upmixing_immersivity, 0.0f, 1.0f) : 0.0f;
+        fc->setImmersivity(std::clamp(base + delta * 0.25f, 0.0f, 1.0f));
+    } else if (s.wfs_enabled != 0u) {
+        float base = std::isfinite(s.wfs_spread) ? std::clamp(s.wfs_spread, 0.0f, 2.0f) : 1.0f;
+        if (ad) base *= std::clamp(ad->currentSpreadMultiplier(), 0.0f, 2.0f);
+        fc->setWfsSpread(std::clamp(base + delta * 0.5f, 0.0f, 2.0f));
+    } else {
+        const float base = std::isfinite(s.spatial_width)
+            ? std::clamp(s.spatial_width, 0.0f, 3.0f) : 1.0f;
+        fc->setSpatialWidth(std::clamp(base + delta, 0.0f, 3.0f));
+    }
+    (void)intensity; // Intensity is applied by the Route B meter when it computes fotoHoloDelta.
 }
 
 static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
@@ -984,6 +1020,10 @@ static int32_t omega_process(effect_handle_t self,
         }
     }
 
+    // FotoHolo Route B: use the most recent analysis of this effect's own PCM.
+    // This runs on every callback, not only when a control generation changes.
+    omega_apply_fotoholo_modulation(ctx, fc, ctx->antiDolby);
+
     // ── Thermal Governor & Master Bypass — transición suave Zero-Pop ────────
     // NUNCA realizar bypass duro en el hilo de audio mientras masterBypassEnv > 0.
     // Solo cuando la rampa de transición llega exactamente a cero se ejecuta el
@@ -1002,6 +1042,7 @@ static int32_t omega_process(effect_handle_t self,
         ctx->thermalSkipVolterra = (tier >= ivanna::ThermalTier::LIMITED) || ctx->cpuShed;
     }
 
+    if (!wantMasterActive) ctx->fotoHoloDelta = 0.0f;
     if (!ctx->masterBypassEnv.beginBlock(wantMasterActive ? 1.0f : 0.0f, masterProfile)) {
         if (ctx->rtL && ctx->rtR && ctx->rtCapacity > 0) {
             const int tailFrames = std::min(frames, std::min(ctx->rtCapacity, 64));
@@ -1460,6 +1501,12 @@ static int32_t omega_process(effect_handle_t self,
             dryBufL, dryBufR, L, R, (size_t)chunk);
 
         const auto chunkBands = ctx->bandMeter.processBlock(L, R, (size_t)chunk);
+        bool fotoHoloEnabled = false;
+        float fotoHoloIntensity = 0.0f;
+        ivanna::omega_fotoholo_decode(ctx->pendingSnap.temporal_field,
+                                      fotoHoloEnabled, fotoHoloIntensity);
+        ctx->fotoHoloDelta = ctx->fotoHoloBarkMeter.processBlock(
+            L, R, (size_t)chunk, fotoHoloEnabled, fotoHoloIntensity);
         bandAccum.low  += chunkBands.low;
         bandAccum.mid  += chunkBands.mid;
         bandAccum.high += chunkBands.high;
@@ -1615,6 +1662,8 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 const bool srChanged = (ctx->lastConfiguredSr != 0u && ctx->lastConfiguredSr != sr);
                 ctx->lastConfiguredSr = sr;
                 ctx->bandMeter.prepare((float)sr);
+                ctx->fotoHoloBarkMeter.prepare((float)sr);
+                ctx->fotoHoloDelta = 0.0f;
                 // AUDIT FIX (session isolation): DSP se instancia POR CONTEXTO.
                 // Cada sesión AudioFlinger llega aquí y crea su propio
                 // IvannaFusionCore; ya no se pisa el global entre sesiones.
