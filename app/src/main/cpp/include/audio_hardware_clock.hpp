@@ -12,6 +12,8 @@ struct HardwareClockSample {
     uint64_t presentedFrames = 0;
     uint64_t hardwareTimestampNs = 0;
     uint32_t nominalSampleRateHz = 0;
+    uint64_t streamId = 0;
+    uint64_t routeGeneration = 0;
 };
 
 struct HardwareClockStatus {
@@ -30,6 +32,7 @@ class HardwareClockTracker {
 public:
     HardwareClockStatus observe(const HardwareClockSample& sample) noexcept {
         if (sample.hardwareTimestampNs == 0 ||
+            ((sample.streamId == 0) != (sample.routeGeneration == 0)) ||
             sample.nominalSampleRateHz < 8000 ||
             sample.nominalSampleRateHz > 768000) {
             reset();
@@ -41,6 +44,11 @@ public:
             return {};
         }
 
+        if (sample.streamId != previous_.streamId ||
+            sample.routeGeneration != previous_.routeGeneration) {
+            previous_ = sample;
+            return {};
+        }
         if (sample.hardwareTimestampNs <= previous_.hardwareTimestampNs ||
             sample.presentedFrames <= previous_.presentedFrames ||
             sample.nominalSampleRateHz != previous_.nominalSampleRateHz) {
