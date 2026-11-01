@@ -23,10 +23,12 @@ public:
     // timespec must be from the same successful driver query. It performs only
     // bounded atomic stores after the publisher has been opened.
     bool report(uint64_t frames, const timespec& timestamp,
-                uint32_t nominalSampleRateHz) noexcept {
+                uint32_t nominalSampleRateHz,
+                uint64_t streamId, uint64_t routeGeneration) noexcept {
         return publishHalPresentationPosition(
             publisher_, frames, static_cast<int64_t>(timestamp.tv_sec),
-            static_cast<int64_t>(timestamp.tv_nsec), nominalSampleRateHz);
+            static_cast<int64_t>(timestamp.tv_nsec), nominalSampleRateHz,
+            streamId, routeGeneration);
     }
 
     void stop() noexcept { publisher_.close(); }
