@@ -15,9 +15,11 @@ namespace ivanna::audio::moto_g85 {
 class ActivePalStreamClockBinding {
 public:
     ActivePalStreamClockBinding(pal_stream_handle_t* activeStream,
-                                uint32_t nominalRateHz) noexcept
-        : context_{activeStream},
-          publisher_(&queryPosition, &context_, nominalRateHz) {}
+                                uint32_t nominalRateHz,
+                                uint64_t streamId,
+                                uint64_t routeGeneration) noexcept
+        : context_{activeStream, streamId, routeGeneration},
+          publisher_(&queryPosition, &context_, nominalRateHz, streamId, routeGeneration) {}
 
     ActivePalStreamClockBinding(const ActivePalStreamClockBinding&) = delete;
     ActivePalStreamClockBinding& operator=(const ActivePalStreamClockBinding&) = delete;
@@ -26,7 +28,8 @@ public:
     // The HAL's SELinux policy must allow this process to create/map the
     // configured IVHC snapshot path; failure leaves telemetry unavailable.
     bool start(const char* snapshotPath = kHardwareClockSnapshotPath) noexcept {
-        return publisher_.start(snapshotPath);
+        return context_.stream && context_.streamId != 0 &&
+               context_.routeGeneration != 0 && publisher_.start(snapshotPath);
     }
 
     // Call from the output stream's serialized, non-real-time control task
@@ -41,9 +44,13 @@ public:
 
     // Use only while the owning HAL stream is serialized. Rebind after the
     // vendor HAL replaces its PAL handle; the previous query state is discarded.
-    void rebind(pal_stream_handle_t* activeStream) noexcept {
+    void rebind(pal_stream_handle_t* activeStream, uint32_t nominalRateHz,
+                uint64_t streamId, uint64_t routeGeneration) noexcept {
         publisher_.reset();
         context_.stream = activeStream;
+        context_.streamId = streamId;
+        context_.routeGeneration = routeGeneration;
+        publisher_.rebind(nominalRateHz, streamId, routeGeneration);
     }
 
     void stop() noexcept {
@@ -54,6 +61,8 @@ public:
 private:
     struct Context {
         pal_stream_handle_t* stream;
+        uint64_t streamId;
+        uint64_t routeGeneration;
     };
 
     static bool queryPosition(void* opaque, int32_t* frames,
