@@ -15,8 +15,10 @@ public:
 
     PalMmapActiveStreamClockPublisher(QueryPosition query,
                                       void* streamContext,
-                                      uint32_t nominalRateHz) noexcept
-        : query_(query, streamContext, nominalRateHz) {}
+                                      uint32_t nominalRateHz,
+                                      uint64_t streamId,
+                                      uint64_t routeGeneration) noexcept
+        : query_(query, streamContext, nominalRateHz, streamId, routeGeneration) {}
 
     PalMmapActiveStreamClockPublisher(const PalMmapActiveStreamClockPublisher&) = delete;
     PalMmapActiveStreamClockPublisher& operator=(const PalMmapActiveStreamClockPublisher&) = delete;
@@ -31,12 +33,25 @@ public:
     // returned together by one PAL query. A failure publishes nothing.
     bool poll() noexcept {
         HardwareClockSample sample{};
-        if (!query_.query(&sample)) return false;
-        return publisher_.publish(sample);
+        if (!query_.query(&sample)) {
+            publisher_.invalidate();
+            return false;
+        }
+        if (!publisher_.publish(sample)) {
+            publisher_.invalidate();
+            return false;
+        }
+        return true;
     }
 
     // Required on standby, stream close/reopen, route change, or discontinuity.
-    void reset() noexcept { query_.reset(); }
+    void reset() noexcept { query_.reset(); publisher_.invalidate(); }
+
+    void rebind(uint32_t nominalRateHz, uint64_t streamId,
+                uint64_t routeGeneration) noexcept {
+        reset();
+        query_.rebind(nominalRateHz, streamId, routeGeneration);
+    }
 
     void stop() noexcept {
         query_.reset();
