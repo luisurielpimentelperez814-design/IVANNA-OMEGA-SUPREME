@@ -10,8 +10,10 @@ Build this header only inside a matching Motorola/Qualcomm HAL source tree that 
 #include "ivanna_pal_active_stream_binding.hpp"
 
 // In the long-lived output-stream owner, after PAL stream creation:
+// streamId remains stable for the stream object; routeGeneration changes
+// on every standby/reopen/device reroute. Both values must be non-zero.
 ivanna::audio::moto_g85::ActivePalStreamClockBinding ivannaClock(
-    existingPalStreamHandle, activeSampleRateHz);
+    existingPalStreamHandle, activeSampleRateHz, streamId, routeGeneration);
 const bool clockTelemetryReady = ivannaClock.start();
 
 // On the owner's serialized low-rate control task (~10–20 Hz):
@@ -20,13 +22,14 @@ if (clockTelemetryReady) (void)ivannaClock.poll();
 // On standby, route change, PAL handle replacement, or stream restart:
 ivannaClock.reset();
 // If the PAL handle was replaced, while serialized:
-ivannaClock.rebind(newPalStreamHandle);
+ivannaClock.rebind(newPalStreamHandle, newSampleRateHz,
+                   newStreamId, newRouteGeneration);
 
 // Before destroying the output stream:
 ivannaClock.stop();
 ```
 
-The callback invokes `pal_stream_get_mmap_position()` exactly once per sample and uses the frame position and timestamp returned by that same result. Unsupported stream modes/errors fail closed and publish no new sample. The code does not open a second PCM device, write mixer controls, infer time from wall clock, or issue ASRC commands.
+The callback invokes `pal_stream_get_mmap_position()` exactly once per sample and uses the frame position and timestamp returned by that same result. Every IVHC snapshot carries a non-zero stream identity and route generation. A failed query, standby, route change, rebind or stop invalidates the shared snapshot immediately. Unsupported stream modes/errors fail closed and publish no active sample. The code does not open a second PCM device, write mixer controls, infer time from wall clock, or issue ASRC commands.
 
 ## Non-negotiable deployment gates
 
