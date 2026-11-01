@@ -2172,9 +2172,13 @@ static const struct effect_interface_s OMEGA_INTERFACE = {
 static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
                                    int32_t ioId, effect_handle_t *pHandle) {
     if (!pHandle) return -EINVAL;
+    // The context embeds stateful C++ DSP objects (RtBandMeter and FotoHoloBarkMeter).
+    // calloc alone does not begin their object lifetimes; construct the complete context
+    // in the zeroed storage so their constructors and member lifetimes are valid.
+    void* contextStorage = calloc(1, sizeof(omega_effect_context_t));
+    if (!contextStorage) return -ENOMEM;
     omega_effect_context_t *ctx =
-        reinterpret_cast<omega_effect_context_t *>(calloc(1, sizeof(omega_effect_context_t)));
-    if (!ctx) return -ENOMEM;
+        new (contextStorage) omega_effect_context_t{};
     ctx->itfe = &OMEGA_INTERFACE;
     ctx->enabled = false;
     ctx->bandMeter.prepare(48000.0f);
@@ -2375,6 +2379,8 @@ static int32_t omega_release_effect(effect_handle_t handle) {
         if (ctx->rtDryR) { free(ctx->rtDryR); ctx->rtDryR = nullptr; }
         if (ctx->rtVolterraScratch) { free(ctx->rtVolterraScratch); ctx->rtVolterraScratch = nullptr; }
         ctx->rtCapacity = 0;
+        // Match placement-new above: end the C++ object lifetime before freeing storage.
+        ctx->~omega_effect_context_t();
         free(ctx);
     }
     return 0;
