@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.213
-versionCode=504
+version=v2.5.214
+versionCode=505
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.213: FotoHolo Route B ACK parsing JVM-safe; validated Android and native build
+description=v2.5.214: FotoHolo dual-route Bark modulation; AudioFlinger Route B native observer and Route A exclusivity
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

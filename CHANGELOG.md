@@ -1,3 +1,12 @@
+## v2.5.214 (505) — 2026-11-01
+
+- **FotoHolo A/B conectado de extremo a extremo:** Ruta A conserva el análisis Bark de PlaybackCaptureService y su StereoWidener local; Ruta B analiza el PCM seco real de AudioFlinger dentro de `omega_effect`, sin depender de la captura A.
+- **Control Route B:** interruptor e intensidad se transportan por `SET_FOTOHOLO_STATE`, daemon y `OmegaDspSnapshot`; el DSP modula al propietario espacial activo siguiendo WFS → HOA → M/S y confirma consumo mediante la generación aplicada por bloque.
+- **DSP en tiempo real:** observador de 64 bandas sin asignaciones ni bloqueos en callback, anti-alias antes de decimar rutas de alta frecuencia, reset seguro, límites de ±0.25 y rampa temporal acotada.
+- **Aislamiento de rutas e interfaz:** SAFMUS evita doble procesamiento A/B; la tarjeta distingue las bandas visualizadas de A de la modulación nativa B y ofrece verificación de evidencia B en lugar de un falso botón de sincronización.
+- **Robustez nativa:** construcción/destrucción correcta del contexto C++ que contiene los observadores DSP; pruebas del códec temporal y del observador Bark, más correcciones de fixtures HAL.
+- **Límite de validación:** la publicación de CI no equivale a certificación acústica del Moto G85. La confirmación física de Ruta B requiere instalar este artefacto y verificar AudioFlinger/efecto activo con reproducción real en el dispositivo.
+
 ## v2.5.213 (504) — 2026-10-31
 
 - **FotoHolo Route B: robustez JVM:** el parser de ACK ya no depende de org.json Android stubs; interpreta únicamente escalares JSON permitidos y conserva la validación estricta de ok, applied, status y consumer.
