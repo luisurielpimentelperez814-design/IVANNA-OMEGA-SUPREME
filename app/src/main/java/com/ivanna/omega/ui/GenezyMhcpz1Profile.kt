@@ -97,7 +97,7 @@ fun GenezyMhcpz1ProfileCard(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         Text("PERFIL FÍSICO · GENEZY MHCPZ1", color = Color(0xFF65E7F2), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-        Text("16 posiciones virtuales → mapa angular de frontales y satélites laterales. No añade una ruta de audio ni presupone 4 canales independientes.", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        Text("Salida prevista: estéreo AUX hacia el Genezy. Su amplificador distribuye la señal a 2 frontales + 2 satélites + subwoofer; IVANNA no finge cinco canales PCM discretos.", color = Color(0xFF9AA4B2), fontSize = 11.sp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Usar perfil como referencia espacial", color = Color.White, fontSize = 12.sp)
             Switch(checked = enabled, onCheckedChange = {
@@ -116,18 +116,13 @@ fun GenezyMhcpz1ProfileCard(modifier: Modifier = Modifier) {
         Text("Satélites laterales L/R: 24 Ω declarados por lado", color = Color(0xFFB7C1CE), fontSize = 11.sp)
         Text("Graves: 1×15″ + 2×4″ · 6 Ω declarados para el conjunto", color = Color(0xFFB7C1CE), fontSize = 11.sp)
         Text(
-            if (enabled) "Perfil conectado al ancho estéreo NanoTomix: extensión lateral +8 % cuando NanoTomix está activo y sin bypass. No crea salidas discretas."
-            else "Perfil apagado: el DSP conserva el ancho base del usuario.",
+            if (enabled) "Perfil solicitado: NanoTomix aplica un ajuste de anchura de hasta +8 % solo cuando está activo, sin bypass y con una ruta DSP disponible. La separación física de los cinco grupos la realiza el Genezy."
+            else "Perfil apagado: se conserva el ancho base. El crossover y la distribución interna del Genezy permanecen bajo control de su amplificador.",
             color = if (enabled) Color(0xFF65E7F2) else Color(0xFF9AA4B2), fontSize = 11.sp
         )
-        if (enabled) routes.forEach { r ->
-            Text(
-                "%02d · %6.1f° → %s %.0f%% + %s %.0f%%".format(
-                    r.position.index, r.position.azimuthDeg, r.primaryZone.label, r.primaryWeight * 100f,
-                    r.secondaryZone.label, r.secondaryWeight * 100f
-                ),
-                color = Color(0xFFB7C1CE), fontSize = 10.sp
-            )
-        }
+        if (enabled) Text(
+            "Topología física declarada: FL · FR · SL · SR · SUB. El estado de aplicación se verifica en la telemetría FotoHolo; el interruptor por sí solo no demuestra efecto audible.",
+            color = Color(0xFFB7C1CE), fontSize = 10.sp
+        )
     }
 }
