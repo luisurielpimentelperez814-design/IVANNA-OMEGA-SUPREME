@@ -43,7 +43,7 @@ TEST(AdaptiveGainRamp, EnableOnlyAttenuatesAndIsMonotonic) {
         EXPECT_LE(right[i], -0.5f);
         if (i > 0) {
             EXPECT_LE(left[i], left[i - 1]);
-            EXPECT_LE(right[i], right[i - 1]);
+            EXPECT_GE(right[i], right[i - 1]);
         }
     }
     EXPECT_FLOAT_EQ(left.back(), 0.5f);
