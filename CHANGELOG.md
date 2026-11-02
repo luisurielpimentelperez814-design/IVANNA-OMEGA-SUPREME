@@ -1,3 +1,10 @@
+## v2.5.217 (508) - 2026-11-01
+
+- Adaptive modulator: OFF/0% is a true bypass.
+- DSP updater: do not cache a state before native library availability; force the first complete parameter write.
+- Control loop: start after native initialization and keep it at application audio-process scope; expose tick/frame counters and errors.
+- Device playback and audible A/B verification remain required; CI is not hardware certification.
+
 ## v2.5.216 (507) — 2026-11-02
 
 - **Acoustic Reality continuo en Ruta B:** el pipeline ya no limita el orquestador a la primera secuencia de la sesión; recalcula el estado con PCM vivo en cada bloque de audio.
