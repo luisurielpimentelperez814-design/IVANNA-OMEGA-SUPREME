@@ -326,12 +326,15 @@ public:
         evo_thread_ = std::thread([this]() {
             constexpr int EVO_INTERVAL_MS = 50;
             while (evo_running_.load(std::memory_order_acquire)) {
-                if (mode.load(std::memory_order_acquire) != 3) break;
+                // The explicit Start/Stop UI controls this worker independently
+                // of PDEngine's render mode. Do not terminate a valid worker just
+                // because the current renderer mode is not 3.
                 if (evo_evolve_step_with_convergence() == 0) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(EVO_INTERVAL_MS));
             }
             evo_running_.store(false, std::memory_order_release);
-            if (mode.load(std::memory_order_acquire) != 3) {
+            // Natural convergence in mode 3 must release the evolved override.
+            if (mode.load(std::memory_order_acquire) == 3) {
                 g_control_frame.evolutionary_active.store(false, std::memory_order_release);
                 control_clear_evo_genome();
             }
