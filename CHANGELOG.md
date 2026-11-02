@@ -1,3 +1,7 @@
+## v2.5.225 (516) - 2026-11-02
+
+- **HRTF dataset truthfulness:** the evidence (effect file, daemon `GET_PROCESSOR_EVIDENCE` → `hrtfDataset`, and `read_processor_evidence.py`) now says whether the HRTF is running on measured HRIRs (IHR1/SOFA) or on the analytic Rayleigh synthesis fallback. Without a dataset in `/data/adb/ivanna_omega/` the binaural path is the fallback, which a plain "applying" flag would have hidden.
+
 ## v2.5.224 (515) - 2026-11-02
 
 - **FotoHolo WebView crash-proofing:** `onRenderProcessGone` was unhandled, so when Android killed the WebView renderer under memory pressure the whole app died (taking the audio session with it). The panel now logs it, returns handled and rebuilds the WebView.

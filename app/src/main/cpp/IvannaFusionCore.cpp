@@ -552,6 +552,7 @@ bool IvannaFusionEngine::hrtfEvidence(HrtfEvidenceOut& o) const noexcept {
     o.safRefreshes = e.safRefreshes; o.poseApplies = e.poseApplies;
     o.inEnergy = e.inEnergy; o.outEnergy = e.outEnergy;
     o.azimuthDeg = e.azimuthDeg; o.safBiasDeg = e.safBiasDeg; o.curvature = e.curvature;
+    o.datasetLoaded = e.datasetLoaded;
     return true;
 }
 

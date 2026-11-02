@@ -1668,6 +1668,7 @@ if (ctx->adaptive) {
                     ev.hrtfInEnergy = h.inEnergy; ev.hrtfOutEnergy = h.outEnergy;
                     ev.hrtfAzimuthDeg = h.azimuthDeg; ev.hrtfSafBiasDeg = h.safBiasDeg;
                     ev.hrtfCurvature = h.curvature;
+                    ev.hrtfDatasetLoaded = h.datasetLoaded ? 1u : 0u;
                 }
             }
             if (ctx->rirConvolver) {

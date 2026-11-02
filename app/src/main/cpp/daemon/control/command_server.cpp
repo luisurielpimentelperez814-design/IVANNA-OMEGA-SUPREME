@@ -416,14 +416,14 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
                 "{\"ok\":true,\"action\":\"GET_PROCESSOR_EVIDENCE\",\"comparable\":%s,"
                 "\"hrtfApplying\":%s,\"hrtfDspDelegated\":%s,\"rirApplying\":%s,\"safReachedHrtf\":%s,\"safReachedRir\":%s,"
                 "\"hrtfCpuBlocks\":%llu,\"hrtfDspBlocks\":%llu,\"hrtfSafRefreshes\":%llu,\"rirLoads\":%llu,\"rirRelinks\":%llu,\"rirActiveBlocks\":%llu,"
-                "\"hrtfAzimuthDeg\":%.2f,\"hrtfSafBiasDeg\":%.2f,\"hrtfCurvature\":%.3f,\"rirWet\":%.3f,"
+                "\"hrtfDataset\":%s,\"hrtfAzimuthDeg\":%.2f,\"hrtfSafBiasDeg\":%.2f,\"hrtfCurvature\":%.3f,\"rirWet\":%.3f,"
                 "\"rirBakedEarly\":%.3f,\"rirBakedDecorrel\":%.3f,\"rirBakedRt60Delta\":%.3f,\"rirWetScale\":%.3f}",
                 cmp?"true":"false", hrtfCpu?"true":"false", hrtfDsp?"true":"false", rirApp?"true":"false",
                 safHrtf?"true":"false", safRir?"true":"false",
                 (unsigned long long)cur.hrtfCpuBlocks, (unsigned long long)cur.hrtfDspBlocks,
                 (unsigned long long)cur.hrtfSafRefreshes, (unsigned long long)cur.rirLoads,
                 (unsigned long long)cur.rirRelinks, (unsigned long long)cur.rirActiveBlocks,
-                cur.hrtfAzimuthDeg, cur.hrtfSafBiasDeg, cur.hrtfCurvature, cur.rirWet,
+                cur.hrtfDatasetLoaded ? "true" : "false", cur.hrtfAzimuthDeg, cur.hrtfSafBiasDeg, cur.hrtfCurvature, cur.rirWet,
                 cur.rirBakedEarly, cur.rirBakedDecorrel, cur.rirBakedRt60Delta, cur.rirWetScale);
             prev = cur; havePrev = true;
         }

@@ -8,7 +8,7 @@ import argparse, struct, sys, time
 FMT = "<IIQ QQQQ QQQ dd dd ffff ffff II"
 SIZE = struct.calcsize(FMT)
 NAMES = ("magic version seq hrtfCpu hrtfDsp hrtfSafRefresh hrtfPose rirLoads rirRelinks rirActive "
-         "hrtfIn hrtfOut rirIn rirOut hrtfAz hrtfBias hrtfCurv rirWet rirEarly rirDecor rirRt60 rirWetScale sr res").split()
+         "hrtfIn hrtfOut rirIn rirOut hrtfAz hrtfBias hrtfCurv rirWet rirEarly rirDecor rirRt60 rirWetScale sr dataset").split()
 
 def read(path):
     for _ in range(50):
@@ -25,7 +25,7 @@ def verdict(a, b):
     out = {}
     if b["hrtfCpu"] > a["hrtfCpu"]:
         dIn, dOut = b["hrtfIn"] - a["hrtfIn"], b["hrtfOut"] - a["hrtfOut"]
-        out["HRTF"] = ("APLICA (CPU), ganancia energia %.2f dB" % (10 * __import__('math').log10(max(dOut, 1e-12) / max(dIn, 1e-12)))
+        out["HRTF"] = (("[dataset medido] " if b["dataset"] else "[SINTESIS analitica, sin HRIR medidas] ") + "APLICA (CPU), ganancia energia %.2f dB" % (10 * __import__('math').log10(max(dOut, 1e-12) / max(dIn, 1e-12)))
                        if dIn > 1e-9 else "CPU procesa pero la entrada es silencio: sin prueba")
     elif b["hrtfDsp"] > a["hrtfDsp"]:
         out["HRTF"] = "delegado al Hexagon: SIN medicion propia (no verificable desde aqui)"

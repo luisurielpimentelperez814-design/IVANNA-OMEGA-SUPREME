@@ -103,6 +103,7 @@ public:
         uint64_t cpuBlocks=0, dspBlocks=0, safRefreshes=0, poseApplies=0;
         double inEnergy=0, outEnergy=0;
         float azimuthDeg=0, safBiasDeg=0, curvature=0;
+        bool datasetLoaded=false;
     };
     bool hrtfEvidence(HrtfEvidenceOut& out) const noexcept;
 

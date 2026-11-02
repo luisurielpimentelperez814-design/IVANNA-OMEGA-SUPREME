@@ -30,7 +30,7 @@ struct alignas(8) EffectEvidence {
     float    hrtfAzimuthDeg, hrtfSafBiasDeg, hrtfCurvature, rirWet;
     float    rirBakedEarly, rirBakedDecorrel, rirBakedRt60Delta, rirWetScale;
     uint32_t sampleRate;
-    uint32_t reserved;
+    uint32_t hrtfDatasetLoaded; // 1 = HRIR medidas (IHR1/SOFA), 0 = sintesis analitica
 };
 static_assert(sizeof(EffectEvidence) <= 256, "EffectEvidence excede 256 B");
 

@@ -105,6 +105,7 @@ public:
         uint64_t poseApplies = 0;    // setHeadPose efectivos
         double inEnergy = 0.0, outEnergy = 0.0;
         float azimuthDeg = 0.f, curvature = 0.f, safBiasDeg = 0.f;
+        bool datasetLoaded = false;   // false => sintesis analitica (Rayleigh), no HRIR medidas
     };
     Evidence evidence() const noexcept {
         Evidence e;
@@ -117,6 +118,7 @@ public:
         e.azimuthDeg = m_currentAzimuthDeg.load(std::memory_order_relaxed);
         e.curvature = m_intrinsicCurvature.load(std::memory_order_relaxed);
         e.safBiasDeg = m_safAzimuthBias.load(std::memory_order_relaxed);
+        e.datasetLoaded = m_datasetLoaded;
         return e;
     }
 
