@@ -170,7 +170,9 @@ void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
 }
 
 void HrtfManager::processBinauralSceneImpl(Ivanna::AudioBuffer* buffer) {
-    if (m_fastRpcClient.isDSPReady()) {
+    if (m_fastRpcClient.isDSPReady() &&
+        m_wetDry.load(std::memory_order_relaxed) >= 0.999f &&
+        m_wetEnv.currentGain >= 0.999f && !m_wetEnv.isTransitioning()) {
         // FIX (cableado binaural, FASE 8): azimuth/elevation ya NO se
         // envían fijos en cero — se leen de la última pose real recibida
         // por setHeadPose() (yaw/pitch del sensor + sesgo SAF), la misma
