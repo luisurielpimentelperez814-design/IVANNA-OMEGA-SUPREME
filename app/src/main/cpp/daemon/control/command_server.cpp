@@ -181,8 +181,9 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     // v2.5.44: dinamica espacial temporal.
     snap.temporal_field = ivanna::omega_temporal_field_encode(s.temporal_field_enabled, s.temporal_field_amount, s.temporal_field_auto)
                         | (s.xtc_enabled ? ivanna::OMEGA_TEMPORAL_FIELD_XTC_BIT : 0u);
-    // FotoHolo's Route B observer settings share the unused high bits of temporal_field (ABI v8).
+    // FotoHolo observer and Route-B effect switches occupy disjoint reserved temporal_field bits (ABI v8).
     snap.temporal_field |= ivanna::omega_fotoholo_encode(s.fotoholo_enabled, s.fotoholo_intensity);
+    snap.temporal_field |= ivanna::omega_effect_features_encode(s.hrtf_enabled, s.adaptive_enabled);
     // v2.5.49: corrección acústica de sala.
     for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) snap.room_corr_db[i] = s.room_corr_db[i];
     snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db) | s.scene_distance_word;   // distancia en bits 16..31
@@ -711,6 +712,53 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.pf_baseline_set = true;
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
+
+    } else if (strcmp(action,"SET_AUDIO_FEATURES")==0) {
+        // Estado deseado de los dos actuadores de Ruta B. La respuesta distingue
+        // publicar el snapshot de que omega_effect lo haya consumido realmente.
+        const float h = _jsonFloat(json,"hrtfEnabled", 9999.f);
+        const float a = _jsonFloat(json,"adaptiveEnabled", 9999.f);
+        const bool hasH = h != 9999.f, hasA = a != 9999.f;
+        if ((!hasH && !hasA) || (hasH && h != 0.f && h != 1.f) ||
+            (hasA && a != 0.f && a != 1.f)) {
+            n = snprintf(reply,reply_sz,
+                "{\"ok\":false,\"action\":\"SET_AUDIO_FEATURES\",\"applied\":false,\"status\":\"invalid_arguments\"}");
+        } else {
+            if (hasH) m_state.hrtf_enabled = h > 0.5f;
+            if (hasA) m_state.adaptive_enabled = a > 0.5f;
+            const uint64_t gen = publishCurrentState(m_state);
+            m_audio_feature_generation = gen;
+            ivanna::EffectEvidence ev{};
+            const bool evidence = ivanna::readEffectEvidence(ev);
+            const bool applied = gen > 0u && evidence && ev.controlGeneration >= gen &&
+                ev.hrtfEnabled == (m_state.hrtf_enabled ? 1u : 0u) &&
+                ev.adaptiveEnabled == (m_state.adaptive_enabled ? 1u : 0u);
+            n = snprintf(reply,reply_sz,
+                "{\"ok\":%s,\"action\":\"SET_AUDIO_FEATURES\",\"applied\":%s,\"status\":\"%s\","
+                "\"generation\":%llu,\"consumerGeneration\":%llu,\"hrtfEnabled\":%s,\"adaptiveEnabled\":%s,\"consumer\":%s}",
+                gen>0u?"true":"false", applied?"true":"false",
+                gen==0u?"publish_failed":(applied?"applied":"accepted_pending_consumer"),
+                (unsigned long long)gen,
+                (unsigned long long)(evidence?ev.controlGeneration:0u),
+                m_state.hrtf_enabled?"true":"false",m_state.adaptive_enabled?"true":"false",
+                hasActiveConsumer()?"\"omega_effect\"":"null");
+        }
+
+    } else if (strcmp(action,"GET_AUDIO_FEATURES_STATUS")==0) {
+        ivanna::EffectEvidence ev{};
+        const bool evidence = ivanna::readEffectEvidence(ev);
+        const uint64_t gen = m_audio_feature_generation;
+        const bool applied = gen > 0u && evidence && ev.controlGeneration >= gen &&
+            ev.hrtfEnabled == (m_state.hrtf_enabled ? 1u : 0u) &&
+            ev.adaptiveEnabled == (m_state.adaptive_enabled ? 1u : 0u);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"action\":\"GET_AUDIO_FEATURES_STATUS\",\"applied\":%s,\"status\":\"%s\","
+            "\"generation\":%llu,\"consumerGeneration\":%llu,\"hrtfEnabled\":%s,\"adaptiveEnabled\":%s,\"consumer\":%s}",
+            applied?"true":"false",
+            gen==0u?"no_request":(applied?"applied":(evidence?"accepted_pending_consumer":"consumer_unavailable")),
+            (unsigned long long)gen,(unsigned long long)(evidence?ev.controlGeneration:0u),
+            m_state.hrtf_enabled?"true":"false",m_state.adaptive_enabled?"true":"false",
+            hasActiveConsumer()?"\"omega_effect\"":"null");
 
     } else if (strcmp(action,"SET_ADAPTIVE_STATE")==0) {
         m_state.target_gain = _jsonFloat(json,"targetGain",m_state.target_gain);
