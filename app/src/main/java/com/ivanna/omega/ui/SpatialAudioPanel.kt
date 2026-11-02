@@ -312,10 +312,15 @@ fun SpatialAudioPanel(
                 }
             }
         }
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(holoHeightDp.dp)) {
-            AndroidView(factory = { holoWebView }, modifier = Modifier.matchParentSize())
-            androidx.compose.foundation.layout.Box(
-                Modifier.matchParentSize().pointerInput(holoWebView) {
+        // Key the AndroidView subtree by the WebView instance. Merely changing
+        // remember(webEpoch) is insufficient: AndroidView.factory is invoked once
+        // for a stable composition identity, so without key() the replacement WebView
+        // created after onRenderProcessGone would never be attached to the view tree.
+        androidx.compose.runtime.key(holoWebView) {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(holoHeightDp.dp)) {
+                AndroidView(factory = { holoWebView }, modifier = Modifier.matchParentSize())
+                androidx.compose.foundation.layout.Box(
+                    Modifier.matchParentSize().pointerInput(holoWebView) {
                     val slop = viewConfiguration.touchSlop
                     awaitPointerEventScope {
                         while (true) {
@@ -480,7 +485,8 @@ fun SpatialAudioPanel(
                 pushHybridMagistral()
             }
         }
-
+        }
+        
         // ── PIPELINE ESPACIAL EN VIVO ─────────────────────────────────────
         SpatialCard(
             "PIPELINE ESPACIAL EN VIVO",
