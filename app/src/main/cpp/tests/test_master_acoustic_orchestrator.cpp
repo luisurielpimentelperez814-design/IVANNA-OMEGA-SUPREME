@@ -57,6 +57,7 @@ TEST(MasterAcousticOrchestratorTest, Phase1_NumericalStability_ExtremeInputs) {
     extreme.band_high_energy = 5.0f;
     extreme.band_mid_energy = 2.0f;
     extreme.band_low_energy = 1.0f;
+    extreme.band_energy_valid = true;
     auto s2 = MasterAcousticOrchestrator::evaluate(extreme, 0.9f, 0.8f);
 
     EXPECT_FALSE(std::isnan(s2.target_gain));
@@ -72,6 +73,7 @@ TEST(MasterAcousticOrchestratorTest, Phase1_NumericalStability_ExtremeInputs) {
     pathological.peak = std::numeric_limits<float>::infinity();
     pathological.gain_reduction_db = -std::numeric_limits<float>::infinity();
     pathological.voice_score = std::numeric_limits<float>::quiet_NaN();
+    pathological.voice_score_valid = true;
 
     auto s3 = MasterAcousticOrchestrator::evaluate(pathological, 0.0f, 0.0f);
     EXPECT_TRUE(std::isfinite(s3.target_gain));
