@@ -22,6 +22,8 @@ def require(source: str, needles: tuple[str, ...], label: str) -> None:
 
 def main() -> int:
     app = read("app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt")
+    activity = read("app/src/main/java/com/ivanna/omega/MainActivity.kt")
+    self_heal = read("app/src/main/java/com/ivanna/omega/agent/SelfHealingAgent.kt")
     route = read("app/src/main/java/com/ivanna/omega/audio/AudioRouteManager.kt")
     calibrator = read("app/src/main/java/com/ivanna/omega/audio/RouteDspCalibrator.kt")
     player = read("app/src/main/java/com/ivanna/omega/audio/IvannaBridgePlayer.kt")
@@ -38,6 +40,14 @@ def main() -> int:
         (app, ("AudioRouteManager.start(this)", "RouteDspCalibrator.start(this)",
                "IvannaUnifiedPipeline.start(this)", "AudioBackendSelector.start(this)"),
          "application route bootstrap"),
+        (activity, ("IvannaNativeLib.nativeInitDSP(sr)",
+                    "IvannaNativeLib.nativeCreateAdaptiveEngine()",
+                    "AdaptiveDecisionEngine iniciado"),
+         "process bootstrap for the real adaptive decision engine"),
+        (self_heal, ("val routeActive", "it[0].toInt() in 1..2",
+                     "IvannaNativeLib.nativeCreateAdaptiveEngine()",
+                     "DSP preservado"),
+         "non-destructive route-aware adaptive recovery"),
         (route, ("AudioEngine.nativeSetRouteProfileStatic", "OmegaEngineBridge.setRouteProfile"),
          "route profile fan-out to app JNI and system daemon"),
         (calibrator, ("nativeSetHrtfWetDryStatic", "nativeSetHRTFEnabled",
@@ -74,6 +84,18 @@ def main() -> int:
                 require(item[0], item[1], item[2])
             else:
                 require(item[0], item[1], "documentation/physical-output contract")
+        # The adaptive watchdog must never reset the whole DSP graph just
+        # because no adaptive block has been observed yet (silence/cold start).
+        heal_start = self_heal.index("// ── 2. Motor adaptativo:")
+        heal_end = self_heal.index("// ── 3. Clipping sostenido", heal_start)
+        if "nativeResetDSP()" in self_heal[heal_start:heal_end]:
+            raise AssertionError("adaptive watchdog must not reset the complete DSP graph")
+        init_at = activity.index("IvannaNativeLib.nativeInitDSP(sr)")
+        create_at = activity.index("IvannaNativeLib.nativeCreateAdaptiveEngine()", init_at)
+        evo_at = activity.index("IvannaNativeLib.nativeStartEvoThread()", create_at)
+        if not init_at < create_at < evo_at:
+            raise AssertionError("adaptive engine must be started after DSP init and before process control loop")
+
         # Explicitly reject a false claim that the experimental 16->5 kernel is
         # already connected to the production system effect or JNI audio route.
         if "PhysicalTargetDispatcher" in effect or "PhysicalTargetDispatcher" in jni:
