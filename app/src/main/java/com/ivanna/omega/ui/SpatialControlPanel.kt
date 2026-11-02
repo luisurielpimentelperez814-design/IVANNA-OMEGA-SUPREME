@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.OmegaMetrics
+import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.SystemWideHrtfPolicy
 import com.ivanna.omega.core.IvannaAssetProvider
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
@@ -76,8 +78,12 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 if (IvannaNativeLib.isLoaded && subjectIndex >= 0) {
                     runCatching { SaFBridge.setSubjectIndexHint(subjectIndex) }
                 }
-                // Keep the SYSTEM_WIDE effect aligned with this panel's HRTF switch.
-                runCatching { OmegaEngineBridge.queueSystemWideHrtfEnabled(config.hrtfEnabled) }
+                // Keep the SYSTEM_WIDE effect aligned with this panel's HRTF switch and output route.
+                runCatching {
+                    val route = AudioRouteManager.detectOutputRoute()
+                    val enabledForRoute = SystemWideHrtfPolicy.allow(context, config.hrtfEnabled, route)
+                    OmegaEngineBridge.queueSystemWideHrtfEnabled(enabledForRoute)
+                }
                 if (config.rirEnabled && roomList.isNotEmpty()) {
                     val roomIndex = config.rirRoom.coerceIn(0, roomList.lastIndex)
                     runCatching {
