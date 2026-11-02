@@ -77,6 +77,7 @@ struct UnifiedControlFrame {
     std::atomic<bool> anti_dolby_enabled{true};
     std::atomic<bool> spatial_rendering_active{true};
     std::atomic<bool> evolutionary_active{true};
+    std::atomic<bool> evo_genome_valid{false};
 
     // ── Resets & Initializers ──────────────────────────────────────
     void reset() noexcept {
@@ -105,6 +106,7 @@ struct UnifiedControlFrame {
         anti_dolby_enabled.store(true, std::memory_order_relaxed);
         spatial_rendering_active.store(true, std::memory_order_relaxed);
         evolutionary_active.store(true, std::memory_order_relaxed);
+        evo_genome_valid.store(false, std::memory_order_relaxed);
     }
 };
 
@@ -165,6 +167,11 @@ inline void control_set_evo_genome(const float* genome, int genome_size) noexcep
     for (int i = 0; i < 3 && (9 + i) < genome_size; ++i) {
         g_control_frame.evo_genome_spatial[i].store(std::clamp(genome[9 + i], 0.f, 1.f), std::memory_order_relaxed);
     }
+    g_control_frame.evo_genome_valid.store(true, std::memory_order_release);
+}
+
+inline void control_clear_evo_genome() noexcept {
+    g_control_frame.evo_genome_valid.store(false, std::memory_order_release);
 }
 
 /*
