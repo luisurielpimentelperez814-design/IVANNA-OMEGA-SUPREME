@@ -249,7 +249,7 @@ AdaptiveDecisionEngine::arbitrateDynamics(const RawAudioMetrics& m) noexcept {
 AdaptiveDecisionEngine::PersonalityArbitration
 AdaptiveDecisionEngine::arbitratePersonality(const RawAudioMetrics& m, float fatigueEma) noexcept {
     PersonalityArbitration out;
-    const float voiceScore = clamp01(m.voice_score);
+    const float voiceScore = trustedVoiceScore(m);
 
     // Claridad vocal: si hay voz, realce de presencia psicoacústica
     if (voiceScore > 0.5f) {
