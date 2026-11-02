@@ -90,7 +90,6 @@ fun GenezyMhcpz1ProfileCard(modifier: Modifier = Modifier) {
         com.ivanna.omega.fotoholo.FotoHoloEngine.setGenezyProfile(context, enabled, lateralExtension)
     }
     val profile = GenezySpeakerProfile.GENEZY_MHCPZ1
-    val routes = remember(lateralExtension) { GenezySpatialMapping.routeAll(lateralExtension) }
 
     Column(
         modifier.fillMaxWidth().background(Color(0x1A6FF3FF), RoundedCornerShape(14.dp)).padding(14.dp),
