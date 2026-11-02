@@ -18,11 +18,10 @@
  *   → PDEngine state update → Decoder → GainStage(out)
  *
  * EvolutionaryKernel integración:
- *   Hilo de fondo (evo_thread) corre evolveGeneration() cada 50 ms.
- *   Cuando g_population.bestFitness mejora en ≥1%, el mejor genoma
- *   actualiza g_pd.z[] (primeros 32 bytes → [−1,1]) y nho.harmonic_gain
- *   (byte 32 → [0,2]). Usa atomic store/load para lock-free handoff.
- *   El audio thread solo lee, nunca bloquea.
+ *   Un único hilo de fondo evoluciona el cromosoma uint8[256] cada 50 ms.
+ *   audio_orchestrator decodifica el cromosoma completo al ABI de 12
+ *   descriptores y lo publica en UnifiedControlFrame; control_apply_frame
+ *   lo fusiona al ControlFrameBus. No hay proyecciones paralelas por bytes.
  *
  * Modos:
  *   0 = DSP only (GainStage+EQ+Comp+Exciter+Widener)
@@ -209,8 +208,7 @@ public:
     // inL/inR = post-DSP audio; outL/outR = final output
     void process_block(const float* inL, const float* inR,
                        float* outL, float* outR, int n) noexcept {
-        // Lock-free apply of any pending EvolutionaryKernel genome update
-        apply_evo_genome();
+        // The single evolutionary genome path is published through UnifiedControlFrame.
 
         // Extract perceptual cues from block ALWAYS (even in mode 0) so PhaseOracle,
         // 8-band envelope telemetry, and EvolutionaryKernel stay live in all modes.
@@ -308,19 +306,14 @@ public:
         hrtf.set_position(azimuthDeg, aggressiveness);
     }
 
-    // ── EvolutionaryKernel background integration ─────────────────────────
-    //
-    // start_evo_thread() spawns a low-priority std::thread that runs
-    // evo_evolve_generation() every EVO_INTERVAL_MS milliseconds.
-    // When fitness improves ≥ EVO_IMPROVEMENT_THRESHOLD, the best genome
-    // is pushed to z[] and nho.harmonic_gain via atomic_flag handoff.
-    //
-    // Audio thread path: apply_evo_genome() is called once per process_block().
-    // It is lock-free: reads two atomics and a 33-byte array (cache line).
-
+    // ── Single EvolutionaryKernel worker ─────────────────────────────────
+    // The worker only evolves the canonical uint8[256] chromosome. It does not
+    // publish partial byte slices or mutate DSP stages through a second ABI.
+    // audio_orchestrator owns decoding/publication; control_apply_frame owns
+    // the bounded handoff to the DSP ControlFrameBus.
     void start_evo_thread() noexcept {
         bool expected = false;
-        if (!evo_running_.compare_exchange_strong(expected, true)) return;  // already started
+        if (!evo_running_.compare_exchange_strong(expected, true)) return;
         evo_initialize_population();
         if (mode.load(std::memory_order_relaxed) == 3) {
             g_control_frame.evolutionary_active.store(true, std::memory_order_release);
@@ -329,72 +322,26 @@ public:
             constexpr int EVO_INTERVAL_MS = 50;
             while (evo_running_.load(std::memory_order_acquire)) {
                 evo_evolve_generation();
-                const float fit = evo_best_fitness();
-                (void)fit; // publicación siempre activa — gate del 1% eliminado
-                // FIX: always publish — gate del 1% congelaba el frame al converger
-                {
-                    uint8_t genome[33];
-                    evo_get_best_genome(genome, 33);
-                    // Write to staging buffer, then signal audio thread
-                    for (int i = 0; i < 33; ++i) evo_staging_[i] = genome[i];
-                    evo_pending_.store(true, std::memory_order_release);
-
-                    // NUEVO: alimenta el UnifiedControlFrame con el mismo genoma
-                    // ganador (normalizado a [0..1]) para que el orquestador
-                    // central module NHO alpha/beta/harmonic y Spatial
-                    // angle/width en tiempo real (ver nativeProcessBlock).
-                    float fgenome[12];
-                    for (int i = 0; i < 12; ++i) fgenome[i] = genome[i] * (1.0f / 255.0f);
-                    control_set_evo_genome(fgenome, 12);
-                }
-                std::this_thread::sleep_for(
-                    std::chrono::milliseconds(EVO_INTERVAL_MS));
+                std::this_thread::sleep_for(std::chrono::milliseconds(EVO_INTERVAL_MS));
             }
         });
-        // Lower thread priority so it never competes with the audio thread.
-        // SCHED_BATCH is Linux-only; Android bionic uses SCHED_OTHER + nice.
-        // pthread_setschedparam with SCHED_OTHER and priority 0 is portable.
-        {
-            struct sched_param sp;
-            sp.sched_priority = 0;
-            pthread_setschedparam(evo_thread_.native_handle(), SCHED_OTHER, &sp);
-        }
+        struct sched_param sp{};
+        sp.sched_priority = 0;
+        pthread_setschedparam(evo_thread_.native_handle(), SCHED_OTHER, &sp);
     }
 
     void stop_evo_thread() noexcept {
-        g_control_frame.evolutionary_active.store(false, std::memory_order_release);
         evo_running_.store(false, std::memory_order_release);
         if (evo_thread_.joinable()) evo_thread_.join();
+        g_control_frame.evolutionary_active.store(false, std::memory_order_release);
+        control_clear_evo_genome();
     }
 
     ~PDEngine() { stop_evo_thread(); }
 
 private:
-    // ── EvolutionaryKernel thread state ──────────────────────────────────
-    static constexpr float EVO_IMPROVEMENT_THRESHOLD = 0.01f;  // 1% improvement gate
-
-    std::thread        evo_thread_;
-    std::atomic<bool>  evo_running_{false};
-    std::atomic<bool>  evo_pending_{false};
-    // Staging: [0..31] = z[] prior, [32] = harmonic_gain byte
-    uint8_t            evo_staging_[33] = {};
-
-    // Called at start of process_block() — lock-free, O(32) ops
-    inline void apply_evo_genome() noexcept {
-        if (!evo_pending_.load(std::memory_order_acquire)) return;
-        evo_pending_.store(false, std::memory_order_relaxed);
-        constexpr float INV255 = 1.f / 255.f;
-        for (int i = 0; i < PD_DIM; ++i) {
-            // Map byte [0,255] → [−1,+1], then blend 20% into current z
-            const float genome_z = (float)evo_staging_[i] * INV255 * 2.f - 1.f;
-            z[i] = z[i] * 0.8f + genome_z * 0.2f;
-        }
-        if (g_control_frame.evolutionary_active.load(std::memory_order_relaxed)) {
-            // Byte 32: micro-modulación suave [0.85x..1.15x] sobre la ganancia armónica actual
-            const float mod = 0.85f + ((float)evo_staging_[32] * INV255) * 0.30f;
-            nho.set_harmonic_gain(std::clamp(nho.harmonic_gain * mod, 0.0f, 2.0f));
-        }
-    }
+    std::thread       evo_thread_;
+    std::atomic<bool> evo_running_{false};
 };
 
 } // namespace ivanna
