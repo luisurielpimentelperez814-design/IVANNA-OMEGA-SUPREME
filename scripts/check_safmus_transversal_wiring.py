@@ -72,7 +72,7 @@ require("app/src/main/cpp/spatial/SafmusEvolutionGate.hpp", "mayApplyEvolutionCa
         "std::isfinite(e.fitness)", "e.headroomValid")
 require("app/src/main/cpp/audio_orchestrator.cpp", "SafmusEvolutionGate.hpp",
         "mayApplyEvolutionCandidate(evidence)", "decode_evolutionary_genome",
-        "control_set_evo_genome(decoded, 12)", "control_clear_evo_genome()",
+        "control_set_evo_genome(decoded, 8)", "control_clear_evo_genome()",
         "if (routeEnabled && g_orch.genome_valid && signalFinite")
 require("app/src/main/cpp/audio_control_plane.hpp",
         "evo_genome_valid.store(true, std::memory_order_release)",
