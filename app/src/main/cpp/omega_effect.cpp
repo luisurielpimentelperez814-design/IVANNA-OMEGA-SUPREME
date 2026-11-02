@@ -1324,20 +1324,35 @@ static int32_t omega_process(effect_handle_t self,
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
 
-            // Un solo actuador de compresión por ruta: AdaptiveEngineV2 y ADE
-            // comparten el mismo FusionCore. Convertir ADE [0,1] a ratio [1,8]
-            // y arbitrar con el ratio V2 más conservador; no crear un compresor
-            // paralelo ni dejar que el último escritor pise al otro.
+            // Un solo actuador de compresión por ruta: el valor base del
+            // slider/snapshot se conserva y V2 añade una corrección dinámica
+            // relativa a su referencia neutra de -20 dB. El ADE aporta ratio
+            // de protección adicional. Los tres escritores se arbitran aquí.
+            const float v2Threshold = std::clamp(
+                std::isfinite(adaptParams.compressorThreshold)
+                    ? adaptParams.compressorThreshold : -20.0f,
+                -60.0f, 0.0f);
+            const float userThreshold = std::clamp(
+                std::isfinite(ctx->pendingSnap.compressor) && ctx->pendingSnap.compressor < 0.0f
+                    ? ctx->pendingSnap.compressor : -20.0f,
+                -60.0f, 0.0f);
+            const float v2ThresholdDelta = std::clamp(v2Threshold - (-20.0f), -40.0f, 20.0f);
+            const float effectiveThreshold =
+                std::clamp(userThreshold + v2ThresholdDelta, -60.0f, 0.0f);
+
             const float v2Ratio = std::clamp(
                 std::isfinite(adaptParams.compressorRatio) ? adaptParams.compressorRatio : 1.0f,
                 1.0f, 20.0f);
+            const float snapshotRatio = 1.0f + 7.0f * std::clamp(
+                std::isfinite(ctx->pendingSnap.comp_amount) ? ctx->pendingSnap.comp_amount : 0.0f,
+                0.0f, 1.0f);
             const float adeRatio = 1.0f + 7.0f * std::clamp(
                 std::isfinite(ctx->adaptiveDecisionCompAmount)
                     ? ctx->adaptiveDecisionCompAmount : 0.0f,
                 0.0f, 1.0f);
-            const float effectiveRatio = std::max(v2Ratio, adeRatio);
+            const float effectiveRatio = std::max(v2Ratio, std::max(snapshotRatio, adeRatio));
             if (fc) {
-                fc->setCompressorParams(adaptParams.compressorThreshold, effectiveRatio);
+                fc->setCompressorParams(effectiveThreshold, effectiveRatio);
             }
             const float overallTrim = std::clamp(adaptParams.overallGain, 0.75f, 1.15f);
             const float isoGain = adaptParams.applyISO226
