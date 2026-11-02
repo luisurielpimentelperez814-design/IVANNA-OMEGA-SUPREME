@@ -151,6 +151,10 @@ struct OmegaDspState {
     // FotoHolo Route B: análisis espectral del PCM real en omega_effect; apagado por defecto.
     bool fotoholo_enabled = false;
     float fotoholo_intensity = 0.6f;
+
+    // Route-B global effect switches. Defaults preserve current processing.
+    bool hrtf_enabled = true;
+    bool adaptive_enabled = true;
 };
 
 class CommandServer {
