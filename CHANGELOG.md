@@ -1,3 +1,10 @@
+## v2.5.224 (515) - 2026-11-02
+
+- **FotoHolo WebView crash-proofing:** `onRenderProcessGone` was unhandled, so when Android killed the WebView renderer under memory pressure the whole app died (taking the audio session with it). The panel now logs it, returns handled and rebuilds the WebView.
+- **Lifecycle:** WebGL/timers keep animating while the app is backgrounded, competing with the audio thread. The WebView is now paused on ON_PAUSE and resumed on ON_RESUME.
+- **ASRC audit (no change):** measured the 64-tap Blackman-Harris resampler offline: 44.1→48 kHz is −0.26 dB at 20 kHz and −111 dB alias rejection at 30 kHz (96→48). Longer Kaiser designs would gain <0.3 dB at 20 kHz for 1.5–2× CPU, so it is left as is; the PLL already slew-limits the ppm correction.
+- **Validation boundary:** compile/JVM gate in CI; renderer-kill recovery needs a device check (`adb shell am kill` of the WebView sandbox process or low-memory stress).
+
 ## v2.5.223 (514) - 2026-11-02
 
 - **Daemon `GET_PROCESSOR_EVIDENCE`:** the root daemon reads the effect's evidence file (not readable by the app under SELinux) and answers with per-processor verdicts computed from the delta since the previous query: `hrtfApplying`, `hrtfDspDelegated`, `rirApplying` (block counters moved AND output energy differs from input), `safReachedHrtf`, `safReachedRir`, plus the baked SAF coefficients. First query returns `comparable:false` (no baseline).
