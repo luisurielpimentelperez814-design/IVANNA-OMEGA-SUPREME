@@ -186,8 +186,8 @@ void testVoiceProtectionPassthrough() {
     expect(allFinite(sNan), "voice_score=NaN -> voice_protection_amount cae a 0.0, sin propagar NaN");
     expect(sNan.voice_protection_amount == 0.0f, "voice_score=NaN -> fallback seguro 0.0");
 
-    m.voice_score = 1.5f;  // fuera de rango de entrada
-    m.voice_score_valid = true; (no debería pasar, pero no debe romper)
+    m.voice_score = 1.5f;  // fuera de rango de entrada (no debería pasar, pero no debe romper)
+    m.voice_score_valid = true;
     AdaptiveState sClamp = AdaptiveDecisionEngine::evaluate(m, 0.1f);
     expect(sClamp.voice_protection_amount <= 1.0f, "voice_score=1.5 (inválido) -> se clampea a 1.0");
 }
