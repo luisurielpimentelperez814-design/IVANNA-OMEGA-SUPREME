@@ -82,19 +82,11 @@ static float computeAWeight(float freqHz) {
 #define EVOLUTION_PARENT_COUNT 32
 
 
-// NOTA ARQUITECTURA:
-// El genoma todavía representa parámetros abstractos.
-// El siguiente puente debe convertir:
-//
-// BestGenome
-//      ↓
-// DSP Parameter Decoder
-//      ↓
-// OmegaDspSnapshot
-//      ↓
-// OmegaControlBus
-//
-// Nunca debe ejecutarse dentro del callback de audio.
+// GENOME ABI v2:
+// genes [0..3] = four-band EQ; [4..5] = DSP drive/resonance;
+// [6..9] = NHO; [10..11] = spatial angle/width; [12..255] = spectral phenotype.
+// The optimizer scores the phenotype against live post-DSP perceptual cues.
+// audio_orchestrator publishes the twelve control genes via the lock-free plane.
 //
 
 struct Individual {
