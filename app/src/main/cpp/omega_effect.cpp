@@ -4,6 +4,7 @@
 #include "thermal_governor.hpp"   // ThermalGovernor v2.3.0 — O(1) per RT block
 #include "IvannaFusionCore.cpp"
 #include "adaptive_engine_v2.hpp"
+#include "dsp/AdaptiveGainRamp.hpp"
 #include "spatial/RirConvolver.hpp"
 #include "spatial/RirDataset.hpp"
 #include "spatial/SofaSafRirMasterKnowledge.hpp"
@@ -1326,29 +1327,12 @@ static int32_t omega_process(effect_handle_t self,
             adaptiveGainTarget = std::clamp(overallTrim * isoGain, 0.50f, 1.0f);
         }
         const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
-        ctx->adaptGainPrev = adaptiveGainTarget;
         if (std::fabs(adaptiveGainTarget - 1.0f) > 1.0e-4f ||
             std::fabs(gStart - 1.0f) > 1.0e-4f) {
-            const float gStep = (adaptiveGainTarget - gStart) / (float)chunk;
-            float g = gStart;
-            for (int n = 0; n < chunk; ++n) {
-                g += gStep;
-                L[n] *= g;
-                R[n] *= g;
-            }
-        } else if (ctx->adaptGainPrev > 0.0f &&
-                   std::fabs(ctx->adaptGainPrev - 1.0f) > 1.0e-4f) {
-            // Reversible transparent bypass: never leave the last adaptive gain
-            // latched after the user disables Route-B adaptation.
-            const float gStart = std::clamp(ctx->adaptGainPrev, 0.50f, 1.0f);
-            const float gStep = (1.0f - gStart) / static_cast<float>(chunk);
-            float g = gStart;
-            for (int n = 0; n < chunk; ++n) {
-                g += gStep;
-                L[n] *= g;
-                R[n] *= g;
-            }
-            ctx->adaptGainPrev = 1.0f;
+            ctx->adaptGainPrev = ivanna::dsp::applyStereoGainRamp(
+                L, R, static_cast<std::size_t>(chunk), gStart, adaptiveGainTarget);
+        } else {
+            ctx->adaptGainPrev = adaptiveGainTarget;
         }
 
         // ── Anti-Dolby Neural Acoustic De-processing & Soundstage Sculpting ──
