@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.audio.AudioRouteManager
-import com.ivanna.omega.audio.ExternalStereoPolicy
+import com.ivanna.omega.audio.SystemWideHrtfPolicy
 import com.ivanna.omega.audio.OutputRoute
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
@@ -332,11 +332,8 @@ private fun BinauralTab(
         routeControlScope.launch {
             val routeDecision = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val activeRoute = AudioRouteManager.detectOutputRoute()
-                val lineOut = runCatching {
-                    SpatialAudioPrefs.load(appContext).externalStereoLineOut
-                }.getOrDefault(false)
-                val systemHrtf = ExternalStereoPolicy.allowHeadphoneHrtf(
-                    activeRoute, lineOut, hrtf
+                val systemHrtf = SystemWideHrtfPolicy.allow(
+                    appContext, hrtf, activeRoute
                 )
                 val reply = com.ivanna.omega.magisk.OmegaEngineBridge.setAudioFeatures(
                     systemHrtf, adaptive
