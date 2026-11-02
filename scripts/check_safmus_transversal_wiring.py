@@ -90,7 +90,7 @@ if "control_set_evo_genome(fgenome, 12)" in pd_engine or "apply_evo_genome()" in
 control_plane = source("app/src/main/cpp/audio_control_plane.cpp")
 if "g_inline_evo_adapter" in control_plane or "g_evo_adapter" in control_plane:
     errors.append("audio_control_plane.cpp: unused shadow evolutionary optimizer must not run in parallel")
-require("app/src/main/cpp/evolutionary_kernel_v2.cpp", "!std::isfinite(F)",
+require("app/src/main/cpp/evolutionary_kernel_v2.cpp", "!std::isfinite(fitness)",
         "!std::isfinite(loudness)", "CONTROL_GENE_COUNT = 12",
         "g_loudness.load", "g_transient.load", "g_spatial.load",
         "W_EQ", "W_SPATIAL")
