@@ -29,10 +29,18 @@ object IvannaControlLoop {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var job: Job? = null
 
+    @Volatile private var successfulFrames: Long = 0L
+    @Volatile private var attemptedTicks: Long = 0L
+    @Volatile private var lastFailure: String? = null
+
     val isRunning: Boolean get() = job?.isActive == true
+    val appliedFrameCount: Long get() = successfulFrames
+    val tickCount: Long get() = attemptedTicks
+    val lastError: String? get() = lastFailure
 
     fun start() {
         if (job?.isActive == true) return
+        lastFailure = null
         job = scope.launch {
             var lastGenre: String? = null
             while (isActive) {
@@ -43,9 +51,18 @@ object IvannaControlLoop {
                             IvannaNativeLib.nativeSetLearningContext(genre)
                             lastGenre = genre
                         }
-                        IvannaNativeLib.nativeApplyControlFrame()
+                        val updates = IvannaNativeLib.nativeApplyControlFrame()
+                        attemptedTicks++
+                        if (updates > 0) successfulFrames++
+                        if (updates < 0) {
+                            lastFailure = "nativeApplyControlFrame devolvió " + updates
+                            Log.w(TAG, lastFailure!!)
+                        } else if (updates > 0) {
+                            lastFailure = null
+                        }
                     } catch (e: Throwable) {
-                        Log.w(TAG, "tick: $e")
+                        lastFailure = e.javaClass.simpleName + ": " + (e.message ?: "error nativo")
+                        Log.e(TAG, "tick fallido: " + lastFailure, e)
                     }
                 }
                 delay(INTERVAL_MS)
