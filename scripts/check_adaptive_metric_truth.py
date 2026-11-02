@@ -36,11 +36,14 @@ def main() -> int:
 
         for needle in (
             "return trustedVoiceScore(m);",
+            "const float voiceScore = trustedVoiceScore(m);",
             "m.band_energy_valid",
             "trustedBandEnergy(m, m.band_high_energy)",
         ):
             if needle not in engine:
                 raise AssertionError(f"adaptive engine does not honor metric validity: {needle}")
+        if "clamp01(m.voice_score)" in engine:
+            raise AssertionError("adaptive personality path bypasses voice-score validity")
 
         forbidden_jni = (
             "rawM.band_low_energy  = rms * 0.35f",
@@ -95,10 +98,17 @@ def main() -> int:
             if needle not in wave:
                 raise AssertionError(f"wave worker does not publish inference validity: {needle}")
 
-        if "seedM.voice_score      = 0.64f" in seed:
-            raise AssertionError("spatial startup seed still pretends to contain a voice classification")
+        for fake_seed in ("seedM.rms", "seedM.peak", "seedM.band_low_energy",
+                          "seedM.band_mid_energy", "seedM.band_high_energy",
+                          "seedM.voice_score"):
+            if fake_seed in seed:
+                raise AssertionError(f"spatial startup seed must remain neutral: {fake_seed}")
         if "trustedVoiceScore(metrics)" not in reality:
             raise AssertionError("AcousticReality still consumes unvalidated voice score")
+        if "rawMetrics.band_high_energy *" in reality:
+            raise AssertionError("AcousticReality sibilance proxy bypasses spectral validity")
+        if "metrics.voice_score" in reality:
+            raise AssertionError("AcousticReality has a direct unvalidated voice-score read")
 
     except AssertionError as exc:
         print(f"FAIL adaptive-metric-truth: {exc}", file=sys.stderr)
