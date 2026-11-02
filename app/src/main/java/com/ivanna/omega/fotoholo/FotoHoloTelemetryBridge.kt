@@ -337,7 +337,7 @@ class FotoHoloTelemetryBridge(context: Context) {
                     var dspAppliedGeneration = 0L
                     var effectState = -1
                     var dspFrames = 0L
-                    repeat(10) {
+                    for (attempt in 0 until 10) {
                         val status = OmegaEngineBridge.requestCommand(
                             JSONObject().put("action", "GET_STATUS")
                         )
@@ -346,8 +346,8 @@ class FotoHoloTelemetryBridge(context: Context) {
                             effectState = status.optInt("effect_state", -1)
                             dspFrames = status.optLong("dsp_frames", 0L)
                         }
-                        if (dspAppliedGeneration >= generation && effectState == 2 && dspFrames > 0L) return@repeat
-                        android.os.SystemClock.sleep(40L)
+                        if (dspAppliedGeneration >= generation && effectState == 2 && dspFrames > 0L) break
+                        if (attempt < 9) android.os.SystemClock.sleep(40L)
                     }
                     result.put("dspApplied",
                         dspAppliedGeneration >= generation && effectState == 2 && dspFrames > 0L)
