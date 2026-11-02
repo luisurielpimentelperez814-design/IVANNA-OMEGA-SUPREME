@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AudioStateManager
+import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.ExternalStereoPolicy
+import com.ivanna.omega.audio.OutputRoute
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.dsp.DSPBridge
@@ -325,11 +328,24 @@ private fun BinauralTab(
     var routeFeatureStatus by remember { mutableStateOf("RUTA B: esperando confirmación de AudioFlinger") }
     val routeControlScope = rememberCoroutineScope()
     fun requestRouteFeatures(hrtf: Boolean, adaptive: Boolean) {
-        routeFeatureStatus = "RUTA B: enviando controles al daemon…"
+        routeFeatureStatus = "RUTA B: enviando controles según salida activa…"
         routeControlScope.launch {
-            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.ivanna.omega.magisk.OmegaEngineBridge.setAudioFeatures(hrtf, adaptive)
+            val routeDecision = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val activeRoute = AudioRouteManager.detectOutputRoute()
+                val lineOut = runCatching {
+                    SpatialAudioPrefs.load(appContext).externalStereoLineOut
+                }.getOrDefault(false)
+                val systemHrtf = ExternalStereoPolicy.allowHeadphoneHrtf(
+                    activeRoute, lineOut, hrtf
+                )
+                val reply = com.ivanna.omega.magisk.OmegaEngineBridge.setAudioFeatures(
+                    systemHrtf, adaptive
+                )
+                Triple(reply, systemHrtf, activeRoute)
             }
+            val result = routeDecision.first
+            val appliedHrtf = routeDecision.second
+            val selectedRoute = routeDecision.third
             if (result == null) {
                 routeFeatureStatus = "RUTA B NO CONFIRMADA · daemon/socket no disponible"
                 return@launch
@@ -352,13 +368,14 @@ private fun BinauralTab(
                 val hrtfApplying = evidence?.optBoolean("hrtfApplying", false) == true ||
                     evidence?.optBoolean("hrtfDspDelegated", false) == true
                 val hrtfLine = when {
-                    !reply.optBoolean("hrtfEnabled", hrtf) -> "HRTF OFF"
+                    !reply.optBoolean("hrtfEnabled", appliedHrtf) ->
+                        "HRTF OFF · política de salida " + selectedRoute.name
                     evidence == null || !evidence.optBoolean("ok", false) -> "HRTF evidencia no disponible"
                     hrtfApplying && measured -> "HRTF aplicando HRIR medidas · CPU " + cpuBlocks + " / DSP " + dspBlocks
                     hrtfApplying -> "HRTF sintético aplicando · sin HRIR medidas"
                     measured -> "HRIR medidas cargadas · aplicación HRTF no confirmada en la ventana"
                     cpuBlocks + dspBlocks > 0L -> "HRTF previamente procesó síntesis · sin actividad en la ventana"
-                    else -> "HRTF habilitado · esperando bloque de audio real"
+                    else -> "HRTF habilitado · salida " + selectedRoute.name + " · esperando bloque de audio real"
                 }
                 val adaptiveLine = when {
                     !reply.optBoolean("adaptiveEnabled", adaptive) -> "ADAPT OFF"
