@@ -320,9 +320,9 @@ public:
         bool expected = false;
         if (!evo_running_.compare_exchange_strong(expected, true)) return;
         if (!evo_is_initialized()) evo_initialize_population();
-        if (mode.load(std::memory_order_relaxed) == 3) {
-            g_control_frame.evolutionary_active.store(true, std::memory_order_release);
-        }
+        // The explicit UI Start action is the activation contract; it must
+        // publish the enable flag even when the current render mode is 0/1/2.
+        g_control_frame.evolutionary_active.store(true, std::memory_order_release);
         evo_thread_ = std::thread([this]() {
             constexpr int EVO_INTERVAL_MS = 50;
             while (evo_running_.load(std::memory_order_acquire)) {
@@ -333,11 +333,9 @@ public:
                 std::this_thread::sleep_for(std::chrono::milliseconds(EVO_INTERVAL_MS));
             }
             evo_running_.store(false, std::memory_order_release);
-            // Natural convergence in mode 3 must release the evolved override.
-            if (mode.load(std::memory_order_acquire) == 3) {
-                g_control_frame.evolutionary_active.store(false, std::memory_order_release);
-                control_clear_evo_genome();
-            }
+            // A worker that stops by convergence must not leave its override latched.
+            g_control_frame.evolutionary_active.store(false, std::memory_order_release);
+            control_clear_evo_genome();
         });
         struct sched_param sp{};
         sp.sched_priority = 0;
