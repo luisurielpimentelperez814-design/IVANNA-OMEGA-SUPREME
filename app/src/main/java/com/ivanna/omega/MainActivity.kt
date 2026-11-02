@@ -187,7 +187,10 @@ class MainActivity : ComponentActivity() {
             runCatching { DSPBridge.init(sr) }
             if (IvannaNativeLib.isLoaded) {
                 runCatching { IvannaNativeLib.nativeInitDSP(sr) }
+                // El control loop es de proceso, no de pantalla: debe seguir
+                // publicando ControlFrames aunque el usuario salga del Dashboard.
                 runCatching { IvannaNativeLib.nativeStartEvoThread() }
+                com.ivanna.omega.audio.IvannaControlLoop.start()
             }
         }
         // FIX (root / sin root): elige el backend real de procesado. En
@@ -213,6 +216,7 @@ class MainActivity : ComponentActivity() {
         // IvannaSpatialManager.init() solo se llamaba UNA vez en Application.onCreate → tras el primer
         // giro el renderer HRTF, el motor adaptativo y la SHM se destruían y nunca volvían.
         if (isChangingConfigurations) return
+        runCatching { com.ivanna.omega.audio.IvannaControlLoop.stop() }
         runCatching { com.ivanna.omega.spatial.IvannaSpatialManager.release() }
         runCatching { ShmManager.release() }
         if (IvannaNativeLib.isLoaded) {
@@ -1013,11 +1017,9 @@ fun DashboardScreen(
         try {
             if (IvannaDspManager.open()) IvannaDspManager.enable()
         } catch (_: Throwable) {}
-        com.ivanna.omega.audio.IvannaControlLoop.start()
         onDispose {
             adaptiveBackend.stopTelemetry()
             try { IvannaDspManager.close() } catch (_: Throwable) {}
-            com.ivanna.omega.audio.IvannaControlLoop.stop()
         }
     }
     val adaptiveTelemetryRaw by adaptiveBackend.telemetry.collectAsState()
