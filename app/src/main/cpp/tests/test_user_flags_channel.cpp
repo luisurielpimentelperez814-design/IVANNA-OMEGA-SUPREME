@@ -194,7 +194,7 @@ TEST(ControlPlaneProtocol, HelloNegotiatesTheDaemonProtocolVersion) {
     CommandServer cs;
     char reply[4096]{};
     ASSERT_GT(cs.handleJsonCommand("{\"action\":\"HELLO\",\"proto\":2}", reply, sizeof reply), 0);
-    EXPECT_NE(std::string(reply).find("\"proto\":2"), std::string::npos) << reply;
+    EXPECT_NE(std::string(reply).find("\"proto\":3"), std::string::npos) << reply;
     EXPECT_NE(std::string(reply).find("\"compatible\":true"), std::string::npos) << reply;
     EXPECT_NE(std::string(reply).find("\"status\":\"ready\""), std::string::npos) << reply;
 }
@@ -684,6 +684,94 @@ TEST(ScenePoseChannel, DaemonPublishesPoseAndDistanceRejectsInvalidAndClears) {
     EXPECT_TRUE(s.isCrcValid());
 }
 
+
+TEST(RouteBAudioFeaturesPure, UsesDisjointReservedTemporalBitsAndRoundTrips) {
+    const uint32_t encoded = omega_effect_features_encode(true, false);
+    EXPECT_EQ(encoded & 0x0000FFFFu, 0u);
+    bool hrtf = false, adaptive = true;
+    omega_effect_features_decode(encoded, hrtf, adaptive);
+    EXPECT_TRUE(hrtf);
+    EXPECT_FALSE(adaptive);
+
+    const uint32_t combined = omega_fotoholo_encode(true, 0.75f) |
+        omega_temporal_field_encode(true, 0.5f, true) |
+        OMEGA_TEMPORAL_FIELD_XTC_BIT | encoded;
+    bool foto = false, temporal = false, autoMode = false;
+    float intensity = 0.0f, amount = 0.0f;
+    omega_fotoholo_decode(combined, foto, intensity);
+    omega_temporal_field_decode(combined, temporal, amount, autoMode);
+    omega_effect_features_decode(combined, hrtf, adaptive);
+    EXPECT_TRUE(foto);
+    EXPECT_NEAR(intensity, 0.75f, 1.0f / 511.0f);
+    EXPECT_TRUE(temporal);
+    EXPECT_TRUE(autoMode);
+    EXPECT_NEAR(amount, 4.0f / 7.0f, 1e-6f);
+    EXPECT_TRUE(hrtf);
+    EXPECT_FALSE(adaptive);
+    EXPECT_NE(combined & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);
+}
+
+TEST(RouteBAudioFeaturesDaemon, PublishesSwitchesAndPreservesThemAcrossCommands) {
+    Harness h;
+    CommandServer cs;
+    char reply[4096]{};
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_AUDIO_FEATURES\",\"hrtfEnabled\":0,\"adaptiveEnabled\":0}",
+        reply, sizeof reply), 0);
+    const std::string setReply(reply);
+    EXPECT_NE(setReply.find("\"action\":\"SET_AUDIO_FEATURES\""), std::string::npos) << setReply;
+    EXPECT_NE(setReply.find("\"generation\":"), std::string::npos) << setReply;
+
+    OmegaDspSnapshot snap{};
+    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    ASSERT_TRUE(snap.isValid());
+    bool hrtf = true, adaptive = true;
+    omega_effect_features_decode(snap.temporal_field, hrtf, adaptive);
+    EXPECT_FALSE(hrtf);
+    EXPECT_FALSE(adaptive);
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_UPMIXING\",\"upmixingEnabled\":1,\"upmixingImmersivity\":0.8}",
+        reply, sizeof reply), 0);
+    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    omega_effect_features_decode(snap.temporal_field, hrtf, adaptive);
+    EXPECT_FALSE(hrtf);
+    EXPECT_FALSE(adaptive);
+    EXPECT_TRUE(snap.isCrcValid());
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_AUDIO_FEATURES\",\"hrtfEnabled\":2}",
+        reply, sizeof reply), 0);
+    EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
+    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    omega_effect_features_decode(snap.temporal_field, hrtf, adaptive);
+    EXPECT_FALSE(hrtf);
+    EXPECT_FALSE(adaptive);
+}
+
+TEST(RouteBAudioFeaturesDaemon, EnableAndDisableAreReversible) {
+    Harness h;
+    CommandServer cs;
+    char reply[4096]{};
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_AUDIO_FEATURES\",\"hrtfEnabled\":1,\"adaptiveEnabled\":1}",
+        reply, sizeof reply), 0);
+    OmegaDspSnapshot snap{};
+    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    bool hrtf = false, adaptive = false;
+    omega_effect_features_decode(snap.temporal_field, hrtf, adaptive);
+    EXPECT_TRUE(hrtf);
+    EXPECT_TRUE(adaptive);
+
+    ASSERT_GT(cs.handleJsonCommand(
+        "{\"action\":\"SET_AUDIO_FEATURES\",\"hrtfEnabled\":0,\"adaptiveEnabled\":1}",
+        reply, sizeof reply), 0);
+    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    omega_effect_features_decode(snap.temporal_field, hrtf, adaptive);
+    EXPECT_FALSE(hrtf);
+    EXPECT_TRUE(adaptive);
+}
 
 TEST(FotoHoloDaemon, RouteBControlReachesSnapshotWithoutChangingAbi) {
     Harness h;
