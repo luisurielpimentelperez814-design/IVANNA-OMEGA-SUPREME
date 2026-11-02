@@ -337,7 +337,8 @@ class IvannaGlobalEffectManager(
         // .AudioEffect (interface propia) ensombrece a android.media.audiofx
         // .AudioEffect en el resolver de Kotlin -> error package-private.
         val omega:             android.media.audiofx.AudioEffect? = null,
-        val isVideo:           Boolean = false
+        val isVideo:           Boolean = false,
+        val sourcePackage:     String? = null
     )
 
 
@@ -456,11 +457,59 @@ class IvannaGlobalEffectManager(
             dyn  = createDynamics(audioSession, isVideo)
         }
 
-        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, rev, omega, isVideo)
+        activeSessions[audioSession] = SessionEffects(eq, bb, virt, loud, dyn, rev, omega, isVideo, sourcePackage)
         applyProfileToSession(audioSession, activeProfile)
+        ensureWatchdog()
 
         Log.i(TAG, "Sesión $audioSession activa: Omega=${omega != null} EQ=${eq != null} BB=${bb != null} " +
                    "Virt=${virt != null} Loud=${loud != null} Dyn=${dyn != null} Rev=${rev != null} isVideo=$isVideo")
+    }
+
+    // ── Recuperación tras muerte de audioserver / HAL ────────────────────────
+    // Cuando audioserver (o el HAL de audio) reinicia, TODOS los AudioEffect del proceso quedan
+    // como objetos muertos pero activeSessions sigue creyendo que la sesión esta activa, y
+    // openSession() sale temprano por containsKey: el audio sigue sin DSP hasta reiniciar la app.
+    // Un watchdog sondea cada sesion con setEnabled(true) (devuelve el status real de binder) y,
+    // si el efecto murio, lo libera y lo recrea con el mismo origen. Funciona con y sin root
+    // (Ruta B si el modulo esta, efectos stock si no).
+    private val watchdogStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val watchdog: java.util.concurrent.ScheduledExecutorService by lazy {
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "ivanna-fx-watchdog").apply { isDaemon = true }
+        }
+    }
+
+    private fun ensureWatchdog() {
+        if (watchdogStarted.compareAndSet(false, true)) {
+            watchdog.scheduleWithFixedDelay(
+                { runCatching { recoverDeadSessions() }.onFailure { Log.w(TAG, "watchdog: ${it.message}") } },
+                3, 3, java.util.concurrent.TimeUnit.SECONDS
+            )
+        }
+    }
+
+    private fun probeStatus(fx: SessionEffects): Int {
+        val probe: android.media.audiofx.AudioEffect = fx.omega ?: fx.equalizer ?: fx.bassBoost
+            ?: fx.virtualizer ?: fx.loudness ?: fx.dynamics ?: fx.reverb
+            ?: return EffectLiveness.SUCCESS   // sin efectos creados: nada que sondear
+        return runCatching { probe.setEnabled(true) }.getOrDefault(EffectLiveness.DEAD)
+    }
+
+    /** Devuelve cuantas sesiones se recrearon. */
+    @Synchronized
+    internal fun recoverDeadSessions(): Int {
+        var recovered = 0
+        for ((sid, fx) in activeSessions.entries.toList()) {
+            val status = probeStatus(fx)
+            if (EffectLiveness.isAlive(status)) continue
+            Log.w(TAG, "Sesion $sid: efecto muerto (status=$status) — recreando tras reinicio de audioserver")
+            val pkg = fx.sourcePackage
+            closeSession(sid)
+            openSession(sid, pkg)
+            recovered++
+        }
+        if (recovered > 0) republishOmegaEq()
+        return recovered
     }
 
     // ── Cierra y libera efectos de una sesión ─────────────────────────────────

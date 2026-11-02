@@ -1,3 +1,8 @@
+## v2.5.221 (512) - 2026-11-02
+
+- **Recovery after audioserver/HAL death (root and non-root):** when audioserver restarts, every `AudioEffect` of the process becomes a dead object while `IvannaGlobalEffectManager` kept believing the session was active (`openSession` returned early), so audio played without DSP until the app was restarted. A daemon watchdog now probes each session every 3 s (`setEnabled(true)` returns the real binder status); a dead effect is released and re-created with the same source package, and the EQ is republished to the daemon.
+- **Tests:** `EffectLivenessTest` (JVM) pins the liveness criterion. The probe/recreate path needs the device: confirm with `logcat -s IvannaNPE.GlobalFX` after `killall audioserver` (look for "efecto muerto ... recreando").
+
 ## v2.5.220 (511) - 2026-11-02
 
 - **HRTF:** SAF q[1] azimuth bias now reaches the analytic (no-dataset) synthesis path, where it was ignored; SAF changes mark the bank dirty and re-synthesize it from the audio thread after any running crossfade, without waiting for a new head pose.
