@@ -388,8 +388,15 @@ private fun BinauralTab(
             val evidence = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 com.ivanna.omega.magisk.OmegaEngineBridge.getProcessorEvidence()
             }
-            val adaptiveDelta = ((evidence?.optLong("adaptiveApplyBlocks", 0L) ?: 0L) -
-                (evidenceBefore?.optLong("adaptiveApplyBlocks", 0L) ?: 0L)).coerceAtLeast(0L)
+            val adaptiveDelta = if (
+                evidenceBefore?.optBoolean("ok", false) == true &&
+                evidence?.optBoolean("ok", false) == true
+            ) {
+                (evidence.optLong("adaptiveApplyBlocks", 0L) -
+                    evidenceBefore.optLong("adaptiveApplyBlocks", 0L)).coerceAtLeast(0L)
+            } else {
+                0L // No baseline = no activity claim; never treat a lifetime counter as a new delta.
+            }
             routeFeatureStatus = describe(latestStatus, evidence, adaptiveDelta)
         }
     }
