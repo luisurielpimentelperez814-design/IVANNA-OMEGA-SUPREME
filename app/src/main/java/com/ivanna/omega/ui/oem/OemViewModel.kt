@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ivanna.omega.audio.AudioBackendSelector
+import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.SystemWideHrtfPolicy
 import com.ivanna.omega.audio.ThermalGovernor
 import com.ivanna.omega.audio.UsbAudioProManager
 import com.ivanna.omega.core.IvannaNativeLib
@@ -302,7 +304,9 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setHrtfEnabled(en: Boolean) = runCatching {
         IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetHRTFEnabled(en) }
-        OmegaEngineBridge.queueSystemWideHrtfEnabled(en)
+        val route = AudioRouteManager.detectOutputRoute()
+        val routeAllowed = SystemWideHrtfPolicy.allow(getApplication<Application>(), en, route)
+        OmegaEngineBridge.queueSystemWideHrtfEnabled(routeAllowed)
     }
 
     fun setHrtfSubject(subject: String) = runCatching {
