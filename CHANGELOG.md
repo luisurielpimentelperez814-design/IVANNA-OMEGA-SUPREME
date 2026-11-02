@@ -1,3 +1,12 @@
+## v2.5.232 (523) - 2026-11-02
+
+- **Route-aware HRTF publication:** opening or changing the Sound screen now applies the same output-route policy as `RouteDspCalibrator`. HRTF remains off for the built-in speaker and unknown route, and is enabled only for headphone-appropriate routes; declared external line-out policy is respected.
+- **SHM isolation:** feature-only Route-B publications no longer rewrite unrelated gain/compressor/spatial-width shared atomics.
+- **Transactional controls and honest evidence:** failed HRTF/adaptive publishes roll back; mixed CPU/Hexagon HRTF activity is counted correctly.
+- **Release contents:** includes v2.5.227–v2.5.231: system-wide HRTF/adaptive actuators and generation acknowledgements, evidence v3 and accurate UI labels, adaptive unity-return ramp, non-aliasing FastRPC input and CPU fallback.
+
+**Validation boundary:** output-route decisions and the complete audio route still need on-device validation on the rooted Moto G85 5G. No claim of audible improvement, stable latency or hardware ASRC activation is made without device evidence.
+
 ## v2.5.231 (522) - 2026-11-02
 
 - **SHM isolation for feature switches:** HRTF/adaptive-only snapshot publications no longer rewrite unrelated shared gain, compressor, spatial width or route-mix atomics. This prevents feature-toggle failures from leaking partial unrelated values.
