@@ -104,10 +104,11 @@ struct OmegaSharedState {
     std::atomic<float> ai_raw_rms;
     std::atomic<float> ai_raw_peak;
 
-    // Reservas legacy para decisión adaptativa. El único campo de ganancia
-    // (ai_runtime_gain_mul) ya está declarado al inicio de esta estructura.
-    // Estos campos espaciales/compresión/exciter no tienen un consumidor activo
-    // encontrado en este árbol; se conservan solo para respetar el ABI.
+    // Reservas legacy para decisión adaptativa. El control server puede
+    // reflejar valores en estos slots, pero no se encontró un consumidor PCM
+    // activo que los aplique. SYSTEM_WIDE usa los actuadores del ADE por sesión
+    // dentro de omega_effect.cpp. Se conserva el layout por compatibilidad ABI.
+    // ai_runtime_gain_mul ya está declarado al inicio de la estructura.
     std::atomic<float> ai_runtime_spatial_width;
     std::atomic<float> ai_runtime_comp_amount;
     std::atomic<float> ai_runtime_exciter_red;  // 0..1 reservado
