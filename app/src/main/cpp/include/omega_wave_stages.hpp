@@ -193,6 +193,7 @@ private:
         HeavyWorkerResult res = readLatestValid();
         res.sequence = pkt.sequence;
         res.valid    = true;
+        bool voiceScoreValid = false;
 
         // 0) Oleada 5: SelfHealingEngine heartbeats + SuperAgentMemory (fuera del hilo RT)
         selfHealer_.pingAudioEngine();
@@ -203,11 +204,19 @@ private:
         if (antiDolbyAi_.enqueueFeatures(pkt.melFeatures.data())) {
             Ivanna::Neuromorphic::AntiDolbyAI::InferenceResult aiOut{};
             if (antiDolbyAi_.processInference(aiOut)) {
-                res.voiceScore   = std::clamp(aiOut.voice_score,   0.0f, 1.0f);
-                res.musicScore   = std::clamp(aiOut.music_score,   0.0f, 1.0f);
-                res.bassScore    = std::clamp(aiOut.bass_score,    0.0f, 1.0f);
-                res.silenceScore = std::clamp(aiOut.silence_score, 0.0f, 1.0f);
-                res.dominantClass = (res.voiceScore > res.musicScore) ? 4u : 1u;
+                const float classMass = aiOut.voice_score + aiOut.music_score +
+                                        aiOut.bass_score + aiOut.silence_score;
+                voiceScoreValid =
+                    std::isfinite(aiOut.voice_score) && std::isfinite(aiOut.music_score) &&
+                    std::isfinite(aiOut.bass_score) && std::isfinite(aiOut.silence_score) &&
+                    classMass > 1.0e-6f;
+                if (voiceScoreValid) {
+                    res.voiceScore   = std::clamp(aiOut.voice_score,   0.0f, 1.0f);
+                    res.musicScore   = std::clamp(aiOut.music_score,   0.0f, 1.0f);
+                    res.bassScore    = std::clamp(aiOut.bass_score,    0.0f, 1.0f);
+                    res.silenceScore = std::clamp(aiOut.silence_score, 0.0f, 1.0f);
+                    res.dominantClass = (res.voiceScore > res.musicScore) ? 4u : 1u;
+                }
             }
         }
 
@@ -320,7 +329,9 @@ private:
             rawM.band_low_energy  = std::sqrt(bands.low  * invN);
             rawM.band_mid_energy  = std::sqrt(bands.mid  * invN);
             rawM.band_high_energy = std::sqrt(bands.high * invN);
+            rawM.band_energy_valid = true;
             rawM.voice_score      = std::clamp(res.voiceScore, 0.0f, 1.0f);
+            rawM.voice_score_valid = voiceScoreValid;
             rawM.upmix_active     = 1.0f;
 
             ivanna::experimental::AdaptiveState adState{};
