@@ -229,7 +229,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // pensado para audifonos y por altavoces degrada la imagen y el timbre. En modo AUX se apagan
     // por sus propias envolventes (sin cortes) y el campo coherente de graves toma su lugar.
     const bool auxField = g_aux_field_enabled.load(std::memory_order_relaxed);
-    m_hrtf->setWetDry(auxField ? 0.0f : g_hrtf_wet_dry.load(std::memory_order_relaxed));
+    m_hrtf->setWetDry((auxField || !m_hrtfEnabled_.load(std::memory_order_acquire)) ? 0.0f : g_hrtf_wet_dry.load(std::memory_order_relaxed));
 
     // Intelligent Upmixing + HOA Binaural Decoder (Mayor impacto en audio espacial)
     //
