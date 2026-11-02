@@ -169,6 +169,11 @@ private:
     ALIGN_NEON float m_histL[BLOCK_SIZE + HRTF_TAPS];
     ALIGN_NEON float m_histR[BLOCK_SIZE + HRTF_TAPS];
 
+    // Distinct, preallocated FastRPC input staging prevents input/output aliasing
+    // and lets CPU convolution restore the original dry block if Hexagon rejects it.
+    alignas(64) float m_dspDryL[BLOCK_SIZE];
+    alignas(64) float m_dspDryR[BLOCK_SIZE];
+
     // Dataset cargado (HRIRs medidos de hasta 1250 posiciones)
     HRTFBinLoader m_loader;
     ivanna::dsp::IvannaFastRpcClient m_fastRpcClient;
