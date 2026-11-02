@@ -385,10 +385,13 @@ void AdaptiveDecisionEngine::controlLoop() {
         }
 
         {
-            const float total = std::max(0.0f, metrics.band_low_energy) +
-                                 std::max(0.0f, metrics.band_mid_energy) +
-                                 std::max(0.0f, metrics.band_high_energy) + kEps;
-            const float highRatio = std::max(0.0f, metrics.band_high_energy) / total;
+            const float lowBand  = trustedBandEnergy(metrics, metrics.band_low_energy);
+            const float midBand  = trustedBandEnergy(metrics, metrics.band_mid_energy);
+            const float highBand = trustedBandEnergy(metrics, metrics.band_high_energy);
+            const float total = lowBand + midBand + highBand + kEps;
+            // Sin un medidor válido se permite que las EMAs decaigan a neutro,
+            // pero no se etiqueta la ausencia de dato como una medición espectral.
+            const float highRatio = metrics.band_energy_valid ? highBand / total : 0.0f;
 
             constexpr float kSibilanceAlpha = 0.25f;
             sibilanceEma_ += kSibilanceAlpha * (highRatio - sibilanceEma_);
@@ -423,17 +426,17 @@ void AdaptiveDecisionEngine::controlLoop() {
             const auto nowUs = static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());
-            const float sideProxy = clamp01(1.0f - metrics.voice_score * 0.55f);
-            const float lowProxy  = clamp01(metrics.band_low_energy / total);
+            const float sideProxy = clamp01(1.0f - trustedVoiceScore(metrics) * 0.55f);
+            const float lowProxy  = metrics.band_energy_valid ? clamp01(lowBand / total) : 0.0f;
             std::array<ivanna::spatial::DecomposedObject, 4> proxyObjects{};
             proxyObjects[0].position = { 0.0f, 1.4f, 0.0f };
-            proxyObjects[0].energy   = metrics.band_mid_energy;
+            proxyObjects[0].energy   = midBand;
             proxyObjects[1].position = {-0.65f * s.spatial_width, 2.1f, 0.15f };
-            proxyObjects[1].energy   = metrics.band_high_energy * 0.6f;
+            proxyObjects[1].energy   = highBand * 0.6f;
             proxyObjects[2].position = { 0.65f * s.spatial_width, 2.1f, 0.15f };
-            proxyObjects[2].energy   = metrics.band_high_energy * 0.6f;
+            proxyObjects[2].energy   = highBand * 0.6f;
             proxyObjects[3].position = { 0.0f, 1.6f, -0.20f };
-            proxyObjects[3].energy   = metrics.band_low_energy;
+            proxyObjects[3].energy   = lowBand;
 
             ivanna::reality::AcousticRealityOrchestrator::instance().orchestrateCycle(
                 metrics, s, proxyObjects, sideProxy, lowProxy,
