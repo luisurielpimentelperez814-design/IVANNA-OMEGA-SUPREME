@@ -93,7 +93,7 @@ if "g_inline_evo_adapter" in control_plane or "g_evo_adapter" in control_plane:
 require("app/src/main/cpp/evolutionary_kernel_v2.cpp", "!std::isfinite(fitness)",
         "!std::isfinite(loudness)", "CONTROL_GENE_COUNT = 12",
         "g_loudness.load", "g_transient.load", "g_spatial.load",
-        "W_EQ", "W_SPATIAL")
+        "W_EQ", "W_SPATIAL", "W_CONTROL")
 require("app/src/main/cpp/tests/test_evolutionary_kernel.cpp",
         "SAFMUSEvolutionGate", "NonFiniteAudioCuesAreRejectedWithoutPoisoningFitness")
 require("app/src/test/java/com/ivanna/omega/safmus/SafmusUniversalKernelTest.kt",
