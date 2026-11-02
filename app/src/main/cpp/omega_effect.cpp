@@ -231,6 +231,7 @@ struct omega_effect_context_t {
     bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
     ivanna::adaptive::AdaptiveEngineV2* adaptiveEngine;
     bool     adaptiveEnabled;       // snapshot-controlled per-session Route-B actuator gate
+    uint64_t adaptiveApplyBlocks;   // audio-thread count of real AdaptiveEngineV2 blocks applied
     bool     chunkedWarned;         // AUDIT FIX: log único cuando se procesa en chunks
     bool     thermalSkipRIR;        // ThermalGovernor: saltar RIR en tier ≥ LIMITED
     // FIX RT (auditoría 2026-09-24): Volterra H2 (neuromorphic/volterra_h2_symmetric)
@@ -1280,6 +1281,7 @@ static int32_t omega_process(effect_handle_t self,
 
         // FASE ADAPTATIVA INTELIGENTE V2 (EQ, HRTF, Spatial)
         if (ctx->adaptiveEngine && ctx->adaptiveEnabled) {
+            ++ctx->adaptiveApplyBlocks;
             float pitchHz = 0.0f;
             float pitchConf = 0.0f;
             bool isVoiced = false;
@@ -1673,6 +1675,7 @@ if (ctx->adaptive) {
             ev.controlGeneration = ctx->lastAppliedGen;
             ev.hrtfEnabled = (ctx->pendingSnap.temporal_field & ivanna::OMEGA_EFFECT_HRTF_ENABLED_BIT) ? 1u : 0u;
             ev.adaptiveEnabled = ctx->adaptiveEnabled ? 1u : 0u;
+            ev.adaptiveApplyBlocks = ctx->adaptiveApplyBlocks;
             if (ctx->fusionCore) {
                 IvannaFusionEngine::HrtfEvidenceOut h;
                 if (ctx->fusionCore->hrtfEvidence(h)) {
@@ -2278,6 +2281,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rtCapacity = 0;
     ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
     ctx->adaptiveEnabled = true; // legacy-compatible until the first valid daemon snapshot
+    ctx->adaptiveApplyBlocks = 0;
     ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
     ctx->ctrlBusOpen    = false;
     ctx->localWriterOpen = false;  // AUDIT FIX #4: writer local se abre lazy
