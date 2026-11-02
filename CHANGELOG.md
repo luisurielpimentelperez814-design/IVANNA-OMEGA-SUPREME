@@ -1,3 +1,9 @@
+## v2.5.226 (517) - 2026-11-02
+
+- **Android lifecycle:** `MainActivity` recreated itself on every rotation/resize/keyboard change, and the UI keeps no `rememberSaveable` state, so rotating dropped the current screen, reloaded the whole FotoHolo WebGL scene and re-ran `onCreate`. It now declares `configChanges` (orientation, screen size/layout, keyboard, navigation); Compose adapts in place. `uiMode` is intentionally not included so theme changes still recreate.
+- **Genezy audit (no change):** the AUX route is a bounded 1.04 differential-width policy ahead of the Sony's own upmix; it claims no discrete channels. Wired headphones share the same route class (`WIRED_AUX`), so they also receive it; separating them needs the physical AUX-vs-headphone signal, which Android does not distinguish.
+- **Validation boundary:** rotate the device on the main panel and the FotoHolo tab: state and the 3D scene should persist.
+
 ## v2.5.225 (516) - 2026-11-02
 
 - **HRTF dataset truthfulness:** the evidence (effect file, daemon `GET_PROCESSOR_EVIDENCE` → `hrtfDataset`, and `read_processor_evidence.py`) now says whether the HRTF is running on measured HRIRs (IHR1/SOFA) or on the analytic Rayleigh synthesis fallback. Without a dataset in `/data/adb/ivanna_omega/` the binaural path is the fallback, which a plain "applying" flag would have hidden.
