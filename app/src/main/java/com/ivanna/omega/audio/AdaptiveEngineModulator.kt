@@ -31,6 +31,14 @@ class AdaptiveEngineModulator {
         mode: AdaptiveMode,
         intensity: Float
     ): AudioState {
+        // OFF y cero intensidad son bypass real: no deben cambiar ganancia,
+        // compresión ni ancho. Antes OFF => factor 0 => masterGain ×0.8,
+        // compressorRatio=2 y luego suavizado; el supuesto bypass alteraba el audio.
+        if (mode == AdaptiveMode.OFF || intensity <= 0f) {
+            previousModulatedState = baseState
+            return baseState
+        }
+
         // 1. Mapear intensidad usando curvas de potencia según modo
         val intensityFactor = mapIntensityToFactor(intensity, mode)
         
