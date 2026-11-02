@@ -513,57 +513,41 @@ static void audioRouteBridgeLoop() {
     auto lastLogTime = std::chrono::steady_clock::now();
     while (g_bridgeRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
-        OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
-        // ── FIX (UI "SIN AUDIO" con motor procesando, Ruta B sin daemon) ──
-        // omega_daemon_get_shared_state() conecta al estado compartido SHM cuando está disponible; si no existe devuelve nullptr
-        // nullptr cuando el daemon no corre (dispositivo sin root o módulo
-        // sin daemon). Pero omega_effect SÍ publica telemetría real
-        // (raw_rms/raw_peak/effect_frames) en su bus local SHM
-        // OMEGA_EFFECT_LOCAL_BUS_PATH desde 865c53c6. El canal previsto por
-        // la arquitectura ES ese bus seqlock (no hay canal alternativo: el
-        // socket del daemon no existe sin daemon). La app lo lee como
-        // READER lock-free — mismo mecanismo, sin IPC nuevo.
+        // Este puente app-side solo observa el bus local del efecto, que
+        // publica raw_rms/raw_peak cuando no hay un writer daemon. Los campos
+        // ai_raw_* de OmegaSharedState no tienen productor en este árbol:
+        // leerlos cuando shared!=nullptr convertía sus ceros iniciales en
+        // "silencio" aunque el AudioEffect estuviera procesando PCM.
         float rms = 0.0f, peak = 0.0f;
-        if (shared) {
-            rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
-            peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
+        static bool     s_busOpen = false;
+        static uint64_t s_retryMs = 0;
+        if (!s_busOpen) {
+            const auto nowMs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            if (nowMs >= s_retryMs) {
+                s_busOpen = ivanna::effectControlBus().openReader(
+                                ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
+                s_retryMs = nowMs + 1000ULL;
+            }
+        }
+        if (!s_busOpen) continue;
+        static uint64_t s_lastGen = 0;
+        ivanna::OmegaDspSnapshot snap{};
+        if (ivanna::effectControlBus().readLatest(snap, s_lastGen)) {
+            rms  = snap.raw_rms;
+            peak = snap.raw_peak;
+            g_routeB_declippedPeaks.store(snap.supreme_declipped_peaks, std::memory_order_relaxed);
+            g_routeB_tapeMag.store(snap.supreme_tape_mag, std::memory_order_relaxed);
+            g_routeB_snnSpikes.store(snap.supreme_snn_spikes, std::memory_order_relaxed);
+            if (snap.supreme_subsample_delay > 0.0f) {
+                g_routeB_subsampleDelay.store(snap.supreme_subsample_delay, std::memory_order_relaxed);
+            }
+        } else if (lastRms < 0.0f) {
+            continue;  // el bus local aún no publicó un bloque PCM real
         } else {
-            // Fallback Ruta B: leer el bus local del efecto (audioserver).
-            // HARDENING: reintentar apertura del bus si omega_effect se reinicia.
-            // La version anterior usaba s_busTried=true una sola vez — si el efecto
-            // no estaba listo en el primer ciclo, nunca se reintentaba.
-            // Con backoff de 1s: seguro en hilo de telemetria (no es audio callback).
-            static bool     s_busOpen = false;
-            static uint64_t s_retryMs = 0;
-            if (!s_busOpen) {
-                auto nowMs = static_cast<uint64_t>(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch()).count());
-                if (nowMs >= s_retryMs) {
-                    s_busOpen = ivanna::effectControlBus().openReader(
-                                    ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
-                    s_retryMs = nowMs + 1000ULL;
-                }
-            }
-            if (!s_busOpen) continue;  // bus no disponible — retry en siguiente ciclo
-            static uint64_t s_lastGen = 0;
-            ivanna::OmegaDspSnapshot snap{};
-            // readLatest es lock-free (seqlock); si no hay generation nueva,
-            // reusamos la última lectura (lastRms/lastPeak ya la filtran).
-            if (ivanna::effectControlBus().readLatest(snap, s_lastGen)) {
-                rms  = snap.raw_rms;
-                peak = snap.raw_peak;
-                g_routeB_declippedPeaks.store(snap.supreme_declipped_peaks, std::memory_order_relaxed);
-                g_routeB_tapeMag.store(snap.supreme_tape_mag, std::memory_order_relaxed);
-                g_routeB_snnSpikes.store(snap.supreme_snn_spikes, std::memory_order_relaxed);
-                if (snap.supreme_subsample_delay > 0.0f) {
-                    g_routeB_subsampleDelay.store(snap.supreme_subsample_delay, std::memory_order_relaxed);
-                }
-            } else if (lastRms < 0.0f) {
-                continue;  // bus abierto pero jamás publicó — sin audio aún
-            } else {
-                rms = lastRms; peak = lastPeak;  // sin novedad: conservar
-            }
+            rms = lastRms;
+            peak = lastPeak;
         }
         // Silencio absoluto sostenido (o sin cambios desde la última
         // lectura) → omega_effect probablemente no está procesando audio
@@ -574,16 +558,10 @@ static void audioRouteBridgeLoop() {
                                  std::fabs(peak - lastPeak) > 1e-6f;
         lastRms = rms; lastPeak = peak;
         if (!hasSignal && !changed) continue;
-        // ai_gain_db sólo es significativo si el AGC del efecto está
-        // activo (ai_enabled) — se usa como proxy de gain_reduction SOLO
-        // en su excursión negativa (AGC reduciendo por señal fuerte); una
-        // excursión positiva (AGC compensando señal débil) no es
-        // "reducción" y se descarta a 0.
-        float grDb = 0.0f;
-        if (shared && shared->ai_enabled.load(std::memory_order_relaxed)) {
-            const float gainDb = shared->ai_gain_db.load(std::memory_order_relaxed);
-            grDb = gainDb < 0.0f ? -gainDb : 0.0f;
-        }
+        // Este observador no tiene GR sincronizada con el bloque PCM del
+        // bus local. La ruta real publica SafetyLimiter GR dentro del ADE
+        // per-instance de omega_effect; aquí se deja neutral.
+        const float grDb = 0.0f;
         ivanna::experimental::RawAudioMetrics rawM{};
         rawM.rms               = rms;
         rawM.peak              = peak;
@@ -607,45 +585,10 @@ static void audioRouteBridgeLoop() {
         g_lastRawPeak.store(peak, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb, std::memory_order_relaxed);
         g_activeRoute.store(2, std::memory_order_relaxed);
-        // FIX (Opción A de unificación — paridad de protección Ruta A/Ruta
-        // B, ver comentario extenso en omega_shared.h::ai_runtime_gain_mul):
-        // hasta acá solo se publicaban métricas HACIA el motor adaptativo.
-        // Sin este bloque, las decisiones que el motor calcula a partir de
-        // ESTAS MISMAS métricas de Spotify/YouTube nunca volvían a tocar el
-        // audio de Spotify/YouTube — se aplicaban únicamente a g_gain de la
-        // Ruta A (DSPBridge), que no procesa nada en ese momento. Ahora se
-        // lee el AdaptiveState más reciente (el mismo que ya alimenta a la
-        // Ruta A) y se escribe target_gain de vuelta al daemon.
-        static uint64_t s_lastSeenAdaptiveSeq = 0;
-        ivanna::experimental::AdaptiveState st{};
-        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, s_lastSeenAdaptiveSeq) && shared != nullptr) {
-            shared->ai_runtime_gain_mul.store(
-                std::clamp(st.target_gain, 0.5f, 1.0f), std::memory_order_release);
-            // FIX (Ruta B — spatial_width sin efecto, gap README): antes solo
-            // target_gain volvía al daemon; spatial_width (0..1.5, sugerido
-            // por el mismo AdaptiveDecisionEngine) se calculaba pero se
-            // perdía. g_widener_b.setWidth() lo aplica en processLoop()
-            // (omega_daemon.cpp, paso 6). Clamp [0,2] = rango real de
-            // StereoWidener::setWidth(), más ancho que el [0,1.5] emitido.
-            shared->ai_runtime_spatial_width.store(
-                std::clamp(st.spatial_width, 0.0f, 2.0f), std::memory_order_release);
-            // FIX (cableado adaptativo incompleto — mismo patrón que
-            // spatial_width, gap real distinto): omega_daemon.cpp SÍ lee
-            // ai_runtime_comp_amount/ai_runtime_exciter_red en processLoop()
-            // y los aplica vía g_comp_b.setRuntimeAmount()/g_exciter_b.
-            // setRuntimeReduction() — y el socket SÍ acepta SET_AI_RUNTIME_
-            // COMP/EXCRED — pero nada en la app llamaba nunca a esos
-            // comandos, ni este bridge los escribía. compressor_amount y
-            // exciter_reduction del ADE (Ruta A, ya calculados hace tiempo)
-            // se perdían igual que spatial_width antes del fix anterior.
-            // Quedaban congelados en su default (0.0 = sin ajuste extra),
-            // así que Spotify/YouTube nunca recibía la compresión/reducción
-            // de exciter que el motor adaptativo decide en tiempo real.
-            shared->ai_runtime_comp_amount.store(
-                std::clamp(st.compressor_amount, 0.0f, 1.0f), std::memory_order_release);
-            shared->ai_runtime_exciter_red.store(
-                std::clamp(st.exciter_reduction, 0.0f, 1.0f), std::memory_order_release);
-        }
+        // La actuación SYSTEM_WIDE pertenece al ADE per-instance del
+        // omega_effect: consume el PCM local de AudioFlinger y sus actuadores
+        // viven en ese mismo contexto. Este observador global no escribe
+        // ai_runtime_* sobre una SHM que no es suya ni reporta falsa aplicación.
         ++frameCounter;
         // Log throttleado a ~1/s — este hilo NO es RT, loguear aquí es
         // seguro (a diferencia de dentro de Effect_Process/nativeProcess).
