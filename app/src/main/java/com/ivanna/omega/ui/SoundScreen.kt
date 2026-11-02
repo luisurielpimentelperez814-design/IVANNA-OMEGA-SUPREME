@@ -333,28 +333,49 @@ private fun BinauralTab(
                 routeFeatureStatus = "RUTA B NO CONFIRMADA · daemon/socket no disponible"
                 return@launch
             }
-            fun describe(reply: org.json.JSONObject): String {
+            fun describe(reply: org.json.JSONObject, evidence: org.json.JSONObject?): String {
                 val generation = reply.optLong("generation", 0L)
-                return when {
-                    reply.optBoolean("applied", false) ->
-                        "RUTA B APLICADA · gen " + generation + " · HRTF " +
-                            (if (hrtf) "ON" else "OFF") + " · ADAPT " + (if (adaptive) "ON" else "OFF")
+                val control = when {
+                    reply.optBoolean("applied", false) -> "RUTA B APLICADA · gen " + generation
                     reply.optString("status") == "accepted_pending_consumer" ->
                         "RUTA B PENDIENTE · gen " + generation + " · esperando consumo de omega_effect"
                     else -> "RUTA B NO APLICADA · " + reply.optString("status", "sin estado")
                 }
+                val measured = evidence?.optBoolean("hrtfDataset", false) == true
+                val cpuBlocks = evidence?.optLong("hrtfCpuBlocks", 0L) ?: 0L
+                val dspBlocks = evidence?.optLong("hrtfDspBlocks", 0L) ?: 0L
+                val adaptiveBlocks = evidence?.optLong("adaptiveApplyBlocks", 0L) ?: 0L
+                val hrtfLine = when {
+                    !reply.optBoolean("hrtfEnabled", hrtf) -> "HRTF OFF"
+                    evidence == null || !evidence.optBoolean("ok", false) -> "HRTF evidencia no disponible"
+                    measured -> "HRIR medidas · bloques CPU " + cpuBlocks + " / DSP " + dspBlocks
+                    cpuBlocks + dspBlocks > 0L -> "HRTF sintético activo · dataset medido no cargado"
+                    else -> "HRTF habilitado · esperando bloque de audio real"
+                }
+                val adaptiveLine = when {
+                    !reply.optBoolean("adaptiveEnabled", adaptive) -> "ADAPT OFF"
+                    evidence == null || !evidence.optBoolean("ok", false) -> "ADAPT evidencia no disponible"
+                    adaptiveBlocks > 0L -> "AdaptiveEngineV2 procesó " + adaptiveBlocks + " bloques"
+                    else -> "ADAPT habilitado · aún sin bloques procesados"
+                }
+                return control + " · " + hrtfLine + " · " + adaptiveLine
             }
-            routeFeatureStatus = describe(result)
+            var latestStatus = result
             if (!result.optBoolean("applied", false)) {
-                repeat(8) {
+                for (attempt in 0 until 8) {
                     kotlinx.coroutines.delay(250L)
                     val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         com.ivanna.omega.magisk.OmegaEngineBridge.getAudioFeaturesStatus()
-                    } ?: return@launch
-                    routeFeatureStatus = describe(status)
-                    if (status.optBoolean("applied", false)) return@launch
+                    } ?: continue
+                    latestStatus = status
+                    routeFeatureStatus = describe(status, null)
+                    if (status.optBoolean("applied", false)) break
                 }
             }
+            val evidence = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivanna.omega.magisk.OmegaEngineBridge.getProcessorEvidence()
+            }
+            routeFeatureStatus = describe(latestStatus, evidence)
         }
     }
     var tenDStatus by remember { mutableStateOf("10D: recopilando estado real del motor") }
