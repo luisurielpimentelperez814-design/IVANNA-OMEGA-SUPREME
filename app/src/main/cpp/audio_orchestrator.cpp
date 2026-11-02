@@ -76,26 +76,18 @@ struct OrchestratorState {
 
 static OrchestratorState g_orch;
 
-// Genome ABI v1: the 256-byte chromosome is a normalized spectral envelope.
-// Decode it deterministically into eight bounded control descriptors matching
-// UnifiedControlFrame: [0..1] DSP, [2..5] NHO, [6..7] spatial.
-// Equal-width partitions preserve the full chromosome; no genome-wide mean
-// is collapsed into a fake master-gain control.
-static void decode_evolutionary_genome(const uint8_t* genome, float out[8]) noexcept
+// Genome ABI v2: genes [0..11] are explicit normalized control parameters:
+// EQ[4], DSP[2], NHO[4], spatial[2]. Genes [12..255] remain the spectral
+// phenotype evaluated by the optimizer. No averaging or implicit gain shortcut.
+static void decode_evolutionary_genome(const uint8_t* genome, float out[12]) noexcept
 {
     if (!genome || !out) return;
-    for (int parameter = 0; parameter < 8; ++parameter) {
-        const int begin = (parameter * GENOME_SIZE) / 8;
-        const int end = ((parameter + 1) * GENOME_SIZE) / 8;
-        uint32_t sum = 0;
-        for (int bin = begin; bin < end; ++bin) sum += genome[bin];
-        const int count = end - begin;
-        out[parameter] = count > 0
-            ? std::clamp(static_cast<float>(sum) / (255.0f * count), 0.0f, 1.0f)
-            : 0.5f;
+    constexpr float kInvByte = 1.0f / 255.0f;
+    for (int parameter = 0; parameter < 12; ++parameter) {
+        out[parameter] = std::clamp(static_cast<float>(genome[parameter]) * kInvByte,
+                                    0.0f, 1.0f);
     }
 }
-
 
 
 static void update_anti_dolby(float speech,
@@ -605,7 +597,7 @@ extern "C" void ivanna_orchestrate(
         g_orch.genome_generation != g_orch.published_genome_generation) {
         float decoded[12]{};
         decode_evolutionary_genome(g_orch.active_genome, decoded);
-        control_set_evo_genome(decoded, 8);
+        control_set_evo_genome(decoded, 12);
         g_orch.published_genome_generation = g_orch.genome_generation;
         ALOG("evo genome published: generation=%u fitness=%.5f", 
              g_orch.genome_generation, evo_best_fitness());
