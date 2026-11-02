@@ -299,8 +299,12 @@ struct omega_effect_context_t {
     bool                     localWriterOpen;
     ivanna::OmegaDspSnapshot pendingSnap;
     ivanna::PunchEngine punch;    // v2.5.41: impacto predictivo (amount desde snapshot.ext_flags)
-    float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE (antes descartado)
-    float adaptImmScale = 1.0f;   // v2.5.15: upmix_immersivity del ADE (antes descartado)
+    float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE
+    float adaptImmScale = 1.0f;   // v2.5.15: upmix_immersivity del ADE
+    // Salidas directas del AdaptiveDecisionEngine de esta instancia de
+    // AudioFlinger. Se aplican en el mismo consumidor PCM, no solo al snapshot.
+    float adaptiveDecisionTargetGain{1.0f}; // solo atenuación [0.5, 1.0]
+    float adaptiveDecisionCompAmount{0.0f}; // intensidad compresor [0,1]
     float lastVoiceProb = 0.0f;   // v2.5.15: probabilidad VOICE medida (clasificador) para el motor adaptativo
     bool lastVoiceProbValid = false;
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
@@ -1320,9 +1324,20 @@ static int32_t omega_process(effect_handle_t self,
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
 
-            // Consumir parámetros dinámicos y espaciales calculados por AdaptiveEngineV2
+            // Un solo actuador de compresión por ruta: AdaptiveEngineV2 y ADE
+            // comparten el mismo FusionCore. Convertir ADE [0,1] a ratio [1,8]
+            // y arbitrar con el ratio V2 más conservador; no crear un compresor
+            // paralelo ni dejar que el último escritor pise al otro.
+            const float v2Ratio = std::clamp(
+                std::isfinite(adaptParams.compressorRatio) ? adaptParams.compressorRatio : 1.0f,
+                1.0f, 20.0f);
+            const float adeRatio = 1.0f + 7.0f * std::clamp(
+                std::isfinite(ctx->adaptiveDecisionCompAmount)
+                    ? ctx->adaptiveDecisionCompAmount : 0.0f,
+                0.0f, 1.0f);
+            const float effectiveRatio = std::max(v2Ratio, adeRatio);
             if (fc) {
-                fc->setCompressorParams(adaptParams.compressorThreshold, adaptParams.compressorRatio);
+                fc->setCompressorParams(adaptParams.compressorThreshold, effectiveRatio);
             }
             const float overallTrim = std::clamp(adaptParams.overallGain, 0.75f, 1.15f);
             const float isoGain = adaptParams.applyISO226
@@ -1335,7 +1350,13 @@ static int32_t omega_process(effect_handle_t self,
             // (cada bloque cambia el valor suavizado -> clic periodico). Ahora el
             // techo es 1.0 y la ganancia se rampa linealmente por muestra desde el
             // valor del bloque anterior hasta el nuevo.
-            adaptiveGainTarget = std::clamp(overallTrim * isoGain, 0.50f, 1.0f);
+            const float adeGain = std::clamp(
+                std::isfinite(ctx->adaptiveDecisionTargetGain)
+                    ? ctx->adaptiveDecisionTargetGain : 1.0f,
+                0.50f, 1.0f);
+            // Producto de objetivos de atenuación: el límite final garantiza
+            // que este motor nunca amplifique y applyStereoGainRamp evita zipper.
+            adaptiveGainTarget = std::clamp(overallTrim * isoGain * adeGain, 0.50f, 1.0f);
         }
         const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
         if (std::fabs(adaptiveGainTarget - 1.0f) > 1.0e-4f ||
@@ -1643,6 +1664,10 @@ static int32_t omega_process(effect_handle_t self,
             const float invFrames = (outFrames > 0) ? (1.0f / (float)outFrames) : 0.0f;
             rawM.rms              = rms;
             rawM.peak             = pk;
+            // SafetyLimiter::getGainReduction() entrega dB de reducción
+            // aplicada por el último bloque, no una razón lineal ni un proxy.
+            rawM.gain_reduction_db = ctx->safetyLimiter
+                ? std::max(0.0f, ctx->safetyLimiter->getGainReduction()) : 0.0f;
             rawM.band_low_energy  = __builtin_sqrtf(bandAccum.low  * invFrames);
             rawM.band_mid_energy  = __builtin_sqrtf(bandAccum.mid  * invFrames);
             rawM.band_high_energy = __builtin_sqrtf(bandAccum.high * invFrames);
@@ -1659,13 +1684,27 @@ if (ctx->adaptive) {
                 ivanna::experimental::AdaptiveState adSt{};
                 if (ctx->adaptiveEnabled &&
                     ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
-                    ctx->pendingSnap.target_gain = std::clamp(adSt.target_gain, 0.50f, 1.0f);
-                    ctx->pendingSnap.comp_amount = std::clamp(adSt.compressor_amount, 0.0f, 1.0f);
-                    ctx->pendingSnap.exc_red     = std::clamp(adSt.exciter_reduction, 0.0f, 1.0f);
-                    ctx->adaptWfsScale = std::clamp(adSt.wfs_spread_scale,  0.5f, 1.0f);
-                    ctx->adaptImmScale = std::clamp(adSt.upmix_immersivity, 0.5f, 1.0f);
+                    ctx->adaptiveDecisionTargetGain =
+                        std::clamp(std::isfinite(adSt.target_gain) ? adSt.target_gain : 1.0f,
+                                   0.50f, 1.0f);
+                    ctx->adaptiveDecisionCompAmount =
+                        std::clamp(std::isfinite(adSt.compressor_amount) ? adSt.compressor_amount : 0.0f,
+                                   0.0f, 1.0f);
+                    ctx->pendingSnap.target_gain = ctx->adaptiveDecisionTargetGain;
+                    ctx->pendingSnap.comp_amount = ctx->adaptiveDecisionCompAmount;
+                    ctx->pendingSnap.exc_red     = std::clamp(
+                        std::isfinite(adSt.exciter_reduction) ? adSt.exciter_reduction : 0.0f,
+                        0.0f, 1.0f);
+                    ctx->adaptWfsScale = std::clamp(
+                        std::isfinite(adSt.wfs_spread_scale) ? adSt.wfs_spread_scale : 1.0f,
+                        0.5f, 1.0f);
+                    ctx->adaptImmScale = std::clamp(
+                        std::isfinite(adSt.upmix_immersivity) ? adSt.upmix_immersivity : 1.0f,
+                        0.5f, 1.0f);
                 } else if (!ctx->adaptiveEnabled) {
                     // Disabled means neutral actuation; raw metrics remain observable.
+                    ctx->adaptiveDecisionTargetGain = 1.0f;
+                    ctx->adaptiveDecisionCompAmount = 0.0f;
                     ctx->adaptWfsScale = 1.0f;
                     ctx->adaptImmScale = 1.0f;
                 }
