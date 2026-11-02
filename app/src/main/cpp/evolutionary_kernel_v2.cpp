@@ -299,10 +299,15 @@ static std::mutex g_evoMutex;
 // Mejor genoma publicado para lectores en tiempo real (audio_orchestrator lo lee desde el
 // procesamiento de audio): seqlock — el lector nunca bloquea ni toma el mutex.
 static std::atomic<uint32_t> g_bestSeq {0};   // impar = escritura en curso
-static uint8_t g_bestGenome[GENOME_SIZE];
+static std::atomic<uint8_t> g_bestGenome[GENOME_SIZE]{};
+static std::atomic<float> g_publishedBestFitness {0.0f};
+static std::atomic<uint32_t> g_publishedGeneration {0};
 static void publishBestGenomeLocked() {
     g_bestSeq.fetch_add(1, std::memory_order_acq_rel);
-    std::memcpy(g_bestGenome, g_population.individuals[0].genome, GENOME_SIZE);
+    for (int i = 0; i < GENOME_SIZE; ++i)
+        g_bestGenome[i].store(g_population.individuals[0].genome[i], std::memory_order_relaxed);
+    g_publishedBestFitness.store(g_population.bestFitness, std::memory_order_relaxed);
+    g_publishedGeneration.store(g_population.generation, std::memory_order_relaxed);
     g_bestSeq.fetch_add(1, std::memory_order_release);
 }
 
@@ -400,10 +405,10 @@ void evo_set_max_generations(int n) {
     g_maxGenerations.store(n > 0 ? n : 0, std::memory_order_relaxed);
 }
 
-float evo_best_fitness() { return g_population.bestFitness; }
+float evo_best_fitness() { return g_publishedBestFitness.load(std::memory_order_acquire); }
 
 int evo_get_generation() {
-    return g_population.generation;
+    return static_cast<int>(g_publishedGeneration.load(std::memory_order_acquire));
 }
 
 void evo_get_best_genome(uint8_t* out, int len) {
@@ -412,7 +417,8 @@ void evo_get_best_genome(uint8_t* out, int len) {
     for (int attempt = 0; attempt < 8; ++attempt) {
         const uint32_t s1 = g_bestSeq.load(std::memory_order_acquire);
         if (s1 & 1u) continue;                       // escritor activo: reintentar
-        std::memcpy(tmp, g_bestGenome, GENOME_SIZE);
+        for (int i = 0; i < GENOME_SIZE; ++i)
+            tmp[i] = g_bestGenome[i].load(std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_acquire);
         if (g_bestSeq.load(std::memory_order_relaxed) == s1) {
             std::memcpy(out, tmp, std::min(len, GENOME_SIZE));
