@@ -93,7 +93,12 @@ class VoiceProtectionController(context: Context) {
         } else {
             smoothedScore = 0f
             bufferFill = 0
-            Log.i(TAG, "Modo manual desactivado — vuelve control automático (YAMNet)")
+            // El score manual anterior no debe seguir actuando mientras el
+            // clasificador automático aún no ha publicado una inferencia nueva.
+            DSPBridge.setVoiceProtectScore(0f)
+            _voiceScore.value = 0f
+            _sharedVoiceScore.value = 0f
+            Log.i(TAG, "Modo manual desactivado — score neutral hasta la siguiente inferencia YAMNet")
         }
     }
 
