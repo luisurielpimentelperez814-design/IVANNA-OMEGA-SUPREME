@@ -844,7 +844,8 @@ refreshCognitiveSnapshotWithSeed(ivanna::reality::AcousticRealityOrchestrator& o
     seedM.band_low_energy  = 0.08f;
     seedM.band_mid_energy  = 0.11f;
     seedM.band_high_energy = 0.04f;
-    seedM.voice_score      = 0.64f;
+    // Este bloque es solo un seed sintético de arranque, no una medición
+    // ni una inferencia vocal. Se conserva voice_score_valid=false.
     const auto seedAdapt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(seedM, 0.12f, 0.08f);
     std::array<ivanna::spatial::DecomposedObject, 4> seedObjs{};
     seedObjs[0].position = { 0.0f, 1.45f, 0.05f }; seedObjs[0].energy = 0.11f; seedObjs[0].gain = 1.0f;
