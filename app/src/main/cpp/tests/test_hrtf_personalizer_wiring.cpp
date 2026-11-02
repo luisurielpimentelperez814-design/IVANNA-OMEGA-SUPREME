@@ -201,3 +201,30 @@ TEST(ObjectSpatialRendererWiring, LivePipelineActiveInstanceWiringAndChunkedAxes
     EXPECT_EQ(IvannaAudioPipeline::peekActiveInstance(), nullptr);
 }
 
+TEST(AcousticRealityPipeline, LiveAnalysisSequenceAdvancesAcrossAudioBlocks) {
+    constexpr size_t kBlock = 256;
+    IvannaAudioPipeline pipeline;
+    pipeline.prepare(48000.0f, IvannaAudioPipeline::MAX_BLOCK_SIZE);
+    pipeline.setRealityReconstructionEnabled(true);
+
+    std::vector<float> left(kBlock), right(kBlock);
+    for (size_t block = 0; block < 3; ++block) {
+        for (size_t i = 0; i < kBlock; ++i) {
+            const float t = static_cast<float>(block * kBlock + i) / 48000.0f;
+            left[i] = 0.25f * std::sin(2.0f * 3.14159265f * 440.0f * t);
+            right[i] = 0.22f * std::sin(2.0f * 3.14159265f * 660.0f * t);
+        }
+        pipeline.processLiveSpatialAxes(left.data(), right.data(), kBlock,
+                                        48000.0f, true, 0.18f, true, false);
+        for (size_t i = 0; i < kBlock; ++i) {
+            ASSERT_TRUE(std::isfinite(left[i]));
+            ASSERT_TRUE(std::isfinite(right[i]));
+        }
+        if (block == 0) {
+            ASSERT_GT(pipeline.activeRealityState().sequence, 0u);
+        } else {
+            EXPECT_GT(pipeline.activeRealityState().sequence,
+                      static_cast<uint64_t>(block));
+        }
+    }
+}
