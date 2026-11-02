@@ -302,6 +302,7 @@ struct omega_effect_context_t {
     float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE (antes descartado)
     float adaptImmScale = 1.0f;   // v2.5.15: upmix_immersivity del ADE (antes descartado)
     float lastVoiceProb = 0.0f;   // v2.5.15: probabilidad VOICE medida (clasificador) para el motor adaptativo
+    bool lastVoiceProbValid = false;
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
     ivanna::spatial::IvannaAudioPipeline* audioPipeline;
     ivanna::unified::DeclarativeUnifiedPipeline* unifiedPipeline;
@@ -1198,8 +1199,18 @@ static int32_t omega_process(effect_handle_t self,
             (ctx->config.outputCfg.samplingRate != 0) ? (float)ctx->config.outputCfg.samplingRate : 48000.0f);
         float unityProbs[NUM_CLASSES] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
         if (unityCls) unityCls->getClassProbabilities(unityProbs);
+        float probabilityMass = 0.0f;
+        bool probabilitiesFinite = (unityCls != nullptr);
+        for (size_t i = 0; i < NUM_CLASSES; ++i) {
+            if (!std::isfinite(unityProbs[i]) || unityProbs[i] < 0.0f) {
+                probabilitiesFinite = false;
+                break;
+            }
+            probabilityMass += unityProbs[i];
+        }
+        ctx->lastVoiceProbValid = probabilitiesFinite && probabilityMass > 1.0e-6f;
         const float unityVoice = std::clamp(
-            std::isfinite(unityProbs[static_cast<size_t>(AudioContextClass::VOICE)])
+            ctx->lastVoiceProbValid
                 ? unityProbs[static_cast<size_t>(AudioContextClass::VOICE)] : 0.0f,
             0.0f, 1.0f);
         ctx->lastVoiceProb = unityVoice;
@@ -1635,9 +1646,9 @@ static int32_t omega_process(effect_handle_t self,
             rawM.band_low_energy  = __builtin_sqrtf(bandAccum.low  * invFrames);
             rawM.band_mid_energy  = __builtin_sqrtf(bandAccum.mid  * invFrames);
             rawM.band_high_energy = __builtin_sqrtf(bandAccum.high * invFrames);
-            // v2.5.15: antes una constante inventada (0.72 si "voiced", 0.35 si no) que el motor adaptativo
-            // trataba como probabilidad real. Ahora la probabilidad VOICE medida por el clasificador.
+            rawM.band_energy_valid = true; // bandMeter procesó este bloque PCM real
             rawM.voice_score      = ctx->lastVoiceProb;
+            rawM.voice_score_valid = ctx->lastVoiceProbValid;
             rawM.wfs_active       = (ctx->pendingSnap.wfs_enabled != 0u) ? 1.0f : 0.0f;
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
             rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;
