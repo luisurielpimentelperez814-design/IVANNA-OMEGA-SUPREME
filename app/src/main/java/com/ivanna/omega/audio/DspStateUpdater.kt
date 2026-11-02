@@ -51,20 +51,28 @@ class DspStateUpdater {
         val previousState = if (nativeStateApplied) lastState else null
         try {
             val deltas = mutableMapOf<String, Float>()
+            var nativeWrites = 0
+            var nativeWriteFailed = false
 
             // FIX quirúrgico (audit 2026-07-28): antes safeCompressor() sólo se
             // disparaba cuando cambiaba threshold O ratio — si el usuario movía
             // Attack o Release en AdaptiveEngineScreen, el delta ni se registraba.
             // nativeSetCompressorParams SÍ recibe attackMs/releaseMs
             // (IvannaNativeLib.kt:117, firma de 4 args viva desde v3.0).
-            fun safeCompressor() = runCatching {
-                IvannaNativeLib.nativeSetCompressorParams(
-                    newState.compressorThreshold.coerceIn(-60f, 0f),
-                    newState.compressorRatio.coerceIn(1f, 20f),
-                    newState.compressorAttack.coerceIn(0.1f, 500f),
-                    newState.compressorRelease.coerceIn(1f, 2000f)
-                )
-            }.onFailure { Log.w(TAG, "comp native: ${it.message}") }
+            fun safeCompressor() {
+                val result = runCatching {
+                    IvannaNativeLib.nativeSetCompressorParams(
+                        newState.compressorThreshold.coerceIn(-60f, 0f),
+                        newState.compressorRatio.coerceIn(1f, 20f),
+                        newState.compressorAttack.coerceIn(0.1f, 500f),
+                        newState.compressorRelease.coerceIn(1f, 2000f)
+                    )
+                }
+                if (result.isSuccess) nativeWrites++ else {
+                    nativeWriteFailed = true
+                    Log.w(TAG, "comp native: ${result.exceptionOrNull()?.message}")
+                }
+            }
 
             if (previousState == null || newState.compressorThreshold != previousState.compressorThreshold) {
                 deltas["threshold"] = newState.compressorThreshold
@@ -89,7 +97,7 @@ class DspStateUpdater {
                     IvannaNativeLib.nativeSetHarmonicGain(
                         newState.exciterAmount.coerceIn(0f, 1f)
                     )
-                }.onFailure { Log.w(TAG, "harmonic native: ${it.message}") }
+                }.onSuccess { nativeWrites++ }.onFailure { nativeWriteFailed = true; Log.w(TAG, "harmonic native: ${it.message}") }
             }
 
             if (previousState == null || newState.spatialWidth != previousState.spatialWidth) {
@@ -98,7 +106,7 @@ class DspStateUpdater {
                     IvannaNativeLib.nativeSetSpatialWidthDirect(
                         newState.spatialWidth.coerceIn(0f, 2f)
                     )
-                }.onFailure { Log.w(TAG, "spatial native: ${it.message}") }
+                }.onSuccess { nativeWrites++ }.onFailure { nativeWriteFailed = true; Log.w(TAG, "spatial native: ${it.message}") }
                 com.ivanna.omega.audio.OmegaMetrics.updateSharedLevels(spatialWidth = newState.spatialWidth)
             }
 
@@ -121,7 +129,7 @@ class DspStateUpdater {
                         newState.eqTreble.coerceIn(-18f, 18f),
                         newState.masterGain.coerceIn(0.1f, 2f)
                     )
-                }.onFailure { Log.w(TAG, "eq native: ${it.message}") }
+                }.onSuccess { nativeWrites++ }.onFailure { nativeWriteFailed = true; Log.w(TAG, "eq native: ${it.message}") }
             }
 
             if (previousState == null || newState.voiceProtectionEnabled != previousState.voiceProtectionEnabled) {
@@ -134,8 +142,16 @@ class DspStateUpdater {
                 Log.d(TAG, "📡 Delta update enviado: ${deltas.keys.joinToString(", ")}")
             }
 
-            lastState = newState
-            nativeStateApplied = true
+            if (nativeWrites > 0 && !nativeWriteFailed) {
+                lastState = newState
+                nativeStateApplied = true
+            } else {
+                // Partial/empty writes are not an applied snapshot. The next call
+                // retries a complete state instead of silently suppressing deltas.
+                lastState = null
+                nativeStateApplied = false
+                if (nativeWriteFailed) Log.w(TAG, "DSP state not committed: one or more native setters failed")
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "❌ Error en applyUpdate", t)
         }
