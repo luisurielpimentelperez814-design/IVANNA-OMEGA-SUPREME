@@ -172,6 +172,14 @@ int control_apply_frame() noexcept {
     //    (respeta la disciplina "snapshot inmutable" del bus seqlock)
     // ────────────────────────────────────────────────────────────────
     ControlFrame f = g_staging_frame;
+    // Preserve the user/base snapshot: evolved values are proposals for this
+    // published frame only and must never leak into the next staging baseline.
+    const float baseDrive = f.drive;
+    const float baseResonance = f.resonance;
+    const float baseNhoAlpha = f.nho_alpha;
+    const float baseNhoBeta = f.nho_beta;
+    const float baseNhoHarmonic = f.nho_harmonic_gain;
+    const float basePresence = f.presence;
 
     // EQ: gain combinado (control + YAMNet + AudioEngine + ruta de salida) mapeado a 'mid'
     const float combined_eq_gain = eq_gain_db + yamnet_eq_boost_2k + audio_engine_eq + route_dialog_boost;
@@ -342,8 +350,14 @@ int control_apply_frame() noexcept {
     // ────────────────────────────────────────────────────────────────
     g_control_bus.publish(f);             // publica con route boost y NAEL activos
     g_staging_frame = f;
-    g_staging_frame.low  = pre_route_low; // FIX: restaura base sin boost para el próximo tick
-    g_staging_frame.high = pre_nael_high; // FIX: evita acumulación infinita de NAEL high_add (+18 dB)
+    g_staging_frame.low  = pre_route_low; // restore base without route boost for the next tick
+    g_staging_frame.high = pre_nael_high; // prevent cumulative NAEL high_add
+    g_staging_frame.drive = baseDrive;
+    g_staging_frame.resonance = baseResonance;
+    g_staging_frame.nho_alpha = baseNhoAlpha;
+    g_staging_frame.nho_beta = baseNhoBeta;
+    g_staging_frame.nho_harmonic_gain = baseNhoHarmonic;
+    g_staging_frame.presence = basePresence;
 
     return updates;
 }
