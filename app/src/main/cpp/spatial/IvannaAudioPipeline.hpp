@@ -339,10 +339,12 @@ public:
             const float targetReality = realityReconstructionEnabled_ ? 1.0f : 0.0f;
             if (realityEnv_.beginBlock(targetReality)) {
                 if (realityReconstructionEnabled_) {
+                    // Recompute from current PCM continuously. The previous
+                    // sequence==0 guard made Acoustic Reality a one-shot: after
+                    // the first block, music telemetry and inferred scene never
+                    // refreshed again for this AudioFlinger session.
                     realityOrchestrator_.stateBus().consumeIfNewer(activeRealityState_, lastRealitySeq_);
-                    if (activeRealityState_.sequence == 0) {
-                        orchestrateRealityFromBlock(chL, chR, chunk, sr);
-                    }
+                    orchestrateRealityFromBlock(chL, chR, chunk, sr);
                 }
                 float envVal = realityEnv_.currentGain;
                 for (size_t s = 0; s < chunk; ++s) {
@@ -509,10 +511,10 @@ public:
         const float targetReality = realityReconstructionEnabled_ ? 1.0f : 0.0f;
         if (realityEnv_.beginBlock(targetReality)) {
             if (realityReconstructionEnabled_) {
+                // Keep the reality model fresh on every live block; a
+                // one-time sequence==0 initialization freezes its acoustic state.
                 realityOrchestrator_.stateBus().consumeIfNewer(activeRealityState_, lastRealitySeq_);
-                if (activeRealityState_.sequence == 0) {
-                    orchestrateRealityFromBlock(bufferL, bufferR, numSamples, 48000.0f);
-                }
+                orchestrateRealityFromBlock(bufferL, bufferR, numSamples, 48000.0f);
             }
             float envVal = realityEnv_.currentGain;
             for (size_t s = 0; s < numSamples; ++s) {
