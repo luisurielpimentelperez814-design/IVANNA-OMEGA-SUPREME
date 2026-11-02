@@ -147,8 +147,8 @@ inline void control_set_phase_oracle(float T_refined, float coherence) noexcept 
 }
 
 /*
- * Inyecta mejor genoma del kernel evolutivo (llamado cada ~50ms).
- * genome: array de 256 floats, [0..4]=DSP, [5..8]=NHO, [9..11]=Spatial
+ * Publica 12 descriptores decodificados del cromosoma uint8[256].
+ * [0..4]=DSP, [5..8]=NHO, [9..11]=Spatial; el decodificador reside en audio_orchestrator.
  */
 inline void control_set_evo_genome(const float* genome, int genome_size) noexcept {
     if (!genome || genome_size < 12) return;
