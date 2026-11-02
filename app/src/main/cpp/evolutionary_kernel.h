@@ -11,6 +11,8 @@ extern "C" {
 
 void evo_initialize_population(void);
 void evo_evolve_generation(void);
+int  evo_is_initialized(void);
+int  evo_evolve_step_with_convergence(void);
 float evo_best_fitness(void);
 void evo_get_best_genome(uint8_t* out_genome, int len);
 int  evo_get_generation(void);
