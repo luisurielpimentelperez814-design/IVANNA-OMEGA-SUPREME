@@ -295,15 +295,67 @@ class FotoHoloTelemetryBridge(context: Context) {
                     IvannaNativeLib.nativeSetAntiDolbyIntensity(value)
                     IvannaNativeLib.nativeGetAntiDolbyIntensity()
                 }
-                "realityIntensity" -> {
+                "realityIntensity", "realityEnabled" -> {
                     require(value in 0f..1f)
-                    com.ivanna.omega.core.NativeBridge.setRealityIntensity(value)
-                    com.ivanna.omega.core.NativeBridge.getRealityIntensity()
-                }
-                "realityEnabled" -> {
-                    require(value == 0f || value == 1f)
-                    com.ivanna.omega.core.NativeBridge.setRealityReconstructionEnabled(value == 1f)
-                    if (com.ivanna.omega.core.NativeBridge.isRealityReconstructionEnabled()) 1f else 0f
+                    if (name == "realityEnabled") require(value == 0f || value == 1f)
+
+                    // Acoustic Reality is system-wide: write through the daemon, not the
+                    // app-process JNI singleton. omega_effect consumes this snapshot in
+                    // the AudioFlinger process; a local JNI read-back is not global proof.
+                    val before = checkNotNull(OmegaEngineBridge.requestCommand(
+                        JSONObject().put("action", "GET_TELEMETRY")
+                    )) { "daemon-telemetry-unavailable" }
+                    check(before.optBoolean("ok", false)) { "daemon-telemetry-rejected" }
+                    val enabled = if (name == "realityEnabled") value == 1f
+                        else before.optBoolean("reality_recon", false)
+                    val intensity = if (name == "realityIntensity") value
+                        else before.optDouble("reality_intensity", Double.NaN).toFloat()
+                    check(intensity.isFinite() && intensity in 0f..1f) { "daemon-intensity-unavailable" }
+
+                    val ack = checkNotNull(OmegaEngineBridge.requestCommand(
+                        JSONObject().put("action", "SET_REALITY_RECONSTRUCTION")
+                            .put("enabled", enabled).put("intensity", intensity.toDouble())
+                    )) { "daemon-command-no-reply" }
+                    check(ack.optBoolean("ok", false)) {
+                        ack.optString("status", "daemon-command-rejected")
+                    }
+                    val generation = ack.optLong("generation", 0L)
+                    check(generation > 0L) { "daemon-did-not-publish-generation" }
+
+                    val readback = checkNotNull(OmegaEngineBridge.requestCommand(
+                        JSONObject().put("action", "GET_TELEMETRY")
+                    )) { "daemon-readback-unavailable" }
+                    check(readback.optBoolean("ok", false)) { "daemon-readback-rejected" }
+                    val actual = if (name == "realityEnabled") {
+                        if (readback.optBoolean("reality_recon", false)) 1f else 0f
+                    } else readback.optDouble("reality_intensity", Double.NaN).toFloat()
+                    check(actual.isFinite() && kotlin.math.abs(actual - value) < 0.001f) {
+                        "daemon-readback-mismatch"
+                    }
+
+                    // Poll briefly for the exact generation to be consumed by the global effect.
+                    var dspAppliedGeneration = 0L
+                    var effectState = -1
+                    var dspFrames = 0L
+                    repeat(10) {
+                        val status = OmegaEngineBridge.requestCommand(
+                            JSONObject().put("action", "GET_STATUS")
+                        )
+                        if (status != null && status.optBoolean("ok", false)) {
+                            dspAppliedGeneration = status.optLong("dsp_applied_generation", 0L)
+                            effectState = status.optInt("effect_state", -1)
+                            dspFrames = status.optLong("dsp_frames", 0L)
+                        }
+                        if (dspAppliedGeneration >= generation && effectState == 2 && dspFrames > 0L) return@repeat
+                        android.os.SystemClock.sleep(40L)
+                    }
+                    result.put("dspApplied",
+                        dspAppliedGeneration >= generation && effectState == 2 && dspFrames > 0L)
+                    result.put("generation", generation)
+                    result.put("dspAppliedGeneration", dspAppliedGeneration)
+                    result.put("effectState", effectState)
+                    result.put("dspFrames", dspFrames)
+                    actual
                 }
                 else -> return result.toString()
             }
