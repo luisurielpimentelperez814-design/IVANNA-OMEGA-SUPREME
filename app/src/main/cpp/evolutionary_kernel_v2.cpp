@@ -122,8 +122,7 @@ static constexpr int   EVO_CONVERGENCE_STALL = 25;
 // porque la selección por torneo toma padres de los primeros 2*ELITE_COUNT.
 static std::atomic<int> g_activePop {POPULATION_SIZE};
 static std::atomic<int> g_maxGenerations {0};   // 0 = sin tope
-static float g_lastBestFitness = 0.0f;
-static int   g_stallCount      = 0;
+static std::atomic<int> g_stallCount {0};
 
 // Audio cues — actualizados desde el audio thread vía evo_update_audio_cues
 static std::atomic<float> g_loudness  {0.0f};
@@ -337,8 +336,7 @@ void evo_initialize_population() {
               [](const auto& a, const auto& b){ return a.fitness > b.fitness; });
     g_population.generation  = 0;
     g_population.bestFitness = g_population.individuals[0].fitness;
-    g_lastBestFitness = g_population.bestFitness;
-    g_stallCount = 0;
+    g_stallCount.store(0, std::memory_order_relaxed);
     g_liveFitnessReady.store(false, std::memory_order_release);
     publishBestGenomeLocked();
     g_initialized.store(true, std::memory_order_release);
@@ -534,12 +532,11 @@ int evo_evolve_step_with_convergence(void) {
     evo_evolve_generation();
     const float after = evo_best_fitness();
 
-    if (after - before > EVO_CONVERGENCE_EPS) g_stallCount = 0;
-    else ++g_stallCount;
-    g_lastBestFitness = after;
+    if (after - before > EVO_CONVERGENCE_EPS) g_stallCount.store(0, std::memory_order_relaxed);
+    else g_stallCount.fetch_add(1, std::memory_order_relaxed);
     const int cap = g_maxGenerations.load(std::memory_order_relaxed);
     if (cap > 0 && evo_get_generation() >= cap) return 0;
-    return (g_stallCount >= EVO_CONVERGENCE_STALL) ? 0 : 1;
+    return (g_stallCount.load(std::memory_order_relaxed) >= EVO_CONVERGENCE_STALL) ? 0 : 1;
 }
 
 } // extern "C"
