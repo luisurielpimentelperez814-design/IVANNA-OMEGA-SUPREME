@@ -88,7 +88,7 @@ def main() -> int:
 
     print("PASS application route bootstrap: route manager, calibrator, unified state, backend selector")
     print("PASS Route A: AudioFlinger snapshot -> FusionCore EQ/HRTF/SAF/WFS/NPE/RIR/spatial pipeline")
-    print("PASS Route C: in-process JNI spatial pipeline")
+    print("PASS app-owned JNI entrypoint: in-process spatial pipeline (not a third output route)")
     print("PASS owned-player ASRC: AudioTrack timestamps -> bounded PLL -> stereo FIR resampler")
     print("PASS HAL/PAL boundary: no uncorrelated PCM source; system-wide native ASRC remains fail-closed")
     print("PASS physical-output boundary: 16->5 remains logical/experimental, not a claimed phone 5.0 route")
