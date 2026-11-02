@@ -838,14 +838,9 @@ static inline bool cognitiveSnapshotIsLive(uint64_t seq) noexcept {
 static inline ivanna::reality::AcousticRealityState
 refreshCognitiveSnapshotWithSeed(ivanna::reality::AcousticRealityOrchestrator& orch) noexcept {
     ivanna::experimental::RawAudioMetrics seedM{};
-    seedM.rms              = 0.22f;
-    seedM.peak             = 0.68f;
-    seedM.crest_factor_db  = 9.8f;
-    seedM.band_low_energy  = 0.08f;
-    seedM.band_mid_energy  = 0.11f;
-    seedM.band_high_energy = 0.04f;
-    // Este bloque es solo un seed sintético de arranque, no una medición
-    // ni una inferencia vocal. Se conserva voice_score_valid=false.
+    // Bootstrap neutral: no usar RMS/peak sintéticos como si fueran una
+    // medición de audio. El primer estado adaptativo real lo publicará el
+    // callback PCM después de iniciar la ruta.
     const auto seedAdapt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(seedM, 0.12f, 0.08f);
     std::array<ivanna::spatial::DecomposedObject, 4> seedObjs{};
     seedObjs[0].position = { 0.0f, 1.45f, 0.05f }; seedObjs[0].energy = 0.11f; seedObjs[0].gain = 1.0f;
