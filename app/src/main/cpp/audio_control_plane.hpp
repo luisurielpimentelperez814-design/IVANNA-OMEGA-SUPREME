@@ -65,7 +65,8 @@ struct UnifiedControlFrame {
     std::atomic<float> route_widener_mult{1.15f};    // reduce ancho en BT (mono-compat)
 
     // ── Evolutionary Best Genome (actualizado cada 50ms) ───────────
-    std::atomic<float> evo_genome_dsp[2]{};          // [0..1] drive/resonance
+    std::atomic<float> evo_genome_eq[4]{};           // [0..3] four-band EQ
+    std::atomic<float> evo_genome_dsp[2]{};          // [4..5] drive/resonance
     std::atomic<float> evo_genome_nho[4]{};          // [6..9] NHO params
     std::atomic<float> evo_genome_spatial[2]{};      // [10..11] angle/width
 
