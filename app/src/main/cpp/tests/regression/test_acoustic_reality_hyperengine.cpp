@@ -280,7 +280,9 @@ TEST(AcousticRealityHyperengineValidation, 4_RoomRealismAndBoundaryInteraction) 
     m.band_low_energy  = 0.09f;
     m.band_mid_energy  = 0.12f;
     m.band_high_energy = 0.04f;
+    m.band_energy_valid = true;
     m.voice_score      = 0.35f;
+    m.voice_score_valid = true;
 
     std::array<ivanna::spatial::DecomposedObject, 4> objs{};
     const auto genomeSmall = genomeEngine.extractGenome(m, objs, 0.20f, 0.25f, 0.02f);
@@ -676,7 +678,9 @@ TEST(AcousticRealityHumanValidationSuite, 11_HumanValidation_FatigueVsTraditiona
     m.band_low_energy  = 0.08f;
     m.band_mid_energy  = 0.11f;
     m.band_high_energy = 0.05f;
+    m.band_energy_valid = true;
     m.voice_score      = 0.62f;
+    m.voice_score_valid = true;
 
     std::array<ivanna::spatial::DecomposedObject, 4> objs{};
     objs[0].position = { 0.0f, 1.5f, 0.05f }; objs[0].gain = 1.0f;
