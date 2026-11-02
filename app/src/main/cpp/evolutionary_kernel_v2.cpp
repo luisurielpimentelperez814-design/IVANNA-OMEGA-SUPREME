@@ -423,7 +423,7 @@ void evo_get_best_genome(uint8_t* out, int len) {
         for (int i = 0; i < GENOME_SIZE; ++i)
             tmp[i] = g_bestGenome[i].load(std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_acquire);
-        if (g_bestSeq.load(std::memory_order_relaxed) == s1) {
+        if (g_bestSeq.load(std::memory_order_acquire) == s1) {
             std::memcpy(out, tmp, std::min(len, GENOME_SIZE));
             return;
         }
