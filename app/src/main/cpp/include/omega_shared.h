@@ -95,16 +95,12 @@ struct OmegaSharedState {
     std::atomic<float> ai_rms_level;    // RMS normalizado, read-only desde la APK
     std::atomic<float> ai_gain_db;      // ganancia AGC en dB, read-only desde la APK
 
-    // FIX (Adaptive Feedback Loop — cierre de la ruta real de Spotify/YouTube):
-    // ai_rms_level/ai_gain_db SOLO se actualizan dentro de applyAgc(), que a
-    // su vez SOLO corre si ai_enabled==true (false por defecto, ver
-    // constructor). Un usuario que nunca activó el AGC nunca tendría
-    // telemetría real, aunque estuviera sonando música real por esta ruta.
-    // ai_raw_rms/ai_raw_peak se calculan de forma INCONDICIONAL en cada
-    // bloque de Effect_Process (ver omega_effect.cpp), independientes de si
-    // el AGC está activo — son la fuente real que AdaptiveDecisionEngine
-    // consume vía el puente en el mismo proceso de la app (ver
-    // omega_daemon_get_shared_state() en omega_daemon.cpp).
+    // Campos heredados de telemetría. En este árbol no existe escritor
+    // activo que actualice ai_raw_rms/ai_raw_peak; omega_effect publica
+    // raw_rms/raw_peak en OmegaControlBus, no en esta región. No consumir
+    // estos atómicos como mediciones actuales sin añadir un productor con
+    // ownership, secuencia y freshness explícitos. Se conservan para no
+    // cambiar el ABI/layout compartido de versiones instaladas.
     std::atomic<float> ai_raw_rms;
     std::atomic<float> ai_raw_peak;
 
@@ -136,12 +132,9 @@ struct OmegaSharedState {
     std::atomic<float> ai_runtime_comp_amount;
     std::atomic<float> ai_runtime_exciter_red;  // 0..2 → StereoWidener::setWidth()
 
-    // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado — el
-    // Adaptive Engine operaba a ciegas en detección de sibilancia/tono para
-    // streaming. Calculado dentro de processLoop() (omega_daemon.cpp) con
-    // la MISMA clase BiquadEnvelopeBank que ya usa la Ruta A (pd_engine.hpp)
-    // — no es un análisis nuevo, es la misma herramienta ya probada,
-    // instanciada una vez más para este proceso separado.
+    // Reservas legacy de banda espectral. En el código actual no se encontró
+    // un productor que escriba estos campos; por tanto no representan energía
+    // medida aunque la región SHM exista. Se conservan para respetar el ABI.
     std::atomic<float> ai_band_low;
     std::atomic<float> ai_band_mid;
     std::atomic<float> ai_band_high;
