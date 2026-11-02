@@ -7,6 +7,7 @@
 #include "../../include/omega_shared.h"
 #include "../../include/omega_control_bus.h"
 #include "../../include/omega_effect_beacon.h"
+#include "../../include/omega_effect_evidence.h"   // GET_PROCESSOR_EVIDENCE: HRTF/RIR/SAF medidos en el camino de audio
 #include "../../include/asrc_state_bridge.hpp"   // GET_CLOCK_TELEMETRY: el daemon (root) lee el canal ASRC que la app no puede abrir
 #include "../../include/omega_user_flags.hpp"   // v2.5.16: SET_USER_FLAGS (tabla blanca de bits)
 #include "../../spatial/SafmusLatentGuard.hpp" // valida el vector SAFMUS antes de publicarlo
@@ -391,6 +392,41 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             static_cast<unsigned long long>(m_head_pose_generation),
             static_cast<unsigned long long>(ackReadable ? ack.generation : 0u),
             m_state.head_yaw_rad, m_state.head_pitch_rad);
+
+    } else if (strcmp(action,"GET_PROCESSOR_EVIDENCE")==0) {
+        // Evidencia MEDIDA por procesador (no indicadores): el efecto publica contadores y energias
+        // de entrada/salida de HRTF y RIR; aqui se calcula el delta desde la consulta anterior.
+        // El archivo vive en /data/local/tmp (no legible por la app), asi que lo releva el daemon.
+        static ivanna::EffectEvidence prev{};
+        static bool havePrev = false;
+        ivanna::EffectEvidence cur{};
+        if (!ivanna::readEffectEvidence(cur)) {
+            n = snprintf(reply, reply_sz, "{\"ok\":false,\"action\":\"GET_PROCESSOR_EVIDENCE\",\"error\":\"evidence_unavailable\"}");
+        } else {
+            auto applying = [](uint64_t dBlocks, double dIn, double dOut) {
+                return dBlocks > 0 && dIn > 1e-9 && std::fabs(dOut - dIn) / dIn > 1e-3;
+            };
+            const bool cmp = havePrev && cur.seq >= prev.seq;
+            const bool hrtfCpu = cmp && applying(cur.hrtfCpuBlocks - prev.hrtfCpuBlocks, cur.hrtfInEnergy - prev.hrtfInEnergy, cur.hrtfOutEnergy - prev.hrtfOutEnergy);
+            const bool hrtfDsp = cmp && cur.hrtfDspBlocks > prev.hrtfDspBlocks && cur.hrtfCpuBlocks == prev.hrtfCpuBlocks;
+            const bool rirApp = cmp && applying(cur.rirActiveBlocks - prev.rirActiveBlocks, cur.rirInEnergy - prev.rirInEnergy, cur.rirOutEnergy - prev.rirOutEnergy);
+            const bool safHrtf = cmp && (cur.hrtfSafRefreshes > prev.hrtfSafRefreshes);
+            const bool safRir = cmp && (cur.rirRelinks > prev.rirRelinks);
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":true,\"action\":\"GET_PROCESSOR_EVIDENCE\",\"comparable\":%s,"
+                "\"hrtfApplying\":%s,\"hrtfDspDelegated\":%s,\"rirApplying\":%s,\"safReachedHrtf\":%s,\"safReachedRir\":%s,"
+                "\"hrtfCpuBlocks\":%llu,\"hrtfDspBlocks\":%llu,\"hrtfSafRefreshes\":%llu,\"rirLoads\":%llu,\"rirRelinks\":%llu,\"rirActiveBlocks\":%llu,"
+                "\"hrtfAzimuthDeg\":%.2f,\"hrtfSafBiasDeg\":%.2f,\"hrtfCurvature\":%.3f,\"rirWet\":%.3f,"
+                "\"rirBakedEarly\":%.3f,\"rirBakedDecorrel\":%.3f,\"rirBakedRt60Delta\":%.3f,\"rirWetScale\":%.3f}",
+                cmp?"true":"false", hrtfCpu?"true":"false", hrtfDsp?"true":"false", rirApp?"true":"false",
+                safHrtf?"true":"false", safRir?"true":"false",
+                (unsigned long long)cur.hrtfCpuBlocks, (unsigned long long)cur.hrtfDspBlocks,
+                (unsigned long long)cur.hrtfSafRefreshes, (unsigned long long)cur.rirLoads,
+                (unsigned long long)cur.rirRelinks, (unsigned long long)cur.rirActiveBlocks,
+                cur.hrtfAzimuthDeg, cur.hrtfSafBiasDeg, cur.hrtfCurvature, cur.rirWet,
+                cur.rirBakedEarly, cur.rirBakedDecorrel, cur.rirBakedRt60Delta, cur.rirWetScale);
+            prev = cur; havePrev = true;
+        }
 
     } else if (strcmp(action,"GET_CLOCK_TELEMETRY")==0) {
         // CAUSA RAIZ de los campos vacios del Profiler: el beacon (/data/local/tmp, shell_data_file) y el

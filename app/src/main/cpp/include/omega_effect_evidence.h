@@ -70,6 +70,28 @@ private:
     EffectEvidence* map_ = nullptr;
 };
 
+// Lector (daemon root / herramientas). Seqlock: reintenta si el escritor esta a medias.
+inline bool readEffectEvidence(EffectEvidence& out, const char* path = OMEGA_EFFECT_EVIDENCE_PATH) noexcept {
+    const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    struct stat st{};
+    if (::fstat(fd, &st) < 0 || static_cast<size_t>(st.st_size) < sizeof(EffectEvidence)) { ::close(fd); return false; }
+    void* a = ::mmap(nullptr, sizeof(EffectEvidence), PROT_READ, MAP_SHARED, fd, 0);
+    ::close(fd);
+    if (a == MAP_FAILED) return false;
+    const auto* m = static_cast<const EffectEvidence*>(a);
+    bool ok = false;
+    for (int i = 0; i < 20 && !ok; ++i) {
+        const uint64_t s1 = reinterpret_cast<const std::atomic<uint64_t>*>(&m->seq)->load(std::memory_order_acquire);
+        if (s1 & 1u) continue;
+        out = *m;
+        const uint64_t s2 = reinterpret_cast<const std::atomic<uint64_t>*>(&m->seq)->load(std::memory_order_acquire);
+        ok = (s1 == s2) && out.magic == OMEGA_EFFECT_EVIDENCE_MAGIC && out.version == OMEGA_EFFECT_EVIDENCE_VERSION;
+    }
+    ::munmap(a, sizeof(EffectEvidence));
+    return ok;
+}
+
 inline EvidencePublisher& effectEvidence() noexcept {
     static EvidencePublisher p;
     return p;

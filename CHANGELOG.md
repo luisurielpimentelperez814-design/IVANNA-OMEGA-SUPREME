@@ -1,3 +1,9 @@
+## v2.5.223 (514) - 2026-11-02
+
+- **Daemon `GET_PROCESSOR_EVIDENCE`:** the root daemon reads the effect's evidence file (not readable by the app under SELinux) and answers with per-processor verdicts computed from the delta since the previous query: `hrtfApplying`, `hrtfDspDelegated`, `rirApplying` (block counters moved AND output energy differs from input), `safReachedHrtf`, `safReachedRir`, plus the baked SAF coefficients. First query returns `comparable:false` (no baseline).
+- **CLI:** `ivanna_control.sh evidence` queries twice, 3 s apart, so the second reply is a real measurement.
+- **Validation boundary:** needs the module rebuilt by CI and audio playing; silence yields no verdict by design.
+
 ## v2.5.222 (513) - 2026-11-02
 
 - **Daemon supervision (Magisk):** `service.sh` started `ivanna_daemon` once and exited, so a later crash or lost socket left the app without a control plane until reboot. New `supervisor.sh` (single instance, verified by cmdline) checks every 5 s for the process AND the abstract socket, relaunches through `service.sh` with exponential backoff (5 → 60 s) and stops after 8 relaunches in an hour or when `.safe_mode`/`disable`/`remove` appears. Logged to `daemon.log` ("supervisor: ...").
