@@ -76,6 +76,8 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
                 if (IvannaNativeLib.isLoaded && subjectIndex >= 0) {
                     runCatching { SaFBridge.setSubjectIndexHint(subjectIndex) }
                 }
+                // Keep the SYSTEM_WIDE effect aligned with this panel's HRTF switch.
+                runCatching { OmegaEngineBridge.queueSystemWideHrtfEnabled(config.hrtfEnabled) }
                 if (config.rirEnabled && roomList.isNotEmpty()) {
                     val roomIndex = config.rirRoom.coerceIn(0, roomList.lastIndex)
                     runCatching {
