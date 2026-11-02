@@ -813,22 +813,36 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         }
 
     } else if (strcmp(action,"SET_YAMNET_SCORES")==0 || strcmp(action,"PUSH_YAMNET_SCORES")==0) {
-        float speech = _clamp(_jsonFloat(json,"speech",0.f), 0.f, 1.f);
-        float music = _clamp(_jsonFloat(json,"music",0.f), 0.f, 1.f);
-        float classId = _jsonFloat(json,"classId",0.f);
-        float conf = _clamp(_jsonFloat(json,"confidence",0.f), 0.f, 1.f);
-        if (OmegaSharedState* shm = getSharedState()) {
+        const float speechRaw = _jsonFloat(json,"speech",0.f);
+        const float musicRaw = _jsonFloat(json,"music",0.f);
+        const float classRaw = _jsonFloat(json,"classId",-1.f);
+        const float confRaw = _jsonFloat(json,"confidence",0.f);
+        if (!std::isfinite(speechRaw) || !std::isfinite(musicRaw) ||
+            !std::isfinite(classRaw) || !std::isfinite(confRaw) ||
+            classRaw < 0.f || classRaw > 520.f || std::floor(classRaw) != classRaw) {
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":false,\"command\":\"%s\",\"applied\":false,\"status\":\"invalid_classifier_payload\"}",
+                action);
+        } else if (OmegaSharedState* shm = getSharedState()) {
+            const float speech = _clamp(speechRaw, 0.f, 1.f);
+            const float music = _clamp(musicRaw, 0.f, 1.f);
+            const float conf = _clamp(confRaw, 0.f, 1.f);
             shm->ai_voice_score.store(speech, std::memory_order_relaxed);
             shm->ai_music_score.store(music, std::memory_order_relaxed);
-            shm->ai_yamnet_class_id.store(static_cast<int>(classId), std::memory_order_relaxed);
+            shm->ai_yamnet_class_id.store(static_cast<int>(classRaw), std::memory_order_relaxed);
             shm->ai_yamnet_confidence.store(conf, std::memory_order_relaxed);
+            CS_LOG("YAMNET snapshot published speech=%.2f music=%.2f class=%d conf=%.2f",
+                   speech, music, static_cast<int>(classRaw), conf);
+            const uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+            const char* cons = hasActiveConsumer() ? "\"omega_effect\"" : "null";
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":true,\"command\":\"%s\",\"published\":true,\"applied\":false,\"status\":\"published_to_shared_state\",\"generation\":%llu,\"route\":\"CONTROL_PLANE\",\"consumer\":%s,\"speech\":%.2f,\"music\":%.2f,\"classId\":%d,\"confidence\":%.2f}",
+                action, (unsigned long long)gen, cons, speech, music, static_cast<int>(classRaw), conf);
+        } else {
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":false,\"command\":\"%s\",\"published\":false,\"applied\":false,\"status\":\"shared_state_unavailable\"}",
+                action);
         }
-        CS_LOG("YAMNET REAL speech=%.2f music=%.2f class=%d conf=%.2f", speech, music, (int)classId, conf);
-        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
-        const char* cons = hasActiveConsumer() ? "\"omega_effect\"" : "null";
-        n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"%s\",\"applied\":true,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"speech\":%.2f,\"music\":%.2f,\"classId\":%d,\"confidence\":%.2f}",
-            action, (unsigned long long)gen, cons, speech, music, (int)classId, conf);
 
     } else if (strcmp(action,"SET_ROUTE_PROFILE")==0) {
         m_state.bass_boost = _jsonFloat(json,"bassBoostDb", m_state.bass_boost);
