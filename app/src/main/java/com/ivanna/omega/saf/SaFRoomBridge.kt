@@ -87,9 +87,12 @@ object SaFRoomBridge {
      * [3] βᵀz        — exponente contextual de λ_t
      * [4] iteration  — contador de soluciones aceptadas
      */
-    fun getDiagnostics(): FloatArray =
-        if (loaded) runCatching { nativeSafrDiag() }.getOrElse { FloatArray(5) }
-        else FloatArray(5)
+    /** Null means JNI unavailable or the diagnostics call failed; zeros are not a success signal. */
+    fun getDiagnosticsOrNull(): FloatArray? =
+        if (loaded) runCatching { nativeSafrDiag() }.getOrNull() else null
+
+    /** Compatibility API for existing callers; telemetry should use getDiagnosticsOrNull(). */
+    fun getDiagnostics(): FloatArray = getDiagnosticsOrNull() ?: FloatArray(5)
 
     fun reset() { if (loaded) runCatching { nativeSafrReset() } }
 
