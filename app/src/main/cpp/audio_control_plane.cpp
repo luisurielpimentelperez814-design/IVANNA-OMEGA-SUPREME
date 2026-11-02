@@ -259,6 +259,10 @@ int control_apply_frame() noexcept {
     // sobreviva a cualquiera de los dos.
     // ────────────────────────────────────────────────────────────────
     if (evo_active) {
+        float evo_eq[4];
+        for (int i = 0; i < 4; ++i) {
+            evo_eq[i] = g_control_frame.evo_genome_eq[i].load(std::memory_order_relaxed);
+        }
         const float evo_drive     = g_control_frame.evo_genome_dsp[0].load(std::memory_order_relaxed);
         const float evo_resonance = g_control_frame.evo_genome_dsp[1].load(std::memory_order_relaxed);
 
@@ -270,6 +274,13 @@ int control_apply_frame() noexcept {
         for (int i = 0; i < 2; ++i) {
             evo_spatial[i] = g_control_frame.evo_genome_spatial[i].load(std::memory_order_relaxed);
         }
+
+        // Four-band evolutionary EQ. 0.5 is neutral; each band is bounded to +/-4 dB.
+        f.low      = std::clamp(f.low      + (evo_eq[0] - 0.5f) * 8.0f, -18.0f, 18.0f);
+        f.mid      = std::clamp(f.mid      + (evo_eq[1] - 0.5f) * 8.0f, -18.0f, 18.0f);
+        f.high     = std::clamp(f.high     + (evo_eq[2] - 0.5f) * 8.0f, -18.0f, 18.0f);
+        f.presence = std::clamp(f.presence + (evo_eq[3] - 0.5f) * 8.0f, -18.0f, 18.0f);
+        updates += 4;
 
         // DSP: drive/resonance
         f.drive     = std::clamp(evo_drive,     0.f, 1.f);
