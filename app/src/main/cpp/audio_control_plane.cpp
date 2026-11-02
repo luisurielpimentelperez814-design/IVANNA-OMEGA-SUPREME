@@ -266,8 +266,8 @@ int control_apply_frame() noexcept {
         for (int i = 0; i < 4; ++i) {
             evo_nho[i] = g_control_frame.evo_genome_nho[i].load(std::memory_order_relaxed);
         }
-        float evo_spatial[3];
-        for (int i = 0; i < 3; ++i) {
+        float evo_spatial[2];
+        for (int i = 0; i < 2; ++i) {
             evo_spatial[i] = g_control_frame.evo_genome_spatial[i].load(std::memory_order_relaxed);
         }
 
