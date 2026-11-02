@@ -21,6 +21,7 @@ import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.spatial.IvannaSpatialManager
 import com.ivanna.omega.spatial.IvannaSpatialEngine
 import com.ivanna.omega.saf.SaFEngine
+import com.ivanna.omega.saf.SaFRoomBridge
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
@@ -372,6 +373,10 @@ class FotoHoloTelemetryBridge(context: Context) {
         val tel = FotoHoloEngine.telemetry.value
         val metrics = OmegaMetrics.shared.value
         val saf = SaFEngine.latestTelemetry()
+        // SaFEngine is the guided listener-calibration state machine; SaFRoomBridge
+        // is a separate closed-form room MAP solver. Never report one as the other.
+        val safRoomDiag = runCatching { SaFRoomBridge.getDiagnosticsOrNull() }
+            .getOrNull()?.takeIf { it.size >= 5 && it.all { value -> value.isFinite() } }
         val hrtfLoaded = runCatching { IvannaSpatialManager.isHrtfDatasetLoaded() }.getOrDefault(false)
         val hrtfSubject = runCatching { IvannaSpatialManager.currentHrtfSubject() }.getOrDefault("unknown")
         val rirLoaded = runCatching { OmegaEngineBridge.isRirDatasetLoaded() }.getOrDefault(false)
@@ -436,6 +441,15 @@ class FotoHoloTelemetryBridge(context: Context) {
             put("safPhase", saf?.phase?.name ?: "not-initialized")
             put("safIteration", saf?.iteration ?: JSONObject.NULL)
             put("safErrorEnergy", saf?.errorEnergy?.let { finiteOrNull(it) } ?: JSONObject.NULL)
+            put("safRoomRuntime", when {
+                !IvannaNativeLib.isLoaded -> "jni-unavailable"
+                safRoomDiag == null -> "diagnostics-unavailable"
+                safRoomDiag[4] >= 1f -> "map-solution-accepted"
+                else -> "ready-no-solution"
+            })
+            put("safRoomIteration", safRoomDiag?.get(4)?.takeIf { it >= 0f }?.toInt() ?: JSONObject.NULL)
+            put("safRoomTargetWeight", safRoomDiag?.get(0)?.let { finiteOrNull(it) } ?: JSONObject.NULL)
+            put("safRoomError", safRoomDiag?.get(1)?.let { finiteOrNull(it) } ?: JSONObject.NULL)
             put("nativeSpatialState", nativeState.take(512))
         }.toString()
     }.getOrElse {

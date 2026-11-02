@@ -122,8 +122,7 @@ static constexpr int   EVO_CONVERGENCE_STALL = 25;
 // porque la selección por torneo toma padres de los primeros 2*ELITE_COUNT.
 static std::atomic<int> g_activePop {POPULATION_SIZE};
 static std::atomic<int> g_maxGenerations {0};   // 0 = sin tope
-static float g_lastBestFitness = 0.0f;
-static int   g_stallCount      = 0;
+static std::atomic<int> g_stallCount {0};
 
 // Audio cues — actualizados desde el audio thread vía evo_update_audio_cues
 static std::atomic<float> g_loudness  {0.0f};
@@ -133,6 +132,9 @@ static std::atomic<float> g_spatial   {0.0f};
 static std::atomic<float> g_spectralCentroid {2000.0f};
 static std::atomic<float> g_tonality         {0.5f};
 static std::atomic<float> g_dynamicRange     {0.5f};
+// A generation may only be optimized against a real, non-silent audio block.
+static std::atomic<bool> g_audioCuesValid {false};
+static std::atomic<bool> g_liveFitnessReady {false};
 
 // Precalcular A-weighting para los 128 bins del genoma
 static float s_aWeightTable[GENOME_SIZE / 2] = {};
@@ -293,14 +295,20 @@ static std::mutex  g_saveMutex;
 // regeneraba la población mientras el hilo de fondo la evolucionaba (data race).
 // Orden de bloqueo: g_evoMutex → g_saveMutex.
 static std::mutex g_evoMutex;
+static std::mutex g_convergenceMutex;
 
 // Mejor genoma publicado para lectores en tiempo real (audio_orchestrator lo lee desde el
 // procesamiento de audio): seqlock — el lector nunca bloquea ni toma el mutex.
 static std::atomic<uint32_t> g_bestSeq {0};   // impar = escritura en curso
-static uint8_t g_bestGenome[GENOME_SIZE];
+static std::atomic<uint8_t> g_bestGenome[GENOME_SIZE]{};
+static std::atomic<float> g_publishedBestFitness {0.0f};
+static std::atomic<uint32_t> g_publishedGeneration {0};
 static void publishBestGenomeLocked() {
     g_bestSeq.fetch_add(1, std::memory_order_acq_rel);
-    std::memcpy(g_bestGenome, g_population.individuals[0].genome, GENOME_SIZE);
+    for (int i = 0; i < GENOME_SIZE; ++i)
+        g_bestGenome[i].store(g_population.individuals[0].genome[i], std::memory_order_relaxed);
+    g_publishedBestFitness.store(g_population.bestFitness, std::memory_order_relaxed);
+    g_publishedGeneration.store(g_population.generation, std::memory_order_relaxed);
     g_bestSeq.fetch_add(1, std::memory_order_release);
 }
 
@@ -328,8 +336,8 @@ void evo_initialize_population() {
               [](const auto& a, const auto& b){ return a.fitness > b.fitness; });
     g_population.generation  = 0;
     g_population.bestFitness = g_population.individuals[0].fitness;
-    g_lastBestFitness = g_population.bestFitness;
-    g_stallCount = 0;
+    g_stallCount.store(0, std::memory_order_relaxed);
+    g_liveFitnessReady.store(false, std::memory_order_release);
     publishBestGenomeLocked();
     g_initialized.store(true, std::memory_order_release);
 }
@@ -398,10 +406,10 @@ void evo_set_max_generations(int n) {
     g_maxGenerations.store(n > 0 ? n : 0, std::memory_order_relaxed);
 }
 
-float evo_best_fitness() { return g_population.bestFitness; }
+float evo_best_fitness() { return g_publishedBestFitness.load(std::memory_order_acquire); }
 
 int evo_get_generation() {
-    return g_population.generation;
+    return static_cast<int>(g_publishedGeneration.load(std::memory_order_acquire));
 }
 
 void evo_get_best_genome(uint8_t* out, int len) {
@@ -410,9 +418,10 @@ void evo_get_best_genome(uint8_t* out, int len) {
     for (int attempt = 0; attempt < 8; ++attempt) {
         const uint32_t s1 = g_bestSeq.load(std::memory_order_acquire);
         if (s1 & 1u) continue;                       // escritor activo: reintentar
-        std::memcpy(tmp, g_bestGenome, GENOME_SIZE);
+        for (int i = 0; i < GENOME_SIZE; ++i)
+            tmp[i] = g_bestGenome[i].load(std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_acquire);
-        if (g_bestSeq.load(std::memory_order_relaxed) == s1) {
+        if (g_bestSeq.load(std::memory_order_acquire) == s1) {
             std::memcpy(out, tmp, std::min(len, GENOME_SIZE));
             return;
         }
@@ -426,6 +435,9 @@ void evo_update_audio_cues(float loudness, float transient, float spatial) {
     g_loudness  .store(loudness,  std::memory_order_relaxed);
     g_transient .store(transient, std::memory_order_relaxed);
     g_spatial   .store(spatial,   std::memory_order_relaxed);
+    const bool valid = std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f;
+    g_audioCuesValid.store(valid, std::memory_order_release);
+    if (!valid) g_liveFitnessReady.store(false, std::memory_order_release);
 }
 
 // v2.0: cues adicionales
@@ -440,6 +452,9 @@ void evo_update_audio_cues_v2(float loudness, float transient, float spatial,
     g_spectralCentroid.store(std::clamp(centroid, 0.0f, 24000.0f), std::memory_order_relaxed);
     g_tonality        .store(std::clamp(tonality, 0.0f, 1.0f), std::memory_order_relaxed);
     g_dynamicRange    .store(std::clamp(dynamicRange, 0.0f, 1.0f), std::memory_order_relaxed);
+    const bool valid = std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f;
+    g_audioCuesValid.store(valid, std::memory_order_release);
+    if (!valid) g_liveFitnessReady.store(false, std::memory_order_release);
 }
 
 void evo_set_mutation_rate(float rate) {
@@ -478,7 +493,12 @@ int evo_load_state() {
     if (ok) {
         Population loaded;
         ok = std::fread(&loaded, sizeof(loaded), 1, f) == 1;
-        if (ok) { g_population = loaded; publishBestGenomeLocked(); }
+        if (ok) {
+            g_population = loaded;
+            g_initialized.store(true, std::memory_order_release);
+            g_liveFitnessReady.store(false, std::memory_order_release);
+            publishBestGenomeLocked();
+        }
     }
     std::fclose(f); return ok ? 1 : 0;
 }
@@ -488,22 +508,40 @@ int evo_is_initialized(void) {
 }
 
 int evo_evolve_step_with_convergence(void) {
-    if (!g_initialized.load(std::memory_order_acquire)) {
-        evo_initialize_population();
-    }
-    const float before = g_population.bestFitness;
-    evo_evolve_generation();
-    const float after = g_population.bestFitness;
+    std::lock_guard<std::mutex> convergenceLk(g_convergenceMutex);
+    // Abstain until real non-silent cues arrive; do not train against silence.
+    if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
+    if (!g_initialized.load(std::memory_order_acquire)) evo_initialize_population();
 
-    if (after - before > EVO_CONVERGENCE_EPS) {
-        g_stallCount = 0;
-    } else {
-        ++g_stallCount;
+    // Population fitness is context-dependent. Re-score every member once when
+    // live cues resume so elites scored against silence/old cues cannot dominate.
+    if (!g_liveFitnessReady.load(std::memory_order_acquire)) {
+        std::lock_guard<std::mutex> evoLk(g_evoMutex);
+        const int active = std::clamp(g_activePop.load(std::memory_order_relaxed),
+                                      2 * ELITE_COUNT, POPULATION_SIZE);
+        for (int i = 0; i < active; ++i)
+            g_population.individuals[i].fitness =
+                computePsychoacousticFitness(g_population.individuals[i].genome, GENOME_SIZE);
+        std::sort(g_population.individuals, g_population.individuals + active,
+                  [](const auto& a, const auto& b){ return a.fitness > b.fitness; });
+        g_population.bestFitness = g_population.individuals[0].fitness;
+        publishBestGenomeLocked();
+        if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
+        g_liveFitnessReady.store(true, std::memory_order_release);
     }
-    g_lastBestFitness = after;
+
+    // Cues can turn silent while the population is being re-scored; check once
+    // more before spending a generation on stale/silent material.
+    if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
+    const float before = evo_best_fitness();
+    evo_evolve_generation();
+    const float after = evo_best_fitness();
+
+    if (after - before > EVO_CONVERGENCE_EPS) g_stallCount.store(0, std::memory_order_relaxed);
+    else g_stallCount.fetch_add(1, std::memory_order_relaxed);
     const int cap = g_maxGenerations.load(std::memory_order_relaxed);
-    if (cap > 0 && static_cast<int>(g_population.generation) >= cap) return 0;  // tope de generaciones alcanzado
-    return (g_stallCount >= EVO_CONVERGENCE_STALL) ? 0 : 1;
+    if (cap > 0 && evo_get_generation() >= cap) return 0;
+    return (g_stallCount.load(std::memory_order_relaxed) >= EVO_CONVERGENCE_STALL) ? 0 : 1;
 }
 
 } // extern "C"

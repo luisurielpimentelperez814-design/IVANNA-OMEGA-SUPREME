@@ -1,3 +1,12 @@
+## v2.5.219 (510) - 2026-11-01
+
+- **Evolutionary kernel:** worker advances only on valid non-silent post-DSP cues; population is re-scored when live signal resumes so elites evaluated against silence cannot dominate.
+- **Worker lifecycle:** explicit UI Start works independently of renderer mode; Stop/mode exit joins the worker; convergence releases the evolved override instead of leaving a latched control state.
+- **Concurrency:** best genome bytes, fitness and generation are published through atomic state for lock-free audio-thread readers.
+- **FotoHolo Nanotomix:** UI distinguishes native DSP controls (spatial width and rotation) from visual-only depth/elevation/inclination. SAF listener calibration and SAF Room MAP diagnostics are reported separately.
+- **Sony Genezy MHCPZ1:** UI records the physical topology (front L/R, satellite L/R, subwoofer) while accurately describing stereo AUX transport and the Genezy amplifier's internal speaker distribution; no fictitious five-channel PCM or IVANNA crossover is claimed.
+- **Validation boundary:** CI and Moto G85/AUX listening tests are required before declaring acoustic improvement. Asset presence, control acceptance and scene rendering are not proof of audible application.
+
 ## v2.5.218 (509) - 2026-11-01
 
 - **Build gate:** OFF-mode regression test now requires identity bypass; JVM updater tests verify that DSP state remains deferred when the JNI library is absent.

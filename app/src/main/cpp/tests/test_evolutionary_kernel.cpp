@@ -91,6 +91,9 @@ TEST(EvolutionaryKernelV2, EvolveIsStableUnderExtremeMutationRate) {
 
 TEST(EvolutionaryKernelV2, UnifiedJniSymbolsEndToEnd) {
     JNIEnv env{};
+    // nativeEvolveStep must only advance on a real, non-silent cue frame.
+    // Keep this end-to-end JNI test aligned with the runtime safety contract.
+    evo_update_audio_cues_v2(0.45f, 0.20f, 0.30f, 3200.0f, 0.65f, 0.55f);
     EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(&env, nullptr, 128, 50), JNI_TRUE);
     EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(&env, nullptr), 0);
     EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(&env, nullptr), JNI_TRUE);
@@ -124,6 +127,8 @@ TEST(EvolutionaryKernelV2, ActivePopulationSizeIsClampedAndKeepsElitism) {
 
 TEST(EvolutionaryKernelV2, GenerationCapStopsTheLoopAndLiveTuningDoesNotReset) {
     JNIEnv env{};
+    // A real, non-silent cue frame is required before the optimizer may advance.
+    evo_update_audio_cues_v2(0.45f, 0.20f, 0.30f, 3200.0f, 0.65f, 0.55f);
     evo_set_population_size(128);
     evo_set_max_generations(0);
     evo_initialize_population();
@@ -143,6 +148,16 @@ TEST(EvolutionaryKernelV2, GenerationCapStopsTheLoopAndLiveTuningDoesNotReset) {
     evo_set_max_generations(0);
 }
 
+
+TEST(EvolutionaryKernelV2, SilentInputDoesNotAdvanceGeneration) {
+    evo_update_audio_cues_v2(0.0f, 0.0f, 0.0f, 2000.0f, 0.5f, 0.5f);
+    evo_initialize_population();
+    EXPECT_EQ(evo_evolve_step_with_convergence(), 1);
+    EXPECT_EQ(evo_get_generation(), 0);
+    evo_update_audio_cues_v2(0.45f, 0.20f, 0.30f, 3200.0f, 0.65f, 0.55f);
+    EXPECT_EQ(evo_evolve_step_with_convergence(), 1);
+    EXPECT_EQ(evo_get_generation(), 1);
+}
 
 TEST(SAFMUSEvolutionGate, RequiresFiniteBoundedCandidateAndHeadroom) {
     using ivanna::safmus::EvolutionCandidateEvidence;
