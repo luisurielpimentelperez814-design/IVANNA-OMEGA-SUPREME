@@ -1,3 +1,10 @@
+## v2.5.215 (506) — 2026-11-01
+
+- **Acoustic Reality Route B corregido:** los controles de activación e intensidad dejan de escribir solo en el singleton JNI del proceso de la app y publican el estado mediante `SET_REALITY_RECONSTRUCTION` al daemon.
+- **Evidencia real de aplicación:** la interfaz verifica el read-back del daemon y la generación consumida por `omega_effect`; diferencia control aceptado de bloque DSP aplicado y no afirma mejora audible sin A/B nivelado.
+- **Regresión UI:** pruebas cubren estados pendientes y generación DSP confirmada.
+- **Límite de validación:** requiere CI, instalación y reproducción real en el Moto G85; HRTF/RIR/SAF y respuesta acústica siguen sujetos a sus propias verificaciones.
+
 ## v2.5.214 (505) — 2026-11-01
 
 - **FotoHolo A/B conectado de extremo a extremo:** Ruta A conserva el análisis Bark de PlaybackCaptureService y su StereoWidener local; Ruta B analiza el PCM seco real de AudioFlinger dentro de `omega_effect`, sin depender de la captura A.
