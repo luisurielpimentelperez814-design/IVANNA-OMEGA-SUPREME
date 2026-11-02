@@ -1279,7 +1279,11 @@ static int32_t omega_process(effect_handle_t self,
             aiDominantClass = classifier->getDominantClass();
         }
 
-        // FASE ADAPTATIVA INTELIGENTE V2 (EQ, HRTF, Spatial)
+        // FASE ADAPTATIVA INTELIGENTE V2 (EQ, HRTF, Spatial).
+        // El objetivo vuelve a 1.0 cuando se apaga el motor; la envolvente
+        // se ejecuta fuera del if para no dejar una atenuación retenida ni
+        // saltar de golpe al bypass.
+        float adaptiveGainTarget = 1.0f;
         if (ctx->adaptiveEngine && ctx->adaptiveEnabled) {
             ++ctx->adaptiveApplyBlocks;
             float pitchHz = 0.0f;
@@ -1319,18 +1323,18 @@ static int32_t omega_process(effect_handle_t self,
             // (cada bloque cambia el valor suavizado -> clic periodico). Ahora el
             // techo es 1.0 y la ganancia se rampa linealmente por muestra desde el
             // valor del bloque anterior hasta el nuevo.
-            const float combinedAdaptGain = std::clamp(overallTrim * isoGain, 0.50f, 1.0f);
-            const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
-            ctx->adaptGainPrev = combinedAdaptGain;
-            if (std::fabs(combinedAdaptGain - 1.0f) > 1.0e-4f ||
-                std::fabs(gStart - 1.0f) > 1.0e-4f) {
-                const float gStep = (combinedAdaptGain - gStart) / (float)chunk;
-                float g = gStart;
-                for (int n = 0; n < chunk; ++n) {
-                    g += gStep;
-                    L[n] *= g;
-                    R[n] *= g;
-                }
+            adaptiveGainTarget = std::clamp(overallTrim * isoGain, 0.50f, 1.0f);
+        }
+        const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
+        ctx->adaptGainPrev = adaptiveGainTarget;
+        if (std::fabs(adaptiveGainTarget - 1.0f) > 1.0e-4f ||
+            std::fabs(gStart - 1.0f) > 1.0e-4f) {
+            const float gStep = (adaptiveGainTarget - gStart) / (float)chunk;
+            float g = gStart;
+            for (int n = 0; n < chunk; ++n) {
+                g += gStep;
+                L[n] *= g;
+                R[n] *= g;
             }
         } else if (ctx->adaptGainPrev > 0.0f &&
                    std::fabs(ctx->adaptGainPrev - 1.0f) > 1.0e-4f) {
