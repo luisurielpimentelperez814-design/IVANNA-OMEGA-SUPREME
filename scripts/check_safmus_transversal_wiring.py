@@ -79,7 +79,8 @@ require("app/src/main/cpp/audio_control_plane.hpp",
         "evo_genome_valid.store(true, std::memory_order_release)",
         "inline void control_clear_evo_genome()")
 require("app/src/main/cpp/audio_control_plane.cpp",
-        "Four-band evolutionary EQ", "f.presence", "evo_genome_eq[i]")
+        "Four-band evolutionary EQ", "f.presence", "evo_genome_eq[i]",
+        "g_staging_frame.drive = baseDrive", "g_staging_frame.presence = basePresence")
 require("app/src/main/cpp/audio_control_plane.cpp",
         "g_control_frame.evo_genome_valid.load(std::memory_order_acquire)")
 
