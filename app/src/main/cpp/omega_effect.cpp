@@ -1918,7 +1918,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     }
                 }
                 if (!hrtfLoaded) {
-                    LOGI("Using SOFA+SAF Golden Manifold HRTF (255-subject PCA basis active)");
+                    LOGW("No custom measured HRTF file found in AudioFlinger process; internal fallback only. measured-grid-ready=%d", Ivanna::hrtfDatabaseReady() ? 1 : 0);
                 }
                 // Tabla HRTF de la rejilla (HRTFInterpolator -> HybridRenderer del
                 // pipeline). Se llena SOLO desde un dataset medido; si no carga,
