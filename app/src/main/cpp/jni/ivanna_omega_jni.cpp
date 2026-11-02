@@ -587,31 +587,15 @@ static void audioRouteBridgeLoop() {
         ivanna::experimental::RawAudioMetrics rawM{};
         rawM.rms               = rms;
         rawM.peak              = peak;
-        // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado.
-        // Ahora viene de BandEnergyMeter (omega_daemon.cpp::processLoop()),
-        // 3 filtros IIR reales sobre la señal seca — ver ese archivo.
-        // AUDIT FIX (SIGSEGV en fallback sin daemon): nunca dereferenciar
-        // shared cuando el daemon no entregó la región compartida. Sin esa
-        // región, no hay medidor de bandas ni score YAMNet disponible para
-        // esta ruta; la ausencia permanece explícita en los flags de validez.
-        // No sintetizar LOW/MID/HIGH a partir del RMS ni voz a partir de MID.
-        // Solo se acepta YAMNet cuando la región compartida contiene una
-        // inferencia válida (classId y confidence); de otro modo queda
-        // voice_score_valid=false y el motor opera neutral.
-        rawM.band_energy_valid = (shared != nullptr);
-        if (shared) {
-            rawM.band_low_energy  = shared->ai_band_low.load(std::memory_order_relaxed);
-            rawM.band_mid_energy  = shared->ai_band_mid.load(std::memory_order_relaxed);
-            rawM.band_high_energy = shared->ai_band_high.load(std::memory_order_relaxed);
-            const int yamnetClass = shared->ai_yamnet_class_id.load(std::memory_order_relaxed);
-            const float confidence = shared->ai_yamnet_confidence.load(std::memory_order_relaxed);
-            const float speech = shared->ai_voice_score.load(std::memory_order_relaxed);
-            if (yamnetClass >= 0 && std::isfinite(confidence) && confidence > 1.0e-4f &&
-                std::isfinite(speech)) {
-                rawM.voice_score = std::clamp(speech, 0.0f, 1.0f);
-                rawM.voice_score_valid = true;
-            }
-        }
+        // La memoria compartida conserva estos campos por compatibilidad ABI,
+        // pero este build no tiene un productor verificable para ai_band_*.
+        // Tampoco hay timestamp/route-generation unido al último score YAMNet:
+        // no se puede asegurar que corresponda a este bloque PCM. La ruta B real
+        // usa el RtBandMeter y el clasificador per-instance de omega_effect.cpp.
+        // Este puente global conserva solo RMS/peak y una GR del AGC cuando está
+        // habilitado; bandas y voz permanecen explícitamente no disponibles.
+        rawM.band_energy_valid = false;
+        rawM.voice_score_valid = false;
         rawM.gain_reduction_db = grDb;
         // Exponer band energies Ruta B al JNI getter (AdaptiveDashboard)
         g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
