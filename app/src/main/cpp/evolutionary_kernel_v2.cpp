@@ -133,6 +133,8 @@ static std::atomic<float> g_spatial   {0.0f};
 static std::atomic<float> g_spectralCentroid {2000.0f};
 static std::atomic<float> g_tonality         {0.5f};
 static std::atomic<float> g_dynamicRange     {0.5f};
+// A generation may only be optimized against a real, non-silent audio block.
+static std::atomic<bool> g_audioCuesValid {false};
 
 // Precalcular A-weighting para los 128 bins del genoma
 static float s_aWeightTable[GENOME_SIZE / 2] = {};
@@ -426,6 +428,8 @@ void evo_update_audio_cues(float loudness, float transient, float spatial) {
     g_loudness  .store(loudness,  std::memory_order_relaxed);
     g_transient .store(transient, std::memory_order_relaxed);
     g_spatial   .store(spatial,   std::memory_order_relaxed);
+    g_audioCuesValid.store(std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f,
+                           std::memory_order_release);
 }
 
 // v2.0: cues adicionales
@@ -440,6 +444,8 @@ void evo_update_audio_cues_v2(float loudness, float transient, float spatial,
     g_spectralCentroid.store(std::clamp(centroid, 0.0f, 24000.0f), std::memory_order_relaxed);
     g_tonality        .store(std::clamp(tonality, 0.0f, 1.0f), std::memory_order_relaxed);
     g_dynamicRange    .store(std::clamp(dynamicRange, 0.0f, 1.0f), std::memory_order_relaxed);
+    g_audioCuesValid.store(std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f,
+                           std::memory_order_release);
 }
 
 void evo_set_mutation_rate(float rate) {
@@ -488,6 +494,9 @@ int evo_is_initialized(void) {
 }
 
 int evo_evolve_step_with_convergence(void) {
+    // Keep the worker alive but abstain until a real non-silent audio block has
+    // supplied perceptual cues. Random evolution without a signal is not learning.
+    if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
     if (!g_initialized.load(std::memory_order_acquire)) {
         evo_initialize_population();
     }
