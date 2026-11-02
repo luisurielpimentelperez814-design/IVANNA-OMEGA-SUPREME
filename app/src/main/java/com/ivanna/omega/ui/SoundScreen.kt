@@ -46,6 +46,7 @@ fun SoundScreen(modifier: Modifier = Modifier) {
         prefs = update(prefs)
         AdaptiveControlsPrefs.save(appContext, prefs)
     }
+    val routeAdaptiveEnabled = prefs.binauralAdaptEnabled && !audioState.manualModeEnabled
 
     // FIX: EQ/Compresor/Gain se perdían en cada reinicio porque AudioState
     // es in-memory. Restaurar desde prefs y replicar al motor nativo al abrir.
@@ -416,7 +417,7 @@ private fun BinauralTab(
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         syncHybridToNative(prefs)
         // Persisted toggles are re-published to the SYSTEM_WIDE effect whenever this tab opens.
-        requestRouteFeatures(hrtfEnabled, prefs.binauralAdaptEnabled)
+        requestRouteFeatures(hrtfEnabled, routeAdaptiveEnabled)
         var initialPoseConfirmed = false
         var pollCount = 0
         while (true) {
@@ -476,11 +477,15 @@ private fun BinauralTab(
                     onCheckedChange = { en ->
                         updatePrefs { it.copy(binauralAdaptEnabled = en) }
                         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(en) }
-                        requestRouteFeatures(hrtfEnabled, en)
+                        requestRouteFeatures(hrtfEnabled, en && !audioState.manualModeEnabled)
                     }
                 )
             }
             ControlHelpText("MOTOR ADAPTATIVO")
+            if (audioState.manualModeEnabled) {
+                Text("MODO MANUAL ACTIVO · adaptación automática en Ruta B suspendida",
+                    color = TextSecondary, fontSize = 10.sp)
+            }
             Text(routeFeatureStatus, color = TextSecondary, fontSize = 10.sp)
             IvannaSliderRow("AZIMUT", prefs.binauralAzimuth, -180f, 180f, "°") { v ->
                 val next = prefs.copy(binauralAzimuth = v)
