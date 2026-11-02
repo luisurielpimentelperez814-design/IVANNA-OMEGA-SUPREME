@@ -1050,13 +1050,18 @@ jobs:
   # Explicit opt-in via commit message marker. This publishes verified build artifacts
   # for on-device testing while leaving the HWS-01..04 production gate untouched.
   publish-hardware-validation:
-    name: Publish hardware-validation prerelease (non-production)
+    name: Publish hardware-validation prerelease for integration branch (non-production)
     runs-on: ubuntu-22.04
     needs: [verify-release]
     if: >-
       github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      contains(github.event.head_commit.message, '[hardware-validation-release]') &&
+      (
+        github.ref == 'refs/heads/integration/atomic-runtime-hardening' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          contains(github.event.head_commit.message, '[hardware-validation-release]')
+        )
+      ) &&
       needs.verify-release.result == 'success'
     permissions:
       contents: write
@@ -1100,7 +1105,8 @@ jobs:
           sha256sum "$ZIP" "$APK" ivanna_daemon > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
 
-          TAG="validation-${MODULE_VERSION}-${GITHUB_SHA:0:12}"
+          BRANCH_SLUG=$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+          TAG="validation-${BRANCH_SLUG}-${MODULE_VERSION}-${GITHUB_SHA:0:12}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$MODULE_VERSION" >> "$GITHUB_OUTPUT"
 
