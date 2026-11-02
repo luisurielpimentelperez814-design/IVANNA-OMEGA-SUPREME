@@ -167,6 +167,8 @@ object RouteDspCalibrator {
             route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
         val headphoneHrtfAllowed = ExternalStereoPolicy.allowHeadphoneHrtf(
             route, saPrefs?.externalStereoLineOut == true, saPrefs?.hrtfEnabled ?: true)
+        // Route policy is authoritative for the system effect, not only the app-local JNI renderer.
+        runCatching { OmegaEngineBridge.queueSystemWideHrtfEnabled(headphoneHrtfAllowed) }
         val hasPersonalSaf = runCatching { com.ivanna.omega.saf.SaFBridge.nativeSaFGetIteration() > 0 }.getOrDefault(false)
         val safAllowed = saPrefs?.safEnabled == true && !externalStereo && !hasPersonalSaf
         // Route changes must publish or bypass the saved profile, not leave the previous
