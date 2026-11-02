@@ -147,24 +147,24 @@ inline void control_set_phase_oracle(float T_refined, float coherence) noexcept 
 }
 
 /*
- * Publica 12 descriptores decodificados del cromosoma uint8[256].
+ * Publica 8 descriptores decodificados del cromosoma uint8[256].
  * [0..1]=DSP (drive/resonance), [2..5]=NHO, [6..7]=Spatial (angle/width).
  * Los 8 valores proceden de la partición completa del cromosoma uint8[256].
  */
 inline void control_set_evo_genome(const float* genome, int genome_size) noexcept {
     if (!genome || genome_size < 8) return;
 
-    // DSP params [0..4]
+    // DSP params [0..1]
     for (int i = 0; i < 2; ++i) {
         g_control_frame.evo_genome_dsp[i].store(std::clamp(genome[i], 0.f, 1.f), std::memory_order_relaxed);
     }
 
-    // NHO params [5..8]
+    // NHO params [2..5]
     for (int i = 0; i < 4; ++i) {
-        g_control_frame.evo_genome_nho[i].store(std::clamp(genome[5 + i], 0.f, 1.f), std::memory_order_relaxed);
+        g_control_frame.evo_genome_nho[i].store(std::clamp(genome[2 + i], 0.f, 1.f), std::memory_order_relaxed);
     }
 
-    // Spatial params [9..11]
+    // Spatial params [6..7]
     for (int i = 0; i < 2; ++i) {
         g_control_frame.evo_genome_spatial[i].store(std::clamp(genome[6 + i], 0.f, 1.f), std::memory_order_relaxed);
     }
