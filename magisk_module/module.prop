@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.214
-versionCode=505
+version=v2.5.215
+versionCode=506
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.214: FotoHolo dual-route Bark modulation; AudioFlinger Route B native observer and Route A exclusivity
+description=v2.5.215: Acoustic Reality controls routed through daemon to AudioFlinger with DSP generation evidence
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
