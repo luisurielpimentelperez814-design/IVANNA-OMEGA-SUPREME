@@ -86,7 +86,7 @@ static void decode_evolutionary_genome(const uint8_t* genome, float out[8]) noex
     if (!genome || !out) return;
     for (int parameter = 0; parameter < 8; ++parameter) {
         const int begin = (parameter * GENOME_SIZE) / 8;
-        const int end = ((parameter + 1) * GENOME_SIZE) / 12;
+        const int end = ((parameter + 1) * GENOME_SIZE) / 8;
         uint32_t sum = 0;
         for (int bin = begin; bin < end; ++bin) sum += genome[bin];
         const int count = end - begin;
