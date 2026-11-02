@@ -225,8 +225,23 @@ object OmegaEngineBridge {
             // daemon recibía valores viejos tarde. Ahora el ÚLTIMO payload de cada
             // acción reemplaza al pendiente (estado, no eventos) y un solo drenaje
             // corre en el hilo de E/S.
-            val key = payload.optString("action", "")
-            pendingByAction[key] = payload
+            val action = payload.optString("action", "")
+            val key = action
+            if (action == "SET_AUDIO_FEATURES") {
+                // Merge partial HRTF/adaptive updates so two rapid UI toggles cannot erase each other.
+                pendingByAction.compute(key) { _, previous ->
+                    if (previous == null) {
+                        JSONObject(payload.toString())
+                    } else {
+                        JSONObject(previous.toString()).apply {
+                            if (payload.has("hrtfEnabled")) put("hrtfEnabled", payload.optInt("hrtfEnabled"))
+                            if (payload.has("adaptiveEnabled")) put("adaptiveEnabled", payload.optInt("adaptiveEnabled"))
+                        }
+                    }
+                }
+            } else {
+                pendingByAction[key] = payload
+            }
             if (drainScheduled.compareAndSet(false, true)) {
                 ioExecutor.execute { drainPending() }
             }
