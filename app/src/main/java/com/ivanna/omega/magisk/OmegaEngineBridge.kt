@@ -275,6 +275,10 @@ object OmegaEngineBridge {
     fun getAudioFeaturesStatus(): JSONObject? =
         requestCommand(JSONObject().apply { put("action", "GET_AUDIO_FEATURES_STATUS") })
 
+    /** Read measurements produced by omega_effect (not app-local state). */
+    fun getProcessorEvidence(): JSONObject? =
+        requestCommand(JSONObject().apply { put("action", "GET_PROCESSOR_EVIDENCE") })
+
     fun setPFParams(vararg params: Float): Boolean {
         if (params.any { !it.isFinite() }) return false
         return sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
