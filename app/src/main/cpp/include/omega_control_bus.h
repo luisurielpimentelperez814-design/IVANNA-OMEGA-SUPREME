@@ -616,6 +616,8 @@ struct OmegaDspSnapshot {
         s.supreme_snn_spikes      = 2u;
         s.supreme_subsample_delay = 0.24f;
         s.effect_frames = 0ULL;
+        // Legacy-compatible defaults: keep both Route-B engines enabled until user changes them.
+        s.temporal_field |= omega_effect_features_encode(true, true);
         s.stampCrc();
         return s;
     }
