@@ -375,7 +375,7 @@ class FotoHoloTelemetryBridge(context: Context) {
         val saf = SaFEngine.latestTelemetry()
         // SaFEngine is the guided listener-calibration state machine; SaFRoomBridge
         // is a separate closed-form room MAP solver. Never report one as the other.
-        val safRoomDiag = runCatching { SaFRoomBridge.getDiagnostics() }
+        val safRoomDiag = runCatching { SaFRoomBridge.getDiagnosticsOrNull() }
             .getOrNull()?.takeIf { it.size >= 5 && it.all { value -> value.isFinite() } }
         val hrtfLoaded = runCatching { IvannaSpatialManager.isHrtfDatasetLoaded() }.getOrDefault(false)
         val hrtfSubject = runCatching { IvannaSpatialManager.currentHrtfSubject() }.getOrDefault("unknown")
