@@ -142,15 +142,23 @@ class DspStateUpdater {
                 Log.d(TAG, "📡 Delta update enviado: ${deltas.keys.joinToString(", ")}")
             }
 
-            if (nativeWrites > 0 && !nativeWriteFailed) {
-                lastState = newState
-                nativeStateApplied = true
-            } else {
-                // Partial/empty writes are not an applied snapshot. The next call
-                // retries a complete state instead of silently suppressing deltas.
+            if (nativeWriteFailed) {
+                // A partial native update cannot be treated as an atomic snapshot.
+                // Clear the cache so the next request replays the complete state.
                 lastState = null
                 nativeStateApplied = false
-                if (nativeWriteFailed) Log.w(TAG, "DSP state not committed: one or more native setters failed")
+                Log.w(TAG, "DSP state not committed: one or more native setters failed")
+            } else if (nativeWrites > 0) {
+                lastState = newState
+                nativeStateApplied = true
+            } else if (previousState == null) {
+                // No native setter ran (for example, only an informational field changed).
+                lastState = null
+                nativeStateApplied = false
+            } else {
+                // An empty delta means the previous native snapshot is still current.
+                lastState = previousState
+                nativeStateApplied = true
             }
         } catch (t: Throwable) {
             Log.e(TAG, "❌ Error en applyUpdate", t)
