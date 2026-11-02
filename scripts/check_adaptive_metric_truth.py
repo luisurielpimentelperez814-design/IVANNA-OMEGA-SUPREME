@@ -53,12 +53,21 @@ def main() -> int:
                 raise AssertionError(f"fabricated Route B metric reintroduced: {needle}")
 
         for needle in (
-            "rawM.band_energy_valid = (shared != nullptr);",
-            "shared->ai_voice_score.load",
+            "rawM.band_energy_valid = false;",
+            "rawM.voice_score_valid = false;",
             "rawM.voice_score_valid = g_voice_protect_score_valid.load",
         ):
             if needle not in jni:
                 raise AssertionError(f"JNI metric provenance is not wired: {needle}")
+        bridge_start = jni.index("static void audioRouteBridgeLoop()")
+        bridge_end = jni.index("static inline float adaptive_mode_base_strength", bridge_start)
+        bridge = jni[bridge_start:bridge_end]
+        for stale_source in ("shared->ai_raw_rms.load", "shared->ai_raw_peak.load",
+                             "shared->ai_band_low.load", "shared->ai_yamnet_class_id.load"):
+            if stale_source in bridge:
+                raise AssertionError(f"app bridge consumes an unwritten/unsynchronized SHM field: {stale_source}")
+        if "OMEGA_EFFECT_LOCAL_BUS_PATH" not in bridge:
+            raise AssertionError("app fallback bridge has no real per-effect PCM telemetry source")
 
         if "rawM.voice_score = std::clamp((rawM.band_mid_energy" in spatial:
             raise AssertionError("spatial pipeline still derives voice from mid-band energy")
@@ -69,9 +78,14 @@ def main() -> int:
             "ctx->lastVoiceProbValid",
             "rawM.voice_score_valid = ctx->lastVoiceProbValid;",
             "rawM.band_energy_valid = true;",
+            "rawM.gain_reduction_db = ctx->safetyLimiter",
+            "ctx->adaptiveDecisionTargetGain",
+            "ctx->adaptiveDecisionCompAmount",
+            "const float effectiveRatio = std::max(v2Ratio, adeRatio);",
+            "adaptiveGainTarget = std::clamp(overallTrim * isoGain * adeGain, 0.50f, 1.0f);",
         ):
             if needle not in effect:
-                raise AssertionError(f"AudioEffect route metric validity missing: {needle}")
+                raise AssertionError(f"AudioEffect route metric/actuator wiring missing: {needle}")
 
         for needle in (
             "bool voiceScoreValid = false;",
@@ -92,7 +106,9 @@ def main() -> int:
 
     print("PASS core metric defaults are neutral and carry source-validity flags")
     print("PASS Route A voice score requires VoiceProtectionController inference")
-    print("PASS Route B bands require the daemon's real IIR meter; voice requires YAMNet confidence")
+    print("PASS Route B effect-local bands/voice come from its PCM meter and classifier")
+    print("PASS Route B ADE compression/gain decisions reach the same PCM actuators")
+    print("PASS app bridge rejects unwritten SHM fields and does not claim system-wide actuation")
     print("PASS spatial and wave workers do not fabricate missing voice scores")
     print("PASS AcousticReality/AdaptiveDecisionEngine consume validity-aware metrics")
     print("NOTE static source contract only; Moto G85 runtime evidence remains a separate gate.")
