@@ -576,11 +576,9 @@ extern "C" void ivanna_orchestrate(
         // Genome genes are bytes by ABI; reject stale/uninitialized candidates
         // by requiring a live generation and a finite, non-degenerate score.
         const int candidateGeneration = evo_get_generation();
-        bool candidateFinite = true;
-        for (int i = 0; i < GENOME_SIZE; ++i) {
-            if (candidate[i] > 255u) { candidateFinite = false; break; }
-        }
-        const bool candidateBounded = candidateFinite;
+        // uint8_t genes are finite and intrinsically bounded to [0,255].
+        constexpr bool candidateFinite = true;
+        constexpr bool candidateBounded = true;
         const bool headroomValid = std::isfinite(blockPeak) &&
             (blockPeak <= 1.0e-8f || blockPeak <= 0.98f);
         const ivanna::safmus::EvolutionCandidateEvidence evidence{
@@ -617,6 +615,9 @@ extern "C" void ivanna_orchestrate(
     // downstream control plane return to its user/base state. No hidden +10% gain.
     if (!routeEnabled) {
         g_orch.genome_valid = false;
+        if (g_orch.published_genome_generation != UINT32_MAX) {
+            control_clear_evo_genome();
+        }
         g_orch.published_genome_generation = UINT32_MAX;
     }
 
