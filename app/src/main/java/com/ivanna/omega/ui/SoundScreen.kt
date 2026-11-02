@@ -397,6 +397,12 @@ private fun BinauralTab(
             } else {
                 0L // No baseline = no activity claim; never treat a lifetime counter as a new delta.
             }
+            // Re-read after the evidence window: an audio callback may have consumed the
+            // generation after the initial bounded poll loop timed out.
+            val finalStatus = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivanna.omega.magisk.OmegaEngineBridge.getAudioFeaturesStatus()
+            }
+            if (finalStatus != null) latestStatus = finalStatus
             routeFeatureStatus = describe(latestStatus, evidence, adaptiveDelta)
         }
     }
