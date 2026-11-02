@@ -167,13 +167,11 @@ static float computePsychoacousticFitness(const uint8_t* genome, int len) {
     float spectrum[GENOME_SIZE]{};
     float sumLin = 0.0f;
     float logSum = 0.0f;
-    float maxMag = 0.0f;
     for (int i = 0; i < spectralLen; ++i) {
         const float value = static_cast<float>(genome[CONTROL_GENE_COUNT + i]) / 255.0f;
         spectrum[i] = value;
         sumLin += value;
         logSum += std::log(std::max(value, 1.0e-6f));
-        maxMag = std::max(maxMag, value);
     }
     const float meanLin = sumLin / static_cast<float>(spectralLen);
     if (meanLin < 1.0e-8f) return 0.0f;
