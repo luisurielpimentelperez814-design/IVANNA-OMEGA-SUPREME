@@ -508,13 +508,14 @@ int evo_is_initialized(void) {
 }
 
 int evo_evolve_step_with_convergence(void) {
+    std::lock_guard<std::mutex> convergenceLk(g_convergenceMutex);
     // Abstain until real non-silent cues arrive; do not train against silence.
     if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
     if (!g_initialized.load(std::memory_order_acquire)) evo_initialize_population();
 
     // Population fitness is context-dependent. Re-score every member once when
     // live cues resume so elites scored against silence/old cues cannot dominate.
-    if (!g_liveFitnessReady.exchange(true, std::memory_order_acq_rel)) {
+    if (!g_liveFitnessReady.load(std::memory_order_acquire)) {
         std::lock_guard<std::mutex> evoLk(g_evoMutex);
         const int active = std::clamp(g_activePop.load(std::memory_order_relaxed),
                                       2 * ELITE_COUNT, POPULATION_SIZE);
@@ -525,9 +526,13 @@ int evo_evolve_step_with_convergence(void) {
                   [](const auto& a, const auto& b){ return a.fitness > b.fitness; });
         g_population.bestFitness = g_population.individuals[0].fitness;
         publishBestGenomeLocked();
+        if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
+        g_liveFitnessReady.store(true, std::memory_order_release);
     }
 
-    std::lock_guard<std::mutex> convergenceLk(g_convergenceMutex);
+    // Cues can turn silent while the population is being re-scored; check once
+    // more before spending a generation on stale/silent material.
+    if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
     const float before = evo_best_fitness();
     evo_evolve_generation();
     const float after = evo_best_fitness();
