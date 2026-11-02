@@ -118,7 +118,8 @@ int control_apply_frame() noexcept {
     const auto audio_engine_eq      = g_control_frame.audio_engine_eq_gain.load(std::memory_order_relaxed);
     const auto audio_engine_width   = g_control_frame.audio_engine_width.load(std::memory_order_relaxed);
 
-    const auto evo_active = g_control_frame.evolutionary_active.load(std::memory_order_relaxed);
+    const auto evo_active = g_control_frame.evolutionary_active.load(std::memory_order_relaxed) &&
+        g_control_frame.evo_genome_valid.load(std::memory_order_acquire);
 
     const auto route_bass_boost   = g_control_frame.route_bass_boost_db.load(std::memory_order_relaxed);
     const auto route_dialog_boost = g_control_frame.route_dialog_boost_db.load(std::memory_order_relaxed);
