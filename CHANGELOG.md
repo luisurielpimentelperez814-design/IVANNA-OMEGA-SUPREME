@@ -1,3 +1,11 @@
+## v2.5.216 (507) — 2026-11-02
+
+- **Acoustic Reality continuo en Ruta B:** el pipeline ya no limita el orquestador a la primera secuencia de la sesión; recalcula el estado con PCM vivo en cada bloque de audio.
+- **Regresión de actualización en vivo:** test nativo verifica que la secuencia acústica avanza durante bloques sucesivos y que la salida permanece finita.
+- **HRTF honesto:** se elimina el log que afirmaba que el manifold SOFA+SAF de 255 sujetos estaba activo cuando no se había cargado un HRTF medido; ahora se informa explícitamente del fallback y del estado de la tabla medida.
+- **Acoustic Reality por daemon:** conserva el envío global `SET_REALITY_RECONSTRUCTION` y la verificación de generación consumida por `omega_effect` incorporados en v2.5.215.
+- **Validación pendiente en hardware:** la CI no certifica escucha; la salida real del Moto G85 requiere instalación y medición A/B.
+
 ## v2.5.215 (506) — 2026-11-01
 
 - **Acoustic Reality Route B corregido:** los controles de activación e intensidad dejan de escribir solo en el singleton JNI del proceso de la app y publican el estado mediante `SET_REALITY_RECONSTRUCTION` al daemon.
