@@ -124,6 +124,8 @@ TEST(EvolutionaryKernelV2, ActivePopulationSizeIsClampedAndKeepsElitism) {
 
 TEST(EvolutionaryKernelV2, GenerationCapStopsTheLoopAndLiveTuningDoesNotReset) {
     JNIEnv env{};
+    // A real, non-silent cue frame is required before the optimizer may advance.
+    evo_update_audio_cues_v2(0.45f, 0.20f, 0.30f, 3200.0f, 0.65f, 0.55f);
     evo_set_population_size(128);
     evo_set_max_generations(0);
     evo_initialize_population();
@@ -143,6 +145,16 @@ TEST(EvolutionaryKernelV2, GenerationCapStopsTheLoopAndLiveTuningDoesNotReset) {
     evo_set_max_generations(0);
 }
 
+
+TEST(EvolutionaryKernelV2, SilentInputDoesNotAdvanceGeneration) {
+    evo_update_audio_cues_v2(0.0f, 0.0f, 0.0f, 2000.0f, 0.5f, 0.5f);
+    evo_initialize_population();
+    EXPECT_EQ(evo_evolve_step_with_convergence(), 1);
+    EXPECT_EQ(evo_get_generation(), 0);
+    evo_update_audio_cues_v2(0.45f, 0.20f, 0.30f, 3200.0f, 0.65f, 0.55f);
+    EXPECT_EQ(evo_evolve_step_with_convergence(), 1);
+    EXPECT_EQ(evo_get_generation(), 1);
+}
 
 TEST(SAFMUSEvolutionGate, RequiresFiniteBoundedCandidateAndHeadroom) {
     using ivanna::safmus::EvolutionCandidateEvidence;
