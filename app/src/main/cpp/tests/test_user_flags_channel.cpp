@@ -744,7 +744,8 @@ TEST(RouteBAudioFeaturesDaemon, PublishesSwitchesAndPreservesThemAcrossCommands)
         "{\"action\":\"SET_AUDIO_FEATURES\",\"hrtfEnabled\":2}",
         reply, sizeof reply), 0);
     EXPECT_NE(std::string(reply).find("\"ok\":false"), std::string::npos) << reply;
-    ASSERT_TRUE(h.reader.readLatest(snap, h.seen));
+    // Invalid commands do not publish a new generation; retain the prior valid snapshot.
+    EXPECT_FALSE(h.reader.readLatest(snap, h.seen));
     omega_effect_features_decode(snap.temporal_field, hrtf, adaptive);
     EXPECT_FALSE(hrtf);
     EXPECT_FALSE(adaptive);
