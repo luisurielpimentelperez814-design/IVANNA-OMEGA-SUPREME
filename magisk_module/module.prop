@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.215
-versionCode=506
+version=v2.5.216
+versionCode=507
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.215: Acoustic Reality controls routed through daemon to AudioFlinger with DSP generation evidence
+description=v2.5.216: continuous Acoustic Reality live-PCM refresh and truthful measured-HRTF status
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
