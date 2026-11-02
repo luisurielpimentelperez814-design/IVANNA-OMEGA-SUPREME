@@ -17,6 +17,7 @@ def read(path):
         if len(raw) < SIZE: sys.exit("evidencia incompleta: el efecto no la ha publicado")
         d = dict(zip(NAMES, struct.unpack_from(FMT, raw)))
         if d["magic"] != 0x4F454556: sys.exit("magic invalido")
+        if d["version"] != 3: sys.exit("version de evidencia incompatible: actualiza effect/daemon y vuelve a leer")
         if d["seq"] % 2 == 0: return d
         time.sleep(0.002)
     sys.exit("seqlock no estable")
