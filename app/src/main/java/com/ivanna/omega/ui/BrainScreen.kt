@@ -109,6 +109,7 @@ fun BrainScreen(
 // ── Tab ADAPTATIVO ────────────────────────────────────────────────────────────
 @Composable
 private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null) {
+    val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
 
     GlassCard("MODO ADAPTATIVO", NeonMagenta, "Motor A · Decisión en tiempo real") {
