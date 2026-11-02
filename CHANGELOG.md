@@ -1,3 +1,14 @@
+## v2.5.227 (518) - 2026-11-02
+
+- **Route-B actuators:** the HRTF and adaptive switches publish through the daemon to the system-wide AudioFlinger effect. A command is shown as applied only after the effect publishes a newer evidence sequence with the requested snapshot generation and matching actuator states.
+- **Measured HRTF status:** the sound panel distinguishes measured HRIR data being loaded from HRTF processing actually occurring in the evidence window; analytic fallback is labelled separately and no longer appears as measured HRIR processing.
+- **Adaptive activity evidence:** effect evidence v3 records `adaptiveApplyBlocks` only when `AdaptiveEngineV2` processes a real Route-B audio chunk. The on-device evidence reader rejects incompatible older layouts and reports activity from measured counter deltas.
+- **Reversible adaptive bypass:** Route-B adaptive gain uses a bounded, per-sample stereo ramp. Disabling adaptation returns the gain smoothly to unity rather than retaining the last attenuating gain. No adaptive gain stage can boost above unity.
+- **Cross-panel route consistency:** HRTF and adaptive updates from the spatial panel, output-route calibrator, OEM/neuromorphic controls and manual-mode switches are merged as partial commands so concurrent toggles do not overwrite each other.
+- **Regression coverage:** host tests cover snapshot propagation, invalid-command non-publication, reversible Route-B switches and bounded stereo gain ramps.
+
+**Validation boundary:** physical audio processing, audible benefit, HAL routing and long-duration stability still require measurement on the rooted Moto G85 5G. This release does not mark device validation or hardware ASRC certification as complete.
+
 ## v2.5.226 (517) - 2026-11-02
 
 - **Android lifecycle:** `MainActivity` recreated itself on every rotation/resize/keyboard change, and the UI keeps no `rememberSaveable` state, so rotating dropped the current screen, reloaded the whole FotoHolo WebGL scene and re-ran `onCreate`. It now declares `configChanges` (orientation, screen size/layout, keyboard, navigation); Compose adapts in place. `uiMode` is intentionally not included so theme changes still recreate.
