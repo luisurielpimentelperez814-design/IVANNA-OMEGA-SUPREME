@@ -66,8 +66,8 @@ struct UnifiedControlFrame {
 
     // ── Evolutionary Best Genome (actualizado cada 50ms) ───────────
     std::atomic<float> evo_genome_dsp[2]{};          // [0..1] drive/resonance
-    std::atomic<float> evo_genome_nho[4]{};          // [5..8] NHO params
-    std::atomic<float> evo_genome_spatial[2]{};      // [6..7] angle/width
+    std::atomic<float> evo_genome_nho[4]{};          // [6..9] NHO params
+    std::atomic<float> evo_genome_spatial[2]{};      // [10..11] angle/width
 
     // ── Telemetry & Monitoring ────────────────────────────────────
     std::atomic<float> output_lufs{-16.f};           // LUFS actual
@@ -147,27 +147,21 @@ inline void control_set_phase_oracle(float T_refined, float coherence) noexcept 
 }
 
 /*
- * Publica 8 descriptores decodificados del cromosoma uint8[256].
- * [0..1]=DSP (drive/resonance), [2..5]=NHO, [6..7]=Spatial (angle/width).
- * Los 8 valores proceden de la partición completa del cromosoma uint8[256].
+ * Publica el ABI canónico del cromosoma uint8[256]:
+ * [0..3] EQ low/mid/high/presence, [4..5] DSP drive/resonance,
+ * [6..9] NHO alpha/beta/wet/harmonic, [10..11] spatial angle/width.
+ * Los 12 genes de control se separan del sobre espectral de fitness [12..255].
  */
 inline void control_set_evo_genome(const float* genome, int genome_size) noexcept {
-    if (!genome || genome_size < 8) return;
-
-    // DSP params [0..1]
-    for (int i = 0; i < 2; ++i) {
-        g_control_frame.evo_genome_dsp[i].store(std::clamp(genome[i], 0.f, 1.f), std::memory_order_relaxed);
-    }
-
-    // NHO params [2..5]
-    for (int i = 0; i < 4; ++i) {
-        g_control_frame.evo_genome_nho[i].store(std::clamp(genome[2 + i], 0.f, 1.f), std::memory_order_relaxed);
-    }
-
-    // Spatial params [6..7]
-    for (int i = 0; i < 2; ++i) {
-        g_control_frame.evo_genome_spatial[i].store(std::clamp(genome[6 + i], 0.f, 1.f), std::memory_order_relaxed);
-    }
+    if (!genome || genome_size < 12) return;
+    for (int i = 0; i < 4; ++i)
+        g_control_frame.evo_genome_eq[i].store(std::clamp(genome[i], 0.f, 1.f), std::memory_order_relaxed);
+    for (int i = 0; i < 2; ++i)
+        g_control_frame.evo_genome_dsp[i].store(std::clamp(genome[4 + i], 0.f, 1.f), std::memory_order_relaxed);
+    for (int i = 0; i < 4; ++i)
+        g_control_frame.evo_genome_nho[i].store(std::clamp(genome[6 + i], 0.f, 1.f), std::memory_order_relaxed);
+    for (int i = 0; i < 2; ++i)
+        g_control_frame.evo_genome_spatial[i].store(std::clamp(genome[10 + i], 0.f, 1.f), std::memory_order_relaxed);
     g_control_frame.evo_genome_valid.store(true, std::memory_order_release);
 }
 
