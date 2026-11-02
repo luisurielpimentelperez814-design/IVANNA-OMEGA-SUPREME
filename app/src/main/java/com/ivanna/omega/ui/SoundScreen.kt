@@ -319,6 +319,7 @@ private fun BinauralTab(
 ) {
     val appContext = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
+    val routeAdaptiveEnabled = prefs.binauralAdaptEnabled && !audioState.manualModeEnabled
     // Bug B fix — hrtfEnabled derivado del audioState para que re-sincronice
     // si la fuente cambia externamente (no val plana ni remember sin key)
     val hrtfEnabled by remember { derivedStateOf { audioState.binaural } }
@@ -383,7 +384,7 @@ private fun BinauralTab(
                 }
                 return control + " · " + hrtfLine + " · " + adaptiveLine
             }
-            var latestStatus = result
+            var latestStatus: org.json.JSONObject = requireNotNull(result)
             if (!result.optBoolean("applied", false)) {
                 for (attempt in 0 until 8) {
                     kotlinx.coroutines.delay(250L)
