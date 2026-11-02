@@ -62,6 +62,8 @@
  * ============================================================================
  */
 
+#include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <array>
 #include <cmath>
@@ -118,16 +120,15 @@ struct RawAudioMetrics {
     float band_low_energy   = 0.0f;  // energía aproximada <250Hz, lineal
     float band_mid_energy   = 0.0f;  // energía aproximada 250Hz-4kHz, lineal
     float band_high_energy  = 0.0f;  // energía aproximada 5-9kHz — proxy de sibilancia
-    // FIX (mismatch de unidades detectado — ver gainReductionLinearToDb()
-    // más abajo): SafetyLimiter::getGainReduction() devuelve peak-ceiling
-    // en amplitud LINEAL (típicamente ~0.01-0.05), NO decibeles pese al
-    // nombre del campo. Quien publique este struct debe convertir con
-    // AdaptiveDecisionEngine::gainReductionLinearToDb() ANTES de llamar
-    // rawMetrics.publish() — este campo asume que ya llegó convertido.
+    // SIEMPRE dB. Los productores que parten de un cociente lineal deben
+    // convertirlo explícitamente; SafetyLimiter::getGainReduction() ya
+    // devuelve dB y NO debe volver a convertirse.
     float gain_reduction_db = 0.0f;
-    // GAP cerrado (auditoría vs. spec de Fase 3): pass-through del score
-    // de VoiceProtectionController.
-    float voice_score        = 0.5f;
+    // Ningún score por defecto: solo es utilizable cuando una ruta publicó
+    // una inferencia real y marcó voice_score_valid.
+    float voice_score        = 0.0f;
+    bool band_energy_valid   = false; // true solo si low/mid/high vienen de un medidor real
+    bool voice_score_valid   = false; // true solo si viene de un clasificador/inferencia válida
 
     // Métricas para arbitraje de motores activos y dinámica
     float crest_factor_db   = 0.0f;  // 20*log10(peak/max(rms, 1e-6))
@@ -144,6 +145,17 @@ struct RawAudioMetrics {
     // detecta novedad — NO lo rellena el productor, siempre lo pisa el bus.
     uint64_t seq             = 0;
 };
+
+// Valores utilizables por los consumidores adaptativos. Nunca se convierte
+// la ausencia de una medición en una probabilidad o energía inferida.
+inline float trustedVoiceScore(const RawAudioMetrics& metrics) noexcept {
+    if (!metrics.voice_score_valid || !std::isfinite(metrics.voice_score)) return 0.0f;
+    return std::clamp(metrics.voice_score, 0.0f, 1.0f);
+}
+inline float trustedBandEnergy(const RawAudioMetrics& metrics, float value) noexcept {
+    if (!metrics.band_energy_valid || !std::isfinite(value)) return 0.0f;
+    return std::max(0.0f, value);
+}
 
 // ── Bus multi-fuente con slot seqlock por productor. Cada slot es SPSC
 // y el lector elige el snapshot de mayor secuencia global, evitando que
