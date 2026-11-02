@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.217
-versionCode=508
+version=v2.5.218
+versionCode=509
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.217: adaptive bypass, first-write DSP delivery and persistent control loop fixes
+description=v2.5.218: evolutionary genome decoder wired to DSP/NHO/spatial control plane; truthful native state acknowledgements
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
