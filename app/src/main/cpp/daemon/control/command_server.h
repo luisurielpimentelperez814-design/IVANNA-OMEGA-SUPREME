@@ -192,6 +192,7 @@ private:
     OmegaDspState m_state;
     uint64_t m_head_pose_generation = 0;
     uint64_t m_audio_feature_generation = 0;
+    uint64_t m_audio_feature_evidence_seq = 0;
     int m_server_fd;
     std::string m_socket_path;
     bool m_running;
