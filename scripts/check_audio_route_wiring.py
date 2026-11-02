@@ -88,7 +88,7 @@ def main() -> int:
         # because no adaptive block has been observed yet (silence/cold start).
         heal_start = self_heal.index("// ── 2. Motor adaptativo:")
         heal_end = self_heal.index("// ── 3. Clipping sostenido", heal_start)
-        if "nativeResetDSP()" in self_heal[heal_start:heal_end]:
+        if "IvannaNativeLib.nativeResetDSP()" in self_heal[heal_start:heal_end]:
             raise AssertionError("adaptive watchdog must not reset the complete DSP graph")
         init_at = activity.index("IvannaNativeLib.nativeInitDSP(sr)")
         create_at = activity.index("IvannaNativeLib.nativeCreateAdaptiveEngine()", init_at)
