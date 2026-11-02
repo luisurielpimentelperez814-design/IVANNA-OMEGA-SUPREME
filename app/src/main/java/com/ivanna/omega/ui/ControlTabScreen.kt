@@ -275,7 +275,7 @@ fun ControlTabScreen(
         },
         onNpeFlagsChange = { hrtf, cochlear, adapt ->
             if (PiLstmBridge.isReady) {
-                PiLstmBridge.setHrtfEnabled(hrtf)
+                PiLstmBridge.setHrtfEnabled(hrtf, context.applicationContext)
                 PiLstmBridge.setCochlearEnabled(cochlear)
                 PiLstmBridge.setAdaptEnabled(adapt)
             }
