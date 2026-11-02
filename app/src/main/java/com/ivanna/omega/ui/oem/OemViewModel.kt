@@ -302,6 +302,7 @@ class OemViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setHrtfEnabled(en: Boolean) = runCatching {
         IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetHRTFEnabled(en) }
+        OmegaEngineBridge.queueSystemWideHrtfEnabled(en)
     }
 
     fun setHrtfSubject(subject: String) = runCatching {
