@@ -7,7 +7,7 @@
 
 ## Dictamen
 
-IVANNA ya dispone de tres caminos de audio diferentes y de consumidores DSP compartidos. La integración debe preservar su propiedad de reloj y evitar que dos rutas procesen la misma señal. La presencia de una clase, un setter JNI, un socket o un daemon no demuestra por sí sola que el bloque PCM de la salida elegida lo haya consumido.
+IVANNA dispone de dos rutas de salida (efecto de sistema y ruta propiedad de la app) y de varios puntos de entrada JNI in-process que procesan audio dentro de la ruta de la app. La integración debe preservar su propiedad de reloj y evitar que dos rutas procesen la misma señal. La presencia de una clase, un setter JNI, un socket o un daemon no demuestra por sí sola que el bloque PCM de la salida elegida lo haya consumido.
 
 ## Topología verificada
 
@@ -28,13 +28,13 @@ En el snapshot de Ruta A se verifican consumidores de perfil de ruta, EQ por ban
 
 Playback Capture está sujeto al permiso MediaProjection y a la política de captura de la aplicación origen; no captura universalmente cualquier aplicación.
 
-### Ruta C — procesamiento nativo in-process
+### Entrada JNI in-process — subruta de procesamiento de la app
 
 `DSPBridge_nativeProcess / IvannaNativeLib_nativeProcessBlock
 → IvannaAudioPipeline::processLiveSpatialAxes()
 → etapas nativas permitidas → salida propia de la app`
 
-Esta ruta comparte motores nativos pero no debe recibir el mismo PCM que ya procesó Ruta A. El arbitraje de ruta y el filtro de sesiones de IVANNA deben mantenerse.
+No es una tercera salida independiente: es un punto de entrada de procesamiento dentro de la ruta propiedad de IVANNA. Comparte motores nativos con Ruta A, pero no debe recibir el mismo PCM que ya procesó el efecto del sistema.
 
 ## Matriz de funciones y límites
 
