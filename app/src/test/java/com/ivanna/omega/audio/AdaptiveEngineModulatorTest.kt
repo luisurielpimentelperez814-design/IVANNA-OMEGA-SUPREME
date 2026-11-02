@@ -72,7 +72,7 @@ class AdaptiveEngineModulatorTest {
             baseState, AdaptiveMode.OFF, 1.0f
         )
         
-        // OFF mode debe producir factor 0
-        assertEquals(0f, result.exciterAmount, 0.01f)
+        // OFF es bypass de identidad: no debe mutar ningún parámetro.
+        assertEquals(baseState, result)
     }
 }
