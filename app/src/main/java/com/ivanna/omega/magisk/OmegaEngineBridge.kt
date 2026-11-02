@@ -272,6 +272,19 @@ object OmegaEngineBridge {
             put("adaptiveEnabled", if (adaptiveEnabled) 1 else 0)
         })
 
+    // Partial updates preserve the other feature bit and can be called safely from UI callbacks.
+    fun queueSystemWideHrtfEnabled(enabled: Boolean): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action", "SET_AUDIO_FEATURES")
+            put("hrtfEnabled", if (enabled) 1 else 0)
+        })
+
+    fun queueSystemWideAdaptiveEnabled(enabled: Boolean): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action", "SET_AUDIO_FEATURES")
+            put("adaptiveEnabled", if (enabled) 1 else 0)
+        })
+
     fun getAudioFeaturesStatus(): JSONObject? =
         requestCommand(JSONObject().apply { put("action", "GET_AUDIO_FEATURES_STATUS") })
 
