@@ -5,10 +5,10 @@ No usa indicadores de UI: solo contadores y energias medidos en el camino de aud
 Uso (root, en el telefono):  python3 read_processor_evidence.py [--interval 3] [--path ...]"""
 import argparse, struct, sys, time
 
-FMT = "<IIQ QQQQ QQQ dd dd ffff ffff II"
+FMT = "<IIQ QQQQ QQQ dd dd ffff ffff II QII"
 SIZE = struct.calcsize(FMT)
 NAMES = ("magic version seq hrtfCpu hrtfDsp hrtfSafRefresh hrtfPose rirLoads rirRelinks rirActive "
-         "hrtfIn hrtfOut rirIn rirOut hrtfAz hrtfBias hrtfCurv rirWet rirEarly rirDecor rirRt60 rirWetScale sr dataset").split()
+         "hrtfIn hrtfOut rirIn rirOut hrtfAz hrtfBias hrtfCurv rirWet rirEarly rirDecor rirRt60 rirWetScale sr dataset controlGeneration hrtfEnabled adaptiveEnabled").split()
 
 def read(path):
     for _ in range(50):
