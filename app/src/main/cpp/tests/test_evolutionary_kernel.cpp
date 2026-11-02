@@ -91,6 +91,9 @@ TEST(EvolutionaryKernelV2, EvolveIsStableUnderExtremeMutationRate) {
 
 TEST(EvolutionaryKernelV2, UnifiedJniSymbolsEndToEnd) {
     JNIEnv env{};
+    // nativeEvolveStep must only advance on a real, non-silent cue frame.
+    // Keep this end-to-end JNI test aligned with the runtime safety contract.
+    evo_update_audio_cues_v2(0.45f, 0.20f, 0.30f, 3200.0f, 0.65f, 0.55f);
     EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitializeEvolution(&env, nullptr, 128, 50), JNI_TRUE);
     EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetGeneration(&env, nullptr), 0);
     EXPECT_EQ(Java_com_ivanna_omega_core_IvannaNativeLib_nativeEvolveStep(&env, nullptr), JNI_TRUE);
