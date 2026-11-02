@@ -186,7 +186,25 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { DSPBridge.init(sr) }
             if (IvannaNativeLib.isLoaded) {
-                runCatching { IvannaNativeLib.nativeInitDSP(sr) }
+                val dspReady = runCatching {
+                    IvannaNativeLib.nativeInitDSP(sr)
+                }.getOrDefault(false)
+                if (dspReady) {
+                    // El ADE es un singleton de proceso, no un motor que deba
+                    // depender de que el usuario abra AdaptiveEngineLivePanel.
+                    // nativeCreateAdaptiveEngine() es idempotente y arranca el
+                    // consumidor adaptativo real en el hilo de control.
+                    val adaptiveHandle = runCatching {
+                        IvannaNativeLib.nativeCreateAdaptiveEngine()
+                    }.getOrDefault(0L)
+                    if (adaptiveHandle != 0L) {
+                        android.util.Log.i("IVANNA.Boot", "AdaptiveDecisionEngine iniciado; handle válido")
+                    } else {
+                        android.util.Log.e("IVANNA.Boot", "AdaptiveDecisionEngine no pudo iniciar; estado NOT_READY")
+                    }
+                } else {
+                    android.util.Log.e("IVANNA.Boot", "DSP nativo no inicializado; ADE permanece bloqueado")
+                }
                 // El control loop es de proceso, no de pantalla: debe seguir
                 // publicando ControlFrames aunque el usuario salga del Dashboard.
                 runCatching { IvannaNativeLib.nativeStartEvoThread() }
