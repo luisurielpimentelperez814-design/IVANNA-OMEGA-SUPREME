@@ -1,3 +1,11 @@
+## v2.5.233 (524) - 2026-11-02
+
+- **Unified route-aware HRTF gate:** Sound, SpatialControlPanel, OEM controls and NPE callbacks now use the same policy as `RouteDspCalibrator`. A saved HRTF request cannot re-enable binaural processing on the built-in speaker or an explicitly declared external line-out.
+- **Context-safe NPE callback:** NPE HRTF callbacks now receive the application context and apply the centralized route policy before publishing a partial Route-B update.
+- **Release contents:** includes v2.5.227–v2.5.232: AudioFlinger HRTF/adaptive actuators, effect-generation acknowledgement, measured-vs-synthetic evidence, adaptive block telemetry and unity-return ramp, non-aliasing FastRPC staging with CPU fallback, transactional daemon publishing and SHM isolation.
+
+**Validation boundary:** route policy behavior, audible quality, latency, thermal stability and HAL routing still require a Moto G85 5G device run. No physical measurement or hardware ASRC activation is asserted by host CI.
+
 ## v2.5.232 (523) - 2026-11-02
 
 - **Route-aware HRTF publication:** opening or changing the Sound screen now applies the same output-route policy as `RouteDspCalibrator`. HRTF remains off for the built-in speaker and unknown route, and is enabled only for headphone-appropriate routes; declared external line-out policy is respected.

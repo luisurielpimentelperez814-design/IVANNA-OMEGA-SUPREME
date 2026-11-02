@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.232
-versionCode=523
+version=v2.5.233
+versionCode=524
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.232: route-aware system HRTF; transactional Route-B controls; honest evidence; safe FastRPC fallback
+description=v2.5.233: unified route-aware HRTF controls across Sound, Spatial, OEM and NPE
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
