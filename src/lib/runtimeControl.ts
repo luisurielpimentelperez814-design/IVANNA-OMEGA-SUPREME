@@ -4,7 +4,7 @@ export const RUNTIME_CONTROLS = {
 } as const;
 
 export interface RuntimeControlBridge { applyRuntimeControl(name: string, value: number): string }
-export type ControlReceipt = { accepted: boolean; message: string; readback?: number };
+export type ControlReceipt = { accepted: boolean; message: string; readback?: number; dspApplied?: boolean; generation?: number };
 
 export function applyRuntimeControl(bridge: RuntimeControlBridge | undefined, name: string, value: unknown): ControlReceipt {
   const bounds = RUNTIME_CONTROLS[name as keyof typeof RUNTIME_CONTROLS];
@@ -17,6 +17,14 @@ export function applyRuntimeControl(bridge: RuntimeControlBridge | undefined, na
     const result = JSON.parse(bridge.applyRuntimeControl(name, value));
     if (result.accepted === true && typeof result.readback === 'number' &&
         Number.isFinite(result.readback) && Math.abs(result.readback - value) < 0.001) {
+      if (name === 'realityEnabled' || name === 'realityIntensity') {
+        const dspApplied = result.dspApplied === true;
+        const generation = typeof result.generation === 'number' ? result.generation : undefined;
+        return { accepted: true, readback: result.readback, dspApplied, generation,
+          message: dspApplied
+            ? `${name}: daemon confirmado; generación ${generation ?? '—'} consumida por omega_effect. La mejora audible aún requiere A/B nivelado.`
+            : `${name}: daemon confirmó el control, pero omega_effect aún no acredita esa generación. Requiere reproducción activa; no se declara efecto audible.` };
+      }
       return { accepted: true, readback: result.readback,
         message: `${name}: ${result.readback} confirmado por lectura del control nativo; procesamiento audible pendiente de medición.` };
     }
