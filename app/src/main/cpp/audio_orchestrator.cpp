@@ -81,10 +81,10 @@ static OrchestratorState g_orch;
 // UnifiedControlFrame: [0..4] DSP, [5..8] NHO, [9..11] spatial.
 // Equal-width partitions preserve the full chromosome; no genome-wide mean
 // is collapsed into a fake master-gain control.
-static void decode_evolutionary_genome(const uint8_t* genome, float out[12]) noexcept
+static void decode_evolutionary_genome(const uint8_t* genome, float out[8]) noexcept
 {
     if (!genome || !out) return;
-    for (int parameter = 0; parameter < 12; ++parameter) {
+    for (int parameter = 0; parameter < 8; ++parameter) {
         const int begin = (parameter * GENOME_SIZE) / 12;
         const int end = ((parameter + 1) * GENOME_SIZE) / 12;
         uint32_t sum = 0;
@@ -605,7 +605,7 @@ extern "C" void ivanna_orchestrate(
         g_orch.genome_generation != g_orch.published_genome_generation) {
         float decoded[12]{};
         decode_evolutionary_genome(g_orch.active_genome, decoded);
-        control_set_evo_genome(decoded, 12);
+        control_set_evo_genome(decoded, 8);
         g_orch.published_genome_generation = g_orch.genome_generation;
         ALOG("evo genome published: generation=%u fitness=%.5f", 
              g_orch.genome_generation, evo_best_fitness());
