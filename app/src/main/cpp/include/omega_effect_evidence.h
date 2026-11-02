@@ -17,7 +17,7 @@ namespace ivanna {
 
 inline constexpr const char* OMEGA_EFFECT_EVIDENCE_PATH = "/data/local/tmp/omega_effect_evidence";
 inline constexpr uint32_t OMEGA_EFFECT_EVIDENCE_MAGIC = 0x4F454556u;  // "OEEV"
-inline constexpr uint32_t OMEGA_EFFECT_EVIDENCE_VERSION = 1u;
+inline constexpr uint32_t OMEGA_EFFECT_EVIDENCE_VERSION = 2u;
 
 struct alignas(8) EffectEvidence {
     uint32_t magic;
@@ -31,6 +31,10 @@ struct alignas(8) EffectEvidence {
     float    rirBakedEarly, rirBakedDecorrel, rirBakedRt60Delta, rirWetScale;
     uint32_t sampleRate;
     uint32_t hrtfDatasetLoaded; // 1 = HRIR medidas (IHR1/SOFA), 0 = sintesis analitica
+    // Route-B acknowledgement is written by omega_effect after consuming the snapshot.
+    uint64_t controlGeneration;
+    uint32_t hrtfEnabled;
+    uint32_t adaptiveEnabled;
 };
 static_assert(sizeof(EffectEvidence) <= 256, "EffectEvidence excede 256 B");
 
