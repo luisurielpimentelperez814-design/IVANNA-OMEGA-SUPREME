@@ -260,6 +260,21 @@ object OmegaEngineBridge {
     fun clearScenePose(): Boolean =
         sendCommand(JSONObject().apply { put("action", "SET_SCENE_POSE"); put("clear", 1) })
 
+    /**
+     * Route B: switches consumed inside libomega_effect / audioserver.
+     * The daemon reply distinguishes a published request from an effect-consumed generation.
+     * Call from Dispatchers.IO because requestCommand performs a synchronous socket round trip.
+     */
+    fun setAudioFeatures(hrtfEnabled: Boolean, adaptiveEnabled: Boolean): JSONObject? =
+        requestCommand(JSONObject().apply {
+            put("action", "SET_AUDIO_FEATURES")
+            put("hrtfEnabled", if (hrtfEnabled) 1 else 0)
+            put("adaptiveEnabled", if (adaptiveEnabled) 1 else 0)
+        })
+
+    fun getAudioFeaturesStatus(): JSONObject? =
+        requestCommand(JSONObject().apply { put("action", "GET_AUDIO_FEATURES_STATUS") })
+
     fun setPFParams(vararg params: Float): Boolean {
         if (params.any { !it.isFinite() }) return false
         return sendCommand(JSONObject().apply { put("action","SET_PF_PARAMS"); put("params", params.toList()) })
