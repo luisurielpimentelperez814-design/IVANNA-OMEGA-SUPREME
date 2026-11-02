@@ -486,7 +486,6 @@ fun SpatialAudioPanel(
                 pushHybridMagistral()
             }
         }
-        }
         
         // ── PIPELINE ESPACIAL EN VIVO ─────────────────────────────────────
         SpatialCard(
