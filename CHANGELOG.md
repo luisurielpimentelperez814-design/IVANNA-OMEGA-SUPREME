@@ -1,3 +1,11 @@
+## v2.5.228 (519) - 2026-11-02
+
+- **Route-B acknowledgement refresh:** after the processor evidence sampling window, the sound screen now performs a final status read so a late AudioFlinger callback can confirm the requested generation without leaving a stale pending label.
+- **Evidence-gated adaptive reporting:** the UI reports new adaptive block activity only when both before/after evidence reads are valid; missing or incompatible evidence is shown as unavailable rather than inferred from a lifetime counter.
+- **Release contents:** includes all v2.5.227 changes: system-wide HRTF/adaptive daemon actuators, generation/evidence acknowledgement, measured-vs-synthetic HRTF distinctions, adaptive block counter, and reversible bounded gain ramp with host regression tests.
+
+**Validation boundary:** no Moto G85 audible, latency, thermal or HAL acceptance claim is made until the packaged build is exercised on that rooted device. Hardware ASRC remains separately gated and is not declared enabled by this release.
+
 ## v2.5.227 (518) - 2026-11-02
 
 - **Route-B actuators:** the HRTF and adaptive switches publish through the daemon to the system-wide AudioFlinger effect. A command is shown as applied only after the effect publishes a newer evidence sequence with the requested snapshot generation and matching actuator states.

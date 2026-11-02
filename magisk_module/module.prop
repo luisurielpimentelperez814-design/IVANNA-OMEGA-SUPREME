@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.227
-versionCode=518
+version=v2.5.228
+versionCode=519
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.227: acknowledged system HRTF/adaptive controls; measured effect evidence; reversible adaptive bypass
+description=v2.5.228: acknowledged system HRTF/adaptive controls; current-generation status refresh; evidence-gated activity reporting
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
