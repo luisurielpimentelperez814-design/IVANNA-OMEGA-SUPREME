@@ -42,6 +42,11 @@ STANDALONE_HEADERS = {
     # validada. La reproducción Android usa su servo software existente; activar
     # este controlador en paralelo duplicaría los lazos de reloj.
     "dsp/asrc_clock_controller.hpp",
+    # Adaptadores evolutivos legacy: la ruta activa usa evolutionary_kernel_v2
+    # y su integración en pd_engine; estos headers no tienen callers de runtime
+    # ni deben confundirse con el kernel activo del APK.
+    "evolutionary_adapter.hpp",
+    "evolutionary_adapter_enhanced.hpp",
 }
 
 INCLUDE_DIRS = [
