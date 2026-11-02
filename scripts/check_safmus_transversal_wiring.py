@@ -79,6 +79,14 @@ require("app/src/main/cpp/audio_control_plane.hpp",
         "inline void control_clear_evo_genome()")
 require("app/src/main/cpp/audio_control_plane.cpp",
         "g_control_frame.evo_genome_valid.load(std::memory_order_acquire)")
+
+# There must be exactly one production writer/decoder for the 256-gene chromosome.
+pd_engine = source("app/src/main/cpp/pd_engine.hpp")
+if "control_set_evo_genome(fgenome, 12)" in pd_engine or "apply_evo_genome()" in pd_engine:
+    errors.append("pd_engine.hpp: legacy partial-genome projection bypasses the canonical decoder")
+control_plane = source("app/src/main/cpp/audio_control_plane.cpp")
+if "g_inline_evo_adapter" in control_plane or "g_evo_adapter" in control_plane:
+    errors.append("audio_control_plane.cpp: unused shadow evolutionary optimizer must not run in parallel")
 require("app/src/main/cpp/evolutionary_kernel_v2.cpp", "!std::isfinite(F)",
         "!std::isfinite(loudness)", "std::clamp(dynamicRange, 0.0f, 1.0f)")
 require("app/src/main/cpp/tests/test_evolutionary_kernel.cpp",
