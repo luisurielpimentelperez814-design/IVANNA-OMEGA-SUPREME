@@ -1,3 +1,11 @@
+## v2.5.230 (521) - 2026-11-02
+
+- **Transactional Route-B controls:** when publishing an HRTF/adaptive snapshot fails, the daemon rolls back the desired feature state and acknowledgement generation. A later unrelated publish can no longer activate a request that was reported as failed.
+- **Mixed CPU/Hexagon evidence:** HRTF DSP delegation is reported whenever the DSP block counter advances, even if CPU HRTF blocks also occurred during the same evidence interval.
+- **Release contents:** includes v2.5.227–v2.5.229 fixes: AudioFlinger HRTF/adaptive actuators with generation acknowledgement, evidence v3, measured-vs-synthetic processing status, adaptive block counts, smooth unity-return bypass, non-aliasing FastRPC buffers and CPU fallback on RPC failure.
+
+**Validation boundary:** device-side audible quality, latency, thermal limits, real HAL routes and Hexagon DSP availability remain unverified until exercised on the rooted Moto G85 5G. Failed DSP delegation deliberately falls back to CPU.
+
 ## v2.5.229 (520) - 2026-11-02
 
 - **FastRPC HRTF buffer safety:** Hexagon convolution now receives separate, preallocated dry input buffers and writes into the output buffers. No input/output aliasing is assumed by the QAIC wrapper.

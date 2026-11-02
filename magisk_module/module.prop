@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.229
-versionCode=520
+version=v2.5.230
+versionCode=521
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.229: system HRTF/adaptive controls; non-aliasing FastRPC; CPU fallback on DSP failure
+description=v2.5.230: transactional HRTF/adaptive controls; honest mixed CPU/Hexagon evidence; FastRPC fallback
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
