@@ -545,6 +545,16 @@ bool IvannaFusionEngine::setSceneDistance(float distanceScale) noexcept {
     return m_hrtf ? m_hrtf->setSceneDistance(distanceScale) : false;
 }
 
+bool IvannaFusionEngine::hrtfEvidence(HrtfEvidenceOut& o) const noexcept {
+    if (!m_hrtf) return false;
+    const auto e = m_hrtf->evidence();
+    o.cpuBlocks = e.cpuBlocks; o.dspBlocks = e.dspBlocks;
+    o.safRefreshes = e.safRefreshes; o.poseApplies = e.poseApplies;
+    o.inEnergy = e.inEnergy; o.outEnergy = e.outEnergy;
+    o.azimuthDeg = e.azimuthDeg; o.safBiasDeg = e.safBiasDeg; o.curvature = e.curvature;
+    return true;
+}
+
 void IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {
     // SAFMUS: invalid/non-finite proposals are rejected; preserve the last safe HRTF state.
     if (!ivanna::safmus::isFiniteLatent(q)) return;

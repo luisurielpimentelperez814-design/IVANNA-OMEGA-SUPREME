@@ -1498,3 +1498,18 @@ gtest_discover_tests(test_saf_optimizer_state)
 
 # FotoHolo Route B: 64-band Bark observer, fail-closed silence and bounded modulation.
 ivanna_add_test(test_fotoholo_bark_meter)
+
+
+# Evidencia medida por procesador: HRTF / RIR / SAF (con controles negativos).
+add_executable(test_processor_evidence
+  test_processor_evidence.cpp
+  ../HrtfManager.cpp
+  ../HRTFBinLoader.cpp
+  ../hexagon/ivanna_fastrpc_client.cpp
+  ../hexagon/ivanna_dsp.cpp
+  ../spatial/RirConvolver.cpp
+)
+target_link_libraries(test_processor_evidence PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_processor_evidence PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_processor_evidence PRIVATE -Wall -Wextra)
+add_test(NAME test_processor_evidence COMMAND test_processor_evidence)

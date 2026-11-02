@@ -1,3 +1,11 @@
+## v2.5.220 (511) - 2026-11-02
+
+- **HRTF:** SAF q[1] azimuth bias now reaches the analytic (no-dataset) synthesis path, where it was ignored; SAF changes mark the bank dirty and re-synthesize it from the audio thread after any running crossfade, without waiting for a new head pose.
+- **RIR:** `wetScale` and `rt60Delta` from `computeSofaRirCoupling` were computed and discarded. `wetScale` now scales the wet path; `rt60Delta` reshapes the decay slope (baked into the IR). The raw IR is kept so a live SAF change re-bakes it on the worker thread (`couplingStale()` / `relinkFromRaw()`), not only on a room change.
+- **Evidence (measured, not UI flags):** HRTF and RIR count blocks and in/out energy in their own audio paths; `omega_effect` publishes them to `/data/local/tmp/omega_effect_evidence` (seqlock mmap). `scripts/read_processor_evidence.py` compares two reads and reports per processor whether it applies. Hexagon-delegated HRTF is reported as not verifiable from the host side.
+- **Tests:** `test_processor_evidence` links the real HrtfManager and RirConvolver: bit-exact wet=0 bypass, effect at wet=1, pose and SAF sensitivity, wetScale/rt60Delta applied, live re-coupling, plus negative controls.
+- **Validation boundary:** host DSP evidence only; audible improvement and Moto G85 behaviour still need the on-device reader and A/B listening.
+
 ## v2.5.219 (510) - 2026-11-01
 
 - **Evolutionary kernel:** worker advances only on valid non-silent post-DSP cues; population is re-scored when live signal resumes so elites evaluated against silence cannot dominate.

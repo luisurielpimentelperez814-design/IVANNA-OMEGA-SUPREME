@@ -99,6 +99,38 @@ void RirConvolver::applySofaCoupling(const float q[7]) noexcept {
     ivanna::master::computeSofaRirCoupling(q, earlyBoost, lateDecorrel, rt60Delta, wetScale);
     earlyBoost_.store(earlyBoost, std::memory_order_relaxed);
     decorrel_.store(lateDecorrel, std::memory_order_relaxed);
+    wetScale_.store(std::clamp(wetScale, 0.75f, 1.25f), std::memory_order_relaxed);
+    rt60Delta_.store(std::clamp(rt60Delta, -0.15f, 0.15f), std::memory_order_relaxed);
+}
+
+bool RirConvolver::couplingStale() const noexcept {
+    if (rawL_.empty() || bakedEarly_.load(std::memory_order_relaxed) < 0.f) return false;
+    auto d = [](float a, float b) { return std::fabs(a - b); };
+    return d(earlyBoost_.load(std::memory_order_relaxed), bakedEarly_.load(std::memory_order_relaxed)) > 0.01f ||
+           d(decorrel_.load(std::memory_order_relaxed), bakedDecorrel_.load(std::memory_order_relaxed)) > 0.02f ||
+           d(rt60Delta_.load(std::memory_order_relaxed), bakedRt60Delta_.load(std::memory_order_relaxed)) > 0.005f;
+}
+
+bool RirConvolver::relinkFromRaw() noexcept {
+    if (rawL_.empty() || rawL_.size() != rawR_.size()) return false;
+    std::vector<float> l = rawL_, r = rawR_;   // copia: load() reescribe raw
+    load(l.data(), r.data(), static_cast<int>(l.size()));
+    relinks_.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+RirConvolver::Evidence RirConvolver::evidence() const noexcept {
+    Evidence e;
+    e.loads = loads_.load(std::memory_order_relaxed);
+    e.relinks = relinks_.load(std::memory_order_relaxed);
+    e.activeBlocks = activeBlocks_.load(std::memory_order_relaxed);
+    e.inEnergy = inEnergy_.load(std::memory_order_relaxed);
+    e.outEnergy = outEnergy_.load(std::memory_order_relaxed);
+    e.bakedEarly = bakedEarly_.load(std::memory_order_relaxed);
+    e.bakedDecorrel = bakedDecorrel_.load(std::memory_order_relaxed);
+    e.bakedRt60Delta = bakedRt60Delta_.load(std::memory_order_relaxed);
+    e.wetScale = wetScale_.load(std::memory_order_relaxed);
+    return e;
 }
 
 void RirConvolver::synthesizeMasterStudioBrir(float rt60S, int sampleRate) noexcept {
@@ -159,6 +191,16 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     if (tailOverBudget) irLen = MAX_IR;
     lastSynthRt60_ = -1.0f;
     lastSynthSr_   = 0;
+
+    // Snapshot del acoplamiento SAF que se hornea en esta carga + IR cruda para re-acoplar.
+    const float snapEarly = earlyBoost_.load(std::memory_order_relaxed);
+    const float snapDec   = decorrel_.load(std::memory_order_relaxed);
+    const float snapRt    = rt60Delta_.load(std::memory_order_relaxed);
+    if (irL != rawL_.data()) {
+        const int keep = std::min(irLen, MAX_IR_TOTAL);
+        rawL_.assign(irL, irL + keep);
+        rawR_.assign(irR, irR + keep);
+    }
 
     // ── FIX CRÍTICO: Eliminación de DC + Alineación Temporal Time-Of-Flight + Supresión de Eco Directo ──
     // En respuestas al impulso de sala (RIR) grabadas en disco, el tiempo de vuelo altavoz->micrófono
@@ -229,6 +271,18 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     for (int i = 0; i < safeLen; ++i) {
         normIrL[i] *= invL2;
         normIrR[i] *= invL2;
+    }
+
+    // SAF rt60Delta: envolvente exponencial que cambia la pendiente de decaimiento
+    // (T' = T0*(1+delta)); 60 dB de caida = 3*ln10 por T. Solo desde 1 ms (cola/reflexiones).
+    if (std::fabs(snapRt) > 1e-3f) {
+        const float sr = static_cast<float>(sampleRate_.load(std::memory_order_relaxed));
+        const float T0 = 0.34f, T1 = T0 * (1.0f + snapRt);
+        const float k = 6.9077553f * (1.0f / T1 - 1.0f / T0) / sr;  // por muestra
+        for (int i = 48; i < safeLen; ++i) {
+            const float g = std::min(3.0f, std::exp(-k * static_cast<float>(i - 48)));
+            normIrL[i] *= g; normIrR[i] *= g;
+        }
     }
 
     // ── Particionado no uniforme: head (latencia 0) + cola (overlap-save) ──
@@ -357,6 +411,10 @@ void RirConvolver::load(const float* irL, const float* irR, int irLen) noexcept 
     }
 
     pendOverlapLen_ = len - 1;
+    bakedEarly_.store(snapEarly, std::memory_order_relaxed);
+    bakedDecorrel_.store(snapDec, std::memory_order_relaxed);
+    bakedRt60Delta_.store(snapRt, std::memory_order_relaxed);
+    loads_.fetch_add(1, std::memory_order_relaxed);
 
     // Señalar al hilo de audio que hay una nueva IR lista
     pending_.store(true, std::memory_order_release);
@@ -558,6 +616,8 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
         float wn = wetNow_;
         const float tsCross = trueStereoCross_.load(std::memory_order_relaxed);
         const float xtcAmt  = xtcStrength_.load(std::memory_order_relaxed);
+        const float safWetScale = wetScale_.load(std::memory_order_relaxed);
+        double evIn = 0.0, evOut = 0.0;
         constexpr float kBassCoeff = 0.028f; // ~220 Hz @ 48 kHz (preserva impacto en graves)
         constexpr float kShadowLp  = 0.36f;  // Sombra acústica craneal de Woodworth (~3.2 kHz)
         constexpr float kDcPole    = 0.9993f; // ~5 Hz DC blocker en la cola reverberante
@@ -567,7 +627,7 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             // Ley de mezcla equa-potencia suave: evita que al subir el slider Wet al 100%
             // la cola reverberante sume +6 dB sobre la señal directa.
             const float dry = 1.0f - 0.68f * wn;
-            const float wetGain = 0.82f * wn;
+            const float wetGain = 0.82f * wn * safWetScale;
             const float inL = L[offset + i];
             const float inR = R[offset + i];
 
@@ -631,10 +691,15 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
                 outR = std::copysign(0.96f + 0.04f * std::tanh((std::fabs(outR) - 0.96f) * 8.0f), outR);
             }
 
+            evIn  += static_cast<double>(inL) * inL + static_cast<double>(inR) * inR;
+            evOut += static_cast<double>(outL) * outL + static_cast<double>(outR) * outR;
             L[offset + i] = outL;
             R[offset + i] = outR;
         }
         wetNow_ = wn;
+        activeBlocks_.fetch_add(1, std::memory_order_relaxed);
+        inEnergy_.store(inEnergy_.load(std::memory_order_relaxed) + evIn, std::memory_order_relaxed);
+        outEnergy_.store(outEnergy_.load(std::memory_order_relaxed) + evOut, std::memory_order_relaxed);
 
         offset    += n;
         remaining -= n;

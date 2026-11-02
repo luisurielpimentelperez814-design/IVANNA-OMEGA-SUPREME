@@ -98,6 +98,13 @@ public:
     void applyGoldenEarGAN(Ivanna::AudioBuffer* buffer);
 
     void setSafLatentParams(const float q[7]) noexcept;
+    // Evidencia medida del HRTF (contadores/energias del camino de audio real).
+    struct HrtfEvidenceOut {
+        uint64_t cpuBlocks=0, dspBlocks=0, safRefreshes=0, poseApplies=0;
+        double inEnergy=0, outEnergy=0;
+        float azimuthDeg=0, safBiasDeg=0, curvature=0;
+    };
+    bool hrtfEvidence(HrtfEvidenceOut& out) const noexcept;
 
     // Pose de la escena (Ruta B): azimut/elevación en rad y distancia relativa (0.5..2). Devuelve true si el motor HRTF la aplicó.
     bool setSceneDistance(float distanceScale) noexcept;

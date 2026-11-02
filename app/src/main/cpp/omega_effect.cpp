@@ -22,6 +22,7 @@
 #include "supreme/SnnNmfHoaUpmixer.hpp"
 #include "supreme/PinnaManifoldInterpolator.hpp"
 #include "supreme/ShmPipelineArbitrator.hpp"
+#include "include/omega_effect_evidence.h"   // evidencia medida HRTF/RIR/SAF por procesador
 #include "include/omega_effect_beacon.h"   // señal real "el efecto procesa" para la app (Ruta A/B)
 #include "include/audio_callback_clock.hpp" // reloj de cadencia software; nunca referencia de fase DAC
 #include "include/audio_hardware_clock.hpp" // estimador de frecuencia desde posiciones reales del driver
@@ -654,6 +655,7 @@ static std::vector<omega_effect_context_t*> g_rirBLive;   // ctx vivos
 static omega_effect_context_t* g_rirBCtx = nullptr;       // petición pendiente
 static int32_t                 g_rirBIdx = -1;
 static float                   g_rirBSynthRt60 = -1.0f;
+static omega_effect_context_t* g_rirBRecoupleCtx = nullptr;  // SAF q cambio: re-hornear IR viva
 
 static bool omega_rir_ctx_alive_locked(omega_effect_context_t* ctx) {
     for (auto* c : g_rirBLive) if (c == ctx) return true;
@@ -663,7 +665,17 @@ static bool omega_rir_ctx_alive_locked(omega_effect_context_t* ctx) {
 static void omega_rir_worker_loop() {
     std::unique_lock<std::mutex> lk(g_rirBMtx);
     while (true) {
-        g_rirBCv.wait(lk, [] { return g_rirBIdx >= 0 || g_rirBSynthRt60 > 0.0f; });
+        g_rirBCv.wait(lk, [] { return g_rirBIdx >= 0 || g_rirBSynthRt60 > 0.0f || g_rirBRecoupleCtx != nullptr; });
+        if (g_rirBRecoupleCtx && g_rirBIdx < 0 && g_rirBSynthRt60 <= 0.0f) {
+            omega_effect_context_t* rctx = g_rirBRecoupleCtx;
+            g_rirBRecoupleCtx = nullptr;
+            // Re-hornea la IR cruda con el acoplamiento SAF vigente (fuera de RT, bajo mutex
+            // solo el registro; la FFT corre bajo el mismo porque load() es corto y no hay disco).
+            if (omega_rir_ctx_alive_locked(rctx) && rctx->rirConvolver && rctx->rirConvolver->couplingStale()) {
+                rctx->rirConvolver->relinkFromRaw();
+            }
+            continue;
+        }
         omega_effect_context_t* ctx = g_rirBCtx;
         const int32_t idx = g_rirBIdx;
         const float synthRt60 = g_rirBSynthRt60;
@@ -812,6 +824,21 @@ static inline void omega_apply_room(omega_effect_context_t* ctx,
     // MAX_IR la hace el worker (mismo criterio: reflejo temprano conservado).
     ctx->rirConvolver->setWetDry(wet);
     omega_rir_post_load(ctx, roomIdx);
+}
+
+// SAF q -> RIR en vivo. wetScale se aplica al instante (atomico); early/decorrel/rt60Delta
+// estan horneados en la IR, asi que si difieren de lo horneado se pide un re-horneado al worker.
+// Hilo de audio: solo atomicos + notify, sin alloc.
+static void omega_apply_saf_to_rir(omega_effect_context_t* ctx, const ivanna::OmegaDspSnapshot& s) noexcept {
+    if (!ctx || !ctx->rirConvolver) return;
+    if (s.saf_q_valid != 1u || !ivanna::safmus::isFiniteLatent(s.saf_q)) return;
+    ctx->rirConvolver->applySofaCoupling(s.saf_q);
+    if (!ctx->rirConvolver->couplingStale()) return;
+    if (g_rirBMtx.try_lock()) {
+        g_rirBRecoupleCtx = ctx;
+        g_rirBMtx.unlock();
+        g_rirBCv.notify_one();
+    }
 }
 
 /* ── Conversión multi-formato PCM sin allocs para AudioFlinger / DAC USB-C ──
@@ -1028,6 +1055,7 @@ static int32_t omega_process(effect_handle_t self,
             omega_apply_snapshot(fc, ctx->antiDolby, snap);
             omega_apply_supreme_axes(ctx, snap);
             omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
+            omega_apply_saf_to_rir(ctx, snap);  // SAF q -> wetScale/rt60/early/decorrel de la IR viva
             ctx->pendingSnap = snap;
         }
     }
@@ -1628,6 +1656,32 @@ if (ctx->adaptive) {
     // Beacon (RT-safe): un bloque paso por TODO el DSP. Es la unica senal que la app puede
     // usar para saber que Ruta B realmente suena (isDaemonRunning solo prueba el daemon).
     ivanna::effectBeacon().onBlock(static_cast<uint32_t>(frames), ctx->pendingSnap.generation);
+    {   // Evidencia por procesador (RT-safe: contadores atomicos -> mmap, cada 32 callbacks).
+        static std::atomic<uint32_t> s_evTick{0};
+        if ((s_evTick.fetch_add(1, std::memory_order_relaxed) & 31u) == 0u && ivanna::effectEvidence().isOpen()) {
+            ivanna::EffectEvidence ev{};
+            if (ctx->fusionCore) {
+                IvannaFusionEngine::HrtfEvidenceOut h;
+                if (ctx->fusionCore->hrtfEvidence(h)) {
+                    ev.hrtfCpuBlocks = h.cpuBlocks; ev.hrtfDspBlocks = h.dspBlocks;
+                    ev.hrtfSafRefreshes = h.safRefreshes; ev.hrtfPoseApplies = h.poseApplies;
+                    ev.hrtfInEnergy = h.inEnergy; ev.hrtfOutEnergy = h.outEnergy;
+                    ev.hrtfAzimuthDeg = h.azimuthDeg; ev.hrtfSafBiasDeg = h.safBiasDeg;
+                    ev.hrtfCurvature = h.curvature;
+                }
+            }
+            if (ctx->rirConvolver) {
+                const auto r = ctx->rirConvolver->evidence();
+                ev.rirLoads = r.loads; ev.rirRelinks = r.relinks; ev.rirActiveBlocks = r.activeBlocks;
+                ev.rirInEnergy = r.inEnergy; ev.rirOutEnergy = r.outEnergy;
+                ev.rirBakedEarly = r.bakedEarly; ev.rirBakedDecorrel = r.bakedDecorrel;
+                ev.rirBakedRt60Delta = r.bakedRt60Delta; ev.rirWetScale = r.wetScale;
+                ev.rirWet = ctx->rirConvolver->wetDry();
+                ev.sampleRate = static_cast<uint32_t>(ctx->rirConvolver->sampleRate());
+            }
+            ivanna::effectEvidence().publish(ev);
+        }
+    }
     // Ack solo tras consumir la generación, llamar updateHeadPose y completar el bloque DSP.
     const auto& appliedPose = ctx->pendingSnap;
     if (appliedPose.generation > 0u &&
@@ -1841,6 +1895,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 omega_rir_dataset_init();
                 // Cadena 4D: se crea AQUÍ (hilo de control; asigna memoria), nunca en el callback de audio.
                 ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
+                ivanna::effectEvidence().open();   // NO-RT: mmap de evidencia por procesador
                 if (!ctx->rirConvolver) {
                     ctx->rirConvolver = new Ivanna::RirConvolver();
                     ctx->rirConvolver->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);

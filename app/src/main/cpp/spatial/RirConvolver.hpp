@@ -91,6 +91,20 @@ public:
     void setTransauralXtcStrength(float strength) noexcept { xtcStrength_.store(std::clamp(strength, 0.0f, 0.85f), std::memory_order_relaxed); }
     float transauralXtcStrength() const noexcept { return xtcStrength_.load(std::memory_order_relaxed); }
     void applySofaCoupling(const float q[7]) noexcept;
+    float wetScale() const noexcept  { return wetScale_.load(std::memory_order_relaxed); }
+    float rt60Delta() const noexcept { return rt60Delta_.load(std::memory_order_relaxed); }
+    // true si el acoplamiento SAF vigente difiere del horneado en la IR cargada.
+    bool couplingStale() const noexcept;
+    // Hilo de control/worker (NO audio): re-hornea la IR cruda con el acoplamiento actual.
+    bool relinkFromRaw() noexcept;
+    // Evidencia medida en el camino de audio (no indicadores): energia entrada/salida
+    // de los bloques realmente convolucionados, cargas y re-acoplamientos efectivos.
+    struct Evidence {
+        uint64_t loads = 0, relinks = 0, activeBlocks = 0;
+        double inEnergy = 0.0, outEnergy = 0.0;
+        float bakedEarly = 0.f, bakedDecorrel = 0.f, bakedRt60Delta = 0.f, wetScale = 1.f;
+    };
+    Evidence evidence() const noexcept;
     void synthesizeMasterStudioBrir(float rt60S = 0.34f, int sampleRate = 48000) noexcept;
     bool needsMasterStudioBrirSynthesis(float rt60S, int sampleRate) const noexcept {
         const int sr = (sampleRate > 8000) ? sampleRate : 48000;
@@ -146,6 +160,12 @@ private:
     std::atomic<float> wetDry_{0.f};
     std::atomic<float> decorrel_{0.62f};     // Acoplado a coherencia interaural SOFA por defecto
     std::atomic<float> earlyBoost_{1.08f};   // Pre-énfasis de claridad temprana acoplado a muesca de pinna SOFA
+    std::atomic<float> wetScale_{1.0f};      // SAF: escala del wet (aplicada en process)
+    std::atomic<float> rt60Delta_{0.0f};     // SAF: delta relativo de RT60 (horneado en load)
+    std::atomic<float> bakedEarly_{-1.f}, bakedDecorrel_{-1.f}, bakedRt60Delta_{0.f};
+    std::atomic<uint64_t> loads_{0}, relinks_{0}, activeBlocks_{0};
+    std::atomic<double> inEnergy_{0.0}, outEnergy_{0.0};
+    std::vector<float> rawL_, rawR_;         // IR cruda para re-acoplar en vivo
     std::atomic<float> trueStereoCross_{0.18f}; // Matriz True-Stereo 4-caminos (LL, LR, RL, RR)
     std::atomic<float> xtcStrength_{0.0f};      // Cancelación de diafonía transaural (XTC tipo BACCH)
     alignas(64) float crossHistL_[32] = {};
