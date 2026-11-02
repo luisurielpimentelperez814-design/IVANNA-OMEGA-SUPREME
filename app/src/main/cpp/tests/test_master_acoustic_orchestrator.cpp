@@ -142,6 +142,7 @@ TEST(MasterAcousticOrchestratorTest, Phase4_AcousticPersonalityAndFatigue) {
     // 1. Preservación vocal: voz detectada protege centro y reduce reverb de sala
     RawAudioMetrics vocalMetrics{};
     vocalMetrics.voice_score = 0.85f;
+    vocalMetrics.voice_score_valid = true;
     vocalMetrics.rir_active  = 1.0f;
 
     auto spatVoice = MasterAcousticOrchestrator::arbitrateSpatial(vocalMetrics);
