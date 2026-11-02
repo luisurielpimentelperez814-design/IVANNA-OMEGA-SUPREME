@@ -77,8 +77,8 @@ struct OrchestratorState {
 static OrchestratorState g_orch;
 
 // Genome ABI v1: the 256-byte chromosome is a normalized spectral envelope.
-// Decode it deterministically into 12 bounded control descriptors matching
-// UnifiedControlFrame: [0..4] DSP, [5..8] NHO, [9..11] spatial.
+// Decode it deterministically into eight bounded control descriptors matching
+// UnifiedControlFrame: [0..1] DSP, [2..5] NHO, [6..7] spatial.
 // Equal-width partitions preserve the full chromosome; no genome-wide mean
 // is collapsed into a fake master-gain control.
 static void decode_evolutionary_genome(const uint8_t* genome, float out[8]) noexcept
