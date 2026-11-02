@@ -104,23 +104,16 @@ struct OmegaSharedState {
     std::atomic<float> ai_raw_rms;
     std::atomic<float> ai_raw_peak;
 
-    // FIX (Opción A de unificación — paridad de protección entre Ruta A y
-    // Ruta B, sin fusionar los dos motores DSP): AdaptiveDecisionEngine ya
-    // recibe métricas reales de la Ruta B (ai_raw_rms/ai_raw_peak, ver
-    // arriba) y calcula decisiones — pero esas decisiones solo se
-    // aplicaban a g_gain/g_comp/g_exciter de la Ruta A (DSPBridge), que no
-    // procesan nada de lo que suena por Spotify/YouTube. Cero protección
-    // real para streaming pese a que el motor "sabía" qué hacer.
-    // target_gain (ya clampeado [0.5,1.0] en computeTargetGain() — solo
-    // puede atenuar, nunca subir de 1.0, seguro por construcción) y el
-    // daemon lo aplica como multiplicador adicional en 
+    // Reservas legacy para decisión adaptativa. En el código actual el
+    // consumidor PCM de SYSTEM_WIDE es el ADE per-instance de omega_effect.cpp,
+    // que aplica sus decisiones directamente al FusionCore de esa sesión.
+    // Estos campos no tienen un consumidor activo encontrado en este árbol;
+    // no describen una actuación del HAL/daemon y se conservan solo por ABI.
+    std::atomic<float> ai_runtime_gain_mul;
+    std::atomic<float> ai_runtime_spatial_width;
+    std::atomic<float> ai_runtime_comp_amount;
+    std::atomic<float> ai_runtime_exciter_red;  // 0..1 reservado
 
-
-
-// SAF FULL MATHEMATICS
-// Φ_SAF = ΠS(p + factor * G^-1 * Δ)
-
-// en el hot-path. Semántica idéntica a Ruta A.
     // FIX (Ruta B — spatial_width sin efecto, gap documentado en README):
     // AdaptiveDecisionEngine calcula AdaptiveState::spatial_width (0..1.5,
     // 1.0=sin cambio) desde hace tiempo, pero nada lo escribía acá y
