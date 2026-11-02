@@ -1846,7 +1846,9 @@ public:
         state.personalField = personalModel_.synthesizePersonalField(state.timeline);
 
         // Fase 7: Optimizar contra el cerebro (Presencia, Naturalidad, Separación, Fatiga, Inmersión)
-        const float sibProxy = std::clamp(rawMetrics.band_high_energy * 2.5f, 0.0f, 1.0f);
+        const float sibProxy = std::clamp(
+            ivanna::experimental::trustedBandEnergy(rawMetrics, rawMetrics.band_high_energy) * 2.5f,
+            0.0f, 1.0f);
         const float fatProxy = std::clamp(std::fabs(adaptiveState.eq_tilt_db) / 2.5f, 0.0f, 1.0f);
         state.perceptual = PerceptualOptimizationEngine::optimizeForBrain(
             state.genome, state.microMap, state.neuralProposal, state.personalField, sibProxy, fatProxy);
