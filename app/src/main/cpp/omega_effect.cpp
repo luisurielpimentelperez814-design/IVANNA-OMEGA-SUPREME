@@ -230,6 +230,7 @@ struct omega_effect_context_t {
     uint64_t lastAppliedGen;        // AUDIT FIX: seguimiento de la generation SHM
     bool     ctrlBusOpen;           // AUDIT FIX: OmegaControlBus reader ready
     ivanna::adaptive::AdaptiveEngineV2* adaptiveEngine;
+    bool     adaptiveEnabled;       // snapshot-controlled per-session Route-B actuator gate
     bool     chunkedWarned;         // AUDIT FIX: log único cuando se procesa en chunks
     bool     thermalSkipRIR;        // ThermalGovernor: saltar RIR en tier ≥ LIMITED
     // FIX RT (auditoría 2026-09-24): Volterra H2 (neuromorphic/volterra_h2_symmetric)
@@ -373,6 +374,8 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     }
     fc->setWfsSpeakerLayout(s.wfs_speaker_x, s.wfs_speaker_y, s.wfs_speaker_z);
 
+    // Route-B HRTF actuator gate: the core performs a smooth wet/dry transition.
+    fc->setHrtfEnabled((s.temporal_field & ivanna::OMEGA_EFFECT_HRTF_ENABLED_BIT) != 0u);
     // ABI v8: aplicar la pose HRTF solo cuando una nueva generación llega al callback.
     if (std::isfinite(s.head_yaw_rad) && std::isfinite(s.head_pitch_rad)) {
         fc->updateHeadPose(std::clamp(s.head_yaw_rad, -3.14159265f, 3.14159265f),
@@ -1052,6 +1055,8 @@ static int32_t omega_process(effect_handle_t self,
             if (realityOrch.isEnabled()) {
                 realityOrch.coordinateSnapshot(snap);
             }
+            ctx->adaptiveEnabled =
+                (snap.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
             omega_apply_snapshot(fc, ctx->antiDolby, snap);
             omega_apply_supreme_axes(ctx, snap);
             omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
@@ -1274,7 +1279,7 @@ static int32_t omega_process(effect_handle_t self,
         }
 
         // FASE ADAPTATIVA INTELIGENTE V2 (EQ, HRTF, Spatial)
-        if (ctx->adaptiveEngine) {
+        if (ctx->adaptiveEngine && ctx->adaptiveEnabled) {
             float pitchHz = 0.0f;
             float pitchConf = 0.0f;
             bool isVoiced = false;
@@ -1638,12 +1643,17 @@ if (ctx->adaptive) {
                 ctx->adaptive->rawMetrics.publish(
                     ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
                 ivanna::experimental::AdaptiveState adSt{};
-                if (ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
+                if (ctx->adaptiveEnabled &&
+                    ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
                     ctx->pendingSnap.target_gain = std::clamp(adSt.target_gain, 0.50f, 1.0f);
                     ctx->pendingSnap.comp_amount = std::clamp(adSt.compressor_amount, 0.0f, 1.0f);
                     ctx->pendingSnap.exc_red     = std::clamp(adSt.exciter_reduction, 0.0f, 1.0f);
                     ctx->adaptWfsScale = std::clamp(adSt.wfs_spread_scale,  0.5f, 1.0f);
                     ctx->adaptImmScale = std::clamp(adSt.upmix_immersivity, 0.5f, 1.0f);
+                } else if (!ctx->adaptiveEnabled) {
+                    // Disabled means neutral actuation; raw metrics remain observable.
+                    ctx->adaptWfsScale = 1.0f;
+                    ctx->adaptImmScale = 1.0f;
                 }
             }
         }
@@ -1660,6 +1670,9 @@ if (ctx->adaptive) {
         static std::atomic<uint32_t> s_evTick{0};
         if ((s_evTick.fetch_add(1, std::memory_order_relaxed) & 31u) == 0u && ivanna::effectEvidence().isOpen()) {
             ivanna::EffectEvidence ev{};
+            ev.controlGeneration = ctx->lastAppliedGen;
+            ev.hrtfEnabled = (ctx->pendingSnap.temporal_field & ivanna::OMEGA_EFFECT_HRTF_ENABLED_BIT) ? 1u : 0u;
+            ev.adaptiveEnabled = ctx->adaptiveEnabled ? 1u : 0u;
             if (ctx->fusionCore) {
                 IvannaFusionEngine::HrtfEvidenceOut h;
                 if (ctx->fusionCore->hrtfEvidence(h)) {
@@ -1940,6 +1953,8 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                             if (realityOrch.isEnabled()) {
                                 realityOrch.coordinateSnapshot(seed);
                             }
+                            ctx->adaptiveEnabled =
+                                (seed.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
                             omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, seed);
                             omega_apply_supreme_axes(ctx, seed);
                             omega_apply_room(ctx, seed);
@@ -2262,6 +2277,7 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;
     ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
+    ctx->adaptiveEnabled = true; // legacy-compatible until the first valid daemon snapshot
     ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
     ctx->ctrlBusOpen    = false;
     ctx->localWriterOpen = false;  // AUDIT FIX #4: writer local se abre lazy
