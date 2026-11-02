@@ -17,7 +17,7 @@ namespace ivanna {
 
 inline constexpr const char* OMEGA_EFFECT_EVIDENCE_PATH = "/data/local/tmp/omega_effect_evidence";
 inline constexpr uint32_t OMEGA_EFFECT_EVIDENCE_MAGIC = 0x4F454556u;  // "OEEV"
-inline constexpr uint32_t OMEGA_EFFECT_EVIDENCE_VERSION = 2u;
+inline constexpr uint32_t OMEGA_EFFECT_EVIDENCE_VERSION = 3u;
 
 struct alignas(8) EffectEvidence {
     uint32_t magic;
@@ -35,6 +35,7 @@ struct alignas(8) EffectEvidence {
     uint64_t controlGeneration;
     uint32_t hrtfEnabled;
     uint32_t adaptiveEnabled;
+    uint64_t adaptiveApplyBlocks; // increments only when Route-B AdaptiveEngineV2 processes a real chunk
 };
 static_assert(sizeof(EffectEvidence) <= 256, "EffectEvidence excede 256 B");
 
