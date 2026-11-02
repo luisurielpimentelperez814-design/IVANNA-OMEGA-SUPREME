@@ -116,6 +116,8 @@ ivanna_add_test(test_audio_hardware_clock_bridge)
 # IVANNA-ASRC-X1: núcleo variable y control fail-closed (sin ruta productiva habilitada).
 ivanna_add_test(test_variable_asrc)
 ivanna_add_test(test_hal_output_rate_control)
+# Route-B adaptive bypass: per-sample bounded ramp back to unity on disable.
+ivanna_add_test(test_adaptive_gain_ramp)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
