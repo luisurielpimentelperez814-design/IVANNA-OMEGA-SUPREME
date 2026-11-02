@@ -71,8 +71,14 @@ require("app/src/main/cpp/tests/CMakeLists.txt", "ivanna_add_test(test_perceptua
 require("app/src/main/cpp/spatial/SafmusEvolutionGate.hpp", "mayApplyEvolutionCandidate",
         "std::isfinite(e.fitness)", "e.headroomValid")
 require("app/src/main/cpp/audio_orchestrator.cpp", "SafmusEvolutionGate.hpp",
-        "mayApplyEvolutionCandidate(evidence)", "std::clamp(output, -0.98f, 0.98f)",
+        "mayApplyEvolutionCandidate(evidence)", "decode_evolutionary_genome",
+        "control_set_evo_genome(decoded, 12)", "control_clear_evo_genome()",
         "if (routeEnabled && g_orch.genome_valid && signalFinite")
+require("app/src/main/cpp/audio_control_plane.hpp",
+        "evo_genome_valid.store(true, std::memory_order_release)",
+        "inline void control_clear_evo_genome()")
+require("app/src/main/cpp/audio_control_plane.cpp",
+        "g_control_frame.evo_genome_valid.load(std::memory_order_acquire)")
 require("app/src/main/cpp/evolutionary_kernel_v2.cpp", "!std::isfinite(F)",
         "!std::isfinite(loudness)", "std::clamp(dynamicRange, 0.0f, 1.0f)")
 require("app/src/main/cpp/tests/test_evolutionary_kernel.cpp",
