@@ -1,3 +1,12 @@
+## v2.5.231 (522) - 2026-11-02
+
+- **SHM isolation for feature switches:** HRTF/adaptive-only snapshot publications no longer rewrite unrelated shared gain, compressor, spatial width or route-mix atomics. This prevents feature-toggle failures from leaking partial unrelated values.
+- **Transactional Route-B controls:** failed publications restore the prior in-memory HRTF/adaptive state and leave the previous generation/evidence baseline intact.
+- **Evidence correctness:** Hexagon HRTF blocks are reported even when CPU HRTF blocks occur in the same evidence window.
+- **Release contents:** includes v2.5.227–v2.5.230: system-wide HRTF/adaptive controls, effect-consumed generation acknowledgement, evidence v3, evidence-based UI labels, adaptive unity-return ramp, non-aliasing FastRPC staging and CPU fallback.
+
+**Validation boundary:** real-device audio quality, latency, thermal limits, HAL paths and Hexagon availability require Moto G85 5G validation; this changelog does not claim those measurements are complete.
+
 ## v2.5.230 (521) - 2026-11-02
 
 - **Transactional Route-B controls:** when publishing an HRTF/adaptive snapshot fails, the daemon rolls back the desired feature state and acknowledgement generation. A later unrelated publish can no longer activate a request that was reported as failed.
