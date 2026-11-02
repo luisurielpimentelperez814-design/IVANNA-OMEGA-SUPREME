@@ -20,6 +20,7 @@ import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.perceptual.PerceptualSceneRuntime
 import com.ivanna.omega.perceptual.AxisState
 import com.ivanna.omega.ui.theme.*
+import kotlinx.coroutines.launch
 
 /**
  * SoundScreen — Sección SONIDO unificada.
@@ -320,6 +321,42 @@ private fun BinauralTab(
     var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
     var spatialPoseStatus by remember { mutableStateOf("POSE 3D: esperando motor HRTF") }
     var hrtfDatasetStatus by remember { mutableStateOf("HRTF: no confirmado") }
+    var routeFeatureStatus by remember { mutableStateOf("RUTA B: esperando confirmación de AudioFlinger") }
+    val routeControlScope = rememberCoroutineScope()
+    fun requestRouteFeatures(hrtf: Boolean, adaptive: Boolean) {
+        routeFeatureStatus = "RUTA B: enviando controles al daemon…"
+        routeControlScope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivanna.omega.magisk.OmegaEngineBridge.setAudioFeatures(hrtf, adaptive)
+            }
+            if (result == null) {
+                routeFeatureStatus = "RUTA B NO CONFIRMADA · daemon/socket no disponible"
+                return@launch
+            }
+            fun describe(reply: org.json.JSONObject): String {
+                val generation = reply.optLong("generation", 0L)
+                return when {
+                    reply.optBoolean("applied", false) ->
+                        "RUTA B APLICADA · gen " + generation + " · HRTF " +
+                            (if (hrtf) "ON" else "OFF") + " · ADAPT " + (if (adaptive) "ON" else "OFF")
+                    reply.optString("status") == "accepted_pending_consumer" ->
+                        "RUTA B PENDIENTE · gen " + generation + " · esperando consumo de omega_effect"
+                    else -> "RUTA B NO APLICADA · " + reply.optString("status", "sin estado")
+                }
+            }
+            routeFeatureStatus = describe(result)
+            if (!result.optBoolean("applied", false)) {
+                repeat(8) {
+                    kotlinx.coroutines.delay(250L)
+                    val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.ivanna.omega.magisk.OmegaEngineBridge.getAudioFeaturesStatus()
+                    } ?: return@launch
+                    routeFeatureStatus = describe(status)
+                    if (status.optBoolean("applied", false)) return@launch
+                }
+            }
+        }
+    }
     var tenDStatus by remember { mutableStateOf("10D: recopilando estado real del motor") }
     var tenDAxes by remember { mutableStateOf(emptyList<String>()) }
     var movementEnabled by remember { mutableStateOf(com.ivanna.omega.spatial.IvannaSpatialManager.sceneMovementActive) }
@@ -357,6 +394,8 @@ private fun BinauralTab(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         syncHybridToNative(prefs)
+        // Persisted toggles are re-published to the SYSTEM_WIDE effect whenever this tab opens.
+        requestRouteFeatures(hrtfEnabled, prefs.binauralAdaptEnabled)
         var initialPoseConfirmed = false
         var pollCount = 0
         while (true) {
@@ -393,7 +432,7 @@ private fun BinauralTab(
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(hrtfDatasetStatus, color = TextSecondary, fontSize = 10.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("HRTF ACTIVO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text("HRTF SOLICITADO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Switch(
                     checked = hrtfEnabled,
                     onCheckedChange = { en ->
@@ -403,6 +442,7 @@ private fun BinauralTab(
                             runCatching { IvannaNativeLib.nativeSetBinauralEnabled(en) }
                         }
                         com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = en
+                        requestRouteFeatures(en, prefs.binauralAdaptEnabled)
                     }
                 )
             }
@@ -415,10 +455,12 @@ private fun BinauralTab(
                     onCheckedChange = { en ->
                         updatePrefs { it.copy(binauralAdaptEnabled = en) }
                         if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(en) }
+                        requestRouteFeatures(hrtfEnabled, en)
                     }
                 )
             }
             ControlHelpText("MOTOR ADAPTATIVO")
+            Text(routeFeatureStatus, color = TextSecondary, fontSize = 10.sp)
             IvannaSliderRow("AZIMUT", prefs.binauralAzimuth, -180f, 180f, "°") { v ->
                 val next = prefs.copy(binauralAzimuth = v)
                 updatePrefs { next }
