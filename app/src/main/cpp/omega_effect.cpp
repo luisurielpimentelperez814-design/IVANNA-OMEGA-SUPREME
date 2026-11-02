@@ -1332,6 +1332,19 @@ static int32_t omega_process(effect_handle_t self,
                     R[n] *= g;
                 }
             }
+        } else if (ctx->adaptGainPrev > 0.0f &&
+                   std::fabs(ctx->adaptGainPrev - 1.0f) > 1.0e-4f) {
+            // Reversible transparent bypass: never leave the last adaptive gain
+            // latched after the user disables Route-B adaptation.
+            const float gStart = std::clamp(ctx->adaptGainPrev, 0.50f, 1.0f);
+            const float gStep = (1.0f - gStart) / static_cast<float>(chunk);
+            float g = gStart;
+            for (int n = 0; n < chunk; ++n) {
+                g += gStep;
+                L[n] *= g;
+                R[n] *= g;
+            }
+            ctx->adaptGainPrev = 1.0f;
         }
 
         // ── Anti-Dolby Neural Acoustic De-processing & Soundstage Sculpting ──
