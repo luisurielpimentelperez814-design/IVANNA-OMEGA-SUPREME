@@ -37,8 +37,10 @@ def verdict(a, b):
                       if dIn > 1e-9 else "convoluciona pero la entrada es silencio: sin prueba")
     else:
         out["RIR"] = "NO CONVOLUCIONA (wet=%.2f, cargas=%d)" % (b["rirWet"], b["rirLoads"])
-    out["ADAPTATIVO"] = ("APLICA" if b["adaptiveEnabled"] and b["adaptiveApplyBlocks"] > a["adaptiveApplyBlocks"] else "SIN BLOQUES APLICADOS") + \\
-        " | blocks=%d enabled=%d" % (b["adaptiveApplyBlocks"], b["adaptiveEnabled"])
+    out["ADAPTATIVO"] = (
+        ("APLICA" if b["adaptiveEnabled"] and b["adaptiveApplyBlocks"] > a["adaptiveApplyBlocks"] else "SIN BLOQUES APLICADOS")
+        + " | blocks=%d enabled=%d" % (b["adaptiveApplyBlocks"], b["adaptiveEnabled"])
+    )
     out["RUTA B"] = "generation=%d HRTF=%d datasetMedido=%d CPU=%d DSP=%d" % (b["controlGeneration"], b["hrtfEnabled"], b["dataset"], b["hrtfCpu"], b["hrtfDsp"])
     saf = []
     if b["hrtfSafRefresh"] > a["hrtfSafRefresh"] or b["hrtfBias"] != a["hrtfBias"]: saf.append("HRTF re-sintetizado por SAF")
