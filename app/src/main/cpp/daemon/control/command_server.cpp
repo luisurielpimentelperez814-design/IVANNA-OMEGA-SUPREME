@@ -113,8 +113,9 @@ static OmegaSharedState* getSharedState() noexcept {
         static_cast<uint8_t*>(base) + ivanna::SHM_STATE_OFFSET);
 }
 
-static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
-    if (OmegaSharedState* shm = getSharedState()) {
+static uint64_t publishCurrentState(const OmegaDspState& s, bool updateSharedState = true) noexcept {
+    if (updateSharedState) {
+        if (OmegaSharedState* shm = getSharedState()) {
         shm->intensity.store(s.intensity, std::memory_order_relaxed);
         shm->ai_runtime_gain_mul.store(s.target_gain, std::memory_order_relaxed);
         shm->ai_runtime_comp_amount.store(s.comp_amount, std::memory_order_relaxed);
@@ -123,6 +124,7 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
         shm->route_bass_boost_db.store(s.bass_boost, std::memory_order_relaxed);
         shm->route_dialog_boost_db.store(s.dialog_boost, std::memory_order_relaxed);
         shm->route_widener_mult.store(s.widener_mult, std::memory_order_relaxed);
+        }
     }
     ivanna::OmegaDspSnapshot snap{}; snap.magic=ivanna::OMEGA_CTRL_MAGIC; snap.version=ivanna::OMEGA_CTRL_VERSION;
     snap.active_route=static_cast<int32_t>(ivanna::RouteMode::SYSTEM_WIDE);
@@ -732,7 +734,9 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             if (hasA) m_state.adaptive_enabled = a > 0.5f;
             ivanna::EffectEvidence before{};
             const bool beforeReadable = ivanna::readEffectEvidence(before);
-            const uint64_t gen = publishCurrentState(m_state);
+            // HRTF/adaptive toggles live only in the control snapshot; do not
+            // rewrite unrelated shared gain/mix atomics for this command.
+            const uint64_t gen = publishCurrentState(m_state, false);
             if (gen > 0u) {
                 m_audio_feature_generation = gen;
                 m_audio_feature_evidence_seq = beforeReadable ? before.seq : 0u;
