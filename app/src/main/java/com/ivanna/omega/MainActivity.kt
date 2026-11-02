@@ -1294,7 +1294,7 @@ fun DashboardScreen(
             },
             onNpeFlagsChange = { hrtf, cochlear, adapt ->
                 if (PiLstmBridge.isReady) {
-                    PiLstmBridge.setHrtfEnabled(hrtf)
+                    PiLstmBridge.setHrtfEnabled(hrtf, this@MainActivity.applicationContext)
                     PiLstmBridge.setCochlearEnabled(cochlear)
                     PiLstmBridge.setAdaptEnabled(adapt)
                 }
