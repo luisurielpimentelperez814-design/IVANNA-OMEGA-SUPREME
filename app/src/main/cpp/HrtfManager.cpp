@@ -173,24 +173,27 @@ void HrtfManager::processBinauralSceneImpl(Ivanna::AudioBuffer* buffer) {
     if (m_fastRpcClient.isDSPReady() &&
         m_wetDry.load(std::memory_order_relaxed) >= 0.999f &&
         m_wetEnv.currentGain >= 0.999f && !m_wetEnv.isTransitioning()) {
-        // FIX (cableado binaural, FASE 8): azimuth/elevation ya NO se
-        // envían fijos en cero — se leen de la última pose real recibida
-        // por setHeadPose() (yaw/pitch del sensor + sesgo SAF), la misma
-        // fuente de verdad que usa el path CPU de más abajo. Sin este fix,
-        // en cualquier dispositivo con Hexagon DSP activo el binaural
-        // quedaba congelado siempre al centro, sin importar movimiento de
-        // cabeza ni ajuste espacial del optimizer SAF.
+        // The QAIC client does not promise in-place operation. Preserve the
+        // source block in preallocated per-instance staging and only count/return
+        // when the DSP explicitly confirms success. A rejected/failed RPC restores
+        // the dry block and falls through to the CPU convolver below.
+        std::memcpy(m_dspDryL, buffer->left, sizeof(m_dspDryL));
+        std::memcpy(m_dspDryR, buffer->right, sizeof(m_dspDryR));
         ivanna::dsp::SpatialPosition pos;
         pos.azimuth = m_currentAzimuthDeg.load(std::memory_order_relaxed);
         pos.elevation = m_currentElevationDeg.load(std::memory_order_relaxed);
-        pos.distance = 1.0f;  // sin modelo de distancia en el motor actual — campo lejano de referencia
-        m_evDsp.fetch_add(1, std::memory_order_relaxed);
-        m_fastRpcClient.delegateBinauralConvolution(
-            buffer->left, buffer->right,
+        pos.distance = 1.0f;
+        const bool dspApplied = m_fastRpcClient.delegateBinauralConvolution(
+            m_dspDryL, m_dspDryR,
             buffer->left, buffer->right,
             pos, BLOCK_SIZE
         );
-        return;
+        if (dspApplied) {
+            m_evDsp.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        std::memcpy(buffer->left, m_dspDryL, sizeof(m_dspDryL));
+        std::memcpy(buffer->right, m_dspDryR, sizeof(m_dspDryR));
     }
     // ── Crossfade lock-free ──────────────────────────────────────────────────
     // Si hay un banco pendiente: inicia crossfade suave sin clic.
