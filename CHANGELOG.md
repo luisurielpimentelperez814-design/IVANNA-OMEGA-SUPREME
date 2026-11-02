@@ -1,3 +1,8 @@
+## v2.5.222 (513) - 2026-11-02
+
+- **Daemon supervision (Magisk):** `service.sh` started `ivanna_daemon` once and exited, so a later crash or lost socket left the app without a control plane until reboot. New `supervisor.sh` (single instance, verified by cmdline) checks every 5 s for the process AND the abstract socket, relaunches through `service.sh` with exponential backoff (5 → 60 s) and stops after 8 relaunches in an hour or when `.safe_mode`/`disable`/`remove` appears. Logged to `daemon.log` ("supervisor: ...").
+- **Validation boundary:** shell syntax checked only; confirm on device with `kill -9 $(pidof ivanna_daemon)` and watch `daemon.log` for the relaunch within ~10 s.
+
 ## v2.5.221 (512) - 2026-11-02
 
 - **Recovery after audioserver/HAL death (root and non-root):** when audioserver restarts, every `AudioEffect` of the process becomes a dead object while `IvannaGlobalEffectManager` kept believing the session was active (`openSession` returned early), so audio played without DSP until the app was restarted. A daemon watchdog now probes each session every 3 s (`setEnabled(true)` returns the real binder status); a dead effect is released and re-created with the same source package, and the EQ is republished to the daemon.

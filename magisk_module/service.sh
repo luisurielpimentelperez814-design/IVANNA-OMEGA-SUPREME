@@ -8,6 +8,16 @@ LOG="$STATE/daemon.log"
 
 mkdir -p "$STATE" || exit 1
 
+# Supervision continua: un solo supervisor vivo (verificado por cmdline, no solo por PID).
+if [ -z "$IVANNA_SUPERVISED" ] && [ -f "$MODDIR/supervisor.sh" ]; then
+    SUP_OLD=$(cat "$STATE/supervisor.pid" 2>/dev/null)
+    case "$SUP_OLD" in ''|*[!0-9]*) SUP_OLD="" ;; esac
+    if [ -z "$SUP_OLD" ] || ! grep -aq supervisor.sh "/proc/$SUP_OLD/cmdline" 2>/dev/null; then
+        chmod 755 "$MODDIR/supervisor.sh" 2>/dev/null
+        nohup sh "$MODDIR/supervisor.sh" >/dev/null 2>&1 &
+    fi
+fi
+
 # FIX (omega_shm, causa raiz MLS): la app (untrusted_app:s0:cXXX,...) leia
 # /data/adb/ivanna_omega/omega_shm pero su write()/mmap(PROT_WRITE) era
 # denegado en bucle (>100 denials en 10 s, ver logcat "denied { write }
