@@ -20,3 +20,22 @@ test('rejects stale, absent, malformed or failed receipts', () => {
   }
   assert.equal(applyRuntimeControl({ applyRuntimeControl: () => { throw Error('offline'); } }, 'spatialWidth', 1).accepted, false);
 });
+
+test('Acoustic Reality distinguishes daemon readback from global DSP generation', () => {
+  const pending = applyRuntimeControl({
+    applyRuntimeControl: (_: string, value: number) =>
+      JSON.stringify({ accepted: true, readback: value, dspApplied: false, generation: 42 })
+  }, 'realityEnabled', 1);
+  assert.equal(pending.accepted, true);
+  assert.equal(pending.dspApplied, false);
+  assert.match(pending.message, /omega_effect aún no acredita/);
+
+  const applied = applyRuntimeControl({
+    applyRuntimeControl: (_: string, value: number) =>
+      JSON.stringify({ accepted: true, readback: value, dspApplied: true, generation: 43 })
+  }, 'realityIntensity', 0.75);
+  assert.equal(applied.accepted, true);
+  assert.equal(applied.dspApplied, true);
+  assert.equal(applied.generation, 43);
+  assert.match(applied.message, /generación 43 consumida por omega_effect/);
+});
