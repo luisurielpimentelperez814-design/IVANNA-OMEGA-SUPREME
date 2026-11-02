@@ -142,13 +142,17 @@ object PiLstmBridge {
             runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.setHarmonicGain(v.toDouble()) }
         }
     }
-    fun setHrtfEnabled(en: Boolean) {
+    fun setHrtfEnabled(en: Boolean, context: Context) {
         if (ready) {
             nativeSetHrtfEnabled(en)
             runCatching { IvannaNativeLib.nativeSetHRTFEnabled(en) }
             runCatching { IvannaNpeEngine.setBinauralEnabled(en) }
-            // Keep the AudioFlinger effect synchronized as well as the app-local NPE.
-            runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.queueSystemWideHrtfEnabled(en) }
+            // Keep the AudioFlinger effect synchronized under the same output-route policy.
+            runCatching {
+                val route = AudioRouteManager.detectOutputRoute()
+                val routeAllowed = SystemWideHrtfPolicy.allow(context, en, route)
+                com.ivanna.omega.magisk.OmegaEngineBridge.queueSystemWideHrtfEnabled(routeAllowed)
+            }
         }
     }
     fun getNpSat(): Float = if (ready) nativeGetNpSat() else 0f
