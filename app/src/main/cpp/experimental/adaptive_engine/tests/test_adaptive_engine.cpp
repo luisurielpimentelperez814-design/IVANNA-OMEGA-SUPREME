@@ -74,6 +74,8 @@ void testSilentInput() {
     expect(s.target_gain == 1.0f, "silencio: target_gain = 1.0 (sin recorte)");
     expect(s.safety_margin == 1.0f, "silencio: safety_margin = 1.0 (máximo)");
     expect(s.compressor_amount == 0.0f, "silencio: compressor_amount = 0.0");
+    expect(s.voice_protection_amount == 0.0f,
+           "silencio sin inferencia: protección vocal neutra, no voz inventada");
 }
 
 void testNormalSignal() {
@@ -88,7 +90,8 @@ void testNormalSignal() {
     m.peak = 0.25f;
     m.band_low_energy  = 0.3f;
     m.band_mid_energy  = 0.4f;
-    m.band_high_energy = 0.1f;   // 12.5% del total — bajo el umbral de sibilancia (15%)
+    m.band_high_energy = 0.1f;
+    m.band_energy_valid = true;   // 12.5% del total — bajo el umbral de sibilancia (15%)
     m.gain_reduction_db = 0.0f;  // limiter no está trabajando
     AdaptiveState s = AdaptiveDecisionEngine::evaluate(m, /*sibilanceEma=*/0.05f);
     printState("normal", s);
@@ -116,7 +119,8 @@ void testSaturatedSignal() {
     m.peak = 0.995f;               // por encima del threshold real del SafetyLimiter (0.98855)
     m.band_low_energy  = 0.2f;
     m.band_mid_energy  = 0.3f;
-    m.band_high_energy = 0.6f;     // 54.5% del total — sibilancia fuerte
+    m.band_high_energy = 0.6f;
+    m.band_energy_valid = true;     // 54.5% del total — sibilancia fuerte
     m.gain_reduction_db = 8.0f;    // limiter trabajando duro
     AdaptiveState s = AdaptiveDecisionEngine::evaluate(m, /*sibilanceEma=*/0.8f);
     printState("saturada", s);
@@ -144,7 +148,8 @@ void testExtremeTrebleNoise() {
     m.peak = 0.35f;                 // lejos del threshold — no debe disparar el limiter
     m.band_low_energy  = 0.05f;
     m.band_mid_energy  = 0.15f;
-    m.band_high_energy = 0.80f;     // 80% de la energía en 5-9kHz — sibilancia extrema
+    m.band_high_energy = 0.80f;
+    m.band_energy_valid = true;     // 80% de la energía en 5-9kHz — sibilancia extrema
     m.gain_reduction_db = 0.0f;     // limiter inactivo — aísla la causa
     // sibilanceEma alto también: exposición sostenida, no solo un pico.
     AdaptiveState s = AdaptiveDecisionEngine::evaluate(m, /*sibilanceEma=*/0.9f);
@@ -164,18 +169,25 @@ void testVoiceProtectionPassthrough() {
     RawAudioMetrics m{};
     m.rms = 0.1f; m.peak = 0.2f;
     m.band_low_energy = 0.3f; m.band_mid_energy = 0.4f; m.band_high_energy = 0.3f;
+    m.band_energy_valid = true;
+    const AdaptiveState sUnknown = AdaptiveDecisionEngine::evaluate(m, 0.1f);
+    expect(sUnknown.voice_protection_amount == 0.0f,
+           "sin clasificador válido, voice protection permanece en cero pese a energía MID");
 
     m.voice_score = 0.85f;
+    m.voice_score_valid = true;
     AdaptiveState sHigh = AdaptiveDecisionEngine::evaluate(m, /*sibilanceEma=*/0.1f);
     expect(std::fabs(sHigh.voice_protection_amount - 0.85f) < 1e-5f,
            "voice_score=0.85 -> voice_protection_amount=0.85 (pass-through exacto)");
 
     m.voice_score = std::numeric_limits<float>::quiet_NaN();
+    m.voice_score_valid = true;
     AdaptiveState sNan = AdaptiveDecisionEngine::evaluate(m, 0.1f);
     expect(allFinite(sNan), "voice_score=NaN -> voice_protection_amount cae a 0.0, sin propagar NaN");
     expect(sNan.voice_protection_amount == 0.0f, "voice_score=NaN -> fallback seguro 0.0");
 
-    m.voice_score = 1.5f;  // fuera de rango de entrada (no debería pasar, pero no debe romper)
+    m.voice_score = 1.5f;  // fuera de rango de entrada
+    m.voice_score_valid = true; (no debería pasar, pero no debe romper)
     AdaptiveState sClamp = AdaptiveDecisionEngine::evaluate(m, 0.1f);
     expect(sClamp.voice_protection_amount <= 1.0f, "voice_score=1.5 (inválido) -> se clampea a 1.0");
 }
@@ -187,7 +199,8 @@ void testExtremeAndDegenerateInputs() {
     m.peak = std::numeric_limits<float>::infinity();
     m.band_low_energy = -5.0f;   // energía negativa no debería ser posible en la práctica,
     m.band_mid_energy = -1.0f;   // pero una fuente de métricas corrupta/con bug no debe
-    m.band_high_energy = -3.0f;  // poder producir NaN aguas abajo.
+    m.band_high_energy = -3.0f;
+    m.band_energy_valid = true;  // poder producir NaN aguas abajo.
     m.gain_reduction_db = std::numeric_limits<float>::quiet_NaN();
     AdaptiveState s = AdaptiveDecisionEngine::evaluate(m, /*sibilanceEma=*/std::numeric_limits<float>::quiet_NaN());
     printState("degenerada", s);
