@@ -55,13 +55,16 @@ float AdaptiveDecisionEngine::computeCompressorAmount(const RawAudioMetrics& m) 
 
 float AdaptiveDecisionEngine::computeExciterReduction(const RawAudioMetrics& m,
                                                        float sibilanceEma) noexcept {
-    const float total = std::max(0.0f, m.band_low_energy) +
-                         std::max(0.0f, m.band_mid_energy) +
-                         std::max(0.0f, m.band_high_energy) + kEps;
-    const float highRatio = std::max(0.0f, m.band_high_energy) / total;
+    const float low  = trustedBandEnergy(m, m.band_low_energy);
+    const float mid  = trustedBandEnergy(m, m.band_mid_energy);
+    const float high = trustedBandEnergy(m, m.band_high_energy);
+    const float total = low + mid + high + kEps;
+    const float highRatio = high / total;
     // >15% de la energía total en la banda de sibilancia (5-9kHz) empieza
     // a sugerir reducción; a partir de 50% se satura en máxima reducción.
-    const float instantTerm = clamp01((highRatio - 0.15f) / 0.35f);
+    const float instantTerm = m.band_energy_valid
+        ? clamp01((highRatio - 0.15f) / 0.35f)
+        : 0.0f;
     // Se pondera igual la lectura instantánea (transitorio de "S"/platillos)
     // que la EMA sostenida (fatiga acumulada) — un pico aislado no debería
     // bajar el exciter tanto como una exposición sostenida.
@@ -116,14 +119,9 @@ float AdaptiveDecisionEngine::gainReductionLinearToDb(float peakExcessLinear, fl
 }
 
 float AdaptiveDecisionEngine::computeVoiceProtection(const RawAudioMetrics& m) noexcept {
-    // GAP cerrado (auditoría vs. spec de Fase 3): pass-through directo del
-    // score real de VoiceProtectionController/YamnetClassifier. Este motor
-    // no detecta voz por sí mismo (no tiene acceso a un clasificador ML,
-    // y no lo va a fingir con heurísticas de RMS/bandas — eso sería una
-    // métrica falsa, exactamente el patrón que este proyecto viene
-    // corrigiendo toda la sesión).
-    if (!std::isfinite(m.voice_score)) return 0.0f;
-    return clamp01(m.voice_score);
+    // La ausencia de inferencia válida es neutral. No se estima voz a partir
+    // de RMS, bandas, contenido medio ni valores de inicialización.
+    return trustedVoiceScore(m);
 }
 
 AdaptiveDecisionEngine::HarmonicArbitration
@@ -170,7 +168,7 @@ AdaptiveDecisionEngine::arbitrateSpatial(const RawAudioMetrics& m) noexcept {
     const bool upmixActive = (m.upmix_active > 0.5f);
     const bool wfsActive   = (m.wfs_active > 0.5f);
     const bool rirActive   = (m.rir_active > 0.5f);
-    const float voiceScore = clamp01(m.voice_score);
+    const float voiceScore = trustedVoiceScore(m);
     const float gr         = std::max(0.0f, m.gain_reduction_db);
 
     // 1. Localización HRTF: siempre 1.0 (referencia binaural directa)
@@ -266,10 +264,11 @@ AdaptiveDecisionEngine::arbitratePersonality(const RawAudioMetrics& m, float fat
     }
 
     // Densidad musical: si el bajo es muy dominante (>55% de la energía)
-    const float total = std::max(0.0f, m.band_low_energy) +
-                         std::max(0.0f, m.band_mid_energy) +
-                         std::max(0.0f, m.band_high_energy) + kEps;
-    if (m.band_low_energy / total > 0.55f) {
+    const float low  = trustedBandEnergy(m, m.band_low_energy);
+    const float mid  = trustedBandEnergy(m, m.band_mid_energy);
+    const float high = trustedBandEnergy(m, m.band_high_energy);
+    const float total = low + mid + high + kEps;
+    if (m.band_energy_valid && low / total > 0.55f) {
         out.sub_bass_damping = 0.3f; // Control de subgrave en música densa
     }
 
