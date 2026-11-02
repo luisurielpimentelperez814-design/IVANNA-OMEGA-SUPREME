@@ -410,6 +410,7 @@ TEST(AcousticRealityHyperengineValidation, 6_ZeroAlgorithmicLatencyAndLockFreeBu
     ivanna::experimental::RawAudioMetrics rawM{};
     rawM.rms = 0.22f; rawM.peak = 0.65f;
     rawM.band_low_energy = 0.08f; rawM.band_mid_energy = 0.10f; rawM.band_high_energy = 0.04f;
+    rawM.band_energy_valid = true;
     const auto adaptSt = ivanna::MasterAcousticOrchestrator::evaluate(rawM, 0.10f, 0.05f);
 
     ivanna::MasterAcousticOrchestrator::arbitrateSnapshot(dspSnap, adaptSt);
