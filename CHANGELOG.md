@@ -1,3 +1,11 @@
+## v2.5.229 (520) - 2026-11-02
+
+- **FastRPC HRTF buffer safety:** Hexagon convolution now receives separate, preallocated dry input buffers and writes into the output buffers. No input/output aliasing is assumed by the QAIC wrapper.
+- **Fail-safe DSP delegation:** HRTF DSP activity is counted only after `delegateBinauralConvolution` returns success. On RPC rejection/failure the original dry samples are restored and processing falls through to the CPU HRTF path in the same block.
+- **Release contents:** includes v2.5.227–v2.5.228 work: generation-acknowledged system-wide HRTF/adaptive control, evidence v3, measured-vs-synthetic HRTF status, evidence-gated adaptive activity, reversible bounded adaptive gain ramp, UI status refresh and cross-panel route consistency.
+
+**Validation boundary:** actual Hexagon execution, audible quality, latency, thermal stability and HAL behavior remain subject to on-device Moto G85 5G validation. Failed FastRPC calls intentionally use CPU fallback; this release does not claim that Hexagon is active on every device.
+
 ## v2.5.228 (519) - 2026-11-02
 
 - **Route-B acknowledgement refresh:** after the processor evidence sampling window, the sound screen now performs a final status read so a late AudioFlinger callback can confirm the requested generation without leaving a stale pending label.
