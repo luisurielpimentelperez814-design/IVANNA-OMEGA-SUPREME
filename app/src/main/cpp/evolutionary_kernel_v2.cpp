@@ -45,13 +45,14 @@
 static constexpr int CONTROL_GENE_COUNT = 12;
 
 // Multi-objective weights sum to 1.0; no synthetic convergence bonus.
-static constexpr float W_FLATNESS   = 0.18f;
-static constexpr float W_LOUDNESS   = 0.18f;
-static constexpr float W_RESONANCE  = 0.16f;
-static constexpr float W_DYNAMIC    = 0.12f;
-static constexpr float W_TONAL      = 0.12f;
-static constexpr float W_EQ         = 0.12f;
-static constexpr float W_SPATIAL    = 0.12f;
+static constexpr float W_FLATNESS   = 0.16f;
+static constexpr float W_LOUDNESS   = 0.16f;
+static constexpr float W_RESONANCE  = 0.14f;
+static constexpr float W_DYNAMIC    = 0.10f;
+static constexpr float W_TONAL      = 0.10f;
+static constexpr float W_EQ         = 0.10f;
+static constexpr float W_SPATIAL    = 0.10f;
+static constexpr float W_CONTROL    = 0.14f;
 
 // Curva ISO 226 (A-weighting simplificada, normalizada a 0dB en 1kHz)
 // Para 256 bins de FFT (potencia de 2, SR=48kHz → resolución 93.75 Hz/bin)
@@ -244,13 +245,36 @@ static float computePsychoacousticFitness(const uint8_t* genome, int len) {
     const float spatialScore = 1.0f - std::min(1.0f,
         std::fabs(evolvedWidth - targetWidth) / 0.65f);
 
+    // 8) The remaining control genes must also affect selection; otherwise
+    // drive/resonance/NHO/angle would drift neutrally despite being applied.
+    const auto match = [](float value, float target, float tolerance) noexcept {
+        return 1.0f - std::min(1.0f, std::fabs(value - target) / tolerance);
+    };
+    const float driveGene = static_cast<float>(genome[4]) / 255.0f;
+    const float resonanceGene = static_cast<float>(genome[5]) / 255.0f;
+    const float nhoAlphaGene = static_cast<float>(genome[6]) / 255.0f;
+    const float nhoBetaGene = static_cast<float>(genome[7]) / 255.0f;
+    const float nhoWetGene = static_cast<float>(genome[8]) / 255.0f;
+    const float nhoHarmonicGene = static_cast<float>(genome[9]) / 255.0f;
+    const float spatialAngleGene = static_cast<float>(genome[10]) / 255.0f;
+    const float controlScore = (
+        match(driveGene, 0.40f - 0.15f * liveTransient, 0.60f) +
+        match(resonanceGene, 0.42f, 0.58f) +
+        match(nhoAlphaGene, 0.375f, 0.625f) +
+        match(nhoBetaGene, 0.50f, 0.50f) +
+        match(nhoWetGene, 0.50f, 0.50f) +
+        match(nhoHarmonicGene, 0.25f + 0.30f * liveLoudness, 0.75f) +
+        match(spatialAngleGene, 0.50f, 0.50f)
+    ) / 7.0f;
+
     const float fitness = W_FLATNESS * flatness
                         + W_LOUDNESS * loudnessScore
                         + W_RESONANCE * resonanceScore
                         + W_DYNAMIC * dynamicScore
                         + W_TONAL * tonalConsistency
                         + W_EQ * eqScore
-                        + W_SPATIAL * spatialScore;
+                        + W_SPATIAL * spatialScore
+                        + W_CONTROL * controlScore;
     if (!std::isfinite(fitness)) return 0.0f;
     return std::clamp(fitness, 0.0f, 1.0f);
 }
