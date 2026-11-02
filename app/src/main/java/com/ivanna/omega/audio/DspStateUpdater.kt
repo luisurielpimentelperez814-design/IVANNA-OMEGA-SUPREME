@@ -16,6 +16,9 @@ class DspStateUpdater {
     private val handler = Handler(Looper.getMainLooper())
     private var updateRunnable: Runnable? = null
     private var lastState: AudioState? = null
+    // El primer estado nativo debe ser una escritura completa, no un delta.
+    // Si la biblioteca aún no estaba cargada, no cacheamos el estado como aplicado.
+    private var nativeStateApplied = false
     
     companion object {
         private const val TAG = "DspStateUpdater"
@@ -41,11 +44,11 @@ class DspStateUpdater {
      * Aplicar actualización (solo parámetros que cambiaron)
      */
     private fun applyUpdate(newState: AudioState) {
-        val previousState = lastState ?: AudioState()
         if (!IvannaNativeLib.isLoaded) {
-            lastState = newState
+            Log.w(TAG, "DSP update diferido: libivanna_omega aún no está cargada")
             return
         }
+        val previousState = if (nativeStateApplied) lastState else null
         try {
             val deltas = mutableMapOf<String, Float>()
 
@@ -63,24 +66,24 @@ class DspStateUpdater {
                 )
             }.onFailure { Log.w(TAG, "comp native: ${it.message}") }
 
-            if (newState.compressorThreshold != previousState.compressorThreshold) {
+            if (previousState == null || newState.compressorThreshold != previousState.compressorThreshold) {
                 deltas["threshold"] = newState.compressorThreshold
                 safeCompressor()
             }
-            if (newState.compressorRatio != previousState.compressorRatio) {
+            if (previousState == null || newState.compressorRatio != previousState.compressorRatio) {
                 deltas["ratio"] = newState.compressorRatio
                 safeCompressor()
             }
-            if (newState.compressorAttack != previousState.compressorAttack) {
+            if (previousState == null || newState.compressorAttack != previousState.compressorAttack) {
                 deltas["attack"] = newState.compressorAttack
                 safeCompressor()
             }
-            if (newState.compressorRelease != previousState.compressorRelease) {
+            if (previousState == null || newState.compressorRelease != previousState.compressorRelease) {
                 deltas["release"] = newState.compressorRelease
                 safeCompressor()
             }
 
-            if (newState.exciterAmount != previousState.exciterAmount) {
+            if (previousState == null || newState.exciterAmount != previousState.exciterAmount) {
                 deltas["exciter"] = newState.exciterAmount
                 runCatching {
                     IvannaNativeLib.nativeSetHarmonicGain(
@@ -89,7 +92,7 @@ class DspStateUpdater {
                 }.onFailure { Log.w(TAG, "harmonic native: ${it.message}") }
             }
 
-            if (newState.spatialWidth != previousState.spatialWidth) {
+            if (previousState == null || newState.spatialWidth != previousState.spatialWidth) {
                 deltas["spatial_width"] = newState.spatialWidth
                                 runCatching {
                     IvannaNativeLib.nativeSetSpatialWidthDirect(
@@ -99,10 +102,10 @@ class DspStateUpdater {
                 com.ivanna.omega.audio.OmegaMetrics.updateSharedLevels(spatialWidth = newState.spatialWidth)
             }
 
-            if (newState.eqBass != previousState.eqBass ||
-                newState.eqMid != previousState.eqMid ||
-                newState.eqTreble != previousState.eqTreble ||
-                newState.masterGain != previousState.masterGain) {
+            if (previousState == null || newState.eqBass != previousState.eqBass ||
+                previousState == null || newState.eqMid != previousState.eqMid ||
+                previousState == null || newState.eqTreble != previousState.eqTreble ||
+                previousState == null || newState.masterGain != previousState.masterGain) {
                 deltas["eq"] = newState.eqBass + newState.eqMid + newState.eqTreble
                 // FIX: antes el delta "eq" se contabilizaba y logueaba pero
                 // NUNCA se enviaba al motor nativo desde esta ruta. La ruta
@@ -121,7 +124,7 @@ class DspStateUpdater {
                 }.onFailure { Log.w(TAG, "eq native: ${it.message}") }
             }
 
-            if (newState.voiceProtectionEnabled != previousState.voiceProtectionEnabled) {
+            if (previousState == null || newState.voiceProtectionEnabled != previousState.voiceProtectionEnabled) {
                 deltas["voice_protection"] = if (newState.voiceProtectionEnabled) 1f else 0f
                 // Nota: la ruta real de voz es VoiceProtectionManager.applyToEngine()
                 // — este delta es sólo informativo para el log, no dispara C++.
@@ -132,6 +135,7 @@ class DspStateUpdater {
             }
 
             lastState = newState
+            nativeStateApplied = true
         } catch (t: Throwable) {
             Log.e(TAG, "❌ Error en applyUpdate", t)
         }
@@ -148,7 +152,7 @@ class DspStateUpdater {
     /**
      * Obtener último estado aplicado
      */
-    fun getLastAppliedState(): AudioState? = lastState
+    fun getLastAppliedState(): AudioState? = lastState.takeIf { nativeStateApplied }
     
     val lastSpatialWidth: Float
         get() = lastState?.spatialWidth ?: 0f
