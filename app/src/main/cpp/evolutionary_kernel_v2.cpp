@@ -40,12 +40,18 @@
 #include <string>
 #include <cmath>
 
-// Pesos del fitness multi-criterio (suman 1.0)
-static constexpr float W_FLATNESS   = 0.25f;
-static constexpr float W_LOUDNESS   = 0.25f;
-static constexpr float W_RESONANCE  = 0.20f;
-static constexpr float W_DYNAMIC    = 0.15f;
-static constexpr float W_TONAL      = 0.15f;
+// Genome ABI v2: genes [0..11] are live controls; [12..255] is the
+// spectral phenotype evaluated against post-DSP perceptual cues.
+static constexpr int CONTROL_GENE_COUNT = 12;
+
+// Multi-objective weights sum to 1.0; no synthetic convergence bonus.
+static constexpr float W_FLATNESS   = 0.18f;
+static constexpr float W_LOUDNESS   = 0.18f;
+static constexpr float W_RESONANCE  = 0.16f;
+static constexpr float W_DYNAMIC    = 0.12f;
+static constexpr float W_TONAL      = 0.12f;
+static constexpr float W_EQ         = 0.12f;
+static constexpr float W_SPATIAL    = 0.12f;
 
 // Curva ISO 226 (A-weighting simplificada, normalizada a 0dB en 1kHz)
 // Para 256 bins de FFT (potencia de 2, SR=48kHz → resolución 93.75 Hz/bin)
@@ -153,90 +159,110 @@ static void initAWeightTable() {
 // ── Fitness psicoacústico multi-criterio ──────────────────────────────────────
 static float computePsychoacousticFitness(const uint8_t* genome, int len) {
     initAWeightTable();
-    if (!genome || len < 4 || len > GENOME_SIZE) return 0.0f;
+    if (!genome || len < CONTROL_GENE_COUNT + 8 || len > GENOME_SIZE) return 0.0f;
 
-    // Convertir genoma de uint8 a espectro de amplitud normalizado
-    float spectrum[GENOME_SIZE];
+    // Genes 0..11 are controls, not spectrum bins. Fitness evaluates only
+    // the remaining phenotype so parameter bytes cannot masquerade as audio.
+    const int spectralLen = len - CONTROL_GENE_COUNT;
+    float spectrum[GENOME_SIZE]{};
     float sumLin = 0.0f;
     float logSum = 0.0f;
     float maxMag = 0.0f;
-    float minMag = 1e6f;
-
-    for (int i = 0; i < len; ++i) {
-        const float v = (genome[i] / 255.0f);
-        spectrum[i] = v;
-        sumLin += v;
-        logSum += (v > 1e-6f) ? std::log(v) : std::log(1e-6f);
-        maxMag  = std::max(maxMag, v);
-        if (v > 1e-6f) minMag = std::min(minMag, v);
+    for (int i = 0; i < spectralLen; ++i) {
+        const float value = static_cast<float>(genome[CONTROL_GENE_COUNT + i]) / 255.0f;
+        spectrum[i] = value;
+        sumLin += value;
+        logSum += std::log(std::max(value, 1.0e-6f));
+        maxMag = std::max(maxMag, value);
     }
+    const float meanLin = sumLin / static_cast<float>(spectralLen);
+    if (meanLin < 1.0e-8f) return 0.0f;
 
-    const float meanLin = sumLin / len;
-    if (meanLin < 1e-8f) return 0.0f;
+    const float liveLoudness = std::clamp(g_loudness.load(std::memory_order_relaxed), 0.0f, 1.0f);
+    const float liveTransient = std::clamp(g_transient.load(std::memory_order_relaxed), 0.0f, 1.0f);
+    const float liveSpatial = std::clamp(g_spatial.load(std::memory_order_relaxed), 0.0f, 1.0f);
 
-    // ── 1. Spectral Flatness (Wiener) ────────────────────────────────────────
-    const float geomMean = std::exp(logSum / len);
-    const float flatness = geomMean / meanLin;  // [0,1] — 1 = white noise, 0 = tone
+    // 1) Spectral flatness of the evolved phenotype.
+    const float geomMean = std::exp(logSum / static_cast<float>(spectralLen));
+    const float flatness = std::clamp(geomMean / meanLin, 0.0f, 1.0f);
 
-    // ── 2. Loudness Balance (correlación con A-weighting) ───────────────────
-    // Queremos que el espectro del genoma esté "alineado" con la curva de
-    // sensibilidad del oído. Un genoma que booste frecuencias donde el oído
-    // ya es muy sensible (2-5kHz) debe tener menor peso.
+    // 2) Loudness balance: A-weighted spectral correlation plus measured
+    // post-DSP level target. Quiet passages may retain more energy; loud ones
+    // are discouraged from accumulating further spectral boost.
     float loudCorr = 0.0f;
-    // FIX (warnings CI #34534011357): centroid y 'f' declarados pero no
-    // leídos → -Wunused-variable. El loop solo necesita aw (precomputada);
-    // eliminamos las cargas inútiles que ensuciaban el test host.
-    for (int k = 0; k < std::min(len/2, GENOME_SIZE/2); ++k) {
-        const float aw = s_aWeightTable[k];
-        loudCorr += spectrum[k] * aw;
+    const int halfSpectrum = std::min(spectralLen / 2, GENOME_SIZE / 2);
+    for (int k = 0; k < halfSpectrum; ++k) {
+        loudCorr += spectrum[k] * s_aWeightTable[k];
     }
-    loudCorr /= (len / 2);
+    loudCorr /= static_cast<float>(std::max(1, halfSpectrum));
+    const float targetMean = 0.42f - 0.12f * liveLoudness;
+    const float loudnessMatch = 1.0f - std::min(1.0f,
+        std::fabs(meanLin - targetMean) / std::max(0.1f, targetMean));
+    const float loudnessScore = 0.55f * std::clamp(loudCorr, 0.0f, 1.0f)
+                              + 0.45f * loudnessMatch;
 
-    // ── 3. Resonance Penalty ────────────────────────────────────────────────
-    // Si algún bin supera 3× la media → resonancia puntual → penalizar
-    const float RESONANCE_THRESH = 3.0f;
+    // 3) Resonance penalty: no narrow bin may dominate the evolved envelope.
+    constexpr float RESONANCE_THRESH = 3.0f;
     float resonancePenalty = 0.0f;
-    for (int i = 0; i < len; ++i) {
-        const float ratio = spectrum[i] / (meanLin + 1e-8f);
+    for (int i = 0; i < spectralLen; ++i) {
+        const float ratio = spectrum[i] / (meanLin + 1.0e-8f);
         if (ratio > RESONANCE_THRESH)
             resonancePenalty += (ratio - RESONANCE_THRESH) / 10.0f;
     }
-    resonancePenalty = std::min(1.0f, resonancePenalty / len);
+    resonancePenalty = std::clamp(resonancePenalty / static_cast<float>(spectralLen), 0.0f, 1.0f);
     const float resonanceScore = 1.0f - resonancePenalty;
 
-    // ── 4. Dynamic Score ─────────────────────────────────────────────────────
-    const float dynamicRange = g_dynamicRange.load(std::memory_order_relaxed);
-    // Genomas con varianza interna proporcional al dynamic range del material
+    // 4) Dynamic score follows both configured dynamic range and the live
+    // transient cue measured from the processed audio block.
+    const float dynamicRange = std::clamp(g_dynamicRange.load(std::memory_order_relaxed), 0.0f, 1.0f);
     float variance = 0.0f;
-    for (int i = 0; i < len; ++i) {
-        float d = spectrum[i] - meanLin;
-        variance += d * d;
+    for (int i = 0; i < spectralLen; ++i) {
+        const float delta = spectrum[i] - meanLin;
+        variance += delta * delta;
     }
-    variance /= len;
+    variance /= static_cast<float>(spectralLen);
     const float stdDev = std::sqrt(variance);
-    // Para material dinámico, queremos más varianza espectral
-    const float targetStd  = 0.15f + dynamicRange * 0.25f;
+    const float targetStd = 0.12f + dynamicRange * 0.16f + liveTransient * 0.12f;
     const float dynamicScore = 1.0f - std::min(1.0f,
         std::fabs(stdDev - targetStd) / (targetStd + 0.1f));
 
-    // ── 5. Tonal Consistency ─────────────────────────────────────────────────
-    const float tonality = g_tonality.load(std::memory_order_relaxed);
-    // Si el material es tonal (tonality > 0.6), el genoma debe ser más suave
-    // (evitar resonancias que interfieran con la armonía). Si es ruidoso/
-    // percusivo, más varianza está OK.
-    const float tonalConsistency = (tonality > 0.6f)
+    // 5) Tonal consistency penalizes resonant spectra on tonal material.
+    const float tonality = std::clamp(g_tonality.load(std::memory_order_relaxed), 0.0f, 1.0f);
+    const float tonalConsistency = tonality > 0.6f
         ? (1.0f - std::min(1.0f, resonancePenalty * 2.0f))
         : (0.5f + 0.5f * dynamicScore);
 
-    // ── Fitness final ────────────────────────────────────────────────────────
-    const float F = W_FLATNESS  * flatness
-                  + W_LOUDNESS  * std::min(1.0f, loudCorr)
-                  + W_RESONANCE * resonanceScore
-                  + W_DYNAMIC   * dynamicScore
-                  + W_TONAL     * tonalConsistency;
+    // 6) Four-band EQ regularizer. The four first genes map to +/-4 dB;
+    // smooth neighboring bands are preferred, but non-flat corrections remain possible.
+    float eqMagnitude = 0.0f;
+    float eqVariation = 0.0f;
+    float previousEq = 0.5f;
+    for (int i = 0; i < 4; ++i) {
+        const float eq = static_cast<float>(genome[i]) / 255.0f;
+        eqMagnitude += std::fabs(eq - 0.5f) * 2.0f;
+        if (i > 0) eqVariation += std::fabs(eq - previousEq) * 2.0f;
+        previousEq = eq;
+    }
+    eqMagnitude *= 0.25f;
+    eqVariation /= 3.0f;
+    const float eqScore = 1.0f - std::clamp(0.65f * eqMagnitude + 0.35f * eqVariation, 0.0f, 1.0f);
 
-    if (!std::isfinite(F)) return 0.0f;
-    return std::max(0.0f, std::min(1.0f, F));
+    // 7) Spatial width is scored against the live inter-channel cue rather
+    // than a fixed preferred value. Genome[11] maps to a bounded width control.
+    const float evolvedWidth = static_cast<float>(genome[11]) / 255.0f;
+    const float targetWidth = std::clamp(0.35f + 0.30f * liveSpatial, 0.35f, 0.65f);
+    const float spatialScore = 1.0f - std::min(1.0f,
+        std::fabs(evolvedWidth - targetWidth) / 0.65f);
+
+    const float fitness = W_FLATNESS * flatness
+                        + W_LOUDNESS * loudnessScore
+                        + W_RESONANCE * resonanceScore
+                        + W_DYNAMIC * dynamicScore
+                        + W_TONAL * tonalConsistency
+                        + W_EQ * eqScore
+                        + W_SPATIAL * spatialScore;
+    if (!std::isfinite(fitness)) return 0.0f;
+    return std::clamp(fitness, 0.0f, 1.0f);
 }
 
 // ── Población y evolución ─────────────────────────────────────────────────────
