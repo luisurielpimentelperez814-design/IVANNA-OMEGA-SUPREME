@@ -2,9 +2,9 @@
 
 - **Build gate:** OFF-mode regression test now requires identity bypass; JVM updater tests verify that DSP state remains deferred when the JNI library is absent.
 - **DSP acknowledgement:** the updater records a state as applied only after native setters succeed; partial/empty writes force a complete retry instead of suppressing future deltas.
-- **Evolutionary genome ABI:** decode the 256-byte chromosome into 8 bounded descriptors (2 DSP, 4 NHO, 2 spatial) and publish them through the lock-free control plane. Removed the genome-average-to-master-gain shortcut.
+- **Evolutionary genome ABI:** define a canonical 256-byte genome ABI: genes 0–3 drive a four-band EQ, 4–5 drive/resonance, 6–9 NHO, 10–11 spatial; genes 12–255 are the spectral phenotype. All 12 control genes are decoded and published through the lock-free control plane. The old genome-average-to-master-gain shortcut is removed.
 - **Safe bypass:** downstream DSP consumes only a completely published genome and invalidates it when the manifold route is disabled.
-- Fitness/convergence is still an optimizer metric, not a fabricated 1.0 target; audible improvement requires Moto G85 playback and loopback/A-B verification.
+- Fitness now uses the post-DSP loudness, transient and stereo cues plus spectral, resonance, dynamic, tonal, EQ-smoothness and spatial objectives. Convergence remains a measured optimizer metric, not a fabricated 1.0 target; audible improvement requires Moto G85 playback and loopback/A-B verification.
 
 ## v2.5.217 (508) - 2026-11-01
 
