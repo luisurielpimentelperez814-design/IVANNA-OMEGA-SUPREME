@@ -135,6 +135,7 @@ static std::atomic<float> g_tonality         {0.5f};
 static std::atomic<float> g_dynamicRange     {0.5f};
 // A generation may only be optimized against a real, non-silent audio block.
 static std::atomic<bool> g_audioCuesValid {false};
+static std::atomic<bool> g_liveFitnessReady {false};
 
 // Precalcular A-weighting para los 128 bins del genoma
 static float s_aWeightTable[GENOME_SIZE / 2] = {};
@@ -295,6 +296,7 @@ static std::mutex  g_saveMutex;
 // regeneraba la población mientras el hilo de fondo la evolucionaba (data race).
 // Orden de bloqueo: g_evoMutex → g_saveMutex.
 static std::mutex g_evoMutex;
+static std::mutex g_convergenceMutex;
 
 // Mejor genoma publicado para lectores en tiempo real (audio_orchestrator lo lee desde el
 // procesamiento de audio): seqlock — el lector nunca bloquea ni toma el mutex.
@@ -337,6 +339,7 @@ void evo_initialize_population() {
     g_population.bestFitness = g_population.individuals[0].fitness;
     g_lastBestFitness = g_population.bestFitness;
     g_stallCount = 0;
+    g_liveFitnessReady.store(false, std::memory_order_release);
     publishBestGenomeLocked();
     g_initialized.store(true, std::memory_order_release);
 }
@@ -434,8 +437,9 @@ void evo_update_audio_cues(float loudness, float transient, float spatial) {
     g_loudness  .store(loudness,  std::memory_order_relaxed);
     g_transient .store(transient, std::memory_order_relaxed);
     g_spatial   .store(spatial,   std::memory_order_relaxed);
-    g_audioCuesValid.store(std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f,
-                           std::memory_order_release);
+    const bool valid = std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f;
+    g_audioCuesValid.store(valid, std::memory_order_release);
+    if (!valid) g_liveFitnessReady.store(false, std::memory_order_release);
 }
 
 // v2.0: cues adicionales
@@ -450,8 +454,9 @@ void evo_update_audio_cues_v2(float loudness, float transient, float spatial,
     g_spectralCentroid.store(std::clamp(centroid, 0.0f, 24000.0f), std::memory_order_relaxed);
     g_tonality        .store(std::clamp(tonality, 0.0f, 1.0f), std::memory_order_relaxed);
     g_dynamicRange    .store(std::clamp(dynamicRange, 0.0f, 1.0f), std::memory_order_relaxed);
-    g_audioCuesValid.store(std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f,
-                           std::memory_order_release);
+    const bool valid = std::fabs(loudness) + std::fabs(transient) + std::fabs(spatial) > 1.0e-5f;
+    g_audioCuesValid.store(valid, std::memory_order_release);
+    if (!valid) g_liveFitnessReady.store(false, std::memory_order_release);
 }
 
 void evo_set_mutation_rate(float rate) {
@@ -490,7 +495,12 @@ int evo_load_state() {
     if (ok) {
         Population loaded;
         ok = std::fread(&loaded, sizeof(loaded), 1, f) == 1;
-        if (ok) { g_population = loaded; publishBestGenomeLocked(); }
+        if (ok) {
+            g_population = loaded;
+            g_initialized.store(true, std::memory_order_release);
+            g_liveFitnessReady.store(false, std::memory_order_release);
+            publishBestGenomeLocked();
+        }
     }
     std::fclose(f); return ok ? 1 : 0;
 }
@@ -500,24 +510,35 @@ int evo_is_initialized(void) {
 }
 
 int evo_evolve_step_with_convergence(void) {
-    // Keep the worker alive but abstain until a real non-silent audio block has
-    // supplied perceptual cues. Random evolution without a signal is not learning.
+    // Abstain until real non-silent cues arrive; do not train against silence.
     if (!g_audioCuesValid.load(std::memory_order_acquire)) return 1;
-    if (!g_initialized.load(std::memory_order_acquire)) {
-        evo_initialize_population();
-    }
-    const float before = g_population.bestFitness;
-    evo_evolve_generation();
-    const float after = g_population.bestFitness;
+    if (!g_initialized.load(std::memory_order_acquire)) evo_initialize_population();
 
-    if (after - before > EVO_CONVERGENCE_EPS) {
-        g_stallCount = 0;
-    } else {
-        ++g_stallCount;
+    // Population fitness is context-dependent. Re-score every member once when
+    // live cues resume so elites scored against silence/old cues cannot dominate.
+    if (!g_liveFitnessReady.exchange(true, std::memory_order_acq_rel)) {
+        std::lock_guard<std::mutex> evoLk(g_evoMutex);
+        const int active = std::clamp(g_activePop.load(std::memory_order_relaxed),
+                                      2 * ELITE_COUNT, POPULATION_SIZE);
+        for (int i = 0; i < active; ++i)
+            g_population.individuals[i].fitness =
+                computePsychoacousticFitness(g_population.individuals[i].genome, GENOME_SIZE);
+        std::sort(g_population.individuals, g_population.individuals + active,
+                  [](const auto& a, const auto& b){ return a.fitness > b.fitness; });
+        g_population.bestFitness = g_population.individuals[0].fitness;
+        publishBestGenomeLocked();
     }
+
+    std::lock_guard<std::mutex> convergenceLk(g_convergenceMutex);
+    const float before = evo_best_fitness();
+    evo_evolve_generation();
+    const float after = evo_best_fitness();
+
+    if (after - before > EVO_CONVERGENCE_EPS) g_stallCount = 0;
+    else ++g_stallCount;
     g_lastBestFitness = after;
     const int cap = g_maxGenerations.load(std::memory_order_relaxed);
-    if (cap > 0 && static_cast<int>(g_population.generation) >= cap) return 0;  // tope de generaciones alcanzado
+    if (cap > 0 && evo_get_generation() >= cap) return 0;
     return (g_stallCount >= EVO_CONVERGENCE_STALL) ? 0 : 1;
 }
 
