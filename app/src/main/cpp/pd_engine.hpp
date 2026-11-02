@@ -49,6 +49,8 @@ extern "C" {
 #endif
 void   evo_initialize_population();
 void   evo_evolve_generation();
+int    evo_is_initialized();
+int    evo_evolve_step_with_convergence();
 float  evo_best_fitness();
 void   evo_get_best_genome(uint8_t* out_genome, int len);  // len must be ≥ 33
 void   evo_update_audio_cues(float loudness, float transient, float spatial);
@@ -270,6 +272,9 @@ public:
 
     void set_mode(int m) noexcept {
         const int clamped = std::clamp(m, 0, 3);
+        // Leaving evolutionary mode must stop and join the worker; merely hiding
+        // the UI flag left a background optimizer consuming CPU indefinitely.
+        if (clamped != 3) stop_evo_thread();
         mode.store(clamped, std::memory_order_relaxed);
         if (clamped == 0) {
             g_control_frame.evolutionary_active.store(false, std::memory_order_release);
@@ -314,15 +319,21 @@ public:
     void start_evo_thread() noexcept {
         bool expected = false;
         if (!evo_running_.compare_exchange_strong(expected, true)) return;
-        evo_initialize_population();
+        if (!evo_is_initialized()) evo_initialize_population();
         if (mode.load(std::memory_order_relaxed) == 3) {
             g_control_frame.evolutionary_active.store(true, std::memory_order_release);
         }
         evo_thread_ = std::thread([this]() {
             constexpr int EVO_INTERVAL_MS = 50;
             while (evo_running_.load(std::memory_order_acquire)) {
-                evo_evolve_generation();
+                if (mode.load(std::memory_order_acquire) != 3) break;
+                if (evo_evolve_step_with_convergence() == 0) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(EVO_INTERVAL_MS));
+            }
+            evo_running_.store(false, std::memory_order_release);
+            if (mode.load(std::memory_order_acquire) != 3) {
+                g_control_frame.evolutionary_active.store(false, std::memory_order_release);
+                control_clear_evo_genome();
             }
         });
         struct sched_param sp{};
