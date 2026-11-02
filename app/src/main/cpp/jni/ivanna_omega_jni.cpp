@@ -267,6 +267,7 @@ static void rirWorkerLoop() {
 // vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
 // dejar que Exciter/Compresor la sobre-procesen.
 static std::atomic<float> g_voice_protect_score{0.f};
+static std::atomic<bool>  g_voice_protect_score_valid{false};
 
 // ── FIX nho_wet: 3 escritores competían sobre g_pd.set_nho_wet() ─────────────
 // nativeSetParams pisaba el control HRTF WET y el η del LSTM en cada movimiento
@@ -602,33 +603,26 @@ static void audioRouteBridgeLoop() {
             rawM.band_mid_energy   = shared->ai_band_mid.load(std::memory_order_relaxed);
             rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
         }
-        // FIX: ai_band_* nunca se escriben desde el bus local — solo el daemon
-        // legacy las poblaba. Sin daemon, siempre son 0 → AdaptiveDashboard
-        // muestra LOW/MID/HIGH en 0% permanente.
-        // Fallback: cuando todas las bandas son 0 pero hay señal (rms > 0),
-        // estimar la distribución espectral con un modelo estadístico simple
-        // basado en el RMS. Distribución típica de audio mixto:
-        //   LOW  ≈ 35% de la energía total (bass + sub)
-        //   MID  ≈ 45% (voz + instrumentos medios)
-        //   HIGH ≈ 20% (presencia + brillante)
-        // Este proxy es visualmente correcto y evita que la UI quede muerta.
-        if (rawM.band_low_energy == 0.f && rawM.band_mid_energy == 0.f &&
-            rawM.band_high_energy == 0.f && rms > 1e-6f) {
-            rawM.band_low_energy  = rms * 0.35f;
-            rawM.band_mid_energy  = rms * 0.45f;
-            rawM.band_high_energy = rms * 0.20f;
+        // Sin daemon no existe una fuente real de bandas en este puente.
+        // No sintetizar LOW/MID/HIGH a partir del RMS ni voz a partir de MID.
+        // Solo se acepta YAMNet cuando la región compartida contiene una
+        // inferencia válida (classId y confidence); de otro modo queda
+        // voice_score_valid=false y el motor opera neutral.
+        rawM.band_energy_valid = (shared != nullptr);
+        if (shared) {
+            rawM.band_low_energy  = shared->ai_band_low.load(std::memory_order_relaxed);
+            rawM.band_mid_energy  = shared->ai_band_mid.load(std::memory_order_relaxed);
+            rawM.band_high_energy = shared->ai_band_high.load(std::memory_order_relaxed);
+            const int yamnetClass = shared->ai_yamnet_class_id.load(std::memory_order_relaxed);
+            const float confidence = shared->ai_yamnet_confidence.load(std::memory_order_relaxed);
+            const float speech = shared->ai_voice_score.load(std::memory_order_relaxed);
+            if (yamnetClass >= 0 && std::isfinite(confidence) && confidence > 1.0e-4f &&
+                std::isfinite(speech)) {
+                rawM.voice_score = std::clamp(speech, 0.0f, 1.0f);
+                rawM.voice_score_valid = true;
+            }
         }
         rawM.gain_reduction_db = grDb;
-        // FIX (telemetría Compression/Voice Prot congelada en 0%): omega_effect
-        // corre en el proceso de audioserver y no puede correr
-        // VoiceProtectionController (necesita PCM crudo, no compartido entre
-        // procesos). Se usa como proxy la energía de banda media ya publicada
-        // por BandEnergyMeter (voz humana concentra energía ahí) normalizada
-        // contra el total de banda — el AdaptiveDecisionEngine consume esto
-        // igual que el voice_score real de la Ruta A.
-        const float bandTotal = rawM.band_low_energy + rawM.band_mid_energy +
-                                 rawM.band_high_energy + 1e-6f;
-        rawM.voice_score = std::clamp((rawM.band_mid_energy / bandTotal) * 1.5f, 0.0f, 1.0f);
         // Exponer band energies Ruta B al JNI getter (AdaptiveDashboard)
         g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
         g_lastBandMid .store(rawM.band_mid_energy,  std::memory_order_relaxed);
@@ -1085,8 +1079,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetStereoWidth(JNIEnv*, jobject, jfloa
 // de arriba, por la misma razón (evitar colisión con otros parámetros).
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject, jfloat score) {
+    if (!std::isfinite(score)) return;
     g_voice_protect_score.store(
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
+    // Este setter solo es invocado después de una inferencia YAMNet válida.
+    g_voice_protect_score_valid.store(true, std::memory_order_release);
 }
 
 // ── REINYECCION DIFERENCIAL DE RUTA A (v2.5.0) ─────────────────────────────
@@ -1624,8 +1621,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         rawM.band_low_energy   = bandEnergy(0, 1);
         rawM.band_mid_energy   = bandEnergy(2, 4);
         rawM.band_high_energy  = bandEnergy(5, 7);
+        rawM.band_energy_valid = true;
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = vpScore;
+        rawM.voice_score_valid = g_voice_protect_score_valid.load(std::memory_order_acquire);
         rawM.crest_factor_db   = (rms > 1e-6f) ? 20.0f * std::log10(std::max(peakAbs / rms, 1.0f)) : 0.0f;
         rawM.upmix_active      = g_upmixing_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
         rawM.golden_ear_active = (g_params.drive > 0.05f) ? 1.0f : 0.0f;
@@ -2709,6 +2708,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFatigueProtection(
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
+    g_voice_protect_score.store(0.0f, std::memory_order_relaxed);
+    g_voice_protect_score_valid.store(false, std::memory_order_release);
     g_pd.stop_evo_thread();
     g_eq.reset(); g_comp.reset(); g_exciter.reset();
     g_widener.reset();
