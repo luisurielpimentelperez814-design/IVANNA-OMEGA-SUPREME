@@ -72,11 +72,14 @@ require("app/src/main/cpp/spatial/SafmusEvolutionGate.hpp", "mayApplyEvolutionCa
         "std::isfinite(e.fitness)", "e.headroomValid")
 require("app/src/main/cpp/audio_orchestrator.cpp", "SafmusEvolutionGate.hpp",
         "mayApplyEvolutionCandidate(evidence)", "decode_evolutionary_genome",
-        "control_set_evo_genome(decoded, 8)", "control_clear_evo_genome()",
+        "control_set_evo_genome(decoded, 12)", "control_clear_evo_genome()",
         "if (routeEnabled && g_orch.genome_valid && signalFinite")
 require("app/src/main/cpp/audio_control_plane.hpp",
+        "evo_genome_eq[4]", "genome_size < 12",
         "evo_genome_valid.store(true, std::memory_order_release)",
         "inline void control_clear_evo_genome()")
+require("app/src/main/cpp/audio_control_plane.cpp",
+        "Four-band evolutionary EQ", "f.presence", "evo_genome_eq[i]")
 require("app/src/main/cpp/audio_control_plane.cpp",
         "g_control_frame.evo_genome_valid.load(std::memory_order_acquire)")
 
@@ -88,7 +91,9 @@ control_plane = source("app/src/main/cpp/audio_control_plane.cpp")
 if "g_inline_evo_adapter" in control_plane or "g_evo_adapter" in control_plane:
     errors.append("audio_control_plane.cpp: unused shadow evolutionary optimizer must not run in parallel")
 require("app/src/main/cpp/evolutionary_kernel_v2.cpp", "!std::isfinite(F)",
-        "!std::isfinite(loudness)", "std::clamp(dynamicRange, 0.0f, 1.0f)")
+        "!std::isfinite(loudness)", "CONTROL_GENE_COUNT = 12",
+        "g_loudness.load", "g_transient.load", "g_spatial.load",
+        "W_EQ", "W_SPATIAL")
 require("app/src/main/cpp/tests/test_evolutionary_kernel.cpp",
         "SAFMUSEvolutionGate", "NonFiniteAudioCuesAreRejectedWithoutPoisoningFitness")
 require("app/src/test/java/com/ivanna/omega/safmus/SafmusUniversalKernelTest.kt",
