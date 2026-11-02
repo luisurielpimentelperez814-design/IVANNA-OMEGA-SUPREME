@@ -65,9 +65,9 @@ struct UnifiedControlFrame {
     std::atomic<float> route_widener_mult{1.15f};    // reduce ancho en BT (mono-compat)
 
     // ── Evolutionary Best Genome (actualizado cada 50ms) ───────────
-    std::atomic<float> evo_genome_dsp[5]{};          // [0..4] DSP params
+    std::atomic<float> evo_genome_dsp[2]{};          // [0..1] drive/resonance
     std::atomic<float> evo_genome_nho[4]{};          // [5..8] NHO params
-    std::atomic<float> evo_genome_spatial[3]{};      // [9..11] Spatial params
+    std::atomic<float> evo_genome_spatial[2]{};      // [6..7] angle/width
 
     // ── Telemetry & Monitoring ────────────────────────────────────
     std::atomic<float> output_lufs{-16.f};           // LUFS actual
@@ -148,24 +148,25 @@ inline void control_set_phase_oracle(float T_refined, float coherence) noexcept 
 
 /*
  * Publica 12 descriptores decodificados del cromosoma uint8[256].
- * [0..4]=DSP, [5..8]=NHO, [9..11]=Spatial; el decodificador reside en audio_orchestrator.
+ * [0..1]=DSP (drive/resonance), [2..5]=NHO, [6..7]=Spatial (angle/width).
+ * Los 8 valores proceden de la partición completa del cromosoma uint8[256].
  */
 inline void control_set_evo_genome(const float* genome, int genome_size) noexcept {
-    if (!genome || genome_size < 12) return;
+    if (!genome || genome_size < 8) return;
 
     // DSP params [0..4]
-    for (int i = 0; i < 5 && i < genome_size; ++i) {
+    for (int i = 0; i < 2; ++i) {
         g_control_frame.evo_genome_dsp[i].store(std::clamp(genome[i], 0.f, 1.f), std::memory_order_relaxed);
     }
 
     // NHO params [5..8]
-    for (int i = 0; i < 4 && (5 + i) < genome_size; ++i) {
+    for (int i = 0; i < 4; ++i) {
         g_control_frame.evo_genome_nho[i].store(std::clamp(genome[5 + i], 0.f, 1.f), std::memory_order_relaxed);
     }
 
     // Spatial params [9..11]
-    for (int i = 0; i < 3 && (9 + i) < genome_size; ++i) {
-        g_control_frame.evo_genome_spatial[i].store(std::clamp(genome[9 + i], 0.f, 1.f), std::memory_order_relaxed);
+    for (int i = 0; i < 2; ++i) {
+        g_control_frame.evo_genome_spatial[i].store(std::clamp(genome[6 + i], 0.f, 1.f), std::memory_order_relaxed);
     }
     g_control_frame.evo_genome_valid.store(true, std::memory_order_release);
 }
