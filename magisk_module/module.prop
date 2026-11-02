@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.216
-versionCode=507
+version=v2.5.217
+versionCode=508
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.216: continuous Acoustic Reality live-PCM refresh and truthful measured-HRTF status
+description=v2.5.217: adaptive bypass, first-write DSP delivery and persistent control loop fixes
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
