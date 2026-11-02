@@ -727,11 +727,14 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         } else {
             if (hasH) m_state.hrtf_enabled = h > 0.5f;
             if (hasA) m_state.adaptive_enabled = a > 0.5f;
+            ivanna::EffectEvidence before{};
+            m_audio_feature_evidence_seq = ivanna::readEffectEvidence(before) ? before.seq : 0u;
             const uint64_t gen = publishCurrentState(m_state);
             m_audio_feature_generation = gen;
             ivanna::EffectEvidence ev{};
             const bool evidence = ivanna::readEffectEvidence(ev);
-            const bool applied = gen > 0u && evidence && ev.controlGeneration >= gen &&
+            const bool applied = gen > 0u && evidence &&
+                ev.seq > m_audio_feature_evidence_seq && ev.controlGeneration >= gen &&
                 ev.hrtfEnabled == (m_state.hrtf_enabled ? 1u : 0u) &&
                 ev.adaptiveEnabled == (m_state.adaptive_enabled ? 1u : 0u);
             n = snprintf(reply,reply_sz,
@@ -749,7 +752,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         ivanna::EffectEvidence ev{};
         const bool evidence = ivanna::readEffectEvidence(ev);
         const uint64_t gen = m_audio_feature_generation;
-        const bool applied = gen > 0u && evidence && ev.controlGeneration >= gen &&
+        const bool applied = gen > 0u && evidence &&
+            ev.seq > m_audio_feature_evidence_seq && ev.controlGeneration >= gen &&
             ev.hrtfEnabled == (m_state.hrtf_enabled ? 1u : 0u) &&
             ev.adaptiveEnabled == (m_state.adaptive_enabled ? 1u : 0u);
         n = snprintf(reply,reply_sz,
@@ -1006,6 +1010,8 @@ void CommandServer::resetState() {
     pthread_mutex_lock(&m_mutex);
     m_state = kDefaultState;
     m_state.last_update = _nowMs();
+    m_audio_feature_generation = 0u;
+    m_audio_feature_evidence_seq = 0u;
     pthread_mutex_unlock(&m_mutex);
 }
 bool CommandServer::start(const std::string& socket_path) {
