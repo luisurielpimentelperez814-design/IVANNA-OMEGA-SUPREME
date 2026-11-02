@@ -409,7 +409,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             };
             const bool cmp = havePrev && cur.seq >= prev.seq;
             const bool hrtfCpu = cmp && applying(cur.hrtfCpuBlocks - prev.hrtfCpuBlocks, cur.hrtfInEnergy - prev.hrtfInEnergy, cur.hrtfOutEnergy - prev.hrtfOutEnergy);
-            const bool hrtfDsp = cmp && cur.hrtfDspBlocks > prev.hrtfDspBlocks && cur.hrtfCpuBlocks == prev.hrtfCpuBlocks;
+            const bool hrtfDsp = cmp && cur.hrtfDspBlocks > prev.hrtfDspBlocks;
             const bool rirApp = cmp && applying(cur.rirActiveBlocks - prev.rirActiveBlocks, cur.rirInEnergy - prev.rirInEnergy, cur.rirOutEnergy - prev.rirOutEnergy);
             const bool safHrtf = cmp && (cur.hrtfSafRefreshes > prev.hrtfSafRefreshes);
             const bool safRir = cmp && (cur.rirRelinks > prev.rirRelinks);
@@ -725,12 +725,24 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             n = snprintf(reply,reply_sz,
                 "{\"ok\":false,\"action\":\"SET_AUDIO_FEATURES\",\"applied\":false,\"status\":\"invalid_arguments\"}");
         } else {
+            const OmegaDspState previousState = m_state;
+            const uint64_t previousGeneration = m_audio_feature_generation;
+            const uint64_t previousEvidenceSeq = m_audio_feature_evidence_seq;
             if (hasH) m_state.hrtf_enabled = h > 0.5f;
             if (hasA) m_state.adaptive_enabled = a > 0.5f;
             ivanna::EffectEvidence before{};
-            m_audio_feature_evidence_seq = ivanna::readEffectEvidence(before) ? before.seq : 0u;
+            const bool beforeReadable = ivanna::readEffectEvidence(before);
             const uint64_t gen = publishCurrentState(m_state);
-            m_audio_feature_generation = gen;
+            if (gen > 0u) {
+                m_audio_feature_generation = gen;
+                m_audio_feature_evidence_seq = beforeReadable ? before.seq : 0u;
+            } else {
+                // Publication failed: rollback the desired state so a later,
+                // unrelated command cannot accidentally activate this request.
+                m_state = previousState;
+                m_audio_feature_generation = previousGeneration;
+                m_audio_feature_evidence_seq = previousEvidenceSeq;
+            }
             ivanna::EffectEvidence ev{};
             const bool evidence = ivanna::readEffectEvidence(ev);
             const bool applied = gen > 0u && evidence &&
