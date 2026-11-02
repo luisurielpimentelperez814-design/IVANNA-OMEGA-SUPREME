@@ -147,6 +147,8 @@ object PiLstmBridge {
             nativeSetHrtfEnabled(en)
             runCatching { IvannaNativeLib.nativeSetHRTFEnabled(en) }
             runCatching { IvannaNpeEngine.setBinauralEnabled(en) }
+            // Keep the AudioFlinger effect synchronized as well as the app-local NPE.
+            runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.queueSystemWideHrtfEnabled(en) }
         }
     }
     fun getNpSat(): Float = if (ready) nativeGetNpSat() else 0f
