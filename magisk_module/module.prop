@@ -3,5 +3,5 @@ name=IVANNA OMEGA SUPREME
 version=v2.5.338
 versionCode=629
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.338: adaptive engine join-state test accessor; no runtime behavior change
+description=v2.5.338: adaptive engine start from nativeInitDSP, FotoHolo state retry fixes and stricter wiring contracts
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
