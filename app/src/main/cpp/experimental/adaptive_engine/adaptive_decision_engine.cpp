@@ -321,6 +321,7 @@ bool AdaptiveDecisionEngine::start() noexcept {
     // Un hilo detenido también queda joinable hasta hacer join(). Se drena
     // bajo el mismo mutex que serializa start/stop antes de reutilizarlo.
     if (controlThread_.joinable()) {
+#if defined(__EXCEPTIONS)
         try {
             if (controlThread_.get_id() == std::this_thread::get_id()) return false;
             controlThread_.join();
@@ -328,9 +329,15 @@ bool AdaptiveDecisionEngine::start() noexcept {
             running_.store(false, std::memory_order_release);
             return false;
         }
+#else
+        // Build Android arm64: -fno-exceptions (CMakeLists.txt). Sin try/catch.
+        if (controlThread_.get_id() == std::this_thread::get_id()) return false;
+        controlThread_.join();
+#endif
     }
 
     running_.store(true, std::memory_order_release);
+#if defined(__EXCEPTIONS)
     try {
         controlThread_ = std::thread([this]() { controlLoop(); });
     } catch (...) {
@@ -340,6 +347,10 @@ bool AdaptiveDecisionEngine::start() noexcept {
         running_.store(false, std::memory_order_release);
         return false;
     }
+#else
+    // -fno-exceptions: un fallo de std::thread aborta; no hay rama de recuperación.
+    controlThread_ = std::thread([this]() { controlLoop(); });
+#endif
     return true;
 }
 
@@ -351,12 +362,16 @@ void AdaptiveDecisionEngine::stop() noexcept {
         // el futuro alguien añade ese camino, no auto-join/detach el hilo;
         // una llamada externa posterior podrá drenarlo sin UAF.
         if (controlThread_.get_id() == std::this_thread::get_id()) return;
+#if defined(__EXCEPTIONS)
         try {
             controlThread_.join();
         } catch (...) {
             // Mantener el objeto joinable para que el siguiente stop()
             // pueda volver a intentar el join; nunca fingir que fue drenado.
         }
+#else
+        controlThread_.join();
+#endif
     }
 }
 
