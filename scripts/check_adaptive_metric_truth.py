@@ -218,8 +218,13 @@ def main() -> int:
         ):
             if "if (!adaptiveActive)" not in consumer or gain_state not in consumer or comp_state not in consumer or exc_state not in consumer:
                 raise AssertionError("OFF/manual must reset each Route A consumer's independent adaptive smoothers")
-            if "g_gain.setRuntimeGain(1.0f);" not in consumer or "g_exciter.setRuntimeReduction(0.0f);" not in consumer:
-                raise AssertionError("OFF/manual must neutralize retained gain and exciter actuator state")
+            if "g_gain.setRuntimeGain(1.0f);" not in consumer:
+                raise AssertionError("OFF/manual must neutralize the retained gain actuator state")
+            if ("g_exciter.setRuntimeReduction(0.0f);" not in consumer and
+                    "g_exciter.setRuntimeReduction(g_ats.excReductionSmooth);" not in consumer):
+                raise AssertionError("OFF/manual must explicitly set the exciter's measured-or-neutral target")
+        if "g_exciter.setRuntimeReduction(g_ats.excReductionSmooth);" not in route_a_consumer:
+            raise AssertionError("Route A must continue applying the measured harmonic-budget reduction when ADE is OFF")
             if "g_comp.resetRuntimeAmount();" in consumer or "g_comp.setRuntimeAmount(" not in consumer:
                 raise AssertionError("OFF/manual must slew the compressor runtime overlay without erasing the Perceptual Guard target")
         if "g_ats.compAmountSmooth = std::max(g_ats.compAmountSmooth, g_ats.guardCompLimitApplied);" not in route_a_consumer:
