@@ -61,6 +61,26 @@ void printState(const char* label, const AdaptiveState& s) {
                 s.spatial_width, s.safety_margin, s.voice_protection_amount);
 }
 
+void testControlThreadLifecycle() {
+    std::printf("\\n=== Ciclo de vida ADE: start/stop idempotente y recuperable ===\\n");
+    AdaptiveDecisionEngine engine;
+
+    expect(engine.start(), "lifecycle: primer start crea el hilo de control");
+    expect(engine.running(), "lifecycle: estado running refleja un hilo vivo");
+    expect(engine.start(), "lifecycle: start repetido es idempotente");
+    expect(engine.running(), "lifecycle: start repetido no detiene el hilo");
+
+    engine.stop();
+    expect(!engine.running(), "lifecycle: stop termina el hilo de control");
+    engine.stop();
+    expect(!engine.running(), "lifecycle: stop repetido es seguro");
+
+    expect(engine.start(), "lifecycle: el motor puede reiniciarse tras stop");
+    expect(engine.running(), "lifecycle: restart vuelve a estado vivo");
+    engine.stop();
+    expect(!engine.running(), "lifecycle: stop final deja el hilo drenado");
+}
+
 void testSilentInput() {
     std::printf("\n=== Entrada silenciosa (rms=0, peak=0, bandas=0) ===\n");
     RawAudioMetrics m{};  // todo en 0 por defecto
@@ -461,6 +481,7 @@ int main() {
     std::printf("AdaptiveDecisionEngine — suite de tests standalone\n");
     std::printf("====================================================\n");
 
+    testControlThreadLifecycle();
     testSilentInput();
     testNormalSignal();
     testSaturatedSignal();
