@@ -163,8 +163,8 @@ def main() -> int:
         wfs_policy_end = jni.find("\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
         wfs_policy = jni[wfs_policy_start:wfs_policy_end] if wfs_policy_end > wfs_policy_start else ""
         if not re.search(
-                r"return\\s+g_wfs_enabled\\.load\\(std::memory_order_acquire\\)\\s*&&\\s*"
-                r"!g_aux_field_enabled\\.load\\(std::memory_order_acquire\\)\\s*;",
+                r"return\s+g_wfs_enabled\.load\(std::memory_order_acquire\)\s*&&\s*"
+                r"!g_aux_field_enabled\.load\(std::memory_order_acquire\)\s*;",
                 wfs_policy,
                 re.DOTALL):
             raise AssertionError(
