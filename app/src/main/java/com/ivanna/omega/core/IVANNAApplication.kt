@@ -498,7 +498,7 @@ class IVANNAApplication : Application() {
                             if (ok) {
                                 Log.i(TAG, "✅ OmegaEngineBridge reconectado al daemon")
                                 runCatching {
-                                    omegaBridge.queueSystemWideAdaptiveEnabled(adaptiveRequested)
+                                    omegaBridge.queueSystemWideAdaptiveEnabled(currentAdaptiveRequested())
                                 }
                             }
                         }

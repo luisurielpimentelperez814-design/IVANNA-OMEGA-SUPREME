@@ -164,12 +164,39 @@ def main() -> int:
             source = engine if "AdaptiveDecisionEngine::start" in needle else header
             if needle not in source:
                 raise AssertionError(f"adaptive lifecycle contract missing: {needle}")
+        if "pthread_create(" not in engine or "createResult != 0" not in engine:
+            raise AssertionError("Android -fno-exceptions lifecycle does not handle pthread resource failure")
+        if "running_.store(false, std::memory_order_release);" not in engine[engine.find("const int createResult = pthread_create"):]:
+            raise AssertionError("pthread creation failure leaves ADE falsely marked running")
+        if "controlThreadJoinable_ = false;" not in engine:
+            raise AssertionError("pthread lifecycle has no successful join/drain transition")
+        if "pthread_t controlThread_" not in header:
+            raise AssertionError("Android ADE lifecycle does not own a joinable pthread handle")
         if "if (!ensureAdaptiveEngineStarted()) return 0;" not in jni:
             raise AssertionError("nativeCreateAdaptiveEngine can claim a disabled/failed engine is ready")
+        ensure_start = jni.find("static bool ensureAdaptiveEngineStarted")
+        ensure_end = jni.find("\n}", ensure_start) if ensure_start >= 0 else -1
+        ensure_body = jni[ensure_start:ensure_end] if ensure_end > ensure_start else ""
+        if "!g_initialized.load(std::memory_order_acquire)" not in ensure_body:
+            raise AssertionError("explicit create/watchdog can start ADE before the native DSP graph is ready")
+        if "if (g_adaptiveEngine.running()) g_adaptiveEngine.stop();" not in ensure_body:
+            raise AssertionError("ADE thread is not drained when the native DSP graph becomes unavailable")
         if "g_adaptiveEngineUiEnabled.store(true" in jni:
             raise AssertionError("nativeCreateAdaptiveEngine must not override the user's OFF/manual preference")
         if "g_adaptiveEngine.running()" not in jni:
             raise AssertionError("JNI health query does not inspect the real control thread")
+        enabled_start = jni.find("static bool setAdaptiveEngineEnabled")
+        enabled_end = jni.find("\n}", enabled_start) if enabled_start >= 0 else -1
+        enabled_body = jni[enabled_start:enabled_end] if enabled_end > enabled_start else ""
+        if "!g_initialized.load(std::memory_order_acquire)" not in enabled_body:
+            raise AssertionError("native ON preference can start the control thread before DSP initialization")
+        native_init_start = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(")
+        native_init_end = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeSet", native_init_start)
+        native_init = jni[native_init_start:native_init_end] if native_init_end > native_init_start else ""
+        graph_ready = native_init.find("g_initialized.store(true, std::memory_order_release);")
+        ade_start = native_init.find("ensureAdaptiveEngineStarted()")
+        if graph_ready < 0 or ade_start < graph_ready:
+            raise AssertionError("DSPBridge starts ADE before the native graph is initialized")
         unload_start = jni.rfind("JNI_OnUnload")
         if unload_start < 0:
             raise AssertionError("JNI_OnUnload is missing")
@@ -207,6 +234,8 @@ def main() -> int:
             raise AssertionError("self-heal does not respect the manual-mode state")
         if "testControlThreadLifecycle();" not in lifecycle_test:
             raise AssertionError("native lifecycle regression test is not in the test runner")
+        if "testConcurrentControlThreadLifecycle();" not in lifecycle_test:
+            raise AssertionError("concurrent start/stop lifecycle regression test is not in the test runner")
         sound_screen = read("app/src/main/java/com/ivanna/omega/ui/SoundScreen.kt")
         hrtf_toggle = sound_screen.find('requestRouteFeatures(en, routeAdaptiveEnabled)')
         if hrtf_toggle < 0:
@@ -256,6 +285,15 @@ def main() -> int:
             raise AssertionError("unexpected placeholder in audio route contract")
         if "heal_start = self_heal.find(" not in route_contract or "init_at = activity.find(" not in route_contract:
             raise AssertionError("audio route contract must validate missing source markers without ValueError")
+
+        quality = read("app/src/main/cpp/tests/test_audio_quality_metrics.cpp")
+        limiter_start = quality.find("TEST(AudioQualityMetrics, ProcessingLatency_LimiterUnder1ms)")
+        limiter_end = quality.find("TEST(AudioQualityMetrics, ProcessingLatency_CompressorUnder1ms)", limiter_start)
+        limiter_test = quality[limiter_start:limiter_end] if limiter_start >= 0 and limiter_end > limiter_start else ""
+        sort_at = limiter_test.find("std::sort(times.begin(), times.end());")
+        median_at = limiter_test.find("long long medianNs = times[REPS / 2];")
+        if sort_at < 0 or median_at < 0 or sort_at > median_at:
+            raise AssertionError("limiter latency benchmark must sort samples before calculating its median")
 
     except AssertionError as exc:
         print(f"FAIL adaptive-metric-truth: {exc}", file=sys.stderr)

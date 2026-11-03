@@ -314,65 +314,86 @@ AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
     return s;
 }
 
+#if defined(__linux__) || defined(__ANDROID__)
+void* AdaptiveDecisionEngine::controlThreadEntry(void* self) noexcept {
+    auto* engine = static_cast<AdaptiveDecisionEngine*>(self);
+    if (engine) engine->controlLoop();
+    return nullptr;
+}
+#endif
+
 bool AdaptiveDecisionEngine::start() noexcept {
     std::lock_guard<std::mutex> lock(controlLifecycleMutex_);
     if (running_.load(std::memory_order_acquire)) return true;
 
-    // Un hilo detenido también queda joinable hasta hacer join(). Se drena
-    // bajo el mismo mutex que serializa start/stop antes de reutilizarlo.
+#if defined(__linux__) || defined(__ANDROID__)
+    // Unlike std::thread in a -fno-exceptions build, pthread_create reports
+    // resource exhaustion (EAGAIN/ENOMEM) without throwing/terminating.
+    if (controlThreadJoinable_) {
+        if (pthread_equal(pthread_self(), controlThread_)) return false;
+        const int joinResult = pthread_join(controlThread_, nullptr);
+        if (joinResult != 0) {
+            running_.store(false, std::memory_order_release);
+            return false; // retain joinable state so a later stop/start can retry
+        }
+        controlThreadJoinable_ = false;
+    }
+
+    running_.store(true, std::memory_order_release);
+    const int createResult = pthread_create(
+        &controlThread_, nullptr, &AdaptiveDecisionEngine::controlThreadEntry, this);
+    if (createResult != 0) {
+        running_.store(false, std::memory_order_release);
+        return false;
+    }
+    controlThreadJoinable_ = true;
+    return true;
+#else
     if (controlThread_.joinable()) {
-#if defined(__EXCEPTIONS)
+        if (controlThread_.get_id() == std::this_thread::get_id()) return false;
         try {
-            if (controlThread_.get_id() == std::this_thread::get_id()) return false;
             controlThread_.join();
         } catch (...) {
             running_.store(false, std::memory_order_release);
             return false;
         }
-#else
-        // Build Android arm64: -fno-exceptions (CMakeLists.txt). Sin try/catch.
-        if (controlThread_.get_id() == std::this_thread::get_id()) return false;
-        controlThread_.join();
-#endif
     }
 
     running_.store(true, std::memory_order_release);
-#if defined(__EXCEPTIONS)
     try {
         controlThread_ = std::thread([this]() { controlLoop(); });
     } catch (...) {
-        // No dejar running=true ni un estado "started" ficticio si el SoC
-        // no pudo crear el hilo (memoria/recursos agotados). El caller puede
-        // reintentar más tarde sin destruir ni resetear el grafo DSP.
         running_.store(false, std::memory_order_release);
         return false;
     }
-#else
-    // -fno-exceptions: un fallo de std::thread aborta; no hay rama de recuperación.
-    controlThread_ = std::thread([this]() { controlLoop(); });
-#endif
     return true;
+#endif
 }
 
 void AdaptiveDecisionEngine::stop() noexcept {
     std::lock_guard<std::mutex> lock(controlLifecycleMutex_);
     running_.store(false, std::memory_order_release);
+
+#if defined(__linux__) || defined(__ANDROID__)
+    if (controlThreadJoinable_) {
+        if (pthread_equal(pthread_self(), controlThread_)) return;
+        const int joinResult = pthread_join(controlThread_, nullptr);
+        if (joinResult == 0) {
+            controlThreadJoinable_ = false;
+        }
+        // On failure retain joinable=true. A later external stop() retries;
+        // never detach or destroy a live thread's owner.
+    }
+#else
     if (controlThread_.joinable()) {
-        // stop() no debe ejecutarse desde el propio hilo de control. Si en
-        // el futuro alguien añade ese camino, no auto-join/detach el hilo;
-        // una llamada externa posterior podrá drenarlo sin UAF.
         if (controlThread_.get_id() == std::this_thread::get_id()) return;
-#if defined(__EXCEPTIONS)
         try {
             controlThread_.join();
         } catch (...) {
-            // Mantener el objeto joinable para que el siguiente stop()
-            // pueda volver a intentar el join; nunca fingir que fue drenado.
+            // Keep joinable state so a later external stop() can retry.
         }
-#else
-        controlThread_.join();
-#endif
     }
+#endif
 }
 
 void AdaptiveDecisionEngine::controlLoop() {
