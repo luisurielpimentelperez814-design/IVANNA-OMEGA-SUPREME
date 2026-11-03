@@ -1351,9 +1351,9 @@ static int32_t omega_process(effect_handle_t self,
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
 
             // Un solo actuador de compresión por ruta: se conserva el
-            // umbral de usuario/snapshot, V2 aplica su corrección dinámica y
-            // ADE añade protección de ratio. pendingSnap.comp_amount ya es el
-            // resultado ADE consumido; no debe contarse por segunda vez.
+            // umbral/ratio manual del snapshot, V2 añade su corrección dinámica
+            // y ADE añade su ratio protector separado. Arbitrar aquí evita que
+            // el último escritor borre el control manual o la decisión ADE.
             const float v2Threshold = std::clamp(
                 std::isfinite(adaptParams.compressorThreshold)
                     ? adaptParams.compressorThreshold : -20.0f,
