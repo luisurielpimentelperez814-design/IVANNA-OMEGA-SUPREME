@@ -3780,10 +3780,10 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
     g_snapshotRunning.store(false, std::memory_order_release);
     if (g_snapshotThread.joinable()) g_snapshotThread.join();
 
-    // 3. Parar el hilo de control del AdaptiveDecisionEngine.
-    if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
-        g_adaptiveEngine.stop();
-    }
+    // 3. Parar y drenar siempre el hilo de control del AdaptiveDecisionEngine.
+    // No confiar solo en g_adaptiveEngineStarted: una ruta de recuperación
+    // fallida puede dejar el std::thread joinable aunque el flag esté en false.
+    (void)setAdaptiveEngineEnabled(false);
 
     // 3. Parar el worker de carga de IR Ruta A — accede a g_rirDataset/
     //    g_rirConvolver (estáticos) y no debe sobrevivir a dlclose().
