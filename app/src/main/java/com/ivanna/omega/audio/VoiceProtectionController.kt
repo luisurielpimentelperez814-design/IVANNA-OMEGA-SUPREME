@@ -199,9 +199,14 @@ class VoiceProtectionController(context: Context) {
             _voiceScore.value = 0f
             _sharedVoiceScore.value = 0f
         }
-        // Mutex serialization ensures an already-running blocking classify()
-        // finishes before the interpreter is released by a future call owner.
-        scope.coroutineContext[Job]?.cancel()
-        classifier.release()
+        // classify() may be a blocking native/TFLite call and can outlive its
+        // cancelled Job. Queue interpreter release behind that call instead
+        // of racing classifier.release() against an in-flight invocation.
+        scope.launch {
+            classifierMutex.withLock {
+                classifier.release()
+            }
+            scope.coroutineContext[Job]?.cancel()
+        }
     }
 }
