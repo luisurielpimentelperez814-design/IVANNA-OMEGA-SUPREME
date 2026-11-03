@@ -1324,10 +1324,10 @@ static int32_t omega_process(effect_handle_t self,
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
 
-            // Un solo actuador de compresión por ruta: el valor base del
-            // slider/snapshot se conserva y V2 añade una corrección dinámica
-            // relativa a su referencia neutra de -20 dB. El ADE aporta ratio
-            // de protección adicional. Los tres escritores se arbitran aquí.
+            // Un solo actuador de compresión por ruta: se conserva el
+            // umbral de usuario/snapshot, V2 aplica su corrección dinámica y
+            // ADE añade protección de ratio. pendingSnap.comp_amount ya es el
+            // resultado ADE consumido; no debe contarse por segunda vez.
             const float v2Threshold = std::clamp(
                 std::isfinite(adaptParams.compressorThreshold)
                     ? adaptParams.compressorThreshold : -20.0f,
@@ -1343,14 +1343,11 @@ static int32_t omega_process(effect_handle_t self,
             const float v2Ratio = std::clamp(
                 std::isfinite(adaptParams.compressorRatio) ? adaptParams.compressorRatio : 1.0f,
                 1.0f, 20.0f);
-            const float snapshotRatio = 1.0f + 7.0f * std::clamp(
-                std::isfinite(ctx->pendingSnap.comp_amount) ? ctx->pendingSnap.comp_amount : 0.0f,
-                0.0f, 1.0f);
             const float adeRatio = 1.0f + 7.0f * std::clamp(
                 std::isfinite(ctx->adaptiveDecisionCompAmount)
                     ? ctx->adaptiveDecisionCompAmount : 0.0f,
                 0.0f, 1.0f);
-            const float effectiveRatio = std::max(v2Ratio, std::max(snapshotRatio, adeRatio));
+            const float effectiveRatio = std::max(v2Ratio, adeRatio);
             if (fc) {
                 fc->setCompressorParams(effectiveThreshold, effectiveRatio);
             }
@@ -1717,9 +1714,15 @@ if (ctx->adaptive) {
                         std::isfinite(adSt.upmix_immersivity) ? adSt.upmix_immersivity : 1.0f,
                         0.5f, 1.0f);
                 } else if (!ctx->adaptiveEnabled) {
-                    // Disabled means neutral actuation; raw metrics remain observable.
+                    // Bypass adaptativo real: neutralizar también los parámetros
+                    // que el callback conserva dentro del snapshot. Si solo se
+                    // limpia el estado auxiliar, exc_red/comp_amount anteriores
+                    // pueden seguir actuando en coordinación armónica/compresor.
                     ctx->adaptiveDecisionTargetGain = 1.0f;
                     ctx->adaptiveDecisionCompAmount = 0.0f;
+                    ctx->pendingSnap.target_gain = 1.0f;
+                    ctx->pendingSnap.comp_amount = 0.0f;
+                    ctx->pendingSnap.exc_red = 0.0f;
                     ctx->adaptWfsScale = 1.0f;
                     ctx->adaptImmScale = 1.0f;
                 }
