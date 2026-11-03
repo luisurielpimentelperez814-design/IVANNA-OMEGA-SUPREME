@@ -8,6 +8,8 @@
 #include "ivanna_hal_output_stream.hpp"
 #include "audio_hardware_clock_bridge.hpp"
 
+#include <time.h>
+
 namespace ivanna::audio {
 
 class QualcommPalClockIntegration {
@@ -63,11 +65,21 @@ private:
         if (!self || !self->query_ || !out) return false;
 
         HardwareClockSample sample{};
-        if (!self->query_(self->queryContext_, &sample) ||
-            sample.streamId == 0 || sample.routeGeneration == 0 ||
-            sample.hardwareTimestampNs == 0 ||
-            sample.nominalSampleRateHz < 8000 ||
-            sample.nominalSampleRateHz > 768000) {
+        // PAL/MMAP obtains its hardware timestamp during query(). Read the
+        // comparison clock afterwards so a fresh in-query timestamp is not
+        // rejected merely because CLOCK_MONOTONIC was sampled too early.
+        if (!self->query_(self->queryContext_, &sample)) {
+            if (self->reporterOpen_) self->publisher_.invalidate();
+            return false;
+        }
+        timespec now{};
+        if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0) {
+            if (self->reporterOpen_) self->publisher_.invalidate();
+            return false;
+        }
+        const uint64_t nowNs = static_cast<uint64_t>(now.tv_sec) * 1000000000ull +
+                               static_cast<uint64_t>(now.tv_nsec);
+        if (!isFreshMonotonicHardwareClockSample(sample, nowNs)) {
             if (self->reporterOpen_) self->publisher_.invalidate();
             return false;
         }

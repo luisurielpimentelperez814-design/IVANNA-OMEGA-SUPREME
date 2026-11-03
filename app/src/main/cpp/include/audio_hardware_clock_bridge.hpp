@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -18,6 +19,9 @@ namespace ivanna::audio {
 // presentation timestamp and the matching presented-frame position.
 // Never publish CLOCK_MONOTONIC sampled at effect callback entry.
 inline constexpr const char* kHardwareClockSnapshotPath =
+        "/data/vendor/ivanna_audio/clock_snapshot.v2";
+// Compatibility path used by the v2 producer before the filename migration.
+inline constexpr const char* kLegacyHardwareClockSnapshotPath =
         "/data/vendor/ivanna_audio/clock_snapshot";
 inline constexpr uint32_t kHardwareClockSnapshotMagic = 0x32485649u; // "IVH2" — reject v1 readers
 inline constexpr size_t kHardwareClockSnapshotBytes = 64;
@@ -70,8 +74,16 @@ public:
         if (snapshot_) return true;
         const int fd = ::open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0660);
         if (fd < 0) return false;
+        struct stat st{};
+        if (::fstat(fd, &st) < 0 ||
+            (st.st_size != 0 &&
+             static_cast<size_t>(st.st_size) != kHardwareClockSnapshotBytes)) {
+            // Never truncate an unknown/legacy snapshot layout in place.
+            ::close(fd);
+            return false;
+        }
         (void)::fchmod(fd, 0660);
-        if (::ftruncate(fd, kHardwareClockSnapshotBytes) < 0) {
+        if (st.st_size == 0 && ::ftruncate(fd, kHardwareClockSnapshotBytes) < 0) {
             ::close(fd);
             return false;
         }
@@ -145,9 +157,18 @@ public:
     HardwareClockReader& operator=(const HardwareClockReader&) = delete;
     ~HardwareClockReader() { close(); }
 
-    bool open(const char* path = kHardwareClockSnapshotPath) noexcept {
+    bool open(const char* path = kHardwareClockSnapshotPath,
+              const char* fallbackPath = nullptr) noexcept {
         if (snapshot_) return true;
-        const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+        if (!path) path = kHardwareClockSnapshotPath;
+        int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+        // Keep existing v2 HAL producers working across the filename migration.
+        // Only fall back when the preferred path cannot be opened; an opened but
+        // malformed v2 snapshot must fail closed rather than masking corruption.
+        if (fd < 0 && fallbackPath)
+            fd = ::open(fallbackPath, O_RDONLY | O_CLOEXEC);
+        else if (fd < 0 && std::strcmp(path, kHardwareClockSnapshotPath) == 0)
+            fd = ::open(kLegacyHardwareClockSnapshotPath, O_RDONLY | O_CLOEXEC);
         if (fd < 0) return false;
         struct stat st{};
         if (::fstat(fd, &st) < 0 ||

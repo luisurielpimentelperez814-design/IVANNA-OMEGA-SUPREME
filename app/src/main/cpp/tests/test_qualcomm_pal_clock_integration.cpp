@@ -13,6 +13,7 @@
 
 #include <cstdio>
 #include <string>
+#include <time.h>
 #include <unistd.h>
 #include <vector>
 
@@ -49,13 +50,38 @@ struct FakePal {
     bool queryOk = true;
     int queries = 0;
     FakeAsrc asrc;
+    uint64_t sourceEpochNs = 0;
+    uint64_t monotonicEpochNs = 0;
+    HardwareClockSample lastReturnedSample{};
+
     static bool query(void* p, HardwareClockSample* out) noexcept {
         auto* self = static_cast<FakePal*>(p);
         ++self->queries;
         if (!self->queryOk || !out) return false;
-        *out = self->sample;
-        out->streamId = 7;
-        out->routeGeneration = 1;
+
+        HardwareClockSample sample = self->sample;
+        // Map the deterministic synthetic test epoch onto a fresh MONOTONIC
+        // window. Zero timestamps remain zero so invalid-sample tests stay invalid.
+        if (sample.hardwareTimestampNs != 0) {
+            if (self->sourceEpochNs == 0) {
+                timespec now{};
+                if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0)
+                    return false;
+                const uint64_t nowNs = static_cast<uint64_t>(now.tv_sec) * 1000000000ull +
+                                       static_cast<uint64_t>(now.tv_nsec);
+                self->sourceEpochNs = sample.hardwareTimestampNs;
+                self->monotonicEpochNs = nowNs > 500000000ull
+                    ? nowNs - 500000000ull : nowNs;
+            }
+            if (sample.hardwareTimestampNs >= self->sourceEpochNs) {
+                sample.hardwareTimestampNs = self->monotonicEpochNs +
+                    (sample.hardwareTimestampNs - self->sourceEpochNs);
+            }
+        }
+        sample.streamId = 7;
+        sample.routeGeneration = 1;
+        self->lastReturnedSample = sample;
+        *out = sample;
         return true;
     }
 };
@@ -66,6 +92,32 @@ void lockServo(QualcommPalClockIntegration& pal, FakePal& hal) {
     hal.sample = {4800, 1100000000ull, 48000};   EXPECT_TRUE(pal.controlTick());
     hal.sample = {9601, 1200000000ull, 48000};   EXPECT_TRUE(pal.controlTick());
     hal.sample = {14402, 1300000000ull, 48000};  EXPECT_TRUE(pal.controlTick());
+}
+
+struct TimestampTakenInsideQuery {
+    static bool query(void*, HardwareClockSample* out) noexcept {
+        if (!out) return false;
+        timespec ts{};
+        if (::clock_gettime(CLOCK_MONOTONIC, &ts) != 0 || ts.tv_sec < 0) return false;
+        out->presentedFrames = 48000;
+        out->hardwareTimestampNs = static_cast<uint64_t>(ts.tv_sec) * 1000000000ull +
+                                   static_cast<uint64_t>(ts.tv_nsec);
+        out->nominalSampleRateHz = 48000;
+        out->streamId = 19;
+        out->routeGeneration = 4;
+        return true;
+    }
+};
+
+TEST(QualcommPalClockIntegration, AcceptsTimestampCapturedDuringPairedQuery) {
+    FakeAsrc asrc;
+    QualcommPalClockIntegration pal(&TimestampTakenInsideQuery::query, nullptr,
+                                     &FakeAsrc::apply, &asrc);
+    // The query obtains CLOCK_MONOTONIC internally. The comparison clock must
+    // be sampled after that callback, or this fresh timestamp can look future-dated.
+    EXPECT_TRUE(pal.controlTick());
+    EXPECT_FALSE(pal.correctionEnabled());  // one sample is not enough to lock
+    expectOnlyUnityCommands(asrc);
 }
 
 TEST(QualcommPalClockIntegration, NullQueryFailsClosedToUnityRatio) {
@@ -166,7 +218,7 @@ TEST(QualcommPalClockIntegration, PublishesTheSameSampleItControlsWith) {
     HardwareClockSample got{};
     ASSERT_TRUE(reader.read(got));
     EXPECT_EQ(got.presentedFrames, 96000u);
-    EXPECT_EQ(got.hardwareTimestampNs, 3000000000ull);
+    EXPECT_EQ(got.hardwareTimestampNs, hal.lastReturnedSample.hardwareTimestampNs);
     EXPECT_EQ(got.nominalSampleRateHz, 48000u);
     reader.close();
     std::remove(path.c_str());
