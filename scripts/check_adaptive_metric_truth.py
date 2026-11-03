@@ -147,6 +147,9 @@ def main() -> int:
             raise AssertionError("nativeCreateAdaptiveEngine must not override the user's OFF/manual preference")
         if "g_adaptiveEngine.running()" not in jni:
             raise AssertionError("JNI health query does not inspect the real control thread")
+        unload_start = jni.rindex("JNI_OnUnload")
+        if "(void)setAdaptiveEngineEnabled(false);" not in jni[unload_start:unload_start + 1800]:
+            raise AssertionError("JNI unload does not unconditionally stop/join the adaptive engine")
         if "AdaptiveControlsPrefs.load(this).binauralAdaptEnabled" not in app_boot:
             raise AssertionError("Application bootstrap does not restore the persisted adaptive preference")
         if "AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled" not in activity_boot:
