@@ -120,17 +120,11 @@ object SelfHealingAgent {
             AdaptiveControlsPrefs.load(IVANNAApplication.instance).binauralAdaptEnabled &&
                 !AudioStateManager.audioState.value.manualModeEnabled
         }.getOrDefault(false)
-        val pipelineStatus = if (IvannaNativeLib.isLoaded) runCatching {
-            IvannaNativeLib.nativeGetUnifiedPipelineStatus()
-        }.getOrNull() else null
-        val routeActive = pipelineStatus?.let {
-            it.size >= 8 && it[0].toInt() in 1..2
-        } == true
         val engineRunning = if (IvannaNativeLib.isLoaded) runCatching {
             IvannaNativeLib.nativeIsAdaptiveEngineRunning()
         }.getOrDefault(false) else false
 
-        if (IvannaNativeLib.isLoaded && adaptiveRequested && routeActive &&
+        if (IvannaNativeLib.isLoaded && adaptiveRequested &&
             !engineRunning && now - lastEngineAttempt > COOLDOWN_ENGINE_MS) {
             lastEngineAttempt = now
             val handle = runCatching {
