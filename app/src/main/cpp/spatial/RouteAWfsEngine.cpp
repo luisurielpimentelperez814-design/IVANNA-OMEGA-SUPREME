@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <new>
+#include <limits>
 #include <atomic>
 
 extern std::atomic<float> g_wfs_applied_spread;
@@ -17,6 +18,10 @@ public:
     float wetL[2048]{};
     float wetR[2048]{};
     int maxFrames = 0;
+    float sampleRate = 48000.0f;
+    float dryLowpassCoeff = 1.0f;
+    float dryLowpassL = 0.0f;
+    float dryLowpassR = 0.0f;
 };
 
 RouteAWfsEngine::RouteAWfsEngine() noexcept {
@@ -39,6 +44,8 @@ bool RouteAWfsEngine::prepare(float sampleRate, int maxFrames) noexcept {
         if (impl_ == nullptr) return false;
     }
     impl_->maxFrames = maxFrames;
+    impl_->sampleRate = sampleRate;
+    impl_->dryLowpassL = impl_->dryLowpassR = 0.0f;
     if (!impl_->renderer.init(sampleRate, maxFrames, 7)) return false;
     impl_->governor.configure(sampleRate / static_cast<float>(maxFrames), 0.12f);
     impl_->governor.reset(spread_.load(std::memory_order_relaxed));
@@ -87,6 +94,27 @@ void RouteAWfsEngine::applyLayout(uint32_t generation) noexcept {
         dz[i] = y - room.listenerY;
     }
     impl_->renderer.setSpeakerLayout3D(dx, dyFwd, dz, 7);
+
+    // Complement the renderer's geometry-derived low-pass alias guard with
+    // a matching dry high-pass. WFS carries the low band; the original
+    // programme carries frequencies the discrete array cannot reconstruct.
+    float minSpacingM = std::numeric_limits<float>::max();
+    for (int a = 0; a < 7; ++a) {
+        for (int b = a + 1; b < 7; ++b) {
+            const float deltaX = dx[a] - dx[b];
+            const float deltaY = dyFwd[a] - dyFwd[b];
+            const float deltaZ = dz[a] - dz[b];
+            const float spacing = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+            if (spacing > 1.0e-4f) minSpacingM = std::min(minSpacingM, spacing);
+        }
+    }
+    if (std::isfinite(minSpacingM) && minSpacingM < std::numeric_limits<float>::max()) {
+        constexpr float kSpeedOfSound = 343.0f;
+        constexpr float kTwoPi = 6.2831853071795864769f;
+        const float aliasHz = kSpeedOfSound / (2.0f * minSpacingM);
+        impl_->dryLowpassCoeff =
+            1.0f - std::exp(-kTwoPi * aliasHz / impl_->sampleRate);
+    }
     appliedLayoutGeneration_ = generation;
 }
 
@@ -111,6 +139,18 @@ void RouteAWfsEngine::process(float* left, float* right, int frames) noexcept {
     std::fill_n(impl_->wetR, frames, 0.0f);
     const float* sources[2] = {left, right};
     impl_->renderer.process(sources, 2, impl_->wetL, impl_->wetR, frames);
+
+    // Complementary crossover: the WFS alias guard is low-pass, so preserve
+    // the dry high band instead of replacing the full programme with a
+    // bandwidth-limited wet field. The same one-pole coefficient/cutoff is
+    // derived from the actual seven-speaker geometry in applyLayout().
+    const float alpha = impl_->dryLowpassCoeff;
+    for (int i = 0; i < frames; ++i) {
+        impl_->dryLowpassL += alpha * (left[i] - impl_->dryLowpassL);
+        impl_->dryLowpassR += alpha * (right[i] - impl_->dryLowpassR);
+        impl_->wetL[i] += left[i] - impl_->dryLowpassL;
+        impl_->wetR[i] += right[i] - impl_->dryLowpassR;
+    }
     impl_->renderer.blendWithBypass(left, right, impl_->wetL, impl_->wetR,
                                     left, right, frames);
 }
