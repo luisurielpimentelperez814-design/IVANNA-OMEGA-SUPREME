@@ -355,7 +355,15 @@ PalAsrcBridge::PalAsrcBridge() {
                 "std::atomic<double> must be lock-free for RT use");
 }
 
-PalAsrcBridge::~PalAsrcBridge() = default;
+PalAsrcBridge::~PalAsrcBridge() {
+  // Destruction is a control-plane operation. Stop new callbacks and wait for
+  // the single active RT callback to leave before unique_ptr releases buffers.
+  reconfiguring_.store(true, std::memory_order_seq_cst);
+  const timespec pause{0, 100000};  // 100 us
+  while (inProcess_.load(std::memory_order_seq_cst)) {
+    nanosleep(&pause, nullptr);
+  }
+}
 
 bool PalAsrcBridge::configure(const AsrcConfig& in) {
   AsrcConfig cfg = in;
