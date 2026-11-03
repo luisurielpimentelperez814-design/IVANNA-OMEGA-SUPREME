@@ -286,6 +286,15 @@ def main() -> int:
         if "heal_start = self_heal.find(" not in route_contract or "init_at = activity.find(" not in route_contract:
             raise AssertionError("audio route contract must validate missing source markers without ValueError")
 
+        quality = read("app/src/main/cpp/tests/test_audio_quality_metrics.cpp")
+        limiter_start = quality.find("TEST(AudioQualityMetrics, ProcessingLatency_LimiterUnder1ms)")
+        limiter_end = quality.find("TEST(AudioQualityMetrics, ProcessingLatency_CompressorUnder1ms)", limiter_start)
+        limiter_test = quality[limiter_start:limiter_end] if limiter_start >= 0 and limiter_end > limiter_start else ""
+        sort_at = limiter_test.find("std::sort(times.begin(), times.end());")
+        median_at = limiter_test.find("long long medianNs = times[REPS / 2];")
+        if sort_at < 0 or median_at < 0 or sort_at > median_at:
+            raise AssertionError("limiter latency benchmark must sort samples before calculating its median")
+
     except AssertionError as exc:
         print(f"FAIL adaptive-metric-truth: {exc}", file=sys.stderr)
         return 1
