@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.337
-versionCode=628
+version=v2.5.338
+versionCode=629
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.337: LocalSocket connect-before-timeout fix; includes current mainline adaptive and FotoHolo integrations
+description=v2.5.338: adaptive engine join-state test accessor; no runtime behavior change
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

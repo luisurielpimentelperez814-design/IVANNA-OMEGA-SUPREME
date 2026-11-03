@@ -1,3 +1,10 @@
+## v2.5.338 (629) - 2026-11-03
+
+- **Adaptive engine join-state test coverage:** added `AdaptiveDecisionEngine::controlThreadPendingJoin()`, a test-only accessor that reads the real join state under `controlLifecycleMutex_` (pthread branch on Linux/Android, `std::thread` branch elsewhere). `testControlThreadLifecycle` and `testConcurrentControlThreadLifecycle` now assert that `stop()` actually joins the control thread; `running()` alone could not, because `stop()` clears it before the join. Verified by mutation: with the join block removed the new assertions fail.
+- **No runtime behavior change:** the accessor is not called from production code.
+
+**Validation boundary:** host tests only. Thread lifecycle under real audio load and memory pressure still requires Moto G85 5G validation.
+
 ## v2.5.337 (628) - 2026-11-03
 
 - Corrige el orden de inicialización de `LocalSocket`: `connect()` se ejecuta antes de configurar `soTimeout` en `MagiskBridge.sendCommand`, `isOmegaSocketAvailable` y `ShmManager.mapFromDaemon`. Evita `IOException("socket not created")` por descriptor aún no creado.
