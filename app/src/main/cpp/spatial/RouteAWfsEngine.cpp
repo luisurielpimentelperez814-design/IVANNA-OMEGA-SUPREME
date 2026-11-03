@@ -135,6 +135,14 @@ void RouteAWfsEngine::process(float* left, float* right, int frames) noexcept {
 
     impl_->renderer.setObject(0, -governed.offsetM, 1.5f, 1.0f);
     impl_->renderer.setObject(1,  governed.offsetM, 1.5f, 1.0f);
+
+    // Sanitize the caller-owned PCM before either WFS synthesis or downstream
+    // stages (RIR/XTC) can observe it. Preserve every finite sample exactly.
+    for (int i = 0; i < frames; ++i) {
+        if (!std::isfinite(left[i])) left[i] = 0.0f;
+        if (!std::isfinite(right[i])) right[i] = 0.0f;
+    }
+
     std::fill_n(impl_->wetL, frames, 0.0f);
     std::fill_n(impl_->wetR, frames, 0.0f);
     const float* sources[2] = {left, right};
