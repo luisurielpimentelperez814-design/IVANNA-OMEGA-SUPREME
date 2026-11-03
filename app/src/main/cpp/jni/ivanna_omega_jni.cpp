@@ -45,6 +45,7 @@
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
 #include "../spatial/RoomProbe.hpp"
 #include "../spatial/SceneGeometryRenderer.hpp"
+#include "../spatial/RouteAWfsEngine.hpp"
 #include "../neuromorphic/NpeStereoCore.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../include/BlockPeakGuard.h"
@@ -186,6 +187,21 @@ struct LivePipelineAutoRegistrar {
 } // namespace
 
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
+static ivanna::spatial::RouteAWfsEngine g_routeAWfsEngine;
+
+// AUX has priority over the binaural WFS renderer in Route A, matching the
+// Route-B spatial policy. Keep the user's WFS preference intact so disabling
+// AUX restores WFS automatically; RouteAWfsEngine applies the 15 ms crossfade.
+static inline bool routeAWfsAllowed() noexcept {
+    return ivanna::spatial::isRouteAWfsAllowed(
+        g_wfs_enabled.load(std::memory_order_acquire),
+        g_aux_field_enabled.load(std::memory_order_acquire));
+}
+
+static inline void processRouteAWfs(float* left, float* right, int frames) noexcept {
+    g_routeAWfsEngine.setEnabled(routeAWfsAllowed());
+    g_routeAWfsEngine.process(left, right, frames);
+}
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
 // FIX RT (Ruta A): el dataset RIR y su convolver se inicializan en
@@ -737,6 +753,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // gate lo bloqueaba. Sin cambio de arquitectura: misma cadena, gate
     // ampliado al rango que el hardware USB/Hi-Fi actual expone.
     g_params.sampleRate = (uint32_t)sr;
+    if (!g_routeAWfsEngine.prepare(static_cast<float>(sr), 2048)) {
+        LOGE("Ruta A WFS: inicialización fallida; salida permanece en bypass");
+    }
     g_eq.setParams(g_params);
     g_comp.setParams(g_params);
     g_exciter.setParams(g_params);
@@ -1235,7 +1254,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_ats.dryL, g_ats.dryR, static_cast<size_t>(n),
         g_voice_protect_score.load(std::memory_order_relaxed), 0.0f,
         g_upmixing_enabled.load(std::memory_order_relaxed),
-        g_wfs_enabled.load(std::memory_order_relaxed),
+        routeAWfsAllowed(),
         g_rirConvolver.load(std::memory_order_acquire) != nullptr,
         g_params.drive);
     const ivanna::unity::AcousticUnityContext unityCtx = unityEngine.getContext();
@@ -1402,6 +1421,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     }
     // buffers en g_ats
     g_pd.process_block(g_ats.chL, g_ats.chR, g_ats.pdOutL, g_ats.pdOutR, n);
+    // WFS real en Ruta A, post-PDEngine y pre-RIR/limitador final.
+    processRouteAWfs(g_ats.pdOutL, g_ats.pdOutR, n);
     // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
     // correlación L/R real del material SECO (dryL/dryR, antes de
     // cualquier DSP) y aplica un ensanchamiento M/S extra cuando el
@@ -1636,7 +1657,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         rawM.crest_factor_db   = (rms > 1e-6f) ? 20.0f * std::log10(std::max(peakAbs / rms, 1.0f)) : 0.0f;
         rawM.upmix_active      = g_upmixing_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
         rawM.golden_ear_active = (g_params.drive > 0.05f) ? 1.0f : 0.0f;
-        rawM.wfs_active        = g_wfs_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+        rawM.wfs_active        = routeAWfsAllowed() ? 1.0f : 0.0f;
         rawM.rir_active        = (g_rirConvolver.load(std::memory_order_acquire) != nullptr) ? 1.0f : 0.0f;
         // Exponer band energies al JNI getter (AdaptiveDashboard)
         g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
@@ -1698,7 +1719,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         const float combinedWidenAmount =
             std::max({widenAmountFromCorrelation, adaptiveWidenAmount, unityWidenAsk}) * widenPermission;
         const bool spatialHierarchyActive = (g_upmixing_enabled.load(std::memory_order_relaxed) ||
-                                             g_wfs_enabled.load(std::memory_order_relaxed));
+                                             routeAWfsAllowed());
         const float targetWidenAmount = spatialHierarchyActive ? 0.0f : combinedWidenAmount;
         static float s_effectiveWidenSmooth = 0.0f;
         if (targetWidenAmount > 0.001f || s_effectiveWidenSmooth > 0.001f) {
@@ -1842,7 +1863,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
 
         const bool allowLiveSpatial =
             !g_upmixing_enabled.load(std::memory_order_relaxed) &&
-            !g_wfs_enabled.load(std::memory_order_relaxed);
+            !routeAWfsAllowed();
         ivanna::ime::imeFeedPlanar(g_ats.pdOutL, g_ats.pdOutR, n, srNow);
         ivanna_pilstm_bridge_tick_block(g_ats.pdOutL, g_ats.pdOutR, n, srNow);
         pipe.processLiveSpatialAxes(
@@ -1985,6 +2006,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
         return JNI_TRUE;
     }
     g_params.sampleRate = (uint32_t)sr;
+    if (!g_routeAWfsEngine.prepare(static_cast<float>(sr), 2048)) {
+        LOGE("Ruta A WFS: inicialización fallida; salida permanece en bypass");
+    }
     g_eq.setParams(g_params); g_comp.setParams(g_params);
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
     // Compensación de headroom EQ en init (misma lógica que nativeSetEQParams).
@@ -2178,6 +2202,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     }
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
+    // Misma etapa WFS que DSPBridge.nativeProcess: evita divergencia entre APIs JNI.
+    processRouteAWfs(oL, oR, n);
 
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
     if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
@@ -2217,7 +2243,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         s_blkGuard.beginBlock(oL, oR, nSamples, false);
         const bool allowLiveSpatial =
             !g_upmixing_enabled.load(std::memory_order_relaxed) &&
-            !g_wfs_enabled.load(std::memory_order_relaxed);
+            !routeAWfsAllowed();
         ivanna::ime::imeFeedPlanar(oL, oR, n, srNow);
         ivanna_pilstm_bridge_tick_block(oL, oR, n, srNow);
         pipe.processLiveSpatialAxes(
@@ -3345,6 +3371,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
     if (std::isfinite(spread)) {
         const float sp = std::clamp(spread, 0.0f, 2.0f);
         g_wfs_spread.store(sp, std::memory_order_relaxed);
+        g_routeAWfsEngine.setSpread(sp);
         omegaSendWfsToDaemon(g_wfs_enabled.load(std::memory_order_relaxed), sp);
         auto& bus = ivanna::effectControlBus();
         ivanna::OmegaDspSnapshot snap;
@@ -3383,6 +3410,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
             std::fabs(x[i]) > 7.0f || std::fabs(y[i]) > 5.0f ||
             std::fabs(z[i]) > 9.0f) return;
     }
+
+    g_routeAWfsEngine.setSpeakerLayout(x, y, z);
 
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;

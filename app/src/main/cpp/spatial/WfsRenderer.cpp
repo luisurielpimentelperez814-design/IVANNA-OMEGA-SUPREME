@@ -14,6 +14,15 @@
 namespace {
 thread_local ivanna::wfs::WfsProtectionChain g_wfsProtection;
 thread_local bool g_wfsProtectionInit = false;
+thread_local float g_wfsProtectionSampleRate = 0.0f;
+
+inline void ensureWfsProtection(float sampleRate) noexcept {
+    if (!g_wfsProtectionInit || g_wfsProtectionSampleRate != sampleRate) {
+        g_wfsProtection.init(sampleRate);
+        g_wfsProtectionSampleRate = sampleRate;
+        g_wfsProtectionInit = true;
+    }
+}
 }
 
 #if defined(__x86_64__) || defined(__i386__)
@@ -106,6 +115,25 @@ void WfsRenderer::setSpeakerLayout3D(const float* dx, const float* dyFwd, const 
         if (pan >= 0.f) { speakerItdL_[static_cast<size_t>(s)] = itd; speakerItdR_[static_cast<size_t>(s)] = 0; }
         else            { speakerItdL_[static_cast<size_t>(s)] = 0;   speakerItdR_[static_cast<size_t>(s)] = itd; }
     }
+
+    // Explicit room geometry must drive the spatial-alias limit too. Using
+    // the virtual circular-array spacing here can set an unrelated cutoff.
+    float minSpacingM = std::numeric_limits<float>::max();
+    for (int a = 0; a < count; ++a) {
+        for (int b = a + 1; b < count; ++b) {
+            const float deltaX = dx[a] - dx[b];
+            const float deltaY = dyFwd[a] - dyFwd[b];
+            const float deltaZ = dz[a] - dz[b];
+            const float spacing = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+            if (spacing > 1.0e-4f) minSpacingM = std::min(minSpacingM, spacing);
+        }
+    }
+    // Degenerate geometry resets to the documented 8 kHz fallback rather
+    // than retaining a cutoff from a previous valid layout.
+    const float effectiveSpacing =
+        (std::isfinite(minSpacingM) && minSpacingM < std::numeric_limits<float>::max())
+            ? minSpacingM : 0.0f;
+    aliasGuard_.init(effectiveSpacing, sampleRate_);
 }
 
 void WfsRenderer::reset() noexcept {
@@ -352,6 +380,23 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
     }
 
     if (softSuspended) {
+        // Keep every stateful part of the wet chain clocked while bypassed.
+        // Delay lines above receive the live input; the binaural ITD histories
+        // and post-field filters receive silence so old programme material
+        // cannot leak back after a long bypass interval.
+        for (int n = 0; n < frames; ++n) {
+            for (int s = 0; s < numSpeakers_; ++s) {
+                auto& hist = itdHist_[static_cast<size_t>(s)];
+                int& hp = itdPos_[static_cast<size_t>(s)];
+                hist[static_cast<size_t>(hp)] = 0.0f;
+                hp = (hp + 1) & 255;
+            }
+            float silentL = 0.0f;
+            float silentR = 0.0f;
+            aliasGuard_.process(silentL, silentR);
+            ensureWfsProtection(sampleRate_);
+            g_wfsProtection.process(silentL, silentR);
+        }
         return;
     }
 
@@ -420,11 +465,11 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
             auto& hist = itdHist_[static_cast<size_t>(s)];
             int& hp = itdPos_[static_cast<size_t>(s)];
             hist[static_cast<size_t>(hp)] = spk;
-            const float vL = hist[static_cast<size_t>((hp - speakerItdL_[s]) & 63)];
-            const float vR = hist[static_cast<size_t>((hp - speakerItdR_[s]) & 63)];
+            const float vL = hist[static_cast<size_t>((hp - speakerItdL_[s]) & 255)];
+            const float vR = hist[static_cast<size_t>((hp - speakerItdR_[s]) & 255)];
             accL += vL * speakerGainL_[s];
             accR += vR * speakerGainR_[s];
-            hp = (hp + 1) & 63;
+            hp = (hp + 1) & 255;
         }
         // FIX (guarda de anti-aliasing espacial, antes definida pero jamás
         // llamada desde ningún lado del árbol): se aplica al campo YA
@@ -441,7 +486,7 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
         // WfsProtectionChain REAL (ya no declarada-sin-usar): sanea NaN/Inf,
         // quita DC y subnormales, y limita suave — imposible clipear aunque
         // la suma coherente de altavoces supere 0 dBFS.
-        if (!g_wfsProtectionInit) { g_wfsProtection.init(48000.0f); g_wfsProtectionInit = true; }
+        ensureWfsProtection(sampleRate_);
         float pl = outLRaw, pr = outRRaw;   // copias mutables (los Raw son const)
         g_wfsProtection.process(pl, pr);
         outL[n] += pl;
@@ -491,8 +536,19 @@ void WfsRenderer::blendWithBypass(const float* dryL, const float* dryR,
         else if (enabledMix_ > enabledTarget_) enabledMix_ = std::max(enabledMix_ - step, enabledTarget_);
         const float t = enabledMix_;
         const float shaped = t * t * (3.0f - 2.0f * t);
-        outL[n] = dryL[n] * (1.0f - shaped) + wetL[n] * shaped;
-        outR[n] = dryR[n] * (1.0f - shaped) + wetR[n] * shaped;
+        // Exact dry bypass is also a fault-containment boundary: IEEE-754
+        // NaN * 0 remains NaN, so a contaminated wet renderer must never
+        // leak into the dry signal after the 15 ms fade has completed.
+        if (shaped <= 0.0f) {
+            outL[n] = dryL[n];
+            outR[n] = dryR[n];
+        } else if (shaped >= 1.0f) {
+            outL[n] = wetL[n];
+            outR[n] = wetR[n];
+        } else {
+            outL[n] = dryL[n] * (1.0f - shaped) + wetL[n] * shaped;
+            outR[n] = dryR[n] * (1.0f - shaped) + wetR[n] * shaped;
+        }
     }
 }
 

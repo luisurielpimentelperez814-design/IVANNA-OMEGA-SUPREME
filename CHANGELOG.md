@@ -1,3 +1,11 @@
+## v2.5.339 (630) - 2026-11-03
+
+- **WFS en Ruta A:** conecta `RouteAWfsEngine` y el `WfsRenderer` existente al procesamiento JNI, después de PDEngine y antes de RIR/protección final.
+- **Arbitraje AUX/WFS:** AUX tiene prioridad; WFS queda excluido mientras AUX está activo y la transición entre modos conserva el fundido gradual.
+- **Robustez DSP:** bypass mantiene alimentadas las líneas de retardo; se sanea audio no finito, se unifica el filtro seco con la frecuencia activa y se comparte el corte efectivo del alias guard.
+- **Geometría y frecuencia:** historial ITD ampliado a 256 muestras para cubrir retardos de hasta 384 kHz; pruebas de regresión y contratos de cableado actualizados.
+
+**Validación:** CI de esta versión debe completar compilación Android/ARM64, CTest, JVM y verificación de integridad APK/ZIP. Las pruebas host no sustituyen la validación acústica en el Moto G85; no se afirma certificación física ni activación de hardware WFS multicanal.
 ## v2.5.338 (629) - 2026-11-03
 
 CodeRabbit follow-ups, each verified against current `main` before applying (findings already fixed were skipped).

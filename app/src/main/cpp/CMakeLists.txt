@@ -179,6 +179,9 @@ add_library(ivanna_omega SHARED
     # (extern en jni/ivanna_omega_jni.cpp) pero no estaba en ningún target
     # → undefined symbols al enlazar libivanna_omega.so.
     wfs_controls_bridge.cpp
+    # Ruta A reutiliza el renderer WFS real compartido con AudioFlinger.
+    spatial/RouteAWfsEngine.cpp
+    spatial/WfsRenderer.cpp
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp

@@ -5,6 +5,7 @@ This is a source-graph guard, not proof of device runtime or acoustic output.
 Device gates remain the Moto G85 beacon/AudioFlinger/PAL probes.
 """
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -156,6 +157,34 @@ def main() -> int:
                 "gate, output channel negotiation, matrix validation and runtime tests "
                 "before marking 5-channel output production-ready."
             )
+        # Route-A WFS must obey the same AUX > binaural-WFS priority as
+        # Route B while retaining the user's WFS preference for restoration.
+        wfs_policy_start = jni.find("static inline bool routeAWfsAllowed()")
+        wfs_policy_end = jni.find("\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
+        wfs_policy = jni[wfs_policy_start:wfs_policy_end] if wfs_policy_end > wfs_policy_start else ""
+        # Strip comments before checking the thin JNI adapter; the four-way
+        # executable truth table lives in test_route_a_wfs_engine.cpp and calls
+        # the same constexpr helper used here by production code.
+        wfs_policy_code = re.sub(r"/\*.*?\*/|//[^\n]*", "", wfs_policy, flags=re.DOTALL)
+        if not re.search(
+                r"return\s+ivanna::spatial::isRouteAWfsAllowed\s*\(\s*"
+                r"g_wfs_enabled\.load\(std::memory_order_acquire\)\s*,\s*"
+                r"g_aux_field_enabled\.load\(std::memory_order_acquire\)\s*\)\s*;",
+                wfs_policy_code,
+                re.DOTALL):
+            raise AssertionError(
+                "routeAWfsAllowed must pass the live WFS/AUX atomic state to "
+                "the shared executable arbitration policy"
+            )
+        if ("g_routeAWfsEngine.setEnabled(routeAWfsAllowed());" not in jni or
+                "g_routeAWfsEngine.process(left, right, frames);" not in jni):
+            raise AssertionError("Route-A renderer must consume the shared effective WFS state")
+        if jni.count("processRouteAWfs(g_ats.pdOutL, g_ats.pdOutR, n);") != 1 or jni.count("processRouteAWfs(oL, oR, n);") != 1:
+            raise AssertionError("both live Route-A JNI audio consumers must use the AUX-aware WFS policy")
+        if (jni.count("!routeAWfsAllowed();") != 2 or
+                "const bool spatialHierarchyActive = (g_upmixing_enabled.load(std::memory_order_relaxed) ||" not in jni or
+                "routeAWfsAllowed());" not in jni):
+            raise AssertionError("both Route-A spatial gates and the M/S hierarchy must use effective WFS state")
     except AssertionError as exc:
         print(f"FAIL audio-route-wiring: {exc}", file=sys.stderr)
         return 1

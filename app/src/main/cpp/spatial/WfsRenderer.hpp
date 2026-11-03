@@ -112,6 +112,7 @@ public:
     // obtiene el comportamiento de siempre (compatibilidad con el uso
     // existente de esta clase).
     void setEnabled(bool enabled) noexcept { enabledTarget_ = enabled ? 1.0f : 0.0f; }
+    float aliasGuardCoefficient() const noexcept { return aliasGuard_.a; }
     bool isEnabled() const noexcept { return enabledTarget_ > 0.5f; }
     bool isSettledBypassed() const noexcept {
         return enabledTarget_ <= 0.0f && enabledMix_ <= 0.0f;
@@ -218,8 +219,8 @@ private:
     std::vector<DelayTap> taps_;
     int maxDelayTap_ = 0;
 
-    // Historia ITD por altavoz (64 muestras — ITD máximo ~30 @48k).
-    std::array<std::array<float, 64>, kMaxSpeakers> itdHist_{};
+    // 256 muestras cubren el ITD máximo (242 muestras) a 384 kHz.
+    std::array<std::array<float, 256>, kMaxSpeakers> itdHist_{};
     std::array<int, kMaxSpeakers>                   itdPos_{};
 
     // FIX (2026-09-18 → cableado real): antes definido en el .cpp, fuera de
