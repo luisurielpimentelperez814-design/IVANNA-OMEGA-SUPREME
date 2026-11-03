@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.236
-versionCode=527
+version=v2.5.337
+versionCode=628
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.236: FotoHolo Route B state publish retries on any active route (no stale 'demonio no disponible')
+description=v2.5.337: LocalSocket connect-before-timeout fix; includes current mainline adaptive and FotoHolo integrations
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

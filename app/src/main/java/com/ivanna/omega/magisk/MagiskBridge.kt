@@ -180,10 +180,11 @@ val isDaemonRunning: Boolean
         // Abstract namespace — donde publica ivanna_daemon
         runCatching {
             LocalSocket().use { sock ->
-                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
+                // LocalSocket creates its descriptor lazily in connect(); configure timeout afterwards.
                 sock.connect(
                     LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
                 )
+                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
                 sock.outputStream.apply {
                     write(command.toByteArray(Charsets.UTF_8))
                     write("\n".toByteArray(Charsets.UTF_8))
@@ -252,10 +253,11 @@ val isDaemonRunning: Boolean
     private fun isOmegaSocketAvailable(): Boolean {
         val abstractOk = runCatching {
             LocalSocket().use { sock ->
-                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
+                // connect() must create the LocalSocket descriptor before setting its timeout.
                 sock.connect(
                     LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
                 )
+                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
                 true
             }
         }.getOrDefault(false)

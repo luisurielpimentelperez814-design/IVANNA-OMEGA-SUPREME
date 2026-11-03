@@ -210,10 +210,11 @@ object ShmManager {
     private fun mapFromDaemon(): ByteBuffer? {
         val sock = LocalSocket()
         try {
-            sock.soTimeout = HANDSHAKE_TIMEOUT_MS
             sock.connect(
                 LocalSocketAddress(DAEMON_SOCKET, LocalSocketAddress.Namespace.ABSTRACT)
             )
+            // LocalSocket's descriptor is created by connect(); set timeout after connection.
+            sock.soTimeout = HANDSHAKE_TIMEOUT_MS
             // No escribir NADA: el daemon clasifica como cliente SHM (Modo B)
             // exactamente a quien calla durante 150 ms; si mandamos un byte
             // entra al parser de texto y nunca envia el fd.
