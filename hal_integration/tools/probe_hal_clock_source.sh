@@ -51,15 +51,16 @@ for f in /data/adb/ivanna_omega/daemon.log /data/adb/ivanna_omega.log /data/adb/
 done
 
 section "HAL/PAL snapshot: metadata only"
-SNAP=/data/vendor/ivanna_audio/clock_snapshot
-if [ -e "$SNAP" ]; then
-  ls -lZ "$SNAP" >> "$R" 2>&1
-  if command -v stat >/dev/null 2>&1; then stat -c 'size=%s mode=%a uid=%u gid=%g mtime=%Y' "$SNAP" >> "$R" 2>&1; fi
-  say "first 64 bytes (hex only; do not interpret as proof without a validated reader):"
-  od -An -tx1 -N64 "$SNAP" >> "$R" 2>&1
-else
-  say "snapshot absent: $SNAP"
-fi
+for SNAP in /data/vendor/ivanna_audio/clock_snapshot.v2 /data/vendor/ivanna_audio/clock_snapshot; do
+  if [ -e "$SNAP" ]; then
+    ls -lZ "$SNAP" >> "$R" 2>&1
+    if command -v stat >/dev/null 2>&1; then stat -c 'size=%s mode=%a uid=%u gid=%g mtime=%Y' "$SNAP" >> "$R" 2>&1; fi
+    say "first 64 bytes (hex only; do not interpret as proof without a validated reader): $SNAP"
+    od -An -tx1 -N64 "$SNAP" >> "$R" 2>&1
+  else
+    say "snapshot absent: $SNAP"
+  fi
+done
 
 section "Resultado honesto"
 say "La presencia del nodo o del snapshot NO prueba que sea la ruta de audio activa."
