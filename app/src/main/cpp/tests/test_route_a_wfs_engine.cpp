@@ -108,6 +108,33 @@ int main() {
             CHECK(std::isfinite(right[i]));
         }
     }
+    // WFS alias filtering is intentionally low-pass. The complementary
+    // dry high-pass must retain programme treble when the WFS path is active.
+    {
+        ivanna::spatial::RouteAWfsEngine engine;
+        CHECK(engine.prepare(48000.0f, 512));
+        engine.setEnabled(true);
+        float left[512], right[512];
+        double energy = 0.0;
+        for (int block = 0; block < 6; ++block) {
+            for (int i = 0; i < 512; ++i) {
+                const float phase = 6.2831853071795864769f *
+                    8000.0f * static_cast<float>(block * 512 + i) / 48000.0f;
+                left[i] = right[i] = 0.2f * std::sin(phase);
+            }
+            engine.process(left, right, 512);
+            if (block == 5) {
+                for (int i = 0; i < 512; ++i) {
+                    CHECK(std::isfinite(left[i]));
+                    CHECK(std::isfinite(right[i]));
+                    energy += static_cast<double>(left[i]) * left[i];
+                }
+            }
+        }
+        const double rms = std::sqrt(energy / 512.0);
+        CHECK(rms > 0.10); // full-band dry treble must not be discarded
+    }
+
     // The bypass endpoint must remain bit-transparent even if the wet
     // renderer has produced a non-finite sample: IEEE-754 NaN * 0 is NaN.
     {
