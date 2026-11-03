@@ -97,4 +97,13 @@ class FotoHoloRouteBTest {
             FotoHoloRouteB.statusFromReply("{\"ok\":true,\"status\":\"applied\",\"generation\":7}"))
         assertEquals("respuesta sin confirmación válida del demonio", FotoHoloRouteB.statusFromReply("ACK"))
     }
+
+    @Test fun prefixedStatePublishFailureIsStillRetryable() {
+        assertTrue(FotoHoloRouteB.shouldRetryCommand("FotoHolo Ruta B: demonio no disponible"))
+        assertTrue(FotoHoloRouteB.shouldRetryCommand("FotoHolo Ruta B: error: IOException"))
+        assertTrue(FotoHoloRouteB.shouldRetryCommand("FotoHolo Ruta B: respuesta sin confirmación válida del demonio"))
+        // Un rechazo explícito del daemon o un estado sin consumidor NO son fallos de transporte.
+        assertFalse(FotoHoloRouteB.shouldRetryCommand("FotoHolo Ruta B: rechazado por el demonio"))
+        assertFalse(FotoHoloRouteB.shouldRetryCommand("FotoHolo Ruta B: aceptado; sin consumidor activo"))
+    }
 }
