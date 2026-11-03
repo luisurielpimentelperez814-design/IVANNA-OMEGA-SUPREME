@@ -71,8 +71,12 @@ def main() -> int:
         ):
             if needle not in jni:
                 raise AssertionError(f"JNI metric provenance is not wired: {needle}")
-        bridge_start = jni.index("static void audioRouteBridgeLoop()")
-        bridge_end = jni.index("static inline float adaptive_mode_base_strength", bridge_start)
+        bridge_start = jni.find("static void audioRouteBridgeLoop()")
+        if bridge_start < 0:
+            raise AssertionError("app audio route bridge function is missing")
+        bridge_end = jni.find("static inline float adaptive_mode_base_strength", bridge_start)
+        if bridge_end < 0 or bridge_end <= bridge_start:
+            raise AssertionError("app audio route bridge end marker is missing or out of order")
         bridge = jni[bridge_start:bridge_end]
         for stale_source in ("shared->ai_raw_rms.load", "shared->ai_raw_peak.load",
                              "shared->ai_band_low.load", "shared->ai_yamnet_class_id.load"):
@@ -159,7 +163,9 @@ def main() -> int:
             raise AssertionError("nativeCreateAdaptiveEngine must not override the user's OFF/manual preference")
         if "g_adaptiveEngine.running()" not in jni:
             raise AssertionError("JNI health query does not inspect the real control thread")
-        unload_start = jni.rindex("JNI_OnUnload")
+        unload_start = jni.rfind("JNI_OnUnload")
+        if unload_start < 0:
+            raise AssertionError("JNI_OnUnload is missing")
         if "(void)setAdaptiveEngineEnabled(false);" not in jni[unload_start:unload_start + 1800]:
             raise AssertionError("JNI unload does not unconditionally stop/join the adaptive engine")
         if "AdaptiveControlsPrefs.load(this).binauralAdaptEnabled" not in app_boot:
@@ -172,11 +178,16 @@ def main() -> int:
             raise AssertionError("Activity bootstrap does not honor the persisted adaptive preference")
         if app_boot.count("queueSystemWideAdaptiveEnabled(adaptiveRequested)") < 2:
             raise AssertionError("daemon startup/reconnect does not restore the user's adaptive preference")
+        watchdog_start = self_heal.find("// ── 2. Motor adaptativo")
+        watchdog_end = self_heal.find("// ── 3. Clipping sostenido", watchdog_start) if watchdog_start >= 0 else -1
+        if watchdog_start < 0 or watchdog_end <= watchdog_start:
+            raise AssertionError("self-heal adaptive watchdog section markers are missing or out of order")
+        watchdog_section = self_heal[watchdog_start:watchdog_end]
         if (
-            "adaptiveRequested &&" not in self_heal
-            or "nativeIsAdaptiveEngineRunning()" not in self_heal
-            or "!engineRunning" not in self_heal
-            or "routeActive" in self_heal[self_heal.index("// ── 2. Motor adaptativo"):self_heal.index("// ── 3. Clipping sostenido")]
+            "adaptiveRequested &&" not in watchdog_section
+            or "nativeIsAdaptiveEngineRunning()" not in watchdog_section
+            or "!engineRunning" not in watchdog_section
+            or "routeActive" in watchdog_section
         ):
             raise AssertionError("self-heal can override user preference or confuse silence with thread death")
         if "!AudioStateManager.audioState.value.manualModeEnabled" not in self_heal:
@@ -200,14 +211,16 @@ def main() -> int:
             raise AssertionError("JNI does not implement the voice provenance clear operation")
         if "g_voice_protect_score_valid.store(false" not in jni:
             raise AssertionError("voice reset does not clear native score validity")
-        if "classifierMutex.withLock" not in voice_controller[voice_controller.index("fun release()"):]:
+        voice_release_start = voice_controller.find("fun release()")
+        if voice_release_start < 0 or "classifierMutex.withLock" not in voice_controller[voice_release_start:]:
             raise AssertionError("classifier release can race a blocking inference")
 
         # The mode decision and native create must be serialized with UI events.
-        main_thread_block = activity_boot[
-            activity_boot.index("kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate)")
-            :activity_boot.index("Triple(requested, handle, running)")
-        ]
+        main_thread_start = activity_boot.find("kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate)")
+        main_thread_end = activity_boot.find("Triple(requested, handle, running)", main_thread_start) if main_thread_start >= 0 else -1
+        if main_thread_start < 0 or main_thread_end <= main_thread_start:
+            raise AssertionError("MainActivity serialized adaptive bootstrap markers are missing")
+        main_thread_block = activity_boot[main_thread_start:main_thread_end]
         if "AudioStateManager.audioState.value.manualModeEnabled" not in main_thread_block:
             raise AssertionError("MainActivity reads manual mode outside the serialized main-thread block")
         if "nativeCreateAdaptiveEngine()" not in main_thread_block:
