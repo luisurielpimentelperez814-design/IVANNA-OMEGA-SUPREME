@@ -112,10 +112,10 @@ void WfsRenderer::setSpeakerLayout3D(const float* dx, const float* dyFwd, const 
     float minSpacingM = std::numeric_limits<float>::max();
     for (int a = 0; a < count; ++a) {
         for (int b = a + 1; b < count; ++b) {
-            const float dx = dx[a] - dx[b];
-            const float dy = dyFwd[a] - dyFwd[b];
-            const float dz = dz[a] - dz[b];
-            const float spacing = std::sqrt(dx * dx + dy * dy + dz * dz);
+            const float deltaX = dx[a] - dx[b];
+            const float deltaY = dyFwd[a] - dyFwd[b];
+            const float deltaZ = dz[a] - dz[b];
+            const float spacing = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
             if (spacing > 1.0e-4f) minSpacingM = std::min(minSpacingM, spacing);
         }
     }
