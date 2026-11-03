@@ -63,6 +63,11 @@ using namespace Ivanna;
 #ifndef LOGW
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #endif
+// FIX (build arm64): los reintentos de arranque del hilo del motor adaptativo
+// (SET_CONFIG/ENABLE) reportan fallos con LOGE, que este archivo no definia.
+#ifndef LOGE
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#endif
 
 // ── AUDIT FIX #4 (plano de control) ──────────────────────────────────────────
 // EFFECT_CMD_SET_PARAM era un no-op: cualquier android.media.audiofx.
