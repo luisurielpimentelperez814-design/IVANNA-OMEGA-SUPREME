@@ -72,13 +72,19 @@ void testControlThreadLifecycle() {
 
     engine.stop();
     expect(!engine.running(), "lifecycle: stop termina el hilo de control");
+    expect(!engine.controlThreadPendingJoin(),
+           "lifecycle: stop une el hilo de control (no queda join pendiente)");
     engine.stop();
     expect(!engine.running(), "lifecycle: stop repetido es seguro");
+    expect(!engine.controlThreadPendingJoin(),
+           "lifecycle: stop repetido no deja join pendiente");
 
     expect(engine.start(), "lifecycle: el motor puede reiniciarse tras stop");
     expect(engine.running(), "lifecycle: restart vuelve a estado vivo");
     engine.stop();
     expect(!engine.running(), "lifecycle: stop final deja el hilo drenado");
+    expect(!engine.controlThreadPendingJoin(),
+           "lifecycle: stop final une el hilo de control tras el restart");
 }
 
 void testConcurrentControlThreadLifecycle() {
@@ -102,6 +108,8 @@ void testConcurrentControlThreadLifecycle() {
            "lifecycle concurrente: ningún start externo falla bajo toggles simultáneos");
     expect(!engine.running(),
            "lifecycle concurrente: stop final deja el ADE detenido y drenado");
+    expect(!engine.controlThreadPendingJoin(),
+           "lifecycle concurrente: stop final une el hilo de control");
 }
 
 void testSilentInput() {

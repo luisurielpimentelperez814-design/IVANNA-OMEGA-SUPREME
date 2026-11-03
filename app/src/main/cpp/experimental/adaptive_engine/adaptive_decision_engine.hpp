@@ -398,6 +398,19 @@ public:
     void stop() noexcept;
     bool running() const noexcept { return running_.load(std::memory_order_acquire); }
 
+    // Solo para pruebas: indica si queda un hilo de control pendiente de unir.
+    // running() solo refleja el flag atomico (stop() lo baja antes del join),
+    // asi que no prueba que el join se haya completado. Esto lee el estado real
+    // de la rama de plataforma bajo el mismo mutex que serializa start/stop.
+    bool controlThreadPendingJoin() const noexcept {
+        std::lock_guard<std::mutex> lock(controlLifecycleMutex_);
+#if defined(__linux__) || defined(__ANDROID__)
+        return controlThreadJoinable_;
+#else
+        return controlThread_.joinable();
+#endif
+    }
+
     // ── Entorno Acústico (RT60) y Factor de Adaptación Temporal λ_t ─────────
     void setEnvironmentRT60(float rt60) noexcept {
         if (!std::isfinite(rt60)) return;

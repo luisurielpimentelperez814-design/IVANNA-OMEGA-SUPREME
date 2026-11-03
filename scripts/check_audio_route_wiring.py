@@ -34,6 +34,8 @@ def main() -> int:
     hal = read("app/src/main/cpp/daemon/hal_clock_producer.cpp")
     hal_h = read("app/src/main/cpp/daemon/hal_clock_producer.hpp")
     asrc_doc = read("docs/ASRC_SOFTWARE_CLOCK_WIRING.md")
+    fotoholo_engine = read("app/src/main/java/com/ivanna/omega/fotoholo/FotoHoloEngine.kt")
+    fotoholo_routeb = read("app/src/main/java/com/ivanna/omega/fotoholo/FotoHoloRouteB.kt")
     dispatcher_h = read("app/src/main/cpp/spatial/PhysicalTargetDispatcher.hpp")
 
     checks = [
@@ -63,7 +65,7 @@ def main() -> int:
         (jni, ("pipe.processLiveSpatialAxes(", "Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess"),
          "in-process JNI audio consumer"),
         (player, ("StereoAudioResampler(sampleRate)", "AudioTrackBufferPll(sampleRate)",
-                  "bufferPll.observe(", "resampler.setClockCorrectionPpm(",
+                  "bufferPll.observe(", "resampler.setClockCorrectionPpm(correctionPpm)",
                   "track.getTimestamp(outputTimestamp)", "resampler.process(inputChunk)"),
          "owned-player software ASRC loop"),
         (resampler, ("fun setClockCorrectionPpm(", "clockCorrectionPpm"),
@@ -108,6 +110,44 @@ def main() -> int:
         if evo_at < 0 or not init_at < create_at < evo_at:
             raise AssertionError("nativeInitDSP must precede nativeCreateAdaptiveEngine and nativeStartEvoThread")
 
+        # FotoHolo state publication must heal from the idle loop too: the retry
+        # has to run BEFORE the idle branch `continue`s, or a failed publish while
+        # FotoHolo is off/without signal stays frozen.
+        retry_at = fotoholo_engine.find("FotoHoloRouteB.retryStatePublishIfNeeded()")
+        idle_at = fotoholo_engine.find("if (!shouldSample && !modulating && !systemWideRouteActive)")
+        if retry_at < 0 or idle_at < 0 or not retry_at < idle_at:
+            raise AssertionError(
+                "FotoHoloEngine must call retryStatePublishIfNeeded() before the idle "
+                "branch that skips the rest of the loop")
+
+        # The retry must read the desired state INSIDE the serial executor (latest
+        # intent wins) and must not republish through setFotoHoloState().
+        retry_def = fotoholo_routeb.find("fun retryStatePublishIfNeeded()")
+        if retry_def < 0:
+            raise AssertionError("FotoHoloRouteB.retryStatePublishIfNeeded() is missing")
+        retry_end = fotoholo_routeb.find("\n    fun ", retry_def + 1)
+        retry_body = fotoholo_routeb[retry_def:retry_end if retry_end > 0 else len(fotoholo_routeb)]
+        exec_at = retry_body.find("io.execute")
+        desired_at = retry_body.find("desiredEnabled")
+        if exec_at < 0 or desired_at < 0 or not exec_at < desired_at:
+            raise AssertionError(
+                "FotoHolo state retry must read desiredEnabled inside io.execute, not before queuing")
+        if "setFotoHoloState(" in retry_body:
+            raise AssertionError(
+                "FotoHolo state retry must not call setFotoHoloState(): it would overwrite a newer UI intent")
+
+        # nativeInitDSP is the bootstrap path MainActivity uses: it must start the
+        # adaptive engine once the DSP graph is initialized (ON preference may have
+        # been stored before DSP init), and the helper itself respects OFF/manual.
+        dsp_def = jni.find("Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(")
+        if dsp_def < 0:
+            raise AssertionError("IvannaNativeLib_nativeInitDSP JNI entrypoint is missing")
+        dsp_end = jni.find("\n}\n", dsp_def)
+        dsp_body = jni[dsp_def:dsp_end if dsp_end > 0 else len(jni)]
+        if "ensureAdaptiveEngineStarted()" not in dsp_body:
+            raise AssertionError(
+                "nativeInitDSP must call ensureAdaptiveEngineStarted() after the DSP graph is initialized")
+
         # Explicitly reject a false claim that the experimental 16->5 kernel is
         # already connected to the production system effect or JNI audio route.
         if "PhysicalTargetDispatcher" in effect or "PhysicalTargetDispatcher" in jni:
@@ -124,6 +164,8 @@ def main() -> int:
     print("PASS Route A: AudioFlinger snapshot -> FusionCore EQ/HRTF/SAF/WFS/NPE/RIR/spatial pipeline")
     print("PASS app-owned JNI entrypoint: in-process spatial pipeline (not a third output route)")
     print("PASS owned-player ASRC: AudioTrack timestamps -> bounded PLL -> stereo FIR resampler")
+    print("PASS FotoHolo state retry: runs before the idle branch and publishes the latest intent from the serial executor")
+    print("PASS adaptive engine start: nativeInitDSP starts the ADE once the DSP graph is initialized")
     print("PASS HAL/PAL boundary: no uncorrelated PCM source; system-wide native ASRC remains fail-closed")
     print("PASS physical-output boundary: 16->5 remains logical/experimental, not a claimed phone 5.0 route")
     print("NOTE static source contract only; Moto G85 runtime validation is still required.")

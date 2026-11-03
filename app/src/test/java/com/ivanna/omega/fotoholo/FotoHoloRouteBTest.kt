@@ -106,4 +106,19 @@ class FotoHoloRouteBTest {
         assertFalse(FotoHoloRouteB.shouldRetryCommand("FotoHolo Ruta B: rechazado por el demonio"))
         assertFalse(FotoHoloRouteB.shouldRetryCommand("FotoHolo Ruta B: aceptado; sin consumidor activo"))
     }
+
+    @Test fun reapplicationIsOnlyReportedAfterARouteBWidthWasPushed() {
+        val nan = Float.NaN
+        // Sin ningún push previo (ruta ROUTE_A, lastOwner "UNKNOWN", nada aplicado): no hay
+        // nada que reaplicar aunque el daemon ya reporte un propietario válido.
+        assertFalse(FotoHoloRouteB.reapplicationNeeded("WFS", "UNKNOWN", nan, nan, false, 0f))
+        assertFalse(FotoHoloRouteB.reapplicationNeeded("MS", "UNKNOWN", nan, nan, true, 0.5f))
+        // Tras un push real, un cambio de propietario sí exige reaplicar.
+        assertTrue(FotoHoloRouteB.reapplicationNeeded("HOA", "WFS", 1.2f, nan, false, 0f))
+        assertTrue(FotoHoloRouteB.reapplicationNeeded("MS", "WFS", nan, nan, false, 0f))
+        // Mismo propietario: solo si cambió la base externa y hubo delta aplicado relevante.
+        assertFalse(FotoHoloRouteB.reapplicationNeeded("WFS", "WFS", 1.2f, nan, false, 0.5f))
+        assertTrue(FotoHoloRouteB.reapplicationNeeded("WFS", "WFS", 1.2f, nan, true, 0.5f))
+        assertFalse(FotoHoloRouteB.reapplicationNeeded("WFS", "WFS", 1.2f, nan, true, 0.0005f))
+    }
 }

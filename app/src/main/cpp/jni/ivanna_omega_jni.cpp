@@ -709,12 +709,16 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 384000) { LOGE("Bad SR: %d", sr); return; }
     if (g_initialized.load(std::memory_order_acquire)
         && (g_params.sampleRate == static_cast<uint32_t>(sr))) {
+        // DSP ya listo (p. ej. inicializado por nativeInitDSP): una preferencia ON recibida
+        // antes no debe quedarse sin motor. ensure() es idempotente y respeta OFF/manual.
+        (void)ensureAdaptiveEngineStarted();
         return;
     }
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     const bool alreadyInitSameSr = g_initialized.load(std::memory_order_acquire)
                                 && (g_params.sampleRate == static_cast<uint32_t>(sr));
     if (alreadyInitSameSr) {
+        (void)ensureAdaptiveEngineStarted();
         return;
     }
     // NATIVOS DIRECTOS: 48000/96000/192000/384000 Hz pasan sin remuestreo
@@ -1952,10 +1956,12 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint sr) {
     if (sr < 8000 || sr > 384000) return JNI_FALSE;  // paridad con nativeInit (9f99d4e6): nativas directas hasta 384k
     if (g_initialized.load(std::memory_order_acquire) && g_params.sampleRate == static_cast<uint32_t>(sr)) {
+        (void)ensureAdaptiveEngineStarted();  // idempotente; respeta OFF/manual
         return JNI_TRUE;
     }
     std::lock_guard<std::mutex> lock(g_dspProcessMutex);
     if (g_initialized.load(std::memory_order_acquire) && g_params.sampleRate == static_cast<uint32_t>(sr)) {
+        (void)ensureAdaptiveEngineStarted();
         return JNI_TRUE;
     }
     g_params.sampleRate = (uint32_t)sr;
@@ -2031,6 +2037,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     // no-ops y con un dispositivo a 44.1 kHz el conductor temporizaba con un bloque erróneo.
     ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
     g_initialized.store(true, std::memory_order_release);
+    // Misma regla que nativeInit: el ADE arranca cuando el grafo ya está preparado. Esta es la
+    // ruta que usa MainActivity; sin esto una preferencia ON fijada antes del DSP esperaba a
+    // nativeCreateAdaptiveEngine/watchdog. Respeta OFF/manual y es idempotente.
+    if (ensureAdaptiveEngineStarted()) {
+        LOGI("AdaptiveDecisionEngine running (nativeInitDSP, control thread @50ms)");
+    } else {
+        LOGI("AdaptiveDecisionEngine disabled by preference or start unavailable (nativeInitDSP)");
+    }
     LOGI("IvannaNativeLib DSP @ %d Hz (EvolutionaryKernel online)", sr);
     return JNI_TRUE;
 }

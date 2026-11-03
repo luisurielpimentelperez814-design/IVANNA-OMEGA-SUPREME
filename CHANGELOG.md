@@ -1,3 +1,15 @@
+## v2.5.338 (629) - 2026-11-03
+
+CodeRabbit follow-ups, each verified against current `main` before applying (findings already fixed were skipped).
+
+- **Adaptive engine join-state test coverage:** added `AdaptiveDecisionEngine::controlThreadPendingJoin()`, a test-only accessor that reads the real join state under `controlLifecycleMutex_` (pthread branch on Linux/Android, `std::thread` branch elsewhere). `testControlThreadLifecycle` and `testConcurrentControlThreadLifecycle` now assert that `stop()` joins the control thread; `running()` alone could not, because `stop()` clears it before the join. Verified by mutation: with the join block removed the new assertions fail.
+- **Adaptive engine start from `nativeInitDSP`:** `nativeInitDSP` (the path `MainActivity` uses) and the "already initialized at the same sample rate" early returns now call `ensureAdaptiveEngineStarted()`, so an ON preference stored before DSP init no longer waits for `nativeCreateAdaptiveEngine` or the watchdog. The helper is idempotent and still respects OFF/manual mode.
+- **FotoHolo state retry:** the retry now runs before the idle-loop `continue` (it stayed frozen with FotoHolo off, in bypass or without signal) and reads the desired state inside the serial executor, so it can no longer overwrite a newer UI intent. "Reapplication needed" is only reported after a Route-B width was actually pushed.
+- **Static contracts:** the owned-player ASRC guard now requires `setClockCorrectionPpm(correctionPpm)` (a constant no longer satisfies it) and new guards cover the FotoHolo retry ordering and the `nativeInitDSP` ADE start. `check_adaptive_metric_truth.py` accepts an ADE start before `g_initialized.store(true)` only inside the already-initialized branch.
+- **Docs:** the route-wiring audit separates the MediaCodec player (uses `StereoAudioResampler`) from `PlaybackCaptureService` (`AudioRecord` at 48 kHz, no software ASRC).
+
+**Validation boundary:** native host tests and static contracts were run locally; the Kotlin changes (`FotoHoloEngine`, `FotoHoloRouteB` and its unit test) could not be compiled without the Android SDK and rely on CI. No on-device validation: thread lifecycle, FotoHolo recovery after daemon restarts and ADE start order still require Moto G85 5G testing.
+
 ## v2.5.337 (628) - 2026-11-03
 
 - Corrige el orden de inicialización de `LocalSocket`: `connect()` se ejecuta antes de configurar `soTimeout` en `MagiskBridge.sendCommand`, `isOmegaSocketAvailable` y `ShmManager.mapFromDaemon`. Evita `IOException("socket not created")` por descriptor aún no creado.
