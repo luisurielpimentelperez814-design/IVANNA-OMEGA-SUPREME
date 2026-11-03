@@ -62,7 +62,7 @@ void printState(const char* label, const AdaptiveState& s) {
 }
 
 void testControlThreadLifecycle() {
-    std::printf("\\n=== Ciclo de vida ADE: start/stop idempotente y recuperable ===\\n");
+    std::printf("\n=== Ciclo de vida ADE: start/stop idempotente y recuperable ===\n");
     AdaptiveDecisionEngine engine;
 
     expect(engine.start(), "lifecycle: primer start crea el hilo de control");
