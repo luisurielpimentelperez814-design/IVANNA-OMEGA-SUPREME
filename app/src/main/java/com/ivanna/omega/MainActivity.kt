@@ -184,34 +184,43 @@ class MainActivity : ComponentActivity() {
         // hilos nativos. No bloquear el hilo de UI: hacerlo en IO para evitar
         // jank/ANR en el primer frame. El sample rate sigue siendo el del HAL.
         lifecycleScope.launch(Dispatchers.IO) {
-            val adaptiveRequested =
-                com.ivanna.omega.ui.AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled &&
-                !com.ivanna.omega.audio.AudioStateManager.audioState.value.manualModeEnabled
-            if (IvannaNativeLib.isLoaded) {
-                runCatching {
-                    IvannaNativeLib.nativeSetAdaptiveEngineEnabled(adaptiveRequested)
-                }.onFailure {
-                    android.util.Log.e("IVANNA.Boot", "No se pudo aplicar el modo adaptativo solicitado", it)
-                }
-            }
             runCatching { DSPBridge.init(sr) }
             if (IvannaNativeLib.isLoaded) {
                 val dspReady = runCatching {
                     IvannaNativeLib.nativeInitDSP(sr)
                 }.getOrDefault(false)
-                if (dspReady && adaptiveRequested) {
-                    // El create no cambia la preferencia: devuelve un handle
-                    // solo si el hilo nativo realmente está iniciado.
-                    val adaptiveHandle = runCatching {
-                        IvannaNativeLib.nativeCreateAdaptiveEngine()
-                    }.getOrDefault(0L)
-                    if (adaptiveHandle != 0L && IvannaNativeLib.nativeIsAdaptiveEngineRunning()) {
-                        android.util.Log.i("IVANNA.Boot", "AdaptiveDecisionEngine iniciado y vivo")
-                    } else {
-                        android.util.Log.e("IVANNA.Boot", "AdaptiveDecisionEngine NOT_READY; DSP preservado")
+
+                // AudioStateManager is restored by attachPersistence() before
+                // this bootstrap. Read manual mode and perform the native
+                // toggle/create in one Main.immediate section so a UI toggle
+                // cannot slip between the check and native engine creation.
+                val (adaptiveRequested, adaptiveHandle, adaptiveRunning) =
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        val requested =
+                            dspReady &&
+                            com.ivanna.omega.ui.AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled &&
+                            !com.ivanna.omega.audio.AudioStateManager.audioState.value.manualModeEnabled
+                        runCatching {
+                            IvannaNativeLib.nativeSetAdaptiveEngineEnabled(requested)
+                        }.onFailure {
+                            android.util.Log.e("IVANNA.Boot", "No se pudo aplicar el modo adaptativo solicitado", it)
+                        }
+                        val handle = if (requested) {
+                            runCatching { IvannaNativeLib.nativeCreateAdaptiveEngine() }.getOrDefault(0L)
+                        } else {
+                            0L
+                        }
+                        val running = requested && handle != 0L &&
+                            runCatching { IvannaNativeLib.nativeIsAdaptiveEngineRunning() }.getOrDefault(false)
+                        Triple(requested, handle, running)
                     }
-                } else if (dspReady) {
+
+                if (adaptiveRequested && adaptiveRunning) {
+                    android.util.Log.i("IVANNA.Boot", "AdaptiveDecisionEngine iniciado y vivo")
+                } else if (dspReady && !adaptiveRequested) {
                     android.util.Log.i("IVANNA.Boot", "Modo manual/adaptativo apagado por preferencia; DSP preservado")
+                } else if (dspReady) {
+                    android.util.Log.e("IVANNA.Boot", "AdaptiveDecisionEngine NOT_READY (handle=$adaptiveHandle); DSP preservado")
                 } else {
                     android.util.Log.e("IVANNA.Boot", "DSP nativo no inicializado; ruta NOT_READY")
                 }
