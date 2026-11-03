@@ -153,3 +153,19 @@ TEST(PalAsrcOutputPath, RejectsUnfilteredDownsamplingAndAllowsSincDownsampling) 
     config.mode = ::omega::AsrcMode::kPolyphaseSinc;
     EXPECT_TRUE(path.configure(config));
 }
+
+TEST(PalAsrcOutputPath, RejectsClockFromDifferentNominalOutputRate) {
+    FakePal pal;
+    const uint64_t now = monotonicNowNs();
+    ASSERT_GT(now, 500000000ull);
+    pal.samples = {{4800u, now - 100000000ull, 44100u, 99u, 2u}};
+
+    PalAsrcOutputPath path(&FakePal::query, &pal);
+    ::omega::AsrcConfig config;
+    config.outputRateHz = 48000;
+    ASSERT_TRUE(path.configure(config));
+    EXPECT_FALSE(path.controlTick());
+    EXPECT_FALSE(path.correctionEnabled());
+    ASSERT_TRUE(path.hasKnownAppliedRatio());
+    EXPECT_DOUBLE_EQ(path.lastAppliedRatio(), 1.0);
+}
