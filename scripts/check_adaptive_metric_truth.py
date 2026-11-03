@@ -86,6 +86,9 @@ def main() -> int:
             "rawM.voice_score_valid = ctx->lastVoiceProbValid;",
             "rawM.band_energy_valid = true;",
             "rawM.gain_reduction_db = ctx->safetyLimiter",
+            "if (ctx->adaptive && ctx->adaptiveEnabled)",
+            "if (ctx->adaptive && !ctx->adaptive->start())",
+            "ctx->adaptiveEnabled = false;",
             "ctx->adaptiveDecisionTargetGain",
             "ctx->adaptiveDecisionCompAmount",
             "ctx->adaptiveDecisionExciterReduction",
@@ -111,6 +114,10 @@ def main() -> int:
                 raise AssertionError(f"ADE overwrites control-plane snapshot field: {stale_writer}")
         if effect.count("omega_neutralize_adaptive_snapshot(ctx->pendingSnap)") < 3:
             raise AssertionError("system-wide, initial seed and local routes do not all neutralize adaptive snapshot fields on OFF")
+        if "ctx->adaptive->rawMetrics.publish(" not in effect:
+            raise AssertionError("per-session ADE has no real PCM metric producer")
+        if "if (ctx && ctx->adaptive && !ctx->adaptive->running()" not in effect:
+            raise AssertionError("per-session ADE ENABLE callback does not retry failed thread creation")
 
         for needle in (
             "bool voiceScoreValid = false;",
