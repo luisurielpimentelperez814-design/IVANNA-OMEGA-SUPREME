@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.339
-versionCode=630
+version=v2.5.340
+versionCode=631
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.339: Route A WFS engine, AUX arbitration and 384 kHz ITD regression coverage
+description=v2.5.340: ASRC/HAL clock channel directory and permissions in the Magisk module (no PAL clock producer yet)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

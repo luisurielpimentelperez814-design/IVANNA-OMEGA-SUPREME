@@ -1,7 +1,7 @@
-## Sin publicar
+## v2.5.340 (631) - 2026-11-03
 
 - **Módulo Magisk — canal ASRC/reloj HAL:** el módulo nunca creaba `/data/vendor/ivanna_audio` (solo lo hacía una plantilla `init.rc` que no se instala), de modo que `ivanna_daemon` no podía abrir `asrc_state` ni `clock_snapshot.v2` con `open(O_CREAT)`. Nuevo `asrc_link.sh` (cargado por `service.sh` antes de lanzar el daemon) crea el directorio (0775, `adb_data_file`) y, cuando el daemon crea los archivos con 0660 root:root, les abre lectura (0664) para la app. `sepolicy.rule` v3.5 permite a la app atravesar `/data/vendor`. Nuevo comando `ivanna_control.sh asrc-link [repair]` y prueba `tests/test_asrc_link.py` (7 casos, mutación verificada).
-- **Alcance:** corrige la publicación/lectura del estado del servo ASRC software. No añade actuador ASRC físico ni un productor de reloj PAL: eso sigue bloqueado como documenta `docs/ASRC_SOFTWARE_CLOCK_WIRING.md`. Sin validación en dispositivo ni CI en esta entrada.
+- **Alcance:** corrige la publicación/lectura del estado del servo ASRC software. No añade actuador ASRC físico ni un productor de reloj PAL: eso sigue bloqueado como documenta `docs/ASRC_SOFTWARE_CLOCK_WIRING.md`. **No es la integración completa del ASRC:** sigue sin existir un productor de reloj propietario del stream (el daemon permanece en `BLOCKED:no-writable-correlated-route`, ratio 1.0). El desensamblado de `audio.primary.blair.so` muestra que el par frames/tiempo del HAL es software-estampado (`CLOCK_MONOTONIC` tras `pal_get_timestamp`) y cuantizado a 1 ms; la sonda `hal_integration/tools/ivanna_pal_ts_probe.js` queda lista para medir si `absolute_time`/`timestamp` sirven como fuente. Sin validación en dispositivo.
 
 ## v2.5.339 (630) - 2026-11-03
 
