@@ -18,8 +18,8 @@
 //    The estimator must be fed with frames counted on the SINK-PACED side
 //    (frames handed to the HAL/PAL write path, whose blocking cadence is set by
 //    the DAC clock), OR with hardware timestamps supplied through
-//    reportHardwareTimestamp(). process*() counts its own output frames and
-//    pairs them with CLOCK_MONOTONIC unless a fresh hardware timestamp exists.
+//    reportHardwareTimestamp(). process*() output counts are diagnostics only;
+//    callback cadence is never substituted for the physical sink clock.
 //
 //  Threading model:
 //    * process*()                  : real-time thread. Wait-free, no locks, no
