@@ -1039,6 +1039,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject,
     g_voice_protect_score_valid.store(true, std::memory_order_release);
 }
 
+// Reset de procedencia para el cambio a modo automático, manual OFF o release.
+// No reinicia EQ, compresor, spatial DSP ni el resto del grafo.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeClearVoiceProtectScore(JNIEnv*, jobject) {
+    g_voice_protect_score.store(0.0f, std::memory_order_relaxed);
+    g_voice_protect_score_valid.store(false, std::memory_order_release);
+}
+
 // ── REINYECCION DIFERENCIAL DE RUTA A (v2.5.0) ─────────────────────────────
 // Reemplaza el delta (procesado - seco) en Kotlin: alinea el seco con el procesado
 // (latencia propia del DSP, fraccional), mide la coherencia delta<->seco al retardo L
