@@ -196,12 +196,14 @@ class MainActivity : ComponentActivity() {
                 // cannot slip between the check and native engine creation.
                 val (adaptiveRequested, adaptiveHandle, adaptiveRunning) =
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-                        val requested =
-                            dspReady &&
+                        val preferred =
                             com.ivanna.omega.ui.AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled &&
                             !com.ivanna.omega.audio.AudioStateManager.audioState.value.manualModeEnabled
+                        val requested = preferred && dspReady
+                        // Conservar la preferencia aunque DSP falle: el watchdog
+                        // podrá recuperar el motor cuando la ruta vuelva a estar lista.
                         runCatching {
-                            IvannaNativeLib.nativeSetAdaptiveEngineEnabled(requested)
+                            IvannaNativeLib.nativeSetAdaptiveEngineEnabled(preferred)
                         }.onFailure {
                             android.util.Log.e("IVANNA.Boot", "No se pudo aplicar el modo adaptativo solicitado", it)
                         }
