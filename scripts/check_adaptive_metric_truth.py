@@ -171,6 +171,8 @@ def main() -> int:
         ensure_body = jni[ensure_start:ensure_end] if ensure_end > ensure_start else ""
         if "!g_initialized.load(std::memory_order_acquire)" not in ensure_body:
             raise AssertionError("explicit create/watchdog can start ADE before the native DSP graph is ready")
+        if "if (g_adaptiveEngine.running()) g_adaptiveEngine.stop();" not in ensure_body:
+            raise AssertionError("ADE thread is not drained when the native DSP graph becomes unavailable")
         if "g_adaptiveEngineUiEnabled.store(true" in jni:
             raise AssertionError("nativeCreateAdaptiveEngine must not override the user's OFF/manual preference")
         if "g_adaptiveEngine.running()" not in jni:
