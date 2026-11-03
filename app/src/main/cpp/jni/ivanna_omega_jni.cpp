@@ -45,6 +45,7 @@
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
 #include "../spatial/RoomProbe.hpp"
 #include "../spatial/SceneGeometryRenderer.hpp"
+#include "../spatial/RouteAWfsEngine.hpp"
 #include "../neuromorphic/NpeStereoCore.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../include/BlockPeakGuard.h"
@@ -186,6 +187,7 @@ struct LivePipelineAutoRegistrar {
 } // namespace
 
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
+static ivanna::spatial::RouteAWfsEngine g_routeAWfsEngine;
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
 // FIX RT (Ruta A): el dataset RIR y su convolver se inicializan en
@@ -729,6 +731,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // gate lo bloqueaba. Sin cambio de arquitectura: misma cadena, gate
     // ampliado al rango que el hardware USB/Hi-Fi actual expone.
     g_params.sampleRate = (uint32_t)sr;
+    if (!g_routeAWfsEngine.prepare(static_cast<float>(sr), 2048)) {
+        LOGE("Ruta A WFS: inicialización fallida; salida permanece en bypass");
+    }
     g_eq.setParams(g_params);
     g_comp.setParams(g_params);
     g_exciter.setParams(g_params);
@@ -1382,6 +1387,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     }
     // buffers en g_ats
     g_pd.process_block(g_ats.chL, g_ats.chR, g_ats.pdOutL, g_ats.pdOutR, n);
+    // WFS real en Ruta A, post-PDEngine y pre-RIR/limitador final.
+    g_routeAWfsEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
     // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
     // correlación L/R real del material SECO (dryL/dryR, antes de
     // cualquier DSP) y aplica un ensanchamiento M/S extra cuando el
@@ -1965,6 +1972,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
         return JNI_TRUE;
     }
     g_params.sampleRate = (uint32_t)sr;
+    if (!g_routeAWfsEngine.prepare(static_cast<float>(sr), 2048)) {
+        LOGE("Ruta A WFS: inicialización fallida; salida permanece en bypass");
+    }
     g_eq.setParams(g_params); g_comp.setParams(g_params);
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
     // Compensación de headroom EQ en init (misma lógica que nativeSetEQParams).
@@ -2144,6 +2154,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     }
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
+    // Misma etapa WFS que DSPBridge.nativeProcess: evita divergencia entre APIs JNI.
+    g_routeAWfsEngine.process(oL, oR, n);
 
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
     if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
@@ -3295,6 +3307,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsEnabled(
     JNIEnv*, jobject, jboolean enabled) {
     const bool en = (enabled == JNI_TRUE);
     g_wfs_enabled.store(en, std::memory_order_relaxed);
+    g_routeAWfsEngine.setEnabled(en);
     omegaSendWfsToDaemon(en, g_wfs_spread.load(std::memory_order_relaxed));
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
@@ -3311,6 +3324,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpread(
     if (std::isfinite(spread)) {
         const float sp = std::clamp(spread, 0.0f, 2.0f);
         g_wfs_spread.store(sp, std::memory_order_relaxed);
+        g_routeAWfsEngine.setSpread(sp);
         omegaSendWfsToDaemon(g_wfs_enabled.load(std::memory_order_relaxed), sp);
         auto& bus = ivanna::effectControlBus();
         ivanna::OmegaDspSnapshot snap;
@@ -3349,6 +3363,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
             std::fabs(x[i]) > 7.0f || std::fabs(y[i]) > 5.0f ||
             std::fabs(z[i]) > 9.0f) return;
     }
+
+    g_routeAWfsEngine.setSpeakerLayout(x, y, z);
 
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;

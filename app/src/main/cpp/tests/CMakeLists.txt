@@ -640,6 +640,19 @@ gtest_discover_tests(test_hoa_binaural_decoder)
 
 
 # ── Wave Field Synthesis (2026-09-18) ──
+add_executable(test_route_a_wfs_engine
+  test_route_a_wfs_engine.cpp
+  ../spatial/RouteAWfsEngine.cpp
+  ../spatial/WfsRenderer.cpp
+  ../wfs_controls_bridge.cpp)
+target_include_directories(test_route_a_wfs_engine PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_route_a_wfs_engine PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_route_a_wfs_engine PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_route_a_wfs_engine PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_route_a_wfs_engine COMMAND test_route_a_wfs_engine)
+
 add_executable(test_wfs_renderer
   test_wfs_renderer.cpp
   ../spatial/WfsRenderer.cpp
