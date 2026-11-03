@@ -3355,7 +3355,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsEnabled(
     JNIEnv*, jobject, jboolean enabled) {
     const bool en = (enabled == JNI_TRUE);
     g_wfs_enabled.store(en, std::memory_order_relaxed);
-    g_routeAWfsEngine.setEnabled(en);
     omegaSendWfsToDaemon(en, g_wfs_spread.load(std::memory_order_relaxed));
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
