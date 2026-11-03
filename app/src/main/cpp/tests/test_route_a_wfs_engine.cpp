@@ -4,7 +4,7 @@
 
 #define CHECK(condition) do { \
     if (!(condition)) { \
-        std::fprintf(stderr, "CHECK failed: %s (%s:%d)\\n", #condition, __FILE__, __LINE__); \
+        std::fprintf(stderr, "CHECK failed: %s (%s:%d)\n", #condition, __FILE__, __LINE__); \
         return __LINE__; \
     } \
 } while (false)
