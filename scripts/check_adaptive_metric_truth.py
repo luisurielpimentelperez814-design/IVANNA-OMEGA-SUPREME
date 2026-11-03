@@ -27,6 +27,10 @@ def main() -> int:
     activity_boot = read("app/src/main/java/com/ivanna/omega/MainActivity.kt")
     self_heal = read("app/src/main/java/com/ivanna/omega/agent/SelfHealingAgent.kt")
     lifecycle_test = read("app/src/main/cpp/experimental/adaptive_engine/tests/test_adaptive_engine.cpp")
+    voice_controller = read("app/src/main/java/com/ivanna/omega/audio/VoiceProtectionController.kt")
+    dsp_bridge = read("app/src/main/java/com/ivanna/omega/dsp/DSPBridge.kt")
+    command_server = read("app/src/main/cpp/daemon/control/command_server.cpp")
+    route_contract = read("scripts/check_audio_route_wiring.py")
 
     try:
         for needle in (
@@ -179,6 +183,49 @@ def main() -> int:
             raise AssertionError("self-heal does not respect the manual-mode state")
         if "testControlThreadLifecycle();" not in lifecycle_test:
             raise AssertionError("native lifecycle regression test is not in the test runner")
+
+        # Voice inference provenance/race: a late synchronous model call may
+        # outlive Job.cancel(), so mode transitions invalidate its generation.
+        for needle in (
+            "inferenceGeneration++",
+            "generation != inferenceGeneration",
+            "classifierMutex.withLock",
+            "DSPBridge.clearVoiceProtectScore()",
+        ):
+            if needle not in voice_controller:
+                raise AssertionError(f"voice inference invalidation contract missing: {needle}")
+        if "nativeClearVoiceProtectScore()" not in dsp_bridge:
+            raise AssertionError("DSPBridge does not expose the validity-clearing native operation")
+        if "Java_com_ivanna_omega_dsp_DSPBridge_nativeClearVoiceProtectScore" not in jni:
+            raise AssertionError("JNI does not implement the voice provenance clear operation")
+        if "g_voice_protect_score_valid.store(false" not in jni:
+            raise AssertionError("voice reset does not clear native score validity")
+        if "classifierMutex.withLock" not in voice_controller[voice_controller.index("fun release()"):]:
+            raise AssertionError("classifier release can race a blocking inference")
+
+        # The mode decision and native create must be serialized with UI events.
+        main_thread_block = activity_boot[
+            activity_boot.index("kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate)")
+            :activity_boot.index("Triple(requested, handle, running)")
+        ]
+        if "AudioStateManager.audioState.value.manualModeEnabled" not in main_thread_block:
+            raise AssertionError("MainActivity reads manual mode outside the serialized main-thread block")
+        if "nativeCreateAdaptiveEngine()" not in main_thread_block:
+            raise AssertionError("MainActivity does not create the ADE in the same serialized preference block")
+
+        # Missing JSON fields must be rejected, not converted into valid zero scores.
+        for needle in (
+            '_jsonFloat(json,"speech",std::nanf(""))',
+            '_jsonFloat(json,"music",std::nanf(""))',
+            '_jsonFloat(json,"confidence",std::nanf(""))',
+        ):
+            if needle not in command_server:
+                raise AssertionError(f"YAMNet command accepts a missing field: {needle}")
+        route_watchdog_start = route_contract.find('heal_start = self_heal.find("FutureSentinel")')
+        if route_watchdog_start >= 0:
+            raise AssertionError("unexpected placeholder in audio route contract")
+        if "heal_start = self_heal.find(" not in route_contract or "init_at = activity.find(" not in route_contract:
+            raise AssertionError("audio route contract must validate missing source markers without ValueError")
 
     except AssertionError as exc:
         print(f"FAIL adaptive-metric-truth: {exc}", file=sys.stderr)
