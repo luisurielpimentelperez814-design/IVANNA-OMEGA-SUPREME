@@ -15,6 +15,12 @@ public:
     void process(float* left, float* right, int frames);
     void reset();
 
+    /// Clears only the ADE runtime overlay; user threshold/ratio/attack/release are preserved.
+    void resetRuntimeAmount() noexcept {
+        runtimeAmount_ = 0.0f;
+        runtimeTarget_ = 0.0f;
+    }
+
     void setRuntimeAmount(float amount01) noexcept {
         // Solo fija el OBJETIVO — process() converge con one-pole (~20 ms).
         // El motor adaptativo llama esto por bloque y antes el valor entraba

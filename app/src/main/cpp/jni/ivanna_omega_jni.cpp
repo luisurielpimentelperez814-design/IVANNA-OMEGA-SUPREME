@@ -673,7 +673,15 @@ static inline float adaptive_mode_base_strength(int mode) noexcept {
         default: return 0.35f;
     }
 }
+/// Returns zero unless the user's adaptive preference is ON and the ADE worker is live.
 static inline float adaptive_ui_strength() noexcept {
+    // Fail closed when the ADE is disabled, not initialized, or its control
+    // thread failed to start. Stopping the worker alone must not leave its
+    // last non-neutral snapshot acting on Route A indefinitely (manual mode).
+    if (!g_adaptiveEngineUiEnabled.load(std::memory_order_acquire) ||
+        !g_adaptiveEngineStarted.load(std::memory_order_acquire)) {
+        return 0.0f;
+    }
     const float intensity = std::clamp(
         g_adaptiveUiIntensity.load(std::memory_order_relaxed), 0.f, 100.f) * 0.01f;
     const int mode = g_adaptiveUiMode.load(std::memory_order_relaxed);
@@ -1339,6 +1347,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // estado en g_ats
     // estado en g_ats
     const float adaptiveStrength = adaptive_ui_strength();
+    const bool adaptiveActive = adaptiveStrength > 0.0f;
     const float targetGainUi = blend_adaptive_from_neutral(
         1.0f,
         std::clamp(g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f),
@@ -1354,9 +1363,20 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         0.0f,
         std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
         adaptiveStrength));
-    g_ats.targetGainSmooth += 0.05f * (targetGainUi - g_ats.targetGainSmooth);
-    g_ats.compAmountSmooth += 0.05f * (compAmountUi - g_ats.compAmountSmooth);
-    g_ats.excReductionSmooth += 0.05f * (excReductionUi - g_ats.excReductionSmooth);
+    if (!adaptiveActive) {
+        // OFF/manual: neutralize the ADE contribution while preserving the
+        // independent measured harmonic budget and the Perceptual Guard target.
+        // Compressor user threshold/ratio/attack/release remain untouched; its
+        // runtime overlay slews toward the guard's current request below.
+        g_ats.targetGainSmooth = 1.0f;
+        g_ats.compAmountSmooth = 0.0f;
+        g_ats.excReductionSmooth = std::clamp(excReductionUi, 0.0f, 1.0f);
+        g_gain.setRuntimeGain(1.0f);
+    } else {
+        g_ats.targetGainSmooth += 0.05f * (targetGainUi - g_ats.targetGainSmooth);
+        g_ats.compAmountSmooth += 0.05f * (compAmountUi - g_ats.compAmountSmooth);
+        g_ats.excReductionSmooth += 0.05f * (excReductionUi - g_ats.excReductionSmooth);
+    }
     // Aplicar el límite del guard calculado en el bloque anterior. El delay
     // de 1 bloque es estructural (ver comentario junto a g_ats.guardCompLimit
     // más abajo) — lo que se corrigió fue el escalón duro, no el delay.
@@ -2111,6 +2131,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // bloque de P0 en nativeProcess.
     // estado en g_ats (ver struct AudioThreadState)
     const float adaptiveStrength = adaptive_ui_strength();
+    const bool adaptiveActive = adaptiveStrength > 0.0f;
     const float blkTargetGain = blend_adaptive_from_neutral(
         1.0f,
         std::clamp(g_lastAdaptiveTargetGain.load(std::memory_order_relaxed), 0.5f, 1.0f),
@@ -2123,9 +2144,21 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         0.0f,
         std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
         adaptiveStrength);
-    g_ats.blkTgSmooth += 0.05f * (blkTargetGain - g_ats.blkTgSmooth);
-    g_ats.blkCaSmooth += 0.05f * (blkCompAmount - g_ats.blkCaSmooth);
-    g_ats.blkErSmooth += 0.05f * (blkExcReduction - g_ats.blkErSmooth);
+    if (!adaptiveActive) {
+        // OFF/manual: clear this consumer's independent ADE smoothers.
+        // Compressor user settings survive; setRuntimeAmount below smoothly
+        // returns its runtime overlay to neutral without hard-resetting a
+        // shared actuator that may still be serving the Perceptual Guard.
+        g_ats.blkTgSmooth = 1.0f;
+        g_ats.blkCaSmooth = 0.0f;
+        g_ats.blkErSmooth = 0.0f;
+        g_gain.setRuntimeGain(1.0f);
+        g_exciter.setRuntimeReduction(0.0f);
+    } else {
+        g_ats.blkTgSmooth += 0.05f * (blkTargetGain - g_ats.blkTgSmooth);
+        g_ats.blkCaSmooth += 0.05f * (blkCompAmount - g_ats.blkCaSmooth);
+        g_ats.blkErSmooth += 0.05f * (blkExcReduction - g_ats.blkErSmooth);
+    }
     g_gain.processInput(lBuf, rBuf, n);
     // Guard de pico previo al EQ (campo separado blkPeakGuardScale: este path puede correr en un
     // hilo distinto, mismo patrón que blkTgSmooth vs targetGainSmooth). Lógica en BlockPeakGuard.h.
@@ -2134,6 +2167,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_gain.setRuntimeGain(g_ats.blkTgSmooth);
     g_comp.setRuntimeAmount(g_ats.blkCaSmooth);
     g_comp.process(lBuf, rBuf, n);
+    g_exciter.setRuntimeReduction(g_ats.blkErSmooth);
 
     g_exciter.process(lBuf, rBuf, n);
     g_widener.process(lBuf, rBuf, n);
