@@ -1,3 +1,11 @@
+## v2.5.237 (528) - 2026-11-02
+
+- **Causa raíz de "demonio no disponible" / "Daemon offline — command NOT delivered":** `MagiskBridge.sendCommand`, `MagiskBridge.isOmegaSocketAvailable` y `ShmManager.mapFromDaemon` llamaban `LocalSocket.soTimeout = …` **antes** de `connect()`. `LocalSocket` crea su descriptor de forma perezosa en `connect()`, así que `setSoTimeout()` sobre un socket no creado lanza `IOException("socket not created")` y el comando jamás llegaba al daemon (logcat: `abstract socket send failed: socket not created`). El daemon estaba sano; no había denials SELinux ni rechazos de UID. Ahora `connect()` va primero y `soTimeout` después, como ya hacía `OmegaEngineBridge`.
+- Afecta a todos los comandos que pasan por `MagiskBridge` (FotoHolo Ruta B, presets, bypass, reverb…) y al handshake SHM del Modo B desde la app.
+- v2.5.236 (reintento de `SET_FOTOHOLO_STATE` con cualquier ruta) se mantiene: el reintento cada 1.5 s se vio activo en logcat, pero reenviaba contra este mismo fallo.
+
+**Validation boundary:** corrección de orden de llamadas verificada por lectura del código y por el mensaje exacto de logcat; sin test JVM (requiere framework Android). Confirmar en el Moto G85 5G que `logcat | grep IVANNA-MagiskBridge` deja de mostrar `socket not created`.
+
 ## v2.5.236 (527) - 2026-11-02
 
 - **FotoHolo Ruta B: "demonio no disponible" congelado.** Si `SET_FOTOHOLO_STATE` fallaba una vez (p. ej. la app abría antes de que el daemon estuviera listo), el texto del fallo permanecía indefinidamente cuando la ruta activa era ROUTE_A: el bloque de reintento/refresco de `FotoHoloEngine` solo corre con ROUTE_B. Además `shouldRetryCommand` comparaba con `==` un texto que lleva el prefijo `FotoHolo Ruta B: `, así que tampoco lo reconocía en ROUTE_B.
