@@ -193,8 +193,9 @@ static ivanna::spatial::RouteAWfsEngine g_routeAWfsEngine;
 // Route-B spatial policy. Keep the user's WFS preference intact so disabling
 // AUX restores WFS automatically; RouteAWfsEngine applies the 15 ms crossfade.
 static inline bool routeAWfsAllowed() noexcept {
-    return g_wfs_enabled.load(std::memory_order_acquire) &&
-           !g_aux_field_enabled.load(std::memory_order_acquire);
+    return ivanna::spatial::isRouteAWfsAllowed(
+        g_wfs_enabled.load(std::memory_order_acquire),
+        g_aux_field_enabled.load(std::memory_order_acquire));
 }
 
 static inline void processRouteAWfs(float* left, float* right, int frames) noexcept {
