@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.234
-versionCode=525
+version=v2.5.235
+versionCode=526
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.234: arm64 native build fix for adaptive engine lifecycle (-fno-exceptions)
+description=v2.5.235: omega_effect arm64 build fix (LOGE) for adaptive engine start retries
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
