@@ -305,6 +305,7 @@ struct omega_effect_context_t {
     // AudioFlinger. Se aplican en el mismo consumidor PCM, no solo al snapshot.
     float adaptiveDecisionTargetGain{1.0f}; // solo atenuación [0.5, 1.0]
     float adaptiveDecisionCompAmount{0.0f}; // intensidad compresor [0,1]
+    float adaptiveDecisionExciterReduction{0.0f}; // reducción adicional, [0,1]
     float lastVoiceProb = 0.0f;   // v2.5.15: probabilidad VOICE medida (clasificador) para el motor adaptativo
     bool lastVoiceProbValid = false;
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
@@ -341,6 +342,15 @@ static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept;
 // bloques entre 128 y 2048 frames; se reserva un margen holgado para no
 // necesitar reasignar nunca en la ruta caliente.
 static constexpr int OMEGA_RT_MAX_FRAMES = 8192;
+
+// Neutraliza únicamente los campos de actuación adaptativa del snapshot.
+// compressor, exciter_reduction, EQ, HRTF y geometría siguen siendo controles
+// explícitos; target_gain/comp_amount/exc_red no deben sobrevivir al modo OFF.
+static inline void omega_neutralize_adaptive_snapshot(ivanna::OmegaDspSnapshot& s) noexcept {
+    s.target_gain = 1.0f;
+    s.comp_amount = 0.0f;
+    s.exc_red = 0.0f;
+}
 
 // AUDIT FIX (control plane reconnect): aplica un OmegaDspSnapshot recibido
 // vía SHM al IvannaFusionCore local. Se llama fuera del hot-path (una vez
@@ -1064,11 +1074,12 @@ static int32_t omega_process(effect_handle_t self,
             }
             ctx->adaptiveEnabled =
                 (snap.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
-            omega_apply_snapshot(fc, ctx->antiDolby, snap);
-            omega_apply_supreme_axes(ctx, snap);
-            omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
-            omega_apply_saf_to_rir(ctx, snap);  // SAF q -> wetScale/rt60/early/decorrel de la IR viva
-            ctx->pendingSnap = snap;
+            ctx->pendingSnap = snap; // conserva los valores originales del control plane
+            if (!ctx->adaptiveEnabled) omega_neutralize_adaptive_snapshot(ctx->pendingSnap);
+            omega_apply_snapshot(fc, ctx->antiDolby, ctx->pendingSnap);
+            omega_apply_supreme_axes(ctx, ctx->pendingSnap);
+            omega_apply_room(ctx, ctx->pendingSnap);  // cable RIR: sala desde snapshot
+            omega_apply_saf_to_rir(ctx, ctx->pendingSnap);  // SAF q -> wetScale/rt60/early/decorrel de la IR viva
         }
     }
 
@@ -1243,8 +1254,15 @@ static int32_t omega_process(effect_handle_t self,
         const float coordinatedWfsScale = std::clamp(
             ctx->adaptWfsScale / std::max(1.0f, unityWfsSpread), 0.5f, 1.0f);
         if (fc) fc->setSpatialCoordination(coordinatedWfsScale, ctx->adaptImmScale);
+        const float requestedExciterReduction =
+            std::clamp(ctx->pendingSnap.exc_red, 0.0f, 1.0f);
+        const float adeExciterReduction =
+            ctx->adaptiveEnabled
+                ? std::clamp(ctx->adaptiveDecisionExciterReduction, 0.0f, 1.0f) : 0.0f;
+        const float totalExciterReduction =
+            std::max(requestedExciterReduction, adeExciterReduction);
         if (fc) fc->setHarmonicCoordination(std::min(
-            1.0f - std::clamp(ctx->pendingSnap.exc_red, 0.0f, 1.0f), unityCtx.harmonicBudget));
+            1.0f - totalExciterReduction, unityCtx.harmonicBudget));
 
         ctx->stabilityGuard.beginBlock(L, R, (size_t)chunk, true);
 
@@ -1343,11 +1361,14 @@ static int32_t omega_process(effect_handle_t self,
             const float v2Ratio = std::clamp(
                 std::isfinite(adaptParams.compressorRatio) ? adaptParams.compressorRatio : 1.0f,
                 1.0f, 20.0f);
+            const float requestedRatio = 1.0f + 7.0f * std::clamp(
+                std::isfinite(ctx->pendingSnap.comp_amount) ? ctx->pendingSnap.comp_amount : 0.0f,
+                0.0f, 1.0f);
             const float adeRatio = 1.0f + 7.0f * std::clamp(
                 std::isfinite(ctx->adaptiveDecisionCompAmount)
                     ? ctx->adaptiveDecisionCompAmount : 0.0f,
                 0.0f, 1.0f);
-            const float effectiveRatio = std::max(v2Ratio, adeRatio);
+            const float effectiveRatio = std::max(v2Ratio, std::max(requestedRatio, adeRatio));
             if (fc) {
                 fc->setCompressorParams(effectiveThreshold, effectiveRatio);
             }
@@ -1362,13 +1383,17 @@ static int32_t omega_process(effect_handle_t self,
             // (cada bloque cambia el valor suavizado -> clic periodico). Ahora el
             // techo es 1.0 y la ganancia se rampa linealmente por muestra desde el
             // valor del bloque anterior hasta el nuevo.
+            const float requestedGain = std::clamp(
+                std::isfinite(ctx->pendingSnap.target_gain) ? ctx->pendingSnap.target_gain : 1.0f,
+                0.50f, 1.0f);
             const float adeGain = std::clamp(
                 std::isfinite(ctx->adaptiveDecisionTargetGain)
                     ? ctx->adaptiveDecisionTargetGain : 1.0f,
                 0.50f, 1.0f);
-            // Producto de objetivos de atenuación: el límite final garantiza
-            // que este motor nunca amplifique y applyStereoGainRamp evita zipper.
-            adaptiveGainTarget = std::clamp(overallTrim * isoGain * adeGain, 0.50f, 1.0f);
+            // Producto de objetivos de atenuación: límite final <=1 y rampa
+            // por muestra. Se respetan tanto el request del snapshot como ADE.
+            adaptiveGainTarget = std::clamp(
+                overallTrim * isoGain * requestedGain * adeGain, 0.50f, 1.0f);
         }
         const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
         if (std::fabs(adaptiveGainTarget - 1.0f) > 1.0e-4f ||
@@ -1702,11 +1727,9 @@ if (ctx->adaptive) {
                     ctx->adaptiveDecisionCompAmount =
                         std::clamp(std::isfinite(adSt.compressor_amount) ? adSt.compressor_amount : 0.0f,
                                    0.0f, 1.0f);
-                    ctx->pendingSnap.target_gain = ctx->adaptiveDecisionTargetGain;
-                    ctx->pendingSnap.comp_amount = ctx->adaptiveDecisionCompAmount;
-                    ctx->pendingSnap.exc_red     = std::clamp(
-                        std::isfinite(adSt.exciter_reduction) ? adSt.exciter_reduction : 0.0f,
-                        0.0f, 1.0f);
+                    ctx->adaptiveDecisionExciterReduction =
+                        std::clamp(std::isfinite(adSt.exciter_reduction) ? adSt.exciter_reduction : 0.0f,
+                                   0.0f, 1.0f);
                     ctx->adaptWfsScale = std::clamp(
                         std::isfinite(adSt.wfs_spread_scale) ? adSt.wfs_spread_scale : 1.0f,
                         0.5f, 1.0f);
@@ -1714,15 +1737,12 @@ if (ctx->adaptive) {
                         std::isfinite(adSt.upmix_immersivity) ? adSt.upmix_immersivity : 1.0f,
                         0.5f, 1.0f);
                 } else if (!ctx->adaptiveEnabled) {
-                    // Bypass adaptativo real: neutralizar también los parámetros
-                    // que el callback conserva dentro del snapshot. Si solo se
-                    // limpia el estado auxiliar, exc_red/comp_amount anteriores
-                    // pueden seguir actuando en coordinación armónica/compresor.
+                    // El snapshot ya fue neutralizado al recibir el bit OFF.
+                    // Las salidas calculadas también vuelven a neutro, pero no
+                    // se pisan los campos originales del control plane.
                     ctx->adaptiveDecisionTargetGain = 1.0f;
                     ctx->adaptiveDecisionCompAmount = 0.0f;
-                    ctx->pendingSnap.target_gain = 1.0f;
-                    ctx->pendingSnap.comp_amount = 0.0f;
-                    ctx->pendingSnap.exc_red = 0.0f;
+                    ctx->adaptiveDecisionExciterReduction = 0.0f;
                     ctx->adaptWfsScale = 1.0f;
                     ctx->adaptImmScale = 1.0f;
                 }
@@ -2027,10 +2047,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                             }
                             ctx->adaptiveEnabled =
                                 (seed.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
-                            omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, seed);
-                            omega_apply_supreme_axes(ctx, seed);
-                            omega_apply_room(ctx, seed);
                             ctx->pendingSnap = seed;
+                            if (!ctx->adaptiveEnabled) omega_neutralize_adaptive_snapshot(ctx->pendingSnap);
+                            omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, ctx->pendingSnap);
+                            omega_apply_supreme_axes(ctx, ctx->pendingSnap);
+                            omega_apply_room(ctx, ctx->pendingSnap);
                             ctx->lastAppliedGen = seen;
                             LOGI("OmegaControlBus attached (seed gen=%llu route=%d)",
                                  (unsigned long long)seen,
@@ -2371,6 +2392,9 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
 // aquí (post-declaración de ctx) para no reordenar los símbolos AELI.
 static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept {
     if (!ctx) return;
+    ctx->adaptiveEnabled =
+        (ctx->pendingSnap.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
+    if (!ctx->adaptiveEnabled) omega_neutralize_adaptive_snapshot(ctx->pendingSnap);
     // (a) Apply directo al DSP local — nunca se pierde el parámetro.
     if (ctx->fusionCore) {
         omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, ctx->pendingSnap);
