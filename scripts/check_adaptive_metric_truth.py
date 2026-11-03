@@ -136,8 +136,12 @@ def main() -> int:
             raise AssertionError("Application bootstrap does not restore the persisted adaptive preference")
         if "AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled" not in activity_boot:
             raise AssertionError("Activity bootstrap does not honor the persisted adaptive preference")
-        if "!engineRunning" not in self_heal or "!adaptiveRequested" not in self_heal:
+        if "adaptiveRequested && routeActive" not in self_heal or
+            "nativeIsAdaptiveEngineRunning()" not in self_heal or
+            "!engineRunning" not in self_heal:
             raise AssertionError("self-heal can override user preference or confuse silence with thread death")
+        if "!AudioStateManager.audioState.value.manualModeEnabled" not in self_heal:
+            raise AssertionError("self-heal does not respect the manual-mode state")
         if "testControlThreadLifecycle();" not in lifecycle_test:
             raise AssertionError("native lifecycle regression test is not in the test runner")
 
