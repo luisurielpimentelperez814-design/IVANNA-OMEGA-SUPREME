@@ -31,11 +31,13 @@ public:
     bool configure(const ::omega::AsrcConfig& config) {
         bridge_.setEnabled(false);
         configured_ = false;
+        configuredOutputRateHz_ = 0;
         if (!bridge_.configure(config)) return false;
         // The external PAL servo is the sole drift controller. Never estimate
         // sink drift from the cadence of this ASRC's own process() callbacks.
         bridge_.setDriftTracking(false);
         bridge_.setManualRatio(1.0);
+        configuredOutputRateHz_ = config.outputRateHz;
         bridge_.setEnabled(true);
         configured_ = true;
         return true;
@@ -102,8 +104,11 @@ public:
 private:
     static bool queryThunk(void* context, HardwareClockSample* sample) noexcept {
         auto* self = static_cast<PalAsrcOutputPath*>(context);
-        return self && self->query_ && sample &&
-               self->query_(self->queryContext_, sample);
+        if (!self || !self->query_ || !sample ||
+            !self->query_(self->queryContext_, sample)) return false;
+        // A PAL clock measured against a different nominal stream rate cannot
+        // control this resampler; require the stream to be reconfigured first.
+        return sample->nominalSampleRateHz == self->configuredOutputRateHz_;
     }
 
     static bool applyRatioThunk(void* context, double inputFramesPerOutputFrame) noexcept {
@@ -119,6 +124,7 @@ private:
     QueryPairedSample query_ = nullptr;
     void* queryContext_ = nullptr;
     QualcommPalClockIntegration clock_;
+    uint32_t configuredOutputRateHz_ = 0;
     bool configured_ = false;
 };
 
