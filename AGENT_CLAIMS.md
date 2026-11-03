@@ -48,6 +48,14 @@ que la siguiente sesión sepa el estado real.
 ---
 
 ## 🔒 Frentes actualmente tomados
+
+### Relevo autorizado — AdaptiveDecisionEngine Ruta A/B (2026-11-03)
+**Responsable:** sesión ChatGPT actual, con autorización explícita del propietario.
+**Alcance:** revisar el ciclo preferencia → arranque → métricas PCM reales → decisión ADE → actuadores de Ruta A (JNI/player) y Ruta B (AudioFlinger/omega_effect); respetar OFF/manual y fallos de arranque; mantener el callback RT libre de bloqueos y trabajo de control.
+**Hallazgo corregido en preparación:** Ruta A podía seguir mezclando el último AdaptiveState no neutro después de parar el ADE. La rama `fix/adaptive-off-fail-closed-v2.5.339` añade un gate neutral en `adaptive_ui_strength()` cuando la preferencia está OFF o el worker no está iniciado, con contrato estático de regresión. Ruta B ya neutraliza el snapshot y las salidas ADE separadas cuando el bit adaptativo del control bus está OFF; el snapshot por defecto de main ya falla cerrado y la aplicación vuelve a publicar la preferencia persistida al conectar/reconectar.
+**PR:** #23 — pendiente de CI completa y merge. **No declarar cerrado** hasta CI verde; validación acústica y runtime siguen pendientes en Moto G85 5G.
+**No tocar:** no cambiar ABI, fórmulas de decisión, filtros DSP ni el ciclo de control Route B en este parche; no afirmar prueba física.
+
 > 📌 **Nota (sesión Claude, 2026-09-19, misión "conectar WFS a la ruta de audio real" —
 > instrucción directa del propietario):** cierre completo del control plane WFS, que hasta
 > ahora vivía como atomics `g_wfs_enabled`/`g_wfs_spread` AISLADOS por proceso (uno en
