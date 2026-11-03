@@ -159,7 +159,7 @@ def main() -> int:
         # Route-A WFS must obey the same AUX > binaural-WFS priority as
         # Route B while retaining the user's WFS preference for restoration.
         wfs_policy_start = jni.find("static inline void processRouteAWfs(")
-        wfs_policy_end = jni.find("\\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
+        wfs_policy_end = jni.find("\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
         wfs_policy = jni[wfs_policy_start:wfs_policy_end] if wfs_policy_end > wfs_policy_start else ""
         if ("g_wfs_enabled.load(std::memory_order_acquire)" not in wfs_policy or
                 "!g_aux_field_enabled.load(std::memory_order_acquire)" not in wfs_policy or
