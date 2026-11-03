@@ -98,7 +98,9 @@ void RouteAWfsEngine::process(float* left, float* right, int frames) noexcept {
 
     const bool active = enabled_.load(std::memory_order_acquire);
     impl_->renderer.setEnabled(active);
-    if (!active && impl_->renderer.isSettledBypassed()) return;
+    // Keep WfsRenderer::process running during bypass: its soft-suspended
+    // path writes current input into the delay lines without synthesis. This
+    // prevents stale pre-bypass audio from reappearing when WFS is re-enabled.
     const auto governed = impl_->governor.process(
         spread_.load(std::memory_order_relaxed), 1.0f);
     ::g_wfs_applied_spread.store(governed.spread, std::memory_order_relaxed);
