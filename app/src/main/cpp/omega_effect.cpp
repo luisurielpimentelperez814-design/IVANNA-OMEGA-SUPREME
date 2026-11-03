@@ -352,8 +352,10 @@ static constexpr int OMEGA_RT_MAX_FRAMES = 8192;
 // compressor, exciter_reduction, EQ, HRTF y geometría siguen siendo controles
 // explícitos; target_gain/comp_amount/exc_red no deben sobrevivir al modo OFF.
 static inline void omega_neutralize_adaptive_snapshot(ivanna::OmegaDspSnapshot& s) noexcept {
+    // comp_amount es también el ratio solicitado por el control manual
+    // OMEGA_PARAM_COMPRESSOR_AMOUNT. Solo se neutraliza la salida adaptativa
+    // separada (adaptiveDecisionCompAmount); nunca borrar la petición del usuario.
     s.target_gain = 1.0f;
-    s.comp_amount = 0.0f;
     s.exc_red = 0.0f;
 }
 
