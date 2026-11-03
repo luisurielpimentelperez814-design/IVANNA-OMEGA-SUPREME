@@ -9,7 +9,9 @@
 #include "ivanna_qualcomm_pal_clock_integration.hpp"
 
 #include <cmath>
+#include <atomic>
 #include <cstdint>
+#include <mutex>
 
 namespace ivanna::audio {
 
@@ -31,17 +33,21 @@ public:
     // the render/write path starts. The HAL must size its output FIFO/period
     // for maxOutputFrames() and honour both framesConsumed and framesProduced.
     bool configure(const ::omega::AsrcConfig& config) {
+        std::lock_guard<std::mutex> lock(controlMutex_);
         bridge_.setEnabled(false);
-        configured_ = false;
-        configuredOutputRateHz_ = 0;
+        configured_.store(false, std::memory_order_release);
+        configuredOutputRateHz_.store(0, std::memory_order_relaxed);
+        // A new PAL stream must never inherit lock or anchors from its predecessor.
+        clock_.reset();
+        bridge_.setManualRatio(1.0);
         if (!bridge_.configure(config)) return false;
         // The external PAL servo is the sole drift controller. Never estimate
         // sink drift from the cadence of this ASRC's own process() callbacks.
         bridge_.setDriftTracking(false);
         bridge_.setManualRatio(1.0);
-        configuredOutputRateHz_ = config.outputRateHz;
+        configuredOutputRateHz_.store(config.outputRateHz, std::memory_order_relaxed);
         bridge_.setEnabled(true);
-        configured_ = true;
+        configured_.store(true, std::memory_order_release);
         return true;
     }
 
@@ -55,21 +61,22 @@ public:
     // hard-real-time write/render callback. Invalid/stale samples reset ratio
     // to unity; a new route must acquire lock again.
     bool controlTick() noexcept {
-        if (!configured_) return false;
+        std::lock_guard<std::mutex> lock(controlMutex_);
+        if (!configured_.load(std::memory_order_acquire)) return false;
         return clock_.controlTick();
     }
 
     void reset() noexcept {
-        clock_.reset();
-        bridge_.setManualRatio(1.0);
-        bridge_.reset();
+        std::lock_guard<std::mutex> lock(controlMutex_);
+        resetLocked();
     }
 
     void stop() noexcept {
-        reset();
+        std::lock_guard<std::mutex> lock(controlMutex_);
+        resetLocked();
         bridge_.setEnabled(false);
-        configured_ = false;
-        configuredOutputRateHz_ = 0;
+        configured_.store(false, std::memory_order_release);
+        configuredOutputRateHz_.store(0, std::memory_order_relaxed);
     }
 
     bool correctionEnabled() const noexcept { return clock_.correctionEnabled(); }
@@ -112,7 +119,8 @@ private:
             !self->query_(self->queryContext_, sample)) return false;
         // A PAL clock measured against a different nominal stream rate cannot
         // control this resampler; require the stream to be reconfigured first.
-        return sample->nominalSampleRateHz == self->configuredOutputRateHz_;
+        return sample->nominalSampleRateHz ==
+               self->configuredOutputRateHz_.load(std::memory_order_acquire);
     }
 
     static bool applyRatioThunk(void* context, double inputFramesPerOutputFrame) noexcept {
@@ -124,12 +132,20 @@ private:
         return true;
     }
 
+    void resetLocked() noexcept {
+        clock_.reset();
+        bridge_.setManualRatio(1.0);
+        bridge_.reset();
+    }
+
     ::omega::PalAsrcBridge bridge_{};
     QueryPairedSample query_ = nullptr;
     void* queryContext_ = nullptr;
     QualcommPalClockIntegration clock_;
-    uint32_t configuredOutputRateHz_ = 0;
-    bool configured_ = false;
+    // Serializes lifecycle/control operations; never acquired by the audio callback.
+    std::mutex controlMutex_;
+    std::atomic<uint32_t> configuredOutputRateHz_{0};
+    std::atomic<bool> configured_{false};
 };
 
 } // namespace ivanna::audio
