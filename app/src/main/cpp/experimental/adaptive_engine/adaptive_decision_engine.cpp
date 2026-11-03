@@ -314,36 +314,50 @@ AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
     return s;
 }
 
-void AdaptiveDecisionEngine::start() {
-    bool expected = false;
-    if (!running_.compare_exchange_strong(expected, true,
-                                          std::memory_order_acq_rel,
-                                          std::memory_order_acquire)) {
-        return;  // ya corriendo
+bool AdaptiveDecisionEngine::start() noexcept {
+    std::lock_guard<std::mutex> lock(controlLifecycleMutex_);
+    if (running_.load(std::memory_order_acquire)) return true;
+
+    // Un hilo detenido también queda joinable hasta hacer join(). Se drena
+    // bajo el mismo mutex que serializa start/stop antes de reutilizarlo.
+    if (controlThread_.joinable()) {
+        try {
+            if (controlThread_.get_id() == std::this_thread::get_id()) return false;
+            controlThread_.join();
+        } catch (...) {
+            running_.store(false, std::memory_order_release);
+            return false;
+        }
     }
 
-    // Hardening real contra std::terminate(): si por cualquier edge case
-    // externo quedara un std::thread joinable "viejo" (p.ej. running_=false
-    // pero stop() no alcanzó a hacer join todavía), asignar un nuevo hilo
-    // sobre controlThread_ terminaría el proceso inmediatamente. Nunca debería
-    // pasar en el flujo nominal, pero si pasa preferimos drenar ese hilo aquí
-    // de forma explícita antes de reutilizar el objeto std::thread.
-    if (controlThread_.joinable()) controlThread_.join();
-
-    controlThread_ = std::thread([this]() { controlLoop(); });
+    running_.store(true, std::memory_order_release);
+    try {
+        controlThread_ = std::thread([this]() { controlLoop(); });
+    } catch (...) {
+        // No dejar running=true ni un estado "started" ficticio si el SoC
+        // no pudo crear el hilo (memoria/recursos agotados). El caller puede
+        // reintentar más tarde sin destruir ni resetear el grafo DSP.
+        running_.store(false, std::memory_order_release);
+        return false;
+    }
+    return true;
 }
 
 void AdaptiveDecisionEngine::stop() noexcept {
-    // FIX (causa real de std::terminate() intermitente): el guard antiguo
-    // hacía early-return cuando running_ ya estaba en false. Eso dejaba sin
-    // join un controlThread_ todavía joinable en cualquier edge case donde el
-    // flag y el estado real del std::thread se desincronizaran; más tarde,
-    // el destructor de std::thread o una nueva asignación sobre el mismo
-    // objeto disparaban std::terminate(). El contrato correcto es: parar el
-    // loop SI estaba corriendo, pero hacer join SIEMPRE que el thread siga
-    // joinable, independientemente del flag.
+    std::lock_guard<std::mutex> lock(controlLifecycleMutex_);
     running_.store(false, std::memory_order_release);
-    if (controlThread_.joinable()) controlThread_.join();
+    if (controlThread_.joinable()) {
+        // stop() no debe ejecutarse desde el propio hilo de control. Si en
+        // el futuro alguien añade ese camino, no auto-join/detach el hilo;
+        // una llamada externa posterior podrá drenarlo sin UAF.
+        if (controlThread_.get_id() == std::this_thread::get_id()) return;
+        try {
+            controlThread_.join();
+        } catch (...) {
+            // Mantener el objeto joinable para que el siguiente stop()
+            // pueda volver a intentar el join; nunca fingir que fue drenado.
+        }
+    }
 }
 
 void AdaptiveDecisionEngine::controlLoop() {
