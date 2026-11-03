@@ -113,10 +113,6 @@ struct OmegaSharedState {
     std::atomic<float> ai_runtime_comp_amount;
     std::atomic<float> ai_runtime_exciter_red;  // 0..1 reservado
 
-    // Los campos runtime anteriores se conservan como reservas ABI. No hay
-    // un consumidor PCM activo para ellos en este árbol; SYSTEM_WIDE aplica
-    // los controles mediante el ADE per-instance del efecto AudioFlinger.
-
     // Reservas legacy de banda espectral. En el código actual no se encontró
     // un productor que escriba estos campos; por tanto no representan energía
     // medida aunque la región SHM exista. Se conservan para respetar el ABI.
