@@ -22,6 +22,8 @@ public:
           queryContext_(queryContext),
           clock_(&queryThunk, this, &applyRatioThunk, this) {}
 
+    ~PalAsrcOutputPath() { stop(); }
+
     PalAsrcOutputPath(const PalAsrcOutputPath&) = delete;
     PalAsrcOutputPath& operator=(const PalAsrcOutputPath&) = delete;
 
