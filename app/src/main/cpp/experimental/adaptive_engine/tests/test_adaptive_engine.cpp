@@ -81,6 +81,29 @@ void testControlThreadLifecycle() {
     expect(!engine.running(), "lifecycle: stop final deja el hilo drenado");
 }
 
+void testConcurrentControlThreadLifecycle() {
+    std::printf("\n=== Ciclo de vida ADE concurrente: UI/watchdog start-stop ===\n");
+    AdaptiveDecisionEngine engine;
+    std::atomic<bool> startFailure{false};
+    std::thread workers[4];
+
+    for (auto& worker : workers) {
+        worker = std::thread([&]() {
+            for (int i = 0; i < 20; ++i) {
+                if (!engine.start()) startFailure.store(true, std::memory_order_relaxed);
+                if ((i & 1) == 0) engine.stop();
+            }
+        });
+    }
+    for (auto& worker : workers) worker.join();
+
+    engine.stop();
+    expect(!startFailure.load(std::memory_order_relaxed),
+           "lifecycle concurrente: ningún start externo falla bajo toggles simultáneos");
+    expect(!engine.running(),
+           "lifecycle concurrente: stop final deja el ADE detenido y drenado");
+}
+
 void testSilentInput() {
     std::printf("\n=== Entrada silenciosa (rms=0, peak=0, bandas=0) ===\n");
     RawAudioMetrics m{};  // todo en 0 por defecto
@@ -482,6 +505,7 @@ int main() {
     std::printf("====================================================\n");
 
     testControlThreadLifecycle();
+    testConcurrentControlThreadLifecycle();
     testSilentInput();
     testNormalSignal();
     testSaturatedSignal();
