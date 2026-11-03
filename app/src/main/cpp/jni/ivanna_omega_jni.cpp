@@ -1346,15 +1346,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
         adaptiveStrength));
     if (!adaptiveActive) {
-        // OFF/manual: discard stale ADE state and actuator targets immediately.
-        // Manual compressor threshold/ratio/attack/release remain untouched;
-        // only its additional adaptive runtime amount is cleared.
+        // OFF/manual: neutralize the ADE contribution while preserving the
+        // independent measured harmonic budget and the Perceptual Guard target.
+        // Compressor user threshold/ratio/attack/release remain untouched; its
+        // runtime overlay slews toward the guard's current request below.
         g_ats.targetGainSmooth = 1.0f;
         g_ats.compAmountSmooth = 0.0f;
-        g_ats.excReductionSmooth = 0.0f;
+        g_ats.excReductionSmooth = std::clamp(excReductionUi, 0.0f, 1.0f);
         g_gain.setRuntimeGain(1.0f);
-        g_comp.resetRuntimeAmount();
-        g_exciter.setRuntimeReduction(0.0f);
     } else {
         g_ats.targetGainSmooth += 0.05f * (targetGainUi - g_ats.targetGainSmooth);
         g_ats.compAmountSmooth += 0.05f * (compAmountUi - g_ats.compAmountSmooth);
@@ -2123,13 +2122,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         std::clamp(g_lastAdaptiveExcReduction.load(std::memory_order_relaxed), 0.f, 1.f),
         adaptiveStrength);
     if (!adaptiveActive) {
-        // OFF/manual: clear this consumer's independent block smoothers and
-        // all retained ADE actuator targets; manual compressor settings survive.
+        // OFF/manual: clear this consumer's independent ADE smoothers.
+        // Compressor user settings survive; setRuntimeAmount below smoothly
+        // returns its runtime overlay to neutral without hard-resetting a
+        // shared actuator that may still be serving the Perceptual Guard.
         g_ats.blkTgSmooth = 1.0f;
         g_ats.blkCaSmooth = 0.0f;
         g_ats.blkErSmooth = 0.0f;
         g_gain.setRuntimeGain(1.0f);
-        g_comp.resetRuntimeAmount();
         g_exciter.setRuntimeReduction(0.0f);
     } else {
         g_ats.blkTgSmooth += 0.05f * (blkTargetGain - g_ats.blkTgSmooth);
