@@ -347,6 +347,38 @@ static std::atomic<bool>  g_loudness_trim_enabled{true};
 // de una vez (p. ej. cambio de sample rate por reproductor de archivo).
 static ivanna::experimental::AdaptiveDecisionEngine g_adaptiveEngine;
 static std::atomic<bool> g_adaptiveEngineStarted{false};
+// La preferencia del usuario es la autoridad. El bootstrap de DSP puede
+// repetirse por cambio de SR, pero nunca debe reactivar el motor si está en
+// modo manual o deshabilitado.
+static std::atomic<bool> g_adaptiveEngineUiEnabled{true};
+static std::mutex g_adaptiveEngineLifecycleMutex;
+
+static bool ensureAdaptiveEngineStarted() noexcept {
+    std::lock_guard<std::mutex> lock(g_adaptiveEngineLifecycleMutex);
+    if (!g_adaptiveEngineUiEnabled.load(std::memory_order_acquire)) {
+        if (g_adaptiveEngine.running()) g_adaptiveEngine.stop();
+        g_adaptiveEngineStarted.store(false, std::memory_order_release);
+        return false;
+    }
+    const bool created = g_adaptiveEngine.start();
+    const bool live = created && g_adaptiveEngine.running();
+    g_adaptiveEngineStarted.store(live, std::memory_order_release);
+    return live;
+}
+
+static bool setAdaptiveEngineEnabled(bool enabled) noexcept {
+    std::lock_guard<std::mutex> lock(g_adaptiveEngineLifecycleMutex);
+    g_adaptiveEngineUiEnabled.store(enabled, std::memory_order_release);
+    if (!enabled) {
+        g_adaptiveEngine.stop();
+        g_adaptiveEngineStarted.store(false, std::memory_order_release);
+        return false;
+    }
+    const bool created = g_adaptiveEngine.start();
+    const bool live = created && g_adaptiveEngine.running();
+    g_adaptiveEngineStarted.store(live, std::memory_order_release);
+    return live;
+}
 // Snapshot del último AdaptiveState publicado — lo leen los JNI getters de
 // telemetría (fuera del audio thread) para exponer el ciclo a Kotlin/UI.
 // Se actualiza dentro del audio thread justo después de consumeIfNewer().
@@ -718,23 +750,27 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
-    // ═══ FASE 4B: arrancar el motor adaptativo (una sola vez) ═════════════
-    // start() crea un std::thread propio (el hilo de control lento) que
-    // corre controlLoop() a 50ms. NO se dispara desde el audio thread
-    // — este nativeInit siempre se llama desde el hilo de UI o el hilo
-    // que abre el player (ver IvannaBridgePlayer.play() y
-    // AudioForegroundService.onStartCommand()). exchange() garantiza
-    // idempotencia si el sample rate cambia y nativeInit se re-llama.
-    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
-        g_adaptiveEngine.start();
-      if (!g_adaptiveSnapshotStarted.exchange(true)) {
-          g_snapshotRunning.store(true, std::memory_order_release);
-          g_snapshotThread = std::thread(adaptiveSnapshotLoop);
-          // NO detach() — el hilo se une en JNI_OnUnload antes de que
-          // los destructores estáticos destruyan g_adaptiveEngine.
-          LOGI("AdaptiveState snapshot consumer started");
-      }
-        LOGI("AdaptiveDecisionEngine started (control thread @50ms)");
+    // ═══ FASE 4B: ciclo de vida del motor adaptativo ═════════════════════
+    // El inicio obedece a la preferencia persistida/manual, incluso si
+    // nativeInit se repite por cambio de sample rate.
+    if (ensureAdaptiveEngineStarted()) {
+        LOGI("AdaptiveDecisionEngine running (control thread @50ms)");
+    } else {
+        LOGI("AdaptiveDecisionEngine disabled by user preference or start unavailable");
+    }
+    // El consumidor de snapshots es observabilidad, no el motor. Debe vivir
+    // también cuando el usuario selecciona modo manual, para que el siguiente
+    // enable no herede una telemetría sin consumidor.
+    if (!g_adaptiveSnapshotStarted.exchange(true, std::memory_order_acq_rel)) {
+        g_snapshotRunning.store(true, std::memory_order_release);
+        try {
+            g_snapshotThread = std::thread(adaptiveSnapshotLoop);
+            LOGI("AdaptiveState snapshot consumer started");
+        } catch (...) {
+            g_snapshotRunning.store(false, std::memory_order_release);
+            g_adaptiveSnapshotStarted.store(false, std::memory_order_release);
+            LOGE("AdaptiveState snapshot consumer could not start");
+        }
     }
     // FIX (Adaptive Feedback Loop — ruta real Spotify/YouTube): arrancar el
     // puente hacia omega_effect.cpp UNA sola vez, mismo guard que el motor
@@ -3480,46 +3516,17 @@ extern "C" float learning_bias_get(const char* param_key) {
 // de estado. ivanna_adaptive_jni.cpp queda intacto — sus stubs *_unused
 // siguen ahí por si alguien decide revivir AdaptiveEngineCore como
 // sensor independiente en el futuro (ver INTEGRATION_GUIDE.md).
-// ═══════════════════════════════════════════════════════════════════════════
-// Flag para el toggle Manual/Automático (pausa/reanuda el loop del ADE).
-// El motor A ya expone start()/stop() en g_adaptiveEngine — solo cableamos
-// el switch para que llame al método correcto según el estado.
-static std::atomic<bool> g_adaptiveEngineUiEnabled{true};
+// El toggle manual y el watchdog usan el mismo contrato serializado. El
+// handle solo se entrega cuando existe un hilo de control realmente vivo.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEngineEnabled(
     JNIEnv*, jobject, jboolean enabled) {
-    const bool want = (enabled == JNI_TRUE);
-    const bool prev = g_adaptiveEngineUiEnabled.exchange(want, std::memory_order_acq_rel);
-    if (prev == want) return;  // idempotente — evita start/stop dobles
-    if (want) {
-        // Reanuda el hilo de control del Motor A. Si ya está corriendo (por
-        // nativeInit), start() debe ser no-op — g_adaptiveEngineStarted lo
-        // garantiza.
-        if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
-            g_adaptiveEngine.start();
-        }
-    } else {
-        // Pausa el loop del ADE para que el modo manual pueda escribir
-        // compresor/exciter/ancho sin colisionar. Se resetea el flag
-        // "started" para que un enable(true) posterior lo re-arranque.
-        if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
-            g_adaptiveEngine.stop();
-        }
-    }
+    (void)setAdaptiveEngineEnabled(enabled == JNI_TRUE);
 }
-// Crea/asegura la instancia del Adaptive Engine. En la arquitectura actual
-// g_adaptiveEngine es un objeto estático global — no hay handle real que
-// devolver, pero la firma Kotlin exige un Long. Se devuelve la dirección
-// del singleton (opaco al lado Kotlin, solo se usa como "non-zero = OK").
-// Idempotente: llamadas repetidas devuelven el mismo puntero sin re-crear.
 JNIEXPORT jlong JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(
     JNIEnv*, jobject) {
-    // Asegura que el motor esté corriendo (mismo path que nativeInit toma).
-    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
-        g_adaptiveEngine.start();
-    }
-    g_adaptiveEngineUiEnabled.store(true, std::memory_order_release);
+    if (!ensureAdaptiveEngineStarted()) return 0;
     return reinterpret_cast<jlong>(&g_adaptiveEngine);
 }
 // Devuelve los 12 parámetros adaptativos suavizados. En el Motor A los
@@ -3682,32 +3689,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
-    if (!g_initialized.load(std::memory_order_acquire)) return JNI_FALSE;
-    if (!g_adaptiveEngineStarted.load(std::memory_order_acquire)) return JNI_FALSE;
-
-    // Detectar congelamiento real: comparar applied_count ahora vs hace ~1s.
-    // Si no ha cambiado en 1s pero el engine está "started", es un freeze.
-    static std::atomic<uint64_t> s_lastAppliedSnapshot{0};
-    static std::atomic<int64_t>  s_lastCheckMs{0};
-
-    const auto nowMs = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()
-        ).count()
-    );
-
-    const int64_t lastCheck = s_lastCheckMs.load(std::memory_order_relaxed);
-    const uint64_t currentApplied = g_lastAdaptiveApplied.load(std::memory_order_relaxed);
-
-    if (nowMs - lastCheck >= 1000) {
-        const uint64_t snap = s_lastAppliedSnapshot.exchange(
-            currentApplied, std::memory_order_relaxed);
-        s_lastCheckMs.store(nowMs, std::memory_order_relaxed);
-        // Si el count no cambió en 1s Y ya habíamos recibido datos antes → freeze
-        if (snap > 0 && snap == currentApplied) return JNI_FALSE;
-    }
-
-    return currentApplied > 0 ? JNI_TRUE : JNI_FALSE;
+    // Estado del hilo de control, no actividad de audio. El contador de
+    // bloques aplicados se expone aparte y puede permanecer quieto durante
+    // silencio, pausa o ausencia de una sesión AudioFlinger.
+    const bool enabled = g_adaptiveEngineUiEnabled.load(std::memory_order_acquire);
+    const bool running = g_adaptiveEngine.running();
+    g_adaptiveEngineStarted.store(running, std::memory_order_release);
+    return (enabled && running) ? JNI_TRUE : JNI_FALSE;
 }
 // ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────
 // FloatArray[3]: [0]=low (sub/bass), [1]=mid (presencia/voz), [2]=high (brillo/sibilancia)
