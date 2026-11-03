@@ -385,3 +385,22 @@ Passive capture (`dumpsys media.audio_flinger`, no injection) with music playing
 - Whether the pair reflects the DAC's own oscillator or the USB host's frame timing. The estimate is relative to `CLOCK_MONOTONIC`; it does not show a DAC-clock offset.
 - Any ASRC actuator, or any way for IVANNA to read this pair itself. The pair lives inside AudioFlinger/HAL; the daemon still has no call site there. Correction stays disabled.
 - Per-sample pairs: `dumpsys` only exposes aggregated statistics.
+
+
+## HAL output ASRC stage wired in source (2026-11-03)
+
+The repository now contains:
+
+- `hal_integration/PalAsrcBridge.{h,cpp}`: preallocated streaming resampler, with variable input/output frame accounting.
+- `hal_integration/ivanna_pal_asrc_output_path.hpp`: binds the resampler to `QualcommPalClockIntegration`. Its PAL query callback feeds the paired hardware-clock sample to the bounded rate servo; the servo's accepted input-frames/output-frame ratio is sent to `PalAsrcBridge::setManualRatio()`.
+- `app/src/main/cpp/tests/test_pal_asrc_output_path.cpp`: host tests for pass-through, finite PCM, ratio control, stale/future timestamp rejection and fail-closed reset.
+
+The ASRC's own callback-cadence estimator is disabled in this integration. If the HAL query is absent, stale, future-dated, changes route, or fails, the servo returns the command to unity. The standalone ASRC also no longer estimates sink drift from its own callback cadence when no fresh hardware sample exists.
+
+### Required Motorola HAL binding still outstanding
+
+Instantiate `PalAsrcOutputPath` inside the long-lived owner of the real output stream. Supply a query callback that returns a paired frame counter and `CLOCK_MONOTONIC` timestamp from one successful driver/PAL query. For an MMAP-capable stream, the existing `PalMmapPositionClockQuery` adapter can be used. If the active USB stream is not MMAP-capable, provide another verified paired source; `pal_get_timestamp` alone is not sufficient.
+
+Call `configure()` and optionally `openReporter()` during stream setup, `controlTick()` from a serialized 10–20 Hz control task, and `processF32/S16/S32()` on the actual HAL output path before PCM write. The HAL must own the FIFO/period sizing and preserve both returned frame counts. Call `reset()` on standby/reopen/route change and `stop()` before teardown.
+
+This source-level adapter does **not** modify or inject code into the proprietary `audio.primary.blair.so` binary, and does not prove that the Moto G85 USB path exposes MMAP timestamps or a writable PAL/AGM output insertion point. Until the target HAL binds these callbacks and the device is measured, the handset's ASRC state must remain fail-closed; host tests are not device validation.
