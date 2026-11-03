@@ -616,8 +616,11 @@ struct OmegaDspSnapshot {
         s.supreme_snn_spikes      = 2u;
         s.supreme_subsample_delay = 0.24f;
         s.effect_frames = 0ULL;
-        // Legacy-compatible defaults: keep both Route-B engines enabled until user changes them.
-        s.temporal_field |= omega_effect_features_encode(true, true);
+        // Fail closed for adaptive actuation until the app restores the user's
+        // persisted preference with SET_AUDIO_FEATURES. HRTF retains its
+        // historical default, while an absent/unavailable control plane must
+        // never silently re-enable a user-disabled adaptive engine.
+        s.temporal_field |= omega_effect_features_encode(true, false);
         s.stampCrc();
         return s;
     }

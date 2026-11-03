@@ -267,6 +267,7 @@ static void rirWorkerLoop() {
 // vuelta hacia la señal seca (pre-DSP) cuando hay voz dominante, en vez de
 // dejar que Exciter/Compresor la sobre-procesen.
 static std::atomic<float> g_voice_protect_score{0.f};
+static std::atomic<bool>  g_voice_protect_score_valid{false};
 
 // ── FIX nho_wet: 3 escritores competían sobre g_pd.set_nho_wet() ─────────────
 // nativeSetParams pisaba el control HRTF WET y el η del LSTM en cada movimiento
@@ -346,6 +347,38 @@ static std::atomic<bool>  g_loudness_trim_enabled{true};
 // de una vez (p. ej. cambio de sample rate por reproductor de archivo).
 static ivanna::experimental::AdaptiveDecisionEngine g_adaptiveEngine;
 static std::atomic<bool> g_adaptiveEngineStarted{false};
+// La preferencia del usuario es la autoridad. El bootstrap de DSP puede
+// repetirse por cambio de SR, pero nunca debe reactivar el motor si está en
+// modo manual o deshabilitado.
+static std::atomic<bool> g_adaptiveEngineUiEnabled{true};
+static std::mutex g_adaptiveEngineLifecycleMutex;
+
+static bool ensureAdaptiveEngineStarted() noexcept {
+    std::lock_guard<std::mutex> lock(g_adaptiveEngineLifecycleMutex);
+    if (!g_adaptiveEngineUiEnabled.load(std::memory_order_acquire)) {
+        if (g_adaptiveEngine.running()) g_adaptiveEngine.stop();
+        g_adaptiveEngineStarted.store(false, std::memory_order_release);
+        return false;
+    }
+    const bool created = g_adaptiveEngine.start();
+    const bool live = created && g_adaptiveEngine.running();
+    g_adaptiveEngineStarted.store(live, std::memory_order_release);
+    return live;
+}
+
+static bool setAdaptiveEngineEnabled(bool enabled) noexcept {
+    std::lock_guard<std::mutex> lock(g_adaptiveEngineLifecycleMutex);
+    g_adaptiveEngineUiEnabled.store(enabled, std::memory_order_release);
+    if (!enabled) {
+        g_adaptiveEngine.stop();
+        g_adaptiveEngineStarted.store(false, std::memory_order_release);
+        return false;
+    }
+    const bool created = g_adaptiveEngine.start();
+    const bool live = created && g_adaptiveEngine.running();
+    g_adaptiveEngineStarted.store(live, std::memory_order_release);
+    return live;
+}
 // Snapshot del último AdaptiveState publicado — lo leen los JNI getters de
 // telemetría (fuera del audio thread) para exponer el ciclo a Kotlin/UI.
 // Se actualiza dentro del audio thread justo después de consumeIfNewer().
@@ -512,57 +545,41 @@ static void audioRouteBridgeLoop() {
     auto lastLogTime = std::chrono::steady_clock::now();
     while (g_bridgeRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
-        OmegaSharedState* shared = omega_daemon_get_shared_state();  // load único, evita TOCTOU
-        // ── FIX (UI "SIN AUDIO" con motor procesando, Ruta B sin daemon) ──
-        // omega_daemon_get_shared_state() conecta al estado compartido SHM cuando está disponible; si no existe devuelve nullptr
-        // nullptr cuando el daemon no corre (dispositivo sin root o módulo
-        // sin daemon). Pero omega_effect SÍ publica telemetría real
-        // (raw_rms/raw_peak/effect_frames) en su bus local SHM
-        // OMEGA_EFFECT_LOCAL_BUS_PATH desde 865c53c6. El canal previsto por
-        // la arquitectura ES ese bus seqlock (no hay canal alternativo: el
-        // socket del daemon no existe sin daemon). La app lo lee como
-        // READER lock-free — mismo mecanismo, sin IPC nuevo.
+        // Este puente app-side solo observa el bus local del efecto, que
+        // publica raw_rms/raw_peak cuando no hay un writer daemon. Los campos
+        // ai_raw_* de OmegaSharedState no tienen productor en este árbol:
+        // leerlos cuando shared!=nullptr convertía sus ceros iniciales en
+        // "silencio" aunque el AudioEffect estuviera procesando PCM.
         float rms = 0.0f, peak = 0.0f;
-        if (shared) {
-            rms  = shared->ai_raw_rms.load(std::memory_order_relaxed);
-            peak = shared->ai_raw_peak.load(std::memory_order_relaxed);
+        static bool     s_busOpen = false;
+        static uint64_t s_retryMs = 0;
+        if (!s_busOpen) {
+            const auto nowMs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            if (nowMs >= s_retryMs) {
+                s_busOpen = ivanna::effectControlBus().openReader(
+                                ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
+                s_retryMs = nowMs + 1000ULL;
+            }
+        }
+        if (!s_busOpen) continue;
+        static uint64_t s_lastGen = 0;
+        ivanna::OmegaDspSnapshot snap{};
+        if (ivanna::effectControlBus().readLatest(snap, s_lastGen)) {
+            rms  = snap.raw_rms;
+            peak = snap.raw_peak;
+            g_routeB_declippedPeaks.store(snap.supreme_declipped_peaks, std::memory_order_relaxed);
+            g_routeB_tapeMag.store(snap.supreme_tape_mag, std::memory_order_relaxed);
+            g_routeB_snnSpikes.store(snap.supreme_snn_spikes, std::memory_order_relaxed);
+            if (snap.supreme_subsample_delay > 0.0f) {
+                g_routeB_subsampleDelay.store(snap.supreme_subsample_delay, std::memory_order_relaxed);
+            }
+        } else if (lastRms < 0.0f) {
+            continue;  // el bus local aún no publicó un bloque PCM real
         } else {
-            // Fallback Ruta B: leer el bus local del efecto (audioserver).
-            // HARDENING: reintentar apertura del bus si omega_effect se reinicia.
-            // La version anterior usaba s_busTried=true una sola vez — si el efecto
-            // no estaba listo en el primer ciclo, nunca se reintentaba.
-            // Con backoff de 1s: seguro en hilo de telemetria (no es audio callback).
-            static bool     s_busOpen = false;
-            static uint64_t s_retryMs = 0;
-            if (!s_busOpen) {
-                auto nowMs = static_cast<uint64_t>(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now().time_since_epoch()).count());
-                if (nowMs >= s_retryMs) {
-                    s_busOpen = ivanna::effectControlBus().openReader(
-                                    ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
-                    s_retryMs = nowMs + 1000ULL;
-                }
-            }
-            if (!s_busOpen) continue;  // bus no disponible — retry en siguiente ciclo
-            static uint64_t s_lastGen = 0;
-            ivanna::OmegaDspSnapshot snap{};
-            // readLatest es lock-free (seqlock); si no hay generation nueva,
-            // reusamos la última lectura (lastRms/lastPeak ya la filtran).
-            if (ivanna::effectControlBus().readLatest(snap, s_lastGen)) {
-                rms  = snap.raw_rms;
-                peak = snap.raw_peak;
-                g_routeB_declippedPeaks.store(snap.supreme_declipped_peaks, std::memory_order_relaxed);
-                g_routeB_tapeMag.store(snap.supreme_tape_mag, std::memory_order_relaxed);
-                g_routeB_snnSpikes.store(snap.supreme_snn_spikes, std::memory_order_relaxed);
-                if (snap.supreme_subsample_delay > 0.0f) {
-                    g_routeB_subsampleDelay.store(snap.supreme_subsample_delay, std::memory_order_relaxed);
-                }
-            } else if (lastRms < 0.0f) {
-                continue;  // bus abierto pero jamás publicó — sin audio aún
-            } else {
-                rms = lastRms; peak = lastPeak;  // sin novedad: conservar
-            }
+            rms = lastRms;
+            peak = lastPeak;
         }
         // Silencio absoluto sostenido (o sin cambios desde la última
         // lectura) → omega_effect probablemente no está procesando audio
@@ -573,62 +590,23 @@ static void audioRouteBridgeLoop() {
                                  std::fabs(peak - lastPeak) > 1e-6f;
         lastRms = rms; lastPeak = peak;
         if (!hasSignal && !changed) continue;
-        // ai_gain_db sólo es significativo si el AGC del efecto está
-        // activo (ai_enabled) — se usa como proxy de gain_reduction SOLO
-        // en su excursión negativa (AGC reduciendo por señal fuerte); una
-        // excursión positiva (AGC compensando señal débil) no es
-        // "reducción" y se descarta a 0.
-        float grDb = 0.0f;
-        if (shared && shared->ai_enabled.load(std::memory_order_relaxed)) {
-            const float gainDb = shared->ai_gain_db.load(std::memory_order_relaxed);
-            grDb = gainDb < 0.0f ? -gainDb : 0.0f;
-        }
+        // Este observador no tiene GR sincronizada con el bloque PCM del
+        // bus local. La ruta real publica SafetyLimiter GR dentro del ADE
+        // per-instance de omega_effect; aquí se deja neutral.
+        const float grDb = 0.0f;
         ivanna::experimental::RawAudioMetrics rawM{};
         rawM.rms               = rms;
         rawM.peak              = peak;
-        // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado.
-        // Ahora viene de BandEnergyMeter (omega_daemon.cpp::processLoop()),
-        // 3 filtros IIR reales sobre la señal seca — ver ese archivo.
-        // AUDIT FIX (SIGSEGV en fallback sin daemon): cuando shared == nullptr
-        // (stub activo, telemetría leída del bus local del efecto), el código
-        // anterior dereferenciaba shared->ai_band_* sin verificar -> crash
-        // garantizado en el hilo puente en todo dispositivo sin daemon
-        // (el escenario "SIN AUDIO": la app moría aquí antes de publicar la
-        // telemetría que SÍ había leído del bus local). Band energy solo
-        // existe en la región legacy del daemon; con bus local se reporta 0
-        // y voice_score deriva a 0 por bandTotal=1e-6 (seguro).
-        if (shared) {
-            rawM.band_low_energy   = shared->ai_band_low.load(std::memory_order_relaxed);
-            rawM.band_mid_energy   = shared->ai_band_mid.load(std::memory_order_relaxed);
-            rawM.band_high_energy  = shared->ai_band_high.load(std::memory_order_relaxed);
-        }
-        // FIX: ai_band_* nunca se escriben desde el bus local — solo el daemon
-        // legacy las poblaba. Sin daemon, siempre son 0 → AdaptiveDashboard
-        // muestra LOW/MID/HIGH en 0% permanente.
-        // Fallback: cuando todas las bandas son 0 pero hay señal (rms > 0),
-        // estimar la distribución espectral con un modelo estadístico simple
-        // basado en el RMS. Distribución típica de audio mixto:
-        //   LOW  ≈ 35% de la energía total (bass + sub)
-        //   MID  ≈ 45% (voz + instrumentos medios)
-        //   HIGH ≈ 20% (presencia + brillante)
-        // Este proxy es visualmente correcto y evita que la UI quede muerta.
-        if (rawM.band_low_energy == 0.f && rawM.band_mid_energy == 0.f &&
-            rawM.band_high_energy == 0.f && rms > 1e-6f) {
-            rawM.band_low_energy  = rms * 0.35f;
-            rawM.band_mid_energy  = rms * 0.45f;
-            rawM.band_high_energy = rms * 0.20f;
-        }
+        // La memoria compartida conserva estos campos por compatibilidad ABI,
+        // pero este build no tiene un productor verificable para ai_band_*.
+        // Tampoco hay timestamp/route-generation unido al último score YAMNet:
+        // no se puede asegurar que corresponda a este bloque PCM. La ruta B real
+        // usa el RtBandMeter y el clasificador per-instance de omega_effect.cpp.
+        // Este puente global conserva solo RMS/peak y una GR del AGC cuando está
+        // habilitado; bandas y voz permanecen explícitamente no disponibles.
+        rawM.band_energy_valid = false;
+        rawM.voice_score_valid = false;
         rawM.gain_reduction_db = grDb;
-        // FIX (telemetría Compression/Voice Prot congelada en 0%): omega_effect
-        // corre en el proceso de audioserver y no puede correr
-        // VoiceProtectionController (necesita PCM crudo, no compartido entre
-        // procesos). Se usa como proxy la energía de banda media ya publicada
-        // por BandEnergyMeter (voz humana concentra energía ahí) normalizada
-        // contra el total de banda — el AdaptiveDecisionEngine consume esto
-        // igual que el voice_score real de la Ruta A.
-        const float bandTotal = rawM.band_low_energy + rawM.band_mid_energy +
-                                 rawM.band_high_energy + 1e-6f;
-        rawM.voice_score = std::clamp((rawM.band_mid_energy / bandTotal) * 1.5f, 0.0f, 1.0f);
         // Exponer band energies Ruta B al JNI getter (AdaptiveDashboard)
         g_lastBandLow .store(rawM.band_low_energy,  std::memory_order_relaxed);
         g_lastBandMid .store(rawM.band_mid_energy,  std::memory_order_relaxed);
@@ -639,45 +617,10 @@ static void audioRouteBridgeLoop() {
         g_lastRawPeak.store(peak, std::memory_order_relaxed);
         g_lastRawGrDb.store(grDb, std::memory_order_relaxed);
         g_activeRoute.store(2, std::memory_order_relaxed);
-        // FIX (Opción A de unificación — paridad de protección Ruta A/Ruta
-        // B, ver comentario extenso en omega_shared.h::ai_runtime_gain_mul):
-        // hasta acá solo se publicaban métricas HACIA el motor adaptativo.
-        // Sin este bloque, las decisiones que el motor calcula a partir de
-        // ESTAS MISMAS métricas de Spotify/YouTube nunca volvían a tocar el
-        // audio de Spotify/YouTube — se aplicaban únicamente a g_gain de la
-        // Ruta A (DSPBridge), que no procesa nada en ese momento. Ahora se
-        // lee el AdaptiveState más reciente (el mismo que ya alimenta a la
-        // Ruta A) y se escribe target_gain de vuelta al daemon.
-        static uint64_t s_lastSeenAdaptiveSeq = 0;
-        ivanna::experimental::AdaptiveState st{};
-        if (g_adaptiveEngine.adaptiveState.consumeIfNewer(st, s_lastSeenAdaptiveSeq) && shared != nullptr) {
-            shared->ai_runtime_gain_mul.store(
-                std::clamp(st.target_gain, 0.5f, 1.0f), std::memory_order_release);
-            // FIX (Ruta B — spatial_width sin efecto, gap README): antes solo
-            // target_gain volvía al daemon; spatial_width (0..1.5, sugerido
-            // por el mismo AdaptiveDecisionEngine) se calculaba pero se
-            // perdía. g_widener_b.setWidth() lo aplica en processLoop()
-            // (omega_daemon.cpp, paso 6). Clamp [0,2] = rango real de
-            // StereoWidener::setWidth(), más ancho que el [0,1.5] emitido.
-            shared->ai_runtime_spatial_width.store(
-                std::clamp(st.spatial_width, 0.0f, 2.0f), std::memory_order_release);
-            // FIX (cableado adaptativo incompleto — mismo patrón que
-            // spatial_width, gap real distinto): omega_daemon.cpp SÍ lee
-            // ai_runtime_comp_amount/ai_runtime_exciter_red en processLoop()
-            // y los aplica vía g_comp_b.setRuntimeAmount()/g_exciter_b.
-            // setRuntimeReduction() — y el socket SÍ acepta SET_AI_RUNTIME_
-            // COMP/EXCRED — pero nada en la app llamaba nunca a esos
-            // comandos, ni este bridge los escribía. compressor_amount y
-            // exciter_reduction del ADE (Ruta A, ya calculados hace tiempo)
-            // se perdían igual que spatial_width antes del fix anterior.
-            // Quedaban congelados en su default (0.0 = sin ajuste extra),
-            // así que Spotify/YouTube nunca recibía la compresión/reducción
-            // de exciter que el motor adaptativo decide en tiempo real.
-            shared->ai_runtime_comp_amount.store(
-                std::clamp(st.compressor_amount, 0.0f, 1.0f), std::memory_order_release);
-            shared->ai_runtime_exciter_red.store(
-                std::clamp(st.exciter_reduction, 0.0f, 1.0f), std::memory_order_release);
-        }
+        // La actuación SYSTEM_WIDE pertenece al ADE per-instance del
+        // omega_effect: consume el PCM local de AudioFlinger y sus actuadores
+        // viven en ese mismo contexto. Este observador global no escribe
+        // ai_runtime_* sobre una SHM que no es suya ni reporta falsa aplicación.
         ++frameCounter;
         // Log throttleado a ~1/s — este hilo NO es RT, loguear aquí es
         // seguro (a diferencia de dentro de Effect_Process/nativeProcess).
@@ -807,23 +750,34 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
-    // ═══ FASE 4B: arrancar el motor adaptativo (una sola vez) ═════════════
-    // start() crea un std::thread propio (el hilo de control lento) que
-    // corre controlLoop() a 50ms. NO se dispara desde el audio thread
-    // — este nativeInit siempre se llama desde el hilo de UI o el hilo
-    // que abre el player (ver IvannaBridgePlayer.play() y
-    // AudioForegroundService.onStartCommand()). exchange() garantiza
-    // idempotencia si el sample rate cambia y nativeInit se re-llama.
-    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
-        g_adaptiveEngine.start();
-      if (!g_adaptiveSnapshotStarted.exchange(true)) {
-          g_snapshotRunning.store(true, std::memory_order_release);
-          g_snapshotThread = std::thread(adaptiveSnapshotLoop);
-          // NO detach() — el hilo se une en JNI_OnUnload antes de que
-          // los destructores estáticos destruyan g_adaptiveEngine.
-          LOGI("AdaptiveState snapshot consumer started");
-      }
-        LOGI("AdaptiveDecisionEngine started (control thread @50ms)");
+    // ═══ FASE 4B: ciclo de vida del motor adaptativo ═════════════════════
+    // El inicio obedece a la preferencia persistida/manual, incluso si
+    // nativeInit se repite por cambio de sample rate.
+    if (ensureAdaptiveEngineStarted()) {
+        LOGI("AdaptiveDecisionEngine running (control thread @50ms)");
+    } else {
+        LOGI("AdaptiveDecisionEngine disabled by user preference or start unavailable");
+    }
+    // El consumidor de snapshots es observabilidad, no el motor. Debe vivir
+    // también cuando el usuario selecciona modo manual, para que el siguiente
+    // enable no herede una telemetría sin consumidor.
+    if (!g_adaptiveSnapshotStarted.exchange(true, std::memory_order_acq_rel)) {
+        g_snapshotRunning.store(true, std::memory_order_release);
+#if defined(__EXCEPTIONS)
+        try {
+            g_snapshotThread = std::thread(adaptiveSnapshotLoop);
+            LOGI("AdaptiveState snapshot consumer started");
+        } catch (...) {
+            g_snapshotRunning.store(false, std::memory_order_release);
+            g_adaptiveSnapshotStarted.store(false, std::memory_order_release);
+            LOGE("AdaptiveState snapshot consumer could not start");
+        }
+#else
+        // Android arm64 compila con -fno-exceptions (CMakeLists.txt): sin try/catch,
+        // mismo patrón que g_bridgeThread.
+        g_snapshotThread = std::thread(adaptiveSnapshotLoop);
+        LOGI("AdaptiveState snapshot consumer started");
+#endif
     }
     // FIX (Adaptive Feedback Loop — ruta real Spotify/YouTube): arrancar el
     // puente hacia omega_effect.cpp UNA sola vez, mismo guard que el motor
@@ -1085,8 +1039,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeSetStereoWidth(JNIEnv*, jobject, jfloa
 // de arriba, por la misma razón (evitar colisión con otros parámetros).
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeSetVoiceProtectScore(JNIEnv*, jobject, jfloat score) {
+    if (!std::isfinite(score)) return;
     g_voice_protect_score.store(
         std::clamp(score, 0.f, 1.f), std::memory_order_relaxed);
+    // Este setter solo es invocado después de una inferencia YAMNet válida.
+    g_voice_protect_score_valid.store(true, std::memory_order_release);
+}
+
+// Reset de procedencia para el cambio a modo automático, manual OFF o release.
+// No reinicia EQ, compresor, spatial DSP ni el resto del grafo.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeClearVoiceProtectScore(JNIEnv*, jobject) {
+    g_voice_protect_score.store(0.0f, std::memory_order_relaxed);
+    g_voice_protect_score_valid.store(false, std::memory_order_release);
 }
 
 // ── REINYECCION DIFERENCIAL DE RUTA A (v2.5.0) ─────────────────────────────
@@ -1624,8 +1589,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         rawM.band_low_energy   = bandEnergy(0, 1);
         rawM.band_mid_energy   = bandEnergy(2, 4);
         rawM.band_high_energy  = bandEnergy(5, 7);
+        rawM.band_energy_valid = true;
         rawM.gain_reduction_db = grDb;
         rawM.voice_score       = vpScore;
+        rawM.voice_score_valid = g_voice_protect_score_valid.load(std::memory_order_acquire);
         rawM.crest_factor_db   = (rms > 1e-6f) ? 20.0f * std::log10(std::max(peakAbs / rms, 1.0f)) : 0.0f;
         rawM.upmix_active      = g_upmixing_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
         rawM.golden_ear_active = (g_params.drive > 0.05f) ? 1.0f : 0.0f;
@@ -2709,6 +2676,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetFatigueProtection(
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeResetDSP(JNIEnv*, jobject) {
+    g_voice_protect_score.store(0.0f, std::memory_order_relaxed);
+    g_voice_protect_score_valid.store(false, std::memory_order_release);
     g_pd.stop_evo_thread();
     g_eq.reset(); g_comp.reset(); g_exciter.reset();
     g_widener.reset();
@@ -3562,46 +3531,17 @@ extern "C" float learning_bias_get(const char* param_key) {
 // de estado. ivanna_adaptive_jni.cpp queda intacto — sus stubs *_unused
 // siguen ahí por si alguien decide revivir AdaptiveEngineCore como
 // sensor independiente en el futuro (ver INTEGRATION_GUIDE.md).
-// ═══════════════════════════════════════════════════════════════════════════
-// Flag para el toggle Manual/Automático (pausa/reanuda el loop del ADE).
-// El motor A ya expone start()/stop() en g_adaptiveEngine — solo cableamos
-// el switch para que llame al método correcto según el estado.
-static std::atomic<bool> g_adaptiveEngineUiEnabled{true};
+// El toggle manual y el watchdog usan el mismo contrato serializado. El
+// handle solo se entrega cuando existe un hilo de control realmente vivo.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAdaptiveEngineEnabled(
     JNIEnv*, jobject, jboolean enabled) {
-    const bool want = (enabled == JNI_TRUE);
-    const bool prev = g_adaptiveEngineUiEnabled.exchange(want, std::memory_order_acq_rel);
-    if (prev == want) return;  // idempotente — evita start/stop dobles
-    if (want) {
-        // Reanuda el hilo de control del Motor A. Si ya está corriendo (por
-        // nativeInit), start() debe ser no-op — g_adaptiveEngineStarted lo
-        // garantiza.
-        if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
-            g_adaptiveEngine.start();
-        }
-    } else {
-        // Pausa el loop del ADE para que el modo manual pueda escribir
-        // compresor/exciter/ancho sin colisionar. Se resetea el flag
-        // "started" para que un enable(true) posterior lo re-arranque.
-        if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
-            g_adaptiveEngine.stop();
-        }
-    }
+    (void)setAdaptiveEngineEnabled(enabled == JNI_TRUE);
 }
-// Crea/asegura la instancia del Adaptive Engine. En la arquitectura actual
-// g_adaptiveEngine es un objeto estático global — no hay handle real que
-// devolver, pero la firma Kotlin exige un Long. Se devuelve la dirección
-// del singleton (opaco al lado Kotlin, solo se usa como "non-zero = OK").
-// Idempotente: llamadas repetidas devuelven el mismo puntero sin re-crear.
 JNIEXPORT jlong JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeCreateAdaptiveEngine(
     JNIEnv*, jobject) {
-    // Asegura que el motor esté corriendo (mismo path que nativeInit toma).
-    if (!g_adaptiveEngineStarted.exchange(true, std::memory_order_acq_rel)) {
-        g_adaptiveEngine.start();
-    }
-    g_adaptiveEngineUiEnabled.store(true, std::memory_order_release);
+    if (!ensureAdaptiveEngineStarted()) return 0;
     return reinterpret_cast<jlong>(&g_adaptiveEngine);
 }
 // Devuelve los 12 parámetros adaptativos suavizados. En el Motor A los
@@ -3764,32 +3704,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveTelemetry(
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsAdaptiveEngineRunning(
     JNIEnv*, jobject) {
-    if (!g_initialized.load(std::memory_order_acquire)) return JNI_FALSE;
-    if (!g_adaptiveEngineStarted.load(std::memory_order_acquire)) return JNI_FALSE;
-
-    // Detectar congelamiento real: comparar applied_count ahora vs hace ~1s.
-    // Si no ha cambiado en 1s pero el engine está "started", es un freeze.
-    static std::atomic<uint64_t> s_lastAppliedSnapshot{0};
-    static std::atomic<int64_t>  s_lastCheckMs{0};
-
-    const auto nowMs = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()
-        ).count()
-    );
-
-    const int64_t lastCheck = s_lastCheckMs.load(std::memory_order_relaxed);
-    const uint64_t currentApplied = g_lastAdaptiveApplied.load(std::memory_order_relaxed);
-
-    if (nowMs - lastCheck >= 1000) {
-        const uint64_t snap = s_lastAppliedSnapshot.exchange(
-            currentApplied, std::memory_order_relaxed);
-        s_lastCheckMs.store(nowMs, std::memory_order_relaxed);
-        // Si el count no cambió en 1s Y ya habíamos recibido datos antes → freeze
-        if (snap > 0 && snap == currentApplied) return JNI_FALSE;
-    }
-
-    return currentApplied > 0 ? JNI_TRUE : JNI_FALSE;
+    // Estado del hilo de control, no actividad de audio. El contador de
+    // bloques aplicados se expone aparte y puede permanecer quieto durante
+    // silencio, pausa o ausencia de una sesión AudioFlinger.
+    const bool enabled = g_adaptiveEngineUiEnabled.load(std::memory_order_acquire);
+    const bool running = g_adaptiveEngine.running();
+    g_adaptiveEngineStarted.store(running, std::memory_order_release);
+    return (enabled && running) ? JNI_TRUE : JNI_FALSE;
 }
 // ── nativeGetBandEnergies — expone band energies al AdaptiveDashboard ─────────
 // FloatArray[3]: [0]=low (sub/bass), [1]=mid (presencia/voz), [2]=high (brillo/sibilancia)
@@ -3874,10 +3795,10 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*) {
     g_snapshotRunning.store(false, std::memory_order_release);
     if (g_snapshotThread.joinable()) g_snapshotThread.join();
 
-    // 3. Parar el hilo de control del AdaptiveDecisionEngine.
-    if (g_adaptiveEngineStarted.exchange(false, std::memory_order_acq_rel)) {
-        g_adaptiveEngine.stop();
-    }
+    // 3. Parar y drenar siempre el hilo de control del AdaptiveDecisionEngine.
+    // No confiar solo en g_adaptiveEngineStarted: una ruta de recuperación
+    // fallida puede dejar el std::thread joinable aunque el flag esté en false.
+    (void)setAdaptiveEngineEnabled(false);
 
     // 3. Parar el worker de carga de IR Ruta A — accede a g_rirDataset/
     //    g_rirConvolver (estáticos) y no debe sobrevivir a dlclose().

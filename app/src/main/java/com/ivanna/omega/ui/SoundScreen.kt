@@ -518,8 +518,11 @@ private fun BinauralTab(
                     checked = prefs.binauralAdaptEnabled,
                     onCheckedChange = { en ->
                         updatePrefs { it.copy(binauralAdaptEnabled = en) }
-                        if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(en) }
-                        requestRouteFeatures(hrtfEnabled, en && !audioState.manualModeEnabled)
+                        val effectiveAdaptive = en && !audioState.manualModeEnabled
+                        if (IvannaNativeLib.isLoaded) runCatching {
+                            IvannaNativeLib.nativeSetAdaptiveEngineEnabled(effectiveAdaptive)
+                        }
+                        requestRouteFeatures(hrtfEnabled, effectiveAdaptive)
                     }
                 )
             }

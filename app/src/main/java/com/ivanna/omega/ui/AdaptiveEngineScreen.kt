@@ -265,7 +265,11 @@ internal fun AdaptiveEngineScreen(
                             // Motor A y Motor B nunca escriben al mismo tiempo.
                             // enabled=true  -> manual toma control.
                             // enabled=false -> motor adaptativo recupera control.
-                            IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled) }
+                            val adaptiveRequested =
+                                AdaptiveControlsPrefs.load(context).binauralAdaptEnabled && !enabled
+                            IvannaNativeLib.guardedNative(Unit) {
+                                IvannaNativeLib.nativeSetAdaptiveEngineEnabled(adaptiveRequested)
+                            }
                         } catch (_: Throwable) { }
                         runCatching {
                             val adaptiveAllowed = AdaptiveControlsPrefs.load(context).binauralAdaptEnabled && !enabled

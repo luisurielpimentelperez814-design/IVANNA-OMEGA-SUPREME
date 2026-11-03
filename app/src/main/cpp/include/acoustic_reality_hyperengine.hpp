@@ -151,10 +151,10 @@ public:
     {
         AcousticGenome g{};
         const float safeDt = (dtSeconds > 1.0e-4f) ? dtSeconds : 0.010f;
-        const float totalBand = metrics.band_low_energy + metrics.band_mid_energy + metrics.band_high_energy + 1.0e-6f;
-        const float lowFrac   = std::clamp(metrics.band_low_energy / totalBand, 0.0f, 1.0f);
-        const float midFrac   = std::clamp(metrics.band_mid_energy / totalBand, 0.0f, 1.0f);
-        const float highFrac  = std::clamp(metrics.band_high_energy / totalBand, 0.0f, 1.0f);
+        const float totalBand = ivanna::experimental::trustedBandEnergy(metrics, metrics.band_low_energy) + ivanna::experimental::trustedBandEnergy(metrics, metrics.band_mid_energy) + ivanna::experimental::trustedBandEnergy(metrics, metrics.band_high_energy) + 1.0e-6f;
+        const float lowFrac   = std::clamp(ivanna::experimental::trustedBandEnergy(metrics, metrics.band_low_energy) / totalBand, 0.0f, 1.0f);
+        const float midFrac   = std::clamp(ivanna::experimental::trustedBandEnergy(metrics, metrics.band_mid_energy) / totalBand, 0.0f, 1.0f);
+        const float highFrac  = std::clamp(ivanna::experimental::trustedBandEnergy(metrics, metrics.band_high_energy) / totalBand, 0.0f, 1.0f);
 
         // Energía temporal
         const float rmsDelta = metrics.rms - prevRms_;
@@ -208,7 +208,7 @@ public:
             const auto& dObj = decomposedObjs[i];
             // Profundidad variable modulada por la relación directo/reverberante y energía
             const float depthMod = (i == 0)
-                ? (1.4f - 0.35f * metrics.voice_score + 0.4f * reverbProxy)
+                ? (1.4f - 0.35f * ivanna::experimental::trustedVoiceScore(metrics) + 0.4f * reverbProxy)
                 : ((i == 3) ? (2.8f + 1.8f * reverbProxy) : (1.6f + 0.7f * sideRatio));
             src.posX = std::clamp(dObj.position.x * (1.0f + 0.35f * sideRatio), -3.5f, 3.5f);
             src.posY = std::clamp(depthMod, 0.5f, 7.5f);
@@ -315,9 +315,9 @@ public:
     {
         MicroDetailMap map{};
         const float confBase = std::clamp(1.0f - genome.uncertainty, 0.1f, 1.0f);
-        const float totalBand = metrics.band_low_energy + metrics.band_mid_energy + metrics.band_high_energy + 1.0e-6f;
-        const float midRatio  = std::clamp(metrics.band_mid_energy / totalBand, 0.0f, 1.0f);
-        const float highRatio = std::clamp(metrics.band_high_energy / totalBand, 0.0f, 1.0f);
+        const float totalBand = ivanna::experimental::trustedBandEnergy(metrics, metrics.band_low_energy) + ivanna::experimental::trustedBandEnergy(metrics, metrics.band_mid_energy) + ivanna::experimental::trustedBandEnergy(metrics, metrics.band_high_energy) + 1.0e-6f;
+        const float midRatio  = std::clamp(ivanna::experimental::trustedBandEnergy(metrics, metrics.band_mid_energy) / totalBand, 0.0f, 1.0f);
+        const float highRatio = std::clamp(ivanna::experimental::trustedBandEnergy(metrics, metrics.band_high_energy) / totalBand, 0.0f, 1.0f);
 
         // 0. MicroTransients
         auto& mt = map.nodes[static_cast<size_t>(MicroComponentType::MicroTransients)];
@@ -339,8 +339,8 @@ public:
 
         // 2. HumanBreath (banda formántica media-alta con presencia vocal)
         auto& hb = map.nodes[static_cast<size_t>(MicroComponentType::HumanBreath)];
-        hb.existence  = std::clamp(metrics.voice_score * midRatio * 1.35f, 0.0f, 1.0f);
-        hb.confidence = std::clamp(confBase * (0.5f + 0.5f * metrics.voice_score), 0.0f, 1.0f);
+        hb.existence  = std::clamp(ivanna::experimental::trustedVoiceScore(metrics) * midRatio * 1.35f, 0.0f, 1.0f);
+        hb.confidence = std::clamp(confBase * (0.5f + 0.5f * ivanna::experimental::trustedVoiceScore(metrics)), 0.0f, 1.0f);
         hb.posX       = genome.sources[0].posX;
         hb.posY       = std::max(0.5f, genome.sources[0].posY - 0.25f);
         hb.posZ       = genome.sources[0].posZ + 0.05f;
@@ -674,7 +674,7 @@ public:
         prop.inferenceConfidence = conf;
 
         // 1. Separación de fuentes guiada por actividad vocal, transitorios y difusividad
-        const float voiceDom = std::clamp(metrics.voice_score, 0.0f, 1.0f);
+        const float voiceDom = std::clamp(ivanna::experimental::trustedVoiceScore(metrics), 0.0f, 1.0f);
         const float diff     = genome.reflectionPattern.diffuseness;
         prop.sourceSeparationWeights[0] = std::clamp(0.85f + 0.30f * voiceDom, 0.6f, 1.25f);
         prop.sourceSeparationWeights[1] = std::clamp(0.80f + 0.25f * (1.0f - voiceDom * 0.4f), 0.5f, 1.15f);
@@ -1846,7 +1846,9 @@ public:
         state.personalField = personalModel_.synthesizePersonalField(state.timeline);
 
         // Fase 7: Optimizar contra el cerebro (Presencia, Naturalidad, Separación, Fatiga, Inmersión)
-        const float sibProxy = std::clamp(rawMetrics.band_high_energy * 2.5f, 0.0f, 1.0f);
+        const float sibProxy = std::clamp(
+            ivanna::experimental::trustedBandEnergy(rawMetrics, rawMetrics.band_high_energy) * 2.5f,
+            0.0f, 1.0f);
         const float fatProxy = std::clamp(std::fabs(adaptiveState.eq_tilt_db) / 2.5f, 0.0f, 1.0f);
         state.perceptual = PerceptualOptimizationEngine::optimizeForBrain(
             state.genome, state.microMap, state.neuralProposal, state.personalField, sibProxy, fatProxy);

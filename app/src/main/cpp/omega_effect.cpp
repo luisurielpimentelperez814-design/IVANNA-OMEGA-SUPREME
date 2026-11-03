@@ -63,6 +63,11 @@ using namespace Ivanna;
 #ifndef LOGW
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #endif
+// FIX (build arm64): los reintentos de arranque del hilo del motor adaptativo
+// (SET_CONFIG/ENABLE) reportan fallos con LOGE, que este archivo no definia.
+#ifndef LOGE
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#endif
 
 // ── AUDIT FIX #4 (plano de control) ──────────────────────────────────────────
 // EFFECT_CMD_SET_PARAM era un no-op: cualquier android.media.audiofx.
@@ -299,9 +304,15 @@ struct omega_effect_context_t {
     bool                     localWriterOpen;
     ivanna::OmegaDspSnapshot pendingSnap;
     ivanna::PunchEngine punch;    // v2.5.41: impacto predictivo (amount desde snapshot.ext_flags)
-    float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE (antes descartado)
-    float adaptImmScale = 1.0f;   // v2.5.15: upmix_immersivity del ADE (antes descartado)
+    float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE
+    float adaptImmScale = 1.0f;   // v2.5.15: upmix_immersivity del ADE
+    // Salidas directas del AdaptiveDecisionEngine de esta instancia de
+    // AudioFlinger. Se aplican en el mismo consumidor PCM, no solo al snapshot.
+    float adaptiveDecisionTargetGain{1.0f}; // solo atenuación [0.5, 1.0]
+    float adaptiveDecisionCompAmount{0.0f}; // intensidad compresor [0,1]
+    float adaptiveDecisionExciterReduction{0.0f}; // reducción adicional, [0,1]
     float lastVoiceProb = 0.0f;   // v2.5.15: probabilidad VOICE medida (clasificador) para el motor adaptativo
+    bool lastVoiceProbValid = false;
     ivanna::supreme::SupremeAcousticStabilityGuard stabilityGuard;
     ivanna::spatial::IvannaAudioPipeline* audioPipeline;
     ivanna::unified::DeclarativeUnifiedPipeline* unifiedPipeline;
@@ -336,6 +347,15 @@ static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept;
 // bloques entre 128 y 2048 frames; se reserva un margen holgado para no
 // necesitar reasignar nunca en la ruta caliente.
 static constexpr int OMEGA_RT_MAX_FRAMES = 8192;
+
+// Neutraliza únicamente los campos de actuación adaptativa del snapshot.
+// compressor, exciter_reduction, EQ, HRTF y geometría siguen siendo controles
+// explícitos; target_gain/comp_amount/exc_red no deben sobrevivir al modo OFF.
+static inline void omega_neutralize_adaptive_snapshot(ivanna::OmegaDspSnapshot& s) noexcept {
+    s.target_gain = 1.0f;
+    s.comp_amount = 0.0f;
+    s.exc_red = 0.0f;
+}
 
 // AUDIT FIX (control plane reconnect): aplica un OmegaDspSnapshot recibido
 // vía SHM al IvannaFusionCore local. Se llama fuera del hot-path (una vez
@@ -1059,11 +1079,12 @@ static int32_t omega_process(effect_handle_t self,
             }
             ctx->adaptiveEnabled =
                 (snap.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
-            omega_apply_snapshot(fc, ctx->antiDolby, snap);
-            omega_apply_supreme_axes(ctx, snap);
-            omega_apply_room(ctx, snap);  // cable RIR: sala desde snapshot
-            omega_apply_saf_to_rir(ctx, snap);  // SAF q -> wetScale/rt60/early/decorrel de la IR viva
-            ctx->pendingSnap = snap;
+            ctx->pendingSnap = snap; // conserva los valores originales del control plane
+            if (!ctx->adaptiveEnabled) omega_neutralize_adaptive_snapshot(ctx->pendingSnap);
+            omega_apply_snapshot(fc, ctx->antiDolby, ctx->pendingSnap);
+            omega_apply_supreme_axes(ctx, ctx->pendingSnap);
+            omega_apply_room(ctx, ctx->pendingSnap);  // cable RIR: sala desde snapshot
+            omega_apply_saf_to_rir(ctx, ctx->pendingSnap);  // SAF q -> wetScale/rt60/early/decorrel de la IR viva
         }
     }
 
@@ -1198,8 +1219,18 @@ static int32_t omega_process(effect_handle_t self,
             (ctx->config.outputCfg.samplingRate != 0) ? (float)ctx->config.outputCfg.samplingRate : 48000.0f);
         float unityProbs[NUM_CLASSES] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
         if (unityCls) unityCls->getClassProbabilities(unityProbs);
+        float probabilityMass = 0.0f;
+        bool probabilitiesFinite = (unityCls != nullptr);
+        for (size_t i = 0; i < NUM_CLASSES; ++i) {
+            if (!std::isfinite(unityProbs[i]) || unityProbs[i] < 0.0f) {
+                probabilitiesFinite = false;
+                break;
+            }
+            probabilityMass += unityProbs[i];
+        }
+        ctx->lastVoiceProbValid = probabilitiesFinite && probabilityMass > 1.0e-6f;
         const float unityVoice = std::clamp(
-            std::isfinite(unityProbs[static_cast<size_t>(AudioContextClass::VOICE)])
+            ctx->lastVoiceProbValid
                 ? unityProbs[static_cast<size_t>(AudioContextClass::VOICE)] : 0.0f,
             0.0f, 1.0f);
         ctx->lastVoiceProb = unityVoice;
@@ -1228,8 +1259,15 @@ static int32_t omega_process(effect_handle_t self,
         const float coordinatedWfsScale = std::clamp(
             ctx->adaptWfsScale / std::max(1.0f, unityWfsSpread), 0.5f, 1.0f);
         if (fc) fc->setSpatialCoordination(coordinatedWfsScale, ctx->adaptImmScale);
+        const float requestedExciterReduction =
+            std::clamp(ctx->pendingSnap.exc_red, 0.0f, 1.0f);
+        const float adeExciterReduction =
+            ctx->adaptiveEnabled
+                ? std::clamp(ctx->adaptiveDecisionExciterReduction, 0.0f, 1.0f) : 0.0f;
+        const float totalExciterReduction =
+            std::max(requestedExciterReduction, adeExciterReduction);
         if (fc) fc->setHarmonicCoordination(std::min(
-            1.0f - std::clamp(ctx->pendingSnap.exc_red, 0.0f, 1.0f), unityCtx.harmonicBudget));
+            1.0f - totalExciterReduction, unityCtx.harmonicBudget));
 
         ctx->stabilityGuard.beginBlock(L, R, (size_t)chunk, true);
 
@@ -1309,9 +1347,35 @@ static int32_t omega_process(effect_handle_t self,
             
             const auto& adaptParams = ctx->adaptiveEngine->getSmoothParameters();
 
-            // Consumir parámetros dinámicos y espaciales calculados por AdaptiveEngineV2
+            // Un solo actuador de compresión por ruta: se conserva el
+            // umbral de usuario/snapshot, V2 aplica su corrección dinámica y
+            // ADE añade protección de ratio. pendingSnap.comp_amount ya es el
+            // resultado ADE consumido; no debe contarse por segunda vez.
+            const float v2Threshold = std::clamp(
+                std::isfinite(adaptParams.compressorThreshold)
+                    ? adaptParams.compressorThreshold : -20.0f,
+                -60.0f, 0.0f);
+            const float userThreshold = std::clamp(
+                std::isfinite(ctx->pendingSnap.compressor) && ctx->pendingSnap.compressor < 0.0f
+                    ? ctx->pendingSnap.compressor : -20.0f,
+                -60.0f, 0.0f);
+            const float v2ThresholdDelta = std::clamp(v2Threshold - (-20.0f), -40.0f, 20.0f);
+            const float effectiveThreshold =
+                std::clamp(userThreshold + v2ThresholdDelta, -60.0f, 0.0f);
+
+            const float v2Ratio = std::clamp(
+                std::isfinite(adaptParams.compressorRatio) ? adaptParams.compressorRatio : 1.0f,
+                1.0f, 20.0f);
+            const float requestedRatio = 1.0f + 7.0f * std::clamp(
+                std::isfinite(ctx->pendingSnap.comp_amount) ? ctx->pendingSnap.comp_amount : 0.0f,
+                0.0f, 1.0f);
+            const float adeRatio = 1.0f + 7.0f * std::clamp(
+                std::isfinite(ctx->adaptiveDecisionCompAmount)
+                    ? ctx->adaptiveDecisionCompAmount : 0.0f,
+                0.0f, 1.0f);
+            const float effectiveRatio = std::max(v2Ratio, std::max(requestedRatio, adeRatio));
             if (fc) {
-                fc->setCompressorParams(adaptParams.compressorThreshold, adaptParams.compressorRatio);
+                fc->setCompressorParams(effectiveThreshold, effectiveRatio);
             }
             const float overallTrim = std::clamp(adaptParams.overallGain, 0.75f, 1.15f);
             const float isoGain = adaptParams.applyISO226
@@ -1324,7 +1388,17 @@ static int32_t omega_process(effect_handle_t self,
             // (cada bloque cambia el valor suavizado -> clic periodico). Ahora el
             // techo es 1.0 y la ganancia se rampa linealmente por muestra desde el
             // valor del bloque anterior hasta el nuevo.
-            adaptiveGainTarget = std::clamp(overallTrim * isoGain, 0.50f, 1.0f);
+            const float requestedGain = std::clamp(
+                std::isfinite(ctx->pendingSnap.target_gain) ? ctx->pendingSnap.target_gain : 1.0f,
+                0.50f, 1.0f);
+            const float adeGain = std::clamp(
+                std::isfinite(ctx->adaptiveDecisionTargetGain)
+                    ? ctx->adaptiveDecisionTargetGain : 1.0f,
+                0.50f, 1.0f);
+            // Producto de objetivos de atenuación: límite final <=1 y rampa
+            // por muestra. Se respetan tanto el request del snapshot como ADE.
+            adaptiveGainTarget = std::clamp(
+                overallTrim * isoGain * requestedGain * adeGain, 0.50f, 1.0f);
         }
         const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
         if (std::fabs(adaptiveGainTarget - 1.0f) > 1.0e-4f ||
@@ -1632,32 +1706,53 @@ static int32_t omega_process(effect_handle_t self,
             const float invFrames = (outFrames > 0) ? (1.0f / (float)outFrames) : 0.0f;
             rawM.rms              = rms;
             rawM.peak             = pk;
+            // SafetyLimiter::getGainReduction() entrega dB de reducción
+            // aplicada por el último bloque, no una razón lineal ni un proxy.
+            rawM.gain_reduction_db = ctx->safetyLimiter
+                ? std::max(0.0f, ctx->safetyLimiter->getGainReduction()) : 0.0f;
             rawM.band_low_energy  = __builtin_sqrtf(bandAccum.low  * invFrames);
             rawM.band_mid_energy  = __builtin_sqrtf(bandAccum.mid  * invFrames);
             rawM.band_high_energy = __builtin_sqrtf(bandAccum.high * invFrames);
-            // v2.5.15: antes una constante inventada (0.72 si "voiced", 0.35 si no) que el motor adaptativo
-            // trataba como probabilidad real. Ahora la probabilidad VOICE medida por el clasificador.
+            rawM.band_energy_valid = true; // bandMeter procesó este bloque PCM real
             rawM.voice_score      = ctx->lastVoiceProb;
+            rawM.voice_score_valid = ctx->lastVoiceProbValid;
             rawM.wfs_active       = (ctx->pendingSnap.wfs_enabled != 0u) ? 1.0f : 0.0f;
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
             rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;
             rawM.volterra_active  = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1.0f : 0.0f;
-if (ctx->adaptive) {
+if (ctx->adaptive && ctx->adaptiveEnabled) {
+                // No alimentar ni ejecutar decisiones ADE cuando el snapshot
+                // del control plane deshabilita adaptación (modo manual/OFF).
+                // Las métricas PCM permanecen disponibles para la evidencia
+                // del efecto; el motor adaptativo no retiene nuevas muestras.
                 ctx->adaptive->rawMetrics.publish(
                     ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
                 ivanna::experimental::AdaptiveState adSt{};
-                if (ctx->adaptiveEnabled &&
-                    ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
-                    ctx->pendingSnap.target_gain = std::clamp(adSt.target_gain, 0.50f, 1.0f);
-                    ctx->pendingSnap.comp_amount = std::clamp(adSt.compressor_amount, 0.0f, 1.0f);
-                    ctx->pendingSnap.exc_red     = std::clamp(adSt.exciter_reduction, 0.0f, 1.0f);
-                    ctx->adaptWfsScale = std::clamp(adSt.wfs_spread_scale,  0.5f, 1.0f);
-                    ctx->adaptImmScale = std::clamp(adSt.upmix_immersivity, 0.5f, 1.0f);
-                } else if (!ctx->adaptiveEnabled) {
-                    // Disabled means neutral actuation; raw metrics remain observable.
-                    ctx->adaptWfsScale = 1.0f;
-                    ctx->adaptImmScale = 1.0f;
+                if (ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
+                    ctx->adaptiveDecisionTargetGain =
+                        std::clamp(std::isfinite(adSt.target_gain) ? adSt.target_gain : 1.0f,
+                                   0.50f, 1.0f);
+                    ctx->adaptiveDecisionCompAmount =
+                        std::clamp(std::isfinite(adSt.compressor_amount) ? adSt.compressor_amount : 0.0f,
+                                   0.0f, 1.0f);
+                    ctx->adaptiveDecisionExciterReduction =
+                        std::clamp(std::isfinite(adSt.exciter_reduction) ? adSt.exciter_reduction : 0.0f,
+                                   0.0f, 1.0f);
+                    ctx->adaptWfsScale = std::clamp(
+                        std::isfinite(adSt.wfs_spread_scale) ? adSt.wfs_spread_scale : 1.0f,
+                        0.5f, 1.0f);
+                    ctx->adaptImmScale = std::clamp(
+                        std::isfinite(adSt.upmix_immersivity) ? adSt.upmix_immersivity : 1.0f,
+                        0.5f, 1.0f);
                 }
+            } else if (!ctx->adaptiveEnabled) {
+                // OFF/manual: los controles originales del snapshot ya fueron
+                // neutralizados; restablecer únicamente salidas ADE separadas.
+                ctx->adaptiveDecisionTargetGain = 1.0f;
+                ctx->adaptiveDecisionCompAmount = 0.0f;
+                ctx->adaptiveDecisionExciterReduction = 0.0f;
+                ctx->adaptWfsScale = 1.0f;
+                ctx->adaptImmScale = 1.0f;
             }
         }
 
@@ -1934,7 +2029,12 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (!ctx->adaptive) {
                     ctx->adaptive = new ivanna::experimental::AdaptiveDecisionEngine();
                     ctx->lastAdaptiveSeq = 0;
-                    ctx->adaptive->start();
+                }
+                // SET_CONFIG is a non-realtime control callback. Retry start
+                // after a previous thread-creation failure; start() is
+                // serialized/idempotent and never reallocates the DSP graph.
+                if (ctx->adaptive && !ctx->adaptive->start()) {
+                    LOGE("Route-B AdaptiveDecisionEngine thread start failed; next SET_CONFIG/ENABLE will retry");
                 }
                 // AUDIT FIX (control plane reconnect): abrir el reader del
                 // OmegaControlBus (SHM cross-process). Si el daemon todavía
@@ -1959,10 +2059,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                             }
                             ctx->adaptiveEnabled =
                                 (seed.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
-                            omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, seed);
-                            omega_apply_supreme_axes(ctx, seed);
-                            omega_apply_room(ctx, seed);
                             ctx->pendingSnap = seed;
+                            if (!ctx->adaptiveEnabled) omega_neutralize_adaptive_snapshot(ctx->pendingSnap);
+                            omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, ctx->pendingSnap);
+                            omega_apply_supreme_axes(ctx, ctx->pendingSnap);
+                            omega_apply_room(ctx, ctx->pendingSnap);
                             ctx->lastAppliedGen = seen;
                             LOGI("OmegaControlBus attached (seed gen=%llu route=%d)",
                                  (unsigned long long)seen,
@@ -2010,6 +2111,14 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             }
             break;
         case EFFECT_CMD_ENABLE:
+            // ENABLE is also a non-realtime control callback. Retry the
+            // per-session control thread if SET_CONFIG previously could not
+            // create it. A failed start leaves the DSP path intact and
+            // reports NOT_READY instead of inventing active telemetry.
+            if (ctx && ctx->adaptive && !ctx->adaptive->running() &&
+                !ctx->adaptive->start()) {
+                LOGE("Route-B AdaptiveDecisionEngine still NOT_READY on ENABLE; retry on next SET_CONFIG");
+            }
             // Beacon: cuenta solo la transicion deshabilitado->habilitado (ENABLE repetido
             // no debe inflar el contador). Camino NO-RT: open()/mmap permitido aqui.
             if (ctx && !ctx->enabled) ivanna::effectBeacon().onEnable();
@@ -2281,7 +2390,10 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;
     ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
-    ctx->adaptiveEnabled = true; // legacy-compatible until the first valid daemon snapshot
+    // Fail closed until a valid control snapshot explicitly requests adaptation.
+    // The daemon's makeDefault() carries the saved/default feature bit when
+    // available; an absent control plane is not permission to self-enable.
+    ctx->adaptiveEnabled = false;
     ctx->adaptiveApplyBlocks = 0;
     ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
     ctx->ctrlBusOpen    = false;
@@ -2303,6 +2415,9 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
 // aquí (post-declaración de ctx) para no reordenar los símbolos AELI.
 static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept {
     if (!ctx) return;
+    ctx->adaptiveEnabled =
+        (ctx->pendingSnap.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
+    if (!ctx->adaptiveEnabled) omega_neutralize_adaptive_snapshot(ctx->pendingSnap);
     // (a) Apply directo al DSP local — nunca se pierde el parámetro.
     if (ctx->fusionCore) {
         omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, ctx->pendingSnap);

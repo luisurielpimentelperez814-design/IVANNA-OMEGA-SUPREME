@@ -93,6 +93,12 @@ object DSPBridge {
         nativeSetVoiceProtectScore(score)
     }
 
+    /** Clear a non-inference score and mark voice_score_valid=false natively. */
+    fun clearVoiceProtectScore() {
+        if (!loaded) return
+        nativeClearVoiceProtectScore()
+    }
+
     fun setAdaptiveParams(params: FloatArray) {
         if (!loaded) return
 
@@ -296,6 +302,7 @@ object DSPBridge {
     )
     private external fun nativeSetStereoWidth(width: Float)
     private external fun nativeSetVoiceProtectScore(score: Float)
+    private external fun nativeClearVoiceProtectScore()
     
 
     

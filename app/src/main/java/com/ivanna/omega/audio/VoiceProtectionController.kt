@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +56,9 @@ class VoiceProtectionController(context: Context) {
 
     private val classifier = YamnetClassifier(context)
     private val scope = CoroutineScope(Dispatchers.Default + Job())
+    private val classifierMutex = Mutex()
+    private val inferenceLock = Any()
+    private var inferenceGeneration = 0L
     private var classifyJob: Job? = null
 
     private var resampleAccumulator = 0.0
@@ -84,16 +89,34 @@ class VoiceProtectionController(context: Context) {
      * suavizado para que el modo automático no arranque con un salto.
      */
     fun setManualMode(active: Boolean, score: Float = 1.0f) {
-        manualModeEnabled = active
-        if (active) {
-            classifyJob?.cancel()
-            smoothedScore = score.coerceIn(0f, 1f)
-            DSPBridge.setVoiceProtectScore(smoothedScore)
-            Log.i(TAG, "Modo manual activado, score=$smoothedScore")
-        } else {
-            smoothedScore = 0f
-            bufferFill = 0
-            Log.i(TAG, "Modo manual desactivado — vuelve control automático (YAMNet)")
+        synchronized(inferenceLock) {
+            val transitioned = manualModeEnabled != active
+            if (transitioned) {
+                // Invalidate first: a TFLite/native classify() already running
+                // may finish after Job.cancel() because that call is blocking.
+                inferenceGeneration++
+                classifyJob?.cancel()
+                classifyJob = null
+                bufferFill = 0
+                resampleAccumulator = 0.0
+                manualModeEnabled = active
+            }
+
+            if (active) {
+                smoothedScore = score.coerceIn(0f, 1f)
+                // Explicit manual score is a valid user control, not an
+                // inference result. It is invalidated when leaving manual mode.
+                DSPBridge.setVoiceProtectScore(smoothedScore)
+                _voiceScore.value = smoothedScore
+                _sharedVoiceScore.value = smoothedScore
+                Log.i(TAG, "Modo manual activado, score=$smoothedScore")
+            } else if (transitioned) {
+                smoothedScore = 0f
+                DSPBridge.clearVoiceProtectScore()
+                _voiceScore.value = 0f
+                _sharedVoiceScore.value = 0f
+                Log.i(TAG, "Modo manual desactivado — score inválido/neutro hasta la siguiente inferencia YAMNet")
+            }
         }
     }
 
@@ -105,42 +128,55 @@ class VoiceProtectionController(context: Context) {
      * modifica el audio; es solo para clasificación.
      */
     fun feed(stereoInterleaved: FloatArray, frames: Int, sourceSampleRate: Int) {
-        if (!enabled) return
-        if (manualModeEnabled) return  // score ya aplicado directo en setManualMode()
         if (frames <= 0 || sourceSampleRate <= 0) return
 
-        // Downmix a mono + resample simple por decimación con acumulador
-        // fraccional (suficiente para clasificación, no para reproducción).
-        val ratio = sourceSampleRate.toDouble() / TARGET_SR
-        var srcIdx = 0
-        while (srcIdx < frames) {
-            if (bufferFill >= YAMNET_INPUT_LENGTH) break
-            val l = stereoInterleaved[srcIdx * 2]
-            val r = stereoInterleaved[srcIdx * 2 + 1]
-            monoBuffer[bufferFill] = (l + r) * 0.5f
-            bufferFill++
-            resampleAccumulator += ratio
-            srcIdx += resampleAccumulator.toInt().coerceAtLeast(1)
-            resampleAccumulator -= resampleAccumulator.toInt()
-        }
+        synchronized(inferenceLock) {
+            if (!enabled || manualModeEnabled) return
+            val safeFrames = minOf(frames, stereoInterleaved.size / 2)
+            if (safeFrames <= 0) return
 
-        if (bufferFill >= YAMNET_INPUT_LENGTH) {
-            val frameToClassify = monoBuffer.copyOf(YAMNET_INPUT_LENGTH)
-            bufferFill = 0
-            // Clasificación en corrutina aparte: TFLite tarda unos ms,
-            // no debe bloquear el loop de decodificación/escritura de
-            // IvannaBridgePlayer.
-            if (classifyJob?.isActive != true) {
+            // Downmix to mono and resample for classification only.
+            val ratio = sourceSampleRate.toDouble() / TARGET_SR
+            var srcIdx = 0
+            while (srcIdx < safeFrames && bufferFill < YAMNET_INPUT_LENGTH) {
+                val l = stereoInterleaved[srcIdx * 2]
+                val r = stereoInterleaved[srcIdx * 2 + 1]
+                monoBuffer[bufferFill++] = (l + r) * 0.5f
+                resampleAccumulator += ratio
+                val advance = resampleAccumulator.toInt()
+                srcIdx += advance.coerceAtLeast(1)
+                resampleAccumulator -= advance
+            }
+
+            if (bufferFill >= YAMNET_INPUT_LENGTH && classifyJob?.isActive != true) {
+                val frameToClassify = monoBuffer.copyOf(YAMNET_INPUT_LENGTH)
+                bufferFill = 0
+                val generation = inferenceGeneration
+
                 classifyJob = scope.launch {
                     try {
-                        val result = classifier.classify(frameToClassify)
-                        if (result.isValid) {
-                            val raw = if (result.speech > SPEECH_THRESHOLD) result.speech else 0f
-                            smoothedScore += EMA_ALPHA * (raw - smoothedScore)
-                            DSPBridge.setVoiceProtectScore(smoothedScore)
-                            _voiceScore.value = smoothedScore
-                            _sharedVoiceScore.value = smoothedScore  // 3I: exponer globalmente
+                        // Serialize calls to the same TFLite interpreter. A
+                        // cancelled blocking inference may still be executing;
+                        // a newer inference must not enter that interpreter
+                        // concurrently.
+                        classifierMutex.withLock {
+                            val result = classifier.classify(frameToClassify)
+                            if (result.isValid) {
+                                synchronized(inferenceLock) {
+                                    if (generation != inferenceGeneration ||
+                                        manualModeEnabled || !enabled) {
+                                        return@withLock
+                                    }
+                                    val raw = if (result.speech > SPEECH_THRESHOLD) result.speech else 0f
+                                    smoothedScore += EMA_ALPHA * (raw - smoothedScore)
+                                    DSPBridge.setVoiceProtectScore(smoothedScore)
+                                    _voiceScore.value = smoothedScore
+                                    _sharedVoiceScore.value = smoothedScore
+                                }
+                            }
                         }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         Log.w(TAG, "Error clasificando: ${e.message}")
                     }
@@ -150,9 +186,27 @@ class VoiceProtectionController(context: Context) {
     }
 
     fun release() {
-        enabled = false
-        classifyJob?.cancel()
-        classifier.release()
-        DSPBridge.setVoiceProtectScore(0f)
+        synchronized(inferenceLock) {
+            inferenceGeneration++
+            enabled = false
+            manualModeEnabled = false
+            classifyJob?.cancel()
+            classifyJob = null
+            bufferFill = 0
+            resampleAccumulator = 0.0
+            smoothedScore = 0f
+            DSPBridge.clearVoiceProtectScore()
+            _voiceScore.value = 0f
+            _sharedVoiceScore.value = 0f
+        }
+        // classify() may be a blocking native/TFLite call and can outlive its
+        // cancelled Job. Queue interpreter release behind that call instead
+        // of racing classifier.release() against an in-flight invocation.
+        scope.launch {
+            classifierMutex.withLock {
+                classifier.release()
+            }
+            scope.coroutineContext[Job]?.cancel()
+        }
     }
 }

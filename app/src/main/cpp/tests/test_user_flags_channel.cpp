@@ -711,6 +711,16 @@ TEST(RouteBAudioFeaturesPure, UsesDisjointReservedTemporalBitsAndRoundTrips) {
     EXPECT_NE(combined & OMEGA_TEMPORAL_FIELD_XTC_BIT, 0u);
 }
 
+TEST(RouteBAudioFeaturesPure, DefaultSnapshotKeepsAdaptiveDisabledUntilPreferenceRestore) {
+    const OmegaDspSnapshot snapshot = OmegaDspSnapshot::makeDefault();
+    ASSERT_TRUE(snapshot.isValid());
+    bool hrtf = false;
+    bool adaptive = true;
+    omega_effect_features_decode(snapshot.temporal_field, hrtf, adaptive);
+    EXPECT_TRUE(hrtf);
+    EXPECT_FALSE(adaptive);
+}
+
 TEST(RouteBAudioFeaturesDaemon, PublishesSwitchesAndPreservesThemAcrossCommands) {
     Harness h;
     CommandServer cs;

@@ -1,3 +1,16 @@
+## v2.5.235 (526) - 2026-11-02
+
+- **omega_effect arm64 build fix:** Route-B adaptive engine start retries in `omega_effect.cpp` report failures through `LOGE`, which that file did not define (only `LOGI` and `LOGW`). The macro is now defined with the same `#ifndef` pattern as `LOGW`. Found by syntax-checking every native source touched by PR #17 with `-fno-exceptions -fno-rtti` before the arm64 runner reached the `omega_effect` target.
+
+**Validation boundary:** compilation fix only; no change to audio processing. Runtime behavior of the start-retry path still requires Moto G85 5G device validation.
+
+## v2.5.234 (525) - 2026-11-02
+
+- **arm64 native build fix:** the adaptive engine lifecycle work (PR #17) added `try/catch` blocks in `adaptive_decision_engine.cpp` and in the JNI snapshot-thread start. `ivanna_omega` and `omega_effect` are compiled with `-fno-exceptions` on arm64-v8a, so Build APK failed with "cannot use 'try' with exceptions disabled". The blocks are now guarded with `#if defined(__EXCEPTIONS)`, the same pattern already used in `evolutionary_kernel_jni.cpp`; host tests keep the exception-safe path and the original code is preserved.
+- **Behavior on device:** with exceptions disabled, a failed `std::thread` creation aborts instead of being recovered. This matches the existing `g_bridgeThread` start path.
+
+**Validation boundary:** this release fixes compilation only. CI confirms the build; audible behavior, latency and thread-start robustness under memory pressure still require Moto G85 5G device validation.
+
 ## v2.5.233 (524) - 2026-11-02
 
 - **Unified route-aware HRTF gate:** Sound, SpatialControlPanel, OEM controls and NPE callbacks now use the same policy as `RouteDspCalibrator`. A saved HRTF request cannot re-enable binaural processing on the built-in speaker or an explicitly declared external line-out.
