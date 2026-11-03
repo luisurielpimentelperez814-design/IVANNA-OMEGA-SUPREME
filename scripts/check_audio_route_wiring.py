@@ -159,7 +159,7 @@ def main() -> int:
         # Route-A WFS must obey the same AUX > binaural-WFS priority as
         # Route B while retaining the user's WFS preference for restoration.
         wfs_policy_start = jni.find("static inline bool routeAWfsAllowed()")
-        wfs_policy_end = jni.find("\\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
+        wfs_policy_end = jni.find("\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
         wfs_policy = jni[wfs_policy_start:wfs_policy_end] if wfs_policy_end > wfs_policy_start else ""
         if ("g_wfs_enabled.load(std::memory_order_acquire)" not in wfs_policy or
                 "!g_aux_field_enabled.load(std::memory_order_acquire)" not in wfs_policy):
@@ -169,8 +169,9 @@ def main() -> int:
             raise AssertionError("Route-A renderer must consume the shared effective WFS state")
         if jni.count("processRouteAWfs(g_ats.pdOutL, g_ats.pdOutR, n);") != 1 or jni.count("processRouteAWfs(oL, oR, n);") != 1:
             raise AssertionError("both live Route-A JNI audio consumers must use the AUX-aware WFS policy")
-        if jni.count("!routeAWfsAllowed();") != 2 or "||\\n                                              routeAWfsAllowed());" not in jni:
-            raise AssertionError("both Route-A spatial gates and the M/S hierarchy must use effective WFS state")
+        if (jni.count("!routeAWfsAllowed();") != 2 or
+                "const bool spatialHierarchyActive = (g_upmixing_enabled.load(std::memory_order_relaxed) ||" not in jni or
+                "routeAWfsAllowed());" not in jni):
     except AssertionError as exc:
         print(f"FAIL audio-route-wiring: {exc}", file=sys.stderr)
         return 1
