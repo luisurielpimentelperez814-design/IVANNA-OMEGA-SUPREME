@@ -2024,7 +2024,12 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (!ctx->adaptive) {
                     ctx->adaptive = new ivanna::experimental::AdaptiveDecisionEngine();
                     ctx->lastAdaptiveSeq = 0;
-                    ctx->adaptive->start();
+                }
+                // SET_CONFIG is a non-realtime control callback. Retry start
+                // after a previous thread-creation failure; start() is
+                // serialized/idempotent and never reallocates the DSP graph.
+                if (ctx->adaptive && !ctx->adaptive->start()) {
+                    LOGE("Route-B AdaptiveDecisionEngine thread start failed; next SET_CONFIG/ENABLE will retry");
                 }
                 // AUDIT FIX (control plane reconnect): abrir el reader del
                 // OmegaControlBus (SHM cross-process). Si el daemon todavía
@@ -2101,6 +2106,14 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             }
             break;
         case EFFECT_CMD_ENABLE:
+            // ENABLE is also a non-realtime control callback. Retry the
+            // per-session control thread if SET_CONFIG previously could not
+            // create it. A failed start leaves the DSP path intact and
+            // reports NOT_READY instead of inventing active telemetry.
+            if (ctx && ctx->adaptive && !ctx->adaptive->running() &&
+                !ctx->adaptive->start()) {
+                LOGE("Route-B AdaptiveDecisionEngine still NOT_READY on ENABLE; retry on next SET_CONFIG");
+            }
             // Beacon: cuenta solo la transicion deshabilitado->habilitado (ENABLE repetido
             // no debe inflar el contador). Camino NO-RT: open()/mmap permitido aqui.
             if (ctx && !ctx->enabled) ivanna::effectBeacon().onEnable();
@@ -2372,7 +2385,10 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;
     ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
-    ctx->adaptiveEnabled = true; // legacy-compatible until the first valid daemon snapshot
+    // Fail closed until a valid control snapshot explicitly requests adaptation.
+    // The daemon's makeDefault() carries the saved/default feature bit when
+    // available; an absent control plane is not permission to self-enable.
+    ctx->adaptiveEnabled = false;
     ctx->adaptiveApplyBlocks = 0;
     ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
     ctx->ctrlBusOpen    = false;
