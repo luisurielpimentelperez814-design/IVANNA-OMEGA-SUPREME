@@ -19,7 +19,17 @@ int main() {
             right[i] = dryR[i] = 0.17f * std::sin(0.037f * static_cast<float>(i));
         }
         engine.setEnabled(false);
-        for (int block = 0; block < 3; ++block) engine.process(left, right, 512);
+        // Each call represents a fresh upstream PCM block. The engine works
+        // in-place, so restore the source before every callback rather than
+        // accidentally feeding the previous callback's output back as input.
+        for (int block = 0; block < 3; ++block) {
+            for (int i = 0; i < 512; ++i) {
+                left[i] = dryL[i];
+                right[i] = dryR[i];
+            }
+            engine.process(left, right, 512);
+        }
+        // Three 512-frame blocks exceed the 15 ms bypass ramp at 48 kHz.
         for (int i = 0; i < 512; ++i) {
             CHECK(left[i] == dryL[i]);
             CHECK(right[i] == dryR[i]);
@@ -27,6 +37,10 @@ int main() {
         engine.setEnabled(true);
         bool changed = false;
         for (int block = 0; block < 8; ++block) {
+            for (int i = 0; i < 512; ++i) {
+                left[i] = dryL[i];
+                right[i] = dryR[i];
+            }
             engine.process(left, right, 512);
             for (int i = 0; i < 512; ++i) {
                 CHECK(std::isfinite(left[i]));
