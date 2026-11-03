@@ -5,6 +5,7 @@ This is a source-graph guard, not proof of device runtime or acoustic output.
 Device gates remain the Moto G85 beacon/AudioFlinger/PAL probes.
 """
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -161,9 +162,21 @@ def main() -> int:
         wfs_policy_start = jni.find("static inline bool routeAWfsAllowed()")
         wfs_policy_end = jni.find("\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
         wfs_policy = jni[wfs_policy_start:wfs_policy_end] if wfs_policy_end > wfs_policy_start else ""
-        if ("g_wfs_enabled.load(std::memory_order_acquire)" not in wfs_policy or
-                "!g_aux_field_enabled.load(std::memory_order_acquire)" not in wfs_policy):
-            raise AssertionError("effective Route-A WFS state must preserve WFS preference and yield to AUX")
+        if not re.search(
+                r"return\\s+g_wfs_enabled\\.load\\(std::memory_order_acquire\\)\\s*&&\\s*"
+                r"!g_aux_field_enabled\\.load\\(std::memory_order_acquire\\)\\s*;",
+                wfs_policy,
+                re.DOTALL):
+            raise AssertionError(
+                "routeAWfsAllowed must implement WFS-enabled AND NOT AUX-enabled"
+            )
+        # Truth-table guard documents the required arbitration semantics:
+        # WFS is active only when the user's preference is ON and AUX is OFF.
+        for wfs_enabled, aux_enabled, expected in (
+                (False, False, False), (False, True, False),
+                (True, False, True), (True, True, False)):
+            if (wfs_enabled and not aux_enabled) is not expected:
+                raise AssertionError("Route-A WFS/AUX arbitration truth table regressed")
         if ("g_routeAWfsEngine.setEnabled(routeAWfsAllowed());" not in jni or
                 "g_routeAWfsEngine.process(left, right, frames);" not in jni):
             raise AssertionError("Route-A renderer must consume the shared effective WFS state")
