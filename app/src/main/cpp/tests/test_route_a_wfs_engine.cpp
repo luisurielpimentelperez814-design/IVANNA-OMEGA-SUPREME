@@ -204,5 +204,26 @@ int main() {
             CHECK(outR[i] == dryR[i]);
         }
     }
+    // 384 kHz reaches 242 samples of interaural delay at kMaxItdS.
+    // Exercise the full ITD range under ASan/UBSan to catch history wrap errors.
+    {
+        ivanna::spatial::WfsRenderer renderer;
+        CHECK(renderer.init(384000.0f, 256, 7));
+        const float x[7] = {-1.5f, 1.5f, -1.0f, 1.0f, -0.5f, 0.5f, 0.0f};
+        const float y[7] = {0.0f, 0.0f, 0.5f, 0.5f, 1.0f, 1.0f, 1.5f};
+        const float z[7] = {};
+        renderer.setSpeakerLayout3D(x, y, z, 7);
+        renderer.setObject(0, 0.0f, 1.5f, 1.0f);
+        const float* inputs[1];
+        float source[256], outL[256]{}, outR[256]{};
+        for (int i = 0; i < 256; ++i) source[i] = 0.1f * std::sin(0.03f * i);
+        inputs[0] = source;
+        renderer.process(inputs, 1, outL, outR, 256);
+        for (int i = 0; i < 256; ++i) {
+            CHECK(std::isfinite(outL[i]));
+            CHECK(std::isfinite(outR[i]));
+        }
+    }
+
     return 0;
 }
