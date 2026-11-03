@@ -21,8 +21,15 @@ En el snapshot de Ruta A se verifican consumidores de perfil de ruta, EQ por ban
 
 ### Ruta B — reproductor/captura propiedad de IVANNA
 
-`MediaCodec o PlaybackCapture permitido → PCM estéreo → StereoAudioResampler
-→ DSPBridge / etapas locales → AudioTrack propio → AudioFlinger → HAL → salida`
+Reproductor propio (`IvannaBridgePlayer`):
+
+`MediaCodec → PCM estéreo → StereoAudioResampler → DSPBridge / etapas locales
+→ AudioTrack propio → AudioFlinger → HAL → salida`
+
+Captura de reproducción permitida (`PlaybackCaptureService`, ruta independiente que no usa `StereoAudioResampler`):
+
+`AudioRecord (AudioPlaybackCapture) → PCM estéreo a SAMPLE_RATE (48 kHz) → DSPBridge / etapas locales
+→ AudioTrack propio → AudioFlinger → HAL → salida`
 
 `IvannaBridgePlayer` toma timestamps del mismo `AudioTrack`, empareja `framePosition` y `nanoTime`, obtiene una corrección acotada del único `AudioTrackBufferPll` y la entrega a `StereoAudioResampler.setClockCorrectionPpm()`. Este es el ASRC software vivo para el reproductor propio. No controla el reloj físico del DAC, el oscilador Bluetooth ni las demás aplicaciones.
 
@@ -47,7 +54,7 @@ No es una tercera salida independiente: es un punto de entrada de procesamiento 
 | WFS / HOA / upmix | FusionCore y renderers con arbitraje de prioridad | Buses/objetos virtuales renderizados a la salida que realmente exponga el sistema |
 | NHO / dinámica / limitador | DSPBridge/JNI local y consumidores del snapshot del efecto | Deben conservar headroom, bypass transparente y límites por bloque |
 | Adaptativo / NPE | setters/estado nativo y consumer de bloque; Ruta A evidencia por contador de bloques | Habilitado no significa procesando; exigir contador/delta real |
-| ASRC software del reproductor | AudioTrackBufferPll → StereoAudioResampler | Solo AudioTrack propiedad de IVANNA |
+| ASRC software del reproductor | AudioTrackBufferPll → StereoAudioResampler | Solo el AudioTrack de `IvannaBridgePlayer`; `PlaybackCaptureService` no usa este ASRC |
 | VariableAsrc C++ + ASRC HAL global | componente nativo y tests existen; no hay call-site de producción para `VariableAsrc::setTargetRatio()` | **NOT_APPROVED / BLOCKED** hasta recibir pares frame/timestamp del PAL propietario y conectar el actuador al mismo stream |
 | 16 fuentes → 5 buses | PhysicalTargetDispatcher experimental | **NOT_IMPLEMENTED como salida física 5.0**; cinco buses lógicos no prueban cinco canales físicos |
 
