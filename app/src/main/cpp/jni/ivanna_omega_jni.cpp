@@ -188,6 +188,17 @@ struct LivePipelineAutoRegistrar {
 
 static PDEngine       g_pd;    // NHO + BiquadEnvelopeBank + CueBasedSpatial
 static ivanna::spatial::RouteAWfsEngine g_routeAWfsEngine;
+
+// AUX has priority over the binaural WFS renderer in Route A, matching the
+// Route-B spatial policy. Keep the user's WFS preference intact so disabling
+// AUX restores WFS automatically; RouteAWfsEngine applies the 15 ms crossfade.
+static inline void processRouteAWfs(float* left, float* right, int frames) noexcept {
+    const bool wfsAllowed =
+        g_wfs_enabled.load(std::memory_order_acquire) &&
+        !g_aux_field_enabled.load(std::memory_order_acquire);
+    g_routeAWfsEngine.setEnabled(wfsAllowed);
+    g_routeAWfsEngine.process(left, right, frames);
+}
 static DSPParams      g_params;
 static std::atomic<bool> g_initialized{false};
 // FIX RT (Ruta A): el dataset RIR y su convolver se inicializan en
@@ -1388,7 +1399,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // buffers en g_ats
     g_pd.process_block(g_ats.chL, g_ats.chR, g_ats.pdOutL, g_ats.pdOutR, n);
     // WFS real en Ruta A, post-PDEngine y pre-RIR/limitador final.
-    g_routeAWfsEngine.process(g_ats.pdOutL, g_ats.pdOutR, n);
+    processRouteAWfs(g_ats.pdOutL, g_ats.pdOutR, n);
     // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
     // correlación L/R real del material SECO (dryL/dryR, antes de
     // cualquier DSP) y aplica un ensanchamiento M/S extra cuando el
@@ -2155,7 +2166,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // PDEngine (NHO + Spatial on modes 1/2)
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
     // Misma etapa WFS que DSPBridge.nativeProcess: evita divergencia entre APIs JNI.
-    g_routeAWfsEngine.process(oL, oR, n);
+    processRouteAWfs(oL, oR, n);
 
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
     if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
