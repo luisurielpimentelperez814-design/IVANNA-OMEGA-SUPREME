@@ -244,6 +244,15 @@ object FotoHoloEngine {
                         }
                     }
 
+                    // El estado FotoHolo (SET_FOTOHOLO_STATE) debe sanar con CUALQUIER ruta y también en
+                    // reposo: si el daemon aún no estaba listo cuando se publicó (arranque de la app,
+                    // reinicio del módulo) o el usuario apagó FotoHolo con el daemon caído, la rama
+                    // inactiva hace `continue` y el fallo quedaba congelado. Va ANTES de ese `continue`.
+                    if (nowMs - lastStateRetryMs >= 1_500L) {
+                        lastStateRetryMs = nowMs
+                        FotoHoloRouteB.retryStatePublishIfNeeded()
+                    }
+
                     if (!shouldSample && !modulating && !systemWideRouteActive) {
                         _telemetry.value = _telemetry.value.copy(
                             enabled = enabled, bypass = bypass, hasSignal = false,
@@ -354,14 +363,6 @@ object FotoHoloEngine {
                     } else {
                         lastRouteBCommanded = Float.NaN
                         lastRouteBBase = Float.NaN
-                    }
-
-                    // El estado FotoHolo (SET_FOTOHOLO_STATE) debe sanar con CUALQUIER ruta activa: si el
-                    // daemon aún no estaba listo cuando se publicó (arranque de la app, reinicio del
-                    // módulo), con ROUTE_A el bloque de arriba no corre y el fallo quedaba congelado.
-                    if (nowMs - lastStateRetryMs >= 1_500L) {
-                        lastStateRetryMs = nowMs
-                        FotoHoloRouteB.retryStatePublishIfNeeded()
                     }
 
                     // Refrescar read-back en cada tick de control tras una escritura
