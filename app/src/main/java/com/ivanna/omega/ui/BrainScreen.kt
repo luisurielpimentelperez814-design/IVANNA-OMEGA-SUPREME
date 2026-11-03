@@ -156,8 +156,14 @@ private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null)
                     onCheckedChange = { enabled ->
                         AudioStateManager.updateState { s -> s.copy(manualModeEnabled = enabled) }
                         // Motor A y manual nunca escriben a la vez (mismo contrato que AdaptiveEngineScreen).
+                        val adaptiveRequested =
+                            AdaptiveControlsPrefs.load(context).binauralAdaptEnabled && !enabled
                         if (IvannaNativeLib.isLoaded)
-                            runCatching { IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled) } }
+                            runCatching {
+                                IvannaNativeLib.guardedNative(Unit) {
+                                    IvannaNativeLib.nativeSetAdaptiveEngineEnabled(adaptiveRequested)
+                                }
+                            }
                         // Manual mode is exclusive: it disables adaptive actuation in AudioFlinger too.
                         runCatching {
                             OmegaEngineBridge.queueSystemWideAdaptiveEnabled(
