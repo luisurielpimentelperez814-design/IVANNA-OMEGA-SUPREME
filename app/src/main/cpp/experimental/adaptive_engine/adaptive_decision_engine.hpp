@@ -70,6 +70,9 @@
 #include <cstdint>
 #include <cstring>
 #include <thread>
+#if defined(__linux__) || defined(__ANDROID__)
+#include <pthread.h>
+#endif
 #include <mutex>
 #include <type_traits>
 
@@ -500,10 +503,17 @@ private:
     std::atomic<float> environmentRt60_{0.30f};
     std::atomic<float> adaptiveLambdaT_{0.50f};
 
-    // Serializes start/stop/join so a watchdog and UI toggle cannot race
-    // on std::thread::joinable()/assignment.
+    // Serializes start/stop/join so a watchdog and UI toggle cannot race.
     mutable std::mutex controlLifecycleMutex_;
-    std::thread       controlThread_;
+#if defined(__linux__) || defined(__ANDROID__)
+    // pthread_create reports EAGAIN/ENOMEM as an error code and remains
+    // recoverable under Android's -fno-exceptions native build.
+    static void* controlThreadEntry(void* self) noexcept;
+    pthread_t controlThread_{};
+    bool controlThreadJoinable_{false}; // guarded by controlLifecycleMutex_
+#else
+    std::thread controlThread_;
+#endif
     std::atomic<bool> running_{false};
 
     static constexpr int kControlIntervalMs = 50;
