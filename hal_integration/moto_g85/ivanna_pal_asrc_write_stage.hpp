@@ -14,7 +14,8 @@
 // No allocations, locks, or logging occur in processAndWrite(). Configure and
 // allocate on the stream setup/control thread. If a block is only partly
 // consumed, the caller MUST retain and resubmit the unconsumed input frames.
-// A failed PAL write is a stream error: do not replay already-consumed input.
+// PAL may also accept a partial output write: this stage retains the unwritten
+// output bytes and drains them before accepting another input block.
 
 #include "ivanna_pal_asrc_output_path.hpp"
 
@@ -30,17 +31,22 @@ class PalAsrcWriteStage {
 public:
     using QueryPairedSample = PalAsrcOutputPath::QueryPairedSample;
 
-    // Must submit exactly byteCount bytes to the existing PAL stream and
-    // return the real pal_stream_write status. It must not open another stream.
-    using WriteBytes = int32_t (*)(void* context, const void* data,
+    // PAL pal_stream_write returns ssize_t: positive bytes written, zero for
+    // no progress, or a negative error. int64_t preserves that contract on
+    // the supported 64-bit Android target without importing private headers.
+    using WriteBytes = int64_t (*)(void* context, const void* data,
                                    size_t byteCount) noexcept;
 
     struct Result {
         uint32_t framesConsumed = 0;
         uint32_t framesProduced = 0;
-        int32_t palStatus = 0;
+        int64_t palBytesWrittenOrError = 0;
+        size_t bytesPending = 0;
         bool processed = false;
         bool writeAttempted = false;
+        bool writeComplete = false;
+        bool writeContractViolation = false;
+        bool partialFrameWrite = false;
     };
 
     PalAsrcWriteStage(QueryPairedSample query, void* queryContext,
@@ -70,7 +76,10 @@ public:
         const size_t bytesPerOutput =
             static_cast<size_t>(maxOut) * config.channels * sizeof(float);
         if (bytesPerOutput > std::numeric_limits<size_t>::max() -
-                                 (sampleBytes - 1)) return false;
+                                 (sampleBytes - 1)) {
+            path_.stop();
+            return false;
+        }
 
         // max_align_t storage safely accommodates float, int16_t and int32_t.
         const size_t words = (bytesPerOutput + sampleBytes - 1) / sampleBytes;
@@ -86,6 +95,10 @@ public:
         maxInputFrames_ = maxInputFrames;
         scratchBytes_ = words * sampleBytes;
         configured_ = true;
+        pendingBytes_ = 0;
+        pendingOffset_ = 0;
+        bytesPerFrame_ = 0;
+        poisoned_ = false;
         return true;
     }
 
@@ -95,6 +108,11 @@ public:
 
     void reset() noexcept {
         path_.reset();
+        // A route/clock discontinuity invalidates any queued converted PCM.
+        pendingBytes_ = 0;
+        pendingOffset_ = 0;
+        bytesPerFrame_ = 0;
+        poisoned_ = false;
     }
 
     void stop() noexcept {
@@ -103,6 +121,10 @@ public:
         channels_ = 0;
         maxInputFrames_ = 0;
         scratchBytes_ = 0;
+        pendingBytes_ = 0;
+        pendingOffset_ = 0;
+        bytesPerFrame_ = 0;
+        poisoned_ = false;
         configured_ = false;
     }
 
@@ -130,11 +152,72 @@ public:
     }
 
 private:
+    bool flushPending(Result& result) noexcept {
+        if (pendingBytes_ == 0) {
+            result.writeComplete = true;
+            return true;
+        }
+        if (poisoned_ || !write_ || bytesPerFrame_ == 0) {
+            result.bytesPending = pendingBytes_ - pendingOffset_;
+            return false;
+        }
+
+        const size_t remaining = pendingBytes_ - pendingOffset_;
+        result.writeAttempted = true;
+        const auto* bytes =
+            reinterpret_cast<const uint8_t*>(scratch_.data()) + pendingOffset_;
+        const int64_t written = write_(writeContext_, bytes, remaining);
+        result.palBytesWrittenOrError = written;
+
+        if (written < 0) {
+            result.bytesPending = remaining;
+            return false; // Preserve pending PCM; caller handles stream error.
+        }
+        if (static_cast<uint64_t>(written) > remaining) {
+            poisoned_ = true;
+            result.writeContractViolation = true;
+            result.bytesPending = remaining;
+            return false;
+        }
+        if (written == 0) {
+            result.bytesPending = remaining;
+            return false; // No progress: retry only on the next caller entry.
+        }
+
+        const size_t accepted = static_cast<size_t>(written);
+        if ((accepted % bytesPerFrame_) != 0) {
+            // PAL accepted a fraction of a PCM frame. Continuing would submit
+            // a misaligned buffer, so fail closed until reset/reconfigure.
+            pendingOffset_ += accepted;
+            poisoned_ = true;
+            result.partialFrameWrite = true;
+            result.bytesPending = pendingBytes_ - pendingOffset_;
+            return false;
+        }
+
+        pendingOffset_ += accepted;
+        if (pendingOffset_ == pendingBytes_) {
+            pendingBytes_ = 0;
+            pendingOffset_ = 0;
+            result.bytesPending = 0;
+            result.writeComplete = true;
+            return true;
+        }
+
+        result.bytesPending = pendingBytes_ - pendingOffset_;
+        return false;
+    }
+
     template <typename Sample>
     Result processAndWrite(const Sample* input, uint32_t inputFrames) noexcept {
         Result result{};
         if (!configured_ || !input || inputFrames == 0 ||
-            inputFrames > maxInputFrames_ || !write_) return result;
+            inputFrames > maxInputFrames_ || !write_ || poisoned_) return result;
+
+        // Never accept new input while a previous converted block is pending.
+        // If it drains now, this call may proceed with the caller's current
+        // (still-unconsumed) input block.
+        if (pendingBytes_ != 0 && !flushPending(result)) return result;
 
         const uint32_t capacityFrames = path_.maxOutputFrames(inputFrames);
         const size_t requiredBytes =
@@ -147,12 +230,16 @@ private:
         result.framesProduced = converted.framesProduced;
         result.processed = true;
 
-        if (converted.framesProduced == 0) return result;
+        if (converted.framesProduced == 0) {
+            result.writeComplete = true;
+            return result;
+        }
 
-        const size_t outputBytes =
+        pendingBytes_ =
             static_cast<size_t>(converted.framesProduced) * channels_ * sizeof(Sample);
-        result.writeAttempted = true;
-        result.palStatus = write_(writeContext_, output, outputBytes);
+        pendingOffset_ = 0;
+        bytesPerFrame_ = static_cast<size_t>(channels_) * sizeof(Sample);
+        (void)flushPending(result);
         return result;
     }
 
@@ -176,6 +263,10 @@ private:
     uint32_t channels_ = 0;
     uint32_t maxInputFrames_ = 0;
     size_t scratchBytes_ = 0;
+    size_t pendingBytes_ = 0;
+    size_t pendingOffset_ = 0;
+    size_t bytesPerFrame_ = 0;
+    bool poisoned_ = false;
     bool configured_ = false;
 };
 
