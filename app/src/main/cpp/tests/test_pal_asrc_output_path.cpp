@@ -138,3 +138,15 @@ TEST(PalAsrcOutputPath, ReporterDoesNotTruncateUnknownSnapshotLayout) {
     EXPECT_EQ(st.st_size, 226);
     std::remove(path.c_str());
 }
+
+TEST(PalAsrcOutputPath, RejectsUnfilteredDownsamplingAndAllowsSincDownsampling) {
+    PalAsrcOutputPath path(nullptr, nullptr);
+    ::omega::AsrcConfig config;
+    config.inputRateHz = 48000;
+    config.outputRateHz = 44100;
+    config.mode = ::omega::AsrcMode::kCubicHermite;
+    EXPECT_FALSE(path.configure(config));
+
+    config.mode = ::omega::AsrcMode::kPolyphaseSinc;
+    EXPECT_TRUE(path.configure(config));
+}
