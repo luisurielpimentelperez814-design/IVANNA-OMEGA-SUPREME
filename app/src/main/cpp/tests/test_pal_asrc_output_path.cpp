@@ -6,6 +6,7 @@
 #include <cstring>
 #include <ctime>
 #include <limits>
+#include <sys/stat.h>
 #include <vector>
 
 namespace {
@@ -120,3 +121,20 @@ TEST(PalAsrcOutputPath, FutureTimestampNeverEnablesCorrection) {
 }
 
 } // namespace
+
+TEST(PalAsrcOutputPath, ReporterDoesNotTruncateUnknownSnapshotLayout) {
+    const std::string path = "/tmp/ivanna_pal_asrc_legacy_" + std::to_string(::getpid());
+    std::remove(path.c_str());
+    std::FILE* file = std::fopen(path.c_str(), "wb");
+    ASSERT_NE(file, nullptr);
+    ASSERT_EQ(::ftruncate(::fileno(file), 226), 0);
+    std::fclose(file);
+
+    PalAsrcOutputPath outputPath(nullptr, nullptr);
+    EXPECT_FALSE(outputPath.openReporter(path.c_str()));
+
+    struct stat st{};
+    ASSERT_EQ(::stat(path.c_str(), &st), 0);
+    EXPECT_EQ(st.st_size, 226);
+    std::remove(path.c_str());
+}
