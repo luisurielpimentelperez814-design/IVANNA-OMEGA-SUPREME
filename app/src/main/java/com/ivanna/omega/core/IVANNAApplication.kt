@@ -127,6 +127,21 @@ class IVANNAApplication : Application() {
 
         super.onCreate()
         AudioStateManager.attachPersistence(this)
+
+        // La preferencia persistida debe gobernar el motor nativo ANTES de
+        // que AudioBackendSelector, un AudioSessionReceiver o la Activity
+        // puedan llamar DSPBridge.nativeInit(). El modo manual siempre gana.
+        val adaptiveRequested =
+            com.ivanna.omega.ui.AdaptiveControlsPrefs.load(this).binauralAdaptEnabled &&
+            !AudioStateManager.audioState.value.manualModeEnabled
+        if (IvannaNativeLib.isLoaded && !adaptiveRequested) {
+            runCatching {
+                IvannaNativeLib.nativeSetAdaptiveEngineEnabled(false)
+            }.onFailure {
+                Log.w(TAG, "No se pudo aplicar preferencia manual/adaptativa inicial: ${it.message}")
+            }
+        }
+        Log.d(TAG, "Adaptive bootstrap preference: enabled=$adaptiveRequested")
         Log.d(TAG, "=== IVANNA DSP Application iniciada ===")
 
         // FIX (crash): consumer unico del canal DSP.
