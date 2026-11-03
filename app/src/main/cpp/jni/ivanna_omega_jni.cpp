@@ -659,6 +659,13 @@ static inline float adaptive_mode_base_strength(int mode) noexcept {
     }
 }
 static inline float adaptive_ui_strength() noexcept {
+    // Fail closed when the ADE is disabled, not initialized, or its control
+    // thread failed to start. Stopping the worker alone must not leave its
+    // last non-neutral snapshot acting on Route A indefinitely (manual mode).
+    if (!g_adaptiveEngineUiEnabled.load(std::memory_order_acquire) ||
+        !g_adaptiveEngineStarted.load(std::memory_order_acquire)) {
+        return 0.0f;
+    }
     const float intensity = std::clamp(
         g_adaptiveUiIntensity.load(std::memory_order_relaxed), 0.f, 100.f) * 0.01f;
     const int mode = g_adaptiveUiMode.load(std::memory_order_relaxed);
