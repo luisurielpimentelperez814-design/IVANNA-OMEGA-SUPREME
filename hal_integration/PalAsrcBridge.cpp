@@ -611,7 +611,7 @@ PalAsrcBridge::ProcessResult PalAsrcBridge::processLocked(const T* in, uint32_t 
   // supplies a manual ratio, or when drift tracking is disabled.
   const bool needsClock = manualRatio_.load(std::memory_order_relaxed) <= 0.0 &&
                           driftTracking_.load(std::memory_order_relaxed);
-  updateDrift(needsClock ? nowNs() : 0);
+  updateDrift(needsClock);
 
   const uint32_t ch = channels_;
   uint32_t inPos = 0, outPos = 0;
@@ -666,7 +666,7 @@ PalAsrcBridge::ProcessResult PalAsrcBridge::processLocked(const T* in, uint32_t 
 }
 
 // Drift controller: runs once per callback, a handful of flops + clock read.
-void PalAsrcBridge::updateDrift(uint64_t tNs) noexcept {
+void PalAsrcBridge::updateDrift(bool needsClock) noexcept {
   double alpha = 1.0;
   const double manual = manualRatio_.load(std::memory_order_relaxed);
 
@@ -675,6 +675,9 @@ void PalAsrcBridge::updateDrift(uint64_t tNs) noexcept {
   } else if (driftTracking_.load(std::memory_order_relaxed)) {
     uint64_t hwFrames = 0, hwNs = 0;
     const bool haveHw = readHardwareTimestamp(hwFrames, hwNs);
+    // Read CLOCK_MONOTONIC only after the seqlock snapshot. A concurrent
+    // publisher may otherwise make a just-published sample appear future-dated.
+    const uint64_t tNs = needsClock ? nowNs() : 0;
     const bool fresh = haveHw && hwNs <= tNs &&
                        (tNs - hwNs) <= kHwTimestampMaxAgeNs;
 
