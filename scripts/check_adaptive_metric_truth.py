@@ -22,6 +22,10 @@ def main() -> int:
     wave = read("app/src/main/cpp/include/omega_wave_stages.hpp")
     seed = read("app/src/main/cpp/jni/ivanna_spatial_jni.cpp")
     reality = read("app/src/main/cpp/include/acoustic_reality_hyperengine.hpp")
+    app_boot = read("app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt")
+    activity_boot = read("app/src/main/java/com/ivanna/omega/MainActivity.kt")
+    self_heal = read("app/src/main/java/com/ivanna/omega/agent/SelfHealingAgent.kt")
+    lifecycle_test = read("app/src/main/cpp/experimental/adaptive_engine/tests/test_adaptive_engine.cpp")
 
     try:
         for needle in (
@@ -84,8 +88,8 @@ def main() -> int:
             "rawM.gain_reduction_db = ctx->safetyLimiter",
             "ctx->adaptiveDecisionTargetGain",
             "ctx->adaptiveDecisionCompAmount",
-            "const float snapshotRatio = 1.0f + 7.0f * std::clamp(",
-            "const float effectiveRatio = std::max(v2Ratio, std::max(snapshotRatio, adeRatio));",
+            "const float effectiveRatio = std::max(v2Ratio, adeRatio);",
+            "ctx->pendingSnap.exc_red = 0.0f;",
             "const float effectiveThreshold =",
             "ctx->pendingSnap.compressor",
             "adaptiveGainTarget = std::clamp(overallTrim * isoGain * adeGain, 0.50f, 1.0f);",
@@ -112,6 +116,30 @@ def main() -> int:
             raise AssertionError("AcousticReality sibilance proxy bypasses spectral validity")
         if "metrics.voice_score" in reality:
             raise AssertionError("AcousticReality has a direct unvalidated voice-score read")
+
+        # Lifecycle contract: start is retryable, create cannot override a
+        # user-disabled state, and UI/watchdog restore the persisted request.
+        for needle in (
+            "bool AdaptiveDecisionEngine::start() noexcept",
+            "controlLifecycleMutex_",
+        ):
+            source = engine if "AdaptiveDecisionEngine::start" in needle else header
+            if needle not in source:
+                raise AssertionError(f"adaptive lifecycle contract missing: {needle}")
+        if "if (!ensureAdaptiveEngineStarted()) return 0;" not in jni:
+            raise AssertionError("nativeCreateAdaptiveEngine can claim a disabled/failed engine is ready")
+        if "g_adaptiveEngineUiEnabled.store(true" in jni:
+            raise AssertionError("nativeCreateAdaptiveEngine must not override the user's OFF/manual preference")
+        if "g_adaptiveEngine.running()" not in jni:
+            raise AssertionError("JNI health query does not inspect the real control thread")
+        if "AdaptiveControlsPrefs.load(this).binauralAdaptEnabled" not in app_boot:
+            raise AssertionError("Application bootstrap does not restore the persisted adaptive preference")
+        if "AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled" not in activity_boot:
+            raise AssertionError("Activity bootstrap does not honor the persisted adaptive preference")
+        if "!engineRunning" not in self_heal or "!adaptiveRequested" not in self_heal:
+            raise AssertionError("self-heal can override user preference or confuse silence with thread death")
+        if "testControlThreadLifecycle();" not in lifecycle_test:
+            raise AssertionError("native lifecycle regression test is not in the test runner")
 
     except AssertionError as exc:
         print(f"FAIL adaptive-metric-truth: {exc}", file=sys.stderr)
