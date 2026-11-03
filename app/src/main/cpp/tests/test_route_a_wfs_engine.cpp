@@ -12,6 +12,14 @@
 } while (false)
 
 int main() {
+    // Exercise the exact pure policy called by production JNI, not a
+    // duplicated Python truth table. AUX wins while preserving WFS preference.
+    using ivanna::spatial::isRouteAWfsAllowed;
+    CHECK(!isRouteAWfsAllowed(false, false));
+    CHECK(!isRouteAWfsAllowed(false, true));
+    CHECK(isRouteAWfsAllowed(true, false));
+    CHECK(!isRouteAWfsAllowed(true, true));
+
     {
         ivanna::spatial::RouteAWfsEngine engine;
         CHECK(engine.prepare(48000.0f, 512));
