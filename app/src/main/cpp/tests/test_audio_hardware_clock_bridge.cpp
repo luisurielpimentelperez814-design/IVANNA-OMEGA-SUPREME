@@ -57,6 +57,28 @@ TEST(HardwareClockBridge, InvalidSnapshotCanBeRetriedAfterPublisherInitializesIt
     std::remove(path.c_str());
 }
 
+TEST(HardwareClockBridge, OpensLegacyV2PathWhenPreferredPathIsMissing) {
+    const std::string preferred = testPath() + "_v2";
+    const std::string legacy = testPath() + "_legacy";
+    std::remove(preferred.c_str());
+    std::remove(legacy.c_str());
+
+    ivanna::audio::HardwareClockPublisher publisher;
+    ASSERT_TRUE(publisher.open(legacy.c_str()));
+    ASSERT_TRUE(publisher.publish({48000, 3000000000ull, 48000, 21, 2}));
+
+    ivanna::audio::HardwareClockReader reader;
+    ASSERT_TRUE(reader.open(preferred.c_str(), legacy.c_str()));
+    ivanna::audio::HardwareClockSample sample{};
+    ASSERT_TRUE(reader.read(sample));
+    EXPECT_EQ(sample.presentedFrames, 48000ull);
+    EXPECT_EQ(sample.streamId, 21ull);
+    reader.close();
+    publisher.close();
+    std::remove(preferred.c_str());
+    std::remove(legacy.c_str());
+}
+
 TEST(HardwareClockBridge, PublishesAndReadsDriverSnapshot) {
     const std::string path = testPath();
     std::remove(path.c_str());
