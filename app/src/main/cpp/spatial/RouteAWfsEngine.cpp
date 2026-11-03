@@ -146,10 +146,14 @@ void RouteAWfsEngine::process(float* left, float* right, int frames) noexcept {
     // derived from the actual seven-speaker geometry in applyLayout().
     const float alpha = impl_->dryLowpassCoeff;
     for (int i = 0; i < frames; ++i) {
-        impl_->dryLowpassL += alpha * (left[i] - impl_->dryLowpassL);
-        impl_->dryLowpassR += alpha * (right[i] - impl_->dryLowpassR);
-        impl_->wetL[i] += left[i] - impl_->dryLowpassL;
-        impl_->wetR[i] += right[i] - impl_->dryLowpassR;
+        // A non-finite PCM sample must not poison the recursive dry crossover:
+        // its state is shared across callbacks and otherwise remains NaN/Inf.
+        const float safeL = std::isfinite(left[i]) ? left[i] : 0.0f;
+        const float safeR = std::isfinite(right[i]) ? right[i] : 0.0f;
+        impl_->dryLowpassL += alpha * (safeL - impl_->dryLowpassL);
+        impl_->dryLowpassR += alpha * (safeR - impl_->dryLowpassR);
+        impl_->wetL[i] += safeL - impl_->dryLowpassL;
+        impl_->wetR[i] += safeR - impl_->dryLowpassR;
     }
     impl_->renderer.blendWithBypass(left, right, impl_->wetL, impl_->wetR,
                                     left, right, frames);
