@@ -190,6 +190,11 @@ def main() -> int:
         enabled_body = jni[enabled_start:enabled_end] if enabled_end > enabled_start else ""
         if "!g_initialized.load(std::memory_order_acquire)" not in enabled_body:
             raise AssertionError("native ON preference can start the control thread before DSP initialization")
+        strength_start = jni.find("static inline float adaptive_ui_strength()")
+        strength_end = jni.find("\n}", strength_start) if strength_start >= 0 else -1
+        strength_body = jni[strength_start:strength_end] if strength_end > strength_start else ""
+        if "g_adaptiveEngineUiEnabled.load(std::memory_order_acquire)" not in strength_body or "g_adaptiveEngineStarted.load(std::memory_order_acquire)" not in strength_body:
+            raise AssertionError("Route A adaptive strength must fail closed when ADE is disabled or not running")
         native_init_start = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(")
         native_init_end = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeSet", native_init_start)
         native_init = jni[native_init_start:native_init_end] if native_init_end > native_init_start else ""
