@@ -1515,3 +1515,23 @@ target_link_libraries(test_processor_evidence PRIVATE GTest::gtest_main Threads:
 target_include_directories(test_processor_evidence PRIVATE .. ../include ../spatial host_stubs)
 target_compile_options(test_processor_evidence PRIVATE -Wall -Wextra)
 add_test(NAME test_processor_evidence COMMAND test_processor_evidence)
+
+
+# HAL PAL -> bounded servo -> variable-ratio ASRC output path.
+# This is a host contract test; it does not claim a Motorola vendor-HAL build.
+add_executable(test_pal_asrc_output_path
+  test_pal_asrc_output_path.cpp
+  ../../../../../hal_integration/PalAsrcBridge.cpp
+)
+target_include_directories(test_pal_asrc_output_path PRIVATE
+  ..
+  ../include
+  ../../../../../hal_integration
+)
+target_link_libraries(test_pal_asrc_output_path PRIVATE GTest::gtest_main Threads::Threads)
+target_compile_options(test_pal_asrc_output_path PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_pal_asrc_output_path PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_pal_asrc_output_path PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_pal_asrc_output_path)
