@@ -1,6 +1,8 @@
 #include "spatial/RouteAWfsEngine.hpp"
+#include "spatial/WfsRenderer.hpp"
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 #define CHECK(condition) do { \
     if (!(condition)) { \
@@ -104,6 +106,28 @@ int main() {
         for (int i = 0; i < 256; ++i) {
             CHECK(std::isfinite(left[i]));
             CHECK(std::isfinite(right[i]));
+        }
+    }
+    // The bypass endpoint must remain bit-transparent even if the wet
+    // renderer has produced a non-finite sample: IEEE-754 NaN * 0 is NaN.
+    {
+        ivanna::spatial::WfsRenderer renderer;
+        constexpr int kFadeFrames = 720; // 15 ms at 48 kHz
+        CHECK(renderer.init(48000.0f, kFadeFrames, 7));
+        float dryL[kFadeFrames], dryR[kFadeFrames];
+        float wetL[kFadeFrames], wetR[kFadeFrames];
+        float outL[kFadeFrames]{}, outR[kFadeFrames]{};
+        for (int i = 0; i < kFadeFrames; ++i) {
+            dryL[i] = 0.23f;
+            dryR[i] = -0.17f;
+            wetL[i] = wetR[i] = std::numeric_limits<float>::quiet_NaN();
+        }
+        renderer.setEnabled(false);
+        renderer.blendWithBypass(dryL, dryR, wetL, wetR,
+                                 outL, outR, kFadeFrames);
+        for (int i = 0; i < kFadeFrames; ++i) {
+            CHECK(outL[i] == dryL[i]);
+            CHECK(outR[i] == dryR[i]);
         }
     }
     return 0;
