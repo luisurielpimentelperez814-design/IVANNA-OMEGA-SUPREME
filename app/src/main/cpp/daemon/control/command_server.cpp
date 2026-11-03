@@ -813,10 +813,10 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         }
 
     } else if (strcmp(action,"SET_YAMNET_SCORES")==0 || strcmp(action,"PUSH_YAMNET_SCORES")==0) {
-        const float speechRaw = _jsonFloat(json,"speech",0.f);
-        const float musicRaw = _jsonFloat(json,"music",0.f);
+        const float speechRaw = _jsonFloat(json,"speech",std::nanf(""));
+        const float musicRaw = _jsonFloat(json,"music",std::nanf(""));
         const float classRaw = _jsonFloat(json,"classId",-1.f);
-        const float confRaw = _jsonFloat(json,"confidence",0.f);
+        const float confRaw = _jsonFloat(json,"confidence",std::nanf(""));
         if (!std::isfinite(speechRaw) || !std::isfinite(musicRaw) ||
             !std::isfinite(classRaw) || !std::isfinite(confRaw) ||
             classRaw < 0.f || classRaw > 520.f || std::floor(classRaw) != classRaw) {
