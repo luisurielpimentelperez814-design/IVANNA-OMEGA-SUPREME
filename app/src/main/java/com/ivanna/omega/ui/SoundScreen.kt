@@ -506,7 +506,7 @@ private fun BinauralTab(
                             runCatching { IvannaNativeLib.nativeSetBinauralEnabled(en) }
                         }
                         com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = en
-                        requestRouteFeatures(en, prefs.binauralAdaptEnabled)
+                        requestRouteFeatures(en, routeAdaptiveEnabled)
                     }
                 )
             }
