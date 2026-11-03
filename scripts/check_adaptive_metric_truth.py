@@ -14,6 +14,7 @@ def read(path: str) -> str:
 
 
 def main() -> int:
+    """Validate metric provenance, ADE lifecycle, and both audio-route OFF contracts."""
     header = read("app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp")
     engine = read("app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.cpp")
     jni = read("app/src/main/cpp/jni/ivanna_omega_jni.cpp")
@@ -193,8 +194,34 @@ def main() -> int:
         strength_start = jni.find("static inline float adaptive_ui_strength()")
         strength_end = jni.find("\n}", strength_start) if strength_start >= 0 else -1
         strength_body = jni[strength_start:strength_end] if strength_end > strength_start else ""
-        if "g_adaptiveEngineUiEnabled.load(std::memory_order_acquire)" not in strength_body or "g_adaptiveEngineStarted.load(std::memory_order_acquire)" not in strength_body:
-            raise AssertionError("Route A adaptive strength must fail closed when ADE is disabled or not running")
+        normalized_strength = " ".join(strength_body.split())
+        expected_guard = (
+            "if (!g_adaptiveEngineUiEnabled.load(std::memory_order_acquire) || "
+            "!g_adaptiveEngineStarted.load(std::memory_order_acquire)) { return 0.0f; }"
+        )
+        if expected_guard not in normalized_strength:
+            raise AssertionError("Route A adaptive strength must preserve the complete fail-closed guard and neutral return")
+
+        compressor_header = read("app/src/main/cpp/include/Compressor.h")
+        if "void resetRuntimeAmount() noexcept" not in compressor_header or "runtimeAmount_ = 0.0f;" not in compressor_header or "runtimeTarget_ = 0.0f;" not in compressor_header:
+            raise AssertionError("adaptive OFF must clear compressor runtime state without changing manual parameters")
+
+        route_a_start = jni.find("const float adaptiveStrength = adaptive_ui_strength();")
+        route_b_start = jni.find("const float adaptiveStrength = adaptive_ui_strength();", route_a_start + 1)
+        if route_a_start < 0 or route_b_start < 0:
+            raise AssertionError("both Route A adaptive consumers must be present")
+        route_a_consumer = jni[route_a_start:route_b_start]
+        route_b_consumer = jni[route_b_start:]
+        for consumer, gain_state, comp_state, exc_state in (
+            (route_a_consumer, "g_ats.targetGainSmooth = 1.0f;", "g_ats.compAmountSmooth = 0.0f;", "g_ats.excReductionSmooth = 0.0f;"),
+            (route_b_consumer, "g_ats.blkTgSmooth = 1.0f;", "g_ats.blkCaSmooth = 0.0f;", "g_ats.blkErSmooth = 0.0f;"),
+        ):
+            if "if (!adaptiveActive)" not in consumer or gain_state not in consumer or comp_state not in consumer or exc_state not in consumer:
+                raise AssertionError("OFF/manual must reset each Route A consumer's independent adaptive smoothers")
+            if "g_gain.setRuntimeGain(1.0f);" not in consumer or "g_comp.resetRuntimeAmount();" not in consumer or "g_exciter.setRuntimeReduction(0.0f);" not in consumer:
+                raise AssertionError("OFF/manual must neutralize retained gain/compressor/exciter actuator state")
+        if "g_exciter.setRuntimeReduction(g_ats.blkErSmooth);" not in route_b_consumer:
+            raise AssertionError("nativeProcessBlock must apply its adaptive exciter target and neutralize it on OFF")
         native_init_start = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(")
         native_init_end = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeSet", native_init_start)
         native_init = jni[native_init_start:native_init_end] if native_init_end > native_init_start else ""
