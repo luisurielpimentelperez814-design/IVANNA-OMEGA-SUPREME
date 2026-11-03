@@ -55,13 +55,16 @@ float AdaptiveDecisionEngine::computeCompressorAmount(const RawAudioMetrics& m) 
 
 float AdaptiveDecisionEngine::computeExciterReduction(const RawAudioMetrics& m,
                                                        float sibilanceEma) noexcept {
-    const float total = std::max(0.0f, m.band_low_energy) +
-                         std::max(0.0f, m.band_mid_energy) +
-                         std::max(0.0f, m.band_high_energy) + kEps;
-    const float highRatio = std::max(0.0f, m.band_high_energy) / total;
+    const float low  = trustedBandEnergy(m, m.band_low_energy);
+    const float mid  = trustedBandEnergy(m, m.band_mid_energy);
+    const float high = trustedBandEnergy(m, m.band_high_energy);
+    const float total = low + mid + high + kEps;
+    const float highRatio = high / total;
     // >15% de la energía total en la banda de sibilancia (5-9kHz) empieza
     // a sugerir reducción; a partir de 50% se satura en máxima reducción.
-    const float instantTerm = clamp01((highRatio - 0.15f) / 0.35f);
+    const float instantTerm = m.band_energy_valid
+        ? clamp01((highRatio - 0.15f) / 0.35f)
+        : 0.0f;
     // Se pondera igual la lectura instantánea (transitorio de "S"/platillos)
     // que la EMA sostenida (fatiga acumulada) — un pico aislado no debería
     // bajar el exciter tanto como una exposición sostenida.
@@ -116,14 +119,9 @@ float AdaptiveDecisionEngine::gainReductionLinearToDb(float peakExcessLinear, fl
 }
 
 float AdaptiveDecisionEngine::computeVoiceProtection(const RawAudioMetrics& m) noexcept {
-    // GAP cerrado (auditoría vs. spec de Fase 3): pass-through directo del
-    // score real de VoiceProtectionController/YamnetClassifier. Este motor
-    // no detecta voz por sí mismo (no tiene acceso a un clasificador ML,
-    // y no lo va a fingir con heurísticas de RMS/bandas — eso sería una
-    // métrica falsa, exactamente el patrón que este proyecto viene
-    // corrigiendo toda la sesión).
-    if (!std::isfinite(m.voice_score)) return 0.0f;
-    return clamp01(m.voice_score);
+    // La ausencia de inferencia válida es neutral. No se estima voz a partir
+    // de RMS, bandas, contenido medio ni valores de inicialización.
+    return trustedVoiceScore(m);
 }
 
 AdaptiveDecisionEngine::HarmonicArbitration
@@ -170,7 +168,7 @@ AdaptiveDecisionEngine::arbitrateSpatial(const RawAudioMetrics& m) noexcept {
     const bool upmixActive = (m.upmix_active > 0.5f);
     const bool wfsActive   = (m.wfs_active > 0.5f);
     const bool rirActive   = (m.rir_active > 0.5f);
-    const float voiceScore = clamp01(m.voice_score);
+    const float voiceScore = trustedVoiceScore(m);
     const float gr         = std::max(0.0f, m.gain_reduction_db);
 
     // 1. Localización HRTF: siempre 1.0 (referencia binaural directa)
@@ -251,7 +249,7 @@ AdaptiveDecisionEngine::arbitrateDynamics(const RawAudioMetrics& m) noexcept {
 AdaptiveDecisionEngine::PersonalityArbitration
 AdaptiveDecisionEngine::arbitratePersonality(const RawAudioMetrics& m, float fatigueEma) noexcept {
     PersonalityArbitration out;
-    const float voiceScore = clamp01(m.voice_score);
+    const float voiceScore = trustedVoiceScore(m);
 
     // Claridad vocal: si hay voz, realce de presencia psicoacústica
     if (voiceScore > 0.5f) {
@@ -266,10 +264,11 @@ AdaptiveDecisionEngine::arbitratePersonality(const RawAudioMetrics& m, float fat
     }
 
     // Densidad musical: si el bajo es muy dominante (>55% de la energía)
-    const float total = std::max(0.0f, m.band_low_energy) +
-                         std::max(0.0f, m.band_mid_energy) +
-                         std::max(0.0f, m.band_high_energy) + kEps;
-    if (m.band_low_energy / total > 0.55f) {
+    const float low  = trustedBandEnergy(m, m.band_low_energy);
+    const float mid  = trustedBandEnergy(m, m.band_mid_energy);
+    const float high = trustedBandEnergy(m, m.band_high_energy);
+    const float total = low + mid + high + kEps;
+    if (m.band_energy_valid && low / total > 0.55f) {
         out.sub_bass_damping = 0.3f; // Control de subgrave en música densa
     }
 
@@ -315,36 +314,86 @@ AdaptiveState AdaptiveDecisionEngine::evaluate(const RawAudioMetrics& m,
     return s;
 }
 
-void AdaptiveDecisionEngine::start() {
-    bool expected = false;
-    if (!running_.compare_exchange_strong(expected, true,
-                                          std::memory_order_acq_rel,
-                                          std::memory_order_acquire)) {
-        return;  // ya corriendo
+#if defined(__linux__) || defined(__ANDROID__)
+void* AdaptiveDecisionEngine::controlThreadEntry(void* self) noexcept {
+    auto* engine = static_cast<AdaptiveDecisionEngine*>(self);
+    if (engine) engine->controlLoop();
+    return nullptr;
+}
+#endif
+
+bool AdaptiveDecisionEngine::start() noexcept {
+    std::lock_guard<std::mutex> lock(controlLifecycleMutex_);
+    if (running_.load(std::memory_order_acquire)) return true;
+
+#if defined(__linux__) || defined(__ANDROID__)
+    // Unlike std::thread in a -fno-exceptions build, pthread_create reports
+    // resource exhaustion (EAGAIN/ENOMEM) without throwing/terminating.
+    if (controlThreadJoinable_) {
+        if (pthread_equal(pthread_self(), controlThread_)) return false;
+        const int joinResult = pthread_join(controlThread_, nullptr);
+        if (joinResult != 0) {
+            running_.store(false, std::memory_order_release);
+            return false; // retain joinable state so a later stop/start can retry
+        }
+        controlThreadJoinable_ = false;
     }
 
-    // Hardening real contra std::terminate(): si por cualquier edge case
-    // externo quedara un std::thread joinable "viejo" (p.ej. running_=false
-    // pero stop() no alcanzó a hacer join todavía), asignar un nuevo hilo
-    // sobre controlThread_ terminaría el proceso inmediatamente. Nunca debería
-    // pasar en el flujo nominal, pero si pasa preferimos drenar ese hilo aquí
-    // de forma explícita antes de reutilizar el objeto std::thread.
-    if (controlThread_.joinable()) controlThread_.join();
+    running_.store(true, std::memory_order_release);
+    const int createResult = pthread_create(
+        &controlThread_, nullptr, &AdaptiveDecisionEngine::controlThreadEntry, this);
+    if (createResult != 0) {
+        running_.store(false, std::memory_order_release);
+        return false;
+    }
+    controlThreadJoinable_ = true;
+    return true;
+#else
+    if (controlThread_.joinable()) {
+        if (controlThread_.get_id() == std::this_thread::get_id()) return false;
+        try {
+            controlThread_.join();
+        } catch (...) {
+            running_.store(false, std::memory_order_release);
+            return false;
+        }
+    }
 
-    controlThread_ = std::thread([this]() { controlLoop(); });
+    running_.store(true, std::memory_order_release);
+    try {
+        controlThread_ = std::thread([this]() { controlLoop(); });
+    } catch (...) {
+        running_.store(false, std::memory_order_release);
+        return false;
+    }
+    return true;
+#endif
 }
 
 void AdaptiveDecisionEngine::stop() noexcept {
-    // FIX (causa real de std::terminate() intermitente): el guard antiguo
-    // hacía early-return cuando running_ ya estaba en false. Eso dejaba sin
-    // join un controlThread_ todavía joinable en cualquier edge case donde el
-    // flag y el estado real del std::thread se desincronizaran; más tarde,
-    // el destructor de std::thread o una nueva asignación sobre el mismo
-    // objeto disparaban std::terminate(). El contrato correcto es: parar el
-    // loop SI estaba corriendo, pero hacer join SIEMPRE que el thread siga
-    // joinable, independientemente del flag.
+    std::lock_guard<std::mutex> lock(controlLifecycleMutex_);
     running_.store(false, std::memory_order_release);
-    if (controlThread_.joinable()) controlThread_.join();
+
+#if defined(__linux__) || defined(__ANDROID__)
+    if (controlThreadJoinable_) {
+        if (pthread_equal(pthread_self(), controlThread_)) return;
+        const int joinResult = pthread_join(controlThread_, nullptr);
+        if (joinResult == 0) {
+            controlThreadJoinable_ = false;
+        }
+        // On failure retain joinable=true. A later external stop() retries;
+        // never detach or destroy a live thread's owner.
+    }
+#else
+    if (controlThread_.joinable()) {
+        if (controlThread_.get_id() == std::this_thread::get_id()) return;
+        try {
+            controlThread_.join();
+        } catch (...) {
+            // Keep joinable state so a later external stop() can retry.
+        }
+    }
+#endif
 }
 
 void AdaptiveDecisionEngine::controlLoop() {
@@ -386,10 +435,13 @@ void AdaptiveDecisionEngine::controlLoop() {
         }
 
         {
-            const float total = std::max(0.0f, metrics.band_low_energy) +
-                                 std::max(0.0f, metrics.band_mid_energy) +
-                                 std::max(0.0f, metrics.band_high_energy) + kEps;
-            const float highRatio = std::max(0.0f, metrics.band_high_energy) / total;
+            const float lowBand  = trustedBandEnergy(metrics, metrics.band_low_energy);
+            const float midBand  = trustedBandEnergy(metrics, metrics.band_mid_energy);
+            const float highBand = trustedBandEnergy(metrics, metrics.band_high_energy);
+            const float total = lowBand + midBand + highBand + kEps;
+            // Sin un medidor válido se permite que las EMAs decaigan a neutro,
+            // pero no se etiqueta la ausencia de dato como una medición espectral.
+            const float highRatio = metrics.band_energy_valid ? highBand / total : 0.0f;
 
             constexpr float kSibilanceAlpha = 0.25f;
             sibilanceEma_ += kSibilanceAlpha * (highRatio - sibilanceEma_);
@@ -424,17 +476,17 @@ void AdaptiveDecisionEngine::controlLoop() {
             const auto nowUs = static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());
-            const float sideProxy = clamp01(1.0f - metrics.voice_score * 0.55f);
-            const float lowProxy  = clamp01(metrics.band_low_energy / total);
+            const float sideProxy = clamp01(1.0f - trustedVoiceScore(metrics) * 0.55f);
+            const float lowProxy  = metrics.band_energy_valid ? clamp01(lowBand / total) : 0.0f;
             std::array<ivanna::spatial::DecomposedObject, 4> proxyObjects{};
             proxyObjects[0].position = { 0.0f, 1.4f, 0.0f };
-            proxyObjects[0].energy   = metrics.band_mid_energy;
+            proxyObjects[0].energy   = midBand;
             proxyObjects[1].position = {-0.65f * s.spatial_width, 2.1f, 0.15f };
-            proxyObjects[1].energy   = metrics.band_high_energy * 0.6f;
+            proxyObjects[1].energy   = highBand * 0.6f;
             proxyObjects[2].position = { 0.65f * s.spatial_width, 2.1f, 0.15f };
-            proxyObjects[2].energy   = metrics.band_high_energy * 0.6f;
+            proxyObjects[2].energy   = highBand * 0.6f;
             proxyObjects[3].position = { 0.0f, 1.6f, -0.20f };
-            proxyObjects[3].energy   = metrics.band_low_energy;
+            proxyObjects[3].energy   = lowBand;
 
             ivanna::reality::AcousticRealityOrchestrator::instance().orchestrateCycle(
                 metrics, s, proxyObjects, sideProxy, lowProxy,

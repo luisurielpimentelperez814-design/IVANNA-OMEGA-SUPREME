@@ -1,3 +1,144 @@
+## v2.5.338 (629) - 2026-11-03
+
+CodeRabbit follow-ups, each verified against current `main` before applying (findings already fixed were skipped).
+
+- **Adaptive engine join-state test coverage:** added `AdaptiveDecisionEngine::controlThreadPendingJoin()`, a test-only accessor that reads the real join state under `controlLifecycleMutex_` (pthread branch on Linux/Android, `std::thread` branch elsewhere). `testControlThreadLifecycle` and `testConcurrentControlThreadLifecycle` now assert that `stop()` joins the control thread; `running()` alone could not, because `stop()` clears it before the join. Verified by mutation: with the join block removed the new assertions fail.
+- **Adaptive engine start from `nativeInitDSP`:** `nativeInitDSP` (the path `MainActivity` uses) and the "already initialized at the same sample rate" early returns now call `ensureAdaptiveEngineStarted()`, so an ON preference stored before DSP init no longer waits for `nativeCreateAdaptiveEngine` or the watchdog. The helper is idempotent and still respects OFF/manual mode.
+- **FotoHolo state retry:** the retry now runs before the idle-loop `continue` (it stayed frozen with FotoHolo off, in bypass or without signal) and reads the desired state inside the serial executor, so it can no longer overwrite a newer UI intent. "Reapplication needed" is only reported after a Route-B width was actually pushed.
+- **Static contracts:** the owned-player ASRC guard now requires `setClockCorrectionPpm(correctionPpm)` (a constant no longer satisfies it) and new guards cover the FotoHolo retry ordering and the `nativeInitDSP` ADE start. `check_adaptive_metric_truth.py` accepts an ADE start before `g_initialized.store(true)` only inside the already-initialized branch.
+- **Docs:** the route-wiring audit separates the MediaCodec player (uses `StereoAudioResampler`) from `PlaybackCaptureService` (`AudioRecord` at 48 kHz, no software ASRC).
+
+**Validation boundary:** native host tests and static contracts were run locally; the Kotlin changes (`FotoHoloEngine`, `FotoHoloRouteB` and its unit test) could not be compiled without the Android SDK and rely on CI. No on-device validation: thread lifecycle, FotoHolo recovery after daemon restarts and ADE start order still require Moto G85 5G testing.
+
+## v2.5.337 (628) - 2026-11-03
+
+- Corrige el orden de inicialización de `LocalSocket`: `connect()` se ejecuta antes de configurar `soTimeout` en `MagiskBridge.sendCommand`, `isOmegaSocketAvailable` y `ShmManager.mapFromDaemon`. Evita `IOException("socket not created")` por descriptor aún no creado.
+- Conserva los cambios ya integrados en `main`, incluidos el ciclo de vida del motor adaptativo y los reintentos de estado FotoHolo.
+- Validación: pendiente de CI, verificación de APK/ZIP y prueba en Moto G85. No se declara validación física por esta corrección.
+
+## v2.5.236 (527) - 2026-11-02
+
+- **FotoHolo Ruta B: "demonio no disponible" congelado.** Si `SET_FOTOHOLO_STATE` fallaba una vez (p. ej. la app abría antes de que el daemon estuviera listo), el texto del fallo permanecía indefinidamente cuando la ruta activa era ROUTE_A: el bloque de reintento/refresco de `FotoHoloEngine` solo corre con ROUTE_B. Además `shouldRetryCommand` comparaba con `==` un texto que lleva el prefijo `FotoHolo Ruta B: `, así que tampoco lo reconocía en ROUTE_B.
+- **Cambio:** `FotoHoloRouteB` recuerda el último estado FotoHolo pedido y si su publicación falló por transporte; `retryStatePublishIfNeeded()` lo reenvía (los rechazos explícitos del daemon no se reintentan); `FotoHoloEngine` lo invoca cada 1.5 s con cualquier ruta activa; `shouldRetryCommand` tolera el prefijo. Test JVM nuevo para el prefijo.
+- **Sin cambios** en el daemon, `sepolicy.rule` ni en el procesamiento de audio.
+
+**Validation boundary:** corrección de lógica de estado/reintento en la app; verificada por CI (compilación + tests JVM). Que el estado se recupere en el dispositivo tras abrir la app con el daemon ya activo requiere comprobación en el Moto G85 5G.
+
+## v2.5.235 (526) - 2026-11-02
+
+- **omega_effect arm64 build fix:** Route-B adaptive engine start retries in `omega_effect.cpp` report failures through `LOGE`, which that file did not define (only `LOGI` and `LOGW`). The macro is now defined with the same `#ifndef` pattern as `LOGW`. Found by syntax-checking every native source touched by PR #17 with `-fno-exceptions -fno-rtti` before the arm64 runner reached the `omega_effect` target.
+
+**Validation boundary:** compilation fix only; no change to audio processing. Runtime behavior of the start-retry path still requires Moto G85 5G device validation.
+
+## v2.5.234 (525) - 2026-11-02
+
+- **arm64 native build fix:** the adaptive engine lifecycle work (PR #17) added `try/catch` blocks in `adaptive_decision_engine.cpp` and in the JNI snapshot-thread start. `ivanna_omega` and `omega_effect` are compiled with `-fno-exceptions` on arm64-v8a, so Build APK failed with "cannot use 'try' with exceptions disabled". The blocks are now guarded with `#if defined(__EXCEPTIONS)`, the same pattern already used in `evolutionary_kernel_jni.cpp`; host tests keep the exception-safe path and the original code is preserved.
+- **Behavior on device:** with exceptions disabled, a failed `std::thread` creation aborts instead of being recovered. This matches the existing `g_bridgeThread` start path.
+
+**Validation boundary:** this release fixes compilation only. CI confirms the build; audible behavior, latency and thread-start robustness under memory pressure still require Moto G85 5G device validation.
+
+## v2.5.233 (524) - 2026-11-02
+
+- **Unified route-aware HRTF gate:** Sound, SpatialControlPanel, OEM controls and NPE callbacks now use the same policy as `RouteDspCalibrator`. A saved HRTF request cannot re-enable binaural processing on the built-in speaker or an explicitly declared external line-out.
+- **Context-safe NPE callback:** NPE HRTF callbacks now receive the application context and apply the centralized route policy before publishing a partial Route-B update.
+- **Release contents:** includes v2.5.227–v2.5.232: AudioFlinger HRTF/adaptive actuators, effect-generation acknowledgement, measured-vs-synthetic evidence, adaptive block telemetry and unity-return ramp, non-aliasing FastRPC staging with CPU fallback, transactional daemon publishing and SHM isolation.
+
+**Validation boundary:** route policy behavior, audible quality, latency, thermal stability and HAL routing still require a Moto G85 5G device run. No physical measurement or hardware ASRC activation is asserted by host CI.
+
+## v2.5.232 (523) - 2026-11-02
+
+- **Route-aware HRTF publication:** opening or changing the Sound screen now applies the same output-route policy as `RouteDspCalibrator`. HRTF remains off for the built-in speaker and unknown route, and is enabled only for headphone-appropriate routes; declared external line-out policy is respected.
+- **SHM isolation:** feature-only Route-B publications no longer rewrite unrelated gain/compressor/spatial-width shared atomics.
+- **Transactional controls and honest evidence:** failed HRTF/adaptive publishes roll back; mixed CPU/Hexagon HRTF activity is counted correctly.
+- **Release contents:** includes v2.5.227–v2.5.231: system-wide HRTF/adaptive actuators and generation acknowledgements, evidence v3 and accurate UI labels, adaptive unity-return ramp, non-aliasing FastRPC input and CPU fallback.
+
+**Validation boundary:** output-route decisions and the complete audio route still need on-device validation on the rooted Moto G85 5G. No claim of audible improvement, stable latency or hardware ASRC activation is made without device evidence.
+
+## v2.5.231 (522) - 2026-11-02
+
+- **SHM isolation for feature switches:** HRTF/adaptive-only snapshot publications no longer rewrite unrelated shared gain, compressor, spatial width or route-mix atomics. This prevents feature-toggle failures from leaking partial unrelated values.
+- **Transactional Route-B controls:** failed publications restore the prior in-memory HRTF/adaptive state and leave the previous generation/evidence baseline intact.
+- **Evidence correctness:** Hexagon HRTF blocks are reported even when CPU HRTF blocks occur in the same evidence window.
+- **Release contents:** includes v2.5.227–v2.5.230: system-wide HRTF/adaptive controls, effect-consumed generation acknowledgement, evidence v3, evidence-based UI labels, adaptive unity-return ramp, non-aliasing FastRPC staging and CPU fallback.
+
+**Validation boundary:** real-device audio quality, latency, thermal limits, HAL paths and Hexagon availability require Moto G85 5G validation; this changelog does not claim those measurements are complete.
+
+## v2.5.230 (521) - 2026-11-02
+
+- **Transactional Route-B controls:** when publishing an HRTF/adaptive snapshot fails, the daemon rolls back the desired feature state and acknowledgement generation. A later unrelated publish can no longer activate a request that was reported as failed.
+- **Mixed CPU/Hexagon evidence:** HRTF DSP delegation is reported whenever the DSP block counter advances, even if CPU HRTF blocks also occurred during the same evidence interval.
+- **Release contents:** includes v2.5.227–v2.5.229 fixes: AudioFlinger HRTF/adaptive actuators with generation acknowledgement, evidence v3, measured-vs-synthetic processing status, adaptive block counts, smooth unity-return bypass, non-aliasing FastRPC buffers and CPU fallback on RPC failure.
+
+**Validation boundary:** device-side audible quality, latency, thermal limits, real HAL routes and Hexagon DSP availability remain unverified until exercised on the rooted Moto G85 5G. Failed DSP delegation deliberately falls back to CPU.
+
+## v2.5.229 (520) - 2026-11-02
+
+- **FastRPC HRTF buffer safety:** Hexagon convolution now receives separate, preallocated dry input buffers and writes into the output buffers. No input/output aliasing is assumed by the QAIC wrapper.
+- **Fail-safe DSP delegation:** HRTF DSP activity is counted only after `delegateBinauralConvolution` returns success. On RPC rejection/failure the original dry samples are restored and processing falls through to the CPU HRTF path in the same block.
+- **Release contents:** includes v2.5.227–v2.5.228 work: generation-acknowledged system-wide HRTF/adaptive control, evidence v3, measured-vs-synthetic HRTF status, evidence-gated adaptive activity, reversible bounded adaptive gain ramp, UI status refresh and cross-panel route consistency.
+
+**Validation boundary:** actual Hexagon execution, audible quality, latency, thermal stability and HAL behavior remain subject to on-device Moto G85 5G validation. Failed FastRPC calls intentionally use CPU fallback; this release does not claim that Hexagon is active on every device.
+
+## v2.5.228 (519) - 2026-11-02
+
+- **Route-B acknowledgement refresh:** after the processor evidence sampling window, the sound screen now performs a final status read so a late AudioFlinger callback can confirm the requested generation without leaving a stale pending label.
+- **Evidence-gated adaptive reporting:** the UI reports new adaptive block activity only when both before/after evidence reads are valid; missing or incompatible evidence is shown as unavailable rather than inferred from a lifetime counter.
+- **Release contents:** includes all v2.5.227 changes: system-wide HRTF/adaptive daemon actuators, generation/evidence acknowledgement, measured-vs-synthetic HRTF distinctions, adaptive block counter, and reversible bounded gain ramp with host regression tests.
+
+**Validation boundary:** no Moto G85 audible, latency, thermal or HAL acceptance claim is made until the packaged build is exercised on that rooted device. Hardware ASRC remains separately gated and is not declared enabled by this release.
+
+## v2.5.227 (518) - 2026-11-02
+
+- **Route-B actuators:** the HRTF and adaptive switches publish through the daemon to the system-wide AudioFlinger effect. A command is shown as applied only after the effect publishes a newer evidence sequence with the requested snapshot generation and matching actuator states.
+- **Measured HRTF status:** the sound panel distinguishes measured HRIR data being loaded from HRTF processing actually occurring in the evidence window; analytic fallback is labelled separately and no longer appears as measured HRIR processing.
+- **Adaptive activity evidence:** effect evidence v3 records `adaptiveApplyBlocks` only when `AdaptiveEngineV2` processes a real Route-B audio chunk. The on-device evidence reader rejects incompatible older layouts and reports activity from measured counter deltas.
+- **Reversible adaptive bypass:** Route-B adaptive gain uses a bounded, per-sample stereo ramp. Disabling adaptation returns the gain smoothly to unity rather than retaining the last attenuating gain. No adaptive gain stage can boost above unity.
+- **Cross-panel route consistency:** HRTF and adaptive updates from the spatial panel, output-route calibrator, OEM/neuromorphic controls and manual-mode switches are merged as partial commands so concurrent toggles do not overwrite each other.
+- **Regression coverage:** host tests cover snapshot propagation, invalid-command non-publication, reversible Route-B switches and bounded stereo gain ramps.
+
+**Validation boundary:** physical audio processing, audible benefit, HAL routing and long-duration stability still require measurement on the rooted Moto G85 5G. This release does not mark device validation or hardware ASRC certification as complete.
+
+## v2.5.226 (517) - 2026-11-02
+
+- **Android lifecycle:** `MainActivity` recreated itself on every rotation/resize/keyboard change, and the UI keeps no `rememberSaveable` state, so rotating dropped the current screen, reloaded the whole FotoHolo WebGL scene and re-ran `onCreate`. It now declares `configChanges` (orientation, screen size/layout, keyboard, navigation); Compose adapts in place. `uiMode` is intentionally not included so theme changes still recreate.
+- **Genezy audit (no change):** the AUX route is a bounded 1.04 differential-width policy ahead of the Sony's own upmix; it claims no discrete channels. Wired headphones share the same route class (`WIRED_AUX`), so they also receive it; separating them needs the physical AUX-vs-headphone signal, which Android does not distinguish.
+- **Validation boundary:** rotate the device on the main panel and the FotoHolo tab: state and the 3D scene should persist.
+
+## v2.5.225 (516) - 2026-11-02
+
+- **HRTF dataset truthfulness:** the evidence (effect file, daemon `GET_PROCESSOR_EVIDENCE` → `hrtfDataset`, and `read_processor_evidence.py`) now says whether the HRTF is running on measured HRIRs (IHR1/SOFA) or on the analytic Rayleigh synthesis fallback. Without a dataset in `/data/adb/ivanna_omega/` the binaural path is the fallback, which a plain "applying" flag would have hidden.
+
+## v2.5.224 (515) - 2026-11-02
+
+- **FotoHolo WebView crash-proofing:** `onRenderProcessGone` was unhandled, so when Android killed the WebView renderer under memory pressure the whole app died (taking the audio session with it). The panel now logs it, returns handled and rebuilds the WebView.
+- **Lifecycle:** WebGL/timers keep animating while the app is backgrounded, competing with the audio thread. The WebView is now paused on ON_PAUSE and resumed on ON_RESUME.
+- **ASRC audit (no change):** measured the 64-tap Blackman-Harris resampler offline: 44.1→48 kHz is −0.26 dB at 20 kHz and −111 dB alias rejection at 30 kHz (96→48). Longer Kaiser designs would gain <0.3 dB at 20 kHz for 1.5–2× CPU, so it is left as is; the PLL already slew-limits the ppm correction.
+- **Validation boundary:** compile/JVM gate in CI; renderer-kill recovery needs a device check (`adb shell am kill` of the WebView sandbox process or low-memory stress).
+
+## v2.5.223 (514) - 2026-11-02
+
+- **Daemon `GET_PROCESSOR_EVIDENCE`:** the root daemon reads the effect's evidence file (not readable by the app under SELinux) and answers with per-processor verdicts computed from the delta since the previous query: `hrtfApplying`, `hrtfDspDelegated`, `rirApplying` (block counters moved AND output energy differs from input), `safReachedHrtf`, `safReachedRir`, plus the baked SAF coefficients. First query returns `comparable:false` (no baseline).
+- **CLI:** `ivanna_control.sh evidence` queries twice, 3 s apart, so the second reply is a real measurement.
+- **Validation boundary:** needs the module rebuilt by CI and audio playing; silence yields no verdict by design.
+
+## v2.5.222 (513) - 2026-11-02
+
+- **Daemon supervision (Magisk):** `service.sh` started `ivanna_daemon` once and exited, so a later crash or lost socket left the app without a control plane until reboot. New `supervisor.sh` (single instance, verified by cmdline) checks every 5 s for the process AND the abstract socket, relaunches through `service.sh` with exponential backoff (5 → 60 s) and stops after 8 relaunches in an hour or when `.safe_mode`/`disable`/`remove` appears. Logged to `daemon.log` ("supervisor: ...").
+- **Validation boundary:** shell syntax checked only; confirm on device with `kill -9 $(pidof ivanna_daemon)` and watch `daemon.log` for the relaunch within ~10 s.
+
+## v2.5.221 (512) - 2026-11-02
+
+- **Recovery after audioserver/HAL death (root and non-root):** when audioserver restarts, every `AudioEffect` of the process becomes a dead object while `IvannaGlobalEffectManager` kept believing the session was active (`openSession` returned early), so audio played without DSP until the app was restarted. A daemon watchdog now probes each session every 3 s (`setEnabled(true)` returns the real binder status); a dead effect is released and re-created with the same source package, and the EQ is republished to the daemon.
+- **Tests:** `EffectLivenessTest` (JVM) pins the liveness criterion. The probe/recreate path needs the device: confirm with `logcat -s IvannaNPE.GlobalFX` after `killall audioserver` (look for "efecto muerto ... recreando").
+
+## v2.5.220 (511) - 2026-11-02
+
+- **HRTF:** SAF q[1] azimuth bias now reaches the analytic (no-dataset) synthesis path, where it was ignored; SAF changes mark the bank dirty and re-synthesize it from the audio thread after any running crossfade, without waiting for a new head pose.
+- **RIR:** `wetScale` and `rt60Delta` from `computeSofaRirCoupling` were computed and discarded. `wetScale` now scales the wet path; `rt60Delta` reshapes the decay slope (baked into the IR). The raw IR is kept so a live SAF change re-bakes it on the worker thread (`couplingStale()` / `relinkFromRaw()`), not only on a room change.
+- **Evidence (measured, not UI flags):** HRTF and RIR count blocks and in/out energy in their own audio paths; `omega_effect` publishes them to `/data/local/tmp/omega_effect_evidence` (seqlock mmap). `scripts/read_processor_evidence.py` compares two reads and reports per processor whether it applies. Hexagon-delegated HRTF is reported as not verifiable from the host side.
+- **Tests:** `test_processor_evidence` links the real HrtfManager and RirConvolver: bit-exact wet=0 bypass, effect at wet=1, pose and SAF sensitivity, wetScale/rt60Delta applied, live re-coupling, plus negative controls.
+- **Validation boundary:** host DSP evidence only; audible improvement and Moto G85 behaviour still need the on-device reader and A/B listening.
+
 ## v2.5.219 (510) - 2026-11-01
 
 - **Evolutionary kernel:** worker advances only on valid non-silent post-DSP cues; population is re-scored when live signal resumes so elites evaluated against silence cannot dominate.

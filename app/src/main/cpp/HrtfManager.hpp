@@ -7,6 +7,8 @@
 #include <algorithm>  // FIX: std::clamp usado en setSafLatentQ() sin este include
 #include <atomic>
 #include <cstring>
+#include <cmath>
+#include <cstdint>
 
 namespace Ivanna {
 #ifndef IVANNA_HRTF_TAPS_DEFINED
@@ -82,17 +84,49 @@ public:
         if (size < 7 || !ivanna::safmus::isFiniteLatent(q)) return;
         // q[0] → curvatura Riemanniana base ±0.15 alrededor del valor por defecto
         const float cur = 0.15f + std::clamp(q[0], -1.f, 1.f) * 0.15f;
+        const float bias = (size >= 2) ? q[1] * 10.f : 0.f;
+        // Cambio material => el banco HRTF vigente quedo desfasado del SAF: se marca para
+        // re-sintetizar en el hilo de audio (antes solo ocurria en el proximo setHeadPose()).
+        if (std::fabs(cur - m_intrinsicCurvature.load(std::memory_order_relaxed)) > 0.002f ||
+            std::fabs(bias - m_safAzimuthBias.load(std::memory_order_relaxed)) > 0.05f)
+            m_safDirty.store(true, std::memory_order_release);
         m_intrinsicCurvature.store(cur, std::memory_order_relaxed);
-        // q[1] → sesgo de azimut fino [±10°] aplicado en el próximo setHeadPose()
-        if (size >= 2)
-            m_safAzimuthBias.store(q[1] * 10.f, std::memory_order_relaxed);
-        // q[2..6] almacenados para morph de dataset medido (uso futuro)
+        m_safAzimuthBias.store(bias, std::memory_order_relaxed);
         for (int i = 0; i < 7 && i < size; ++i)
             m_safQ[i] = q[i];
         m_safQValid.store(true, std::memory_order_release);
     }
 
+    // Evidencia MEDIDA en el camino de audio (no indicadores de UI).
+    struct Evidence {
+        uint64_t cpuBlocks = 0;      // bloques convolucionados por CPU con wet>0
+        uint64_t dspBlocks = 0;      // bloques delegados al Hexagon (sin medicion propia)
+        uint64_t safRefreshes = 0;   // re-sintesis de banco forzadas por cambio de SAF q
+        uint64_t poseApplies = 0;    // setHeadPose efectivos
+        double inEnergy = 0.0, outEnergy = 0.0;
+        float azimuthDeg = 0.f, curvature = 0.f, safBiasDeg = 0.f;
+        bool datasetLoaded = false;   // false => sintesis analitica (Rayleigh), no HRIR medidas
+    };
+    Evidence evidence() const noexcept {
+        Evidence e;
+        e.cpuBlocks = m_evCpu.load(std::memory_order_relaxed);
+        e.dspBlocks = m_evDsp.load(std::memory_order_relaxed);
+        e.safRefreshes = m_evSafRefresh.load(std::memory_order_relaxed);
+        e.poseApplies = m_evPose.load(std::memory_order_relaxed);
+        e.inEnergy = m_evIn.load(std::memory_order_relaxed);
+        e.outEnergy = m_evOut.load(std::memory_order_relaxed);
+        e.azimuthDeg = m_currentAzimuthDeg.load(std::memory_order_relaxed);
+        e.curvature = m_intrinsicCurvature.load(std::memory_order_relaxed);
+        e.safBiasDeg = m_safAzimuthBias.load(std::memory_order_relaxed);
+        e.datasetLoaded = m_datasetLoaded;
+        return e;
+    }
+
 private:
+    std::atomic<bool> m_safDirty{false};
+    std::atomic<float> m_lastYaw{0.f}, m_lastPitch{0.f}, m_lastRoll{0.f};
+    std::atomic<uint64_t> m_evCpu{0}, m_evDsp{0}, m_evSafRefresh{0}, m_evPose{0};
+    std::atomic<double> m_evIn{0.0}, m_evOut{0.0};
     // Síntesis analítica (Rayleigh esférico) — fallback cuando no hay dataset
     void synthesizeHrtf(float yaw, float pitch, float roll, int bank);
     void processBinauralSceneImpl(Ivanna::AudioBuffer* buffer);
@@ -134,6 +168,11 @@ private:
 
     ALIGN_NEON float m_histL[BLOCK_SIZE + HRTF_TAPS];
     ALIGN_NEON float m_histR[BLOCK_SIZE + HRTF_TAPS];
+
+    // Distinct, preallocated FastRPC input staging prevents input/output aliasing
+    // and lets CPU convolution restore the original dry block if Hexagon rejects it.
+    alignas(64) float m_dspDryL[BLOCK_SIZE];
+    alignas(64) float m_dspDryR[BLOCK_SIZE];
 
     // Dataset cargado (HRIRs medidos de hasta 1250 posiciones)
     HRTFBinLoader m_loader;

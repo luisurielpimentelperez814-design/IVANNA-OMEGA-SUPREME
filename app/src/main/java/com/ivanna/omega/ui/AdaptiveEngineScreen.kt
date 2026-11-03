@@ -27,6 +27,7 @@ import com.ivanna.omega.audio.AudioStateManager
 import com.ivanna.omega.audio.VoiceProtectionController
 import com.ivanna.omega.audio.VoiceProtectionManager
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.theme.*
 import kotlin.math.abs
 
@@ -53,6 +54,10 @@ internal fun AdaptiveEngineScreen(
                 catch (_: Throwable) { }
                 backend.forceManualState(saved)
             }
+        }
+        runCatching {
+            val adaptiveAllowed = AdaptiveControlsPrefs.load(context).binauralAdaptEnabled && !manualModeEnabled
+            OmegaEngineBridge.queueSystemWideAdaptiveEnabled(adaptiveAllowed)
         }
         onDispose {
             backend.stopTelemetry()
@@ -260,8 +265,16 @@ internal fun AdaptiveEngineScreen(
                             // Motor A y Motor B nunca escriben al mismo tiempo.
                             // enabled=true  -> manual toma control.
                             // enabled=false -> motor adaptativo recupera control.
-                            IvannaNativeLib.guardedNative(Unit) { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(!enabled) }
+                            val adaptiveRequested =
+                                AdaptiveControlsPrefs.load(context).binauralAdaptEnabled && !enabled
+                            IvannaNativeLib.guardedNative(Unit) {
+                                IvannaNativeLib.nativeSetAdaptiveEngineEnabled(adaptiveRequested)
+                            }
                         } catch (_: Throwable) { }
+                        runCatching {
+                            val adaptiveAllowed = AdaptiveControlsPrefs.load(context).binauralAdaptEnabled && !enabled
+                            OmegaEngineBridge.queueSystemWideAdaptiveEnabled(adaptiveAllowed)
+                        }
 
                         if (enabled) {
                             // Limpiar memoria de transición del modulador antes

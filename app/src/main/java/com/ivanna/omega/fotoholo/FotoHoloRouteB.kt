@@ -46,6 +46,16 @@ object FotoHoloRouteB {
     @Volatile var status: String = "sin enviar"
         private set
 
+    /** Prefijo con el que se muestra un fallo al publicar SET_FOTOHOLO_STATE. */
+    private const val STATE_FAIL_PREFIX = "FotoHolo Ruta B: "
+
+    // Último estado FotoHolo pedido por la UI y si su publicación quedó pendiente por un fallo de
+    // transporte (daemon aún no listo, reinicio del módulo...). Permite reintentar sin depender de
+    // que la ruta activa sea B: con ROUTE_A el loop de B no corre y el texto de error se congelaba.
+    @Volatile private var desiredEnabled: Boolean? = null
+    @Volatile private var desiredIntensity = 0f
+    @Volatile private var statePublishPending = false
+
     fun initialize(context: Context) {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs = p
@@ -75,27 +85,54 @@ object FotoHoloRouteB {
     /** Publishes the Route B spectral observer state; audio analysis itself runs in omega_effect. */
     fun setFotoHoloState(enabled: Boolean, intensity: Float) {
         val safeIntensity = if (intensity.isFinite()) intensity.coerceIn(0f, 1f) else 0f
-        io.execute {
-            try {
-                val payload = String.format(
-                    Locale.US,
-                    "{\"action\":\"SET_FOTOHOLO_STATE\",\"enabled\":%s,\"intensity\":%.4f}",
-                    if (enabled) "1" else "0",
-                    safeIntensity
-                )
-                val reply = MagiskBridge.sendCommand(payload)
-                status = if (jsonBoolean(reply, "ok") == true) {
-                    expectedGeneration.set(jsonLong(reply, "generation") ?: 0L)
-                    statusFromReply(reply)
-                } else {
-                    expectedGeneration.set(0L)
-                    "FotoHolo Ruta B: " + statusFromReply(reply)
-                }
-                if (expectedGeneration.get() > 0L) refreshEvidence()
-            } catch (e: Exception) {
-                status = "FotoHolo Ruta B: error " + e.javaClass.simpleName
-                Log.w(TAG, "no se pudo publicar estado FotoHolo Ruta B", e)
+        desiredEnabled = enabled
+        desiredIntensity = safeIntensity
+        io.execute { publishFotoHoloState(enabled, safeIntensity) }
+    }
+
+    /** Cuerpo de la publicación; solo debe ejecutarse en el executor serie [io]. */
+    private fun publishFotoHoloState(enabled: Boolean, safeIntensity: Float) {
+        try {
+            val payload = String.format(
+                Locale.US,
+                "{\"action\":\"SET_FOTOHOLO_STATE\",\"enabled\":%s,\"intensity\":%.4f}",
+                if (enabled) "1" else "0",
+                safeIntensity
+            )
+            val reply = MagiskBridge.sendCommand(payload)
+            if (jsonBoolean(reply, "ok") == true) {
+                statePublishPending = false
+                expectedGeneration.set(jsonLong(reply, "generation") ?: 0L)
+                status = statusFromReply(reply)
+            } else {
+                val failure = statusFromReply(reply)
+                // Solo los fallos de transporte se reintentan; un rechazo explícito del daemon no.
+                statePublishPending = shouldRetryCommand(failure)
+                expectedGeneration.set(0L)
+                status = STATE_FAIL_PREFIX + failure
             }
+            if (expectedGeneration.get() > 0L) refreshEvidence()
+        } catch (e: Exception) {
+            statePublishPending = true
+            status = STATE_FAIL_PREFIX + "error: " + e.javaClass.simpleName
+            Log.w(TAG, "no se pudo publicar estado FotoHolo Ruta B", e)
+        }
+    }
+
+    /**
+     * Reenvía el último estado FotoHolo si su publicación falló por transporte. Solo encola trabajo
+     * en el executor serie (nunca bloquea al llamador); el llamador limita la frecuencia.
+     */
+    fun retryStatePublishIfNeeded() {
+        if (!statePublishPending) return
+        io.execute {
+            // La intención se lee DENTRO del executor serie, no al encolar: si la UI
+            // publicó un estado más nuevo mientras esta tarea esperaba, se envía ese
+            // estado y no una copia obsoleta. Tampoco reescribe desired*; solo la UI
+            // (setFotoHoloState) decide la intención. Si ya se publicó, no hace nada.
+            if (!statePublishPending) return@execute
+            val enabled = desiredEnabled ?: return@execute
+            publishFotoHoloState(enabled, desiredIntensity)
         }
     }
 
@@ -165,17 +202,38 @@ object FotoHoloRouteB {
         }
     }
 
+    /**
+     * Reaplicación pendiente solo si ya existe un ancho de Ruta B enviado que verificar.
+     * Sin ningún push previo (p. ej. reintento con ruta ROUTE_A) `lastOwner` sigue en
+     * "UNKNOWN" y comparar contra él anunciaría una reaplicación de algo que nunca se envió.
+     */
+    internal fun reapplicationNeeded(
+        owner: String,
+        lastOwner: String,
+        lastAppliedWfs: Float,
+        lastAppliedHoa: Float,
+        baselineChanged: Boolean,
+        lastDelta: Float
+    ): Boolean {
+        val widthWasPushed = lastOwner != "UNKNOWN" ||
+            lastAppliedWfs.isFinite() || lastAppliedHoa.isFinite()
+        if (!widthWasPushed) return false
+        return owner != lastOwner || (baselineChanged && abs(lastDelta) > 0.001f)
+    }
+
     fun isDeliveryConfirmed(value: String): Boolean =
         value.startsWith("aplicado por bloque DSP; spread WFS consumido") ||
             value.startsWith("aplicado por bloque DSP; inmersividad HOA consumida") ||
             value.startsWith("aplicado por bloque DSP; anchura M/S activa")
 
-    fun shouldRetryCommand(value: String): Boolean =
-        value == "demonio no disponible" ||
-            value.startsWith("error:") ||
-            value == "respuesta sin confirmación válida del demonio" ||
-            value == "arbitraje espacial no verificable" ||
-            value == "propietario cambió; reaplicación necesaria"
+    fun shouldRetryCommand(value: String): Boolean {
+        val v = value.removePrefix(STATE_FAIL_PREFIX)
+        return v == "demonio no disponible" ||
+            v.startsWith("error:") ||
+            v == "respuesta sin confirmación válida del demonio" ||
+            v == "arbitraje espacial no verificable" ||
+            v == "propietario cambió; reaplicación necesaria"
+    }
 
     private fun updateBaselinesFromExternalChanges(e: OmegaEngineBridge.ControlPlaneEvidence): Boolean {
         var changed = false
@@ -324,7 +382,9 @@ object FotoHoloRouteB {
                     return@execute
                 }
                 val baselineChanged = updateBaselinesFromExternalChanges(evidence)
-                if (owner != lastOwner || (baselineChanged && abs(lastDelta) > 0.001f)) {
+                if (reapplicationNeeded(
+                        owner, lastOwner, lastAppliedWfsSpread, lastAppliedHoaImmersivity,
+                        baselineChanged, lastDelta)) {
                     status = "propietario cambió; reaplicación necesaria"
                     return@execute
                 }

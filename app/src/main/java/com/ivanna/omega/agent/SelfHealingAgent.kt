@@ -4,6 +4,9 @@ import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.audio.AudioStateManager
+import com.ivanna.omega.core.IVANNAApplication
+import com.ivanna.omega.ui.AdaptiveControlsPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -109,27 +112,35 @@ object SelfHealingAgent {
                 if (recovered) "daemon re-enlazado" else "daemon sigue inalcanzable (reintento en ${COOLDOWN_DAEMON_MS / 1000}s)")
         }
 
-        // ── 2. Motor adaptativo nativo muerto ───────────────────────────────
-        val engineAlive = IvannaNativeLib.isLoaded && runCatching {
-            IvannaNativeLib.nativeGetUnifiedPipelineStatus()
-        }.getOrNull()?.let { it.size >= 8 && it[7] > 0.5f } == true
-        if (IvannaNativeLib.isLoaded && !engineAlive &&
-            now - lastEngineAttempt > COOLDOWN_ENGINE_MS) {
+        // ── 2. Motor adaptativo: reparar solo si el usuario lo solicitó ──
+        // La falta de bloques no demuestra que el hilo haya muerto: puede ser
+        // silencio o pausa. La salud del hilo se consulta directamente; la
+        // evidencia de bloques aplicados permanece como telemetría separada.
+        val adaptiveRequested = runCatching {
+            AdaptiveControlsPrefs.load(IVANNAApplication.instance).binauralAdaptEnabled &&
+                !AudioStateManager.audioState.value.manualModeEnabled
+        }.getOrDefault(false)
+        val engineRunning = if (IvannaNativeLib.isLoaded) runCatching {
+            IvannaNativeLib.nativeIsAdaptiveEngineRunning()
+        }.getOrDefault(false) else false
+
+        if (IvannaNativeLib.isLoaded && adaptiveRequested &&
+            !engineRunning && now - lastEngineAttempt > COOLDOWN_ENGINE_MS) {
             lastEngineAttempt = now
-            val ok = runCatching {
-                IvannaNativeLib.nativeResetDSP()
-                // Re-init con la SR real del HAL (mismo patrón que la app)
-                val sr = runCatching {
-                    (com.ivanna.omega.core.IVANNAApplication.instance
-                        .getSystemService(android.content.Context.AUDIO_SERVICE)
-                            as? android.media.AudioManager)
-                        ?.getProperty(android.media.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
-                        ?.toIntOrNull()
-                }.getOrNull() ?: 48000
-                IvannaNativeLib.nativeInitDSP(sr)
-            }.getOrDefault(false)
-            record("adaptive_engine_dead", "nativeResetDSP + nativeInitDSP", ok,
-                if (ok) "motor adaptativo reiniciado" else "re-init falló (reintento en ${COOLDOWN_ENGINE_MS / 1000}s)")
+            val handle = runCatching {
+                IvannaNativeLib.nativeCreateAdaptiveEngine()
+            }.getOrDefault(0L)
+            val recovered = handle != 0L &&
+                runCatching { IvannaNativeLib.nativeIsAdaptiveEngineRunning() }.getOrDefault(false)
+            record(
+                "adaptive_engine_inactive_on_active_route",
+                "nativeCreateAdaptiveEngine()",
+                recovered,
+                if (recovered)
+                    "hilo de control ADE confirmado vivo; el DSP no fue reiniciado"
+                else
+                    "ADE no pudo iniciarse; preferencia preservada y DSP intacto, reintento en ${COOLDOWN_ENGINE_MS / 1000}s"
+            )
         }
 
         // ── 3. Clipping sostenido (protección de última instancia) ──────────

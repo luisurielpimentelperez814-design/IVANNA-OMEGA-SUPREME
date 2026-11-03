@@ -7,6 +7,7 @@
 #include "../../include/omega_shared.h"
 #include "../../include/omega_control_bus.h"
 #include "../../include/omega_effect_beacon.h"
+#include "../../include/omega_effect_evidence.h"   // GET_PROCESSOR_EVIDENCE: HRTF/RIR/SAF medidos en el camino de audio
 #include "../../include/asrc_state_bridge.hpp"   // GET_CLOCK_TELEMETRY: el daemon (root) lee el canal ASRC que la app no puede abrir
 #include "../../include/omega_user_flags.hpp"   // v2.5.16: SET_USER_FLAGS (tabla blanca de bits)
 #include "../../spatial/SafmusLatentGuard.hpp" // valida el vector SAFMUS antes de publicarlo
@@ -112,8 +113,9 @@ static OmegaSharedState* getSharedState() noexcept {
         static_cast<uint8_t*>(base) + ivanna::SHM_STATE_OFFSET);
 }
 
-static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
-    if (OmegaSharedState* shm = getSharedState()) {
+static uint64_t publishCurrentState(const OmegaDspState& s, bool updateSharedState = true) noexcept {
+    if (updateSharedState) {
+        if (OmegaSharedState* shm = getSharedState()) {
         shm->intensity.store(s.intensity, std::memory_order_relaxed);
         shm->ai_runtime_gain_mul.store(s.target_gain, std::memory_order_relaxed);
         shm->ai_runtime_comp_amount.store(s.comp_amount, std::memory_order_relaxed);
@@ -122,6 +124,7 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
         shm->route_bass_boost_db.store(s.bass_boost, std::memory_order_relaxed);
         shm->route_dialog_boost_db.store(s.dialog_boost, std::memory_order_relaxed);
         shm->route_widener_mult.store(s.widener_mult, std::memory_order_relaxed);
+        }
     }
     ivanna::OmegaDspSnapshot snap{}; snap.magic=ivanna::OMEGA_CTRL_MAGIC; snap.version=ivanna::OMEGA_CTRL_VERSION;
     snap.active_route=static_cast<int32_t>(ivanna::RouteMode::SYSTEM_WIDE);
@@ -180,8 +183,9 @@ static uint64_t publishCurrentState(const OmegaDspState& s) noexcept {
     // v2.5.44: dinamica espacial temporal.
     snap.temporal_field = ivanna::omega_temporal_field_encode(s.temporal_field_enabled, s.temporal_field_amount, s.temporal_field_auto)
                         | (s.xtc_enabled ? ivanna::OMEGA_TEMPORAL_FIELD_XTC_BIT : 0u);
-    // FotoHolo's Route B observer settings share the unused high bits of temporal_field (ABI v8).
+    // FotoHolo observer and Route-B effect switches occupy disjoint reserved temporal_field bits (ABI v8).
     snap.temporal_field |= ivanna::omega_fotoholo_encode(s.fotoholo_enabled, s.fotoholo_intensity);
+    snap.temporal_field |= ivanna::omega_effect_features_encode(s.hrtf_enabled, s.adaptive_enabled);
     // v2.5.49: corrección acústica de sala.
     for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) snap.room_corr_db[i] = s.room_corr_db[i];
     snap.npe_ctl = ivanna::omega_npe_ctl_encode(s.npe_enabled, s.npe_master_gain_db) | s.scene_distance_word;   // distancia en bits 16..31
@@ -391,6 +395,42 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             static_cast<unsigned long long>(m_head_pose_generation),
             static_cast<unsigned long long>(ackReadable ? ack.generation : 0u),
             m_state.head_yaw_rad, m_state.head_pitch_rad);
+
+    } else if (strcmp(action,"GET_PROCESSOR_EVIDENCE")==0) {
+        // Evidencia MEDIDA por procesador (no indicadores): el efecto publica contadores y energias
+        // de entrada/salida de HRTF y RIR; aqui se calcula el delta desde la consulta anterior.
+        // El archivo vive en /data/local/tmp (no legible por la app), asi que lo releva el daemon.
+        static ivanna::EffectEvidence prev{};
+        static bool havePrev = false;
+        ivanna::EffectEvidence cur{};
+        if (!ivanna::readEffectEvidence(cur)) {
+            n = snprintf(reply, reply_sz, "{\"ok\":false,\"action\":\"GET_PROCESSOR_EVIDENCE\",\"error\":\"evidence_unavailable\"}");
+        } else {
+            auto applying = [](uint64_t dBlocks, double dIn, double dOut) {
+                return dBlocks > 0 && dIn > 1e-9 && std::fabs(dOut - dIn) / dIn > 1e-3;
+            };
+            const bool cmp = havePrev && cur.seq >= prev.seq;
+            const bool hrtfCpu = cmp && applying(cur.hrtfCpuBlocks - prev.hrtfCpuBlocks, cur.hrtfInEnergy - prev.hrtfInEnergy, cur.hrtfOutEnergy - prev.hrtfOutEnergy);
+            const bool hrtfDsp = cmp && cur.hrtfDspBlocks > prev.hrtfDspBlocks;
+            const bool rirApp = cmp && applying(cur.rirActiveBlocks - prev.rirActiveBlocks, cur.rirInEnergy - prev.rirInEnergy, cur.rirOutEnergy - prev.rirOutEnergy);
+            const bool safHrtf = cmp && (cur.hrtfSafRefreshes > prev.hrtfSafRefreshes);
+            const bool safRir = cmp && (cur.rirRelinks > prev.rirRelinks);
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":true,\"action\":\"GET_PROCESSOR_EVIDENCE\",\"comparable\":%s,"
+                "\"hrtfApplying\":%s,\"hrtfDspDelegated\":%s,\"rirApplying\":%s,\"safReachedHrtf\":%s,\"safReachedRir\":%s,"
+                "\"hrtfCpuBlocks\":%llu,\"hrtfDspBlocks\":%llu,\"hrtfSafRefreshes\":%llu,\"rirLoads\":%llu,\"rirRelinks\":%llu,\"rirActiveBlocks\":%llu,"
+                "\"hrtfDataset\":%s,\"hrtfAzimuthDeg\":%.2f,\"hrtfSafBiasDeg\":%.2f,\"hrtfCurvature\":%.3f,\"rirWet\":%.3f,"
+                "\"rirBakedEarly\":%.3f,\"rirBakedDecorrel\":%.3f,\"rirBakedRt60Delta\":%.3f,\"rirWetScale\":%.3f,\"adaptiveApplyBlocks\":%llu}",
+                cmp?"true":"false", hrtfCpu?"true":"false", hrtfDsp?"true":"false", rirApp?"true":"false",
+                safHrtf?"true":"false", safRir?"true":"false",
+                (unsigned long long)cur.hrtfCpuBlocks, (unsigned long long)cur.hrtfDspBlocks,
+                (unsigned long long)cur.hrtfSafRefreshes, (unsigned long long)cur.rirLoads,
+                (unsigned long long)cur.rirRelinks, (unsigned long long)cur.rirActiveBlocks,
+                cur.hrtfDatasetLoaded ? "true" : "false", cur.hrtfAzimuthDeg, cur.hrtfSafBiasDeg, cur.hrtfCurvature, cur.rirWet,
+                cur.rirBakedEarly, cur.rirBakedDecorrel, cur.rirBakedRt60Delta, cur.rirWetScale,
+                (unsigned long long)cur.adaptiveApplyBlocks);
+            prev = cur; havePrev = true;
+        }
 
     } else if (strcmp(action,"GET_CLOCK_TELEMETRY")==0) {
         // CAUSA RAIZ de los campos vacios del Profiler: el beacon (/data/local/tmp, shell_data_file) y el
@@ -676,6 +716,71 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 
+    } else if (strcmp(action,"SET_AUDIO_FEATURES")==0) {
+        // Estado deseado de los dos actuadores de Ruta B. La respuesta distingue
+        // publicar el snapshot de que omega_effect lo haya consumido realmente.
+        const float h = _jsonFloat(json,"hrtfEnabled", 9999.f);
+        const float a = _jsonFloat(json,"adaptiveEnabled", 9999.f);
+        const bool hasH = h != 9999.f, hasA = a != 9999.f;
+        if ((!hasH && !hasA) || (hasH && h != 0.f && h != 1.f) ||
+            (hasA && a != 0.f && a != 1.f)) {
+            n = snprintf(reply,reply_sz,
+                "{\"ok\":false,\"action\":\"SET_AUDIO_FEATURES\",\"applied\":false,\"status\":\"invalid_arguments\"}");
+        } else {
+            const OmegaDspState previousState = m_state;
+            const uint64_t previousGeneration = m_audio_feature_generation;
+            const uint64_t previousEvidenceSeq = m_audio_feature_evidence_seq;
+            if (hasH) m_state.hrtf_enabled = h > 0.5f;
+            if (hasA) m_state.adaptive_enabled = a > 0.5f;
+            ivanna::EffectEvidence before{};
+            const bool beforeReadable = ivanna::readEffectEvidence(before);
+            // HRTF/adaptive toggles live only in the control snapshot; do not
+            // rewrite unrelated shared gain/mix atomics for this command.
+            const uint64_t gen = publishCurrentState(m_state, false);
+            if (gen > 0u) {
+                m_audio_feature_generation = gen;
+                m_audio_feature_evidence_seq = beforeReadable ? before.seq : 0u;
+            } else {
+                // Publication failed: rollback the desired state so a later,
+                // unrelated command cannot accidentally activate this request.
+                m_state = previousState;
+                m_audio_feature_generation = previousGeneration;
+                m_audio_feature_evidence_seq = previousEvidenceSeq;
+            }
+            ivanna::EffectEvidence ev{};
+            const bool evidence = ivanna::readEffectEvidence(ev);
+            const bool applied = gen > 0u && evidence &&
+                ev.seq > m_audio_feature_evidence_seq && ev.controlGeneration >= gen &&
+                ev.hrtfEnabled == (m_state.hrtf_enabled ? 1u : 0u) &&
+                ev.adaptiveEnabled == (m_state.adaptive_enabled ? 1u : 0u);
+            n = snprintf(reply,reply_sz,
+                "{\"ok\":%s,\"action\":\"SET_AUDIO_FEATURES\",\"applied\":%s,\"status\":\"%s\","
+                "\"generation\":%llu,\"consumerGeneration\":%llu,\"hrtfEnabled\":%s,\"adaptiveEnabled\":%s,\"consumer\":%s}",
+                gen>0u?"true":"false", applied?"true":"false",
+                gen==0u?"publish_failed":(applied?"applied":"accepted_pending_consumer"),
+                (unsigned long long)gen,
+                (unsigned long long)(evidence?ev.controlGeneration:0u),
+                m_state.hrtf_enabled?"true":"false",m_state.adaptive_enabled?"true":"false",
+                hasActiveConsumer()?"\"omega_effect\"":"null");
+        }
+
+    } else if (strcmp(action,"GET_AUDIO_FEATURES_STATUS")==0) {
+        ivanna::EffectEvidence ev{};
+        const bool evidence = ivanna::readEffectEvidence(ev);
+        const uint64_t gen = m_audio_feature_generation;
+        const bool applied = gen > 0u && evidence &&
+            ev.seq > m_audio_feature_evidence_seq && ev.controlGeneration >= gen &&
+            ev.hrtfEnabled == (m_state.hrtf_enabled ? 1u : 0u) &&
+            ev.adaptiveEnabled == (m_state.adaptive_enabled ? 1u : 0u);
+        n = snprintf(reply,reply_sz,
+            "{\"ok\":true,\"action\":\"GET_AUDIO_FEATURES_STATUS\",\"applied\":%s,\"status\":\"%s\","
+            "\"generation\":%llu,\"consumerGeneration\":%llu,\"hrtfEnabled\":%s,\"adaptiveEnabled\":%s,\"consumer\":%s}",
+            applied?"true":"false",
+            gen==0u?"no_request":(applied?"applied":(evidence?"accepted_pending_consumer":"consumer_unavailable")),
+            (unsigned long long)gen,(unsigned long long)(evidence?ev.controlGeneration:0u),
+            m_state.hrtf_enabled?"true":"false",m_state.adaptive_enabled?"true":"false",
+            hasActiveConsumer()?"\"omega_effect\"":"null");
+
     } else if (strcmp(action,"SET_ADAPTIVE_STATE")==0) {
         m_state.target_gain = _jsonFloat(json,"targetGain",m_state.target_gain);
         m_state.comp_amount = _jsonFloat(json,"compAmount",m_state.comp_amount);
@@ -708,22 +813,36 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         }
 
     } else if (strcmp(action,"SET_YAMNET_SCORES")==0 || strcmp(action,"PUSH_YAMNET_SCORES")==0) {
-        float speech = _clamp(_jsonFloat(json,"speech",0.f), 0.f, 1.f);
-        float music = _clamp(_jsonFloat(json,"music",0.f), 0.f, 1.f);
-        float classId = _jsonFloat(json,"classId",0.f);
-        float conf = _clamp(_jsonFloat(json,"confidence",0.f), 0.f, 1.f);
-        if (OmegaSharedState* shm = getSharedState()) {
+        const float speechRaw = _jsonFloat(json,"speech",std::nanf(""));
+        const float musicRaw = _jsonFloat(json,"music",std::nanf(""));
+        const float classRaw = _jsonFloat(json,"classId",-1.f);
+        const float confRaw = _jsonFloat(json,"confidence",std::nanf(""));
+        if (!std::isfinite(speechRaw) || !std::isfinite(musicRaw) ||
+            !std::isfinite(classRaw) || !std::isfinite(confRaw) ||
+            classRaw < 0.f || classRaw > 520.f || std::floor(classRaw) != classRaw) {
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":false,\"command\":\"%s\",\"applied\":false,\"status\":\"invalid_classifier_payload\"}",
+                action);
+        } else if (OmegaSharedState* shm = getSharedState()) {
+            const float speech = _clamp(speechRaw, 0.f, 1.f);
+            const float music = _clamp(musicRaw, 0.f, 1.f);
+            const float conf = _clamp(confRaw, 0.f, 1.f);
             shm->ai_voice_score.store(speech, std::memory_order_relaxed);
             shm->ai_music_score.store(music, std::memory_order_relaxed);
-            shm->ai_yamnet_class_id.store(static_cast<int>(classId), std::memory_order_relaxed);
+            shm->ai_yamnet_class_id.store(static_cast<int>(classRaw), std::memory_order_relaxed);
             shm->ai_yamnet_confidence.store(conf, std::memory_order_relaxed);
+            CS_LOG("YAMNET snapshot published speech=%.2f music=%.2f class=%d conf=%.2f",
+                   speech, music, static_cast<int>(classRaw), conf);
+            const uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
+            const char* cons = hasActiveConsumer() ? "\"omega_effect\"" : "null";
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":true,\"command\":\"%s\",\"published\":true,\"applied\":false,\"status\":\"published_to_shared_state\",\"generation\":%llu,\"route\":\"CONTROL_PLANE\",\"consumer\":%s,\"speech\":%.2f,\"music\":%.2f,\"classId\":%d,\"confidence\":%.2f}",
+                action, (unsigned long long)gen, cons, speech, music, static_cast<int>(classRaw), conf);
+        } else {
+            n = snprintf(reply, reply_sz,
+                "{\"ok\":false,\"command\":\"%s\",\"published\":false,\"applied\":false,\"status\":\"shared_state_unavailable\"}",
+                action);
         }
-        CS_LOG("YAMNET REAL speech=%.2f music=%.2f class=%d conf=%.2f", speech, music, (int)classId, conf);
-        uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
-        const char* cons = hasActiveConsumer() ? "\"omega_effect\"" : "null";
-        n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"%s\",\"applied\":true,\"status\":\"applied\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"speech\":%.2f,\"music\":%.2f,\"classId\":%d,\"confidence\":%.2f}",
-            action, (unsigned long long)gen, cons, speech, music, (int)classId, conf);
 
     } else if (strcmp(action,"SET_ROUTE_PROFILE")==0) {
         m_state.bass_boost = _jsonFloat(json,"bassBoostDb", m_state.bass_boost);
@@ -921,6 +1040,8 @@ void CommandServer::resetState() {
     pthread_mutex_lock(&m_mutex);
     m_state = kDefaultState;
     m_state.last_update = _nowMs();
+    m_audio_feature_generation = 0u;
+    m_audio_feature_evidence_seq = 0u;
     pthread_mutex_unlock(&m_mutex);
 }
 bool CommandServer::start(const std::string& socket_path) {

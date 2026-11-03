@@ -15,8 +15,9 @@ int main() {
 
     // Caso música (rms=0.15, peak=0.5, gr=-1dB)
     RawAudioMetrics m{};
-    m.rms = 0.15f; m.peak = 0.5f; m.gain_reduction_db = 1.0f; m.voice_score = 0.2f;
+    m.rms = 0.15f; m.peak = 0.5f; m.gain_reduction_db = 1.0f; m.voice_score = 0.2f; m.voice_score_valid = true;
     m.band_low_energy = 0.3f; m.band_mid_energy = 0.5f; m.band_high_energy = 0.2f;
+    m.band_energy_valid = true;
     AdaptiveState M = AdaptiveDecisionEngine::evaluate(m, 0.1f);
     printf("musica    : target_gain=%.4f margin=%.4f width=%.4f\n",
         M.target_gain, M.safety_margin, M.spatial_width);
@@ -25,8 +26,9 @@ int main() {
 
     // Caso clipping (peak=1.2, gr=6dB)
     RawAudioMetrics c{};
-    c.rms = 0.6f; c.peak = 1.2f; c.gain_reduction_db = 6.0f; c.voice_score = 0.f;
+    c.rms = 0.6f; c.peak = 1.2f; c.gain_reduction_db = 6.0f; c.voice_score = 0.f; c.voice_score_valid = true;
     c.band_low_energy = 0.4f; c.band_mid_energy = 0.6f; c.band_high_energy = 0.4f;
+    c.band_energy_valid = true;
     AdaptiveState C = AdaptiveDecisionEngine::evaluate(c, 0.3f);
     printf("clipping  : target_gain=%.4f margin=%.4f comp=%.4f\n",
         C.target_gain, C.safety_margin, C.compressor_amount);

@@ -229,7 +229,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // pensado para audifonos y por altavoces degrada la imagen y el timbre. En modo AUX se apagan
     // por sus propias envolventes (sin cortes) y el campo coherente de graves toma su lugar.
     const bool auxField = g_aux_field_enabled.load(std::memory_order_relaxed);
-    m_hrtf->setWetDry(auxField ? 0.0f : g_hrtf_wet_dry.load(std::memory_order_relaxed));
+    m_hrtf->setWetDry((auxField || !m_hrtfEnabled_.load(std::memory_order_acquire)) ? 0.0f : g_hrtf_wet_dry.load(std::memory_order_relaxed));
 
     // Intelligent Upmixing + HOA Binaural Decoder (Mayor impacto en audio espacial)
     //
@@ -543,6 +543,17 @@ void IvannaFusionEngine::applyGoldenEarGAN(Ivanna::AudioBuffer* buffer) {
 
 bool IvannaFusionEngine::setSceneDistance(float distanceScale) noexcept {
     return m_hrtf ? m_hrtf->setSceneDistance(distanceScale) : false;
+}
+
+bool IvannaFusionEngine::hrtfEvidence(HrtfEvidenceOut& o) const noexcept {
+    if (!m_hrtf) return false;
+    const auto e = m_hrtf->evidence();
+    o.cpuBlocks = e.cpuBlocks; o.dspBlocks = e.dspBlocks;
+    o.safRefreshes = e.safRefreshes; o.poseApplies = e.poseApplies;
+    o.inEnergy = e.inEnergy; o.outEnergy = e.outEnergy;
+    o.azimuthDeg = e.azimuthDeg; o.safBiasDeg = e.safBiasDeg; o.curvature = e.curvature;
+    o.datasetLoaded = e.datasetLoaded;
+    return true;
 }
 
 void IvannaFusionEngine::setSafLatentParams(const float q[7]) noexcept {

@@ -222,11 +222,12 @@ public:
         rawM.band_low_energy  = std::sqrt(bands.low  * invN);
         rawM.band_mid_energy  = std::sqrt(bands.mid  * invN);
         rawM.band_high_energy = std::sqrt(bands.high * invN);
+        rawM.band_energy_valid = true; // tres bandas medidas por bandMeter_, no una distribución supuesta
         rawM.crest_factor_db  = (rawM.rms > 1.0e-6f)
             ? (20.0f * std::log10(std::max(1.0f, rawM.peak / rawM.rms)))
             : 0.0f;
-        const float bandTot = rawM.band_low_energy + rawM.band_mid_energy + rawM.band_high_energy + 1.0e-6f;
-        rawM.voice_score = std::clamp((rawM.band_mid_energy / bandTot) * 1.4f, 0.0f, 1.0f);
+        // Esta ruta no posee un clasificador de voz. voice_score permanece
+        // inválido/neutral hasta que un clasificador real publique su salida.
 
         ivanna::experimental::AdaptiveState adaptSt{};
         adaptSt.eq_tilt_db = -std::clamp(rawM.band_high_energy * 2.5f, 0.0f, 2.5f);

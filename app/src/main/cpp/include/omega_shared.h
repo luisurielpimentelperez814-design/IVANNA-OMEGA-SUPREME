@@ -95,53 +95,27 @@ struct OmegaSharedState {
     std::atomic<float> ai_rms_level;    // RMS normalizado, read-only desde la APK
     std::atomic<float> ai_gain_db;      // ganancia AGC en dB, read-only desde la APK
 
-    // FIX (Adaptive Feedback Loop — cierre de la ruta real de Spotify/YouTube):
-    // ai_rms_level/ai_gain_db SOLO se actualizan dentro de applyAgc(), que a
-    // su vez SOLO corre si ai_enabled==true (false por defecto, ver
-    // constructor). Un usuario que nunca activó el AGC nunca tendría
-    // telemetría real, aunque estuviera sonando música real por esta ruta.
-    // ai_raw_rms/ai_raw_peak se calculan de forma INCONDICIONAL en cada
-    // bloque de Effect_Process (ver omega_effect.cpp), independientes de si
-    // el AGC está activo — son la fuente real que AdaptiveDecisionEngine
-    // consume vía el puente en el mismo proceso de la app (ver
-    // omega_daemon_get_shared_state() en omega_daemon.cpp).
+    // Campos heredados de telemetría. En este árbol no existe escritor
+    // activo que actualice ai_raw_rms/ai_raw_peak; omega_effect publica
+    // raw_rms/raw_peak en OmegaControlBus, no en esta región. No consumir
+    // estos atómicos como mediciones actuales sin añadir un productor con
+    // ownership, secuencia y freshness explícitos. Se conservan para no
+    // cambiar el ABI/layout compartido de versiones instaladas.
     std::atomic<float> ai_raw_rms;
     std::atomic<float> ai_raw_peak;
 
-    // FIX (Opción A de unificación — paridad de protección entre Ruta A y
-    // Ruta B, sin fusionar los dos motores DSP): AdaptiveDecisionEngine ya
-    // recibe métricas reales de la Ruta B (ai_raw_rms/ai_raw_peak, ver
-    // arriba) y calcula decisiones — pero esas decisiones solo se
-    // aplicaban a g_gain/g_comp/g_exciter de la Ruta A (DSPBridge), que no
-    // procesan nada de lo que suena por Spotify/YouTube. Cero protección
-    // real para streaming pese a que el motor "sabía" qué hacer.
-    // target_gain (ya clampeado [0.5,1.0] en computeTargetGain() — solo
-    // puede atenuar, nunca subir de 1.0, seguro por construcción) y el
-    // daemon lo aplica como multiplicador adicional en 
-
-
-
-// SAF FULL MATHEMATICS
-// Φ_SAF = ΠS(p + factor * G^-1 * Δ)
-
-// en el hot-path. Semántica idéntica a Ruta A.
-    // FIX (Ruta B — spatial_width sin efecto, gap documentado en README):
-    // AdaptiveDecisionEngine calcula AdaptiveState::spatial_width (0..1.5,
-    // 1.0=sin cambio) desde hace tiempo, pero nada lo escribía acá y
-    // g_widener_b (omega_daemon.cpp) corría siempre con su ancho por
-    // 1.0 (unity) porque StereoWidener::setWidth(0.0f) = mono forzado, y
-    // el memset(0) de omega_daemon_init() lo dejaría en 0 si no se
-    // restaura explícitamente (ver ese archivo).
+    // Reservas legacy para decisión adaptativa. El control server puede
+    // reflejar valores en estos slots, pero no se encontró un consumidor PCM
+    // activo que los aplique. SYSTEM_WIDE usa los actuadores del ADE por sesión
+    // dentro de omega_effect.cpp. Se conserva el layout por compatibilidad ABI.
+    // ai_runtime_gain_mul ya está declarado al inicio de la estructura.
     std::atomic<float> ai_runtime_spatial_width;
     std::atomic<float> ai_runtime_comp_amount;
-    std::atomic<float> ai_runtime_exciter_red;  // 0..2 → StereoWidener::setWidth()
+    std::atomic<float> ai_runtime_exciter_red;  // 0..1 reservado
 
-    // FIX (cierre de band energy, Ruta B): antes 0.0f hardcodeado — el
-    // Adaptive Engine operaba a ciegas en detección de sibilancia/tono para
-    // streaming. Calculado dentro de processLoop() (omega_daemon.cpp) con
-    // la MISMA clase BiquadEnvelopeBank que ya usa la Ruta A (pd_engine.hpp)
-    // — no es un análisis nuevo, es la misma herramienta ya probada,
-    // instanciada una vez más para este proceso separado.
+    // Reservas legacy de banda espectral. En el código actual no se encontró
+    // un productor que escriba estos campos; por tanto no representan energía
+    // medida aunque la región SHM exista. Se conservan para respetar el ABI.
     std::atomic<float> ai_band_low;
     std::atomic<float> ai_band_mid;
     std::atomic<float> ai_band_high;

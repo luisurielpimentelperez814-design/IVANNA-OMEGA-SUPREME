@@ -116,6 +116,8 @@ ivanna_add_test(test_audio_hardware_clock_bridge)
 # IVANNA-ASRC-X1: núcleo variable y control fail-closed (sin ruta productiva habilitada).
 ivanna_add_test(test_variable_asrc)
 ivanna_add_test(test_hal_output_rate_control)
+# Route-B adaptive bypass: per-sample bounded ramp back to unity on disable.
+ivanna_add_test(test_adaptive_gain_ramp)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios
@@ -1498,3 +1500,18 @@ gtest_discover_tests(test_saf_optimizer_state)
 
 # FotoHolo Route B: 64-band Bark observer, fail-closed silence and bounded modulation.
 ivanna_add_test(test_fotoholo_bark_meter)
+
+
+# Evidencia medida por procesador: HRTF / RIR / SAF (con controles negativos).
+add_executable(test_processor_evidence
+  test_processor_evidence.cpp
+  ../HrtfManager.cpp
+  ../HRTFBinLoader.cpp
+  ../hexagon/ivanna_fastrpc_client.cpp
+  ../hexagon/ivanna_dsp.cpp
+  ../spatial/RirConvolver.cpp
+)
+target_link_libraries(test_processor_evidence PRIVATE GTest::gtest_main Threads::Threads)
+target_include_directories(test_processor_evidence PRIVATE .. ../include ../spatial host_stubs)
+target_compile_options(test_processor_evidence PRIVATE -Wall -Wextra)
+add_test(NAME test_processor_evidence COMMAND test_processor_evidence)

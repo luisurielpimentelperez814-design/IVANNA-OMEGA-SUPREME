@@ -1,6 +1,9 @@
 package com.ivanna.omega.neuromorphic
 
 import android.util.Log
+import android.content.Context
+import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.SystemWideHrtfPolicy
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeLibraryLoader
 
@@ -142,11 +145,17 @@ object PiLstmBridge {
             runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.setHarmonicGain(v.toDouble()) }
         }
     }
-    fun setHrtfEnabled(en: Boolean) {
+    fun setHrtfEnabled(en: Boolean, context: Context) {
         if (ready) {
             nativeSetHrtfEnabled(en)
             runCatching { IvannaNativeLib.nativeSetHRTFEnabled(en) }
             runCatching { IvannaNpeEngine.setBinauralEnabled(en) }
+            // Keep the AudioFlinger effect synchronized under the same output-route policy.
+            runCatching {
+                val route = AudioRouteManager.detectOutputRoute()
+                val routeAllowed = SystemWideHrtfPolicy.allow(context, en, route)
+                com.ivanna.omega.magisk.OmegaEngineBridge.queueSystemWideHrtfEnabled(routeAllowed)
+            }
         }
     }
     fun getNpSat(): Float = if (ready) nativeGetNpSat() else 0f

@@ -228,7 +228,11 @@ fun SpatialAudioPanel(
                 )
                 .build()
         }
-        val holoWebView = remember(webContext, assetLoader) {
+        // El proceso de render del WebView puede morir (presion de memoria con el DSP y la escena 3D
+        // activos). Por defecto Android MATA la app entera en ese caso; se atiende
+        // onRenderProcessGone y se reconstruye el WebView incrementando esta epoca.
+        var webEpoch by remember { mutableStateOf(0) }
+        val holoWebView = remember(webContext, assetLoader, webEpoch) {
             WebView(webContext).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = false
@@ -239,6 +243,15 @@ fun SpatialAudioPanel(
                 isHorizontalScrollBarEnabled = false
                 setBackgroundColor(android.graphics.Color.rgb(6, 10, 18))
                 webViewClient = object : WebViewClient() {
+                    override fun onRenderProcessGone(
+                        view: WebView,
+                        detail: android.webkit.RenderProcessGoneDetail
+                    ): Boolean {
+                        android.util.Log.w("FotoHolo", "WebView render process gone (crash=${detail.didCrash()}) — reconstruyendo")
+                        webEpoch++
+                        return true   // gestionado: la app NO debe morir
+                    }
+
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                         // Serve only this app's bundled assets; block every non-bundled subresource.
                         return assetLoader.shouldInterceptRequest(request.url)
@@ -254,6 +267,24 @@ fun SpatialAudioPanel(
                 FotoHoloTelemetryBridge.installBeforeLoadingTrustedBundle(this, webContext)
                 loadUrl("https://appassets.androidplatform.net/assets/fotoholo-web/fotoholo-embed.html")
             }
+        }
+        // Ciclo de vida: con la app en segundo plano el WebGL seguia animando (CPU/GPU/bateria que
+        // compiten con el hilo de audio). Se pausan timers y renderer fuera de primer plano.
+        val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+        DisposableEffect(holoWebView, lifecycleOwner) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                        runCatching { holoWebView.onPause(); holoWebView.pauseTimers() }
+                    }
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                        runCatching { holoWebView.onResume(); holoWebView.resumeTimers() }
+                    }
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
         DisposableEffect(holoWebView) {
             onDispose {
@@ -281,10 +312,15 @@ fun SpatialAudioPanel(
                 }
             }
         }
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(holoHeightDp.dp)) {
-            AndroidView(factory = { holoWebView }, modifier = Modifier.matchParentSize())
-            androidx.compose.foundation.layout.Box(
-                Modifier.matchParentSize().pointerInput(holoWebView) {
+        // Key the AndroidView subtree by the WebView instance. Merely changing
+        // remember(webEpoch) is insufficient: AndroidView.factory is invoked once
+        // for a stable composition identity, so without key() the replacement WebView
+        // created after onRenderProcessGone would never be attached to the view tree.
+        androidx.compose.runtime.key(holoWebView) {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(holoHeightDp.dp)) {
+                AndroidView(factory = { holoWebView }, modifier = Modifier.matchParentSize())
+                androidx.compose.foundation.layout.Box(
+                    Modifier.matchParentSize().pointerInput(holoWebView) {
                     val slop = viewConfiguration.touchSlop
                     awaitPointerEventScope {
                         while (true) {
@@ -323,7 +359,8 @@ fun SpatialAudioPanel(
                         }
                     }
                 }
-            )
+                )
+            }
         }
 
         // ── HRTF ──────────────────────────────────────────────────────────
@@ -449,7 +486,7 @@ fun SpatialAudioPanel(
                 pushHybridMagistral()
             }
         }
-
+        
         // ── PIPELINE ESPACIAL EN VIVO ─────────────────────────────────────
         SpatialCard(
             "PIPELINE ESPACIAL EN VIVO",

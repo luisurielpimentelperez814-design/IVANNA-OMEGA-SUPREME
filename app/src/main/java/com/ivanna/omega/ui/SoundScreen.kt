@@ -14,12 +14,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.ivanna.omega.audio.AudioStateManager
+import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.SystemWideHrtfPolicy
+import com.ivanna.omega.audio.OutputRoute
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.NativeBridge
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.perceptual.PerceptualSceneRuntime
 import com.ivanna.omega.perceptual.AxisState
 import com.ivanna.omega.ui.theme.*
+import kotlinx.coroutines.launch
 
 /**
  * SoundScreen — Sección SONIDO unificada.
@@ -45,6 +49,7 @@ fun SoundScreen(modifier: Modifier = Modifier) {
         prefs = update(prefs)
         AdaptiveControlsPrefs.save(appContext, prefs)
     }
+    val routeAdaptiveEnabled = prefs.binauralAdaptEnabled && !audioState.manualModeEnabled
 
     // FIX: EQ/Compresor/Gain se perdían en cada reinicio porque AudioState
     // es in-memory. Restaurar desde prefs y replicar al motor nativo al abrir.
@@ -314,12 +319,108 @@ private fun BinauralTab(
 ) {
     val appContext = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
+    val routeAdaptiveEnabled = prefs.binauralAdaptEnabled && !audioState.manualModeEnabled
     // Bug B fix — hrtfEnabled derivado del audioState para que re-sincronice
     // si la fuente cambia externamente (no val plana ni remember sin key)
     val hrtfEnabled by remember { derivedStateOf { audioState.binaural } }
     var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
     var spatialPoseStatus by remember { mutableStateOf("POSE 3D: esperando motor HRTF") }
     var hrtfDatasetStatus by remember { mutableStateOf("HRTF: no confirmado") }
+    var routeFeatureStatus by remember { mutableStateOf("RUTA B: esperando confirmación de AudioFlinger") }
+    val routeControlScope = rememberCoroutineScope()
+    fun requestRouteFeatures(hrtf: Boolean, adaptive: Boolean) {
+        routeFeatureStatus = "RUTA B: enviando controles según salida activa…"
+        routeControlScope.launch {
+            val routeDecision = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val activeRoute = AudioRouteManager.detectOutputRoute()
+                val systemHrtf = SystemWideHrtfPolicy.allow(
+                    appContext, hrtf, activeRoute
+                )
+                val reply = com.ivanna.omega.magisk.OmegaEngineBridge.setAudioFeatures(
+                    systemHrtf, adaptive
+                )
+                Triple(reply, systemHrtf, activeRoute)
+            }
+            val result = routeDecision.first
+            val appliedHrtf = routeDecision.second
+            val selectedRoute = routeDecision.third
+            if (result == null) {
+                routeFeatureStatus = "RUTA B NO CONFIRMADA · daemon/socket no disponible"
+                return@launch
+            }
+            fun describe(
+                reply: org.json.JSONObject,
+                evidence: org.json.JSONObject?,
+                adaptiveBlocksDelta: Long = 0L
+            ): String {
+                val generation = reply.optLong("generation", 0L)
+                val control = when {
+                    reply.optBoolean("applied", false) -> "RUTA B APLICADA · gen " + generation
+                    reply.optString("status") == "accepted_pending_consumer" ->
+                        "RUTA B PENDIENTE · gen " + generation + " · esperando consumo de omega_effect"
+                    else -> "RUTA B NO APLICADA · " + reply.optString("status", "sin estado")
+                }
+                val measured = evidence?.optBoolean("hrtfDataset", false) == true
+                val cpuBlocks = evidence?.optLong("hrtfCpuBlocks", 0L) ?: 0L
+                val dspBlocks = evidence?.optLong("hrtfDspBlocks", 0L) ?: 0L
+                val hrtfApplying = evidence?.optBoolean("hrtfApplying", false) == true ||
+                    evidence?.optBoolean("hrtfDspDelegated", false) == true
+                val hrtfLine = when {
+                    !reply.optBoolean("hrtfEnabled", appliedHrtf) ->
+                        "HRTF OFF · política de salida " + selectedRoute.name
+                    evidence == null || !evidence.optBoolean("ok", false) -> "HRTF evidencia no disponible"
+                    hrtfApplying && measured -> "HRTF aplicando HRIR medidas · CPU " + cpuBlocks + " / DSP " + dspBlocks
+                    hrtfApplying -> "HRTF sintético aplicando · sin HRIR medidas"
+                    measured -> "HRIR medidas cargadas · aplicación HRTF no confirmada en la ventana"
+                    cpuBlocks + dspBlocks > 0L -> "HRTF previamente procesó síntesis · sin actividad en la ventana"
+                    else -> "HRTF habilitado · salida " + selectedRoute.name + " · esperando bloque de audio real"
+                }
+                val adaptiveLine = when {
+                    !reply.optBoolean("adaptiveEnabled", adaptive) -> "ADAPT OFF"
+                    evidence == null || !evidence.optBoolean("ok", false) -> "ADAPT evidencia no disponible"
+                    adaptiveBlocksDelta > 0L ->
+                        "AdaptiveEngineV2 procesó " + adaptiveBlocksDelta + " bloques durante la comprobación"
+                    else -> "ADAPT habilitado · sin bloques nuevos durante la comprobación"
+                }
+                return control + " · " + hrtfLine + " · " + adaptiveLine
+            }
+            var latestStatus: org.json.JSONObject = requireNotNull(result)
+            if (!result.optBoolean("applied", false)) {
+                for (attempt in 0 until 8) {
+                    kotlinx.coroutines.delay(250L)
+                    val status = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.ivanna.omega.magisk.OmegaEngineBridge.getAudioFeaturesStatus()
+                    } ?: continue
+                    latestStatus = status
+                    routeFeatureStatus = describe(status, null)
+                    if (status.optBoolean("applied", false)) break
+                }
+            }
+            val evidenceBefore = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivanna.omega.magisk.OmegaEngineBridge.getProcessorEvidence()
+            }
+            kotlinx.coroutines.delay(750L)
+            val evidence = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivanna.omega.magisk.OmegaEngineBridge.getProcessorEvidence()
+            }
+            val adaptiveDelta = if (
+                evidenceBefore?.optBoolean("ok", false) == true &&
+                evidence?.optBoolean("ok", false) == true
+            ) {
+                (evidence.optLong("adaptiveApplyBlocks", 0L) -
+                    evidenceBefore.optLong("adaptiveApplyBlocks", 0L)).coerceAtLeast(0L)
+            } else {
+                0L // No baseline = no activity claim; never treat a lifetime counter as a new delta.
+            }
+            // Re-read after the evidence window: an audio callback may have consumed the
+            // generation after the initial bounded poll loop timed out.
+            val finalStatus = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.ivanna.omega.magisk.OmegaEngineBridge.getAudioFeaturesStatus()
+            }
+            if (finalStatus != null) latestStatus = finalStatus
+            routeFeatureStatus = describe(latestStatus, evidence, adaptiveDelta)
+        }
+    }
     var tenDStatus by remember { mutableStateOf("10D: recopilando estado real del motor") }
     var tenDAxes by remember { mutableStateOf(emptyList<String>()) }
     var movementEnabled by remember { mutableStateOf(com.ivanna.omega.spatial.IvannaSpatialManager.sceneMovementActive) }
@@ -357,6 +458,8 @@ private fun BinauralTab(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
         syncHybridToNative(prefs)
+        // Persisted toggles are re-published to the SYSTEM_WIDE effect whenever this tab opens.
+        requestRouteFeatures(hrtfEnabled, routeAdaptiveEnabled)
         var initialPoseConfirmed = false
         var pollCount = 0
         while (true) {
@@ -393,7 +496,7 @@ private fun BinauralTab(
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(hrtfDatasetStatus, color = TextSecondary, fontSize = 10.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("HRTF ACTIVO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text("HRTF SOLICITADO", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Switch(
                     checked = hrtfEnabled,
                     onCheckedChange = { en ->
@@ -403,6 +506,7 @@ private fun BinauralTab(
                             runCatching { IvannaNativeLib.nativeSetBinauralEnabled(en) }
                         }
                         com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = en
+                        requestRouteFeatures(en, routeAdaptiveEnabled)
                     }
                 )
             }
@@ -414,11 +518,20 @@ private fun BinauralTab(
                     checked = prefs.binauralAdaptEnabled,
                     onCheckedChange = { en ->
                         updatePrefs { it.copy(binauralAdaptEnabled = en) }
-                        if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAdaptiveEngineEnabled(en) }
+                        val effectiveAdaptive = en && !audioState.manualModeEnabled
+                        if (IvannaNativeLib.isLoaded) runCatching {
+                            IvannaNativeLib.nativeSetAdaptiveEngineEnabled(effectiveAdaptive)
+                        }
+                        requestRouteFeatures(hrtfEnabled, effectiveAdaptive)
                     }
                 )
             }
             ControlHelpText("MOTOR ADAPTATIVO")
+            if (audioState.manualModeEnabled) {
+                Text("MODO MANUAL ACTIVO · adaptación automática en Ruta B suspendida",
+                    color = TextSecondary, fontSize = 10.sp)
+            }
+            Text(routeFeatureStatus, color = TextSecondary, fontSize = 10.sp)
             IvannaSliderRow("AZIMUT", prefs.binauralAzimuth, -180f, 180f, "°") { v ->
                 val next = prefs.copy(binauralAzimuth = v)
                 updatePrefs { next }

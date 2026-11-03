@@ -225,8 +225,23 @@ object OmegaEngineBridge {
             // daemon recibía valores viejos tarde. Ahora el ÚLTIMO payload de cada
             // acción reemplaza al pendiente (estado, no eventos) y un solo drenaje
             // corre en el hilo de E/S.
-            val key = payload.optString("action", "")
-            pendingByAction[key] = payload
+            val action = payload.optString("action", "")
+            val key = action
+            if (action == "SET_AUDIO_FEATURES") {
+                // Merge partial HRTF/adaptive updates so two rapid UI toggles cannot erase each other.
+                pendingByAction.compute(key) { _, previous ->
+                    if (previous == null) {
+                        JSONObject(payload.toString())
+                    } else {
+                        JSONObject(previous.toString()).apply {
+                            if (payload.has("hrtfEnabled")) put("hrtfEnabled", payload.optInt("hrtfEnabled"))
+                            if (payload.has("adaptiveEnabled")) put("adaptiveEnabled", payload.optInt("adaptiveEnabled"))
+                        }
+                    }
+                }
+            } else {
+                pendingByAction[key] = payload
+            }
             if (drainScheduled.compareAndSet(false, true)) {
                 ioExecutor.execute { drainPending() }
             }
@@ -259,6 +274,38 @@ object OmegaEngineBridge {
 
     fun clearScenePose(): Boolean =
         sendCommand(JSONObject().apply { put("action", "SET_SCENE_POSE"); put("clear", 1) })
+
+    /**
+     * Route B: switches consumed inside libomega_effect / audioserver.
+     * The daemon reply distinguishes a published request from an effect-consumed generation.
+     * Call from Dispatchers.IO because requestCommand performs a synchronous socket round trip.
+     */
+    fun setAudioFeatures(hrtfEnabled: Boolean, adaptiveEnabled: Boolean): JSONObject? =
+        requestCommand(JSONObject().apply {
+            put("action", "SET_AUDIO_FEATURES")
+            put("hrtfEnabled", if (hrtfEnabled) 1 else 0)
+            put("adaptiveEnabled", if (adaptiveEnabled) 1 else 0)
+        })
+
+    // Partial updates preserve the other feature bit and can be called safely from UI callbacks.
+    fun queueSystemWideHrtfEnabled(enabled: Boolean): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action", "SET_AUDIO_FEATURES")
+            put("hrtfEnabled", if (enabled) 1 else 0)
+        })
+
+    fun queueSystemWideAdaptiveEnabled(enabled: Boolean): Boolean =
+        sendCommand(JSONObject().apply {
+            put("action", "SET_AUDIO_FEATURES")
+            put("adaptiveEnabled", if (enabled) 1 else 0)
+        })
+
+    fun getAudioFeaturesStatus(): JSONObject? =
+        requestCommand(JSONObject().apply { put("action", "GET_AUDIO_FEATURES_STATUS") })
+
+    /** Read measurements produced by omega_effect (not app-local state). */
+    fun getProcessorEvidence(): JSONObject? =
+        requestCommand(JSONObject().apply { put("action", "GET_PROCESSOR_EVIDENCE") })
 
     fun setPFParams(vararg params: Float): Boolean {
         if (params.any { !it.isFinite() }) return false

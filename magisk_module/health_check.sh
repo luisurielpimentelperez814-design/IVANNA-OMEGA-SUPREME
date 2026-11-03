@@ -89,16 +89,17 @@ RIR_N=$(ls "$DATA_DIR/rir/"*.wav 2>/dev/null | wc -l)
     || ([ "$RIR_N" -gt 0 ] && warn "RIR: solo $RIR_N salas (esperadas 200)" \
         || fail "RIR: directorio $DATA_DIR/rir/ vacío o inexistente")
 
-# Recursivo: incluye el bloque ARI de HpIR (sofa/ari/*.sofa) si fue desplegado.
-# En la distribución estándar del módulo Magisk, sofa/*.sofa se excluye del zip para no sobrecargar
-# el tamaño de descarga (72MB). El motor opera de forma nativa e independiente con IHR1 (CIPIC/KEMAR).
-SOFA_N=$(find "$DATA_DIR/sofa" -name '*.sofa' 2>/dev/null | wc -l)
-if [ "$SOFA_N" -ge 10 ]; then
-    pass "SOFA: $SOFA_N archivos AES69 presentes"
+# Contrato del módulo (desde v2.5.31 el zip SIEMPRE trae los SOFA): 239 .sofa en total, 200 de ellos en sofa/ari/.
+# customize.sh aborta la instalación si no cuadran, así que si faltan en el dispositivo el despliegue
+# se corrompió o se borró: debe verse como fallo, no como "dataset opcional".
+SOFA_N=$(find "$DATA_DIR/sofa" -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
+SOFA_ARI_N=$(find "$DATA_DIR/sofa/ari" -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
+if [ "$SOFA_N" -eq 239 ] && [ "$SOFA_ARI_N" -eq 200 ]; then
+    pass "SOFA: $SOFA_N archivos AES69 presentes ($SOFA_ARI_N ARI)"
 elif [ "$SOFA_N" -gt 0 ]; then
-    warn "SOFA: solo $SOFA_N archivos (esperados ≥20)"
+    warn "SOFA: incompleto ($SOFA_N/239 total, $SOFA_ARI_N/200 ARI) — reinstalar el módulo"
 else
-    pass "SOFA: dataset opcional ausente (el motor opera autónomamente con IHR1 de alta resolución)"
+    fail "SOFA: $DATA_DIR/sofa/ vacío o inexistente (el módulo debe desplegar 239 .sofa) — reinstalar el módulo"
 fi
 
 # ── 5. Logs recientes ─────────────────────────────────────────────────────────

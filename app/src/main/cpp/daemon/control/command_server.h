@@ -15,7 +15,7 @@
 // Bump cuando se anadan/eliminen acciones o cambie un payload. El reader
 // Kotlin (OmegaEngineBridge) la usa para degradar con ruido en vez de fallar
 // en silencio cuando habla con un daemon de otra epoca.
-inline constexpr uint32_t OMEGA_PROTO_VERSION = 2u;
+inline constexpr uint32_t OMEGA_PROTO_VERSION = 3u;
 
 struct OmegaDspState {
     float eq_gains[OMEGA_EQ_BANDS];
@@ -151,6 +151,10 @@ struct OmegaDspState {
     // FotoHolo Route B: análisis espectral del PCM real en omega_effect; apagado por defecto.
     bool fotoholo_enabled = false;
     float fotoholo_intensity = 0.6f;
+
+    // Route-B global effect switches. Defaults preserve current processing.
+    bool hrtf_enabled = true;
+    bool adaptive_enabled = true;
 };
 
 class CommandServer {
@@ -187,6 +191,8 @@ private:
     pthread_mutex_t m_mutex;
     OmegaDspState m_state;
     uint64_t m_head_pose_generation = 0;
+    uint64_t m_audio_feature_generation = 0;
+    uint64_t m_audio_feature_evidence_seq = 0;
     int m_server_fd;
     std::string m_socket_path;
     bool m_running;

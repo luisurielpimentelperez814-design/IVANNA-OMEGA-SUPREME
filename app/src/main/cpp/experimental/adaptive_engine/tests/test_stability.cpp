@@ -84,22 +84,27 @@ void producerThread(AdaptiveDecisionEngine& engine, int duration_ms, std::atomic
             case 0:  // silencio
                 m.rms = 0.0f; m.peak = 0.0f;
                 m.band_low_energy = m.band_mid_energy = m.band_high_energy = 0.0f;
+                m.band_energy_valid = true;
                 break;
             case 1:  // música normal
                 m.rms = 0.15f + jitter(rng); m.peak = 0.5f + jitter(rng);
                 m.band_low_energy = 0.3f + jitter(rng);
                 m.band_mid_energy = 0.5f + jitter(rng);
                 m.band_high_energy = 0.2f + jitter(rng);
+                m.band_energy_valid = true;
                 m.voice_score = 0.4f;
+                m.voice_score_valid = true;
                 break;
             case 2:  // ráfaga de clipping
                 m.rms = 0.7f + jitter(rng); m.peak = 1.3f + jitter(rng);
                 m.gain_reduction_db = 8.0f + jitter(rng) * 10.0f;
                 m.band_low_energy = 0.6f; m.band_mid_energy = 0.7f; m.band_high_energy = 0.5f;
+                m.band_energy_valid = true;
                 break;
             case 3:  // alta sibilancia (banda alta dominante)
                 m.rms = 0.2f; m.peak = 0.4f;
                 m.band_low_energy = 0.05f; m.band_mid_energy = 0.1f; m.band_high_energy = 0.8f;
+                m.band_energy_valid = true;
                 break;
         }
         engine.rawMetrics.publish(RawMetricsBus::Source::RouteA_BridgePlayer, m);

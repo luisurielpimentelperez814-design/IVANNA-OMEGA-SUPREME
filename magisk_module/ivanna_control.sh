@@ -98,6 +98,8 @@ case "$COMMAND" in
                 esac ;;
     telemetry)  send_command "GET_TELEMETRY" ;;
     clock)      send_command '{"action":"GET_CLOCK_TELEMETRY"}' ;;   # callback / reloj HAL / ASRC software (mismo JSON que la app)
+    evidence)   # HRTF/RIR/SAF medidos en el camino de audio (delta vs la consulta anterior: llamar 2 veces)
+                send_command '{"action":"GET_PROCESSOR_EVIDENCE"}'; sleep 3; send_command '{"action":"GET_PROCESSOR_EVIDENCE"}' ;;
     hal-probe)  exec "$(dirname "$0")/system/bin/ivanna_hal_probe" ;;  # evidencia PAL/ASRC del dispositivo, solo lectura
     reload)     send_command "RELOAD_PARAMS" ;;
     probe)      # Estado del transport, sin efecto lateral

@@ -298,6 +298,23 @@ inline void omega_fotoholo_decode(uint32_t field, bool& enabled, float& intensit
     enabled = (field & OMEGA_FOTOHOLO_ON_BIT) != 0u;
     intensity = static_cast<float>((field & OMEGA_FOTOHOLO_INTENSITY_MASK) >> OMEGA_FOTOHOLO_INTENSITY_SHIFT) / 511.0f;
 }
+// Route-B runtime feature controls use the still-reserved high half of temporal_field.
+// Bits 0..15 remain owned by temporal dynamics, XTC and FotoHolo. This is ABI-neutral:
+// temporal_field is already a 32-bit field and all existing decoders mask only their own bits.
+constexpr uint32_t OMEGA_EFFECT_HRTF_ENABLED_BIT = (1u << 16u);
+constexpr uint32_t OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT = (1u << 17u);
+constexpr uint32_t OMEGA_EFFECT_FEATURES_MASK =
+    OMEGA_EFFECT_HRTF_ENABLED_BIT | OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT;
+inline uint32_t omega_effect_features_encode(bool hrtfEnabled, bool adaptiveEnabled) noexcept {
+    return (hrtfEnabled ? OMEGA_EFFECT_HRTF_ENABLED_BIT : 0u) |
+           (adaptiveEnabled ? OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT : 0u);
+}
+inline void omega_effect_features_decode(uint32_t field, bool& hrtfEnabled, bool& adaptiveEnabled) noexcept {
+    hrtfEnabled = (field & OMEGA_EFFECT_HRTF_ENABLED_BIT) != 0u;
+    adaptiveEnabled = (field & OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
+}
+static_assert((OMEGA_EFFECT_FEATURES_MASK & 0x0000FFFFu) == 0u,
+              "Route-B feature flags must not overlap temporal/XTC/FotoHolo controls");
 inline uint32_t omega_temporal_field_encode(bool on, float amount, bool autoMode) noexcept {
     const float a = (amount == amount) ? amount : 0.6f;
     int lv = static_cast<int>(a * 7.f + 0.5f); lv = lv < 0 ? 0 : (lv > 7 ? 7 : lv);
@@ -599,6 +616,11 @@ struct OmegaDspSnapshot {
         s.supreme_snn_spikes      = 2u;
         s.supreme_subsample_delay = 0.24f;
         s.effect_frames = 0ULL;
+        // Fail closed for adaptive actuation until the app restores the user's
+        // persisted preference with SET_AUDIO_FEATURES. HRTF retains its
+        // historical default, while an absent/unavailable control plane must
+        // never silently re-enable a user-disabled adaptive engine.
+        s.temporal_field |= omega_effect_features_encode(true, false);
         s.stampCrc();
         return s;
     }

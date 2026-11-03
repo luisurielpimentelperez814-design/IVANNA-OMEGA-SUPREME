@@ -186,7 +186,46 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { DSPBridge.init(sr) }
             if (IvannaNativeLib.isLoaded) {
-                runCatching { IvannaNativeLib.nativeInitDSP(sr) }
+                val dspReady = runCatching {
+                    IvannaNativeLib.nativeInitDSP(sr)
+                }.getOrDefault(false)
+
+                // AudioStateManager is restored by attachPersistence() before
+                // this bootstrap. Read manual mode and perform the native
+                // toggle/create in one Main.immediate section so a UI toggle
+                // cannot slip between the check and native engine creation.
+                val (adaptiveRequested, adaptiveHandle, adaptiveRunning) =
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        val preferred =
+                            com.ivanna.omega.ui.AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled &&
+                            !com.ivanna.omega.audio.AudioStateManager.audioState.value.manualModeEnabled
+                        val requested = preferred && dspReady
+                        // Conservar la preferencia aunque DSP falle: el watchdog
+                        // podrá recuperar el motor cuando la ruta vuelva a estar lista.
+                        runCatching {
+                            IvannaNativeLib.nativeSetAdaptiveEngineEnabled(preferred)
+                        }.onFailure {
+                            android.util.Log.e("IVANNA.Boot", "No se pudo aplicar el modo adaptativo solicitado", it)
+                        }
+                        val handle = if (requested) {
+                            runCatching { IvannaNativeLib.nativeCreateAdaptiveEngine() }.getOrDefault(0L)
+                        } else {
+                            0L
+                        }
+                        val running = requested && handle != 0L &&
+                            runCatching { IvannaNativeLib.nativeIsAdaptiveEngineRunning() }.getOrDefault(false)
+                        Triple(requested, handle, running)
+                    }
+
+                if (adaptiveRequested && adaptiveRunning) {
+                    android.util.Log.i("IVANNA.Boot", "AdaptiveDecisionEngine iniciado y vivo")
+                } else if (dspReady && !adaptiveRequested) {
+                    android.util.Log.i("IVANNA.Boot", "Modo manual/adaptativo apagado por preferencia; DSP preservado")
+                } else if (dspReady) {
+                    android.util.Log.e("IVANNA.Boot", "AdaptiveDecisionEngine NOT_READY (handle=$adaptiveHandle); DSP preservado")
+                } else {
+                    android.util.Log.e("IVANNA.Boot", "DSP nativo no inicializado; ruta NOT_READY")
+                }
                 // El control loop es de proceso, no de pantalla: debe seguir
                 // publicando ControlFrames aunque el usuario salga del Dashboard.
                 runCatching { IvannaNativeLib.nativeStartEvoThread() }
@@ -1294,7 +1333,7 @@ fun DashboardScreen(
             },
             onNpeFlagsChange = { hrtf, cochlear, adapt ->
                 if (PiLstmBridge.isReady) {
-                    PiLstmBridge.setHrtfEnabled(hrtf)
+                    PiLstmBridge.setHrtfEnabled(hrtf, context.applicationContext)
                     PiLstmBridge.setCochlearEnabled(cochlear)
                     PiLstmBridge.setAdaptEnabled(adapt)
                 }

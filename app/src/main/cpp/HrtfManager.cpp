@@ -120,6 +120,10 @@ void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
     // (p.ej. el path FastRPC/Hexagon en processBinauralScene) necesita
     // poder leerla sin importar si hay dataset cargado o síntesis analítica.
     constexpr float kRadToDeg = 180.f / 3.14159265f;
+    m_lastYaw.store(yaw, std::memory_order_relaxed);
+    m_lastPitch.store(pitch, std::memory_order_relaxed);
+    m_lastRoll.store(roll, std::memory_order_relaxed);
+    m_evPose.fetch_add(1, std::memory_order_relaxed);
     const float safBias = m_safAzimuthBias.load(std::memory_order_relaxed);
     m_currentAzimuthDeg.store((yaw * kRadToDeg) + safBias, std::memory_order_relaxed);
     m_currentElevationDeg.store(pitch * kRadToDeg, std::memory_order_relaxed);
@@ -131,7 +135,9 @@ void HrtfManager::setHeadPose(float yaw, float pitch, float roll) {
         const float azDeg = (yaw * kRadToDeg) + safBias;
         loadFromDatasetAtPose(azDeg, pitch * kRadToDeg, inactive);
     } else {
-        synthesizeHrtf(yaw, pitch, roll, inactive);
+        // El sesgo SAF (q[1], +-10 grados) tambien debe llegar a la sintesis analitica;
+        // antes solo se aplicaba con dataset medido y q[1] no tenia efecto sin dataset.
+        synthesizeHrtf(yaw + safBias * (3.14159265f / 180.f), pitch, roll, inactive);
     }
     // Señalizar crossfade — processBinauralScene lo lee de forma lock-free
     m_pendingBank.store(inactive, std::memory_order_release);
@@ -164,28 +170,45 @@ void HrtfManager::processBinauralScene(Ivanna::AudioBuffer* buffer) {
 }
 
 void HrtfManager::processBinauralSceneImpl(Ivanna::AudioBuffer* buffer) {
-    if (m_fastRpcClient.isDSPReady()) {
-        // FIX (cableado binaural, FASE 8): azimuth/elevation ya NO se
-        // envían fijos en cero — se leen de la última pose real recibida
-        // por setHeadPose() (yaw/pitch del sensor + sesgo SAF), la misma
-        // fuente de verdad que usa el path CPU de más abajo. Sin este fix,
-        // en cualquier dispositivo con Hexagon DSP activo el binaural
-        // quedaba congelado siempre al centro, sin importar movimiento de
-        // cabeza ni ajuste espacial del optimizer SAF.
+    if (m_fastRpcClient.isDSPReady() &&
+        m_wetDry.load(std::memory_order_relaxed) >= 0.999f &&
+        m_wetEnv.currentGain >= 0.999f && !m_wetEnv.isTransitioning()) {
+        // The QAIC client does not promise in-place operation. Preserve the
+        // source block in preallocated per-instance staging and only count/return
+        // when the DSP explicitly confirms success. A rejected/failed RPC restores
+        // the dry block and falls through to the CPU convolver below.
+        std::memcpy(m_dspDryL, buffer->left, sizeof(m_dspDryL));
+        std::memcpy(m_dspDryR, buffer->right, sizeof(m_dspDryR));
         ivanna::dsp::SpatialPosition pos;
         pos.azimuth = m_currentAzimuthDeg.load(std::memory_order_relaxed);
         pos.elevation = m_currentElevationDeg.load(std::memory_order_relaxed);
-        pos.distance = 1.0f;  // sin modelo de distancia en el motor actual — campo lejano de referencia
-        m_fastRpcClient.delegateBinauralConvolution(
-            buffer->left, buffer->right,
+        pos.distance = 1.0f;
+        const bool dspApplied = m_fastRpcClient.delegateBinauralConvolution(
+            m_dspDryL, m_dspDryR,
             buffer->left, buffer->right,
             pos, BLOCK_SIZE
         );
-        return;
+        if (dspApplied) {
+            m_evDsp.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        std::memcpy(buffer->left, m_dspDryL, sizeof(m_dspDryL));
+        std::memcpy(buffer->right, m_dspDryR, sizeof(m_dspDryR));
     }
     // ── Crossfade lock-free ──────────────────────────────────────────────────
     // Si hay un banco pendiente: inicia crossfade suave sin clic.
     // XFADE_FRAMES bloques de fundido cruzado (coseno)
+    // SAF vivo: si q cambio y no hay crossfade en curso, re-sintetiza el banco inactivo con
+    // la ultima pose (curvatura/sesgo nuevos) y dispara el crossfade, sin esperar a un
+    // setHeadPose() que puede no llegar (p.ej. sin sensores de cabeza).
+    if (m_safDirty.load(std::memory_order_acquire) && !m_xfading &&
+        !m_xfadeTrigger.load(std::memory_order_acquire)) {
+        m_safDirty.store(false, std::memory_order_relaxed);
+        m_evSafRefresh.fetch_add(1, std::memory_order_relaxed);
+        setHeadPose(m_lastYaw.load(std::memory_order_relaxed),
+                    m_lastPitch.load(std::memory_order_relaxed),
+                    m_lastRoll.load(std::memory_order_relaxed));
+    }
     if (m_xfadeTrigger.exchange(false, std::memory_order_acq_rel)) {
         m_pendingBankLocal = m_pendingBank.load(std::memory_order_acquire);
         m_xfading  = true;
@@ -230,6 +253,10 @@ void HrtfManager::processBinauralSceneImpl(Ivanna::AudioBuffer* buffer) {
     }
 
     // ── Convolución HRTF ─────────────────────────────────────────────────────
+    double evIn = 0.0;
+    for (size_t i = 0; i < BLOCK_SIZE; ++i)
+        evIn += static_cast<double>(m_histL[HRTF_TAPS - 1 + i]) * m_histL[HRTF_TAPS - 1 + i]
+              + static_cast<double>(m_histR[HRTF_TAPS - 1 + i]) * m_histR[HRTF_TAPS - 1 + i];
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         const float wet = m_wetEnv.nextSample();
@@ -307,6 +334,15 @@ void HrtfManager::processBinauralSceneImpl(Ivanna::AudioBuffer* buffer) {
         buffer->right[i] = wet * outR + dry * dryR;
     }
 #endif
+    {
+        double evOut = 0.0;
+        for (size_t i = 0; i < BLOCK_SIZE; ++i)
+            evOut += static_cast<double>(buffer->left[i]) * buffer->left[i]
+                   + static_cast<double>(buffer->right[i]) * buffer->right[i];
+        m_evCpu.fetch_add(1, std::memory_order_relaxed);
+        m_evIn.store(m_evIn.load(std::memory_order_relaxed) + evIn, std::memory_order_relaxed);
+        m_evOut.store(m_evOut.load(std::memory_order_relaxed) + evOut, std::memory_order_relaxed);
+    }
 
     // ── Shift de historial: mover las últimas HRTF_TAPS-1 muestras al inicio
     // FIX (bug de offset): el shift anterior movía HRTF_TAPS-1 elementos desde
