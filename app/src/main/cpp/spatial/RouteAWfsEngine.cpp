@@ -19,7 +19,7 @@ public:
     float wetR[2048]{};
     int maxFrames = 0;
     float sampleRate = 48000.0f;
-    float dryLowpassCoeff = 1.0f;
+    float dryLowpassCoeff = 0.0f; // invalid geometry fails safe to full-band dry
     float dryLowpassL = 0.0f;
     float dryLowpassR = 0.0f;
 };
