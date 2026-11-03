@@ -70,6 +70,7 @@
 #include <cstdint>
 #include <cstring>
 #include <thread>
+#include <mutex>
 #include <type_traits>
 
 namespace ivanna::experimental {
@@ -388,9 +389,11 @@ public:
     RawMetricsBus    rawMetrics;
     AdaptiveStateBus adaptiveState;
 
-    void start();
+    // true only when the control thread is actually joinable/running.
+    // Thread creation failure leaves the engine stopped and retryable.
+    bool start() noexcept;
     void stop() noexcept;
-    bool running() const noexcept { return running_.load(std::memory_order_relaxed); }
+    bool running() const noexcept { return running_.load(std::memory_order_acquire); }
 
     // ── Entorno Acústico (RT60) y Factor de Adaptación Temporal λ_t ─────────
     void setEnvironmentRT60(float rt60) noexcept {
@@ -497,6 +500,9 @@ private:
     std::atomic<float> environmentRt60_{0.30f};
     std::atomic<float> adaptiveLambdaT_{0.50f};
 
+    // Serializes start/stop/join so a watchdog and UI toggle cannot race
+    // on std::thread::joinable()/assignment.
+    mutable std::mutex controlLifecycleMutex_;
     std::thread       controlThread_;
     std::atomic<bool> running_{false};
 
