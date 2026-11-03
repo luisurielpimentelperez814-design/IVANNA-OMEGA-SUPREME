@@ -88,14 +88,29 @@ def main() -> int:
             "rawM.gain_reduction_db = ctx->safetyLimiter",
             "ctx->adaptiveDecisionTargetGain",
             "ctx->adaptiveDecisionCompAmount",
-            "const float effectiveRatio = std::max(v2Ratio, adeRatio);",
-            "ctx->pendingSnap.exc_red = 0.0f;",
+            "ctx->adaptiveDecisionExciterReduction",
+            "const float requestedRatio = 1.0f + 7.0f * std::clamp(",
+            "const float effectiveRatio = std::max(v2Ratio, std::max(requestedRatio, adeRatio));",
             "const float effectiveThreshold =",
             "ctx->pendingSnap.compressor",
-            "adaptiveGainTarget = std::clamp(overallTrim * isoGain * adeGain, 0.50f, 1.0f);",
+            "const float requestedGain = std::clamp(",
+            "adaptiveGainTarget = std::clamp(",
+            "overallTrim * isoGain * requestedGain * adeGain, 0.50f, 1.0f);",
+            "omega_neutralize_adaptive_snapshot(ctx->pendingSnap);",
+            "const float totalExciterReduction =",
+            "std::max(requestedExciterReduction, adeExciterReduction);",
         ):
             if needle not in effect:
                 raise AssertionError(f"AudioEffect route metric/actuator wiring missing: {needle}")
+
+        for stale_writer in (
+            "ctx->pendingSnap.target_gain = ctx->adaptiveDecisionTargetGain",
+            "ctx->pendingSnap.comp_amount = ctx->adaptiveDecisionCompAmount",
+        ):
+            if stale_writer in effect:
+                raise AssertionError(f"ADE overwrites control-plane snapshot field: {stale_writer}")
+        if effect.count("omega_neutralize_adaptive_snapshot(ctx->pendingSnap)") < 3:
+            raise AssertionError("system-wide, initial seed and local routes do not all neutralize adaptive snapshot fields on OFF")
 
         for needle in (
             "bool voiceScoreValid = false;",
