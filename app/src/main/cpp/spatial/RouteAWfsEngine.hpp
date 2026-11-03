@@ -4,6 +4,12 @@
 #include <cstdint>
 
 namespace ivanna::spatial {
+// Pure arbitration policy shared by the production JNI route and host tests.
+// AUX takes precedence; the stored WFS preference remains untouched.
+constexpr bool isRouteAWfsAllowed(bool wfsEnabled, bool auxEnabled) noexcept {
+    return wfsEnabled && !auxEnabled;
+}
+
 class RouteAWfsEngine {
 public:
     RouteAWfsEngine() noexcept;
