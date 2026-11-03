@@ -49,7 +49,10 @@ bool RouteAWfsEngine::prepare(float sampleRate, int maxFrames) noexcept {
     if (!impl_->renderer.init(sampleRate, maxFrames, 7)) return false;
     impl_->governor.configure(sampleRate / static_cast<float>(maxFrames), 0.12f);
     impl_->governor.reset(spread_.load(std::memory_order_relaxed));
-    applyLayout(layoutGeneration_.load(std::memory_order_acquire));
+    float x[7], y[7], z[7];
+    uint32_t sequence = 0;
+    if (!readLayoutSnapshot(sequence, x, y, z)) return false;
+    applyLayout(sequence, x, y, z);
     impl_->renderer.setEnabled(enabled_.load(std::memory_order_acquire));
     prepared_ = true;
     return true;
@@ -70,59 +73,65 @@ void RouteAWfsEngine::setSpeakerLayout(const float* x, const float* y, const flo
             std::fabs(x[i]) > 7.0f || std::fabs(y[i]) > 5.0f ||
             std::fabs(z[i]) > 9.0f) return;
     }
+    while (layoutWriter_.test_and_set(std::memory_order_acquire)) { }
+    layoutSequence_.fetch_add(1, std::memory_order_acq_rel); // odd: publication in progress
     for (int i = 0; i < 7; ++i) {
         const size_t k = static_cast<size_t>(i);
         roomX_[k].store(x[i], std::memory_order_relaxed);
         roomY_[k].store(y[i], std::memory_order_relaxed);
         roomZ_[k].store(z[i], std::memory_order_relaxed);
     }
-    layoutGeneration_.fetch_add(1, std::memory_order_release);
+    layoutSequence_.fetch_add(1, std::memory_order_release); // even: coherent snapshot
+    layoutWriter_.clear(std::memory_order_release);
 }
 
-void RouteAWfsEngine::applyLayout(uint32_t generation) noexcept {
-    if (impl_ == nullptr) return;
+bool RouteAWfsEngine::readLayoutSnapshot(uint32_t& sequence,
+                                         float* x, float* y, float* z) const noexcept {
+    if (x == nullptr || y == nullptr || z == nullptr) return false;
+    // Bounded retries keep the real-time audio callback from spinning behind
+    // a control-thread writer. On contention, retain the last complete layout.
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        const uint32_t before = layoutSequence_.load(std::memory_order_acquire);
+        if (before & 1u) continue;
+        for (int i = 0; i < 7; ++i) {
+            const size_t k = static_cast<size_t>(i);
+            x[i] = roomX_[k].load(std::memory_order_relaxed);
+            y[i] = roomY_[k].load(std::memory_order_relaxed);
+            z[i] = roomZ_[k].load(std::memory_order_relaxed);
+        }
+        std::atomic_thread_fence(std::memory_order_acquire);
+        const uint32_t after = layoutSequence_.load(std::memory_order_acquire);
+        if (before == after && !(after & 1u)) {
+            sequence = after;
+            return true;
+        }
+    }
+    return false;
+}
+
+void RouteAWfsEngine::applyLayout(uint32_t sequence,
+                                  const float* x, const float* y, const float* z) noexcept {
+    if (impl_ == nullptr || x == nullptr || y == nullptr || z == nullptr) return;
     const auto& room = RoomGeometryConfig::defaultLayout();
     float dx[7], dyFwd[7], dz[7];
     for (int i = 0; i < 7; ++i) {
-        const size_t k = static_cast<size_t>(i);
-        const float x = roomX_[k].load(std::memory_order_relaxed);
-        const float y = roomY_[k].load(std::memory_order_relaxed);
-        const float z = roomZ_[k].load(std::memory_order_relaxed);
-        // Mismo marco local y convencion que IvannaFusionEngine::setWfsSpeakerLayout.
-        dx[i] = x - room.listenerX;
-        dyFwd[i] = room.listenerZ - z;
-        dz[i] = y - room.listenerY;
+        dx[i] = x[i] - room.listenerX;
+        dyFwd[i] = room.listenerZ - z[i];
+        dz[i] = y[i] - room.listenerY;
     }
     impl_->renderer.setSpeakerLayout3D(dx, dyFwd, dz, 7);
-
-    // Complement the renderer's geometry-derived low-pass alias guard with
-    // a matching dry high-pass. WFS carries the low band; the original
-    // programme carries frequencies the discrete array cannot reconstruct.
-    float minSpacingM = std::numeric_limits<float>::max();
-    for (int a = 0; a < 7; ++a) {
-        for (int b = a + 1; b < 7; ++b) {
-            const float deltaX = dx[a] - dx[b];
-            const float deltaY = dyFwd[a] - dyFwd[b];
-            const float deltaZ = dz[a] - dz[b];
-            const float spacing = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-            if (spacing > 1.0e-4f) minSpacingM = std::min(minSpacingM, spacing);
-        }
-    }
-    if (std::isfinite(minSpacingM) && minSpacingM < std::numeric_limits<float>::max()) {
-        constexpr float kSpeedOfSound = 343.0f;
-        constexpr float kTwoPi = 6.2831853071795864769f;
-        const float aliasHz = kSpeedOfSound / (2.0f * minSpacingM);
-        impl_->dryLowpassCoeff =
-            1.0f - std::exp(-kTwoPi * aliasHz / impl_->sampleRate);
-    }
-    appliedLayoutGeneration_ = generation;
+    // Reuse the renderer's exact cutoff for the complementary dry crossover.
+    impl_->dryLowpassCoeff = impl_->renderer.aliasGuardCoefficient();
+    appliedLayoutSequence_ = sequence;
 }
 
 void RouteAWfsEngine::process(float* left, float* right, int frames) noexcept {
     if (!prepared_ || impl_ == nullptr || left == nullptr || right == nullptr ||
         frames <= 0 || frames > impl_->maxFrames) return;
-    const uint32_t generation = layoutGeneration_.load(std::memory_order_acquire);
-    if (generation != appliedLayoutGeneration_) applyLayout(generation);
+    float x[7], y[7], z[7];
+    uint32_t sequence = 0;
+    if (readLayoutSnapshot(sequence, x, y, z) && sequence != appliedLayoutSequence_)
+        applyLayout(sequence, x, y, z);
 
     const bool active = enabled_.load(std::memory_order_acquire);
     impl_->renderer.setEnabled(active);
