@@ -100,6 +100,12 @@ case "$COMMAND" in
     clock)      send_command '{"action":"GET_CLOCK_TELEMETRY"}' ;;   # callback / reloj HAL / ASRC software (mismo JSON que la app)
     evidence)   # HRTF/RIR/SAF medidos en el camino de audio (delta vs la consulta anterior: llamar 2 veces)
                 send_command '{"action":"GET_PROCESSOR_EVIDENCE"}'; sleep 3; send_command '{"action":"GET_PROCESSOR_EVIDENCE"}' ;;
+    asrc-link)  # diagnostico (y reparacion con "repair", requiere root) del canal ASRC/reloj HAL
+                . "$(dirname "$0")/asrc_link.sh"
+                [ "$ARG" = "repair" ] && { ivanna_asrc_link_prepare; echo "archivos ajustados: $(ivanna_asrc_link_fixperms)"; }
+                echo "dir: $CLOCK_DIR"; ls -laZ "$CLOCK_DIR" 2>&1
+                echo "--- daemon.log (ASRC/HAL-CLOCK/ASRC-LINK, ultimas 15) ---"
+                grep -a -E 'ASRC-SW|HAL-CLOCK|ASRC-LINK' /data/adb/ivanna_omega/daemon.log 2>/dev/null | tail -15 ;;
     hal-probe)  exec "$(dirname "$0")/system/bin/ivanna_hal_probe" ;;  # evidencia PAL/ASRC del dispositivo, solo lectura
     reload)     send_command "RELOAD_PARAMS" ;;
     probe)      # Estado del transport, sin efecto lateral
@@ -125,6 +131,7 @@ Uso:
   $0 concert on|off       Modo Concierto (Spatial + reverb)
   $0 telemetry            Métricas
   $0 clock                Reloj: callback, hardware HAL y estado ASRC software (JSON)
+  $0 asrc-link [repair]   Canal ASRC/reloj HAL: diagnostico (repair = recrear dir y permisos)
   $0 hal-probe            Evidencia PAL/ASRC del dispositivo (solo lectura)
   $0 reload               Releer parámetros
   $0 probe                Estado transport (alive|socket_open_no_nc|no_daemon)

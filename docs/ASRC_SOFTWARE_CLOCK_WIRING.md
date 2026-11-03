@@ -107,3 +107,17 @@ This closes the open item above (`stream0` not captured). The endpoint is **sync
 - Not established: whether the SoC's USB host clock and the audio clock share an oscillator (so even the in-phone residual may be structurally zero), and any behaviour of other DACs. An asynchronous DAC, or a Bluetooth sink, would need a separate measurement before any claim.
 
 The software servo stays in the code as a safe, bounded loop (unity on any invalid input); this capture is a reason to expect it to be a no-op on this DAC, not a reason to remove it.
+
+
+## Canal de estado ASRC en el módulo Magisk (2026-11-03)
+
+**Hallazgo (lectura de código):** `ivanna_daemon` publica `asrc_state` y lee `clock_snapshot.v2` en `/data/vendor/ivanna_audio/` con `open(O_CREAT)`, sin `mkdir`. Ese directorio solo lo creaba `hal_integration/init.ivanna_audio_clock.rc`, plantilla que el módulo no instala. Con el directorio ausente `open()` devuelve ENOENT: no hay publicación y el panel ASRC de la app queda vacío. Además `fchmod(fd, 0660)` en el daemon deja los archivos ilegibles para `untrusted_app` aunque el directorio exista. Corrección: `magisk_module/asrc_link.sh`, llamado desde `service.sh`, más `sepolicy.rule` v3.5 (traversal de `vendor_data_file`).
+
+**Lo que la captura de 2026-11-03 (`OMEGA_ASRC_TIDAL.txt`, `AP_USB.txt`, `audio_primary_blair.so`, `G85_HOT_AUDIO_*.zip`) sí y no respalda:**
+
+- El logcat filtrado (≈24 s) no contiene ninguna línea `ASRC-SW`/`HAL-CLOCK`, y `log_message` del daemon escribe también a logcat (`IVANNA_OMEGA_DAEMON`). Si el daemon instalado fuera el de este repo y el directorio faltara, se esperaría el aviso "no se pudo abrir el canal de publicacion de estado" cada 250 ms. No aparece. Por tanto **la captura no confirma** la hipótesis de ENOENT: es compatible con (a) un daemon instalado más antiguo que el hilo ASRC-SW (la última nota del usuario indica módulo v2.5.202; el repo está en v2.5.339), o (b) un directorio ya existente. `ivanna_control.sh asrc-link` (y el script `ivanna_asrc_link_fix.sh` entregado aparte) recoge `strings` del daemon instalado, `ls -laZ` del canal y `avc` para decidirlo.
+- `OmegaCtrlBus: /data/local/tmp/omega_effect_ctrl_local not available yet` cada segundo indica que el efecto (`libomega_effect.so`) no está conectado al bus; es un problema distinto (Ruta B) y no lo resuelve este cambio.
+- `G85_HOT_AUDIO_*.zip` se capturó como app sin root (`uid=10372`): todos los dumps (`dumpsys audio*`, `/proc/asound`) están en "Permission denied". No aporta datos de audio.
+- `AP_USB.txt`/`OMEGA_ASRC_TIDAL.txt` confirman salida USB (`USB Headset Out`, card=0;device=0) a 48 kHz. Las estimaciones de AudioFlinger se contradicen (`AudioOut_D` localSR 48000.3 con `rate=1`; FastMixer localSR 48002.1 con `rate=0.999928`): no sostienen ninguna corrección ppm concreta. Con el endpoint USB síncrono ya documentado arriba, se espera servo ≈ 0 ppm.
+- `audio_primary_blair.so` importa `pal_get_timestamp` y `pal_stream_get_mmap_position` y contiene `StreamOutPrimary::GetMmapPosition` y la cadena `astream_out_get_presentation_position`. Es un punto de enganche candidato para un productor de reloj propietario del stream, pero no se ha desensamblado ni verificado aquí cómo se empareja frames+timestamp. Sigue sin haber productor PAL/HAL ni actuador ASRC: el servo permanece en BYPASS/bloqueado sin muestras frescas.
+

@@ -140,6 +140,19 @@ rm -f "$STATE/omega_shm"
 
 echo "$(date) iniciando ivanna_daemon" >> "$LOG"
 
+# Canal de estado ASRC / reloj HAL (/data/vendor/ivanna_audio). Sin este
+# directorio el daemon no puede publicar asrc_state ni abrir clock_snapshot.v2
+# (ENOENT) y el panel ASRC queda vacio. Ver asrc_link.sh para la causa raiz.
+ASRC_LINK="$MODDIR/asrc_link.sh"
+if [ -f "$ASRC_LINK" ]; then
+    . "$ASRC_LINK"
+    if ivanna_asrc_link_prepare; then
+        echo "$(date) ASRC-LINK: $CLOCK_DIR listo" >> "$LOG"
+    else
+        echo "$(date) ASRC-LINK: FALLO creando $CLOCK_DIR" >> "$LOG"
+    fi
+fi
+
 # Control autenticado solo por socket UNIX abstracto. El daemon rechaza TCP
 # deliberadamente; no pasar un flag de fallback que la app no debe usar.
 #
@@ -152,6 +165,12 @@ echo "$(date) iniciando ivanna_daemon" >> "$LOG"
 
 PID=$!
 echo "$PID" > "$STATE/daemon.pid"
+
+# El daemon crea los archivos con 0660 root:root; se abre lectura a la app
+# cuando aparecen. Segundo plano, termina solo.
+if command -v ivanna_asrc_link_watch >/dev/null 2>&1; then
+    ( n=$(ivanna_asrc_link_watch); echo "$(date) ASRC-LINK: $n archivo(s) del canal con permisos de lectura" >> "$LOG" ) >/dev/null 2>&1 &
+fi
 
 # Confirm both process survival and the actual abstract socket, not PID alone.
 SOCKET_READY=0

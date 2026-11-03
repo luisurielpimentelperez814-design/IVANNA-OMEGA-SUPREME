@@ -1,3 +1,8 @@
+## Sin publicar
+
+- **Módulo Magisk — canal ASRC/reloj HAL:** el módulo nunca creaba `/data/vendor/ivanna_audio` (solo lo hacía una plantilla `init.rc` que no se instala), de modo que `ivanna_daemon` no podía abrir `asrc_state` ni `clock_snapshot.v2` con `open(O_CREAT)`. Nuevo `asrc_link.sh` (cargado por `service.sh` antes de lanzar el daemon) crea el directorio (0775, `adb_data_file`) y, cuando el daemon crea los archivos con 0660 root:root, les abre lectura (0664) para la app. `sepolicy.rule` v3.5 permite a la app atravesar `/data/vendor`. Nuevo comando `ivanna_control.sh asrc-link [repair]` y prueba `tests/test_asrc_link.py` (7 casos, mutación verificada).
+- **Alcance:** corrige la publicación/lectura del estado del servo ASRC software. No añade actuador ASRC físico ni un productor de reloj PAL: eso sigue bloqueado como documenta `docs/ASRC_SOFTWARE_CLOCK_WIRING.md`. Sin validación en dispositivo ni CI en esta entrada.
+
 ## v2.5.339 (630) - 2026-11-03
 
 - **WFS en Ruta A:** conecta `RouteAWfsEngine` y el `WfsRenderer` existente al procesamiento JNI, después de PDEngine y antes de RIR/protección final.

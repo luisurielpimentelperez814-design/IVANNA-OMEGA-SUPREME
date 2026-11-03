@@ -398,3 +398,22 @@ allow audioserver same_process_hal_file dir { search getattr open read }
 # "denied { write } ... omega_shm" pasan de >100 por 10 s a 0.
 # ═══════════════════════════════════════════════════════════════════════════════
 typeattribute adb_data_file mlstrustedobject
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v3.5 — Canal ASRC/reloj HAL en /data/vendor/ivanna_audio
+#
+# service.sh crea el directorio y lo etiqueta adb_data_file (ya cubierto arriba
+# para archivos). Para llegar a el, la app debe poder TRAVESAR /data/vendor
+# (vendor_data_file); sin 'search' el lector JNI de asrc_state falla con EACCES.
+# Solo traversal, sin lectura de otros archivos de vendor_data_file.
+# ═══════════════════════════════════════════════════════════════════════════════
+allow untrusted_app vendor_data_file dir { search getattr }
+allow untrusted_app_25 vendor_data_file dir { search getattr }
+allow untrusted_app_27 vendor_data_file dir { search getattr }
+allow untrusted_app_29 vendor_data_file dir { search getattr }
+allow untrusted_app_30 vendor_data_file dir { search getattr }
+allow untrusted_app_32 vendor_data_file dir { search getattr }
+allow untrusted_app_33 vendor_data_file dir { search getattr }
+allow untrusted_app_34 vendor_data_file dir { search getattr }
+allow untrusted_app_35 vendor_data_file dir { search getattr }
+allow audioserver vendor_data_file dir { search getattr }
