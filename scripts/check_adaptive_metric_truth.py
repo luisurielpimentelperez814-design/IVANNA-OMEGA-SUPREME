@@ -22,6 +22,7 @@ def main() -> int:
     wave = read("app/src/main/cpp/include/omega_wave_stages.hpp")
     seed = read("app/src/main/cpp/jni/ivanna_spatial_jni.cpp")
     reality = read("app/src/main/cpp/include/acoustic_reality_hyperengine.hpp")
+    control_bus = read("app/src/main/cpp/include/omega_control_bus.h")
     app_boot = read("app/src/main/java/com/ivanna/omega/core/IVANNAApplication.kt")
     activity_boot = read("app/src/main/java/com/ivanna/omega/MainActivity.kt")
     self_heal = read("app/src/main/java/com/ivanna/omega/agent/SelfHealingAgent.kt")
@@ -159,6 +160,10 @@ def main() -> int:
             raise AssertionError("JNI unload does not unconditionally stop/join the adaptive engine")
         if "AdaptiveControlsPrefs.load(this).binauralAdaptEnabled" not in app_boot:
             raise AssertionError("Application bootstrap does not restore the persisted adaptive preference")
+        if "omega_effect_features_encode(true, false)" not in control_bus:
+            raise AssertionError("default control snapshot must fail closed for adaptive actuation")
+        if "omega_effect_features_encode(true, true)" in control_bus:
+            raise AssertionError("default control snapshot must not silently auto-enable adaptive actuation")
         if "AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled" not in activity_boot:
             raise AssertionError("Activity bootstrap does not honor the persisted adaptive preference")
         if app_boot.count("queueSystemWideAdaptiveEnabled(adaptiveRequested)") < 2:
