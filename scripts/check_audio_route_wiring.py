@@ -162,12 +162,19 @@ def main() -> int:
         wfs_policy_start = jni.find("static inline bool routeAWfsAllowed()")
         wfs_policy_end = jni.find("\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
         wfs_policy = jni[wfs_policy_start:wfs_policy_end] if wfs_policy_end > wfs_policy_start else ""
-        if ("ivanna::spatial::isRouteAWfsAllowed(" not in wfs_policy or
-                "g_wfs_enabled.load(std::memory_order_acquire)" not in wfs_policy or
-                "g_aux_field_enabled.load(std::memory_order_acquire)" not in wfs_policy):
+        # Strip comments before checking the thin JNI adapter; the four-way
+        # executable truth table lives in test_route_a_wfs_engine.cpp and calls
+        # the same constexpr helper used here by production code.
+        wfs_policy_code = re.sub(r"/\\*.*?\\*/|//[^\\n]*", "", wfs_policy, flags=re.DOTALL)
+        if not re.search(
+                r"return\\s+ivanna::spatial::isRouteAWfsAllowed\\s*\\(\\s*"
+                r"g_wfs_enabled\\.load\\(std::memory_order_acquire\\)\\s*,\\s*"
+                r"g_aux_field_enabled\\.load\\(std::memory_order_acquire\\)\\s*\\)\\s*;",
+                wfs_policy_code,
+                re.DOTALL):
             raise AssertionError(
-                "routeAWfsAllowed must delegate the live WFS/AUX atomic state to "
-                "ivanna::spatial::isRouteAWfsAllowed()"
+                "routeAWfsAllowed must pass the live WFS/AUX atomic state to "
+                "the shared executable arbitration policy"
             )
         if ("g_routeAWfsEngine.setEnabled(routeAWfsAllowed());" not in jni or
                 "g_routeAWfsEngine.process(left, right, frames);" not in jni):
