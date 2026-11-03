@@ -66,6 +66,8 @@ public:
     void stop() noexcept {
         reset();
         bridge_.setEnabled(false);
+        configured_ = false;
+        configuredOutputRateHz_ = 0;
     }
 
     bool correctionEnabled() const noexcept { return clock_.correctionEnabled(); }
