@@ -65,6 +65,13 @@ private:
         if (!self || !self->query_ || !out) return false;
 
         HardwareClockSample sample{};
+        // PAL/MMAP obtains its hardware timestamp during query(). Read the
+        // comparison clock afterwards so a fresh in-query timestamp is not
+        // rejected merely because CLOCK_MONOTONIC was sampled too early.
+        if (!self->query_(self->queryContext_, &sample)) {
+            if (self->reporterOpen_) self->publisher_.invalidate();
+            return false;
+        }
         timespec now{};
         if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0) {
             if (self->reporterOpen_) self->publisher_.invalidate();
@@ -72,8 +79,7 @@ private:
         }
         const uint64_t nowNs = static_cast<uint64_t>(now.tv_sec) * 1000000000ull +
                                static_cast<uint64_t>(now.tv_nsec);
-        if (!self->query_(self->queryContext_, &sample) ||
-            !isFreshMonotonicHardwareClockSample(sample, nowNs)) {
+        if (!isFreshMonotonicHardwareClockSample(sample, nowNs)) {
             if (self->reporterOpen_) self->publisher_.invalidate();
             return false;
         }
