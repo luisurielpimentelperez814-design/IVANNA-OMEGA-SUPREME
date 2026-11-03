@@ -58,8 +58,13 @@ public:
         if (!write_ || maxInputFrames == 0 || config.channels == 0 ||
             config.channels > 8) return false;
 
+        if (!path_.configure(config)) return false;
+
         const uint32_t maxOut = path_.maxOutputFrames(maxInputFrames);
-        if (maxOut == 0) return false;
+        if (maxOut == 0) {
+            path_.stop();
+            return false;
+        }
 
         const size_t sampleBytes = sizeof(std::max_align_t);
         const size_t bytesPerOutput =
@@ -73,11 +78,7 @@ public:
             scratch_.assign(words, std::max_align_t{});
         } catch (...) {
             scratch_.clear();
-            return false;
-        }
-
-        if (!path_.configure(config)) {
-            scratch_.clear();
+            path_.stop();
             return false;
         }
 
