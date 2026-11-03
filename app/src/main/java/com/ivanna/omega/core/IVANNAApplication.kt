@@ -128,6 +128,12 @@ class IVANNAApplication : Application() {
         super.onCreate()
         AudioStateManager.attachPersistence(this)
 
+        // Fuente única para el estado system-wide. Se vuelve a leer en cada
+        // publicación/reconexión; nunca reutilizar un valor capturado al boot.
+        fun currentAdaptiveRequested(): Boolean =
+            com.ivanna.omega.ui.AdaptiveControlsPrefs.load(this).binauralAdaptEnabled &&
+                !AudioStateManager.audioState.value.manualModeEnabled
+
         // La preferencia persistida debe gobernar el motor nativo ANTES de
         // que AudioBackendSelector, un AudioSessionReceiver o la Activity
         // puedan llamar DSPBridge.nativeInit(). El modo manual siempre gana.
@@ -470,7 +476,7 @@ class IVANNAApplication : Application() {
                 // el singleton JNI de la app y el ADE por instancia del efecto
                 // son motores distintos y ambos deben respetar OFF/manual.
                 runCatching {
-                    omegaBridge.queueSystemWideAdaptiveEnabled(adaptiveRequested)
+                    omegaBridge.queueSystemWideAdaptiveEnabled(currentAdaptiveRequested())
                 }.onFailure {
                     Log.w(TAG, "No se pudo publicar preferencia adaptativa en daemon: ${it.message}")
                 }
