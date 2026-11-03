@@ -12,7 +12,7 @@ int main() {
             right[i]=dryR[i]=0.17f*std::sin(0.037f*static_cast<float>(i));
         }
         engine.setEnabled(false);
-        engine.process(left,right,512);
+        for (int block=0; block<3; ++block) engine.process(left,right,512);
         for(int i=0;i<512;++i) {
             assert(left[i] == dryL[i]);
             assert(right[i] == dryR[i]);
