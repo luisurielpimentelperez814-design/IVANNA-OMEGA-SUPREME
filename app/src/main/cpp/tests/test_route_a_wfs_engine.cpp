@@ -135,6 +135,39 @@ int main() {
         CHECK(rms > 0.10); // full-band dry treble must not be discarded
     }
 
+    // A malformed PCM sample must not poison RouteAWfsEngine's recursive
+    // dry crossover across callbacks. Recovery must be immediate and finite.
+    {
+        ivanna::spatial::RouteAWfsEngine engine;
+        CHECK(engine.prepare(48000.0f, 512));
+        engine.setEnabled(true);
+        float left[512], right[512];
+        for (int i = 0; i < 512; ++i) {
+            left[i] = 0.12f * std::sin(0.019f * static_cast<float>(i));
+            right[i] = 0.11f * std::sin(0.023f * static_cast<float>(i));
+        }
+        left[17] = std::numeric_limits<float>::quiet_NaN();
+        right[29] = std::numeric_limits<float>::infinity();
+        engine.process(left, right, 512);
+
+        double recoveredEnergy = 0.0;
+        for (int block = 0; block < 3; ++block) {
+            for (int i = 0; i < 512; ++i) {
+                const float phase = static_cast<float>(block * 512 + i);
+                left[i] = 0.12f * std::sin(0.019f * phase);
+                right[i] = 0.11f * std::sin(0.023f * phase);
+            }
+            engine.process(left, right, 512);
+            for (int i = 0; i < 512; ++i) {
+                CHECK(std::isfinite(left[i]));
+                CHECK(std::isfinite(right[i]));
+                recoveredEnergy += static_cast<double>(left[i]) * left[i] +
+                                   static_cast<double>(right[i]) * right[i];
+            }
+        }
+        CHECK(recoveredEnergy > 1.0e-4);
+    }
+
     // The bypass endpoint must remain bit-transparent even if the wet
     // renderer has produced a non-finite sample: IEEE-754 NaN * 0 is NaN.
     {
