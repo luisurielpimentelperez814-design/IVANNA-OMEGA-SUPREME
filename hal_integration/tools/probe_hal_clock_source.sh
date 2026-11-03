@@ -51,14 +51,22 @@ for f in /data/adb/ivanna_omega/daemon.log /data/adb/ivanna_omega.log /data/adb/
 done
 
 section "HAL/PAL snapshot: metadata only"
-for SNAP in /data/vendor/ivanna_audio/clock_snapshot.v2 /data/vendor/ivanna_audio/clock_snapshot; do
-  if [ -e "$SNAP" ]; then
-    ls -lZ "$SNAP" >> "$R" 2>&1
-    if command -v stat >/dev/null 2>&1; then stat -c 'size=%s mode=%a uid=%u gid=%g mtime=%Y' "$SNAP" >> "$R" 2>&1; fi
+SNAP_DIR=/data/vendor/ivanna_audio
+for SNAP in "$SNAP_DIR/clock_snapshot.v2" "$SNAP_DIR/clock_snapshot"; do
+  # -e alone is ambiguous when SELinux or directory traversal permissions
+  # prevent lookup. Only report absence when the parent is searchable.
+  if [ ! -x "$SNAP_DIR" ]; then
+    say "snapshot unverifiable (cannot traverse $SNAP_DIR): $SNAP"
+  elif [ -e "$SNAP" ]; then
+    ls -lZ "$SNAP" >> "$R" 2>&1 || say "snapshot exists but metadata is inaccessible: $SNAP"
+    if command -v stat >/dev/null 2>&1; then
+      stat -c 'size=%s mode=%a uid=%u gid=%g mtime=%Y' "$SNAP" >> "$R" 2>&1 ||
+        say "snapshot stat inaccessible: $SNAP"
+    fi
     say "first 64 bytes (hex only; do not interpret as proof without a validated reader): $SNAP"
-    od -An -tx1 -N64 "$SNAP" >> "$R" 2>&1
+    od -An -tx1 -N64 "$SNAP" >> "$R" 2>&1 || say "snapshot contents inaccessible: $SNAP"
   else
-    say "snapshot absent: $SNAP"
+    say "snapshot confirmed absent: $SNAP"
   fi
 done
 
