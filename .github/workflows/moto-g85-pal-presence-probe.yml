@@ -20,9 +20,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: android-actions/setup-android@v3
       - name: Install NDK r27d
-        run: sdkmanager "ndk;27.2.12479018"
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" "ndk;27.2.12479018"
+      - name: Static safety checks
+        run: |
+          python3 hal_integration/moto_g85/pal_preload_probe/validate_source.py
+          sh -n hal_integration/moto_g85/pal_preload_probe/module/service.sh
+          sh -n hal_integration/moto_g85/pal_preload_probe/module/customize.sh
       - name: Compile ARM64 presence probe
         shell: bash
         run: |
