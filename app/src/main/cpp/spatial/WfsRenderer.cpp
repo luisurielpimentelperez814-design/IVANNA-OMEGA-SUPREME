@@ -14,6 +14,15 @@
 namespace {
 thread_local ivanna::wfs::WfsProtectionChain g_wfsProtection;
 thread_local bool g_wfsProtectionInit = false;
+thread_local float g_wfsProtectionSampleRate = 0.0f;
+
+inline void ensureWfsProtection(float sampleRate) noexcept {
+    if (!g_wfsProtectionInit || g_wfsProtectionSampleRate != sampleRate) {
+        g_wfsProtection.init(sampleRate);
+        g_wfsProtectionSampleRate = sampleRate;
+        g_wfsProtectionInit = true;
+    }
+}
 }
 
 #if defined(__x86_64__) || defined(__i386__)
@@ -119,9 +128,12 @@ void WfsRenderer::setSpeakerLayout3D(const float* dx, const float* dyFwd, const 
             if (spacing > 1.0e-4f) minSpacingM = std::min(minSpacingM, spacing);
         }
     }
-    if (std::isfinite(minSpacingM) && minSpacingM < std::numeric_limits<float>::max()) {
-        aliasGuard_.init(minSpacingM, sampleRate_);
-    }
+    // Degenerate geometry resets to the documented 8 kHz fallback rather
+    // than retaining a cutoff from a previous valid layout.
+    const float effectiveSpacing =
+        (std::isfinite(minSpacingM) && minSpacingM < std::numeric_limits<float>::max())
+            ? minSpacingM : 0.0f;
+    aliasGuard_.init(effectiveSpacing, sampleRate_);
 }
 
 void WfsRenderer::reset() noexcept {
@@ -377,15 +389,12 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
                 auto& hist = itdHist_[static_cast<size_t>(s)];
                 int& hp = itdPos_[static_cast<size_t>(s)];
                 hist[static_cast<size_t>(hp)] = 0.0f;
-                hp = (hp + 1) & 63;
+                hp = (hp + 1) & 255;
             }
             float silentL = 0.0f;
             float silentR = 0.0f;
             aliasGuard_.process(silentL, silentR);
-            if (!g_wfsProtectionInit) {
-                g_wfsProtection.init(sampleRate_);
-                g_wfsProtectionInit = true;
-            }
+            ensureWfsProtection(sampleRate_);
             g_wfsProtection.process(silentL, silentR);
         }
         return;
@@ -456,11 +465,11 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
             auto& hist = itdHist_[static_cast<size_t>(s)];
             int& hp = itdPos_[static_cast<size_t>(s)];
             hist[static_cast<size_t>(hp)] = spk;
-            const float vL = hist[static_cast<size_t>((hp - speakerItdL_[s]) & 63)];
-            const float vR = hist[static_cast<size_t>((hp - speakerItdR_[s]) & 63)];
+            const float vL = hist[static_cast<size_t>((hp - speakerItdL_[s]) & 255)];
+            const float vR = hist[static_cast<size_t>((hp - speakerItdR_[s]) & 255)];
             accL += vL * speakerGainL_[s];
             accR += vR * speakerGainR_[s];
-            hp = (hp + 1) & 63;
+            hp = (hp + 1) & 255;
         }
         // FIX (guarda de anti-aliasing espacial, antes definida pero jamás
         // llamada desde ningún lado del árbol): se aplica al campo YA
@@ -477,7 +486,7 @@ void WfsRenderer::process(const float* const* objectInputs, int numObjects,
         // WfsProtectionChain REAL (ya no declarada-sin-usar): sanea NaN/Inf,
         // quita DC y subnormales, y limita suave — imposible clipear aunque
         // la suma coherente de altavoces supere 0 dBFS.
-        if (!g_wfsProtectionInit) { g_wfsProtection.init(48000.0f); g_wfsProtectionInit = true; }
+        ensureWfsProtection(sampleRate_);
         float pl = outLRaw, pr = outRRaw;   // copias mutables (los Raw son const)
         g_wfsProtection.process(pl, pr);
         outL[n] += pl;
