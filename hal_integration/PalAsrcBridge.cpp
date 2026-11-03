@@ -366,7 +366,7 @@ bool PalAsrcBridge::configure(const AsrcConfig& in) {
     return false;
   }
   cfg.sincTaps = std::min<uint32_t>(64, std::max<uint32_t>(16, alignUp(cfg.sincTaps, 8)));
-  cfg.sincCutoff = std::min(0.995f, std::max(0.5f, cfg.sincCutoff));
+  cfg.sincCutoff = std::min(0.995f, std::max(0.01f, cfg.sincCutoff));
   cfg.kaiserBeta = std::min(20.0f, std::max(1.0f, cfg.kaiserBeta));
   cfg.maxChunkFrames = std::min<uint32_t>(8192, std::max<uint32_t>(64, cfg.maxChunkFrames));
   cfg.maxDriftPpm = std::min(50000.0, std::max(100.0, cfg.maxDriftPpm));
@@ -376,7 +376,22 @@ bool PalAsrcBridge::configure(const AsrcConfig& in) {
   cfg.driftMinBaselineMs = std::min(cfg.driftBaselineMs, std::max(cfg.driftAnchorMs * 2.0, cfg.driftMinBaselineMs));
   cfg.driftTauMs = std::max(100.0, cfg.driftTauMs);
 
+  if (cfg.mode != AsrcMode::kCubicHermite &&
+      cfg.mode != AsrcMode::kPolyphaseSinc) {
+    OMEGA_LOGE("configure: invalid ASRC mode");
+    return false;
+  }
   const bool sinc = cfg.mode == AsrcMode::kPolyphaseSinc;
+  if (!sinc && cfg.outputRateHz < cfg.inputRateHz) {
+    OMEGA_LOGE("configure: cubic Hermite mode cannot safely downsample");
+    return false;
+  }
+  if (sinc) {
+    const double rateRatio = static_cast<double>(cfg.outputRateHz) /
+                             static_cast<double>(cfg.inputRateHz);
+    const float antiAliasLimit = static_cast<float>(0.99 * std::min(1.0, rateRatio));
+    cfg.sincCutoff = std::min(cfg.sincCutoff, antiAliasLimit);
+  }
   const uint32_t taps = sinc ? cfg.sincTaps : 4;
   const uint32_t back = sinc ? taps / 2 - 1 : 1;
   const uint32_t ahead = sinc ? taps / 2 : 2;
