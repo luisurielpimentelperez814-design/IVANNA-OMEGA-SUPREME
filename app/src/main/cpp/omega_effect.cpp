@@ -1715,12 +1715,15 @@ static int32_t omega_process(effect_handle_t self,
             rawM.rir_active       = (ctx->pendingSnap.room_rt60_s > 0.05f && ctx->pendingSnap.room_wet > 0.01f) ? 1.0f : 0.0f;
             rawM.upmix_active     = (ctx->pendingSnap.upmixing_enabled != 0u) ? 1.0f : 0.0f;
             rawM.volterra_active  = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) ? 1.0f : 0.0f;
-if (ctx->adaptive) {
+if (ctx->adaptive && ctx->adaptiveEnabled) {
+                // No alimentar ni ejecutar decisiones ADE cuando el snapshot
+                // del control plane deshabilita adaptación (modo manual/OFF).
+                // Las métricas PCM permanecen disponibles para la evidencia
+                // del efecto; el motor adaptativo no retiene nuevas muestras.
                 ctx->adaptive->rawMetrics.publish(
                     ivanna::experimental::RawMetricsBus::Source::RouteB_OmegaEffect, rawM);
                 ivanna::experimental::AdaptiveState adSt{};
-                if (ctx->adaptiveEnabled &&
-                    ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
+                if (ctx->adaptive->adaptiveState.consumeIfNewer(adSt, ctx->lastAdaptiveSeq)) {
                     ctx->adaptiveDecisionTargetGain =
                         std::clamp(std::isfinite(adSt.target_gain) ? adSt.target_gain : 1.0f,
                                    0.50f, 1.0f);
@@ -1736,16 +1739,15 @@ if (ctx->adaptive) {
                     ctx->adaptImmScale = std::clamp(
                         std::isfinite(adSt.upmix_immersivity) ? adSt.upmix_immersivity : 1.0f,
                         0.5f, 1.0f);
-                } else if (!ctx->adaptiveEnabled) {
-                    // El snapshot ya fue neutralizado al recibir el bit OFF.
-                    // Las salidas calculadas también vuelven a neutro, pero no
-                    // se pisan los campos originales del control plane.
-                    ctx->adaptiveDecisionTargetGain = 1.0f;
-                    ctx->adaptiveDecisionCompAmount = 0.0f;
-                    ctx->adaptiveDecisionExciterReduction = 0.0f;
-                    ctx->adaptWfsScale = 1.0f;
-                    ctx->adaptImmScale = 1.0f;
                 }
+            } else if (!ctx->adaptiveEnabled) {
+                // OFF/manual: los controles originales del snapshot ya fueron
+                // neutralizados; restablecer únicamente salidas ADE separadas.
+                ctx->adaptiveDecisionTargetGain = 1.0f;
+                ctx->adaptiveDecisionCompAmount = 0.0f;
+                ctx->adaptiveDecisionExciterReduction = 0.0f;
+                ctx->adaptWfsScale = 1.0f;
+                ctx->adaptImmScale = 1.0f;
             }
         }
 
