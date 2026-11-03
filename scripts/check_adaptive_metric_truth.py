@@ -195,8 +195,18 @@ def main() -> int:
         native_init = jni[native_init_start:native_init_end] if native_init_end > native_init_start else ""
         graph_ready = native_init.find("g_initialized.store(true, std::memory_order_release);")
         ade_start = native_init.find("ensureAdaptiveEngineStarted()")
-        if graph_ready < 0 or ade_start < graph_ready:
+        if graph_ready < 0 or ade_start < 0:
             raise AssertionError("DSPBridge starts ADE before the native graph is initialized")
+        # Any start that appears textually before the graph is marked ready must sit in
+        # the "DSP already initialized" early-return branch (the graph IS ready there),
+        # e.g. a repeated nativeInit at the same sample rate after nativeInitDSP.
+        pos = ade_start
+        while 0 <= pos < graph_ready:
+            window = native_init[max(0, pos - 400):pos]
+            if ("alreadyInitSameSr" not in window and
+                    "g_initialized.load(std::memory_order_acquire)" not in window):
+                raise AssertionError("DSPBridge starts ADE before the native graph is initialized")
+            pos = native_init.find("ensureAdaptiveEngineStarted()", pos + 1)
         unload_start = jni.rfind("JNI_OnUnload")
         if unload_start < 0:
             raise AssertionError("JNI_OnUnload is missing")
