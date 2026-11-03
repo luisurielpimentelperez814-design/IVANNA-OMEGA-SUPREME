@@ -213,7 +213,7 @@ class PalAsrcBridge {
   template <typename T, bool kSinc>
   uint32_t produce(T* out, uint32_t outCap) noexcept;
 
-  void updateDrift(uint64_t nowNs) noexcept;
+  void updateDrift(bool needsClock) noexcept;
   bool readHardwareTimestamp(uint64_t& frames, uint64_t& ns) const noexcept;
   void resetRtState() noexcept;
 
