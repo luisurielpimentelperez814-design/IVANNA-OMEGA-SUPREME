@@ -4,6 +4,9 @@ import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
+import com.ivanna.omega.audio.AudioStateManager
+import com.ivanna.omega.core.IVANNAApplication
+import com.ivanna.omega.ui.AdaptiveControlsPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -109,36 +112,40 @@ object SelfHealingAgent {
                 if (recovered) "daemon re-enlazado" else "daemon sigue inalcanzable (reintento en ${COOLDOWN_DAEMON_MS / 1000}s)")
         }
 
-        // ── 2. Motor adaptativo: recuperar solo con ruta de audio activa ──
-        // [7] significa "ADE ya publicó al menos un bloque", NO "el DSP nativo
-        // está muerto". En silencio / antes del primer bloque vale 0. El código
-        // anterior interpretaba ese estado normal como fallo y ejecutaba
-        // nativeResetDSP(), reiniciando TODA la cadena y deteniendo el worker EVO.
+        // ── 2. Motor adaptativo: reparar solo si el usuario lo solicitó ──
+        // La falta de bloques no demuestra que el hilo haya muerto: puede ser
+        // silencio o pausa. La salud del hilo se consulta directamente; la
+        // evidencia de bloques aplicados permanece como telemetría separada.
+        val adaptiveRequested = runCatching {
+            AdaptiveControlsPrefs.load(IVANNAApplication.instance).binauralAdaptEnabled &&
+                !AudioStateManager.audioState.value.manualModeEnabled
+        }.getOrDefault(false)
         val pipelineStatus = if (IvannaNativeLib.isLoaded) runCatching {
             IvannaNativeLib.nativeGetUnifiedPipelineStatus()
         }.getOrNull() else null
         val routeActive = pipelineStatus?.let {
             it.size >= 8 && it[0].toInt() in 1..2
         } == true
-        val adaptiveBlockObserved = pipelineStatus?.let {
-            it.size >= 8 && it[7] > 0.5f
-        } == true
-        if (IvannaNativeLib.isLoaded && routeActive && !adaptiveBlockObserved &&
-            now - lastEngineAttempt > COOLDOWN_ENGINE_MS) {
+        val engineRunning = if (IvannaNativeLib.isLoaded) runCatching {
+            IvannaNativeLib.nativeIsAdaptiveEngineRunning()
+        }.getOrDefault(false) else false
+
+        if (IvannaNativeLib.isLoaded && adaptiveRequested && routeActive &&
+            !engineRunning && now - lastEngineAttempt > COOLDOWN_ENGINE_MS) {
             lastEngineAttempt = now
-            // Recuperación no destructiva: ensure/start del singleton ADE.
-            // Nunca resetear el DSP completo desde un watchdog de telemetría.
             val handle = runCatching {
                 IvannaNativeLib.nativeCreateAdaptiveEngine()
             }.getOrDefault(0L)
+            val recovered = handle != 0L &&
+                runCatching { IvannaNativeLib.nativeIsAdaptiveEngineRunning() }.getOrDefault(false)
             record(
                 "adaptive_engine_inactive_on_active_route",
                 "nativeCreateAdaptiveEngine()",
-                handle != 0L,
-                if (handle != 0L)
-                    "ADE disponible; esperando confirmación de bloques procesados en el siguiente ciclo"
+                recovered,
+                if (recovered)
+                    "hilo de control ADE confirmado vivo; el DSP no fue reiniciado"
                 else
-                    "ADE no pudo iniciarse; DSP preservado, reintento en ${COOLDOWN_ENGINE_MS / 1000}s"
+                    "ADE no pudo iniciarse; preferencia preservada y DSP intacto, reintento en ${COOLDOWN_ENGINE_MS / 1000}s"
             )
         }
 
