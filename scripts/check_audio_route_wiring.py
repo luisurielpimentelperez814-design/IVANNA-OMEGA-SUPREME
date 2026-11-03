@@ -165,11 +165,11 @@ def main() -> int:
         # Strip comments before checking the thin JNI adapter; the four-way
         # executable truth table lives in test_route_a_wfs_engine.cpp and calls
         # the same constexpr helper used here by production code.
-        wfs_policy_code = re.sub(r"/\\*.*?\\*/|//[^\\n]*", "", wfs_policy, flags=re.DOTALL)
+        wfs_policy_code = re.sub(r"/\*.*?\*/|//[^\n]*", "", wfs_policy, flags=re.DOTALL)
         if not re.search(
-                r"return\\s+ivanna::spatial::isRouteAWfsAllowed\\s*\\(\\s*"
-                r"g_wfs_enabled\\.load\\(std::memory_order_acquire\\)\\s*,\\s*"
-                r"g_aux_field_enabled\\.load\\(std::memory_order_acquire\\)\\s*\\)\\s*;",
+                r"return\s+ivanna::spatial::isRouteAWfsAllowed\s*\(\s*"
+                r"g_wfs_enabled\.load\(std::memory_order_acquire\)\s*,\s*"
+                r"g_aux_field_enabled\.load\(std::memory_order_acquire\)\s*\)\s*;",
                 wfs_policy_code,
                 re.DOTALL):
             raise AssertionError(
