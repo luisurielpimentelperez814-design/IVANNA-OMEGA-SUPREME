@@ -1,7 +1,6 @@
 package com.ivanna.omega.magisk
 
 import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import android.util.Log
 import java.io.File
 
@@ -174,18 +173,16 @@ val isDaemonRunning: Boolean
     // ── Envío de comandos (SIN root, LocalSocket directo) ──────────────────
     /**
      * Envía un comando de texto al daemon (abstract @omega_daemon_socket) y devuelve la respuesta.
-     * Retorna "" si el daemon no está disponible. Sin dependencia de `nc` ni de `su`.
+     * Devuelve la respuesta recibida; "" indica que no hay respuesta útil (fallo de
+     * conexión o escritura, timeout, EOF, error de lectura o respuesta vacía).
+     * Una escritura completada no confirma que el daemon haya aplicado el comando.
+     * Sin dependencia de `nc` ni de `su`.
      */
     fun sendCommand(command: String): String {
         // Abstract namespace — donde publica ivanna_daemon
         runCatching {
             LocalSocket().use { sock ->
-                // connect() ANTES que soTimeout: LocalSocket crea su fd de forma perezosa en connect(); llamar
-                // setSoTimeout() sobre un socket aún no creado lanza IOException("socket not created") y el
-                // comando nunca llegaba al daemon (se reportaba como "demonio no disponible").
-                sock.connect(
-                    LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
-                )
+                connectAbstractNonBlocking(sock, SOCKET_OMEGA)
                 sock.soTimeout = SOCKET_READ_TIMEOUT_MS
                 sock.outputStream.apply {
                     write(command.toByteArray(Charsets.UTF_8))
@@ -193,13 +190,13 @@ val isDaemonRunning: Boolean
                     flush()
                 }
                 val buf = ByteArray(1024)
-                val n = runCatching { sock.inputStream.read(buf) }.getOrDefault(-1)
-                return if (n > 0) String(buf, 0, n, Charsets.UTF_8).trim() else "ACK"
+                val n = sock.inputStream.read(buf)
+                return if (n > 0) String(buf, 0, n, Charsets.UTF_8).trim() else ""
             }
         }.onFailure { Log.d(TAG, "abstract socket send failed: ${it.message}") }
 
-        // Daemon offline: retorna "" (sentinel) para que callers usen isEmpty().
-        Log.w(TAG, "Daemon offline — command NOT delivered: $command")
+        // Un fallo de lectura o escritura no permite saber si el daemon recibió el comando.
+        Log.d(TAG, "Command response unavailable")
         return ""
     }
 
@@ -250,15 +247,13 @@ val isDaemonRunning: Boolean
     /**
      * Probe real de conectividad al daemon vía abstract namespace @omega_daemon_socket.
      * NO necesita fallback a filesystem — el PF Engine legacy fue removido.
-     * soTimeout garantiza que connect() no se bloquee si el backlog está al límite.
+     * connect() es no bloqueante: si el backlog está lleno, el probe falla inmediatamente.
+     * soTimeout limita las lecturas y escrituras posteriores, no connect().
      */
     private fun isOmegaSocketAvailable(): Boolean {
         val abstractOk = runCatching {
             LocalSocket().use { sock ->
-                // connect() antes que soTimeout (ver sendCommand): si no, "socket not created".
-                sock.connect(
-                    LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
-                )
+                connectAbstractNonBlocking(sock, SOCKET_OMEGA)
                 sock.soTimeout = SOCKET_READ_TIMEOUT_MS
                 true
             }

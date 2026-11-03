@@ -159,7 +159,7 @@ object FotoHoloRouteB {
         }
 
     fun statusFromReply(reply: String): String {
-        if (reply.isBlank()) return "demonio no disponible"
+        if (reply.isBlank()) return "sin respuesta del demonio"
         if (jsonScalar(reply, "ok") == null) {
             return "respuesta sin confirmación válida del demonio"
         }
@@ -200,6 +200,7 @@ object FotoHoloRouteB {
     fun shouldRetryCommand(value: String): Boolean {
         val v = value.removePrefix(STATE_FAIL_PREFIX)
         return v == "demonio no disponible" ||
+            v == "sin respuesta del demonio" ||
             v.startsWith("error:") ||
             v == "respuesta sin confirmación válida del demonio" ||
             v == "arbitraje espacial no verificable" ||

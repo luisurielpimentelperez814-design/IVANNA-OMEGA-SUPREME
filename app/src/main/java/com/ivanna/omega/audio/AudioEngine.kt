@@ -356,7 +356,7 @@ internal object DaemonClockRelay {
         lastAt = now
         last = runCatching {
             val raw = com.ivanna.omega.magisk.MagiskBridge.sendCommand("{\"action\":\"GET_CLOCK_TELEMETRY\"}")
-            if (raw.isBlank() || raw == "ACK") null
+            if (raw.isBlank()) null
             else org.json.JSONObject(raw).takeIf { it.optBoolean("ok", false) }
         }.getOrNull()
         return last

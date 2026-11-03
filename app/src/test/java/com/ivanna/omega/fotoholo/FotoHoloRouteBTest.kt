@@ -77,11 +77,12 @@ class FotoHoloRouteBTest {
         assertFalse(FotoHoloRouteB.shouldRetryCommand("aceptado; sin consumidor activo"))
         assertFalse(FotoHoloRouteB.shouldRetryCommand("efecto habilitado; esperando bloque de audio"))
         assertTrue(FotoHoloRouteB.shouldRetryCommand("demonio no disponible"))
+        assertTrue(FotoHoloRouteB.shouldRetryCommand(FotoHoloRouteB.statusFromReply("")))
         assertTrue(FotoHoloRouteB.shouldRetryCommand("error: IOException"))
     }
 
     @Test fun responseRequiresExplicitApplicationConfirmation() {
-        assertEquals("demonio no disponible", FotoHoloRouteB.statusFromReply(""))
+        assertEquals("sin respuesta del demonio", FotoHoloRouteB.statusFromReply(""))
         assertEquals("rechazado por el demonio", FotoHoloRouteB.statusFromReply("{\"ok\":false}"))
         assertEquals("respuesta sin confirmación válida del demonio",
             FotoHoloRouteB.statusFromReply("{\"status\":\"applied\",\"applied\":true}"))

@@ -3,11 +3,26 @@ package com.ivanna.omega.spatial
 import kotlin.math.*
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.magisk.MagiskBridge
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 
 class IvannaSpatialEngine private constructor() {
 
     companion object {
         val shared: IvannaSpatialEngine = IvannaSpatialEngine()
+        private val headPoseUpdates = Channel<Pair<Float, Float>>(Channel.CONFLATED)
+        private val headPoseScope = CoroutineScope(SupervisorJob() + Dispatchers.IO).apply {
+            launch {
+                for ((yaw, pitch) in headPoseUpdates) {
+                    runCatching {
+                        MagiskBridge.sendCommand("""{"action":"SET_HEAD_POSE","yawRad":$yaw,"pitchRad":$pitch}""")
+                    }
+                }
+            }
+        }
 
         /** Separate delay/history state for Ivanna-owned playback streams. */
         internal fun createIsolated(): IvannaSpatialEngine = IvannaSpatialEngine()
@@ -38,10 +53,8 @@ class IvannaSpatialEngine private constructor() {
             val yaw = shared.azimuthRad
             val pitch = shared.elevationRad
             if (!yaw.isFinite() || !pitch.isFinite()) return
-            // Socket IPC se invoca desde controles de app, nunca desde el callback de audio.
-            runCatching {
-                MagiskBridge.sendCommand("""{"action":"SET_HEAD_POSE","yawRad":$yaw,"pitchRad":$pitch}""")
-            }
+            // Los controles pueden ejecutarse en UI; el canal coalesce cambios rápidos en IO.
+            headPoseUpdates.trySend(yaw to pitch)
         }
         fun setWidth(v: Float) { shared.widthFactor = v.coerceIn(0f, 1.5f) }
         fun setDistance(v: Float) {

@@ -600,9 +600,11 @@ fun OmegaApp() {
                 // OmegaDaemon — polling a 4 Hz, nunca en el audio thread.
                 val daemonTelemetry by produceState(initialValue = false to 0f) {
                     while (true) {
-                        val alive = runCatching { com.ivanna.omega.magisk.OmegaDaemon.isLoaded }.getOrDefault(false)
-                        val lat = if (alive) runCatching { com.ivanna.omega.magisk.OmegaDaemon.getLatency() }.getOrDefault(0f) else 0f
-                        value = alive to lat
+                        value = withContext(Dispatchers.IO) {
+                            val alive = runCatching { com.ivanna.omega.magisk.OmegaDaemon.isLoaded }.getOrDefault(false)
+                            val lat = if (alive) runCatching { com.ivanna.omega.magisk.OmegaDaemon.getLatency() }.getOrDefault(0f) else 0f
+                            alive to lat
+                        }
                         kotlinx.coroutines.delay(250L)
                     }
                 }

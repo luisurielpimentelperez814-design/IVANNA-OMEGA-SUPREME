@@ -306,7 +306,7 @@ fun MagiskStatusPanel(
                     lastCommandOutput = "Probando socket..."
                     val ok = withContext(Dispatchers.IO) { omegaBridge.connect() }
                     daemonConnected  = ok
-                    daemonRunning    = ok || MagiskBridge.isDaemonRunning
+                    daemonRunning    = ok || withContext(Dispatchers.IO) { MagiskBridge.isDaemonRunning }
                     lastCommandOutput = if (ok)
                         "✅ Socket conectado. Latencia: ${omegaBridge.getLastLatencyMs()}ms"
                     else {

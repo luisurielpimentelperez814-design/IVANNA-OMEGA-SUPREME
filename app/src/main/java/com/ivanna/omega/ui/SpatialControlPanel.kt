@@ -55,6 +55,14 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
     var adaptivePrefs by remember { mutableStateOf(AdaptiveControlsPrefs.load(context)) }
     var hybridTele by remember { mutableStateOf(NativeBridge.safeGetHybridMagistralTelemetry()) }
     val metrics by OmegaMetrics.shared.collectAsState()
+    val daemonRunning by produceState(initialValue = false) {
+        while (true) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                MagiskBridge.isDaemonRunning
+            }
+            kotlinx.coroutines.delay(2_000L)
+        }
+    }
     var hrtfSubjectReply by remember { mutableStateOf("") }
 
     // Salas RIR: fuente REAL = dataset nativo (APK extraído a filesDir/rir, o el de root si
@@ -397,7 +405,7 @@ fun SpatialControlPanel(onBack: () -> Unit = {}) {
         PanelCard("ESTADO DEL MOTOR", AmberSignal) {
             Text("SR ${metrics.sampleRate / 1000} kHz · RMS ${"%.3f".format(metrics.rmsLevel)} · " +
                  "HRTF ${if (metrics.hrtfActive) "ON" else "OFF"} · " +
-                 "daemon ${if (MagiskBridge.isDaemonRunning) "ONLINE" else "OFFLINE"}",
+                 "daemon ${if (daemonRunning) "ONLINE" else "OFFLINE"}",
                 color = TextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
         }
     }

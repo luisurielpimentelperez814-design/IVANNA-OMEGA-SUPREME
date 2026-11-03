@@ -4,7 +4,6 @@ import com.ivanna.omega.saf.SaFRoomBridge
 
 import android.content.Context
 import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SharedMemory
@@ -210,10 +209,8 @@ object ShmManager {
     private fun mapFromDaemon(): ByteBuffer? {
         val sock = LocalSocket()
         try {
-            sock.connect(
-                LocalSocketAddress(DAEMON_SOCKET, LocalSocketAddress.Namespace.ABSTRACT)
-            )
-            // soTimeout DESPUÉS de connect(): el fd del LocalSocket se crea perezosamente ("socket not created").
+            connectAbstractNonBlocking(sock, DAEMON_SOCKET)
+            // El timeout limita el handshake, no la conexión.
             sock.soTimeout = HANDSHAKE_TIMEOUT_MS
             // No escribir NADA: el daemon clasifica como cliente SHM (Modo B)
             // exactamente a quien calla durante 150 ms; si mandamos un byte
