@@ -156,6 +156,18 @@ def main() -> int:
                 "gate, output channel negotiation, matrix validation and runtime tests "
                 "before marking 5-channel output production-ready."
             )
+        # Route-A WFS must obey the same AUX > binaural-WFS priority as
+        # Route B while retaining the user's WFS preference for restoration.
+        wfs_policy_start = jni.find("static inline void processRouteAWfs(")
+        wfs_policy_end = jni.find("\\n}", wfs_policy_start) if wfs_policy_start >= 0 else -1
+        wfs_policy = jni[wfs_policy_start:wfs_policy_end] if wfs_policy_end > wfs_policy_start else ""
+        if ("g_wfs_enabled.load(std::memory_order_acquire)" not in wfs_policy or
+                "!g_aux_field_enabled.load(std::memory_order_acquire)" not in wfs_policy or
+                "g_routeAWfsEngine.setEnabled(wfsAllowed);" not in wfs_policy or
+                "g_routeAWfsEngine.process(left, right, frames);" not in wfs_policy):
+            raise AssertionError("Route-A WFS must fail closed while AUX is active")
+        if jni.count("processRouteAWfs(g_ats.pdOutL, g_ats.pdOutR, n);") != 1 or jni.count("processRouteAWfs(oL, oR, n);") != 1:
+            raise AssertionError("both live Route-A JNI audio consumers must use the AUX-aware WFS policy")
     except AssertionError as exc:
         print(f"FAIL audio-route-wiring: {exc}", file=sys.stderr)
         return 1
