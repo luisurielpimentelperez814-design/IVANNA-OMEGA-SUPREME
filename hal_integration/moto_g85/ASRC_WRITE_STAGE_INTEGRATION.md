@@ -11,8 +11,15 @@ performed by the long-lived owner of a real PAL output stream.
 - Accepts interleaved Float32, S16, or S32 blocks.
 - Runs the existing ASRC and forwards only produced PCM bytes to a target-supplied
   write callback.
+- Preserves output bytes when PAL reports a short write; pending output is drained
+  before the stage accepts another input block.
+- Treats a negative PAL result as an error without discarding the pending output.
+  A zero-byte write makes no progress and is retried only on the next caller entry.
+- Detects impossible over-reporting and non-frame-aligned partial writes, then
+  fails closed until the stream is reset/reconfigured.
 - Returns exact `framesConsumed` and `framesProduced`; the HAL caller must retain
-  and resubmit any unconsumed input frames.
+  and resubmit any unconsumed input frames. It must not resubmit frames already
+  reported as consumed, even if converted output remains pending.
 - Exposes the existing controller's `controlTick`, reset, ratio and diagnostics.
 - Does not open a second PCM stream or write mixer controls.
 
@@ -32,10 +39,11 @@ not assume the private target ABI.
 
 The adapter must be called for the actual PCM blocks feeding the USB PAL stream,
 not for an AudioFlinger insert effect or a separate OMEGA AudioTrack. Use one
-instance per output stream. For TIDAL's reported 96 kHz direct stream, configure
-the stage with the actual PAL stream's format/rate (nominally 96 kHz in the
-reported snapshot); do not force it to 48 kHz. For the 48 kHz mixer stream, use
-a separate 48 kHz instance.
+instance per output stream. The latest supplied AudioService capture reports
+TIDAL as a normal stereo AudioTrack at 44.1 kHz, not a DIRECT/offload stream.
+An earlier 96 kHz DIRECT observation belongs to a different capture and must not
+be combined with this one. Configure from the live PAL stream attributes, not
+from a stale AudioService snapshot or a hard-coded 48/96 kHz assumption.
 
 ## Control clock requirements
 
@@ -64,3 +72,25 @@ The known ELF findings (the PAL write dispatch, the `libpalclient.so` thunk,
 and candidate stream methods) are useful reverse-engineering leads, but the
 previously reported vtable slot and `pal_buffer` size/layout remain
 unauthenticated. Do not patch the binary using those values.
+
+
+## Latest HAL write-path evidence (2026-11-03)
+
+The supplied ELF analysis identifies `StreamOutPrimary::write` at RVA
+`0x54dd4`, but its disassembly copies PCM into an internal queue and does not
+call the `pal_stream_write` PLT entry directly. Therefore it is not yet the
+ASRC insertion point. The consumer thread/function that drains that queue must
+be identified before choosing the stream owner and callback location.
+
+The imported `pal_stream_write` PLT stub is reported at RVA `0x7cfc0`
+(GOT `0x81268`), with 247 candidate call references in the ELF. Those
+references are a search set, not proof that any particular callsite carries
+TIDAL's PCM. The eventual integration must correlate the active stream handle,
+format/rate, and callsite at runtime. Do not patch all 247 references or hook
+the public `StreamOutPrimary::write` entry based on the current evidence alone.
+
+The latest process snapshot also does not establish that the proprietary
+`audio.primary.blair.so` and PAL client libraries are mapped into the same
+process as the PAL HIDL service. Keep the HAL-side write and Binder/server-side
+PAL processing as separate candidate boundaries until the process maps and
+call chain are correlated.
