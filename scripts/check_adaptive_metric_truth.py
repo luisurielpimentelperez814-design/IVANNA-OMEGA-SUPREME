@@ -170,6 +170,18 @@ def main() -> int:
             raise AssertionError("nativeCreateAdaptiveEngine must not override the user's OFF/manual preference")
         if "g_adaptiveEngine.running()" not in jni:
             raise AssertionError("JNI health query does not inspect the real control thread")
+        enabled_start = jni.find("static bool setAdaptiveEngineEnabled")
+        enabled_end = jni.find("\n}", enabled_start) if enabled_start >= 0 else -1
+        enabled_body = jni[enabled_start:enabled_end] if enabled_end > enabled_start else ""
+        if "!g_initialized.load(std::memory_order_acquire)" not in enabled_body:
+            raise AssertionError("native ON preference can start the control thread before DSP initialization")
+        native_init_start = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(")
+        native_init_end = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeSet", native_init_start)
+        native_init = jni[native_init_start:native_init_end] if native_init_end > native_init_start else ""
+        graph_ready = native_init.find("g_initialized.store(true, std::memory_order_release);")
+        ade_start = native_init.find("ensureAdaptiveEngineStarted()")
+        if graph_ready < 0 or ade_start < graph_ready:
+            raise AssertionError("DSPBridge starts ADE before the native graph is initialized")
         unload_start = jni.rfind("JNI_OnUnload")
         if unload_start < 0:
             raise AssertionError("JNI_OnUnload is missing")
@@ -207,6 +219,8 @@ def main() -> int:
             raise AssertionError("self-heal does not respect the manual-mode state")
         if "testControlThreadLifecycle();" not in lifecycle_test:
             raise AssertionError("native lifecycle regression test is not in the test runner")
+        if "testConcurrentControlThreadLifecycle();" not in lifecycle_test:
+            raise AssertionError("concurrent start/stop lifecycle regression test is not in the test runner")
         sound_screen = read("app/src/main/java/com/ivanna/omega/ui/SoundScreen.kt")
         hrtf_toggle = sound_screen.find('requestRouteFeatures(en, routeAdaptiveEnabled)')
         if hrtf_toggle < 0:
