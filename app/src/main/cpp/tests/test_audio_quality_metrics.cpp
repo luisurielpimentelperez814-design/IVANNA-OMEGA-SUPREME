@@ -163,9 +163,9 @@ TEST(AudioQualityMetrics, ProcessingLatency_LimiterUnder1ms) {
 
     for (int r = 0; r < REPS; ++r) {
         auto lc = L, rc = R;
-        auto t0 = std::chrono::high_resolution_clock::now();
+        auto t0 = std::chrono::steady_clock::now();
         limiter.process(lc.data(), rc.data(), BLOCK);
-        auto t1 = std::chrono::high_resolution_clock::now();
+        auto t1 = std::chrono::steady_clock::now();
         times[r] = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
     }
 
@@ -200,9 +200,9 @@ TEST(AudioQualityMetrics, ProcessingLatency_CompressorUnder1ms) {
     std::vector<long long> times(REPS);
     for (int r = 0; r < REPS; ++r) {
         auto lc = L, rc = R;
-        auto t0 = std::chrono::high_resolution_clock::now();
+        auto t0 = std::chrono::steady_clock::now();
         comp.process(lc.data(), rc.data(), BLOCK);
-        auto t1 = std::chrono::high_resolution_clock::now();
+        auto t1 = std::chrono::steady_clock::now();
         times[r] = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
     }
     std::sort(times.begin(), times.end());
