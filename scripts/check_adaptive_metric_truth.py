@@ -14,6 +14,7 @@ def read(path: str) -> str:
 
 
 def main() -> int:
+    """Validate metric provenance, ADE lifecycle, and both audio-route OFF contracts."""
     header = read("app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.hpp")
     engine = read("app/src/main/cpp/experimental/adaptive_engine/adaptive_decision_engine.cpp")
     jni = read("app/src/main/cpp/jni/ivanna_omega_jni.cpp")
@@ -190,6 +191,46 @@ def main() -> int:
         enabled_body = jni[enabled_start:enabled_end] if enabled_end > enabled_start else ""
         if "!g_initialized.load(std::memory_order_acquire)" not in enabled_body:
             raise AssertionError("native ON preference can start the control thread before DSP initialization")
+        strength_start = jni.find("static inline float adaptive_ui_strength()")
+        strength_end = jni.find("\n}", strength_start) if strength_start >= 0 else -1
+        strength_body = jni[strength_start:strength_end] if strength_end > strength_start else ""
+        normalized_strength = " ".join(strength_body.split())
+        expected_guard = (
+            "if (!g_adaptiveEngineUiEnabled.load(std::memory_order_acquire) || "
+            "!g_adaptiveEngineStarted.load(std::memory_order_acquire)) { return 0.0f; }"
+        )
+        if expected_guard not in normalized_strength:
+            raise AssertionError("Route A adaptive strength must preserve the complete fail-closed guard and neutral return")
+
+        compressor_header = read("app/src/main/cpp/include/Compressor.h")
+        if "void resetRuntimeAmount() noexcept" not in compressor_header or "runtimeAmount_ = 0.0f;" not in compressor_header or "runtimeTarget_ = 0.0f;" not in compressor_header:
+            raise AssertionError("adaptive OFF must clear compressor runtime state without changing manual parameters")
+
+        route_a_start = jni.find("const float adaptiveStrength = adaptive_ui_strength();")
+        route_b_start = jni.find("const float adaptiveStrength = adaptive_ui_strength();", route_a_start + 1)
+        if route_a_start < 0 or route_b_start < 0:
+            raise AssertionError("both Route A adaptive consumers must be present")
+        route_a_consumer = jni[route_a_start:route_b_start]
+        route_b_consumer = jni[route_b_start:]
+        for consumer, gain_state, comp_state, exc_state in (
+            (route_a_consumer, "g_ats.targetGainSmooth = 1.0f;", "g_ats.compAmountSmooth = 0.0f;", "g_ats.excReductionSmooth = std::clamp(excReductionUi, 0.0f, 1.0f);"),
+            (route_b_consumer, "g_ats.blkTgSmooth = 1.0f;", "g_ats.blkCaSmooth = 0.0f;", "g_ats.blkErSmooth = 0.0f;"),
+        ):
+            if "if (!adaptiveActive)" not in consumer or gain_state not in consumer or comp_state not in consumer or exc_state not in consumer:
+                raise AssertionError("OFF/manual must reset each Route A consumer's independent adaptive smoothers")
+            if "g_gain.setRuntimeGain(1.0f);" not in consumer:
+                raise AssertionError("OFF/manual must neutralize the retained gain actuator state")
+            if ("g_exciter.setRuntimeReduction(0.0f);" not in consumer and
+                    "g_exciter.setRuntimeReduction(g_ats.excReductionSmooth);" not in consumer):
+                raise AssertionError("OFF/manual must explicitly set the exciter's measured-or-neutral target")
+        if "g_exciter.setRuntimeReduction(g_ats.excReductionSmooth);" not in route_a_consumer:
+            raise AssertionError("Route A must continue applying the measured harmonic-budget reduction when ADE is OFF")
+            if "g_comp.resetRuntimeAmount();" in consumer or "g_comp.setRuntimeAmount(" not in consumer:
+                raise AssertionError("OFF/manual must slew the compressor runtime overlay without erasing the Perceptual Guard target")
+        if "g_ats.compAmountSmooth = std::max(g_ats.compAmountSmooth, g_ats.guardCompLimitApplied);" not in route_a_consumer:
+            raise AssertionError("Route A must preserve the Perceptual Guard compressor floor in OFF/manual")
+        if "g_exciter.setRuntimeReduction(g_ats.blkErSmooth);" not in route_b_consumer:
+            raise AssertionError("nativeProcessBlock must apply its adaptive exciter target and neutralize it on OFF")
         native_init_start = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(")
         native_init_end = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeSet", native_init_start)
         native_init = jni[native_init_start:native_init_end] if native_init_end > native_init_start else ""
