@@ -184,26 +184,36 @@ class MainActivity : ComponentActivity() {
         // hilos nativos. No bloquear el hilo de UI: hacerlo en IO para evitar
         // jank/ANR en el primer frame. El sample rate sigue siendo el del HAL.
         lifecycleScope.launch(Dispatchers.IO) {
+            val adaptiveRequested =
+                com.ivanna.omega.ui.AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled &&
+                !com.ivanna.omega.audio.AudioStateManager.audioState.value.manualModeEnabled
+            if (IvannaNativeLib.isLoaded) {
+                runCatching {
+                    IvannaNativeLib.nativeSetAdaptiveEngineEnabled(adaptiveRequested)
+                }.onFailure {
+                    android.util.Log.e("IVANNA.Boot", "No se pudo aplicar el modo adaptativo solicitado", it)
+                }
+            }
             runCatching { DSPBridge.init(sr) }
             if (IvannaNativeLib.isLoaded) {
                 val dspReady = runCatching {
                     IvannaNativeLib.nativeInitDSP(sr)
                 }.getOrDefault(false)
-                if (dspReady) {
-                    // El ADE es un singleton de proceso, no un motor que deba
-                    // depender de que el usuario abra AdaptiveEngineLivePanel.
-                    // nativeCreateAdaptiveEngine() es idempotente y arranca el
-                    // consumidor adaptativo real en el hilo de control.
+                if (dspReady && adaptiveRequested) {
+                    // El create no cambia la preferencia: devuelve un handle
+                    // solo si el hilo nativo realmente está iniciado.
                     val adaptiveHandle = runCatching {
                         IvannaNativeLib.nativeCreateAdaptiveEngine()
                     }.getOrDefault(0L)
-                    if (adaptiveHandle != 0L) {
-                        android.util.Log.i("IVANNA.Boot", "AdaptiveDecisionEngine iniciado; handle válido")
+                    if (adaptiveHandle != 0L && IvannaNativeLib.nativeIsAdaptiveEngineRunning()) {
+                        android.util.Log.i("IVANNA.Boot", "AdaptiveDecisionEngine iniciado y vivo")
                     } else {
-                        android.util.Log.e("IVANNA.Boot", "AdaptiveDecisionEngine no pudo iniciar; estado NOT_READY")
+                        android.util.Log.e("IVANNA.Boot", "AdaptiveDecisionEngine NOT_READY; DSP preservado")
                     }
+                } else if (dspReady) {
+                    android.util.Log.i("IVANNA.Boot", "Modo manual/adaptativo apagado por preferencia; DSP preservado")
                 } else {
-                    android.util.Log.e("IVANNA.Boot", "DSP nativo no inicializado; ADE permanece bloqueado")
+                    android.util.Log.e("IVANNA.Boot", "DSP nativo no inicializado; ruta NOT_READY")
                 }
                 // El control loop es de proceso, no de pantalla: debe seguir
                 // publicando ControlFrames aunque el usuario salga del Dashboard.
