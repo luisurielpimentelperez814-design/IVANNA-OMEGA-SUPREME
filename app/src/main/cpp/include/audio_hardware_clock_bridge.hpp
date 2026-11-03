@@ -157,14 +157,17 @@ public:
     HardwareClockReader& operator=(const HardwareClockReader&) = delete;
     ~HardwareClockReader() { close(); }
 
-    bool open(const char* path = kHardwareClockSnapshotPath) noexcept {
+    bool open(const char* path = kHardwareClockSnapshotPath,
+              const char* fallbackPath = nullptr) noexcept {
         if (snapshot_) return true;
         if (!path) path = kHardwareClockSnapshotPath;
         int fd = ::open(path, O_RDONLY | O_CLOEXEC);
         // Keep existing v2 HAL producers working across the filename migration.
         // Only fall back when the preferred path cannot be opened; an opened but
         // malformed v2 snapshot must fail closed rather than masking corruption.
-        if (fd < 0 && std::strcmp(path, kHardwareClockSnapshotPath) == 0)
+        if (fd < 0 && fallbackPath)
+            fd = ::open(fallbackPath, O_RDONLY | O_CLOEXEC);
+        else if (fd < 0 && std::strcmp(path, kHardwareClockSnapshotPath) == 0)
             fd = ::open(kLegacyHardwareClockSnapshotPath, O_RDONLY | O_CLOEXEC);
         if (fd < 0) return false;
         struct stat st{};
