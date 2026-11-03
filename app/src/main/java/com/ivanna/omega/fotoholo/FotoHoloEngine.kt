@@ -209,6 +209,7 @@ object FotoHoloEngine {
             var lastRouteBCommanded = Float.NaN
             var lastRouteBBase = Float.NaN
             var lastRouteBPushMs = 0L
+            var lastStateRetryMs = 0L
             var routeARestorePending = true
 
             while (true) {
@@ -353,6 +354,14 @@ object FotoHoloEngine {
                     } else {
                         lastRouteBCommanded = Float.NaN
                         lastRouteBBase = Float.NaN
+                    }
+
+                    // El estado FotoHolo (SET_FOTOHOLO_STATE) debe sanar con CUALQUIER ruta activa: si el
+                    // daemon aún no estaba listo cuando se publicó (arranque de la app, reinicio del
+                    // módulo), con ROUTE_A el bloque de arriba no corre y el fallo quedaba congelado.
+                    if (nowMs - lastStateRetryMs >= 1_500L) {
+                        lastStateRetryMs = nowMs
+                        FotoHoloRouteB.retryStatePublishIfNeeded()
                     }
 
                     // Refrescar read-back en cada tick de control tras una escritura

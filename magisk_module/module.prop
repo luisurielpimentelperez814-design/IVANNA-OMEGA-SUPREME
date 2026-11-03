@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.235
-versionCode=526
+version=v2.5.236
+versionCode=527
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.235: omega_effect arm64 build fix (LOGE) for adaptive engine start retries
+description=v2.5.236: FotoHolo Route B state publish retries on any active route (no stale 'demonio no disponible')
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

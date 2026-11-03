@@ -1,3 +1,11 @@
+## v2.5.236 (527) - 2026-11-02
+
+- **FotoHolo Ruta B: "demonio no disponible" congelado.** Si `SET_FOTOHOLO_STATE` fallaba una vez (p. ej. la app abría antes de que el daemon estuviera listo), el texto del fallo permanecía indefinidamente cuando la ruta activa era ROUTE_A: el bloque de reintento/refresco de `FotoHoloEngine` solo corre con ROUTE_B. Además `shouldRetryCommand` comparaba con `==` un texto que lleva el prefijo `FotoHolo Ruta B: `, así que tampoco lo reconocía en ROUTE_B.
+- **Cambio:** `FotoHoloRouteB` recuerda el último estado FotoHolo pedido y si su publicación falló por transporte; `retryStatePublishIfNeeded()` lo reenvía (los rechazos explícitos del daemon no se reintentan); `FotoHoloEngine` lo invoca cada 1.5 s con cualquier ruta activa; `shouldRetryCommand` tolera el prefijo. Test JVM nuevo para el prefijo.
+- **Sin cambios** en el daemon, `sepolicy.rule` ni en el procesamiento de audio.
+
+**Validation boundary:** corrección de lógica de estado/reintento en la app; verificada por CI (compilación + tests JVM). Que el estado se recupere en el dispositivo tras abrir la app con el daemon ya activo requiere comprobación en el Moto G85 5G.
+
 ## v2.5.235 (526) - 2026-11-02
 
 - **omega_effect arm64 build fix:** Route-B adaptive engine start retries in `omega_effect.cpp` report failures through `LOGE`, which that file did not define (only `LOGI` and `LOGW`). The macro is now defined with the same `#ifndef` pattern as `LOGW`. Found by syntax-checking every native source touched by PR #17 with `-fno-exceptions -fno-rtti` before the arm64 runner reached the `omega_effect` target.
