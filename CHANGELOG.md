@@ -1,3 +1,9 @@
+## v2.5.337 (628) - 2026-11-03
+
+- Corrige el orden de inicialización de `LocalSocket`: `connect()` se ejecuta antes de configurar `soTimeout` en `MagiskBridge.sendCommand`, `isOmegaSocketAvailable` y `ShmManager.mapFromDaemon`. Evita `IOException("socket not created")` por descriptor aún no creado.
+- Conserva los cambios ya integrados en `main`, incluidos el ciclo de vida del motor adaptativo y los reintentos de estado FotoHolo.
+- Validación: pendiente de CI, verificación de APK/ZIP y prueba en Moto G85. No se declara validación física por esta corrección.
+
 ## v2.5.236 (527) - 2026-11-02
 
 - **FotoHolo Ruta B: "demonio no disponible" congelado.** Si `SET_FOTOHOLO_STATE` fallaba una vez (p. ej. la app abría antes de que el daemon estuviera listo), el texto del fallo permanecía indefinidamente cuando la ruta activa era ROUTE_A: el bloque de reintento/refresco de `FotoHoloEngine` solo corre con ROUTE_B. Además `shouldRetryCommand` comparaba con `==` un texto que lleva el prefijo `FotoHolo Ruta B: `, así que tampoco lo reconocía en ROUTE_B.
