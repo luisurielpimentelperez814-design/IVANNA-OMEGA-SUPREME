@@ -53,8 +53,8 @@ constexpr const char* kLogTag = "OmegaASRC";
 constexpr uint64_t kHwTimestampMaxAgeNs = 2000000000ull;  // 2 s
 
 inline uint64_t nowNs() noexcept {
-  timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);  // same clock as AAudio/ALSA tstamps
+  timespec ts{};
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0 || ts.tv_sec < 0) return 0;
   return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull +
          static_cast<uint64_t>(ts.tv_nsec);
 }
@@ -584,9 +584,11 @@ PalAsrcBridge::ProcessResult PalAsrcBridge::processLocked(const T* in, uint32_t 
     return copyThrough(in, inFrames, out, outCap, channels_);
   }
 
-  // Timestamp is taken on entry and paired with frames already delivered, so
-  // our own processing time never leaks into the drift measurement.
-  updateDrift(nowNs());
+  // Do not read a clock in the RT callback when the external HAL servo
+  // supplies a manual ratio, or when drift tracking is disabled.
+  const bool needsClock = manualRatio_.load(std::memory_order_relaxed) <= 0.0 &&
+                          driftTracking_.load(std::memory_order_relaxed);
+  updateDrift(needsClock ? nowNs() : 0);
 
   const uint32_t ch = channels_;
   uint32_t inPos = 0, outPos = 0;
