@@ -172,6 +172,7 @@ def main() -> int:
         if (jni.count("!routeAWfsAllowed();") != 2 or
                 "const bool spatialHierarchyActive = (g_upmixing_enabled.load(std::memory_order_relaxed) ||" not in jni or
                 "routeAWfsAllowed());" not in jni):
+            raise AssertionError("both Route-A spatial gates and the M/S hierarchy must use effective WFS state")
     except AssertionError as exc:
         print(f"FAIL audio-route-wiring: {exc}", file=sys.stderr)
         return 1
