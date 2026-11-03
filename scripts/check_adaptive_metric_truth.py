@@ -123,6 +123,13 @@ def main() -> int:
                 raise AssertionError(f"ADE overwrites control-plane snapshot field: {stale_writer}")
         if effect.count("omega_neutralize_adaptive_snapshot(ctx->pendingSnap)") < 3:
             raise AssertionError("system-wide, initial seed and local routes do not all neutralize adaptive snapshot fields on OFF")
+        neutral_start = effect.find("static inline void omega_neutralize_adaptive_snapshot")
+        neutral_end = effect.find("\n}", neutral_start) if neutral_start >= 0 else -1
+        neutralizer = effect[neutral_start:neutral_end] if neutral_end > neutral_start else ""
+        if "s.comp_amount" in neutralizer:
+            raise AssertionError("adaptive OFF must preserve the user's manual compressor amount")
+        if "s.target_gain = 1.0f;" not in neutralizer or "s.exc_red = 0.0f;" not in neutralizer:
+            raise AssertionError("adaptive OFF must neutralize only its separate gain/exciter requests")
         if "ctx->adaptive->rawMetrics.publish(" not in effect:
             raise AssertionError("per-session ADE has no real PCM metric producer")
         if "if (ctx && ctx->adaptive && !ctx->adaptive->running()" not in effect:
@@ -176,8 +183,14 @@ def main() -> int:
             raise AssertionError("default control snapshot must not silently auto-enable adaptive actuation")
         if "AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled" not in activity_boot:
             raise AssertionError("Activity bootstrap does not honor the persisted adaptive preference")
-        if app_boot.count("queueSystemWideAdaptiveEnabled(adaptiveRequested)") < 2:
-            raise AssertionError("daemon startup/reconnect does not restore the user's adaptive preference")
+        if "val preferred =" not in activity_boot or "val requested = preferred && dspReady" not in activity_boot:
+            raise AssertionError("Activity conflates user preference with DSP readiness")
+        if "nativeSetAdaptiveEngineEnabled(preferred)" not in activity_boot:
+            raise AssertionError("Activity discards the user's ON preference when DSP init is temporarily unavailable")
+        if "fun currentAdaptiveRequested(): Boolean" not in app_boot:
+            raise AssertionError("Application has no live preference reader for daemon reconnect")
+        if app_boot.count("queueSystemWideAdaptiveEnabled(currentAdaptiveRequested())") < 2:
+            raise AssertionError("daemon startup/reconnect reuses a stale adaptive preference")
         watchdog_start = self_heal.find("// ── 2. Motor adaptativo")
         watchdog_end = self_heal.find("// ── 3. Clipping sostenido", watchdog_start) if watchdog_start >= 0 else -1
         if watchdog_start < 0 or watchdog_end <= watchdog_start:
@@ -194,6 +207,10 @@ def main() -> int:
             raise AssertionError("self-heal does not respect the manual-mode state")
         if "testControlThreadLifecycle();" not in lifecycle_test:
             raise AssertionError("native lifecycle regression test is not in the test runner")
+        sound_screen = read("app/src/main/java/com/ivanna/omega/ui/SoundScreen.kt")
+        hrtf_toggle = sound_screen.find('requestRouteFeatures(en, routeAdaptiveEnabled)')
+        if hrtf_toggle < 0:
+            raise AssertionError("HRTF toggle can republish adaptive=true while manual mode is active")
 
         # Voice inference provenance/race: a late synchronous model call may
         # outlive Job.cancel(), so mode transitions invalidate its generation.
