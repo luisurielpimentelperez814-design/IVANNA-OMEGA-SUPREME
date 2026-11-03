@@ -103,6 +103,36 @@ TEST(PalAsrcOutputPath, PairedPalClockDrivesRatioAndQueryFailureReturnsUnity) {
     EXPECT_DOUBLE_EQ(path.lastAppliedRatio(), 1.0);
 }
 
+TEST(PalAsrcOutputPath, ReconfigureRequiresFreshServoLock) {
+    FakePal pal;
+    const uint64_t now = monotonicNowNs();
+    ASSERT_GT(now, 600000000ull);
+    const uint64_t base = now - 500000000ull;
+    pal.samples = {
+        {0u,     base,                48000u, 71u, 1u},
+        {4805u,  base + 100000000ull, 48000u, 71u, 1u},
+        {9610u,  base + 200000000ull, 48000u, 71u, 1u},
+        {14415u, base + 300000000ull, 48000u, 71u, 1u},
+        {19220u, base + 400000000ull, 48000u, 72u, 2u},
+    };
+
+    PalAsrcOutputPath path(&FakePal::query, &pal);
+    ::omega::AsrcConfig config;
+    config.mode = ::omega::AsrcMode::kCubicHermite;
+    config.maxDriftPpm = 1000.0;
+    ASSERT_TRUE(path.configure(config));
+    for (int i = 0; i < 4; ++i) ASSERT_TRUE(path.controlTick());
+    ASSERT_TRUE(path.correctionEnabled());
+    ASSERT_NE(path.lastAppliedRatio(), 1.0);
+
+    // Reopening the same nominal rate is still a new route: old lock/anchors
+    // must be discarded and the first sample must command unity.
+    ASSERT_TRUE(path.configure(config));
+    ASSERT_TRUE(path.controlTick());
+    EXPECT_FALSE(path.correctionEnabled());
+    EXPECT_DOUBLE_EQ(path.lastAppliedRatio(), 1.0);
+}
+
 TEST(PalAsrcOutputPath, FutureTimestampNeverEnablesCorrection) {
     FakePal pal;
     const uint64_t now = monotonicNowNs();
