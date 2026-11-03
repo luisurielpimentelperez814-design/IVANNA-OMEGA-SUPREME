@@ -466,6 +466,14 @@ class IVANNAApplication : Application() {
                 // su propio fallo, tal como ya hace cada runCatching en el
                 // resto de este bloque.
                 runCatching { com.ivanna.omega.core.PersistedStateRestorer.restore(this@IVANNAApplication) }
+                // Aplicar también la preferencia al consumidor AudioFlinger:
+                // el singleton JNI de la app y el ADE por instancia del efecto
+                // son motores distintos y ambos deben respetar OFF/manual.
+                runCatching {
+                    omegaBridge.queueSystemWideAdaptiveEnabled(adaptiveRequested)
+                }.onFailure {
+                    Log.w(TAG, "No se pudo publicar preferencia adaptativa en daemon: ${it.message}")
+                }
                 runCatching { com.ivanna.omega.magisk.OmegaEngineBridge.startKeepalive() }
 
                 // The persisted restorer is the single startup owner. Do not send a second
@@ -481,7 +489,12 @@ class IVANNAApplication : Application() {
                         delay(5_000L)
                         if (!omegaBridge.isConnected) {
                             val ok = omegaBridge.connect()
-                            if (ok) Log.i(TAG, "✅ OmegaEngineBridge reconectado al daemon")
+                            if (ok) {
+                                Log.i(TAG, "✅ OmegaEngineBridge reconectado al daemon")
+                                runCatching {
+                                    omegaBridge.queueSystemWideAdaptiveEnabled(adaptiveRequested)
+                                }
+                            }
                         }
                     }
                 }
