@@ -180,10 +180,13 @@ val isDaemonRunning: Boolean
         // Abstract namespace — donde publica ivanna_daemon
         runCatching {
             LocalSocket().use { sock ->
-                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
+                // connect() ANTES que soTimeout: LocalSocket crea su fd de forma perezosa en connect(); llamar
+                // setSoTimeout() sobre un socket aún no creado lanza IOException("socket not created") y el
+                // comando nunca llegaba al daemon (se reportaba como "demonio no disponible").
                 sock.connect(
                     LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
                 )
+                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
                 sock.outputStream.apply {
                     write(command.toByteArray(Charsets.UTF_8))
                     write("\n".toByteArray(Charsets.UTF_8))
@@ -252,10 +255,11 @@ val isDaemonRunning: Boolean
     private fun isOmegaSocketAvailable(): Boolean {
         val abstractOk = runCatching {
             LocalSocket().use { sock ->
-                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
+                // connect() antes que soTimeout (ver sendCommand): si no, "socket not created".
                 sock.connect(
                     LocalSocketAddress(SOCKET_OMEGA, LocalSocketAddress.Namespace.ABSTRACT)
                 )
+                sock.soTimeout = SOCKET_READ_TIMEOUT_MS
                 true
             }
         }.getOrDefault(false)
