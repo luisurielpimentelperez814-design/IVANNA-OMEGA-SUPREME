@@ -213,13 +213,17 @@ def main() -> int:
         route_a_consumer = jni[route_a_start:route_b_start]
         route_b_consumer = jni[route_b_start:]
         for consumer, gain_state, comp_state, exc_state in (
-            (route_a_consumer, "g_ats.targetGainSmooth = 1.0f;", "g_ats.compAmountSmooth = 0.0f;", "g_ats.excReductionSmooth = 0.0f;"),
+            (route_a_consumer, "g_ats.targetGainSmooth = 1.0f;", "g_ats.compAmountSmooth = 0.0f;", "g_ats.excReductionSmooth = std::clamp(excReductionUi, 0.0f, 1.0f);"),
             (route_b_consumer, "g_ats.blkTgSmooth = 1.0f;", "g_ats.blkCaSmooth = 0.0f;", "g_ats.blkErSmooth = 0.0f;"),
         ):
             if "if (!adaptiveActive)" not in consumer or gain_state not in consumer or comp_state not in consumer or exc_state not in consumer:
                 raise AssertionError("OFF/manual must reset each Route A consumer's independent adaptive smoothers")
-            if "g_gain.setRuntimeGain(1.0f);" not in consumer or "g_comp.resetRuntimeAmount();" not in consumer or "g_exciter.setRuntimeReduction(0.0f);" not in consumer:
-                raise AssertionError("OFF/manual must neutralize retained gain/compressor/exciter actuator state")
+            if "g_gain.setRuntimeGain(1.0f);" not in consumer or "g_exciter.setRuntimeReduction(0.0f);" not in consumer:
+                raise AssertionError("OFF/manual must neutralize retained gain and exciter actuator state")
+            if "g_comp.resetRuntimeAmount();" in consumer or "g_comp.setRuntimeAmount(" not in consumer:
+                raise AssertionError("OFF/manual must slew the compressor runtime overlay without erasing the Perceptual Guard target")
+        if "g_ats.compAmountSmooth = std::max(g_ats.compAmountSmooth, g_ats.guardCompLimitApplied);" not in route_a_consumer:
+            raise AssertionError("Route A must preserve the Perceptual Guard compressor floor in OFF/manual")
         if "g_exciter.setRuntimeReduction(g_ats.blkErSmooth);" not in route_b_consumer:
             raise AssertionError("nativeProcessBlock must apply its adaptive exciter target and neutralize it on OFF")
         native_init_start = jni.find("Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(")
