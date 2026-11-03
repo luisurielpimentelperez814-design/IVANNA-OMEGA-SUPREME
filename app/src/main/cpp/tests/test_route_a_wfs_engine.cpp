@@ -125,6 +125,12 @@ int main() {
         renderer.setEnabled(false);
         renderer.blendWithBypass(dryL, dryR, wetL, wetR,
                                  outL, outR, kFadeFrames);
+        CHECK(outL[kFadeFrames - 1] == dryL[kFadeFrames - 1]);
+        CHECK(outR[kFadeFrames - 1] == dryR[kFadeFrames - 1]);
+        // Once settled, every sample must be copied from dry without
+        // evaluating the potentially contaminated wet buffer.
+        renderer.blendWithBypass(dryL, dryR, wetL, wetR,
+                                 outL, outR, kFadeFrames);
         for (int i = 0; i < kFadeFrames; ++i) {
             CHECK(outL[i] == dryL[i]);
             CHECK(outR[i] == dryR[i]);
