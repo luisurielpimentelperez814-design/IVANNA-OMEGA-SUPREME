@@ -645,6 +645,7 @@ add_executable(test_route_a_wfs_engine
   ../spatial/RouteAWfsEngine.cpp
   ../spatial/WfsRenderer.cpp
   ../wfs_controls_bridge.cpp)
+target_link_libraries(test_route_a_wfs_engine PRIVATE GTest::gtest_main)
 target_include_directories(test_route_a_wfs_engine PRIVATE .. ../include ../spatial host_stubs)
 target_compile_options(test_route_a_wfs_engine PRIVATE -Wall -Wextra)
 if(IVANNA_SAN_FLAGS)

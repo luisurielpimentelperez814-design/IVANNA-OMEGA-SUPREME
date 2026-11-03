@@ -43,7 +43,7 @@ bool RouteAWfsEngine::prepare(float sampleRate, int maxFrames) noexcept {
     impl_->governor.configure(sampleRate / static_cast<float>(maxFrames), 0.12f);
     impl_->governor.reset(spread_.load(std::memory_order_relaxed));
     applyLayout(layoutGeneration_.load(std::memory_order_acquire));
-    impl_->renderer.setEnabled(false);
+    impl_->renderer.setEnabled(enabled_.load(std::memory_order_acquire));
     prepared_ = true;
     return true;
 }

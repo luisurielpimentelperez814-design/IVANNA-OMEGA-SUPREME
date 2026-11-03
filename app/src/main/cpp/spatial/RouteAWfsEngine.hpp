@@ -22,7 +22,7 @@ private:
     void applyLayout(uint32_t generation) noexcept;
     class Impl;
     Impl* impl_ = nullptr; // creado/liberado solo desde hilo de control
-    std::atomic<bool> enabled_{false};
+    std::atomic<bool> enabled_{true};
     std::atomic<float> spread_{1.18f};
     std::array<std::atomic<float>, 7> roomX_{};
     std::array<std::atomic<float>, 7> roomY_{};
