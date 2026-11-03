@@ -151,10 +151,13 @@ def main() -> int:
             raise AssertionError("Application bootstrap does not restore the persisted adaptive preference")
         if "AdaptiveControlsPrefs.load(applicationContext).binauralAdaptEnabled" not in activity_boot:
             raise AssertionError("Activity bootstrap does not honor the persisted adaptive preference")
+        if app_boot.count("queueSystemWideAdaptiveEnabled(adaptiveRequested)") < 2:
+            raise AssertionError("daemon startup/reconnect does not restore the user's adaptive preference")
         if (
-            "adaptiveRequested && routeActive" not in self_heal
+            "adaptiveRequested &&" not in self_heal
             or "nativeIsAdaptiveEngineRunning()" not in self_heal
             or "!engineRunning" not in self_heal
+            or "routeActive" in self_heal[self_heal.index("// ── 2. Motor adaptativo"):self_heal.index("// ── 3. Clipping sostenido")]
         ):
             raise AssertionError("self-heal can override user preference or confuse silence with thread death")
         if "!AudioStateManager.audioState.value.manualModeEnabled" not in self_heal:
