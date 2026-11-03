@@ -70,8 +70,16 @@ public:
         if (snapshot_) return true;
         const int fd = ::open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0660);
         if (fd < 0) return false;
+        struct stat st{};
+        if (::fstat(fd, &st) < 0 ||
+            (st.st_size != 0 &&
+             static_cast<size_t>(st.st_size) != kHardwareClockSnapshotBytes)) {
+            // Never truncate an unknown/legacy snapshot layout in place.
+            ::close(fd);
+            return false;
+        }
         (void)::fchmod(fd, 0660);
-        if (::ftruncate(fd, kHardwareClockSnapshotBytes) < 0) {
+        if (st.st_size == 0 && ::ftruncate(fd, kHardwareClockSnapshotBytes) < 0) {
             ::close(fd);
             return false;
         }
