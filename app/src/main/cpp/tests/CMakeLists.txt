@@ -1548,3 +1548,27 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_pal_asrc_output_path PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_pal_asrc_output_path)
+
+
+# Compile the Moto G85 write-stage header in host CI. This validates the
+# source-level adapter and PAL byte-count callback contract; it is not a
+# substitute for compiling against Motorola's private target PalApi.h.
+add_executable(test_moto_g85_pal_asrc_write_stage
+  test_moto_g85_pal_asrc_write_stage.cpp
+  ../../../../../hal_integration/PalAsrcBridge.cpp
+)
+target_include_directories(test_moto_g85_pal_asrc_write_stage PRIVATE
+  ..
+  ../include
+  ../../../../../hal_integration
+)
+target_link_libraries(test_moto_g85_pal_asrc_write_stage PRIVATE
+  GTest::gtest_main
+  Threads::Threads
+)
+target_compile_options(test_moto_g85_pal_asrc_write_stage PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_moto_g85_pal_asrc_write_stage PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_moto_g85_pal_asrc_write_stage PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_moto_g85_pal_asrc_write_stage)
