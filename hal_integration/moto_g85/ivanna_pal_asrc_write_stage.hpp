@@ -157,6 +157,7 @@ private:
             result.writeComplete = true;
             return true;
         }
+        result.writeComplete = false;
         if (poisoned_ || !write_ || bytesPerFrame_ == 0) {
             result.bytesPending = pendingBytes_ - pendingOffset_;
             return false;
