@@ -169,8 +169,11 @@ TEST(AudioQualityMetrics, ProcessingLatency_LimiterUnder1ms) {
         times[r] = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
     }
 
-    long long medianNs = times[REPS / 2];
+    // Sort before selecting the median; reading element 50 from the
+    // unsorted sample is merely one arbitrary iteration and made this gate
+    // sensitive to scheduler/ASan outliers rather than typical DSP cost.
     std::sort(times.begin(), times.end());
+    long long medianNs = times[REPS / 2];
     long long p99Ns = times[(int)(REPS * 0.99)];
 
     std::cout << "[  INFO  ] SafetyLimiter 512 frames: median="
