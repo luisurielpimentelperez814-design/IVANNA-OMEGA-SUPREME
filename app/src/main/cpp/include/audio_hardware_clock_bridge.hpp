@@ -18,7 +18,7 @@ namespace ivanna::audio {
 // presentation timestamp and the matching presented-frame position.
 // Never publish CLOCK_MONOTONIC sampled at effect callback entry.
 inline constexpr const char* kHardwareClockSnapshotPath =
-        "/data/vendor/ivanna_audio/clock_snapshot";
+        "/data/vendor/ivanna_audio/clock_snapshot.v2";
 inline constexpr uint32_t kHardwareClockSnapshotMagic = 0x32485649u; // "IVH2" — reject v1 readers
 inline constexpr size_t kHardwareClockSnapshotBytes = 64;
 inline constexpr uint32_t kHardwareClockSnapshotVersion = 2;
