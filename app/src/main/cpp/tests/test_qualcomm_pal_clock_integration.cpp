@@ -94,6 +94,32 @@ void lockServo(QualcommPalClockIntegration& pal, FakePal& hal) {
     hal.sample = {14402, 1300000000ull, 48000};  EXPECT_TRUE(pal.controlTick());
 }
 
+struct TimestampTakenInsideQuery {
+    static bool query(void*, HardwareClockSample* out) noexcept {
+        if (!out) return false;
+        timespec ts{};
+        if (::clock_gettime(CLOCK_MONOTONIC, &ts) != 0 || ts.tv_sec < 0) return false;
+        out->presentedFrames = 48000;
+        out->hardwareTimestampNs = static_cast<uint64_t>(ts.tv_sec) * 1000000000ull +
+                                   static_cast<uint64_t>(ts.tv_nsec);
+        out->nominalSampleRateHz = 48000;
+        out->streamId = 19;
+        out->routeGeneration = 4;
+        return true;
+    }
+};
+
+TEST(QualcommPalClockIntegration, AcceptsTimestampCapturedDuringPairedQuery) {
+    FakeAsrc asrc;
+    QualcommPalClockIntegration pal(&TimestampTakenInsideQuery::query, nullptr,
+                                     &FakeAsrc::apply, &asrc);
+    // The query obtains CLOCK_MONOTONIC internally. The comparison clock must
+    // be sampled after that callback, or this fresh timestamp can look future-dated.
+    EXPECT_TRUE(pal.controlTick());
+    EXPECT_FALSE(pal.correctionEnabled());  // one sample is not enough to lock
+    expectOnlyUnityCommands(asrc);
+}
+
 TEST(QualcommPalClockIntegration, NullQueryFailsClosedToUnityRatio) {
     FakeAsrc asrc;
     QualcommPalClockIntegration pal(nullptr, nullptr, &FakeAsrc::apply, &asrc);
