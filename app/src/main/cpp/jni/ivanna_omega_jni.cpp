@@ -374,6 +374,13 @@ static bool setAdaptiveEngineEnabled(bool enabled) noexcept {
         g_adaptiveEngineStarted.store(false, std::memory_order_release);
         return false;
     }
+    // A user ON preference may arrive before DSP initialization. Preserve
+    // the preference, but do not create a control thread until the native
+    // graph is initialized; nativeInit will call ensureAdaptiveEngineStarted.
+    if (!g_initialized.load(std::memory_order_acquire)) {
+        g_adaptiveEngineStarted.store(false, std::memory_order_release);
+        return false;
+    }
     const bool created = g_adaptiveEngine.start();
     const bool live = created && g_adaptiveEngine.running();
     g_adaptiveEngineStarted.store(live, std::memory_order_release);
@@ -750,14 +757,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
-    // ═══ FASE 4B: ciclo de vida del motor adaptativo ═════════════════════
-    // El inicio obedece a la preferencia persistida/manual, incluso si
-    // nativeInit se repite por cambio de sample rate.
-    if (ensureAdaptiveEngineStarted()) {
-        LOGI("AdaptiveDecisionEngine running (control thread @50ms)");
-    } else {
-        LOGI("AdaptiveDecisionEngine disabled by user preference or start unavailable");
-    }
+    // El ADE se inicia al final, después de que g_initialized confirme el grafo DSP.
     // El consumidor de snapshots es observabilidad, no el motor. Debe vivir
     // también cuando el usuario selecciona modo manual, para que el siguiente
     // enable no herede una telemetría sin consumidor.
@@ -855,6 +855,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // no-ops y con un dispositivo a 44.1 kHz el conductor temporizaba con un bloque erróneo.
     ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
     g_initialized.store(true, std::memory_order_release);
+    // El ADE solo arranca cuando el grafo nativo ya está preparado. La
+    // preferencia puede haberse fijado antes por Application/UI; ensure()
+    // la respeta y nunca reactiva el motor si el usuario eligió OFF/manual.
+    if (ensureAdaptiveEngineStarted()) {
+        LOGI("AdaptiveDecisionEngine running (DSP initialized, control thread @50ms)");
+    } else {
+        LOGI("AdaptiveDecisionEngine disabled by preference or start unavailable");
+    }
     LOGI("OPE initialized @ %d Hz (EvolutionaryKernel online)", sr);
 }
 
