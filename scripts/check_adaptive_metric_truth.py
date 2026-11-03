@@ -164,6 +164,14 @@ def main() -> int:
             source = engine if "AdaptiveDecisionEngine::start" in needle else header
             if needle not in source:
                 raise AssertionError(f"adaptive lifecycle contract missing: {needle}")
+        if "pthread_create(" not in engine or "createResult != 0" not in engine:
+            raise AssertionError("Android -fno-exceptions lifecycle does not handle pthread resource failure")
+        if "running_.store(false, std::memory_order_release);" not in engine[engine.find("const int createResult = pthread_create"):]:
+            raise AssertionError("pthread creation failure leaves ADE falsely marked running")
+        if "controlThreadJoinable_ = false;" not in engine:
+            raise AssertionError("pthread lifecycle has no successful join/drain transition")
+        if "pthread_t controlThread_" not in header:
+            raise AssertionError("Android ADE lifecycle does not own a joinable pthread handle")
         if "if (!ensureAdaptiveEngineStarted()) return 0;" not in jni:
             raise AssertionError("nativeCreateAdaptiveEngine can claim a disabled/failed engine is ready")
         ensure_start = jni.find("static bool ensureAdaptiveEngineStarted")
