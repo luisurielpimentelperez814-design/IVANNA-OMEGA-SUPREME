@@ -763,14 +763,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // enable no herede una telemetría sin consumidor.
     if (!g_adaptiveSnapshotStarted.exchange(true, std::memory_order_acq_rel)) {
         g_snapshotRunning.store(true, std::memory_order_release);
-        try {
-            g_snapshotThread = std::thread(adaptiveSnapshotLoop);
-            LOGI("AdaptiveState snapshot consumer started");
-        } catch (...) {
-            g_snapshotRunning.store(false, std::memory_order_release);
-            g_adaptiveSnapshotStarted.store(false, std::memory_order_release);
-            LOGE("AdaptiveState snapshot consumer could not start");
-        }
+        // LEGACY (no borrar): el try/catch original no compila porque el
+        // módulo nativo se construye con -fno-exceptions (CMakeLists.txt).
+        // Sin excepciones, un fallo de std::thread aborta igual que en
+        // g_bridgeThread; se usa el mismo patrón sin try/catch.
+        // try {
+        //     g_snapshotThread = std::thread(adaptiveSnapshotLoop);
+        // } catch (...) {
+        //     g_snapshotRunning.store(false, std::memory_order_release);
+        //     g_adaptiveSnapshotStarted.store(false, std::memory_order_release);
+        //     LOGE("AdaptiveState snapshot consumer could not start");
+        // }
+        g_snapshotThread = std::thread(adaptiveSnapshotLoop);
+        LOGI("AdaptiveState snapshot consumer started");
     }
     // FIX (Adaptive Feedback Loop — ruta real Spotify/YouTube): arrancar el
     // puente hacia omega_effect.cpp UNA sola vez, mismo guard que el motor
