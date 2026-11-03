@@ -491,8 +491,19 @@ void WfsRenderer::blendWithBypass(const float* dryL, const float* dryR,
         else if (enabledMix_ > enabledTarget_) enabledMix_ = std::max(enabledMix_ - step, enabledTarget_);
         const float t = enabledMix_;
         const float shaped = t * t * (3.0f - 2.0f * t);
-        outL[n] = dryL[n] * (1.0f - shaped) + wetL[n] * shaped;
-        outR[n] = dryR[n] * (1.0f - shaped) + wetR[n] * shaped;
+        // Exact dry bypass is also a fault-containment boundary: IEEE-754
+        // NaN * 0 remains NaN, so a contaminated wet renderer must never
+        // leak into the dry signal after the 15 ms fade has completed.
+        if (shaped <= 0.0f) {
+            outL[n] = dryL[n];
+            outR[n] = dryR[n];
+        } else if (shaped >= 1.0f) {
+            outL[n] = wetL[n];
+            outR[n] = wetR[n];
+        } else {
+            outL[n] = dryL[n] * (1.0f - shaped) + wetL[n] * shaped;
+            outR[n] = dryR[n] * (1.0f - shaped) + wetR[n] * shaped;
+        }
     }
 }
 
