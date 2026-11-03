@@ -166,6 +166,11 @@ def main() -> int:
                 raise AssertionError(f"adaptive lifecycle contract missing: {needle}")
         if "if (!ensureAdaptiveEngineStarted()) return 0;" not in jni:
             raise AssertionError("nativeCreateAdaptiveEngine can claim a disabled/failed engine is ready")
+        ensure_start = jni.find("static bool ensureAdaptiveEngineStarted")
+        ensure_end = jni.find("\n}", ensure_start) if ensure_start >= 0 else -1
+        ensure_body = jni[ensure_start:ensure_end] if ensure_end > ensure_start else ""
+        if "!g_initialized.load(std::memory_order_acquire)" not in ensure_body:
+            raise AssertionError("explicit create/watchdog can start ADE before the native DSP graph is ready")
         if "g_adaptiveEngineUiEnabled.store(true" in jni:
             raise AssertionError("nativeCreateAdaptiveEngine must not override the user's OFF/manual preference")
         if "g_adaptiveEngine.running()" not in jni:
