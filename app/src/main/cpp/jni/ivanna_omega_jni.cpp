@@ -355,6 +355,13 @@ static std::mutex g_adaptiveEngineLifecycleMutex;
 
 static bool ensureAdaptiveEngineStarted() noexcept {
     std::lock_guard<std::mutex> lock(g_adaptiveEngineLifecycleMutex);
+    // Both explicit create() and watchdog recovery are gated by a fully
+    // initialized native DSP graph. A preference can remain ON while the
+    // graph is unavailable; the next successful nativeInit retries here.
+    if (!g_initialized.load(std::memory_order_acquire)) {
+        g_adaptiveEngineStarted.store(false, std::memory_order_release);
+        return false;
+    }
     if (!g_adaptiveEngineUiEnabled.load(std::memory_order_acquire)) {
         if (g_adaptiveEngine.running()) g_adaptiveEngine.stop();
         g_adaptiveEngineStarted.store(false, std::memory_order_release);
