@@ -54,6 +54,7 @@ public:
     // Optional telemetry for the existing AudioFlinger HardwareClockReader.
     // This does not make the insert effect an ASRC actuator.
     bool openReporter(const char* path = kHardwareClockSnapshotPath) noexcept {
+        std::lock_guard<std::mutex> lock(controlMutex_);
         return clock_.openReporter(path);
     }
 
@@ -79,9 +80,18 @@ public:
         configuredOutputRateHz_.store(0, std::memory_order_relaxed);
     }
 
-    bool correctionEnabled() const noexcept { return clock_.correctionEnabled(); }
-    bool hasKnownAppliedRatio() const noexcept { return clock_.hasKnownAppliedRatio(); }
-    double lastAppliedRatio() const noexcept { return clock_.lastAppliedRatio(); }
+    bool correctionEnabled() const noexcept {
+        std::lock_guard<std::mutex> lock(controlMutex_);
+        return clock_.correctionEnabled();
+    }
+    bool hasKnownAppliedRatio() const noexcept {
+        std::lock_guard<std::mutex> lock(controlMutex_);
+        return clock_.hasKnownAppliedRatio();
+    }
+    double lastAppliedRatio() const noexcept {
+        std::lock_guard<std::mutex> lock(controlMutex_);
+        return clock_.lastAppliedRatio();
+    }
 
     uint32_t maxOutputFrames(uint32_t inputFrames) const noexcept {
         return bridge_.maxOutputFrames(inputFrames);
@@ -143,7 +153,7 @@ private:
     void* queryContext_ = nullptr;
     QualcommPalClockIntegration clock_;
     // Serializes lifecycle/control operations; never acquired by the audio callback.
-    std::mutex controlMutex_;
+    mutable std::mutex controlMutex_;
     std::atomic<uint32_t> configuredOutputRateHz_{0};
     std::atomic<bool> configured_{false};
 };
