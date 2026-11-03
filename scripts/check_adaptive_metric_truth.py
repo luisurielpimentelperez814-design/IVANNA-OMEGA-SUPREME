@@ -84,7 +84,10 @@ def main() -> int:
             "rawM.gain_reduction_db = ctx->safetyLimiter",
             "ctx->adaptiveDecisionTargetGain",
             "ctx->adaptiveDecisionCompAmount",
-            "const float effectiveRatio = std::max(v2Ratio, adeRatio);",
+            "const float snapshotRatio = 1.0f + 7.0f * std::clamp(",
+            "const float effectiveRatio = std::max(v2Ratio, std::max(snapshotRatio, adeRatio));",
+            "const float effectiveThreshold =",
+            "ctx->pendingSnap.compressor",
             "adaptiveGainTarget = std::clamp(overallTrim * isoGain * adeGain, 0.50f, 1.0f);",
         ):
             if needle not in effect:
