@@ -349,8 +349,9 @@ static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept;
 static constexpr int OMEGA_RT_MAX_FRAMES = 8192;
 
 // Neutraliza únicamente los campos de actuación adaptativa del snapshot.
-// compressor, exciter_reduction, EQ, HRTF y geometría siguen siendo controles
-// explícitos; target_gain/comp_amount/exc_red no deben sobrevivir al modo OFF.
+// comp_amount es el control manual de ratio y se conserva; target_gain y
+// exc_red son salidas adaptativas separadas y vuelven a neutral al pasar a OFF.
+// Los parámetros explícitos de compresor, EQ, HRTF y geometría permanecen intactos.
 static inline void omega_neutralize_adaptive_snapshot(ivanna::OmegaDspSnapshot& s) noexcept {
     // comp_amount es también el ratio solicitado por el control manual
     // OMEGA_PARAM_COMPRESSOR_AMOUNT. Solo se neutraliza la salida adaptativa
