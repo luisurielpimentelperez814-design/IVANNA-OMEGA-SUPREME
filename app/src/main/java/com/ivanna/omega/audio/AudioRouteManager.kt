@@ -250,7 +250,7 @@ object AudioRouteManager {
             }
             // Also update Route B's independent fourd_xtc field; nativeFourDSetCrosstalk
             // mirrors the legacy XTC bit but does not replace the SET_4D snapshot.
-            com.ivanna.omega.core.FourDRouteB.push(ctx, store)
+            com.ivanna.omega.core.FourDRouteB.push(ctx, store, route)
         }.onFailure { Log.w(TAG, "Transaural route gate failed closed: ${it.message}") }
     }
 
