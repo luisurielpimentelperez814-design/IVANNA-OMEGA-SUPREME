@@ -36,8 +36,9 @@ object FourDRouteB {
 
     fun isExternalStereoRoute(context: Context): Boolean {
         val ctx = context.applicationContext
-        return ExternalStereoPolicy.usesExternalSpeakers(
-            AudioRouteManager.detectOutputRoute(), SpatialAudioPrefs.load(ctx).externalStereoLineOut
+        val route = AudioRouteManager.detectOutputRoute()
+        return ExternalStereoPolicy.allowTransauralXtc(
+            route, SpatialAudioPrefs.load(ctx).externalStereoLineOut, requested = true
         )
     }
 
