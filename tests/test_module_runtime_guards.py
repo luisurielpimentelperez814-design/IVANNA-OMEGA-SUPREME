@@ -94,7 +94,7 @@ class ElfGuardTest(unittest.TestCase):
     def test_accepts_aarch64_elf64_shared_object(self):
         r = self.validate(valid_aarch64_so())
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("ELF64 AArch64 ET_DYN header accepted", r.stdout)
+        self.assertIn("ELF64 AArch64 ET_DYN header and program-header bounds accepted", r.stdout)
 
     def test_rejects_non_elf_without_deleting_it(self):
         with tempfile.TemporaryDirectory() as d:
@@ -134,6 +134,20 @@ class ElfGuardTest(unittest.TestCase):
         r = self.validate(bytes(b))
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("not a shared object", r.stdout)
+
+    def test_rejects_program_header_table_past_end_of_file(self):
+        b = bytearray(valid_aarch64_so())
+        b[56:58] = bytes.fromhex("0200")
+        r = self.validate(bytes(b))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("table exceeds file size", r.stdout)
+
+    def test_rejects_program_header_offset_outside_file(self):
+        b = bytearray(valid_aarch64_so())
+        b[32:40] = bytes.fromhex("f000000000000000")
+        r = self.validate(bytes(b))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("offset outside file", r.stdout)
 
     def test_rejects_truncated_header(self):
         r = self.validate(bytes.fromhex("7f454c46") + bytes(20))
