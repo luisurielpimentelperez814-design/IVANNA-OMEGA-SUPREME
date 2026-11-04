@@ -220,3 +220,75 @@ static boot/init import-order audit for this exact firmware and Magisk
 version, followed by a separate controlled build review. Keep the presence
 probe inert. A successful mapping alone would still not prove PAL function
 interposition or ASRC PCM processing.
+
+
+## Corrected init import-order finding — Magisk v30.7 / Android 15
+
+The earlier candidate suggesting that a top-level `overlay.d/*.rc` could
+provide a later duplicate `vendor.audio-hal` service definition is withdrawn.
+Inspection of the exact Magisk v30.7 source tag
+(`native/src/init/rootdir.cpp`) shows:
+
+1. `load_overlay_rc()` reads top-level `overlay.d/*.rc` entries. New RC
+   files are collected into `rc_list`; existing rootdir RC paths are handled
+   as replacements. `overlay.d/init.rc` is explicitly not accepted as an
+   overwrite.
+2. `patch_rc_scripts()` appends `rc_list` to the primary
+   `/system/etc/init/hw/init.rc` (Android 11+ path) and then injects Magisk's
+   own RC entries.
+3. AOSP Android 15 init documentation says the primary init RC is parsed
+   before the partition init directories, including `/vendor/etc/init/`.
+   Therefore a service definition added by Magisk's top-level overlay RC is
+   parsed before the Motorola vendor service definition.
+4. The exact Motorola service stanza already contains `override`. Android
+   init specifies that the last parsed definition carrying `override` wins.
+   The later vendor stanza therefore takes precedence over an earlier
+   overlay-added duplicate.
+
+Consequently, a simple `overlay.d/*.rc` duplicate service stanza cannot be
+claimed to override this vendor service. The previous candidate design and
+the corresponding release gate wording are superseded by this finding.
+
+### Why the obvious fallback is not approved
+
+Android init's `export NAME VALUE` command sets a global init environment
+variable inherited by all subsequently started child processes. It is not
+service-scoped like the `setenv` service option. Setting global
+`LD_PRELOAD` early could affect many unrelated init-launched processes;
+this is not an acceptable substitute for a targeted HAL service environment
+without a separately designed and tested process-filtering architecture.
+No global `LD_PRELOAD` action is proposed.
+
+A later parsed service override would need to be available in an init RC
+source parsed after the vendor definition (for example, an actual later
+partition init source) or the original vendor service definition itself
+would need a controlled replacement. The current evidence does not establish
+a safe, early, reversible way to provide either on this device. A normal
+Magisk module `service.sh` or post-fs-data file mount is too late to change a
+service definition already parsed by init.
+
+### Current engineering decision
+
+- Do not add a duplicate `vendor.audio-hal` stanza to `overlay.d/*.rc`.
+- Do not set global `LD_PRELOAD` in init.
+- Do not modify or flash `init_boot` on this basis.
+- Keep the presence probe inert and the PAL/ASRC release gates closed.
+- Continue by checking the device's effective primary init path and actual
+  partition init directories, then investigate whether the firmware exposes
+  a supported later init source or whether a vendor-image-level change is
+  unavoidable.
+
+### Source references
+
+- Magisk v30.7 source tag:
+  `native/src/init/rootdir.cpp`,
+  `load_overlay_rc()`, `patch_rc_scripts()`, and `patch_ro_root()`.
+- AOSP Android 15 init README (android15-qpr2-s9-release):
+  primary init RC parsing and partition-directory import order; service
+  `override` semantics.
+- AOSP init language documentation:
+  `export` is global and inherited by subsequently started processes.
+
+This correction is based on source-level boot/init behavior, not a live
+modified-boot test. The exact target boot flow should still be checked against
+the device's effective `ro.boot.init_rc`, mounts, and parsed init files.
