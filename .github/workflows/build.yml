@@ -854,6 +854,24 @@ jobs:
           test -f "$APK_NAME"      || { echo "ERROR: APK no publicado en el artefacto"; exit 1; }
           test -s "$APK_NAME"      || { echo "ERROR: APK publicado pero vacío (0 bytes)"; exit 1; }
           unzip -t "$APK_NAME"     || { echo "ERROR: APK publicado no pasa unzip -t"; exit 1; }
+          unzip -p "$ZIPNAME" module.prop > extracted_module.prop
+          unzip -p "$ZIPNAME" update.json > extracted_update.json
+          python3 - <<'PY'
+          import json
+          def props(path):
+              out = {}
+              for line in open(path, encoding="utf-8"):
+                  line = line.strip()
+                  if line and not line.startswith("#") and "=" in line:
+                      k, v = line.split("=", 1); out[k] = v
+              return out
+          m = props("extracted_module.prop")
+          u = json.load(open("extracted_update.json", encoding="utf-8"))
+          assert m["version"] == u["version"], (m["version"], u["version"])
+          assert int(m["versionCode"]) == int(u["versionCode"]), (m["versionCode"], u["versionCode"])
+          assert u["zipUrl"].endswith("/" + m["version"] + "/ivanna_omega_supreme_" + m["version"] + ".zip"), u["zipUrl"]
+          print("ZIP updater manifest matches module.prop:", m["version"], m["versionCode"])
+          PY
           unzip -l "$APK_NAME" | grep -q "AndroidManifest.xml" || { echo "ERROR: APK publicado sin AndroidManifest.xml"; exit 1; }
           test -f apk_sha256.txt   || { echo "ERROR: manifiesto de hash del APK ausente"; exit 1; }
           H_APK_PUBLISHED=$(sha256sum "$APK_NAME" | awk '{print $1}')
