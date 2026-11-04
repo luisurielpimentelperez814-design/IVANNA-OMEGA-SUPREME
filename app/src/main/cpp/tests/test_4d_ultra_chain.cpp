@@ -311,6 +311,14 @@ TEST(CrosstalkCanceller, SweetSpotToleranceRecomputesCoefficientsImmediately) {
     EXPECT_LT(x.rho(), tight);
 }
 
+TEST(CrosstalkCanceller, NonFiniteSweetSpotToleranceFallsBackConservatively) {
+    CrosstalkCanceller x;
+    x.prepare(kSr, 256);
+    const float nominalRho = x.rho();
+    x.setSweetSpotTolerance(std::numeric_limits<float>::quiet_NaN());
+    EXPECT_NEAR(x.rho(), nominalRho, 1e-6f);
+}
+
 TEST(CrosstalkCanceller, NonFiniteGeometryFallsBackToFiniteNominalValues) {
     CrosstalkCanceller x;
     x.prepare(kSr, 256);
