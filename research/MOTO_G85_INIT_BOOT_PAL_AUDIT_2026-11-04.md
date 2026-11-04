@@ -189,3 +189,34 @@ the `vendor_file` label.
 
 No runtime injection, service restart, boot-image write, or partition flash
 was performed.
+
+
+## Deep runtime verification — 2026-11-04
+
+The follow-up diagnostic was conclusive for the currently running process:
+
+- PID 1443 process SELinux context: `u:r:hal_audio_default:s0`.
+- `/proc/1443/environ` read succeeded (`ENVIRON_READ=OK`).
+- The readable environment contained no `LD_PRELOAD=` entry (`LD_PRELOAD_AUSENTE`).
+- `/proc/1443/maps` did not contain the exact probe basename
+  (`PROBE_NO_MAPEADA`).
+- The search under `/debug_ramdisk` found no `*.rc` overlay
+  (`OVERLAY RC` section empty).
+
+This removes the earlier ambiguity around procfs access: the environment
+was readable, and the preload variable was absent. The probe is not loaded
+in the active HAL process. The process is running in
+`u:r:hal_audio_default:s0`.
+
+The logcat filter in this diagnostic returned mostly unrelated UI/system
+messages and did not provide useful init parser ordering evidence. Therefore
+RC import/override order remains unverified. No service restart, live
+injection, boot image modification, or flash was performed.
+
+## Updated decision
+
+Do not ship or enable a preload RC yet. The next engineering task is a
+static boot/init import-order audit for this exact firmware and Magisk
+version, followed by a separate controlled build review. Keep the presence
+probe inert. A successful mapping alone would still not prove PAL function
+interposition or ASRC PCM processing.
