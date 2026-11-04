@@ -83,7 +83,7 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
         Text("Moto G85 → DAC USB-C → VIDEO/SAT AUDIO IN L/R del Sony MHC-PZ1D. Son dos canales. " +
             "El manual indica 2 frontales + 2 satélites que duplican el sonido frontal + subwoofer. " +
             "SOUND FIELD selecciona 2CH STEREO o 2CH SURR; SUBWOOFER es un botón físico. " +
-            "Estos controles del Sony no se accionan desde esta pantalla. " +
+            "Si usas el mismo DAC con audífonos, apaga la declaración de línea estéreo: Android no puede distinguir esa carga analógica de un amplificador. " +
             "YouTube/Spotify requieren verificar la ruta global Magisk; la captura Android depende de los permisos de cada aplicación.",
             color = Color(0xFFB5C2D4), fontSize = 12.sp)
         Text(routeStatus, color = Color(0xFFB5C2D4), fontSize = 11.sp)
