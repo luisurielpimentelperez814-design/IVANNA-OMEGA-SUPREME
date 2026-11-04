@@ -192,6 +192,9 @@ if kill -0 "$PID" 2>/dev/null && [ "$SOCKET_READY" -eq 1 ]; then
     setprop persist.ivanna.daemon_active 1 2>/dev/null
     command -v set_state >/dev/null 2>&1 && set_state "OPTIMAL"
     echo "0" > "$CRASH_COUNT_FILE"
+    # Health marker consumed by post-fs-data on the next boot. It certifies
+    # only that the IVANNA daemon survived and its control socket was observed;
+    # it is not a claim that Android completed every boot phase.
     touch /data/adb/ivanna_omega_last_boot_ok 2>/dev/null
     CLIENT="$MODDIR/system/bin/ivanna_client"
     if [ -x "$CLIENT" ]; then
