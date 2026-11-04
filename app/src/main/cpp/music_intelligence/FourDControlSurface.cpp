@@ -25,10 +25,6 @@ std::atomic<bool>  g_enabled{false};
 std::atomic<bool>  g_hapticsOn{false};
 std::atomic<bool>  g_xtcOn{false};
 std::atomic<bool>  g_arcOn{false};
-// Geometría de sala del cancelador de la cadena 4D (NaN = nunca fijada: conserva el valor por defecto).
-std::atomic<float> g_xtcSpan{std::numeric_limits<float>::quiet_NaN()};
-std::atomic<float> g_xtcDist{std::numeric_limits<float>::quiet_NaN()};
-std::atomic<float> g_xtcOffset{0.0f};
 std::atomic<float> g_arcDepth{0.0f};
 // Controles continuos: NaN / -1 = "nunca fijado" (la cadena conserva su valor por defecto).
 // Se guardan aquí para que lo restaurado al arrancar (antes de que exista la cadena) no se pierda.
@@ -96,14 +92,6 @@ void reapplyControls() noexcept {
     c->setEnabled(g_enabled.load(std::memory_order_relaxed));
     c->setHapticsEnabled(g_hapticsOn.load(std::memory_order_relaxed));
     c->setCrosstalkEnabled(g_xtcOn.load(std::memory_order_relaxed));
-    {
-        const float sp = g_xtcSpan.load(std::memory_order_relaxed), di = g_xtcDist.load(std::memory_order_relaxed);
-        if (std::isfinite(sp) && std::isfinite(di)) {
-            auto g = c->crosstalk().geometry();
-            g.spanMeters = sp; g.distanceMeters = di; g.listenerOffsetM = g_xtcOffset.load(std::memory_order_relaxed);
-            c->setSpeakerGeometry(g);
-        }
-    }
     c->setArcDepth(g_arcDepth.load(std::memory_order_relaxed));
     { const float v = g_leadMs.load(std::memory_order_relaxed);      if (std::isfinite(v)) c->setLeadMs(v); }
     { const float v = g_depth.load(std::memory_order_relaxed);       if (std::isfinite(v)) c->setDepth(v); }
@@ -184,14 +172,7 @@ void setCrosstalkEnabled(bool on) noexcept {
     if (active()) chain()->setCrosstalkEnabled(on);
 }
 void setSpeakerGeometry(const ivanna::spatial::CrosstalkCanceller::Geometry& g) noexcept {
-    // Se guarda para sobrevivir a que la cadena aun no exista; si nada cambio no se recalcula (se llama por bloque).
-    const bool same = g_xtcSpan.load(std::memory_order_relaxed) == g.spanMeters &&
-                      g_xtcDist.load(std::memory_order_relaxed) == g.distanceMeters &&
-                      g_xtcOffset.load(std::memory_order_relaxed) == g.listenerOffsetM;
-    g_xtcSpan.store(g.spanMeters, std::memory_order_relaxed);
-    g_xtcDist.store(g.distanceMeters, std::memory_order_relaxed);
-    g_xtcOffset.store(g.listenerOffsetM, std::memory_order_relaxed);
-    if (!same && active()) chain()->setSpeakerGeometry(g);
+    if (active()) chain()->setSpeakerGeometry(g);
 }
 
 // ── Alimentación ─────────────────────────────────────────────────────────────
@@ -236,7 +217,7 @@ void applyOutputPlanar(float* L, float* R, int frames) noexcept {
     if (!L || !R || frames <= 0) return;
     TryGuard tg(g_outputBusy);
     if (!tg.ok) return;
-    if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
+    if (!active() || !g_xtcOn.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     int done = 0;
     while (done < frames) {
@@ -265,7 +246,7 @@ void applyOutputInterleaved(float* interleaved, int frames, int channels) noexce
     if (!interleaved || frames <= 0 || channels <= 0) return;
     TryGuard tg(g_outputBusy);
     if (!tg.ok) return;
-    if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
+    if (!active() || !g_xtcOn.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     float l[kChunk], r[kChunk];
     int done = 0;
