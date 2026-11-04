@@ -21,11 +21,17 @@ object WfsCalibrationManager {
     private const val KEY_LYAW = "lyaw"
     private const val KEY_PRESET = "preset"
 
-    val DEFAULT_X = floatArrayOf(0.35f, 3.15f, 0.25f, 3.25f, 0.25f, 3.25f, 3.00f)
-    val DEFAULT_Y = floatArrayOf(1.50f, 1.50f, 1.50f, 1.50f, 3.00f, 3.00f, 0.15f)
+    /** Sala MAGISTRAL del propietario (3.83 × 2.83 × 7.00 m). Debe coincidir con RoomGeometryConfig.hpp (lo verifica tests/test_magistral_defaults.py). */
+    const val ROOM_WIDTH_M = 3.83f
+    const val ROOM_HEIGHT_M = 2.83f
+    /** Oyente fijo del motor nativo (eje central de la sala); el layout relativo se reexpresa respecto de él. */
+    const val NATIVE_LISTENER_X = 1.915f
+
+    val DEFAULT_X = floatArrayOf(0.565f, 3.265f, 0.00f, 3.83f, 0.25f, 3.58f, 3.00f)
+    val DEFAULT_Y = floatArrayOf(1.50f, 1.50f, 1.80f, 1.80f, 2.83f, 2.83f, 0.00f)
     val DEFAULT_Z = floatArrayOf(0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f)
 
-    @Volatile var listenerX = 1.75f
+    @Volatile var listenerX = NATIVE_LISTENER_X
         private set
     @Volatile var listenerY = 1.20f
         private set
@@ -49,7 +55,7 @@ object WfsCalibrationManager {
         }
         return runCatching {
             // JNI/C++ expects room-frame speaker coordinates and subtracts its fixed default listener
-            // (1.75, 1.20, 3.50 m). Convert the user-relative geometry back into that frame here;
+            // (1.915, 1.20, 3.50 m). Convert the user-relative geometry back into that frame here;
             // otherwise passing relative coordinates would subtract the default listener twice.
             val radians = Math.toRadians(listenerYawDegrees.toDouble())
             val cosYaw = kotlin.math.cos(radians).toFloat()
@@ -62,7 +68,7 @@ object WfsCalibrationManager {
                 val dz = DEFAULT_Z[i] - listenerZ
                 val rotatedX = dx * cosYaw + dz * sinYaw
                 val rotatedZ = -dx * sinYaw + dz * cosYaw
-                nativeX[i] = 1.75f + rotatedX
+                nativeX[i] = NATIVE_LISTENER_X + rotatedX
                 nativeY[i] = 1.20f + DEFAULT_Y[i] - listenerY
                 nativeZ[i] = 3.50f + rotatedZ
             }
@@ -83,8 +89,8 @@ object WfsCalibrationManager {
 
     /** Persiste y aplica la posición del oyente con límites físicos de la sala. */
     fun setListener(context: Context, lx: Float, ly: Float, lz: Float, yawDegrees: Float = listenerYawDegrees): Boolean {
-        listenerX = lx.takeIf { it.isFinite() }?.coerceIn(0f, 3.5f) ?: 1.75f
-        listenerY = ly.takeIf { it.isFinite() }?.coerceIn(0f, 3.5f) ?: 1.20f
+        listenerX = lx.takeIf { it.isFinite() }?.coerceIn(0f, ROOM_WIDTH_M) ?: NATIVE_LISTENER_X
+        listenerY = ly.takeIf { it.isFinite() }?.coerceIn(0f, ROOM_HEIGHT_M) ?: 1.20f
         listenerZ = lz.takeIf { it.isFinite() }?.coerceIn(0f, 7f) ?: 3.50f
         listenerYawDegrees = yawDegrees.takeIf { it.isFinite() }?.let { ((it % 360f) + 360f) % 360f } ?: 0f
         prefs(context).edit()
@@ -101,8 +107,8 @@ object WfsCalibrationManager {
         val p = prefs(context)
         // Preferencias antiguas/corruptas pueden contener NaN o Inf. No las publiques
         // al daemon: la geometría relativa debe permanecer finita y dentro de la sala.
-        listenerX = safeStoredFloat(p.getFloat(KEY_LX, 1.75f), 1.75f, 0f, 3.5f)
-        listenerY = safeStoredFloat(p.getFloat(KEY_LY, 1.20f), 1.20f, 0f, 3.5f)
+        listenerX = safeStoredFloat(p.getFloat(KEY_LX, NATIVE_LISTENER_X), NATIVE_LISTENER_X, 0f, ROOM_WIDTH_M)
+        listenerY = safeStoredFloat(p.getFloat(KEY_LY, 1.20f), 1.20f, 0f, ROOM_HEIGHT_M)
         listenerZ = safeStoredFloat(p.getFloat(KEY_LZ, 3.50f), 3.50f, 0f, 7f)
         listenerYawDegrees = safeStoredFloat(p.getFloat(KEY_LYAW, 0f), 0f, 0f, 360f)
         presetName = p.getString(KEY_PRESET, "7ch-default") ?: "7ch-default"

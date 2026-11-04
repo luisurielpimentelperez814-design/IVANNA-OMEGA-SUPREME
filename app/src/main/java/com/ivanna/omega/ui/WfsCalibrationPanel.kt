@@ -68,7 +68,7 @@ fun WfsCalibrationPanel() {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("1 · Posición izquierda / derecha", style = MaterialTheme.typography.titleMedium)
                 Text("Oyente X: ${fmt(lx)} m de 0 a 3,5 m", style = MaterialTheme.typography.bodyLarge)
-                Slider(value = lx, onValueChange = { lx = it }, onValueChangeFinished = { applyPosition() }, valueRange = 0f..3.5f)
+                Slider(value = lx, onValueChange = { lx = it }, onValueChangeFinished = { applyPosition() }, valueRange = 0f..WfsCalibrationManager.ROOM_WIDTH_M)
                 Text("Qué hace: mueve el punto de escucha a lo ancho de la sala. Úsalo para corregir si tu asiento queda desplazado del centro.", style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -77,7 +77,7 @@ fun WfsCalibrationPanel() {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("2 · Altura del oyente", style = MaterialTheme.typography.titleMedium)
                 Text("Oyente Y: ${fmt(ly)} m de 0 a 3,5 m", style = MaterialTheme.typography.bodyLarge)
-                Slider(value = ly, onValueChange = { ly = it }, onValueChangeFinished = { applyPosition() }, valueRange = 0f..3.5f)
+                Slider(value = ly, onValueChange = { ly = it }, onValueChangeFinished = { applyPosition() }, valueRange = 0f..WfsCalibrationManager.ROOM_HEIGHT_M)
                 Text("Qué hace: ajusta la altura de referencia de los altavoces virtuales respecto a tus oídos. Mide desde el suelo aproximadamente.", style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -110,7 +110,7 @@ fun WfsCalibrationPanel() {
                             else "No se pudo enviar el preset: motor nativo no disponible."
                     }, modifier = Modifier.weight(1f)) { Text("Aplicar preset 7ch") }
                     Button(onClick = {
-                        lx = 1.75f
+                        lx = WfsCalibrationManager.NATIVE_LISTENER_X
                         ly = 1.20f
                         lz = 3.50f
                         yaw = 0f

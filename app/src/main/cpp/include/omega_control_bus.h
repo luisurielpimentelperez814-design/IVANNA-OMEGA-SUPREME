@@ -578,8 +578,8 @@ struct OmegaDspSnapshot {
             // RoomGeometryConfig::defaultLayout() (orden FL,FR,SL,SR,TL,TR,SW).
             // Duplicado aquí como literales (no como dependencia de
             // WfsRenderer/spatial) para mantener este header autocontenido.
-            constexpr float kX[OMEGA_CTRL_WFS_SPEAKERS] = {0.35f, 3.15f, 0.25f, 3.25f, 0.25f, 3.25f, 3.00f};
-            constexpr float kY[OMEGA_CTRL_WFS_SPEAKERS] = {1.50f, 1.50f, 1.50f, 1.50f, 3.00f, 3.00f, 0.15f};
+            constexpr float kX[OMEGA_CTRL_WFS_SPEAKERS] = {0.565f, 3.265f, 0.00f, 3.83f, 0.25f, 3.58f, 3.00f};
+            constexpr float kY[OMEGA_CTRL_WFS_SPEAKERS] = {1.50f, 1.50f, 1.80f, 1.80f, 2.83f, 2.83f, 0.00f};
             constexpr float kZ[OMEGA_CTRL_WFS_SPEAKERS] = {0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f};
             for (int i = 0; i < OMEGA_CTRL_WFS_SPEAKERS; ++i) {
                 s.wfs_speaker_x[i] = kX[i]; s.wfs_speaker_y[i] = kY[i]; s.wfs_speaker_z[i] = kZ[i];

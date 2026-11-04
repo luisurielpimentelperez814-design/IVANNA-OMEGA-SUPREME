@@ -198,6 +198,20 @@ void IvannaFusionEngine::setWfsSpeakerLayout(const float x[7], const float y[7],
         dz[i]    = y[i] - room.listenerY;
     }
     m_wfs.setSpeakerLayout3D(dx, dyFwd, dz, 7);
+
+    // El cancelador de diafonía usa la MISMA geometría de sala (FL/FR + oyente), no la de escritorio
+    // por defecto (0.90 m / 0.85 m). Solo se reescribe si cambió: este método corre con cada snapshot.
+    const auto p = ivanna::spatial::RoomGeometryConfig::crosstalkPlacement(
+        x, y, z, room.listenerX, room.listenerY, room.listenerZ);
+    if (p.valid) {
+        auto g = m_xtc.geometry();
+        if (std::fabs(g.spanMeters - p.spanM) > 1.0e-4f ||
+            std::fabs(g.distanceMeters - p.distanceM) > 1.0e-4f ||
+            std::fabs(g.listenerOffsetM - p.listenerOffsetM) > 1.0e-4f) {
+            g.spanMeters = p.spanM; g.distanceMeters = p.distanceM; g.listenerOffsetM = p.listenerOffsetM;
+            m_xtc.setGeometry(g);
+        }
+    }
 }
 
 void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {

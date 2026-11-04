@@ -54,6 +54,7 @@ que la siguiente sesión sepa el estado real.
 **Hecho (verificado en host con pruebas de cancelación medida, no en dispositivo):** paso-alto defectuoso corregido (el cancelador mejoraba 0.1 dB) y realce mono acotado a +4 dB. Ver `CHANGELOG.md` v2.5.342.
 **No declarar "transaural validado":** la geometría del oyente no está medida; falta prueba con micrófono binaural en el Moto G85. El XTC de `RirConvolver` ("tipo BACCH") es una resta de un tap, no una cancelación — pendiente de decisión de producto.
 **No tocar:** no quitar el tope de realce ni las pruebas `CrosstalkCancellation.*` (impiden volver a un cancelador que no cancela).
+**Actualización (v2.5.343):** la geometría del cancelador ahora se deriva de la sala MAGISTRAL del propietario (3.83×2.83×7.00 m, FL/FR a 2.70 m) y se aplica a los dos cancelladores de la ruta real. Detalle y supuestos (oyente centrado a 3.50 m, TL/TR en el techo, sub x/z sin cambiar) en `docs/TRANSAURAL_MAGISTRAL.md`. Sigue **sin** medición binaural ni prueba en el dispositivo. **No tocar:** `tests/test_magistral_defaults.py` impide que las cuatro copias del layout diverjan; si cambias la sala, cámbiala en todas.
 
 ### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
 **Responsable:** sesion Claude, por indicacion directa del propietario.

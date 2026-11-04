@@ -14,6 +14,7 @@
 #include "spatial/HRTFDatabase.h"
 #include "music_intelligence/ImeBridge.hpp"
 #include "music_intelligence/FourDControlSurface.hpp"
+#include "spatial/RoomGeometryConfig.hpp"
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
@@ -1296,6 +1297,17 @@ static int32_t omega_process(effect_handle_t self,
             // la superficie no altera un solo bit. Va tras el IME: toma su escena y publica la adelantada.
             {
                 const ivanna::Omega4DExt e4 = ivanna::omega_4d_decode(ctx->pendingSnap.ext_flags16);
+                {   // Geometria de sala -> cancelador de diafonia 4D (misma fuente que el del motor de fusion).
+                    const auto& rm = ivanna::spatial::RoomGeometryConfig::defaultLayout();
+                    const auto pl = ivanna::spatial::RoomGeometryConfig::crosstalkPlacement(
+                        ctx->pendingSnap.wfs_speaker_x, ctx->pendingSnap.wfs_speaker_y, ctx->pendingSnap.wfs_speaker_z,
+                        rm.listenerX, rm.listenerY, rm.listenerZ);
+                    if (pl.valid) {
+                        ivanna::spatial::CrosstalkCanceller::Geometry xg;
+                        xg.spanMeters = pl.spanM; xg.distanceMeters = pl.distanceM; xg.listenerOffsetM = pl.listenerOffsetM;
+                        ivanna::fourd::setSpeakerGeometry(xg);
+                    }
+                }
                 ivanna::fourd::setDepth(e4.depth);
                 ivanna::fourd::setLeadMs(e4.leadMs);
                 ivanna::fourd::setArcDepth(e4.arcDepth);

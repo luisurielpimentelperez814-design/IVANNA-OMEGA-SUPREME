@@ -44,6 +44,9 @@ public:
         float headRadiusM   = 0.0875f;// radio medio de cabeza adulta
         float speedOfSound  = 343.0f; // m/s a 20 °C
         float shadowGain    = 0.62f;  // ρ base: atenuación contralateral (sombra + difracción)
+        // Corrimiento lateral ESTÁTICO del oyente respecto del eje central del par (m, + = a la derecha).
+        // Viene de la geometría de sala; el rastreador de cabeza (setHeadOffset) se suma encima.
+        float listenerOffsetM = 0.0f;
     };
 
     void prepare(float sampleRate, int maxBlock) noexcept {
@@ -74,6 +77,7 @@ public:
         v.headRadiusM    = std::clamp(v.headRadiusM, 0.06f, 0.12f);
         v.speedOfSound   = std::clamp(v.speedOfSound, 300.0f, 380.0f);
         v.shadowGain     = std::clamp(v.shadowGain, 0.0f, 0.92f);
+        v.listenerOffsetM = std::isfinite(v.listenerOffsetM) ? std::clamp(v.listenerOffsetM, -1.0f, 1.0f) : 0.0f;
         geom_ = v;
         recompute();
     }
@@ -193,7 +197,7 @@ private:
         // ITD geométrico: diferencia de camino entre el oído cercano y el lejano para
         // un par de altavoces en ±span/2 y un oyente con desplazamiento lateral.
         const float half = geom_.spanMeters * 0.5f;
-        const float side = headSideM_.load(std::memory_order_relaxed);
+        const float side = headSideM_.load(std::memory_order_relaxed) + geom_.listenerOffsetM;
         const float az   = headAzDeg_.load(std::memory_order_relaxed) * 3.14159265358979f / 180.0f;
 
         const float xL = -half - side, xR = +half - side;

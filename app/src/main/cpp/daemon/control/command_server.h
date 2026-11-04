@@ -74,8 +74,8 @@ struct OmegaDspState {
     // Geometría real precargada (RoomGeometryConfig::defaultLayout(), orden
     // FL,FR,SL,SR,TL,TR,SW) — SET_WFS puede sobreescribirla con un layout
     // custom, pero el default ya es una sala real, no el origen.
-    float wfs_speaker_x[7] = {0.35f, 3.15f, 0.25f, 3.25f, 0.25f, 3.25f, 3.00f};
-    float wfs_speaker_y[7] = {1.50f, 1.50f, 1.50f, 1.50f, 3.00f, 3.00f, 0.15f};
+    float wfs_speaker_x[7] = {0.565f, 3.265f, 0.00f, 3.83f, 0.25f, 3.58f, 3.00f};
+    float wfs_speaker_y[7] = {1.50f, 1.50f, 1.80f, 1.80f, 2.83f, 2.83f, 0.00f};
     float wfs_speaker_z[7] = {0.00f, 0.00f, 3.50f, 3.50f, 3.50f, 3.50f, 3.00f};
 
     // Eje Supremo Coclear (Active Inverse) — opt-in desde UI
