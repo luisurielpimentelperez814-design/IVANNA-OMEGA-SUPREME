@@ -151,3 +151,41 @@ implements a PAL function interposer or activates ASRC.
 
 This report intentionally keeps the project release gate closed until the
 runtime and ABI evidence above exists.
+
+
+## Runtime evidence from the device — 2026-11-04
+
+A subsequent user-supplied runtime report records:
+
+- Magisk `30.7:MAGISK:R`, root path `/debug_ramdisk`.
+- `init.svc.vendor.audio-hal=running`.
+- `init.svc_debug_pid.vendor.audio-hal=1443`.
+- Process command: `android.hardware.audio.service_64`.
+- Presence probe exists at both the module overlay path and
+  `/vendor/lib64/libivanna_pal_presence_probe.so`.
+- Both files are reported as mode `0644`, owner `root:root`, SELinux
+  label `u:object_r:vendor_file:s0`.
+- Reading `/proc/1443/environ` yielded no visible `LD_PRELOAD=` line and
+  the diagnostic printed the combined message
+  `LD_PRELOAD ausente o inaccesible`.
+- The selected `dmesg` AVC filter returned no matching lines.
+
+Interpretation:
+
+- The HAL service and PID are positively identified.
+- The probe is installed in a vendor-labeled location.
+- No evidence shows the probe mapped into PID 1443.
+- The environment check is intentionally treated as inconclusive because
+  its command conflates an absent variable with a denied/unreadable
+  `/proc/<pid>/environ`.
+- The absence of matching AVC lines in this filtered output does not prove
+  that all required SELinux accesses are allowed.
+
+Next non-invasive diagnostic gate: separately test read access to
+`/proc/1443/environ` (capture the read exit status), inspect
+`/proc/1443/maps` for the exact probe basename, and record the service
+process SELinux context. Do not infer preload success from file presence or
+the `vendor_file` label.
+
+No runtime injection, service restart, boot-image write, or partition flash
+was performed.
