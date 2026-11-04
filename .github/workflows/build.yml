@@ -485,6 +485,56 @@ jobs:
           command -v "$READELF" >/dev/null 2>&1 || READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           python3 scripts/check_aeli_elf.py "$EFFECT_ELF" --readelf "$READELF"
 
+      # ── SONDA LD_PRELOAD PAL (solo presencia) → módulo Magisk ───────────
+      # Compila hal_integration/moto_g85/pal_preload_probe/ivanna_pal_presence_probe.c y la
+      # empaqueta en el módulo principal. Es INERTE: no define símbolos pal_*/agm_*, no
+      # intercepta PCM y el módulo NO inyecta LD_PRELOAD (init ya creó el HAL antes de
+      # service.sh; ver hal_integration/moto_g85/pal_preload/README.md). La comprobación de
+      # que esté cargada en el HAL es `ivanna_control.sh preload` (lee /proc, solo lectura).
+      - name: Compile + stage PAL LD_PRELOAD presence probe into Magisk module
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROBE_DIR=hal_integration/moto_g85/pal_preload_probe
+          python3 "$PROBE_DIR/validate_source.py"
+          TC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TC/aarch64-linux-android29-clang" || { echo "ERROR: clang NDK no encontrado"; exit 1; }
+          OUT=magisk_module/system/vendor/lib64/libivanna_pal_presence_probe.so
+          mkdir -p "$(dirname "$OUT")"
+          rm -f "$OUT"
+          "$TC/aarch64-linux-android29-clang" -std=c11 -O2 -fPIC -fvisibility=hidden \
+            -Wall -Wextra -Werror -shared "$PROBE_DIR/ivanna_pal_presence_probe.c" \
+            -o "$OUT" -Wl,-z,relro,-z,now -Wl,-z,max-page-size=16384 -Wl,--build-id=sha1 -ldl -llog
+          chmod 644 "$OUT"
+          test -s "$OUT" || { echo "ERROR: sonda LD_PRELOAD vacía"; exit 1; }
+          HDR="$("$TC/llvm-readelf" -h "$OUT")"
+          grep -q "AArch64" <<<"$HDR" || { echo "ERROR: la sonda no es AArch64"; exit 1; }
+          DYN="$("$TC/llvm-readelf" -dW "$OUT")"
+          echo "$DYN"
+          if grep -qi "libc++_shared" <<<"$DYN"; then
+            echo "ERROR: la sonda depende de libc++_shared.so — el HAL no la puede resolver"; exit 1
+          fi
+          # Inerte: ningún símbolo pal_/agm_ definido (sería interposición) ni requerido (haría
+          # la librería no cargable en procesos sin PAL).
+          DEFINED="$("$TC/llvm-nm" -D --defined-only "$OUT" || true)"
+          UNDEF="$("$TC/llvm-nm" -D --undefined-only "$OUT" || true)"
+          echo "--- símbolos definidos ---"; echo "$DEFINED"
+          echo "--- símbolos requeridos ---"; echo "$UNDEF"
+          if grep -Eq ' [A-Za-z] (pal|agm)_' <<<"$DEFINED"; then
+            echo "ERROR: la sonda define símbolos pal_/agm_ (interposición no permitida en la sonda de presencia)"; exit 1
+          fi
+          if grep -Eq ' U (pal|agm)_' <<<"$UNDEF"; then
+            echo "ERROR: la sonda requiere símbolos pal_/agm_ en tiempo de enlace"; exit 1
+          fi
+          # ABI 16 KB (Android 15+): mismo criterio que verify-release para nuestros binarios.
+          BAD=0
+          while read -r al; do
+            [ $((al)) -ge 16384 ] || BAD=$((BAD+1))
+          done < <("$TC/llvm-readelf" -lW "$OUT" | awk '/^ *LOAD/{print $NF}')
+          [ "$BAD" = "0" ] || { echo "ERROR ABI: la sonda tiene $BAD segmento(s) LOAD con p_align < 0x4000"; exit 1; }
+          echo "OK: sonda LD_PRELOAD AArch64, inerte, sin libc++_shared, LOAD p_align >= 0x4000"
+          sha256sum "$OUT"
+
       # ── MANIFIESTO DE ARTEFACTOS ───────────────────────────────────────
       - name: Generate BUILD_INFO manifest
         run: |
@@ -498,6 +548,7 @@ jobs:
             echo "daemon_sha256=$(sha256sum ivanna_daemon | awk '{print $1}')"
             echo "daemon_file=$(file ivanna_daemon)"
             echo "effect_sha256=$(sha256sum libomega_effect_arm64.so | awk '{print $1}')"
+            echo "preload_probe_sha256=$(sha256sum magisk_module/system/vendor/lib64/libivanna_pal_presence_probe.so | awk '{print $1}')"
             echo "ndk=${ANDROID_NDK_VERSION}"
           } > magisk_module/BUILD_INFO
           cp magisk_module/BUILD_INFO ./BUILD_INFO
@@ -598,6 +649,7 @@ jobs:
           unzip -l "$ZIPNAME" | grep -q "module.prop"                               || { echo "ERROR: zip sin module.prop"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "system/bin/ivanna_daemon"                  || { echo "ERROR: zip sin daemon"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "system/vendor/lib64/soundfx/libomega_effect.so" || { echo "ERROR: zip sin effect lib"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "system/vendor/lib64/libivanna_pal_presence_probe.so" || { echo "ERROR: zip sin sonda LD_PRELOAD PAL"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"                             || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "BUILD_INFO"                                || { echo "ERROR: zip sin BUILD_INFO"; exit 1; }
           # Datasets (v2.5.31): el zip debe contener EXACTAMENTE lo que hay en el árbol del módulo.
@@ -637,6 +689,12 @@ jobs:
           echo "src_daemon_sha256=$H_SRC"
           [ "$H_ZIP" = "$H_SRC" ] || { echo "ERROR FATAL: hash daemon zip != hash daemon compilado"; exit 1; }
           echo "INTEGRITY OK — compilación → zip: hash idéntico"
+          rm -f extracted_probe.so
+          unzip -p "$ZIPNAME" system/vendor/lib64/libivanna_pal_presence_probe.so > extracted_probe.so
+          H_PROBE_ZIP=$(sha256sum extracted_probe.so | awk '{print $1}')
+          H_PROBE_SRC=$(sha256sum magisk_module/system/vendor/lib64/libivanna_pal_presence_probe.so | awk '{print $1}')
+          [ "$H_PROBE_ZIP" = "$H_PROBE_SRC" ] || { echo "ERROR FATAL: hash sonda zip != hash sonda compilada"; exit 1; }
+          echo "INTEGRITY OK — sonda LD_PRELOAD: compilación → zip: hash idéntico ($H_PROBE_ZIP)"
           ls -lh "$ZIPNAME"
 
       # ── VERIFICACIÓN + EMPAQUETADO DEL APK ─────────────────────────────
@@ -828,6 +886,10 @@ jobs:
           # Verify the exact library extracted from the final distributable ZIP.
           python3 scripts/check_aeli_elf.py extracted_effect.so --readelf readelf
           elf_align_gate extracted_effect.so libomega_effect.so
+          unzip -p "$ZIPNAME" system/vendor/lib64/libivanna_pal_presence_probe.so > extracted_probe.so
+          readelf -h extracted_probe.so | grep -q "AArch64" || { echo "ERROR: libivanna_pal_presence_probe.so no es AArch64"; exit 1; }
+          elf_align_gate extracted_probe.so libivanna_pal_presence_probe.so
+          H_PROBE=$(sha256sum extracted_probe.so | awk '{print $1}')
           unzip -p "$APK_NAME" lib/arm64-v8a/libivanna_omega.so > extracted_jni.so
           readelf -h extracted_jni.so | grep -q "AArch64" || { echo "ERROR: libivanna_omega.so no es AArch64"; exit 1; }
           elf_align_gate extracted_jni.so libivanna_omega.so
@@ -854,6 +916,7 @@ jobs:
           unzip -p "$ZIPNAME" BUILD_INFO | tee build_info_check.txt
           grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
           grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
+          grep -q "preload_probe_sha256=$H_PROBE" build_info_check.txt || { echo "ERROR: BUILD_INFO hash de la sonda LD_PRELOAD no coincide con la del zip"; exit 1; }
 
           echo "════════════════════════════════════════════════════════"
           echo " VERIFY-RELEASE OK"

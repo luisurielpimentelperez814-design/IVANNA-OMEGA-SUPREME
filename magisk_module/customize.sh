@@ -353,6 +353,15 @@ fi
 
 ui_print "- Setting permissions on DSP libraries..."
 set_perm_recursive "$MODPATH/system" root root 0755 0644
+
+# Sonda LD_PRELOAD PAL (solo presencia): etiqueta de libreria de vendor para que el HAL
+# pueda mapearla si init la precarga. Inerte hoy: nada en este modulo la inyecta.
+# Un fallo de etiqueta no debe impedir instalar el modulo (es un diagnostico opcional).
+PRELOAD_PROBE="$MODPATH/system/vendor/lib64/libivanna_pal_presence_probe.so"
+if [ -f "$PRELOAD_PROBE" ]; then
+    set_perm "$PRELOAD_PROBE" root root 0644 u:object_r:vendor_file:s0 \
+        || ui_print "  ⚠ no se pudo etiquetar la sonda LD_PRELOAD (diagnostico opcional; el resto del modulo no se ve afectado)"
+fi
 set_perm_recursive "$MODPATH/core" root root 0755 0755
 
 # ── SELinux policy — aplicar en tiempo de instalación (live) ─────────────────
@@ -451,5 +460,13 @@ ui_print "- Reloj de hardware / ASRC (Ruta B)"
 ui_print "  ✓ El daemon publica el reloj HAL solo con pares frames+timestamp del propietario y ejecuta el ASRC por software"
 ui_print "  ℹ No hay actuador ASRC físico identificado en este equipo: no se corrige el reloj del DAC (fail-closed)"
 ui_print "  ℹ Estado real: ivanna_control.sh clock · evidencia del dispositivo: ivanna_control.sh hal-probe"
+ui_print "- Sonda LD_PRELOAD PAL (solo presencia, diagnostico)"
+if [ -f "$MODPATH/system/vendor/lib64/libivanna_pal_presence_probe.so" ]; then
+    ui_print "  ✓ libivanna_pal_presence_probe.so incluida en /vendor/lib64 (inerte: no define pal_*, no toca PCM)"
+else
+    ui_print "  ⚠ este zip no incluye la sonda LD_PRELOAD (zip anterior a v2.5.341)"
+fi
+ui_print "  ℹ LD_PRELOAD NO queda activo: init ya creo el HAL antes que este modulo; requiere inyeccion en early-init (init_boot)"
+ui_print "  ℹ Estado real (root): ivanna_control.sh preload"
 ui_print "- IVANNA OMEGA SUPREME installed successfully"
 ui_print "  Φ_SAF^∞ Riemannian HRTF optimiser ready"

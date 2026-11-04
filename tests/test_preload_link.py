@@ -238,5 +238,50 @@ class ModuleHonestyContractTest(unittest.TestCase):
         self.assertIn("preload [status|report]", text)
 
 
+class ProbePackagingContractTest(unittest.TestCase):
+    """El modulo principal debe COMPILAR, VERIFICAR y EMPAQUETAR la sonda, y decir la verdad al instalar."""
+
+    BUILD = os.path.join(ROOT, ".github", "workflows", "build.yml")
+    PROBE_SRC = os.path.join(ROOT, "hal_integration", "moto_g85", "pal_preload_probe",
+                             "ivanna_pal_presence_probe.c")
+
+    def build_text(self):
+        return open(self.BUILD, encoding="utf-8").read()
+
+    def test_probe_source_exists_where_ci_compiles_it(self):
+        self.assertTrue(os.path.isfile(self.PROBE_SRC))
+        self.assertIn("pal_preload_probe/ivanna_pal_presence_probe.c", self.build_text())
+
+    def test_ci_compiles_probe_with_project_hardening_and_16kb_pages(self):
+        t = self.build_text()
+        self.assertIn("Compile + stage PAL LD_PRELOAD presence probe into Magisk module", t)
+        step = t[t.index("Compile + stage PAL LD_PRELOAD presence probe"):]
+        step = step[:step.index("MANIFIESTO DE ARTEFACTOS")]
+        for needle in ("-Wall -Wextra -Werror", "-fvisibility=hidden",
+                       "-Wl,-z,relro,-z,now", "max-page-size=16384",
+                       "validate_source.py", "libc++_shared",
+                       "--defined-only", "--undefined-only",
+                       "magisk_module/system/vendor/lib64/libivanna_pal_presence_probe.so"):
+            self.assertIn(needle, step, f"falta {needle!r} en el paso de compilacion de la sonda")
+
+    def test_zip_must_contain_probe_and_match_compiled_hash(self):
+        t = self.build_text()
+        self.assertIn('grep -q "system/vendor/lib64/libivanna_pal_presence_probe.so"', t)
+        self.assertIn("H_PROBE_ZIP", t)
+        self.assertIn("hash sonda zip != hash sonda compilada", t)
+
+    def test_build_info_records_probe_hash_and_verify_release_checks_it(self):
+        t = self.build_text()
+        self.assertIn('echo "preload_probe_sha256=', t)
+        self.assertIn('preload_probe_sha256=$H_PROBE', t)
+        self.assertIn("elf_align_gate extracted_probe.so", t)
+
+    def test_install_message_does_not_claim_active_injection(self):
+        text = open(os.path.join(MOD, "customize.sh"), encoding="utf-8").read()
+        self.assertIn("LD_PRELOAD NO queda activo", text)
+        self.assertIn("ivanna_control.sh preload", text)
+        self.assertIn("early-init", text)
+
+
 if __name__ == "__main__":
     unittest.main()
