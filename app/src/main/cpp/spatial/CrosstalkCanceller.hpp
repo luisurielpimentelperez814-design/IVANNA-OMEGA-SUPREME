@@ -134,8 +134,10 @@ public:
             const float dRf = dr_[i0] * (1.0f - frac) + dr_[i1] * frac;
 
             // Paso-alto sobre el término cruzado (transparencia de la cabeza < 120 Hz).
-            hpL_ += hpa * (dLf - hpXL_); hpXL_ = dLf;
-            hpR_ += hpa * (dRf - hpXR_); hpXR_ = dRf;
+            // One-pole HPF: y[n] = a * (y[n-1] + x[n] - x[n-1]).
+            // Multiplying only the input difference by a would leave a DC residue.
+            hpL_ = hpa * (hpL_ + dLf - hpXL_); hpXL_ = dLf;
+            hpR_ = hpa * (hpR_ + dRf - hpXR_); hpXR_ = dRf;
             // hpL_/hpR_ ya contienen la salida pasa-altas. Restarlos de la señal
             // retrasada produciría el complemento pasa-bajas y cancelaría graves,
             // justo lo contrario de la protección prevista.
