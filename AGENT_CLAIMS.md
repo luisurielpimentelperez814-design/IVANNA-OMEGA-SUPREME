@@ -49,6 +49,12 @@ que la siguiente sesión sepa el estado real.
 
 ## 🔒 Frentes actualmente tomados
 
+### Transaural / CrosstalkCanceller (2026-11-04)
+**Responsable:** sesión Claude, por indicación directa del propietario.
+**Hecho (verificado en host con pruebas de cancelación medida, no en dispositivo):** paso-alto defectuoso corregido (el cancelador mejoraba 0.1 dB) y realce mono acotado a +4 dB. Ver `CHANGELOG.md` v2.5.342.
+**No declarar "transaural validado":** la geometría del oyente no está medida; falta prueba con micrófono binaural en el Moto G85. El XTC de `RirConvolver` ("tipo BACCH") es una resta de un tap, no una cancelación — pendiente de decisión de producto.
+**No tocar:** no quitar el tope de realce ni las pruebas `CrosstalkCancellation.*` (impiden volver a un cancelador que no cancela).
+
 ### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
 **Responsable:** sesion Claude, por indicacion directa del propietario.
 **Hecho (verificado por lectura, host y CI; no en dispositivo):** el modulo principal compila y empaqueta `libivanna_pal_presence_probe.so` (inerte) y expone `ivanna_control.sh preload`, que decide `LOADED`/`NOT_LOADED` con `/proc/<pid>/maps`. Ver `hal_integration/moto_g85/pal_preload/README.md`.
