@@ -2,6 +2,7 @@
 
 - **Activación transaural por ruta:** XTC se activa de forma predeterminada solo cuando el usuario declara una línea estéreo externa y la salida detectada es USB/AUX. Audífonos, Bluetooth, altavoz interno y ruta desconocida quedan en bypass. Una preferencia XTC guardada explícitamente en OFF prevalece sobre el valor inicial.
 - **Independiente del maestro 4D:** la cancelación de diafonía ahora funciona aunque anticipación/háptica 4D esté apagada; el análisis 4D, la háptica y el dosímetro conservan su propio interruptor.
+- **Sin XTC falso en RIR:** se desactiva el crossmix experimental de `RirConvolver` en todas las rutas. Su intensidad ya no se deriva de RT60 ni del arquetipo Bark; la única etapa runtime llamada XTC es `CrosstalkCanceller`, protegida por la política USB/AUX declarada.
 - **Sincronización de Ruta A/B:** los cambios de ruta, el arranque, la restauración de preferencias y la declaración de línea externa actualizan tanto el efecto local como el daemon. Al detener el gestor de rutas se publica bypass.
 - **Conserva v2.5.342:** HPF cruzado correcto y límite de realce mono de +4 dB; añade pruebas de la política de ruta y de independencia del maestro 4D.
 - **Límite acústico:** el modelo sigue siendo geométrico y nominal. No se afirma matriz 2×2 medida altavoz→oído, calibración personalizada, holofonía certificada ni validación física en la sala. La declaración de línea externa es necesaria porque Android no puede distinguir por descriptor un DAC conectado a un amplificador de un DAC conectado a audífonos.
