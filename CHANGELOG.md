@@ -1,6 +1,6 @@
 ## v2.5.344 (635) - 2026-11-04
 
-- **Activación transaural por ruta:** XTC se habilita solo en USB/AUX cuando el usuario declara una línea estéreo externa. Si no existe preferencia XTC guardada, la declaración la habilita por defecto; un OFF guardado prevalece. Bluetooth, audífonos no declarados, altavoz interno y ruta desconocida quedan en bypass.
+- **Activación transaural por ruta:** XTC se habilita solo en USB/AUX cuando el usuario declara una línea estéreo externa. Si no existe preferencia XTC guardada, la declaración la habilita por defecto; un OFF guardado prevalece. Bluetooth, altavoz interno, rutas desconocidas y salidas USB/AUX sin declaración quedan en bypass. Si se usa el mismo DAC con audífonos, el usuario debe apagar la declaración: Android no identifica la carga analógica.
 - **Independiente del maestro 4D:** la cancelación funciona aunque anticipación/háptica 4D esté apagada; análisis 4D, háptica y dosímetro conservan su propio interruptor. Los cambios de ruta, restauración y parada sincronizan Ruta A y Ruta B; un fallo de evaluación fuerza bypass.
 - **Sin XTC falso en RIR:** el crossmix experimental de `RirConvolver` queda en cero en runtime. RT60 y arquetipo Bark ya no pueden activarlo ni apilarlo con `CrosstalkCanceller`.
 - **Release seguro:** el ZIP contiene un manifiesto candidato alineado con `module.prop`; el manifiesto público solo se actualiza después de subir y verificar ZIP, APK y checksums, sin anunciar un ZIP 404 ni retroceder un versionCode más nuevo.
