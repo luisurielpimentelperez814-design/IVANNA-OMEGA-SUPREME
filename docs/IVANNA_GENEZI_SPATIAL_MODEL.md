@@ -132,3 +132,12 @@ La correlación no es una puntuación de calidad por sí sola. Calcular diferenc
 ## 8. Criterio de cierre
 
 El modelo matemático queda cerrado. El perfil sigue siendo beta hasta que las pruebas del camino nativo y el build pasen, y la evaluación física confirme que no hay clipping ni degradación inaceptable. CI valida código y pruebas; no sustituye las mediciones físicas del Genezi.
+
+
+## Addendum v2.5.342 — cancelación cruzada y límites de calibración
+
+El CrosstalkCanceller usa un shuffler recursivo con reinyección cruzada pasa-altas. La implementación anterior calculaba el estado del HPF, pero luego restaba ese estado de la señal retrasada; eso generaba el complemento pasa-bajas y hacía que la realimentación afectara precisamente la zona grave que el diseño decía proteger. La corrección alimenta el shuffler con la salida HPF real y una prueba de regresión verifica que una componente DC estable no sea cancelada.
+
+Los coeficientes derivados de geometría (rho, retardo e HPF) se publican mediante atómicos para que una actualización desde el hilo de control no compita con las lecturas del callback de audio.
+
+La geometría incluida sigue siendo nominal. No representa mediciones de las cuatro transferencias entre cada altavoz y cada oído del Sony ni de la sala. Por tanto, el cancelador es una aproximación de partida y requiere calibración física, posición de escucha estable y evaluación auditiva antes de describirse como transaural calibrado. El modo bypass continúa disponible y el usuario conserva el control de activación.
