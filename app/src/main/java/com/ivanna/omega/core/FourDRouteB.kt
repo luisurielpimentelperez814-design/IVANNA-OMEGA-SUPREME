@@ -1,6 +1,11 @@
 package com.ivanna.omega.core
 
 import com.ivanna.omega.magisk.MagiskBridge
+import android.content.Context
+import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.ExternalStereoPolicy
+import com.ivanna.omega.audio.OutputRoute
+import com.ivanna.omega.ui.SpatialAudioPrefs
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
