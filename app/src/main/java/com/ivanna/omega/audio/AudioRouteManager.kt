@@ -243,11 +243,14 @@ object AudioRouteManager {
         val ctx = context.applicationContext
         runCatching {
             val declaredLineOut = com.ivanna.omega.ui.SpatialAudioPrefs.load(ctx).externalStereoLineOut
-            val userEnabled = com.ivanna.omega.core.ParameterStore(ctx).is4dCrosstalkOn()
-            val allowed = userEnabled && ExternalStereoPolicy.usesExternalSpeakers(route, declaredLineOut)
+            val store = com.ivanna.omega.core.ParameterStore(ctx)
+            val allowed = ExternalStereoPolicy.allowTransauralXtc(route, declaredLineOut, store.is4dCrosstalkOn())
             if (com.ivanna.omega.core.Ivanna4DNative.isAvailable) {
                 com.ivanna.omega.core.Ivanna4DNative.nativeFourDSetCrosstalk(allowed)
             }
+            // Also update Route B's independent fourd_xtc field; nativeFourDSetCrosstalk
+            // mirrors the legacy XTC bit but does not replace the SET_4D snapshot.
+            com.ivanna.omega.core.FourDRouteB.push(ctx, store)
         }.onFailure { Log.w(TAG, "Transaural route gate failed closed: ${it.message}") }
     }
 
