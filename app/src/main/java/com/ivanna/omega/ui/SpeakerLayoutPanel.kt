@@ -74,9 +74,11 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
             Switch(checked = lineOut, onCheckedChange = { selected ->
                 lineOut = selected
                 SpatialAudioPrefs.save(context, SpatialAudioPrefs.load(context).copy(externalStereoLineOut = selected))
+                // Re-evaluate XTC immediately when the user declares/undeclares external speakers.
+                com.ivanna.omega.audio.AudioRouteManager.refreshRoute()
                 val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
                 com.ivanna.omega.audio.RouteDspCalibrator.onRouteChanged(context, route)
-                routeStatus = "Perfil solicitado para ${route.name}; no certifica salida acústica ni efecto global."
+                routeStatus = "Perfil solicitado para ${route.name}; transaural solo en línea estéreo declarada. No certifica calibración acústica."
             })
         }
         Text("Moto G85 → DAC USB-C → VIDEO/SAT AUDIO IN L/R del Sony MHC-PZ1D. Son dos canales. " +
