@@ -172,7 +172,7 @@ public:
 
     // Procesa el audio por el cancelador cuando la salida es por altavoces (AUX/DAC).
     void applyOutputStage(float* L, float* R, int n) noexcept {
-        if (!enabled_.load(std::memory_order_relaxed)) return;
+        // XTC has its own route gate and must remain available with the 4D master OFF.
         if (xbEnabled_.load(std::memory_order_relaxed)) xtc_.processBlock(L, R, n);
     }
 
@@ -235,8 +235,9 @@ public:
 
 private:
     void xbEnabled() noexcept {
-        xtc_.setEngage(xbEnabled_.load(std::memory_order_relaxed)
-                       && enabled_.load(std::memory_order_relaxed));
+        // XTC is an independent speaker-output stage. Route policy controls xbEnabled_;
+        // the 4D anticipation/haptics master must not suppress speaker crosstalk cancellation.
+        xtc_.setEngage(xbEnabled_.load(std::memory_order_relaxed));
     }
 
     float sr_ = 48000.0f;
