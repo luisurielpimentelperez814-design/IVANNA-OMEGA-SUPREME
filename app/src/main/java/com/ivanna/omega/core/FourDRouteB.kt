@@ -1,6 +1,10 @@
 package com.ivanna.omega.core
 
 import com.ivanna.omega.magisk.MagiskBridge
+import android.content.Context
+import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.ExternalStereoPolicy
+import com.ivanna.omega.ui.SpatialAudioPrefs
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
@@ -15,18 +19,31 @@ object FourDRouteB {
     private val pending = AtomicReference<String?>(null)
     private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "fourd-routeb").apply { isDaemon = true } }
 
-    fun json(store: ParameterStore): String = String.format(
+    fun json(context: Context, store: ParameterStore): String {
+        val ctx = context.applicationContext
+        val route = AudioRouteManager.detectOutputRoute()
+        val declaredLineOut = SpatialAudioPrefs.load(ctx).externalStereoLineOut
+        val xtcAllowed = ExternalStereoPolicy.usesExternalSpeakers(route, declaredLineOut)
+        return String.format(
         java.util.Locale.US,
         "{\"action\":\"SET_4D\",\"fourdOn\":%d,\"arcOn\":%d,\"xtcOn\":%d,\"arcDepth\":%.4f,\"depth\":%.4f,\"leadMs\":%.3f}",
         if (store.is4dEnabled()) 1 else 0,
         if (store.is4dArcOn()) 1 else 0,
-        if (store.is4dCrosstalkOn()) 1 else 0,
+        if (store.is4dCrosstalkOn() && xtcAllowed) 1 else 0,
         store.get4dArcDepth(), store.get4dDepth(), store.get4dLeadMs()
-    )
+        )
+    }
+
+    fun isExternalStereoRoute(context: Context): Boolean {
+        val ctx = context.applicationContext
+        return ExternalStereoPolicy.usesExternalSpeakers(
+            AudioRouteManager.detectOutputRoute(), SpatialAudioPrefs.load(ctx).externalStereoLineOut
+        )
+    }
 
     /** Llamar tras guardar en [ParameterStore]; seguro desde el hilo de UI. */
-    fun push(store: ParameterStore) {
-        pending.set(json(store))
+    fun push(context: Context, store: ParameterStore) {
+        pending.set(json(context, store))
         io.execute {
             val cmd = pending.getAndSet(null) ?: return@execute   // otro envío ya llevó el último estado
             runCatching { MagiskBridge.sendCommand(cmd) }
