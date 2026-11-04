@@ -664,7 +664,8 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             float outL = dry * inL + wetGain * wetL;
             float outR = dry * inR + wetGain * wetR;
 
-            // 2. Holografía Transaural Recursiva de Fase Mínima (XTC tipo BACCH para altavoces / Genezi)
+            // Experimental RIR wet-tail crossmix only; production runtime keeps xtcAmt at zero.
+            // This is not a measured 2x2 loudspeaker-to-ear inverse and must not be called BACCH XTC.
             if (xtcAmt > 0.001f) {
                 // Aislar graves (<220 Hz) para mantener pegada en fase intacta en los woofers
                 xtcBassL_ += kBassCoeff * (outL - xtcBassL_);
