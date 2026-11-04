@@ -13,6 +13,7 @@ import android.content.SharedPreferences
  * sobrevivían a un reinicio; el resto volvía siempre a sus defaults de UI).
  */
 class ParameterStore(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences(
         PREFS_NAME, Context.MODE_PRIVATE
     )
@@ -416,7 +417,13 @@ class ParameterStore(context: Context) {
     fun set4dHapticsOn(v: Boolean) = prefs.edit().putBoolean(KEY_4D_HAPTICS, v).apply()
     fun get4dHapticScale(): Float = safeGetFloat(KEY_4D_HSCALE, 0.6f)
     fun set4dHapticScale(v: Float) = prefs.edit().putFloat(KEY_4D_HSCALE, v.coerceIn(0f, 0.85f)).apply()
-    fun is4dCrosstalkOn(): Boolean = safeGetBoolean(KEY_4D_XTC, false)
+    // An explicit external-line-out declaration is the safe default opt-in for XTC.
+    // A persisted false remains authoritative, so users can always disable it.
+    fun is4dCrosstalkOn(): Boolean {
+        val declaredLineOut = appContext.getSharedPreferences("ivanna_spatial_audio", Context.MODE_PRIVATE)
+            .getBoolean("externalStereoLineOut", false)
+        return safeGetBoolean(KEY_4D_XTC, declaredLineOut)
+    }
     fun set4dCrosstalkOn(v: Boolean) = prefs.edit().putBoolean(KEY_4D_XTC, v).apply()
     fun get4dLeadMs(): Float = safeGetFloat(KEY_4D_LEAD, 7.5f)
     fun set4dLeadMs(v: Float) = prefs.edit().putFloat(KEY_4D_LEAD, v.coerceIn(5f, 10f)).apply()
