@@ -343,3 +343,32 @@ Until this missing import path is inspected, the finding is: no supported
 later service override has been identified—not that one is categorically
 impossible. No preload mechanism is approved and no physical PAL/ASRC
 activation is claimed.
+
+
+## Deep target import result — init.qcom.rc
+
+The follow-up device capture `IVANNA_INIT_ORDER_DEEP.txt` resolves
+`ro.hardware=qcom` and confirms the primary vendor hardware import is
+`/vendor/etc/init/hw/init.qcom.rc`.
+
+That file exists and explicitly imports, in order:
+
+- `/vendor/etc/init/hw/init.qti.ufs.rc`
+- `/vendor/etc/init/hw/init.qcom.usb.rc`
+- `/vendor/etc/init/hw/init.qcom.test.rc`
+- `/vendor/etc/init/hw/init.target.rc`
+- `/vendor/etc/init/hw/init.qcom.factory.rc`
+
+The captured recursive grep found no `LD_PRELOAD` or explicit
+`vendor.audio-hal` service definition in those matching RC files under the
+scanned init roots; its only `vendor.audio-hal` matches were service
+restart/start references in `/system/etc/init/audioserver.rc`.
+However, the capture did not print the import directives of each nested RC
+file, nor enumerate every imported descendant. Therefore the remaining
+static audit is to follow the above import graph recursively, not to infer
+that those imported files cannot introduce additional RC sources.
+
+Current status: no later, supported service override is identified. The
+exact qcom hardware RC and its first-level import graph are now known. No
+boot image or service was modified; preload and real PAL/ASRC activation
+remain unproven and disabled.
