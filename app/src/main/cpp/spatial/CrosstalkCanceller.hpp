@@ -161,8 +161,9 @@ public:
         return (delaySamples_.load(std::memory_order_relaxed) / sr_) * 1.0e6f;
     }
     float rho() const noexcept { return rho_.load(std::memory_order_relaxed); }
-    // Máxima ganancia de graves introducida por el regulador (dB) — debe ser ≈ 0.
-    float dcGainDb() const noexcept {
+    // Límite algebraico de ganancia del shuffler antes de la atenuación HPF (dB).
+    // No representa la ganancia DC efectiva del sistema filtrado.
+    float maxFeedbackGainDb() const noexcept {
         const float rho = rho_.load(std::memory_order_relaxed);
         const float gLin = 1.0f / std::max(1.0f - rho * rho, 1.0e-3f);
         return 20.0f * std::log10(gLin);
