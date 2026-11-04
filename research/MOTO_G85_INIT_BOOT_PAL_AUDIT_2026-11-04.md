@@ -292,3 +292,54 @@ service definition already parsed by init.
 This correction is based on source-level boot/init behavior, not a live
 modified-boot test. The exact target boot flow should still be checked against
 the device's effective `ro.boot.init_rc`, mounts, and parsed init files.
+
+
+## Target-device init-order audit — 2026-11-04
+
+Runtime evidence collected from `IVANNA_INIT_ORDER_AUDIT.txt` on the Moto G85:
+
+- Build: `motorola/malmo_gn/malmo:15/V1UOS35H.74-16-4-16/11943-1eca7:user/release-keys`.
+- Magisk: `30.7:MAGISK:R`.
+- `ro.boot.init_rc` was empty; the collector therefore inspected the fallback
+  primary RC `/system/etc/init/hw/init.rc`.
+- The primary RC imports `/vendor/etc/init/hw/init.${ro.hardware}.rc`
+  and later executes `class_start hal` (line 1271 in the captured file).
+- The top-level vendor init directory contains both
+  `android.hardware.audio.service.rc` (32-bit binary) and
+  `android.hardware.audio.service_64.rc` (64-bit binary).
+- The 64-bit stanza declares `service vendor.audio-hal
+  /vendor/bin/hw/android.hardware.audio.service_64` and includes
+  `override`; the 32-bit stanza points to
+  `/vendor/bin/hw/android.hardware.audio.service` and has no `override`.
+- `/odm/etc/init` does not exist. The collector found no matching
+  `LD_PRELOAD` or duplicate service stanza in the scanned top-level
+  `/system/etc/init`, `/system_ext/etc/init`, `/vendor/etc/init`, or
+  `/product/etc/init` files.
+- `/vendor`, `/system_ext`, and `/product` are mounted EROFS read-only.
+- The active service is `running`, PID `1443`.
+- `/debug_ramdisk/overlay.d` contained no files in the captured scan.
+
+### What this establishes and what remains open
+
+This confirms the actual 64-bit service definition and the absence of a
+visible top-level ODM init directory or obvious later duplicate in the
+directories scanned. It does not prove that every possible later RC source
+was inspected: the collector listed only max-depth-1 files in each init
+directory and did not enumerate the explicitly imported
+`/vendor/etc/init/hw/init.${ro.hardware}.rc` file or nested init paths.
+The value of `ro.hardware` was not included in the capture, so that imported
+filename cannot yet be resolved from this report.
+
+### Next read-only evidence gate
+
+Resolve `ro.hardware`, inspect the exact imported vendor hardware RC, and
+recursively enumerate init RC files under `/system/etc/init`,
+`/system_ext/etc/init`, `/vendor/etc/init`, and `/product/etc/init`.
+For each file, capture only occurrences of `vendor.audio-hal`,
+`LD_PRELOAD`, and imports that could introduce additional RC definitions.
+Do not modify any file, mount, boot image, or service while collecting this.
+
+Until this missing import path is inspected, the finding is: no supported
+later service override has been identified—not that one is categorically
+impossible. No preload mechanism is approved and no physical PAL/ASRC
+activation is claimed.
