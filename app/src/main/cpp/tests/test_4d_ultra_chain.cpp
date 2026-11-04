@@ -240,7 +240,7 @@ TEST(CrosstalkCanceller, GeometryProducesPlausibleItdAndSafeDcGain) {
     EXPECT_LT(itdUs, 1200.0f);
     EXPECT_LE(x.rho(), 0.92f);      // estabilidad del shuffler: ρ < 1 siempre
     // El regulador DC debe estar anulado por el paso-alto de reinyección (≈ 0 dB).
-    EXPECT_LT(x.dcGainDb(), 6.0f);
+    EXPECT_LT(x.maxFeedbackGainDb(), 6.0f);
 }
 
 TEST(CrosstalkCanceller, StaysStableAndBoundedOnNoise) {
