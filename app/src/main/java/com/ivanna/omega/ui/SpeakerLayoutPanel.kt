@@ -74,6 +74,7 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
             Switch(checked = lineOut, onCheckedChange = { selected ->
                 lineOut = selected
                 SpatialAudioPrefs.save(context, SpatialAudioPrefs.load(context).copy(externalStereoLineOut = selected))
+                com.ivanna.omega.audio.AudioRouteManager.refreshRoute()
                 val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
                 com.ivanna.omega.audio.RouteDspCalibrator.onRouteChanged(context, route)
                 routeStatus = "Perfil solicitado para ${route.name}; no certifica salida acústica ni efecto global."
