@@ -129,7 +129,7 @@ fun WfsCalibrationPanel() {
                     Switch(checked = fdOn, onCheckedChange = {
                         fdOn = it
                         store.set4dEnabled(it)
-                        FourDRouteB.push(appContext, store)
+                        FourDRouteB.push(ctx, store)
                         if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetEnabled(it)
                     })
                     Text(if (fdOn) "4D activo" else "4D apagado: no altera el audio")
@@ -138,14 +138,14 @@ fun WfsCalibrationPanel() {
                 Slider(value = fdDepth, valueRange = 0f..1f, onValueChange = {
                     fdDepth = it
                     store.set4dDepth(it)
-                    FourDRouteB.push(appContext, store)
+                    FourDRouteB.push(ctx, store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDepth(it)
                 })
                 Text("Antelación (lead): ${String.format(Locale.getDefault(), "%.1f", fdLead)} ms", style = MaterialTheme.typography.bodyLarge)
                 Slider(value = fdLead, valueRange = 5f..10f, onValueChange = {
                     fdLead = it
                     store.set4dLeadMs(it)
-                    FourDRouteB.push(appContext, store)
+                    FourDRouteB.push(ctx, store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetLeadMs(it)
                 })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -153,7 +153,7 @@ fun WfsCalibrationPanel() {
                         fdArc = it
                         store.set4dArcOn(it)
                         store.set4dArcDepth(fdArcDepth)
-                        FourDRouteB.push(appContext, store)
+                        FourDRouteB.push(ctx, store)
                         if (Ivanna4DNative.isAvailable) {
                             Ivanna4DNative.nativeFourDSetArcDepth(fdArcDepth)
                             Ivanna4DNative.nativeFourDSetArc(it)
@@ -165,7 +165,7 @@ fun WfsCalibrationPanel() {
                 Slider(value = fdArcDepth, valueRange = 0f..1f, onValueChange = {
                     fdArcDepth = it
                     store.set4dArcDepth(it)
-                    FourDRouteB.push(appContext, store)
+                    FourDRouteB.push(ctx, store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetArcDepth(it)
                 })
                 Text("Los controles viajan por SET_4D al daemon, que es lo que consume el efecto del sistema. Si el daemon no responde, solo actúa el motor en proceso. Enviar no equivale a una mejora audible verificada.", style = MaterialTheme.typography.bodySmall)
