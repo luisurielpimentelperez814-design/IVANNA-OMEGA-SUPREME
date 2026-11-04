@@ -107,6 +107,13 @@ case "$COMMAND" in
                 echo "--- daemon.log (ASRC/HAL-CLOCK/ASRC-LINK, ultimas 15) ---"
                 grep -a -E 'ASRC-SW|HAL-CLOCK|ASRC-LINK' /data/adb/ivanna_omega/daemon.log 2>/dev/null | tail -15 ;;
     hal-probe)  exec "$(dirname "$0")/system/bin/ivanna_hal_probe" ;;  # evidencia PAL/ASRC del dispositivo, solo lectura
+    preload)    # ¿esta la sonda LD_PRELOAD realmente mapeada en el HAL de audio? (solo lectura de /proc; requiere root)
+                . "$(dirname "$0")/preload_link.sh"
+                case "$ARG" in
+                    ''|status) ivanna_preload_status ;;
+                    report)    ivanna_preload_report ;;
+                    *)         echo "Uso: $0 preload [status|report]"; exit 1 ;;
+                esac ;;
     reload)     send_command "RELOAD_PARAMS" ;;
     probe)      # Estado del transport, sin efecto lateral
                 if socket_alive; then
@@ -133,6 +140,7 @@ Uso:
   $0 clock                Reloj: callback, hardware HAL y estado ASRC software (JSON)
   $0 asrc-link [repair]   Canal ASRC/reloj HAL: diagnostico (repair = recrear dir y permisos)
   $0 hal-probe            Evidencia PAL/ASRC del dispositivo (solo lectura)
+  $0 preload [status|report]  Sonda LD_PRELOAD PAL: ¿cargada en el HAL? (solo lectura, root; no inyecta nada)
   $0 reload               Releer parámetros
   $0 probe                Estado transport (alive|socket_open_no_nc|no_daemon)
 HELP
