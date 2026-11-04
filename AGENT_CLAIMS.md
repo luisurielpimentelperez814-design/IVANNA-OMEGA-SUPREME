@@ -49,6 +49,12 @@ que la siguiente sesión sepa el estado real.
 
 ## 🔒 Frentes actualmente tomados
 
+### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
+**Responsable:** sesion Claude, por indicacion directa del propietario.
+**Hecho (verificado por lectura, host y CI; no en dispositivo):** el modulo principal compila y empaqueta `libivanna_pal_presence_probe.so` (inerte) y expone `ivanna_control.sh preload`, que decide `LOADED`/`NOT_LOADED` con `/proc/<pid>/maps`. Ver `hal_integration/moto_g85/pal_preload/README.md`.
+**Bloqueado, NO declarar resuelto:** la inyeccion automatica en el HAL exige la imagen `init_boot` activa y el rc exacto de `vendor.audio-hal` (gates 1-6 del README). Sin eso no hay `LD_PRELOAD` efectivo, ni hook de PAL, ni ASRC por esta via.
+**No tocar:** no exportar `LD_PRELOAD` ni reiniciar el HAL desde `service.sh`; `tests/test_preload_link.py` lo fija.
+
 ### Relevo autorizado — AdaptiveDecisionEngine Ruta A/B (2026-11-03)
 **Responsable:** sesión ChatGPT actual, con autorización explícita del propietario.
 **Alcance:** revisar el ciclo preferencia → arranque → métricas PCM reales → decisión ADE → actuadores de Ruta A (JNI/player) y Ruta B (AudioFlinger/omega_effect); respetar OFF/manual y fallos de arranque; mantener el callback RT libre de bloqueos y trabajo de control.
