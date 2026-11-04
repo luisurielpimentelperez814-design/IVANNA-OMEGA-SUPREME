@@ -82,6 +82,7 @@ object AudioRouteManager {
         // Invalidate any outstanding codec lookup before releasing route ownership.
         routeGeneration.incrementAndGet()
         currentRoute = OutputRoute.UNKNOWN
+        appContextRef?.let { syncTransauralRoute(it, OutputRoute.UNKNOWN) }
         BluetoothAudioProfiler.invalidate()
         // Un restore HRTF diferido no debe dispararse tras detener el manager.
         pendingHrtfRestore?.let { mainHandler.removeCallbacks(it) }
