@@ -85,7 +85,7 @@ Este es un compromiso robusto entre dos consignas de control, no una optimizaci�
 
 Cuando el usuario declara explícitamente `externalStereoLineOut=true` y mantiene HRTF solicitado, la ruta AUX/USB ya no apaga el motor HRTF: publica un wet conservador de **0.15**. En auriculares, el wet solicitado conserva 1.0; en altavoz integrado o ruta desconocida permanece en 0. El control se restaura tanto en el cambio de ruta como en la restauración de preferencias.
 
-Este blend externo conserva la etapa HRTF como contribución espectral/espacial de baja intensidad. **No es cancelación transaural**: no hay cuatro transferencias altavoz-oído medidas, ni inversión de matriz, ni garantía de sweet spot. El usuario puede desactivar HRTF desde sus preferencias.
+Este blend externo conserva la etapa HRTF como contribución espectral/espacial de baja intensidad. **No es cancelación transaural**: no hay cuatro transferencias altavoz-oído medidas, ni inversión de matriz, ni garantía de sweet spot. El usuario puede desactivar HRTF desde sus preferencias. La etapa de cancelación aproximada `CrosstalkCanceller` es independiente del maestro 4D y solo se habilita por USB/AUX con la línea estéreo externa declarada; audífonos, Bluetooth, altavoz interno y ruta desconocida quedan en bypass. El crossmix experimental de cola de `RirConvolver` permanece en cero en runtime. Esto sigue sin equivaler a una matriz 2×2 medida ni a calibración personalizada.
 
 Los motores que requieren una geometría física que AUX no transporta no se fuerzan artificialmente:
 - WFS multialtavoz no se declara como salida física de dos canales; permanece fuera de la ruta de salida AUX.
