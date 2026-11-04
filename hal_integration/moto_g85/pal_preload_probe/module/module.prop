@@ -1,0 +1,6 @@
+id=omega_pal_presence_probe
+name=IVANNA OMEGA PAL Presence Probe
+version=0.1.0
+versionCode=1
+author=IVANNA OMEGA
+description=Inert ARM64 LD_PRELOAD presence diagnostic; no PAL interposition or ASRC activation.

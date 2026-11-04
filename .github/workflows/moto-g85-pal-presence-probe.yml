@@ -1,0 +1,73 @@
+name: Moto G85 PAL preload presence probe
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "hal_integration/moto_g85/pal_preload_probe/**"
+      - ".github/workflows/moto-g85-pal-presence-probe.yml"
+  pull_request:
+    paths:
+      - "hal_integration/moto_g85/pal_preload_probe/**"
+      - ".github/workflows/moto-g85-pal-presence-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64-probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          accept-android-sdk-licenses: true
+      - name: Install NDK r27d
+        run: sdkmanager "ndk;27.2.12479018"
+      - name: Static safety checks
+        run: |
+          python3 hal_integration/moto_g85/pal_preload_probe/validate_source.py
+          sh -n hal_integration/moto_g85/pal_preload_probe/module/service.sh
+          sh -n hal_integration/moto_g85/pal_preload_probe/module/customize.sh
+      - name: Compile ARM64 presence probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          READELF="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          SRC=hal_integration/moto_g85/pal_preload_probe/ivanna_pal_presence_probe.c
+          mkdir -p out/module/system/vendor/lib64
+          "$CC" -std=c11 -O2 -fPIC -fvisibility=hidden -Wall -Wextra -Werror \
+            -shared "$SRC" -o out/module/system/vendor/lib64/libivanna_pal_presence_probe.so \
+            -Wl,-z,relro,-z,now -ldl -llog
+          "$READELF" -h out/module/system/vendor/lib64/libivanna_pal_presence_probe.so | tee out/elf_header.txt
+          grep -q "AArch64" out/elf_header.txt
+          "$READELF" -d out/module/system/vendor/lib64/libivanna_pal_presence_probe.so | tee out/elf_dynamic.txt
+      - name: Assemble Magisk module ZIP
+        run: |
+          set -euo pipefail
+          ROOT=hal_integration/moto_g85/pal_preload_probe/module
+          cp "$ROOT/"* out/module/
+          cd out/module
+          zip -qr ../Omega_PAL_Presence_Probe_MotoG85.zip .
+          cd ../..
+          unzip -t out/Omega_PAL_Presence_Probe_MotoG85.zip
+      - name: Upload installable diagnostic ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Omega_PAL_Presence_Probe_MotoG85
+          path: out/Omega_PAL_Presence_Probe_MotoG85.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload ELF verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: Omega_PAL_Presence_Probe_ELF_Verification
+          path: |
+            out/elf_header.txt
+            out/elf_dynamic.txt
+          if-no-files-found: error
+          retention-days: 30
