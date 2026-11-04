@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.340
-versionCode=631
+version=v2.5.341
+versionCode=632
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.340: ASRC/HAL clock channel directory and permissions in the Magisk module (no PAL clock producer yet)
+description=v2.5.341: PAL LD_PRELOAD presence probe packaged in the Magisk module + 'ivanna_control.sh preload' (HAL injection still gated on init_boot)
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
