@@ -69,6 +69,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_ivanna_auditory_gate.py' -v
       - name: Release updater manifest regression tests
         run: python3 -m unittest discover -s tests -p 'test_prepare_release_manifest.py' -v
+      - name: Transaural route and RIR crossmix contract tests
+        run: python3 -m unittest discover -s tests -p 'test_transaural_route_contract.py' -v
       - name: Configure (Release)
         run: cmake -B build-tests -S app/src/main/cpp/tests -DCMAKE_BUILD_TYPE=Release
       - name: Build
