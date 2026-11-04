@@ -10,6 +10,7 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <limits>
 
 #include "ExcitationConductor.hpp"
 #include "MultibandHapticMapper.hpp"
@@ -297,6 +298,30 @@ TEST(CrosstalkCanceller, DcComponentIsNotCrossCancelledByHighPassFeedback) {
         EXPECT_NEAR(L[(size_t)i], 0.20f, 1e-4f);
         EXPECT_NEAR(R[(size_t)i], -0.15f, 1e-4f);
     }
+}
+
+TEST(CrosstalkCanceller, SweetSpotToleranceRecomputesCoefficientsImmediately) {
+    CrosstalkCanceller x;
+    x.prepare(kSr, 256);
+    const float tight = x.rho();
+    x.setSweetSpotTolerance(1.0f);
+    EXPECT_LT(x.rho(), tight);
+}
+
+TEST(CrosstalkCanceller, NonFiniteGeometryFallsBackToFiniteNominalValues) {
+    CrosstalkCanceller x;
+    x.prepare(kSr, 256);
+    CrosstalkCanceller::Geometry g;
+    g.spanMeters = std::numeric_limits<float>::quiet_NaN();
+    g.distanceMeters = std::numeric_limits<float>::infinity();
+    g.headRadiusM = std::numeric_limits<float>::quiet_NaN();
+    g.speedOfSound = std::numeric_limits<float>::quiet_NaN();
+    g.shadowGain = std::numeric_limits<float>::infinity();
+    x.setGeometry(g);
+    EXPECT_TRUE(std::isfinite(x.itdMicroseconds()));
+    EXPECT_TRUE(std::isfinite(x.rho()));
+    EXPECT_GT(x.itdMicroseconds(), 0.0f);
+    EXPECT_LE(x.rho(), 0.92f);
 }
 
 TEST(CrosstalkCanceller, HeadOffsetChangesItdContinuously) {
