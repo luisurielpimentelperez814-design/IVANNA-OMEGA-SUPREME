@@ -80,6 +80,23 @@ public:
     Geometry geometry() const noexcept { return geom_; }
 
     void setEngage(bool on) noexcept { engage_.store(on, std::memory_order_relaxed); }
+
+    // Regularización: tope del realce que el cancelador puede introducir con contenido CENTRADO
+    // (mono), que es el peor caso del shuffler recursivo: u = x / (1 + ρ·H·z^-k) llega a
+    // 1/(1-ρ) en las frecuencias donde z^-k = -1 (primera, ≈ 1/(2·ITD) ≈ 2.1 kHz con la
+    // geometría de referencia: justo la banda de presencia/aspereza).
+    // Con el modelo de cabeza SIN medir en el oyente real, perseguir la cancelación máxima
+    // no es realista (el desajuste de geometría la anula) y sí lo es el realce: se acota ρ para
+    // que el peor caso mono no pase de `maxMonoBoostDb` (por defecto +4 dB; rango 0.5..9 dB).
+    void setMaxMonoBoostDb(float db) noexcept {
+        maxMonoBoostDb_ = std::isfinite(db) ? std::clamp(db, 0.5f, 9.0f) : 4.0f;
+        recompute();
+    }
+    float maxMonoBoostDb() const noexcept { return maxMonoBoostDb_; }
+    // Techo teórico del realce mono con el ρ vigente (dB). Telemetría; debe ser ≤ maxMonoBoostDb()+ε.
+    float worstMonoBoostDb() const noexcept {
+        return -20.0f * std::log10(std::max(1.0f - rho_, 1.0e-3f));
+    }
     bool engaged() const noexcept { return engage_.load(std::memory_order_relaxed); }
 
     // Ancho del "sweet spot": fuera de él la cancelación se relaja en lugar de
@@ -132,11 +149,18 @@ public:
             const float dLf = dl_[i0] * (1.0f - frac) + dl_[i1] * frac;
             const float dRf = dr_[i0] * (1.0f - frac) + dr_[i1] * frac;
 
-            // Paso-alto sobre el término cruzado (transparencia de la cabeza < 120 Hz).
-            hpL_ += hpa * (dLf - hpXL_); hpXL_ = dLf;
-            hpR_ += hpa * (dRf - hpXR_); hpXR_ = dRf;
-            const float cfL = dLf - hpL_;
-            const float cfR = dRf - hpR_;
+            // Paso-alto de UN POLO sobre el término cruzado (transparencia de la cabeza < 120 Hz):
+            //   y[n] = a * (y[n-1] + x[n] - x[n-1]),  a = exp(-2π·fc/fs)
+            // CORRECCIÓN (v2.5.342): la versión anterior hacía `hp += a*(x - xprev); cf = x - hp`, que
+            // NO es un paso-alto: deja el término cruzado en (1-a)·x ≈ 1.6 % de x, es decir −36 dB a
+            // TODAS las frecuencias. El cancelador "activo" mejoraba la separación interaural 0.1 dB
+            // (medido en tests/test_crosstalk_canceller_cancellation.cpp). Con el filtro correcto el
+            // término cruzado pasa ≈0 dB sobre 500 Hz y se atenúa por debajo de fc, como documenta
+            // la cabecera.
+            hpL_ = hpa * (hpL_ + dLf - hpXL_); hpXL_ = dLf;
+            hpR_ = hpa * (hpR_ + dRf - hpXR_); hpXR_ = dRf;
+            const float cfL = hpL_;
+            const float cfR = hpR_;
 
             const float uL = xL - rho * cfR;
             const float uR = xR - rho * cfL;
@@ -198,6 +222,9 @@ private:
         const float shadow = std::clamp(geom_.shadowGain * (1.0f + 2.0f * dPath), 0.0f, 0.92f);
         const float drift  = std::clamp(std::fabs(side) / 0.18f + std::fabs(az) / 0.60f, 0.0f, 1.0f);
         rho_ = std::clamp(shadow * (1.0f - 0.55f * tol) * (1.0f - 0.35f * drift), 0.0f, 0.92f);
+        // Regularización por realce mono máximo: 1/(1-ρ) <= 10^(maxMonoBoostDb/20).
+        const float rhoCap = 1.0f - std::pow(10.0f, -maxMonoBoostDb_ / 20.0f);
+        rho_ = std::min(rho_, rhoCap);
 
         // Paso-alto de reinyección a 120 Hz (un polo): protege el sub y el regulador DC.
         hpAlpha_ = std::exp(-2.0f * 3.14159265358979f * 120.0f / sr_);
@@ -211,6 +238,7 @@ private:
     std::vector<float> dl_, dr_;
     int   idx_ = 0;
 
+    float maxMonoBoostDb_ = 4.0f;
     float rho_ = 0.0f;
     float delaySamples_ = 6.0f;
     float hpAlpha_ = 0.98f;

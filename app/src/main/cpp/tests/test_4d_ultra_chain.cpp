@@ -293,6 +293,105 @@ TEST(CrosstalkCanceller, HeadOffsetChangesItdContinuously) {
     EXPECT_LT(rotated, 1200.0f);
 }
 
+// ── 3b. CrosstalkCanceller — CANCELACIÓN MEDIDA (no solo estabilidad) ────────
+// Defecto que estas pruebas impiden que vuelva (v2.5.342): el paso-alto del término cruzado
+// no era un paso-alto (dejaba (1-a)·x = −36 dB a TODAS las frecuencias), de modo que el
+// cancelador "activo" mejoraba la separación interaural ~0.1 dB y las pruebas de estabilidad
+// seguían en verde porque un cancelador que no hace nada es perfectamente estable.
+//
+// Medición contra la acústica que el propio módulo documenta (ojoL = uL + ρ·z^-k·uR, etc.) con la
+// geometría FÍSICA (sin tope de regularización). Valida el álgebra del cancelador; NO sustituye
+// una medición con micrófono binaural en el oyente real (la geometría real no está medida).
+namespace {
+
+// Fuga al oído contralateral (dB) para un tono en el canal izquierdo y silencio en el derecho.
+double contralateralLeakDb(float freq, bool engage, float capDb) {
+    CrosstalkCanceller phys;                 // acústica física: tope alto para no recortar ρ
+    phys.prepare(kSr, 256);
+    phys.setMaxMonoBoostDb(9.0f);
+    CrosstalkCanceller x;
+    x.prepare(kSr, 256);
+    x.setMaxMonoBoostDb(capDb);
+    x.setEngage(engage);
+    const float rho = phys.rho();
+    const float k = phys.itdMicroseconds() * 1.0e-6f * kSr;
+
+    const int N = 48000;
+    std::vector<float> L = sine(freq, N, 0.25f), R((size_t)N, 0.0f);
+    for (int i = 0; i < N; i += 256) x.processBlock(&L[(size_t)i], &R[(size_t)i], std::min(256, N - i));
+
+    auto delayed = [&](const std::vector<float>& v, int n) {
+        const int b = (int)std::floor(k);
+        const float fr = k - (float)b;
+        const int i0 = n - b, i1 = i0 - 1;
+        const float a = (i0 >= 0) ? v[(size_t)i0] : 0.0f;
+        const float c = (i1 >= 0) ? v[(size_t)i1] : 0.0f;
+        return a * (1.0f - fr) + c * fr;
+    };
+    double eL = 0.0, eR = 0.0;
+    for (int n = 24000; n < N; ++n) {
+        const float earL = L[(size_t)n] + rho * delayed(R, n);
+        const float earR = R[(size_t)n] + rho * delayed(L, n);
+        eL += (double)earL * earL;
+        eR += (double)earR * earR;
+    }
+    return 10.0 * std::log10((eR + 1e-20) / (eL + 1e-20));
+}
+
+// Pico de ganancia (dB) con el mismo tono en ambos canales (contenido centrado) o en uno solo.
+double steadyPeakGainDb(float freq, bool mono, float capDb) {
+    CrosstalkCanceller x;
+    x.prepare(kSr, 256);
+    x.setMaxMonoBoostDb(capDb);
+    x.setEngage(true);
+    const int N = 48000;
+    std::vector<float> L = sine(freq, N, 0.25f), R = mono ? L : std::vector<float>((size_t)N, 0.0f);
+    for (int i = 0; i < N; i += 256) x.processBlock(&L[(size_t)i], &R[(size_t)i], std::min(256, N - i));
+    double pk = 0.0;
+    for (int i = 24000; i < N; ++i)
+        pk = std::max(pk, (double)std::max(std::fabs(L[(size_t)i]), std::fabs(R[(size_t)i])));
+    return 20.0 * std::log10(pk / 0.25);
+}
+
+} // namespace
+
+TEST(CrosstalkCancellation, ActuallyReducesContralateralLeakage) {
+    // Antes de la corrección la mejora era ~0.1 dB a TODAS las frecuencias.
+    for (float f : {500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f}) {
+        const double off = contralateralLeakDb(f, false, 4.0f);
+        const double on  = contralateralLeakDb(f, true,  4.0f);
+        EXPECT_LT(on, off - 5.0) << "f=" << f << " Hz  off=" << off << " dB  on=" << on << " dB";
+    }
+}
+
+TEST(CrosstalkCancellation, WorstCaseCenteredBoostStaysWithinRegularizationCap) {
+    // Con contenido centrado el shuffler recursivo realza hasta 1/(1-ρ) (≈ +7.4 dB a 2.1 kHz
+    // sin tope): la banda más áspera. El tope por defecto (+4 dB) lo acota.
+    for (float cap : {2.5f, 4.0f}) {
+        double worst = -99.0;
+        for (float f = 100.0f; f <= 12000.0f; f *= 1.12f)
+            worst = std::max(worst, steadyPeakGainDb(f, /*mono=*/true, cap));
+        EXPECT_LE(worst, (double)cap + 0.6) << "cap=" << cap << " dB";
+    }
+}
+
+TEST(CrosstalkCancellation, DefaultCapIsFourDbAndTelemetryAgrees) {
+    CrosstalkCanceller x;
+    x.prepare(kSr, 256);
+    EXPECT_FLOAT_EQ(x.maxMonoBoostDb(), 4.0f);
+    EXPECT_LE(x.worstMonoBoostDb(), x.maxMonoBoostDb() + 1.0e-3f);
+    x.setMaxMonoBoostDb(100.0f);                       // fuera de rango → se recorta
+    EXPECT_FLOAT_EQ(x.maxMonoBoostDb(), 9.0f);
+    x.setMaxMonoBoostDb(std::nanf(""));                // no finito → valor por defecto
+    EXPECT_FLOAT_EQ(x.maxMonoBoostDb(), 4.0f);
+}
+
+TEST(CrosstalkCancellation, LowFrequenciesAreLeftAlone) {
+    // La cabeza es transparente < ~120 Hz: el cancelador no debe tocar el sub.
+    EXPECT_NEAR(steadyPeakGainDb(40.0f, /*mono=*/false, 4.0f), 0.0, 1.0);
+    EXPECT_GT(steadyPeakGainDb(40.0f, /*mono=*/true, 4.0f), -1.2);
+}
+
 // ── 4. ExposureDosimeter ─────────────────────────────────────────────────────
 TEST(ExposureDosimeter, AWeightingMatchesIecAtKeyFrequencies) {
     ExposureDosimeter d;
