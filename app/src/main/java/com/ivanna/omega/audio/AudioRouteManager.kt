@@ -238,6 +238,18 @@ object AudioRouteManager {
         }, "BtCodecProfileRefresh").start()
     }
 
+    private fun syncTransauralRoute(context: Context, route: OutputRoute) {
+        val ctx = context.applicationContext
+        runCatching {
+            val declaredLineOut = com.ivanna.omega.ui.SpatialAudioPrefs.load(ctx).externalStereoLineOut
+            val userEnabled = com.ivanna.omega.core.ParameterStore(ctx).is4dCrosstalkOn()
+            val allowed = userEnabled && ExternalStereoPolicy.usesExternalSpeakers(route, declaredLineOut)
+            if (com.ivanna.omega.core.Ivanna4DNative.isAvailable) {
+                com.ivanna.omega.core.Ivanna4DNative.nativeFourDSetCrosstalk(allowed)
+            }
+        }.onFailure { Log.w(TAG, "Transaural route gate failed closed: ${it.message}") }
+    }
+
     private fun applyProfileFor(route: OutputRoute, profileOverride: RouteProfile? = null) {
         val baseProfile = profileOverride ?: profileFor(route)
         val load = when (SafmusHardwareCoordinator.lastSnapshot?.budget) {
@@ -283,6 +295,9 @@ object AudioRouteManager {
     }
 
     private fun applyRoute(route: OutputRoute) {
+        // Keep transaural strictly bound to a user-declared external stereo line-out.
+        // A route change to headphones/Bluetooth/internal speaker forces an immediate bypass.
+        appContextRef?.let { ctx -> syncTransauralRoute(ctx, route) }
         if (route == currentRoute) {
             // El endpoint Bluetooth puede cambiar sin que cambie la categoría BLUETOOTH.
             // Invalida el resultado anterior y actualiza ambos perfiles sin bloquear el callback.
