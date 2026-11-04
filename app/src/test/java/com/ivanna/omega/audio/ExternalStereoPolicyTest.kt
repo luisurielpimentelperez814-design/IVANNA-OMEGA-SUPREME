@@ -24,6 +24,16 @@ class ExternalStereoPolicyTest {
         assertEquals(0f, ExternalStereoPolicy.hrtfWetForRoute(OutputRoute.WIRED_AUX, true, false), 0f)
     }
 
+    @Test fun transauralXtcIsAllowedOnlyOnDeclaredExternalStereoRoutes() {
+        assertTrue(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.USB, true, true))
+        assertTrue(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.WIRED_AUX, true, true))
+        assertFalse(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.USB, false, true))
+        assertFalse(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.WIRED_AUX, true, false))
+        assertFalse(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.BLUETOOTH, true, true))
+        assertFalse(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.SPEAKER, true, true))
+        assertFalse(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.UNKNOWN, true, true))
+    }
+
     @Test fun phoneSpeakerAndUnknownRemainFailClosed() {
         assertEquals(0f, ExternalStereoPolicy.hrtfWetForRoute(OutputRoute.UNKNOWN, false, true), 0f)
         assertEquals(0f, ExternalStereoPolicy.hrtfWetForRoute(OutputRoute.SPEAKER, false, true), 0f)
