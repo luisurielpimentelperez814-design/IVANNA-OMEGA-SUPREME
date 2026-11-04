@@ -282,6 +282,23 @@ TEST(CrosstalkCanceller, DisengagedIsPassthrough) {
     }
 }
 
+TEST(CrosstalkCanceller, DcComponentIsNotCrossCancelledByHighPassFeedback) {
+    CrosstalkCanceller x;
+    x.prepare(kSr, 256);
+    x.setEngage(true);
+
+    // Una entrada DC estable representa el límite de frecuencia cero: el HPF
+    // de reinyección debe dejarla fuera del cancelador cruzado.
+    std::vector<float> L(256, 0.20f), R(256, -0.15f);
+    for (int block = 0; block < 32; ++block) {
+        x.processBlock(L.data(), R.data(), 256);
+    }
+    for (int i = 128; i < 256; ++i) {
+        EXPECT_NEAR(L[(size_t)i], 0.20f, 1e-4f);
+        EXPECT_NEAR(R[(size_t)i], -0.15f, 1e-4f);
+    }
+}
+
 TEST(CrosstalkCanceller, HeadOffsetChangesItdContinuously) {
     CrosstalkCanceller x;
     x.prepare(kSr, 256);
