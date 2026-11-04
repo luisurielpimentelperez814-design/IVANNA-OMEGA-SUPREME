@@ -217,7 +217,7 @@ void applyOutputPlanar(float* L, float* R, int frames) noexcept {
     if (!L || !R || frames <= 0) return;
     TryGuard tg(g_outputBusy);
     if (!tg.ok) return;
-    if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
+    if (!active() || !g_xtcOn.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     int done = 0;
     while (done < frames) {
@@ -246,7 +246,7 @@ void applyOutputInterleaved(float* interleaved, int frames, int channels) noexce
     if (!interleaved || frames <= 0 || channels <= 0) return;
     TryGuard tg(g_outputBusy);
     if (!tg.ok) return;
-    if (!active() || !g_enabled.load(std::memory_order_relaxed)) return;
+    if (!active() || !g_xtcOn.load(std::memory_order_relaxed)) return;
     auto* c = chain();
     float l[kChunk], r[kChunk];
     int done = 0;
