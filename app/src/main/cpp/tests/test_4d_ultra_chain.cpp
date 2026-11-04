@@ -292,6 +292,9 @@ TEST(CrosstalkCanceller, DcComponentIsNotCrossCancelledByHighPassFeedback) {
     // de reinyección debe dejarla fuera del cancelador cruzado.
     std::vector<float> L(256, 0.20f), R(256, -0.15f);
     for (int block = 0; block < 32; ++block) {
+        // processBlock is in-place: restore a constant source for every block.
+        std::fill(L.begin(), L.end(), 0.20f);
+        std::fill(R.begin(), R.end(), -0.15f);
         x.processBlock(L.data(), R.data(), 256);
     }
     for (int i = 128; i < 256; ++i) {
