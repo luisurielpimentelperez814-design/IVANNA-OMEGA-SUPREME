@@ -66,11 +66,11 @@ public:
     // ── Controles ────────────────────────────────────────────────────────────
     void setGeometry(const Geometry& g) noexcept {
         Geometry v = g;
-        v.spanMeters     = std::clamp(v.spanMeters, 0.15f, 4.0f);
-        v.distanceMeters = std::clamp(v.distanceMeters, 0.25f, 5.0f);
-        v.headRadiusM    = std::clamp(v.headRadiusM, 0.06f, 0.12f);
-        v.speedOfSound   = std::clamp(v.speedOfSound, 300.0f, 380.0f);
-        v.shadowGain     = std::clamp(v.shadowGain, 0.0f, 0.92f);
+        v.spanMeters     = std::isfinite(v.spanMeters) ? std::clamp(v.spanMeters, 0.15f, 4.0f) : 0.90f;
+        v.distanceMeters = std::isfinite(v.distanceMeters) ? std::clamp(v.distanceMeters, 0.25f, 5.0f) : 0.85f;
+        v.headRadiusM    = std::isfinite(v.headRadiusM) ? std::clamp(v.headRadiusM, 0.06f, 0.12f) : 0.0875f;
+        v.speedOfSound   = std::isfinite(v.speedOfSound) ? std::clamp(v.speedOfSound, 300.0f, 380.0f) : 343.0f;
+        v.shadowGain     = std::isfinite(v.shadowGain) ? std::clamp(v.shadowGain, 0.0f, 0.92f) : 0.62f;
         geom_ = v;
         recompute();
     }
@@ -83,6 +83,7 @@ public:
     // romper el timbre (a 0 = solo postura exacta, a 1 = tolerante).
     void setSweetSpotTolerance(float t) noexcept {
         tol_.store(std::isfinite(t) ? std::clamp(t, 0.0f, 1.0f) : 0.35f, std::memory_order_relaxed);
+        recompute();
     }
 
     // Desplazamiento del oyente respecto de la postura de referencia, medido por el
