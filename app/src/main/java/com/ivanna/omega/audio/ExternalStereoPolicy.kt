@@ -11,6 +11,10 @@ object ExternalStereoPolicy {
     fun usesExternalSpeakers(route: OutputRoute, declaredLineOut: Boolean): Boolean =
         declaredLineOut && (route == OutputRoute.USB || route == OutputRoute.WIRED_AUX)
 
+    /** XTC is opt-in through the saved control and only valid on declared external L/R speakers. */
+    fun allowTransauralXtc(route: OutputRoute, declaredLineOut: Boolean, requested: Boolean): Boolean =
+        requested && usesExternalSpeakers(route, declaredLineOut)
+
     /** HRTF intended for headphones only; do not send a personal headphone SAF profile to speakers. */
     fun allowHeadphoneHrtf(route: OutputRoute, declaredLineOut: Boolean, requested: Boolean): Boolean =
         requested && route != OutputRoute.SPEAKER && route != OutputRoute.UNKNOWN &&
