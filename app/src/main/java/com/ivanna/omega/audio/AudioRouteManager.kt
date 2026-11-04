@@ -251,7 +251,20 @@ object AudioRouteManager {
                 com.ivanna.omega.core.Ivanna4DNative.nativeFourDSetCrosstalk(allowed)
             }
             com.ivanna.omega.core.FourDRouteB.push(ctx, store, route)
-        }.onFailure { Log.w(TAG, "Transaural route gate failed closed: ${it.message}") }
+        }.onFailure {
+            // If route/prefs evaluation fails, actively force both output paths to bypass.
+            runCatching {
+                if (com.ivanna.omega.core.Ivanna4DNative.isAvailable) {
+                    com.ivanna.omega.core.Ivanna4DNative.nativeFourDSetCrosstalk(false)
+                }
+            }
+            runCatching {
+                com.ivanna.omega.core.FourDRouteB.push(
+                    ctx, com.ivanna.omega.core.ParameterStore(ctx), OutputRoute.UNKNOWN
+                )
+            }
+            Log.w(TAG, "Transaural route gate failed closed: ${it.message}")
+        }
     }
 
     private fun applyProfileFor(route: OutputRoute, profileOverride: RouteProfile? = null) {
