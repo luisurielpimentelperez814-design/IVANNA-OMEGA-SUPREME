@@ -88,6 +88,8 @@ public:
     float earlyClarityBoost() const noexcept { return earlyBoost_.load(std::memory_order_relaxed); }
     void setTrueStereoCrossGain(float gain) noexcept { trueStereoCross_.store(std::clamp(gain, 0.0f, 0.45f), std::memory_order_relaxed); }
     float trueStereoCrossGain() const noexcept { return trueStereoCross_.load(std::memory_order_relaxed); }
+    // Experimental wet-tail crossmix only; not a measured speaker-to-ear inverse.
+    // Production runtime paths intentionally keep this at zero; use CrosstalkCanceller for route-gated XTC.
     void setTransauralXtcStrength(float strength) noexcept { xtcStrength_.store(std::clamp(strength, 0.0f, 0.85f), std::memory_order_relaxed); }
     float transauralXtcStrength() const noexcept { return xtcStrength_.load(std::memory_order_relaxed); }
     void applySofaCoupling(const float q[7]) noexcept;
@@ -167,7 +169,7 @@ private:
     std::atomic<double> inEnergy_{0.0}, outEnergy_{0.0};
     std::vector<float> rawL_, rawR_;         // IR cruda para re-acoplar en vivo
     std::atomic<float> trueStereoCross_{0.18f}; // Matriz True-Stereo 4-caminos (LL, LR, RL, RR)
-    std::atomic<float> xtcStrength_{0.0f};      // Cancelación de diafonía transaural (XTC tipo BACCH)
+    std::atomic<float> xtcStrength_{0.0f};      // Crossmix experimental de cola RIR; no es XTC físico calibrado
     alignas(64) float crossHistL_[32] = {};
     alignas(64) float crossHistR_[32] = {};
     int crossWriteIdx_ = 0;
