@@ -30,10 +30,10 @@ class TransauralRouteContractTest(unittest.TestCase):
         chain = self.read("app/src/main/cpp/music_intelligence/FourDExcitationChain.hpp")
         surface = self.read("app/src/main/cpp/music_intelligence/FourDControlSurface.cpp")
         engage_start = chain.find("void xbEnabled()")
-        engage_end = chain.find("\\n    }", engage_start)
+        engage_end = chain.find("\n    }", engage_start)
         engage_body = chain[engage_start:engage_end]
         stage_start = chain.find("void applyOutputStage(")
-        stage_end = chain.find("\\n    }", stage_start)
+        stage_end = chain.find("\n    }", stage_start)
         stage_body = chain[stage_start:stage_end]
         self.assertIn("xtc_.setEngage(xbEnabled_.load(std::memory_order_relaxed));", engage_body)
         self.assertNotIn("enabled_.load", engage_body)
