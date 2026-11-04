@@ -11,6 +11,7 @@
 #include "music_intelligence/FourDControlSurface.hpp"
 #include "music_intelligence/SceneTargetBus.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <vector>
