@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Conservative ELF header validator for the packaged ARM64 audio effect.
-# This checks the loader-relevant ELF identity/header fields; it is NOT a
-# cryptographic checksum and does not replace full readelf/loader validation.
+# This checks the ELF identity and program-header bounds; it is NOT a
+# cryptographic checksum and does not replace readelf/linker validation.
 
 ivanna_elf_field() {
     dd if="$1" bs=1 skip="$2" count="$3" 2>/dev/null |
@@ -10,7 +10,8 @@ ivanna_elf_field() {
 
 ivanna_elf_validate() {
     local file="$1"
-    local size magic class data ident_version type machine version ehsize phentsize phnum
+    local size magic class data ident_version type machine version ehsize phentsize
+    local phnum_hex phoff phnum table_end
 
     IVANNA_ELF_REASON="unknown"
     if [ -z "$file" ] || [ ! -f "$file" ]; then
@@ -37,7 +38,7 @@ ivanna_elf_validate() {
     version=$(ivanna_elf_field "$file" 20 4)
     ehsize=$(ivanna_elf_field "$file" 52 2)
     phentsize=$(ivanna_elf_field "$file" 54 2)
-    phnum=$(ivanna_elf_field "$file" 56 2)
+    phnum_hex=$(ivanna_elf_field "$file" 56 2)
 
     if [ "$magic" != "7f454c46" ]; then
         IVANNA_ELF_REASON="invalid ELF magic"
@@ -53,10 +54,29 @@ ivanna_elf_validate() {
         IVANNA_ELF_REASON="ELF machine is not AArch64"
     elif [ "$ehsize" != "4000" ]; then
         IVANNA_ELF_REASON="unexpected ELF64 header size"
-    elif [ "$phentsize" != "3800" ] || [ "$phnum" = "0000" ]; then
+    elif [ "$phentsize" != "3800" ] || [ "$phnum_hex" = "0000" ]; then
         IVANNA_ELF_REASON="invalid ELF64 program-header table"
     else
-        IVANNA_ELF_REASON="ELF64 AArch64 ET_DYN header accepted"
+        # ELF64 e_phoff/e_phnum are little-endian. The target is AArch64 LE;
+        # od's unsigned 64-/16-bit formats avoid lossy hex-string arithmetic.
+        phoff=$(od -An -tu8 -j32 -N8 "$file" 2>/dev/null | tr -d '[:space:]')
+        phnum=$(od -An -tu2 -j56 -N2 "$file" 2>/dev/null | tr -d '[:space:]')
+        case "$phoff:$phnum" in
+            *[!0-9:]*|:*)
+                IVANNA_ELF_REASON="unreadable ELF64 program-header bounds"
+                return 1
+                ;;
+        esac
+        if [ "$phoff" -lt 64 ] || [ "$phoff" -gt "$size" ]; then
+            IVANNA_ELF_REASON="program-header offset outside file"
+            return 1
+        fi
+        table_end=$((phoff + 56 * phnum))
+        if [ "$table_end" -gt "$size" ]; then
+            IVANNA_ELF_REASON="program-header table exceeds file size"
+            return 1
+        fi
+        IVANNA_ELF_REASON="ELF64 AArch64 ET_DYN header and program-header bounds accepted"
         return 0
     fi
     return 1
