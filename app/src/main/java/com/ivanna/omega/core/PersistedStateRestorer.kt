@@ -185,7 +185,7 @@ object PersistedStateRestorer {
                 Ivanna4DNative.nativeFourDSetArcDepth(ps.get4dArcDepth())
                 Ivanna4DNative.nativeFourDSetArc(ps.is4dArcOn())
                 Ivanna4DNative.nativeFourDSetHaptics(ps.is4dHapticsOn())
-                Ivanna4DNative.nativeFourDSetCrosstalk(ps.is4dCrosstalkOn() && externalStereo)
+                Ivanna4DNative.nativeFourDSetCrosstalk(com.ivanna.omega.audio.ExternalStereoPolicy.allowTransauralXtc(route, saPrefs.externalStereoLineOut, ps.is4dCrosstalkOn()))
                 Ivanna4DNative.nativeFourDSetEnabled(ps.is4dEnabled())
             }
             FourDRouteB.push(ctx, ParameterStore(ctx))   // Ruta B: XTC solo si la ruta física es línea estéreo declarada
