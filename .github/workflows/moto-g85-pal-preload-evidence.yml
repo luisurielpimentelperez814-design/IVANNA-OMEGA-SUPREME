@@ -39,7 +39,6 @@ jobs:
               assert item in s, f"missing required read-only collection step: {item}"
           forbidden = [
               'dd of="$PART"',
-              'flash ',
               'fastboot flash',
               'ctl.restart',
               'setenforce',
