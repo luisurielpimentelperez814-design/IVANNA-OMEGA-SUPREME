@@ -129,7 +129,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     checked = st.enabled,
                     onCheckedChange = { on ->
                         store.set4dEnabled(on)
-                        FourDRouteB.push(store)
+                        FourDRouteB.push(appContext, store)
                         if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetEnabled(on)
                     }
                 )
@@ -186,7 +186,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 onValueChange = {
                     leadMs = it
                     store.set4dLeadMs(it)
-                    FourDRouteB.push(store)
+                    FourDRouteB.push(appContext, store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetLeadMs(it)
                 }
             )
@@ -198,7 +198,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 onValueChange = {
                     depth = it
                     store.set4dDepth(it)
-                    FourDRouteB.push(store)
+                    FourDRouteB.push(appContext, store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetDepth(it)
                 }
             )
@@ -209,7 +209,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     arc = it
                     store.set4dArcOn(it)
                     store.set4dArcDepth(arcDepth)
-                    FourDRouteB.push(store)
+                    FourDRouteB.push(appContext, store)
                     if (Ivanna4DNative.isAvailable) {
                         // La profundidad nativa arranca en 0: se envía junto con el interruptor.
                         Ivanna4DNative.nativeFourDSetArcDepth(arcDepth)
@@ -236,7 +236,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 onValueChange = {
                     arcDepth = it
                     store.set4dArcDepth(it)
-                    FourDRouteB.push(store)
+                    FourDRouteB.push(appContext, store)
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetArcDepth(it)
                 }
             )
@@ -264,11 +264,11 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 Switch(checked = crosstalk, onCheckedChange = {
                     crosstalk = it
                     store.set4dCrosstalkOn(it)
-                    FourDRouteB.push(store)
-                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetCrosstalk(it)
+                    FourDRouteB.push(appContext, store)
+                    if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetCrosstalk(it && FourDRouteB.isExternalStereoRoute(appContext))
                 })
                 Spacer(Modifier.width(8.dp))
-                Text("Cancelación de diafonía (por altavoces)", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                Text("Cancelación transaural (solo bocinas externas declaradas)", color = Color(0xFFB0BEC5), fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(6.dp))
