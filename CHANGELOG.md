@@ -1,3 +1,12 @@
+## v2.5.344 (635) - 2026-11-04
+
+- **Activación transaural por ruta:** XTC se habilita solo en USB/AUX cuando el usuario declara una línea estéreo externa. Si no existe preferencia XTC guardada, la declaración la habilita por defecto; un OFF guardado prevalece. Bluetooth, audífonos no declarados, altavoz interno y ruta desconocida quedan en bypass.
+- **Independiente del maestro 4D:** la cancelación funciona aunque anticipación/háptica 4D esté apagada; análisis 4D, háptica y dosímetro conservan su propio interruptor. Los cambios de ruta, restauración y parada sincronizan Ruta A y Ruta B; un fallo de evaluación fuerza bypass.
+- **Sin XTC falso en RIR:** el crossmix experimental de `RirConvolver` queda en cero en runtime. RT60 y arquetipo Bark ya no pueden activarlo ni apilarlo con `CrosstalkCanceller`.
+- **Release seguro:** el ZIP contiene un manifiesto candidato alineado con `module.prop`; el manifiesto público solo se actualiza después de subir y verificar ZIP, APK y checksums, sin anunciar un ZIP 404 ni retroceder un versionCode más nuevo.
+- **Hereda v2.5.343 MAGISTRAL:** perfil nominal de sala 3.83 × 2.83 × 7.00 m y geometría aplicada a los canceladores; conserva el HPF corregido y el límite de realce mono de +4 dB de v2.5.342.
+- **Límite acústico:** no se afirma matriz 2×2 medida altavoz→oído, calibración binaural personalizada ni validación física. El perfil de sala es nominal y requiere medición en la posición real de escucha. La declaración de línea externa es necesaria porque Android no distingue un DAC conectado a un amplificador del mismo DAC conectado a audífonos.
+
 ## v2.5.343 (634) - 2026-11-04
 
 - **Transaural MAGISTRAL (sala del propietario):** perfil único 3.83 × 2.83 × 7.00 m — FL/FR a 1.50 m y 2.70 m de separación, SL/SR en las paredes laterales a 3.50 m del frente y 1.80 m de altura, subwoofer en el suelo. Se aplica igual en `RoomGeometryConfig`, el snapshot por defecto, el estado del daemon y la UI (`WfsCalibrationManager`); TL/TR bajan de 3.00 m (sobre el techo) a 2.83 m. `tests/test_magistral_defaults.py` impide que las cuatro copias diverjan.
