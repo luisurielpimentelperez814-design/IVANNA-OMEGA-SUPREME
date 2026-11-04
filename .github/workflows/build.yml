@@ -1144,6 +1144,12 @@ jobs:
             REMOTE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/contents/magisk_module/update.json?ref=main")
             REMOTE_SHA=$(printf '%s' "$REMOTE_JSON" | jq -r '.sha')
             REMOTE_B64=$(printf '%s' "$REMOTE_JSON" | jq -r '.content' | tr -d '\n')
+            LOCAL_CODE=$(jq -r '.versionCode' magisk_module/update.json)
+            REMOTE_CODE=$(printf '%s' "$REMOTE_B64" | base64 -d | jq -r '.versionCode')
+            if [ "$REMOTE_CODE" -gt "$LOCAL_CODE" ]; then
+              echo "A newer updater manifest (code $REMOTE_CODE) is already public; refusing to downgrade it to $LOCAL_CODE."
+              exit 0
+            fi
             if [ "$LOCAL_B64" = "$REMOTE_B64" ]; then
               echo "Updater manifest already matches the published release."
               exit 0
