@@ -2,8 +2,9 @@
 
 - **Cancelación transaural — corrección de banda:** el cancelador calculaba el estado de su paso-alto, pero alimentaba la realimentación cruzada con la señal menos ese estado (el complemento pasa-bajas). Ahora usa la salida pasa-altas real, evitando que la reinyección actúe como un cancelador de graves. Se añade una regresión DC para impedir que vuelva a ocurrir.
 - **Seguridad del callback:** rho, retardo fraccional y coeficiente HPF derivados de geometría se publican/leen como atómicos para evitar carreras entre cambios de control y el callback de audio.
+- **Activación por ruta:** la cancelación transaural se aplica solo cuando USB/AUX está declarado como línea estéreo externa; se fuerza bypass en audífonos, Bluetooth y bocina interna. El procesamiento XTC ya no depende del interruptor maestro de anticipación 4D. Si nunca se modificó el control XTC, la declaración explícita de línea estéreo externa habilita el valor inicial conservador; una preferencia guardada OFF sigue prevaleciendo.
 - **Alcance físico explícito:** la geometría predeterminada se documenta como nominal, no como medición del Sony o de la sala. La cancelación sigue siendo una aproximación geométrica; no equivale a una matriz altavoz-oído medida ni certifica holofonía. La calibración y validación auditiva en el equipo real siguen pendientes.
-- **Compatibilidad:** no cambia el ABI del efecto ni el protocolo del daemon; el cancelador permanece apagado hasta que el usuario lo activa.
+- **Compatibilidad:** no cambia el ABI del efecto ni el protocolo del daemon; el cancelador conserva bypass fuera de la ruta de bocinas declarada.
 
 ## v2.5.341 (632) - 2026-11-03
 
