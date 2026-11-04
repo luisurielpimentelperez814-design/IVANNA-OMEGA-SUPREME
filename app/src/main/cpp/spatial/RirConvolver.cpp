@@ -611,7 +611,7 @@ void RirConvolver::process(float* L, float* R, int frames) noexcept {
             }
         }
 
-        // ── Mezcla wet/dry + Matriz True-Stereo 4-Caminos (LL, LR, RL, RR) + Holografía Transaural XTC ──
+        // ── Mezcla wet/dry + Matriz True-Stereo 4-Caminos + crossmix RIR experimental (runtime OFF) ──
         const float ws = wetSmooth_;
         float wn = wetNow_;
         const float tsCross = trueStereoCross_.load(std::memory_order_relaxed);
