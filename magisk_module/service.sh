@@ -87,6 +87,8 @@ if pidof ivanna_daemon >/dev/null 2>&1; then
     # SOCKET=CONECTADO/DESCONECTADO, para no divergir de lo que el usuario ve.
     if grep -aq omega_daemon_socket /proc/net/unix 2>/dev/null; then
         echo "$(date) daemon ya estaba activo y el socket ya está bindeado" >> "$LOG"
+        # Existing healthy instance satisfies the same runtime-health contract.
+        touch /data/adb/ivanna_omega_last_boot_ok 2>/dev/null
         exit 0
     fi
     echo "$(date) proceso ivanna_daemon encontrado pero SIN socket en /proc/net/unix — instancia colgada de un arranque anterior, matando y relanzando" >> "$LOG"
