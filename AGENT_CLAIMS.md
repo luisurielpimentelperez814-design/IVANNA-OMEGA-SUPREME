@@ -50,9 +50,10 @@ que la siguiente sesión sepa el estado real.
 ## 🔒 Frentes actualmente tomados
 
 ### Transaural / CrosstalkCanceller (2026-11-04)
-**Responsable:** sesión Claude, por indicación directa del propietario.
-**Hecho (verificado en host con pruebas de cancelación medida, no en dispositivo):** paso-alto defectuoso corregido (el cancelador mejoraba 0.1 dB) y realce mono acotado a +4 dB. Ver `CHANGELOG.md` v2.5.342.
-**No declarar "transaural validado":** la geometría del oyente no está medida; falta prueba con micrófono binaural en el Moto G85. El XTC de `RirConvolver` ("tipo BACCH") es una resta de un tap, no una cancelación — pendiente de decisión de producto.
+**Responsable:** sesión ChatGPT actual, por autorización del propietario.
+**Hecho (verificado en host):** v2.5.342 corrigió la recurrencia HPF y acotó el realce mono a +4 dB. v2.5.343 separa XTC del maestro 4D, lo limita a USB/AUX declarados y fuerza bypass fuera de esa ruta.
+**Decisión de producto:** el crossmix experimental de `RirConvolver` queda en 0.0 en todas las rutas; no se usa como cancelación. La única etapa runtime XTC es `CrosstalkCanceller`.
+**No declarar "transaural validado":** la geometría del oyente sigue siendo nominal; falta calibración 2×2 altavoz→oído con micrófono binaural y validación en el Moto G85/posición de escucha.
 **No tocar:** no quitar el tope de realce ni las pruebas `CrosstalkCancellation.*` (impiden volver a un cancelador que no cancela).
 
 ### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
