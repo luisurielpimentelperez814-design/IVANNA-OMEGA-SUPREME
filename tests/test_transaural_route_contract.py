@@ -29,9 +29,16 @@ class TransauralRouteContractTest(unittest.TestCase):
     def test_real_xtc_is_an_independent_route_gated_output_stage(self):
         chain = self.read("app/src/main/cpp/music_intelligence/FourDExcitationChain.hpp")
         surface = self.read("app/src/main/cpp/music_intelligence/FourDControlSurface.cpp")
-        self.assertIn("xtc_.setEngage(xbEnabled_.load(std::memory_order_relaxed));", chain)
-        self.assertNotIn("&& enabled_.load(std::memory_order_relaxed)", chain)
-        self.assertIn("if (xbEnabled_.load(std::memory_order_relaxed)) xtc_.processBlock(L, R, n);", chain)
+        engage_start = chain.find("void xbEnabled()")
+        engage_end = chain.find("\\n    }", engage_start)
+        engage_body = chain[engage_start:engage_end]
+        stage_start = chain.find("void applyOutputStage(")
+        stage_end = chain.find("\\n    }", stage_start)
+        stage_body = chain[stage_start:stage_end]
+        self.assertIn("xtc_.setEngage(xbEnabled_.load(std::memory_order_relaxed));", engage_body)
+        self.assertNotIn("enabled_.load", engage_body)
+        self.assertIn("if (xbEnabled_.load(std::memory_order_relaxed)) xtc_.processBlock(L, R, n);", stage_body)
+        self.assertNotIn("enabled_.load", stage_body)
         for name in ("applyOutputPlanar", "applyOutputInterleaved"):
             start = surface.find(f"void {name}(")
             self.assertGreaterEqual(start, 0, name)
