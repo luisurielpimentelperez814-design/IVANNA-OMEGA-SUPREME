@@ -1,0 +1,50 @@
+name: Moto G85 PAL preload evidence collector
+
+on:
+  push:
+    branches: ["feat/moto-g85-pal-ldpreload-magisk-module"]
+    paths:
+      - "hal_integration/moto_g85/pal_preload/**"
+      - ".github/workflows/moto-g85-pal-preload-evidence.yml"
+  pull_request:
+    paths:
+      - "hal_integration/moto_g85/pal_preload/**"
+      - ".github/workflows/moto-g85-pal-preload-evidence.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-collector:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        run: sh -n hal_integration/moto_g85/pal_preload/collect_init_boot_evidence.sh
+      - name: Validate read-only collection contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("hal_integration/moto_g85/pal_preload/collect_init_boot_evidence.sh")
+          s = p.read_text()
+          required = [
+              'getprop ro.boot.slot_suffix',
+              'case "$SLOT" in',
+              'dd if="$PART" of="$IMG"',
+              'cp "$VENDOR_RC" "$RC"',
+              'init_boot_sha256=',
+              'No partition was modified.',
+          ]
+          for item in required:
+              assert item in s, f"missing required read-only collection step: {item}"
+          forbidden = [
+              'dd of="$PART"',
+              'fastboot flash',
+              'ctl.restart',
+              'setenforce',
+              'mount -o remount',
+          ]
+          for item in forbidden:
+              assert item not in s, f"forbidden device modification found: {item}"
+          print("Moto G85 evidence collector contract: PASS")
+          PY
