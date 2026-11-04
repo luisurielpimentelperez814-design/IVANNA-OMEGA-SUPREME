@@ -231,7 +231,8 @@ private:
     float wetSmooth_ = 0.0f;
 
     std::atomic<bool>  engage_{false};   // apagado por defecto
-    std::atomic<float> tol_{0.35f};
+    // Broad sweet spot by default: conservative rho until a physical speaker/room calibration exists.
+    std::atomic<float> tol_{0.85f};
     std::atomic<float> headAzDeg_{0.0f};
     std::atomic<float> headSideM_{0.0f};
 };
