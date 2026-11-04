@@ -1,3 +1,10 @@
+## v2.5.342 (633) - 2026-11-04
+
+- **Cancelación transaural — corrección de banda:** el cancelador calculaba el estado de su paso-alto, pero alimentaba la realimentación cruzada con la señal menos ese estado (el complemento pasa-bajas). Ahora usa la salida pasa-altas real, evitando que la reinyección actúe como un cancelador de graves. Se añade una regresión DC para impedir que vuelva a ocurrir.
+- **Seguridad del callback:** rho, retardo fraccional y coeficiente HPF derivados de geometría se publican/leen como atómicos para evitar carreras entre cambios de control y el callback de audio.
+- **Alcance físico explícito:** la geometría predeterminada se documenta como nominal, no como medición del Sony o de la sala. La cancelación sigue siendo una aproximación geométrica; no equivale a una matriz altavoz-oído medida ni certifica holofonía. La calibración y validación auditiva en el equipo real siguen pendientes.
+- **Compatibilidad:** no cambia el ABI del efecto ni el protocolo del daemon; el cancelador permanece apagado hasta que el usuario lo activa.
+
 ## v2.5.341 (632) - 2026-11-03
 
 - **Módulo Magisk — sonda LD_PRELOAD PAL empaquetada:** el módulo principal ahora genera `libivanna_pal_presence_probe.so` (en `system/vendor/lib64/`). El CI la compila desde `hal_integration/moto_g85/pal_preload_probe/` con `-Wall -Wextra -Werror`, `-fvisibility=hidden`, relro/now y `max-page-size=16384`, y la verifica: AArch64, sin `libc++_shared`, ningún símbolo `pal_*`/`agm_*` definido (sería interposición) ni requerido, segmentos LOAD alineados a 16 KB. El ZIP debe contener exactamente la librería compilada; `BUILD_INFO` registra `preload_probe_sha256` y `verify-release` lo contrasta contra la librería extraída del ZIP publicado.
