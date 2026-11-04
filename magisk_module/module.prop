@@ -3,5 +3,5 @@ name=IVANNA OMEGA SUPREME
 version=v2.5.342
 versionCode=633
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.342: transaural crosstalk HPF correction + atomic DSP parameters; PAL probe remains diagnostic only
+description=v2.5.342: route-gated speaker transaural XTC + corrected HPF; PAL probe remains diagnostic only
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
