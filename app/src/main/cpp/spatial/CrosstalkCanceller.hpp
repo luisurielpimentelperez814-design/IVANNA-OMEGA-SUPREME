@@ -1,24 +1,21 @@
 // CrosstalkCanceller.hpp — Cancelación de Diafonía para Altavoces (Ruta AUX / DAC)
 // (c) 2026 Luis Uriel Pimentel Pérez — GORE TNS. All rights reserved.
 //
-// PROBLEMA REAL: WfsRenderer y HoaBinauralDecoder producen una señal BINAURAL, pensada
-// para auriculares, donde cada oído recibe solo su canal. Por AUX al Genezi (dos
-// altavoces en el aire) esa suposición se rompe: el altavoz izquierdo llega también al
-// oído derecho (y viceversa), y el campo holográfico se COLAPSA hacia la cabeza. Todo el
-// valor del WFS/HOA se pierde en el último centímetro. Este módulo lo recupera.
+// Modelo transaural 2×2 aproximado para salida L/R por dos altavoces.
+// No es una matriz acústica medida: rho e ITD se estiman desde una geometría nominal.
+// La cancelación solo puede aproximar la diafonía y su resultado depende de la posición
+// de escucha, la sala y la respuesta real de los altavoces. No certifica holofonía.
 //
-// MATEMÁTICA: sea A la matriz acústica 2×2 del par de altavoces hacia los dos oídos
-//   A = [[1, ρ·z^-k], [ρ·z^-k, 1]]
-// con ρ = atenuación por sombra de cabeza y k = ITD en muestras. El cancelador es su
-// inversa regularizada, que en forma de "shuffler" recursivo es:
-//   uL[n] = xL[n] − ρ·uR[n−k]
-//   uR[n] = xR[n] − ρ·uL[n−k]
-// Estable para ρ < 1 (se acota a 0.92) y sin inversión de matriz en tiempo real.
+// MATEMÁTICA: A(z) ≈ [[1, ρ·z^-k], [ρ·z^-k, 1]]. El shuffler recursivo aplica
+// la realimentación cruzada después de un paso-alto:
+//   uL[n] = xL[n] − ρ·HPF{uR[n−k]}
+//   uR[n] = xR[n] − ρ·HPF{uL[n−k]}
+// rho se limita a 0.92. La aproximación no sustituye las cuatro transferencias
+// altavoz→oído medidas ni la inversión regularizada de una matriz acústica real.
 //
-// REGULARIZACIÓN CRÍTICA: en continua el regulador 1/(1−ρ²) es enorme y además por debajo
-// de ~120 Hz la cabeza es acústicamente transparente (no hay sombra), así que el término
-// de reinyección cruzada se filtra con un paso-alto de un polo a 120 Hz. Sin esto el
-// cancelador bombea graves y ensucia el sub — precisamente lo que no se puede tocar.
+// REGULARIZACIÓN: la reinyección cruzada usa un paso-alto de primer orden con esquina
+// nominal de 120 Hz para reducir la actuación en graves. El estado HPF, y no su
+// complemento pasa-bajas, es el que debe alimentar la realimentación cruzada.
 //
 // RASTREO DE CABEZA: si el oyente gira, los altavoces virtuales se desplazan respecto de
 // él. setHeadOffset() mueve el par (en azimut y en distancia) y recalcula ρ y k en cada
@@ -37,7 +34,7 @@ namespace ivanna { namespace spatial {
 
 class alignas(64) CrosstalkCanceller {
 public:
-    // Geometría física de referencia (medidas de un Genezi genérico en escritorio).
+    // Geometría nominal de arranque; NO son medidas verificadas del Sony ni de la sala.
     struct Geometry {
         float spanMeters    = 0.90f;  // separación entre altavoces
         float distanceMeters= 0.85f;  // distancia altavoz → oído cercano
@@ -115,10 +112,13 @@ public:
             return;
         }
 
-        const float rho   = rho_;
-        const float frac  = delaySamples_ - std::floor(delaySamples_);
-        const int   base  = (int)std::floor(delaySamples_);
-        const float hpa   = hpAlpha_;   // coeficiente del paso-alto de reinyección
+        // Los parámetros derivados pueden actualizarse desde el hilo de control.
+        // Cargarlos atómicamente evita carreras con el callback de audio.
+        const float rho   = rho_.load(std::memory_order_relaxed);
+        const float delay = delaySamples_.load(std::memory_order_relaxed);
+        const float frac  = delay - std::floor(delay);
+        const int   base  = (int)std::floor(delay);
+        const float hpa   = hpAlpha_.load(std::memory_order_relaxed);
         const int   sz    = (int)dl_.size();
 
         for (int i = 0; i < n; ++i) {
@@ -135,8 +135,11 @@ public:
             // Paso-alto sobre el término cruzado (transparencia de la cabeza < 120 Hz).
             hpL_ += hpa * (dLf - hpXL_); hpXL_ = dLf;
             hpR_ += hpa * (dRf - hpXR_); hpXR_ = dRf;
-            const float cfL = dLf - hpL_;
-            const float cfR = dRf - hpR_;
+            // hpL_/hpR_ ya contienen la salida pasa-altas. Restarlos de la señal
+            // retrasada produciría el complemento pasa-bajas y cancelaría graves,
+            // justo lo contrario de la protección prevista.
+            const float cfL = hpL_;
+            const float cfR = hpR_;
 
             const float uL = xL - rho * cfR;
             const float uR = xR - rho * cfL;
@@ -153,11 +156,14 @@ public:
     }
 
     // ── Telemetría ───────────────────────────────────────────────────────────
-    float itdMicroseconds() const noexcept { return (delaySamples_ / sr_) * 1.0e6f; }
-    float rho() const noexcept { return rho_; }
+    float itdMicroseconds() const noexcept {
+        return (delaySamples_.load(std::memory_order_relaxed) / sr_) * 1.0e6f;
+    }
+    float rho() const noexcept { return rho_.load(std::memory_order_relaxed); }
     // Máxima ganancia de graves introducida por el regulador (dB) — debe ser ≈ 0.
     float dcGainDb() const noexcept {
-        const float gLin = 1.0f / std::max(1.0f - rho_ * rho_, 1.0e-3f);
+        const float rho = rho_.load(std::memory_order_relaxed);
+        const float gLin = 1.0f / std::max(1.0f - rho * rho, 1.0e-3f);
         return 20.0f * std::log10(gLin);
     }
     bool isActive() const noexcept { return wetSmooth_ > 0.5f; }
@@ -189,7 +195,8 @@ private:
         // Corrección por giro de cabeza: el giro reduce el ITD efectivo (los altavoces
         // quedan menos laterales respecto del eje interaural).
         delay *= (1.0f - 0.35f * std::fabs(std::sin(az)));
-        delaySamples_ = std::clamp(delay, 2.0f, (float)(maxDelay_ - 3));
+        delaySamples_.store(std::clamp(delay, 2.0f, (float)(maxDelay_ - 3)),
+                             std::memory_order_relaxed);
 
         // ρ por sombra de cabeza: la atenuación contralateral crece con el exceso de
         // camino; se combina con la tolerancia de sweet spot (más tolerancia = ρ menor,
@@ -197,10 +204,12 @@ private:
         const float tol = tol_.load(std::memory_order_relaxed);
         const float shadow = std::clamp(geom_.shadowGain * (1.0f + 2.0f * dPath), 0.0f, 0.92f);
         const float drift  = std::clamp(std::fabs(side) / 0.18f + std::fabs(az) / 0.60f, 0.0f, 1.0f);
-        rho_ = std::clamp(shadow * (1.0f - 0.55f * tol) * (1.0f - 0.35f * drift), 0.0f, 0.92f);
+        rho_.store(std::clamp(shadow * (1.0f - 0.55f * tol) * (1.0f - 0.35f * drift),
+                              0.0f, 0.92f), std::memory_order_relaxed);
 
         // Paso-alto de reinyección a 120 Hz (un polo): protege el sub y el regulador DC.
-        hpAlpha_ = std::exp(-2.0f * 3.14159265358979f * 120.0f / sr_);
+        hpAlpha_.store(std::exp(-2.0f * 3.14159265358979f * 120.0f / sr_),
+                       std::memory_order_relaxed);
     }
 
     float sr_ = 48000.0f;
@@ -211,9 +220,9 @@ private:
     std::vector<float> dl_, dr_;
     int   idx_ = 0;
 
-    float rho_ = 0.0f;
-    float delaySamples_ = 6.0f;
-    float hpAlpha_ = 0.98f;
+    std::atomic<float> rho_{0.0f};
+    std::atomic<float> delaySamples_{6.0f};
+    std::atomic<float> hpAlpha_{0.98f};
     float hpL_ = 0.0f, hpR_ = 0.0f, hpXL_ = 0.0f, hpXR_ = 0.0f;
     float wetSmooth_ = 0.0f;
 
