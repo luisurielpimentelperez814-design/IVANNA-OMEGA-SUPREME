@@ -21,6 +21,12 @@
 
 using namespace ivanna::supreme;
 
+TEST(SupremeAxis3_Rir, ExperimentalWetTailCrossmixIsDisabledByDefault) {
+    Ivanna::RirConvolver conv;
+    EXPECT_FLOAT_EQ(conv.transauralXtcStrength(), 0.0f);
+}
+
+
 // ─── EJE 1: WarpedLatticeTransducerInverter ──────────────────────────────────
 TEST(SupremeAxis1_WarpedLattice, SubSampleGroupDelayAndMicroChirpStability) {
     WarpedLatticeTransducerInverter inverter;
