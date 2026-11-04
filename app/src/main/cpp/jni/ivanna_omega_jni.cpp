@@ -560,13 +560,6 @@ extern "C" float ivanna_get_routeB_subsample_delay() noexcept {
 extern "C" bool ivanna_is_routeB_active() noexcept {
     return g_activeRoute.load(std::memory_order_relaxed) == 2;
 }
-extern "C" void ivanna_set_route_rir_xtc(int routeIdx) noexcept {
-    if (Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire)) {
-        conv->setTrueStereoCrossGain(0.20f);
-        conv->setTransauralXtcStrength((routeIdx == 2) ? 0.38f : ((routeIdx == 0) ? 0.16f : 0.0f));
-    }
-}
-
 static void audioRouteBridgeLoop() {
     // Última lectura vista, para no republicar/loguear si omega_effect no
     // está produciendo audio nuevo ahora mismo (evita contaminar el bus
@@ -3961,7 +3954,8 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetRirDataDir(JNIEnv* env, 
         auto* conv = new Ivanna::RirConvolver();
         conv->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
         conv->setTrueStereoCrossGain(0.20f);
-        conv->setTransauralXtcStrength(0.16f);
+        // The RIR tail crossmix is experimental, not a measured transaural inverse.
+        conv->setTransauralXtcStrength(0.0f);
         const float initRt60 = g_localRoomRt60.load(std::memory_order_acquire);
         const float initWet  = g_localRoomWet.load(std::memory_order_acquire);
         if (initRt60 >= 0.01f && initWet > 0.001f) {
@@ -4027,7 +4021,8 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetLocalRoom(
     if (!conv) return;
     conv->applySofaCoupling(g_localSafQ);
     conv->setTrueStereoCrossGain(0.20f);
-    conv->setTransauralXtcStrength((rt60S > 0.52f) ? 0.38f : ((rt60S < 0.31f) ? 0.0f : 0.16f));
+    // Room RT60 selects the room model, never a loudspeaker crosstalk-cancellation amount.
+    conv->setTransauralXtcStrength(0.0f);
     conv->setWetDry(std::clamp(static_cast<float>(wet), 0.0f, 1.0f));
     if (ds && ds->isLoaded() && ds->roomCount() > 0) {
         const int32_t targetIdx = (roomIdx >= 0 && static_cast<size_t>(roomIdx) < ds->roomCount())
