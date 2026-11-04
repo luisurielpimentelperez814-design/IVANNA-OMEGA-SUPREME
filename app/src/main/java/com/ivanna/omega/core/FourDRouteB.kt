@@ -23,13 +23,13 @@ object FourDRouteB {
         val ctx = context.applicationContext
         val route = AudioRouteManager.detectOutputRoute()
         val declaredLineOut = SpatialAudioPrefs.load(ctx).externalStereoLineOut
-        val xtcAllowed = ExternalStereoPolicy.usesExternalSpeakers(route, declaredLineOut)
+        val xtcAllowed = ExternalStereoPolicy.allowTransauralXtc(route, declaredLineOut, store.is4dCrosstalkOn())
         return String.format(
         java.util.Locale.US,
         "{\"action\":\"SET_4D\",\"fourdOn\":%d,\"arcOn\":%d,\"xtcOn\":%d,\"arcDepth\":%.4f,\"depth\":%.4f,\"leadMs\":%.3f}",
         if (store.is4dEnabled()) 1 else 0,
         if (store.is4dArcOn()) 1 else 0,
-        if (store.is4dCrosstalkOn() && xtcAllowed) 1 else 0,
+        if (xtcAllowed) 1 else 0,
         store.get4dArcDepth(), store.get4dDepth(), store.get4dLeadMs()
         )
     }
