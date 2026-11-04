@@ -77,6 +77,30 @@ TEST(FourDControlSurface, DisabledIsBitExact) {
     EXPECT_FALSE(fourd::status().enabled);
 }
 
+TEST(FourDControlSurface, CrosstalkRunsWithFourDMasterDisabled) {
+    fourd::shutdown();
+    fourd::ensureInit(48000.f, kBlock);
+    fourd::setEnabled(false);
+    fourd::setCrosstalkEnabled(true);
+
+    std::vector<float> l(kBlock), r(kBlock);
+    float crossPeak = 0.0f;
+    for (int block = 0; block < 16; ++block) {
+        for (int i = 0; i < kBlock; ++i) {
+            l[i] = 0.25f * std::sin(2.0f * kPi * 700.0f * (block * kBlock + i) / kSr);
+            r[i] = 0.0f;
+        }
+        fourd::applyOutputPlanar(l.data(), r.data(), kBlock);
+        if (block >= 5) {
+            for (float sample : r) crossPeak = std::max(crossPeak, std::fabs(sample));
+        }
+    }
+    EXPECT_FALSE(fourd::status().enabled);
+    EXPECT_GT(crossPeak, 1.0e-4f) << "XTC must remain an independent speaker-output stage";
+    fourd::setCrosstalkEnabled(false);
+    fourd::shutdown();
+}
+
 TEST(FourDControlSurface, PredictsOnsetOn120Bpm) {
     fourd::ensureInit(48000.f, kBlock);
     fourd::setEnabled(true);
