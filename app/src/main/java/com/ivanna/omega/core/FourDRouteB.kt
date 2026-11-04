@@ -3,6 +3,7 @@ package com.ivanna.omega.core
 import com.ivanna.omega.magisk.MagiskBridge
 import android.content.Context
 import com.ivanna.omega.audio.AudioRouteManager
+import com.ivanna.omega.audio.OutputRoute
 import com.ivanna.omega.audio.ExternalStereoPolicy
 import com.ivanna.omega.ui.SpatialAudioPrefs
 import java.util.concurrent.Executors
@@ -19,9 +20,9 @@ object FourDRouteB {
     private val pending = AtomicReference<String?>(null)
     private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "fourd-routeb").apply { isDaemon = true } }
 
-    fun json(context: Context, store: ParameterStore): String {
+    fun json(context: Context, store: ParameterStore, routeOverride: OutputRoute? = null): String {
         val ctx = context.applicationContext
-        val route = AudioRouteManager.detectOutputRoute()
+        val route = routeOverride ?: AudioRouteManager.detectOutputRoute()
         val declaredLineOut = SpatialAudioPrefs.load(ctx).externalStereoLineOut
         val xtcAllowed = ExternalStereoPolicy.allowTransauralXtc(route, declaredLineOut, store.is4dCrosstalkOn())
         return String.format(
@@ -43,8 +44,8 @@ object FourDRouteB {
     }
 
     /** Llamar tras guardar en [ParameterStore]; seguro desde el hilo de UI. */
-    fun push(context: Context, store: ParameterStore) {
-        pending.set(json(context, store))
+    fun push(context: Context, store: ParameterStore, routeOverride: OutputRoute? = null) {
+        pending.set(json(context, store, routeOverride))
         io.execute {
             val cmd = pending.getAndSet(null) ?: return@execute   // otro envío ya llevó el último estado
             runCatching { MagiskBridge.sendCommand(cmd) }
