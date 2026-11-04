@@ -82,7 +82,7 @@ public:
     // Ancho del "sweet spot": fuera de él la cancelación se relaja en lugar de
     // romper el timbre (a 0 = solo postura exacta, a 1 = tolerante).
     void setSweetSpotTolerance(float t) noexcept {
-        tol_.store(std::isfinite(t) ? std::clamp(t, 0.0f, 1.0f) : 0.35f, std::memory_order_relaxed);
+        tol_.store(std::isfinite(t) ? std::clamp(t, 0.0f, 1.0f) : 0.85f, std::memory_order_relaxed);
         recompute();
     }
 
