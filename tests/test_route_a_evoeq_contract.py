@@ -27,7 +27,7 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
         self.assertNotIn("new ", apply_body)
 
     def test_only_a_verified_calibration_is_published(self):
-        self.assertRegex(JNI, r"if \(eq->isReady\(\)\) g_evoEqA\.store\(eq, std::memory_order_release\)")
+        self.assertRegex(JNI, r"if \(eq->isReady\(\)\)\s*\{\s*g_evoEqA\.store\(eq, std::memory_order_release\)")
 
     def test_calibration_worker_clears_guard_after_success_or_failure(self):
         body = re.search(r"static void routeAStartEvoEqCalibration\(\).*?\n\}", JNI, re.S).group(0)
