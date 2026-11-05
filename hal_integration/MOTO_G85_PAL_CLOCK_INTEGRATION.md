@@ -200,7 +200,7 @@ Until those steps are completed, this branch is an integration/test improvement,
 
 The uploaded `IVANNA_PAL_PROBE.tar.gz` was inspected. It contains `report.txt` and `config_files_with_hits.txt`; it does not contain the expanded `report_deep.txt`.
 
-Observed on the actual device:
+Historical probe snapshot (previously recorded in this document; its Android 15 / SDK 35 identity conflicts with the Android 14 / SDK 34 `init_boot` now confirmed for the target). Do not treat this block as the current device identity until the probe is rerun on the current Android 14 boot:
 - `ro.product.model=moto g85 5G`, `ro.product.device=malmo`, `ro.board.platform=blair`, Android 15 / SDK 35, probe executed as root.
 - Vendor libraries present include `audio.primary.blair.so`, `libar-pal.so`, `libpalclient.so`, `libagm.so`, `libagmclient.so`, and `vendor.qti.hardware.pal@1.0-impl.so`.
 - PAL/AGM binaries expose timestamp-related symbols including `pal_get_timestamp`, `SessionAlsaPcm::getTimestamp`, `agm_get_session_time`, and `agm_get_buffer_timestamp`.
