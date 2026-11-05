@@ -1,4 +1,4 @@
-## Unreleased
+## v2.5.347 (638) - 2026-11-05
 
 - **Moto G85 / Qualcomm AGM:** se documenta el inventario de símbolos dinámicos de `libagm.so` suministrado y se amplía `hook_pal_agm.js` con observación pasiva de escritura/lectura AGM, ciclo de vida de sesión/grafo/dispositivo y consultas de timestamp. Los argumentos se registran como valores opacos: no se asume ABI ni se escriben parámetros. No habilita todavía inyección HAL, interceptación PCM ni ASRC físico; el firmware Android 14 debe confirmar identidad ELF, correlación frames/timestamp y actuador real.
 
