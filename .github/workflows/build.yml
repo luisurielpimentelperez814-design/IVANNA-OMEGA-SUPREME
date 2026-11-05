@@ -821,10 +821,18 @@ jobs:
             echo "Marcador [publish-release] detectado: recuperación explícita."
             exit 0
           fi
-
           git fetch --tags --force
-          LATEST_RELEASE_TAG=$(git tag --list 'v*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+
-
+          LATEST_RELEASE_TAG=$(git tag --list 'v*' --sort=-version:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1 || true)
+          if [ -n "$LATEST_RELEASE_TAG" ]; then
+            git show "$LATEST_RELEASE_TAG:version.properties" > "$RUNNER_TEMP/last-release-version.properties"
+            DECISION=$(python3 scripts/detect_release_bump.py --current version.properties --baseline "$RUNNER_TEMP/last-release-version.properties")
+            echo "Baseline: $LATEST_RELEASE_TAG"
+          else
+            DECISION=$(python3 scripts/detect_release_bump.py --current version.properties)
+            echo "No hay tag semver previo; se trata como primera release."
+          fi
+          echo "should_release=$DECISION" >> "$GITHUB_OUTPUT"
+          echo "Decisión de publicación: $DECISION"
   # ── JOB DE VERIFICACIÓN: descarga y valida artefactos publicados ──────
   verify-release:
     name: Verify published artifact (download → extract → validate)
