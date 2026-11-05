@@ -1172,8 +1172,10 @@ static int32_t omega_process(effect_handle_t self,
     if (ctx->fusionCore) ctx->fusionCore->setNpeShed(ctx->thermalSkipVolterra);   // NPE: mismo recorte térmico/CPU
     const bool wantVolterraPre = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
     const bool goldenEarRequestedPre = ctx->fusionCore && ctx->fusionCore->goldenEarNeedsNonlinearSlot();
+    const bool volterraTargetEnabled = wantVolterraPre &&
+        !goldenEarRequestedPre && !ctx->thermalSkipVolterra;
     if (ctx->volterraEngine) {
-        ctx->volterraEngine->setEnabled(wantVolterraPre && !goldenEarRequestedPre);
+        ctx->volterraEngine->setEnabled(volterraTargetEnabled);
         ctx->volterraEngine->setThermalBypass(ctx->thermalSkipVolterra);
     }
     const auto unifiedSnapPre = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
@@ -1520,7 +1522,7 @@ static int32_t omega_process(effect_handle_t self,
         // en lugar de outChunk para no sobreescribir el buffer de entrada in-place.
         const bool volterraHasKernel = ctx->volterraEngine && ctx->volterraEngine->hasEffectiveKernel();
         const bool volterraNeedsSlot = volterraHasKernel &&
-            (wantVolterraPre || !ctx->volterraEngine->isSilent());
+            (volterraTargetEnabled || !ctx->volterraEngine->isSilent());
         const bool volterraOwnsNonlinearSlot = volterraNeedsSlot &&
             !goldenEarOwnsNonlinearSlot &&
             ctx->stabilityGuard.arbitration().claimNonlinearSlot(
