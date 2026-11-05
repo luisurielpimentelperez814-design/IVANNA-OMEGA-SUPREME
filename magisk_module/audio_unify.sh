@@ -4,8 +4,8 @@
 # It does not edit vendor/init files, set LD_PRELOAD, restart the HAL,
 # change SELinux, or claim physical PAL/ASRC activation.
 
-MODROOT="/data/adb/modules"
-STATE="/data/adb/ivanna_omega/audio_unification"
+MODROOT="${IVANNA_MODROOT:-/data/adb/modules}"
+STATE="${IVANNA_AUDIO_UNIFY_STATE:-/data/adb/ivanna_omega/audio_unification}"
 LOG="$STATE/migration.log"
 LEGACY_MODULES="ivanna_audio_override ivanna_hal_fix ivanna_audio_probe omega_pal_presence_probe"
 MAIN_MODULE="ivanna_omega_supreme"
