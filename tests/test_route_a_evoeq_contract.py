@@ -29,6 +29,14 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
     def test_only_a_verified_calibration_is_published(self):
         self.assertRegex(JNI, r"if \(eq->isReady\(\)\) g_evoEqA\.store\(eq, std::memory_order_release\)")
 
+    def test_calibration_worker_clears_guard_after_success_or_failure(self):
+        body = re.search(r"static void routeAStartEvoEqCalibration\\(\\).*?\\n\\}", JNI, re.S).group(0)
+        self.assertIn("try {", body)
+        self.assertIn("catch (...)", body)
+        self.assertIn("delete eq;", body)
+        self.assertIn("g_evoEqACalibrating.store(false, std::memory_order_release);", body)
+        self.assertIn("}).detach();", body)
+
     def test_started_from_native_init_before_dsp_is_marked_ready(self):
         self.assertRegex(JNI, r"routeAStartEvoEqCalibration\(\);[^\n]*\n\s*g_initialized\.store\(true, std::memory_order_release\);")
 
