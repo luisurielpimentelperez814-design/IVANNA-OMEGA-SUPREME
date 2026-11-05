@@ -96,6 +96,12 @@ public:
 
     void setGoldenEarMode(bool enable);
 
+    // Reservar el slot no lineal mientras GoldenEar está solicitado o su envolvente
+    // conserva cola audible. Se consulta desde el callback antes de processStereo().
+    bool goldenEarNeedsNonlinearSlot() const noexcept {
+        return m_goldenEarActive || m_harmSmoothed_ > 1.0e-5f;
+    }
+
     void applyGoldenEarGAN(Ivanna::AudioBuffer* buffer);
 
     void setSafLatentParams(const float q[7]) noexcept;
@@ -119,8 +125,6 @@ public:
     bool setSceneDistance(float distanceScale) noexcept;
 
     // ── Supremacía Acústica: TinyML Kernel, Volterra H2 & Hexagon cDSP ────────
-    void setVolterraEnabled(bool enable) noexcept { m_volterraEnabled = enable; }
-    bool isVolterraEnabled() const noexcept { return m_volterraEnabled; }
     void setFastRpcEnabled(bool enable) noexcept { m_fastRpcEnabled = enable; }
     bool isFastRpcEnabled() const noexcept { return m_fastRpcEnabled; }
     void setAtiEnabled(bool enable) noexcept { m_atiEnabled = enable; }
@@ -331,7 +335,6 @@ private:
     IvannaSuperAgentMemory* m_memory = nullptr;
 
     bool m_goldenEarActive = false;
-    bool m_volterraEnabled = true;
     bool m_fastRpcEnabled = false;
     bool m_atiEnabled = true;
 

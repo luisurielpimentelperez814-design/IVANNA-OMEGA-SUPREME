@@ -11,6 +11,7 @@
 #include "../include/StereoWidener.h"
 #include "../anti_dolby.h"
 #include "../neuromorphic/volterra_h2_symmetric.hpp"
+#include "../supreme/SupremeAcousticStabilityGuard.hpp"
 
 namespace {
 bool allFinite(const std::vector<float>& v) {
@@ -100,6 +101,35 @@ TEST(AntiDolbyStateStability, ConvergesToTargetBounded) {
     st.tick(-1.0f);
     st.tick(std::numeric_limits<float>::infinity());
     ASSERT_TRUE(std::isfinite(st.currentWidener()));
+}
+
+// El slot no lineal es único: GoldenEar reclama antes que Volterra y la segunda
+// reclamación se rechaza dentro del mismo bloque de audio.
+TEST(NonlinearArbitration, GoldenEarWinsWhenItHasPriority) {
+    ivanna::supreme::SupremeAcousticStabilityGuard guard;
+    float left[16]{}, right[16]{};
+    guard.beginBlock(left, right, 16, true);
+    auto& arbitration = guard.arbitration();
+    EXPECT_TRUE(arbitration.claimNonlinearSlot(
+        ivanna::supreme::AcousticModuleId::GoldenEarGanAdaptiveV2));
+    EXPECT_FALSE(arbitration.claimNonlinearSlot(
+        ivanna::supreme::AcousticModuleId::VolterraKernel));
+    EXPECT_EQ(arbitration.activeNonlinearModule,
+              ivanna::supreme::AcousticModuleId::GoldenEarGanAdaptiveV2);
+    EXPECT_EQ(arbitration.duplicateAttemptsPrevented, 1u);
+}
+
+TEST(NonlinearArbitration, VolterraCanOwnSlotWhenGoldenEarIsInactive) {
+    ivanna::supreme::SupremeAcousticStabilityGuard guard;
+    float left[16]{}, right[16]{};
+    guard.beginBlock(left, right, 16, true);
+    auto& arbitration = guard.arbitration();
+    EXPECT_TRUE(arbitration.claimNonlinearSlot(
+        ivanna::supreme::AcousticModuleId::VolterraKernel));
+    EXPECT_FALSE(arbitration.claimNonlinearSlot(
+        ivanna::supreme::AcousticModuleId::GoldenEarGanAdaptiveV2));
+    EXPECT_EQ(arbitration.activeNonlinearModule,
+              ivanna::supreme::AcousticModuleId::VolterraKernel);
 }
 
 // ── V2: VolterraH2Symmetric mantiene salida finita y acotada por soft-clip ─

@@ -464,12 +464,9 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         const float mod  = safGain * (1.0f - 0.15f * safDelta);
         fc->setHarmonicGain(std::clamp(base * mod, 0.f, 2.0f));
     }
-    // Supremacía Acústica: Volterra H2, Hexagon cDSP y Active Transducer Inversion (ATI)
-    // Arbitraje de armónicos: si GoldenEarGAN está activo con ganancia positiva, Volterra
-    // se desactiva en este bloque para evitar doble saturación polinómica destructiva.
-    const bool allowVolterra = ((s.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0) &&
-                               (s.harmonic_gain <= 0.05f);
-    fc->setVolterraEnabled(allowVolterra);
+    // Volterra se gobierna en el consumidor PCM, donde puede consultar la cola
+    // real de GoldenEar y reclamar el slot de la misma generación de bloque.
+    // No usar aquí setVolterraEnabled(): esa bandera no gobierna ctx->volterraEngine.
     fc->setFastRpcEnabled((s.flags & ivanna::OMEGA_FLAG_FASTRPC_ON) != 0);
     fc->setAtiEnabled((s.flags & ivanna::OMEGA_FLAG_ATI_ON) != 0);
     // Modo AUX/altavoces (bits 25..31 del snapshot: activo + crossover + coherencia).
@@ -1174,8 +1171,9 @@ static int32_t omega_process(effect_handle_t self,
     // configuran antes del loop; dentro del loop solo corre process(L, R, chunk).
     if (ctx->fusionCore) ctx->fusionCore->setNpeShed(ctx->thermalSkipVolterra);   // NPE: mismo recorte térmico/CPU
     const bool wantVolterraPre = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
+    const bool goldenEarRequestedPre = ctx->fusionCore && ctx->fusionCore->goldenEarNeedsNonlinearSlot();
     if (ctx->volterraEngine) {
-        ctx->volterraEngine->setEnabled(wantVolterraPre);
+        ctx->volterraEngine->setEnabled(wantVolterraPre && !goldenEarRequestedPre);
         ctx->volterraEngine->setThermalBypass(ctx->thermalSkipVolterra);
     }
     const auto unifiedSnapPre = ivanna::unified::UnifiedParamSnapshotBus::instance().readOncePreLoop();
@@ -1276,6 +1274,13 @@ static int32_t omega_process(effect_handle_t self,
             1.0f - totalExciterReduction, unityCtx.harmonicBudget));
 
         ctx->stabilityGuard.beginBlock(L, R, (size_t)chunk, true);
+
+        // GoldenEar reclama primero el único slot no lineal. La reserva se mantiene
+        // durante su cola de release, no solo mientras el slider tenga ganancia > 0.
+        const bool goldenEarOwnsNonlinearSlot = fc &&
+            fc->goldenEarNeedsNonlinearSlot() &&
+            ctx->stabilityGuard.arbitration().claimNonlinearSlot(
+                ivanna::supreme::AcousticModuleId::GoldenEarGanAdaptiveV2);
 
         // Render binaural de objetos (VBAP + HRTF) + DSP de salida
         fc->processStereo(L, R, (size_t)chunk);
@@ -1513,35 +1518,42 @@ static int32_t omega_process(effect_handle_t self,
         // ── Series de Volterra de 2º Orden Truncadas (con SupremeTransitionEnvelope) ──
         // FIX (aliasing inBuf==outBuf en AudioFlinger): usar volterraScratch preasignado
         // en lugar de outChunk para no sobreescribir el buffer de entrada in-place.
-        if (ctx->volterraEngine && ctx->volterraEngine->hasEffectiveKernel() &&
+        const bool volterraHasKernel = ctx->volterraEngine && ctx->volterraEngine->hasEffectiveKernel();
+        const bool volterraNeedsSlot = volterraHasKernel &&
+            (wantVolterraPre || !ctx->volterraEngine->isSilent());
+        const bool volterraOwnsNonlinearSlot = volterraNeedsSlot &&
+            !goldenEarOwnsNonlinearSlot &&
             ctx->stabilityGuard.arbitration().claimNonlinearSlot(
-                ivanna::supreme::AcousticModuleId::VolterraKernel)) {
-            if (wantVolterraPre || !ctx->volterraEngine->isSilent()) {
-                for (int n = 0; n < chunk; ++n) {
-                    volterraScratch[2 * n]     = L[n];
-                    volterraScratch[2 * n + 1] = R[n];
-                }
-                ctx->volterraEngine->processInterleaved(volterraScratch, volterraScratch, (uint32_t)chunk, 2);
-                for (int n = 0; n < chunk; ++n) {
-                    L[n] = volterraScratch[2 * n];
-                    R[n] = volterraScratch[2 * n + 1];
-                }
-                ctx->stabilityGuard.enforceStageEnergyCeiling(
-                    ivanna::supreme::AcousticModuleId::VolterraKernel,
-                    L, R, (size_t)chunk, 1.20f, 0.95f);
-            } else {
-                const int tailFrames = std::min(chunk, 64);
-                const int startFrame = chunk - tailFrames;
-                for (int n = 0; n < tailFrames; ++n) {
-                    volterraScratch[2 * n]     = L[startFrame + n];
-                    volterraScratch[2 * n + 1] = R[startFrame + n];
-                }
-                ctx->volterraEngine->preserveInterleavedTail(volterraScratch, (uint32_t)tailFrames, 2u);
+                ivanna::supreme::AcousticModuleId::VolterraKernel);
+
+        if (volterraOwnsNonlinearSlot) {
+            // El motor ya recibió su target de enable antes del loop. Si solo conserva
+            // cola, sigue siendo dueño hasta que la envolvente llegue a silencio.
+            for (int n = 0; n < chunk; ++n) {
+                volterraScratch[2 * n]     = L[n];
+                volterraScratch[2 * n + 1] = R[n];
             }
+            ctx->volterraEngine->processInterleaved(volterraScratch, volterraScratch, (uint32_t)chunk, 2);
+            for (int n = 0; n < chunk; ++n) {
+                L[n] = volterraScratch[2 * n];
+                R[n] = volterraScratch[2 * n + 1];
+            }
+            ctx->stabilityGuard.enforceStageEnergyCeiling(
+                ivanna::supreme::AcousticModuleId::VolterraKernel,
+                L, R, (size_t)chunk, 1.20f, 0.95f);
+        } else if (ctx->volterraEngine && volterraHasKernel && !ctx->volterraEngine->isSilent()) {
+            // Si GoldenEar u otra etapa posee el slot, avanzar el release de Volterra
+            // sobre scratch descartable: la cola se extingue sin contaminar la salida.
+            ctx->volterraEngine->setEnabled(false);
+            for (int n = 0; n < chunk; ++n) {
+                volterraScratch[2 * n]     = L[n];
+                volterraScratch[2 * n + 1] = R[n];
+            }
+            ctx->volterraEngine->processInterleaved(
+                volterraScratch, volterraScratch, (uint32_t)chunk, 2);
         } else if (ctx->volterraEngine) {
-            // Sin kernel calibrado o sin el slot nonlinear, mantener la memoria FIR
-            // al día sin reclamar autoridad ni ejecutar el kernel. Así la primera
-            // activación válida no arranca con una línea de retardo vacía.
+            // Sin kernel efectivo o completamente silencioso: mantener caliente el
+            // historial FIR sin reclamar autoridad ni ejecutar el kernel.
             const int tailFrames = std::min(chunk, 64);
             const int startFrame = chunk - tailFrames;
             for (int n = 0; n < tailFrames; ++n) {
