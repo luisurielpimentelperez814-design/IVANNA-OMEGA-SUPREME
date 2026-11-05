@@ -78,10 +78,28 @@ public:
         v.speedOfSound   = std::clamp(v.speedOfSound, 300.0f, 380.0f);
         v.shadowGain     = std::clamp(v.shadowGain, 0.0f, 0.92f);
         v.listenerOffsetM = std::isfinite(v.listenerOffsetM) ? std::clamp(v.listenerOffsetM, -1.0f, 1.0f) : 0.0f;
-        geom_ = v;
+        // Los setters corren en hilos de CONTROL mientras processBlock() corre en el de audio:
+        // cada campo es atómico (relaxed) para que no haya carrera de datos. Una geometría que
+        // cambia a mitad de bloque puede mezclar un campo viejo y uno nuevo durante UN bloque
+        // (inocuo: ρ y el retardo se acotan siempre), nunca un valor desgarrado.
+        gSpan_.store(v.spanMeters, std::memory_order_relaxed);
+        gDist_.store(v.distanceMeters, std::memory_order_relaxed);
+        gHead_.store(v.headRadiusM, std::memory_order_relaxed);
+        gC_.store(v.speedOfSound, std::memory_order_relaxed);
+        gShadow_.store(v.shadowGain, std::memory_order_relaxed);
+        gOffset_.store(v.listenerOffsetM, std::memory_order_relaxed);
         recompute();
     }
-    Geometry geometry() const noexcept { return geom_; }
+    Geometry geometry() const noexcept {
+        Geometry g;
+        g.spanMeters     = gSpan_.load(std::memory_order_relaxed);
+        g.distanceMeters = gDist_.load(std::memory_order_relaxed);
+        g.headRadiusM    = gHead_.load(std::memory_order_relaxed);
+        g.speedOfSound   = gC_.load(std::memory_order_relaxed);
+        g.shadowGain     = gShadow_.load(std::memory_order_relaxed);
+        g.listenerOffsetM = gOffset_.load(std::memory_order_relaxed);
+        return g;
+    }
 
     void setEngage(bool on) noexcept { engage_.store(on, std::memory_order_relaxed); }
 
@@ -93,13 +111,13 @@ public:
     // no es realista (el desajuste de geometría la anula) y sí lo es el realce: se acota ρ para
     // que el peor caso mono no pase de `maxMonoBoostDb` (por defecto +4 dB; rango 0.5..9 dB).
     void setMaxMonoBoostDb(float db) noexcept {
-        maxMonoBoostDb_ = std::isfinite(db) ? std::clamp(db, 0.5f, 9.0f) : 4.0f;
+        maxMonoBoostDb_.store(std::isfinite(db) ? std::clamp(db, 0.5f, 9.0f) : 4.0f, std::memory_order_relaxed);
         recompute();
     }
-    float maxMonoBoostDb() const noexcept { return maxMonoBoostDb_; }
+    float maxMonoBoostDb() const noexcept { return maxMonoBoostDb_.load(std::memory_order_relaxed); }
     // Techo teórico del realce mono con el ρ vigente (dB). Telemetría; debe ser ≤ maxMonoBoostDb()+ε.
     float worstMonoBoostDb() const noexcept {
-        return -20.0f * std::log10(std::max(1.0f - rho_, 1.0e-3f));
+        return -20.0f * std::log10(std::max(1.0f - rho_.load(std::memory_order_relaxed), 1.0e-3f));
     }
     bool engaged() const noexcept { return engage_.load(std::memory_order_relaxed); }
 
@@ -122,6 +140,18 @@ public:
         recompute();
     }
 
+    // Postura ESTÁTICA del oyente respecto del par de altavoces, derivada de las coordenadas de
+    // la sala (ver CrosstalkGeometry.hpp): azimut (grados) y corrimiento lateral (m) respecto del
+    // centro del par. Se SUMA al desplazamiento dinámico del rastreador de cabeza (setHeadOffset),
+    // de modo que el seguimiento de cabeza no borra la postura calibrada.
+    void setListenerPose(float azimuthDeg, float lateralMeters) noexcept {
+        staticAzDeg_.store(std::isfinite(azimuthDeg) ? std::clamp(azimuthDeg, -45.0f, 45.0f) : 0.0f,
+                           std::memory_order_relaxed);
+        staticSideM_.store(std::isfinite(lateralMeters) ? std::clamp(lateralMeters, -0.35f, 0.35f) : 0.0f,
+                           std::memory_order_relaxed);
+        recompute();
+    }
+
     // ── Procesado (hilo de audio) ────────────────────────────────────────────
     void processBlock(float* __restrict L, float* __restrict R, int n) noexcept {
         if (!L || !R || n <= 0) return;
@@ -136,10 +166,11 @@ public:
             return;
         }
 
-        const float rho   = rho_;
-        const float frac  = delaySamples_ - std::floor(delaySamples_);
-        const int   base  = (int)std::floor(delaySamples_);
-        const float hpa   = hpAlpha_;   // coeficiente del paso-alto de reinyección
+        const float rho   = rho_.load(std::memory_order_relaxed);
+        const float dly   = delaySamples_.load(std::memory_order_relaxed);
+        const float frac  = dly - std::floor(dly);
+        const int   base  = (int)std::floor(dly);
+        const float hpa   = hpAlpha_.load(std::memory_order_relaxed);   // coeficiente del paso-alto de reinyección
         const int   sz    = (int)dl_.size();
 
         for (int i = 0; i < n; ++i) {
@@ -181,11 +212,12 @@ public:
     }
 
     // ── Telemetría ───────────────────────────────────────────────────────────
-    float itdMicroseconds() const noexcept { return (delaySamples_ / sr_) * 1.0e6f; }
-    float rho() const noexcept { return rho_; }
+    float itdMicroseconds() const noexcept { return (delaySamples_.load(std::memory_order_relaxed) / sr_) * 1.0e6f; }
+    float rho() const noexcept { return rho_.load(std::memory_order_relaxed); }
     // Máxima ganancia de graves introducida por el regulador (dB) — debe ser ≈ 0.
     float dcGainDb() const noexcept {
-        const float gLin = 1.0f / std::max(1.0f - rho_ * rho_, 1.0e-3f);
+        const float r = rho_.load(std::memory_order_relaxed);
+        const float gLin = 1.0f / std::max(1.0f - r * r, 1.0e-3f);
         return 20.0f * std::log10(gLin);
     }
     bool isActive() const noexcept { return wetSmooth_ > 0.5f; }
@@ -194,58 +226,67 @@ private:
     static inline float sanitize(float v) noexcept { return std::isfinite(v) ? v : 0.0f; }
 
     void recompute() noexcept {
+        // Todo se lee de atómicos y se escribe en atómicos: recompute() puede correr en un hilo de
+        // control (setGeometry/setListenerPose/setHeadOffset) mientras processBlock() lee en el de audio.
+        const Geometry g = geometry();
         // ITD geométrico: diferencia de camino entre el oído cercano y el lejano para
         // un par de altavoces en ±span/2 y un oyente con desplazamiento lateral.
-        const float half = geom_.spanMeters * 0.5f;
-        const float side = headSideM_.load(std::memory_order_relaxed) + geom_.listenerOffsetM;
-        const float az   = headAzDeg_.load(std::memory_order_relaxed) * 3.14159265358979f / 180.0f;
+        const float half = g.spanMeters * 0.5f;
+        // Desplazamiento dinámico del rastreador + postura estática calibrada desde las coordenadas.
+        const float side = std::clamp(headSideM_.load(std::memory_order_relaxed) +
+                                      staticSideM_.load(std::memory_order_relaxed) + g.listenerOffsetM, -0.35f, 0.35f);
+        const float azDeg = std::clamp(headAzDeg_.load(std::memory_order_relaxed) +
+                                       staticAzDeg_.load(std::memory_order_relaxed), -45.0f, 45.0f);
+        const float az   = azDeg * 3.14159265358979f / 180.0f;
 
         const float xL = -half - side, xR = +half - side;
-        const float earL = -geom_.headRadiusM, earR = +geom_.headRadiusM;
+        const float earL = -g.headRadiusM, earR = +g.headRadiusM;
 
-        const float dLL = std::sqrt((xL - earL) * (xL - earL) + geom_.distanceMeters * geom_.distanceMeters);
-        const float dLR = std::sqrt((xL - earR) * (xL - earR) + geom_.distanceMeters * geom_.distanceMeters);
-        const float dRL = std::sqrt((xR - earL) * (xR - earL) + geom_.distanceMeters * geom_.distanceMeters);
-        const float dRR = std::sqrt((xR - earR) * (xR - earR) + geom_.distanceMeters * geom_.distanceMeters);
+        const float dd = g.distanceMeters * g.distanceMeters;
+        const float dLL = std::sqrt((xL - earL) * (xL - earL) + dd);
+        const float dLR = std::sqrt((xL - earR) * (xL - earR) + dd);
+        const float dRL = std::sqrt((xR - earL) * (xR - earL) + dd);
+        const float dRR = std::sqrt((xR - earR) * (xR - earR) + dd);
 
         // Camino cruzado = mínimo de los dos cruces (el que de verdad domina).
         const float cross   = std::min(dLR, dRL);
         const float same    = std::min(dLL, dRR);
         const float dPath   = std::max(cross - same, 0.0f);
 
-        float delay = dPath / geom_.speedOfSound * sr_;
+        float delay = dPath / g.speedOfSound * sr_;
         // Corrección por giro de cabeza: el giro reduce el ITD efectivo (los altavoces
         // quedan menos laterales respecto del eje interaural).
         delay *= (1.0f - 0.35f * std::fabs(std::sin(az)));
-        delaySamples_ = std::clamp(delay, 2.0f, (float)(maxDelay_ - 3));
+        delaySamples_.store(std::clamp(delay, 2.0f, (float)(maxDelay_ - 3)), std::memory_order_relaxed);
 
         // ρ por sombra de cabeza: la atenuación contralateral crece con el exceso de
         // camino; se combina con la tolerancia de sweet spot (más tolerancia = ρ menor,
         // cancelación más suave y más robusta al movimiento).
         const float tol = tol_.load(std::memory_order_relaxed);
-        const float shadow = std::clamp(geom_.shadowGain * (1.0f + 2.0f * dPath), 0.0f, 0.92f);
+        const float shadow = std::clamp(g.shadowGain * (1.0f + 2.0f * dPath), 0.0f, 0.92f);
         const float drift  = std::clamp(std::fabs(side) / 0.18f + std::fabs(az) / 0.60f, 0.0f, 1.0f);
-        rho_ = std::clamp(shadow * (1.0f - 0.55f * tol) * (1.0f - 0.35f * drift), 0.0f, 0.92f);
+        float rho = std::clamp(shadow * (1.0f - 0.55f * tol) * (1.0f - 0.35f * drift), 0.0f, 0.92f);
         // Regularización por realce mono máximo: 1/(1-ρ) <= 10^(maxMonoBoostDb/20).
-        const float rhoCap = 1.0f - std::pow(10.0f, -maxMonoBoostDb_ / 20.0f);
-        rho_ = std::min(rho_, rhoCap);
+        const float rhoCap = 1.0f - std::pow(10.0f, -maxMonoBoostDb_.load(std::memory_order_relaxed) / 20.0f);
+        rho_.store(std::min(rho, rhoCap), std::memory_order_relaxed);
 
         // Paso-alto de reinyección a 120 Hz (un polo): protege el sub y el regulador DC.
-        hpAlpha_ = std::exp(-2.0f * 3.14159265358979f * 120.0f / sr_);
+        hpAlpha_.store(std::exp(-2.0f * 3.14159265358979f * 120.0f / sr_), std::memory_order_relaxed);
     }
 
     float sr_ = 48000.0f;
     int   maxBlock_ = 256;
     int   maxDelay_ = 80;
-    Geometry geom_{};
 
     std::vector<float> dl_, dr_;
     int   idx_ = 0;
 
-    float maxMonoBoostDb_ = 4.0f;
-    float rho_ = 0.0f;
-    float delaySamples_ = 6.0f;
-    float hpAlpha_ = 0.98f;
+    // Estado compartido entre hilos de control y de audio: todo atómico (relaxed).
+    std::atomic<float> gSpan_{0.90f}, gDist_{0.85f}, gHead_{0.0875f}, gC_{343.0f}, gShadow_{0.62f}, gOffset_{0.0f};
+    std::atomic<float> maxMonoBoostDb_{4.0f};
+    std::atomic<float> rho_{0.0f};
+    std::atomic<float> delaySamples_{6.0f};
+    std::atomic<float> hpAlpha_{0.98f};
     float hpL_ = 0.0f, hpR_ = 0.0f, hpXL_ = 0.0f, hpXR_ = 0.0f;
     float wetSmooth_ = 0.0f;
 
@@ -253,6 +294,8 @@ private:
     std::atomic<float> tol_{0.35f};
     std::atomic<float> headAzDeg_{0.0f};
     std::atomic<float> headSideM_{0.0f};
+    std::atomic<float> staticAzDeg_{0.0f};
+    std::atomic<float> staticSideM_{0.0f};
 };
 
 }} // namespace ivanna::spatial

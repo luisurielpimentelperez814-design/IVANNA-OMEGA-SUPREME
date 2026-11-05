@@ -10,6 +10,8 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <atomic>
+#include <thread>
 
 #include "ExcitationConductor.hpp"
 #include "MultibandHapticMapper.hpp"
@@ -532,4 +534,41 @@ TEST(ExposureDosimeter, PeakDetectorFlagsOverloadAndFeedsHaptics) {
     for (int i = 0; i < 50; ++i) d3.feed(osha.data(), osha.data(), 4800); // 5 s
     EXPECT_GT(d3.dose(), 0.0f);
     EXPECT_LT(d3.dose(), 0.01f);
+}
+
+// v2.5.344: los setters corren en hilos de control mientras processBlock() corre en el de audio.
+TEST(CrosstalkCancellation, GeometryRoundTripKeepsListenerOffset) {
+    ivanna::spatial::CrosstalkCanceller x; x.prepare(48000.0f, 256);
+    auto g = x.geometry(); g.spanMeters = 2.70f; g.distanceMeters = 2.00f; g.listenerOffsetM = 0.30f;
+    x.setGeometry(g);
+    const auto r = x.geometry();
+    EXPECT_FLOAT_EQ(r.spanMeters, 2.70f);
+    EXPECT_FLOAT_EQ(r.distanceMeters, 2.00f);
+    EXPECT_FLOAT_EQ(r.listenerOffsetM, 0.30f);
+}
+
+TEST(CrosstalkCancellation, ConcurrentGeometryUpdatesNeverProduceNonFiniteOutput) {
+    ivanna::spatial::CrosstalkCanceller x; x.prepare(48000.0f, 256); x.setEngage(true);
+    std::atomic<bool> stop{false};
+    std::thread ctl([&] {
+        float t = 0.0f;
+        while (!stop.load()) {
+            auto g = x.geometry();
+            g.spanMeters = 0.3f + 3.0f * (0.5f + 0.5f * std::sin(t));
+            g.distanceMeters = 0.5f + 2.0f * (0.5f + 0.5f * std::cos(t * 0.7f));
+            g.listenerOffsetM = 0.5f * std::sin(t * 1.3f);
+            x.setGeometry(g); x.setHeadOffset(0.1f * std::sin(t), 5.0f * std::cos(t));
+            t += 0.05f;
+        }
+    });
+    std::vector<float> L(256), R(256);
+    bool finite = true; float peak = 0.0f;
+    for (int b = 0; b < 2000; ++b) {
+        for (int i = 0; i < 256; ++i) { L[i] = 0.3f * std::sin(0.05f * (b * 256 + i)); R[i] = L[i]; }
+        x.processBlock(L.data(), R.data(), 256);
+        for (int i = 0; i < 256; ++i) { finite = finite && std::isfinite(L[i]) && std::isfinite(R[i]); peak = std::max(peak, std::fabs(L[i])); }
+    }
+    stop.store(true); ctl.join();
+    EXPECT_TRUE(finite);
+    EXPECT_LT(peak, 2.0f);
 }
