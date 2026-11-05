@@ -2,7 +2,7 @@
 
 - En Ruta B, GoldenEar reclama el único slot no lineal antes de ejecutar `processStereo()` y conserva la reserva mientras su envolvente mantiene cola audible.
 - Volterra solo inyecta PCM cuando obtiene el slot. Si pierde la prioridad y todavía tiene cola, avanza su release sobre scratch descartable; no mezcla esa cola en la salida. El historial FIR sigue actualizado cuando el kernel es identidad/inactivo.
-- Se elimina el indicador `setVolterraEnabled()` que no gobernaba la instancia real `ctx->volterraEngine`; el gate se aplica directamente al motor que consume PCM.
+- `omega_effect` deja de usar `setVolterraEnabled()` como autoridad (se conserva la API JNI histórica por compatibilidad); el gate se aplica directamente al motor real `ctx->volterraEngine` que consume PCM.
 - Añade regresiones del árbitro para prioridad GoldenEar y adquisición de Volterra cuando GoldenEar no está activo.
 - Alcance: arbitraje GoldenEar/Volterra en Ruta B. No declara resuelta toda la jerarquía no lineal (NPE/exciters), paridad total de Ruta A ni validación acústica en dispositivo.
 
