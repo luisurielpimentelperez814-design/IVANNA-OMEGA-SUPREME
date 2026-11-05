@@ -32,7 +32,7 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
 
     def test_calibration_worker_clears_guard_after_success_or_failure(self):
         start = re.search(r"static void routeAStartEvoEqCalibration\(\).*?\n\}", JNI, re.S).group(0)
-        worker = re.search(r"static void\\* routeAEvoEqCalibrationWorker\\(.*?\\n\\}", JNI, re.S).group(0)
+        worker = re.search(r"static void\* routeAEvoEqCalibrationWorker\(.*?\n\}", JNI, re.S).group(0)
         self.assertIn("pthread_attr_init", start)
         self.assertIn("pthread_create", start)
         self.assertIn("if (createRc != 0)", start)
