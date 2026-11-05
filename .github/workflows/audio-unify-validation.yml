@@ -1,0 +1,32 @@
+name: Audio module consolidation validation
+
+on:
+  pull_request:
+    paths:
+      - "magisk_module/audio_unify.sh"
+      - "magisk_module/ivanna_control.sh"
+      - "tests/audio_unify_test.sh"
+      - ".github/workflows/audio-unify-validation.yml"
+  push:
+    branches: ["**"]
+    paths:
+      - "magisk_module/audio_unify.sh"
+      - "magisk_module/ivanna_control.sh"
+      - "tests/audio_unify_test.sh"
+      - ".github/workflows/audio-unify-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  migration-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        run: |
+          sh -n magisk_module/audio_unify.sh
+          sh -n magisk_module/ivanna_control.sh
+          sh -n tests/audio_unify_test.sh
+      - name: Test reversible module migration in isolated fixture
+        run: sh tests/audio_unify_test.sh
