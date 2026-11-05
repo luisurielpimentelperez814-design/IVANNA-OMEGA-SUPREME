@@ -125,6 +125,9 @@ public:
     bool setSceneDistance(float distanceScale) noexcept;
 
     // ── Supremacía Acústica: TinyML Kernel, Volterra H2 & Hexagon cDSP ────────
+    // Compatibilidad JNI/API histórica; el consumidor omega_effect gobierna el motor real ctx->volterraEngine.
+    void setVolterraEnabled(bool enable) noexcept { m_volterraEnabled = enable; }
+    bool isVolterraEnabled() const noexcept { return m_volterraEnabled; }
     void setFastRpcEnabled(bool enable) noexcept { m_fastRpcEnabled = enable; }
     bool isFastRpcEnabled() const noexcept { return m_fastRpcEnabled; }
     void setAtiEnabled(bool enable) noexcept { m_atiEnabled = enable; }
@@ -335,6 +338,7 @@ private:
     IvannaSuperAgentMemory* m_memory = nullptr;
 
     bool m_goldenEarActive = false;
+    bool m_volterraEnabled = true; // estado de compatibilidad; no controla ctx->volterraEngine
     bool m_fastRpcEnabled = false;
     bool m_atiEnabled = true;
 
