@@ -22,6 +22,7 @@
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/RirConvolver.hpp"
+#include "pd_engine.hpp"
 
 namespace {
 std::atomic<size_t> g_rtAllocCount{0};
@@ -95,6 +96,14 @@ TEST(RtNoAllocDetectorTest, RouteA_UnifiedPipeline_10000BlocksZeroAlloc) {
     ivanna::supreme::SupremeAcousticStabilityGuard guard;
     guard.prepare(kSampleRate);
 
+    // HRTF real de Ruta A: preparar todo el estado antes del callback.
+    ivanna::PDEngine hrtfEngine;
+    hrtfEngine.init(static_cast<uint32_t>(kSampleRate));
+    hrtfEngine.set_binaural_enabled(true);
+    hrtfEngine.set_binaural_position(-35.0f, 0.75f);
+    alignas(64) float hrtfOutL[kBlockFrames]{};
+    alignas(64) float hrtfOutR[kBlockFrames]{};
+
     auto& bus = ivanna::unified::UnifiedParamSnapshotBus::instance();
     bus.resetToAllOff();
 
@@ -105,6 +114,8 @@ TEST(RtNoAllocDetectorTest, RouteA_UnifiedPipeline_10000BlocksZeroAlloc) {
     fillTestSignal(bufL, bufR, kBlockFrames, 0);
     pipeline.process(bufL, bufR, kBlockFrames);
     guard.processBlock(bufL, bufR, kBlockFrames);
+    hrtfEngine.process_block(bufL, bufR, hrtfOutL, hrtfOutR,
+                             static_cast<int>(kBlockFrames));
 
     g_rtAllocCount.store(0, std::memory_order_relaxed);
 
@@ -115,6 +126,8 @@ TEST(RtNoAllocDetectorTest, RouteA_UnifiedPipeline_10000BlocksZeroAlloc) {
             const float intensity = 0.2f + 0.6f * static_cast<float>((b >> 6) % 5u) * 0.25f;
             bus.setStageEnabled(ivanna::unified::StageId::PhaseOracleControl, en, intensity);
             bus.setStageEnabled(ivanna::unified::StageId::CochlearPinn, en, intensity);
+            const float azimuth = -70.0f + 140.0f * static_cast<float>((b >> 6) % 9u) / 8.0f;
+            hrtfEngine.set_binaural_position(azimuth, 0.65f);
         }
 
         fillTestSignal(bufL, bufR, kBlockFrames, b);
@@ -123,11 +136,13 @@ TEST(RtNoAllocDetectorTest, RouteA_UnifiedPipeline_10000BlocksZeroAlloc) {
             ivanna::unified::RtCallbackSanitizerScope rtScope;
             pipeline.process(bufL, bufR, kBlockFrames);
             guard.processBlock(bufL, bufR, kBlockFrames);
+            hrtfEngine.process_block(bufL, bufR, hrtfOutL, hrtfOutR,
+                                     static_cast<int>(kBlockFrames));
         }
     }
 
     EXPECT_EQ(g_rtAllocCount.load(std::memory_order_relaxed), 0u)
-        << "Ruta A realizó asignaciones de heap dentro de inRealtimeAudioCallback()";
+        << "Ruta A (pipeline + PDEngine/HRTF) realizó asignaciones dentro del callback";
 }
 
 TEST(RtNoAllocDetectorTest, RouteB_SpatialAndConvolver_10000BlocksZeroAlloc) {

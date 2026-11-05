@@ -1,3 +1,11 @@
+## v2.5.353 (644) - 2026-11-05
+
+- **Ruta A — HRTF sin asignaciones en el callback:** `PDEngine` reemplaza los dos `std::vector` de scratch HRTF por buffers `std::array` fijos de 2048 frames, coherentes con el límite de `nativeProcess` y los buffers `AudioThreadState`. Se elimina `resize()` del camino de audio.
+- **Degradación segura:** si un caller excede 2048 frames, HRTF se omite y la rampa binaural retorna suavemente a Spatial; no se indexa scratch fuera de rango.
+- **Prueba de tiempo real:** `test_rt_no_alloc` ejercita PDEngine/HRTF dentro del scope de callback durante 10 000 bloques, moviendo azimut desde el hilo de control. El gate exige cero asignaciones dinámicas.
+- **Paridad HRTF corregida:** HRTF real existe en Ruta A (`PDEngine::hrtf/HRTFConvolver`) y Ruta B (`HrtfManager`). Son implementaciones distintas; no se declara equivalencia perceptual ni se duplica el motor.
+- **Evidencia:** cambios de código y contratos sujetos al CI de este commit. No se afirma escucha, medición acústica ni validación física en el Moto G85.
+
 ## v2.5.352 (643) - 2026-11-05
 
 - **Ruta A — estado real del EQ evolutivo:** la UI consume el read-back JNI cada 500 ms y muestra por separado si el filtro está calibrado/validado y activo, si sigue calibrando/verificando, si el usuario lo desactivó o si la biblioteca nativa no está disponible. El interruptor continúa representando exclusivamente la intención persistida del usuario.

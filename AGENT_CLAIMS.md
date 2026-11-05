@@ -2724,3 +2724,12 @@ medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.p
 
 ### v2.5.349 — NPE en Ruta A
 **Hecho (verificado en host):** `NpeStereoCore` corre en la cadena nativa de la app, controlado sin daemon; el núcleo pasa 5/5. **No hecho:** compilación NDK, escucha/medición en el teléfono. Pendientes de paridad: HrtfManager (escena binaural), GoldenEar GAN, AdaptiveEngineV2, ATLAS.
+
+
+### v2.5.353 — HRTF Ruta A: scratch fijo y auditoría de paridad (2026-11-05)
+
+- **Hallazgo:** `PDEngine::process_block` podía ejecutar `std::vector::resize` al cambiar el tamaño de bloque con HRTF activo; el callback no debe asignar memoria.
+- **Cambio:** scratch HRTF fijo `std::array<float, 2048>`, alineado con el límite de frames que `nativeProcess` acepta y con `AudioThreadState`. Si un caller excede ese límite, HRTF no se procesa ni se lee fuera del buffer; el wet binaural retorna con rampa a Spatial.
+- **Prueba:** `test_rt_no_alloc` incluye PDEngine/HRTF dentro del detector durante 10 000 bloques y cambios de azimut desde el hilo de control. CI decide aceptación; no se presume que ya pasó.
+- **Paridad:** Ruta A contiene `PDEngine::hrtf/HRTFConvolver`; Ruta B usa `HrtfManager`. La capacidad existe en ambas, pero equivalencia de dataset, pose, latencia y respuesta perceptual sigue abierta.
+- **Límite de evidencia:** no hay escucha ni medición acústica en el Moto G85 en esta entrega.

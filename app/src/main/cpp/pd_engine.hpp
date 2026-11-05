@@ -38,6 +38,7 @@
 #include <cmath>
 #include <algorithm>
 #include <atomic>
+#include <array>
 #include <thread>
 #include <chrono>
 #include <pthread.h>
@@ -65,6 +66,8 @@ int    evo_load_state();   // 1 = ok, 0 = fallo/deshabilitado
 namespace ivanna {
 
 static constexpr int PD_DIM = 32;
+// Maximum Ruta A block: matches nativeProcess and AudioThreadState.
+static constexpr int kMaxBlockFrames = 2048;
 
 class PDEngine {
 public:
@@ -89,8 +92,8 @@ public:
                                                 // dos independientes desalinean fase y
                                                 // colapsan la imagen estéreo, no repetir eso)
     static constexpr float kBinauralRampCoeff = 0.01f;
-    std::vector<float>   hrtfBufL_, hrtfBufR_; // reusados entre bloques; resize
-                                                // solo si cambia n, nunca allocar por bloque
+    std::array<float, kMaxBlockFrames> hrtfBufL_{};
+    std::array<float, kMaxBlockFrames> hrtfBufR_{}; // fixed scratch: no heap in RT
 
     // ── Parameters ───────────────────────────────────────────────────────────
     std::atomic<int>   mode{1};   // 0=DSP, 1=DSP+NHO, 2=DSP+NHO+Spatial
@@ -210,6 +213,7 @@ public:
     // inL/inR = post-DSP audio; outL/outR = final output
     void process_block(const float* inL, const float* inR,
                        float* outL, float* outR, int n) noexcept {
+        if (n <= 0) return;
         // The single evolutionary genome path is published through UnifiedControlFrame.
 
         // Extract perceptual cues from block ALWAYS (even in mode 0) so PhaseOracle,
@@ -229,16 +233,12 @@ public:
             return;
         }
 
-        // FASE 8 paso 4 (b/3): procesar el bloque completo por HRTFConvolver
-        // de una sola llamada (es autocontenida — acumula en su ring buffer
-        // interno y drena a exactamente n muestras, confirmado por lectura
-        // directa de hrtf_convolver.cpp).
-        if (binauralOn || binauralRamp_ > 0.0005f) {
-            if (hrtfBufL_.size() != static_cast<size_t>(n)) {
-                hrtfBufL_.resize(n);
-                hrtfBufR_.resize(n);
-            }
-            hrtf.process(inL, inR, hrtfBufL_.data(), hrtfBufR_.data(), n);
+        // HRTF usa scratch fijo. Nunca se hace resize/alloc dentro del callback.
+        // Si un caller excede 2048 frames, se omite HRTF y la rampa vuelve a Spatial.
+        const bool hrtfBlockAvailable = n <= kMaxBlockFrames;
+        if (hrtfBlockAvailable && (binauralOn || binauralRamp_ > 0.0005f)) {
+            hrtf.process(inL, inR, hrtfBufL_.data(), hrtfBufR_.data(),
+                         static_cast<uint32_t>(n));
         }
 
         for (int i = 0; i < n; ++i) {
@@ -253,11 +253,11 @@ public:
                 float sL, sR;
                 spatial.process_sample(nhL, nhR, sL, sR, sample_rate);
 
-                const float target = binauralOn ? 1.f : 0.f;
+                const float target = (binauralOn && hrtfBlockAvailable) ? 1.f : 0.f;
                 binauralRamp_ += (target - binauralRamp_) * kBinauralRampCoeff;
 
                 float finalL = sL, finalR = sR;
-                if (binauralRamp_ > 0.0005f) {   // evita indexar hrtfBufL_ vacío si nunca se activó
+                if (hrtfBlockAvailable && binauralRamp_ > 0.0005f) {
                     finalL = sL * (1.f - binauralRamp_) + hrtfBufL_[i] * binauralRamp_;
                     finalR = sR * (1.f - binauralRamp_) + hrtfBufR_[i] * binauralRamp_;
                 }
