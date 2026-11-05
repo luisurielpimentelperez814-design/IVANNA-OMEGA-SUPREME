@@ -57,6 +57,8 @@
 #include "../spatial/IvannaAudioPipeline.hpp"
 #include "../music_intelligence/ImeBridge.hpp"
 #include "../music_intelligence/FourDControlSurface.hpp"   // Cadena 4D: alimentación, diafonía y dosímetro (v2.5.48)
+#include "../spatial/RoomGeometryConfig.hpp"
+#include "../spatial/CrosstalkCanceller.hpp"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../include/dc_blocker.hpp"
@@ -172,6 +174,25 @@ static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
 #include "../neuromorphic/CochlearActiveInverseModel.hpp"
 #include "../include/omega_wave_stages.hpp"
 #include "../supreme/SpatialWidthReadback.hpp"
+
+// ── Ruta A: geometría de sala → cancelador de diafonía 4D ───────────────────────────────────────────────
+// El cancelador de la cadena 4D (compartida con Ruta B) corría con la geometría de escritorio (0.90 m / 0.85 m)
+// porque, en Ruta A, nadie le pasaba la de la sala. Se deriva de FL/FR del mismo layout que usa el WFS de
+// Ruta A (ya trasladado al marco del oyente nativo fijo) con la misma función que Ruta B. fourd::setSpeakerGeometry
+// guarda el valor y lo aplica cuando la cadena exista; si nada cambió no recalcula.
+static void routeAApplyXtcGeometry(const float* x, const float* y, const float* z) noexcept {
+    const auto& room = ivanna::spatial::RoomGeometryConfig::defaultLayout();
+    const auto pl = ivanna::spatial::RoomGeometryConfig::crosstalkPlacement(
+        x, y, z, room.listenerX, room.listenerY, room.listenerZ);
+    if (!pl.valid) return;
+    ivanna::spatial::CrosstalkCanceller::Geometry g;
+    g.spanMeters = pl.spanM; g.distanceMeters = pl.distanceM; g.listenerOffsetM = pl.listenerOffsetM;
+    ivanna::fourd::setSpeakerGeometry(g);
+}
+static void routeAApplyDefaultXtcGeometry() noexcept {
+    const auto& room = ivanna::spatial::RoomGeometryConfig::defaultLayout();
+    routeAApplyXtcGeometry(room.speakerX.data(), room.speakerY.data(), room.speakerZ.data());
+}
 std::atomic<bool>  g_cochlearEnabled{false};
 std::atomic<float> g_cochlearIntensity{0.35f};
 ivanna::neuromorphic::CochlearActiveInverseEngine g_cochlearEngine;
@@ -749,6 +770,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     if (!g_routeAWfsEngine.prepare(static_cast<float>(sr), 2048)) {
         LOGE("Ruta A WFS: inicialización fallida; salida permanece en bypass");
     }
+    routeAApplyDefaultXtcGeometry();
     g_eq.setParams(g_params);
     g_comp.setParams(g_params);
     g_exciter.setParams(g_params);
@@ -2002,6 +2024,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     if (!g_routeAWfsEngine.prepare(static_cast<float>(sr), 2048)) {
         LOGE("Ruta A WFS: inicialización fallida; salida permanece en bypass");
     }
+    routeAApplyDefaultXtcGeometry();
     g_eq.setParams(g_params); g_comp.setParams(g_params);
     g_exciter.setParams(g_params); g_widener.setParams(g_params);
     // Compensación de headroom EQ en init (misma lógica que nativeSetEQParams).
@@ -3405,6 +3428,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetWfsSpeakerLayout(
     }
 
     g_routeAWfsEngine.setSpeakerLayout(x, y, z);
+    routeAApplyXtcGeometry(x, y, z);
 
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;

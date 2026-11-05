@@ -1,3 +1,9 @@
+## v2.5.346 (637) - 2026-11-04
+
+- **Transaural en Ruta A (captura de reproducción):** la geometría de sala 3.83 × 2.83 × 7.00 m del cancelador de diafonía solo se aplicaba en `omega_effect.cpp` (Ruta B). El cancelador de Ruta A es el de la cadena 4D y seguía con la geometría de escritorio (0.90 m / 0.85 m). Ahora se deriva de FL/FR del layout del WFS de Ruta A con la misma función que Ruta B, al preparar el motor y al cambiar el layout.
+- **Auditoría de paridad A/B:** `docs/ROUTE_A_EFFECT_PARITY.md`. `IvannaFusionEngine` solo se compila en `libomega_effect.so`; los efectos sin equivalente en Ruta A son EvolutionaryEQ, la escena binaural de `HrtfManager`, GoldenEar GAN, `AdaptiveEngineV2` y los bits `ATLAS_*` (el offload FastRPC no es trasladable). **No se movió ningún efecto de B a A en esta versión**: hacerlo en bloque duplicaría etapas que Ruta A ya tiene y no hay forma de comprobar el sonido aquí.
+- **Alcance:** verificado con prueba estructural y compilación aislada del helper; la biblioteca JNI completa (NDK) y el dispositivo quedan sin comprobar.
+
 ## v2.5.345 (636) - 2026-11-04
 
 - **Activación transaural por ruta:** XTC se habilita solo en USB/AUX cuando el usuario declara una línea estéreo externa. Si no existe preferencia XTC guardada, la declaración la habilita por defecto; un OFF guardado prevalece. Bluetooth, altavoz interno, rutas desconocidas y salidas USB/AUX sin declaración quedan en bypass. Si se usa el mismo DAC con audífonos, el usuario debe apagar la declaración: Android no identifica la carga analógica.

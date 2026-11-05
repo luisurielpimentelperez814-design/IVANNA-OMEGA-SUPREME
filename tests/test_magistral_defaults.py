@@ -82,6 +82,15 @@ class MagistralDefaultsTest(unittest.TestCase):
         self.assertIn("crosstalkPlacement", eff)
         self.assertIn("fourd::setSpeakerGeometry", eff)
 
+    def test_xtc_geometry_is_wired_in_route_a_jni(self):
+        jni = read(os.path.join(CPP, "jni", "ivanna_omega_jni.cpp"))
+        self.assertIn("static void routeAApplyXtcGeometry", jni)
+        self.assertIn("crosstalkPlacement", jni)
+        self.assertIn("fourd::setSpeakerGeometry", jni)
+        # al preparar el motor (dos sitios de arranque) y al cambiar el layout del WFS de Ruta A
+        self.assertEqual(jni.count("routeAApplyDefaultXtcGeometry();"), 2)
+        self.assertRegex(jni, r"g_routeAWfsEngine\.setSpeakerLayout\(x, y, z\);\s*\n\s*routeAApplyXtcGeometry\(x, y, z\);")
+
 
 if __name__ == "__main__":
     unittest.main()

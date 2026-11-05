@@ -56,6 +56,12 @@ que la siguiente sesión sepa el estado real.
 **No declarar "transaural validado":** la geometría sigue siendo un modelo nominal del perfil de sala; falta calibración 2×2 altavoz→oído con micrófono binaural y validación en el Moto G85/posición real de escucha.
 **No tocar:** no quitar el tope de realce ni las pruebas `CrosstalkCancellation.*` (impiden volver a un cancelador que no cancela).
 
+### Paridad de efectos Ruta A / Ruta B — captura de reproducción (2026-11-04)
+**Responsable:** sesión Claude, por indicación directa del propietario ("todos los efectos por Ruta A").
+**Hecho (verificado por lectura y prueba estructural, no en dispositivo):** v2.5.346 aplica también en Ruta A (JNI, cadena 4D) la geometría de sala del cancelador de diafonía; antes solo llegaba a Ruta B (`omega_effect.cpp`) y el de Ruta A corría con la de escritorio. Auditoría completa en `docs/ROUTE_A_EFFECT_PARITY.md`: `IvannaFusionEngine` solo se compila en `libomega_effect.so`; sin equivalente en Ruta A: EvolutionaryEQ, escena binaural de `HrtfManager`, GoldenEar GAN, `AdaptiveEngineV2`, bits `ATLAS_*`.
+**Decisión:** **no** se trasladó ningún efecto de B a A; trasladar en bloque duplicaría etapas que Ruta A ya tiene y cambiaría el sonido sin prueba posible aquí (ver el historial del gate de `PlaybackCaptureService` más arriba). Cada traslado: correspondencia de parámetros, identidad apagado, prueba host y escucha en el dispositivo.
+**No tocar:** el bloque "Transaural / CrosstalkCanceller" de arriba pertenece a otra sesión; esta entrada solo añade el cableado de la geometría en Ruta A.
+
 ### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
 **Responsable:** sesion Claude, por indicacion directa del propietario.
 **Hecho (verificado por lectura, host y CI; no en dispositivo):** el modulo principal compila y empaqueta `libivanna_pal_presence_probe.so` (inerte) y expone `ivanna_control.sh preload`, que decide `LOADED`/`NOT_LOADED` con `/proc/<pid>/maps`. Ver `hal_integration/moto_g85/pal_preload/README.md`.
