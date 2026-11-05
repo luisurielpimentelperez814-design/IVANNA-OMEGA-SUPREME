@@ -21,6 +21,7 @@
 #include <atomic>
 #include <algorithm>
 #include <thread>
+#include <pthread.h>
 #include <mutex>
 #include <chrono>
 #include <condition_variable>
@@ -202,29 +203,37 @@ static std::atomic<bool> g_evoEqAEnabled{true};   // por defecto ON: Ruta B lo a
 static std::atomic<bool> g_evoEqACalibrating{false};
 static float g_evoEqAWet = 0.0f;                  // solo lo toca el hilo de audio (bajo g_dspProcessMutex)
 
+static void* routeAEvoEqCalibrationWorker(void*) noexcept {
+    Ivanna::EvolutionaryEQ* eq = new (std::nothrow) Ivanna::EvolutionaryEQ();
+    if (eq) {
+        eq->calibrate(48000.0f);
+        if (eq->isReady()) {
+            g_evoEqA.store(eq, std::memory_order_release);
+            eq = nullptr;  // propiedad transferida al proceso; el hot-path nunca libera el objeto
+        }
+    }
+    delete eq;  // asignacion fallida/no verificada: Ruta A permanece en identidad
+    g_evoEqACalibrating.store(false, std::memory_order_release);
+    return nullptr;
+}
+
 static void routeAStartEvoEqCalibration() noexcept {
     bool expected = false;
     if (!g_evoEqACalibrating.compare_exchange_strong(expected, true)) return;   // una sola vez mientras calibra
-    try {
-        std::thread([] {
-            Ivanna::EvolutionaryEQ* eq = nullptr;
-            try {
-                eq = new (std::nothrow) Ivanna::EvolutionaryEQ();
-                if (eq) {
-                    eq->calibrate(48000.0f);
-                    if (eq->isReady()) {
-                        g_evoEqA.store(eq, std::memory_order_release);
-                        eq = nullptr;  // propiedad transferida al proceso; el hot-path nunca libera el objeto
-                    }
-                }
-            } catch (...) {
-                // Fallo de calibracion: mantener Ruta A en identidad y permitir reintento en el siguiente init.
-            }
-            delete eq;  // incluye asignacion fallida/no verificada; nunca publicar un filtro parcial
-            g_evoEqACalibrating.store(false, std::memory_order_release);
-        }).detach();
-    } catch (...) {
-        // Si no se puede crear el worker, no dejar bloqueado el estado "calibrando".
+
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0) {
+        g_evoEqACalibrating.store(false, std::memory_order_release);
+        return;
+    }
+    const int detachRc = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_t worker{};
+    const int createRc = (detachRc == 0)
+        ? pthread_create(&worker, &attr, routeAEvoEqCalibrationWorker, nullptr)
+        : detachRc;
+    pthread_attr_destroy(&attr);
+    if (createRc != 0) {
+        // Fallo de creacion: permitir que el siguiente nativeInit vuelva a intentarlo.
         g_evoEqACalibrating.store(false, std::memory_order_release);
     }
 }
