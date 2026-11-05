@@ -2,7 +2,7 @@
 
 ## Scope and exact target build
 
-Observations supplied from Termux on a Moto G85, Android 15, dated 2026-10-20. Target fingerprint:
+Historical observations supplied from Termux on a Moto G85, dated 2026-10-20, and labeled Android 15. The owner has since confirmed the current target is Android 14 / SDK 34; treat the hashes, Build IDs, offsets and fingerprint below as historical until recaptured on that Android 14 build. Target fingerprint from the historical capture:
 
 `motorola/malmo_gn/malmo:15/V1UOS35H.74-16-4-16/11943-1eca7:user/release-keys`
 
@@ -148,7 +148,7 @@ llvm-objdump -s --start-address=0x880470 --stop-address=0x8804b0 "$SO" 2>/dev/nu
 Also inspect direct callers of 0x256894 to establish the true signature and function boundary. Avoid guessing a control name or writing any mixer array based only on this evidence.
 
 
-## Checkpoint — Android 15 malmo_g / Blair MFC and timestamp ABI (2026-10-21)
+## Historical checkpoint — Android 15 malmo_g / Blair MFC and timestamp ABI (2026-10-21; not current Android 14 validation)
 
 This checkpoint records the latest public-header/source transcriptions supplied during the investigation. These are **source-side claims to compare against the exact device binary**, not yet independent confirmation that every public mirror matches the installed vendor build.
 
