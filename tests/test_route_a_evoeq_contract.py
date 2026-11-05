@@ -20,8 +20,9 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
 
     def test_calibration_runs_on_its_own_thread_never_in_the_audio_callback(self):
         body = re.search(r"static void routeAStartEvoEqCalibration\(\).*?\n\}", JNI, re.S).group(0)
-        self.assertIn("std::thread", body)
-        self.assertIn(".detach()", body)
+        self.assertIn("pthread_create", body)
+        self.assertIn("PTHREAD_CREATE_DETACHED", body)
+        self.assertIn("routeAEvoEqCalibrationWorker", body)
         apply_body = re.search(r"static void routeAApplyEvoEq\(.*?\n\}", JNI, re.S).group(0)
         self.assertNotIn("calibrate", apply_body)
         self.assertNotIn("new ", apply_body)
@@ -30,12 +31,14 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
         self.assertRegex(JNI, r"if \(eq->isReady\(\)\)\s*\{\s*g_evoEqA\.store\(eq, std::memory_order_release\)")
 
     def test_calibration_worker_clears_guard_after_success_or_failure(self):
-        body = re.search(r"static void routeAStartEvoEqCalibration\(\).*?\n\}", JNI, re.S).group(0)
-        self.assertIn("try {", body)
-        self.assertIn("catch (...)", body)
-        self.assertIn("delete eq;", body)
-        self.assertIn("g_evoEqACalibrating.store(false, std::memory_order_release);", body)
-        self.assertIn("}).detach();", body)
+        start = re.search(r"static void routeAStartEvoEqCalibration\(\).*?\n\}", JNI, re.S).group(0)
+        worker = re.search(r"static void\\* routeAEvoEqCalibrationWorker\\(.*?\\n\\}", JNI, re.S).group(0)
+        self.assertIn("pthread_attr_init", start)
+        self.assertIn("pthread_create", start)
+        self.assertIn("if (createRc != 0)", start)
+        self.assertIn("g_evoEqACalibrating.store(false, std::memory_order_release);", start)
+        self.assertIn("delete eq;", worker)
+        self.assertIn("g_evoEqACalibrating.store(false, std::memory_order_release);", worker)
 
     def test_started_from_native_init_before_dsp_is_marked_ready(self):
         self.assertRegex(JNI, r"routeAStartEvoEqCalibration\(\);[^\n]*\n\s*g_initialized\.store\(true, std::memory_order_release\);")
