@@ -11,6 +11,7 @@ This directory contains the reusable HAL-side hook. It is not a replacement for 
 - `ivanna_pal_mmap_position_adapter.hpp`: converts one `pal_stream_get_mmap_position()` result (frames + `CLOCK_MONOTONIC` ns) into a validated 64-bit frame sample; target code supplies the callback bound to its existing PAL stream handle. Host tests cover 32-bit wrap and fail-closed resets; actual Motorola API support remains unverified.
 - `ivanna_pal_active_stream_clock_publisher.hpp`: report-only bridge that combines the paired-position adapter with the shared snapshot publisher. Bind its callback to the active stream's real `pal_stream_handle_t`; poll at 10–20 Hz from a serialized non-real-time control task. It does not command ASRC and does not attach itself to the proprietary HAL automatically.
 - `tools/probe_moto_g85_pal.sh`: read-only on-device probe that gathers the PAL/ASRC evidence the Qualcomm seam still needs (see `MOTO_G85_PAL_CLOCK_INTEGRATION.md`).
+- `../docs/device_audits/MOTO_G85_INIT_BOOT_AUDIT.md`: análisis del `ivanna_init_boot_a.img` recuperado (Android 14 / SDK 34), hash, inventario del ramdisk, configuración Magisk y `snapuserd`; documenta por qué no es un punto de integración PAL/ASRC ni acredita el `init_boot` Android 15 activo.
 - `sepolicy/` and `init.ivanna_audio_clock.rc`: product-specific templates only; adapt to the target policy and init layout.
 
 Add `app/src/main/cpp/include` to the target HAL module's include paths. Compile the target HAL against the same C++ standard and NDK/platform toolchain used by that HAL.
