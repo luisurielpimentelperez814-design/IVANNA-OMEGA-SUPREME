@@ -43,7 +43,6 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     m_transition_env.setImmediate(0.0f);
 
     m_h1 = static_cast<float*>(memalign(align, static_cast<size_t>(m_kernel_length) * sizeof(float)));
-    const size_t h2_size = (static_cast<size_t>(m_kernel_length) * (m_kernel_length + 1u)) / 2u;
     // H2 es cuadrático O(K²): no reservar cientos de MB para el kernel cero
     // que acompaña al estado sin calibrar. Se materializa solo al cargar H2 real.
     m_h2 = nullptr;
