@@ -2,6 +2,8 @@
 
 ## Scope
 
+**Target identity correction (2026-11-05):** the owner confirms the Moto G85 currently runs Android 14 / SDK 34. The Android 15 / SDK 35 identity and image hash recorded below (`f6642...`) belong to a separate earlier evidence set and are not authoritative for the current target. The separately supplied `ivanna_init_boot_a.img` analyzed in `docs/device_audits/MOTO_G85_INIT_BOOT_AUDIT.md` has SHA-256 `db3dd9987183fb843b7b274f43dd7ec66a7670d737853df6d00f24361759e9e1` and identifies Android 14 / SDK 34. Do not apply Android 15-specific init ordering conclusions from this historical report to the Android 14 device without revalidating against Android 14 init sources and the current vendor RC.
+
 This report records a read-only analysis of the user-supplied active-slot
 `init_boot_a.img`, the exact vendor audio service RC, the installed module
 scripts, and the PAL HIDL dynamic-section report. It does not modify or flash
@@ -9,7 +11,7 @@ the phone, and it does not claim PAL interposition or ASRC activation.
 
 ## Active init_boot image
 
-Evidence supplied for the Moto G85 / Android 15 / Magisk 30.7 target:
+Historical evidence set (not the current owner-confirmed Android 14 target), previously labeled Moto G85 / Android 15 / Magisk 30.7:
 
 - Image size: 8,388,608 bytes (8 MiB).
 - SHA-256: `f6642cbdea72e1b5927bfae524778071b11215f4b2289e9f91594c8b696c72b2`.
@@ -222,7 +224,7 @@ probe inert. A successful mapping alone would still not prove PAL function
 interposition or ASRC PCM processing.
 
 
-## Corrected init import-order finding — Magisk v30.7 / Android 15
+## Historical init import-order finding — Magisk v30.7 / Android 15 (not validated for current Android 14 target)
 
 The earlier candidate suggesting that a top-level `overlay.d/*.rc` could
 provide a later duplicate `vendor.audio-hal` service definition is withdrawn.
