@@ -1,0 +1,121 @@
+name: Moto G85 AndKittyInjector safe build validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/moto-g85-andkittyinjector-smoke.yml"
+      - "hal_integration/moto_g85/andkittyinjector_smoke/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64-safe-smoke:
+    name: Build pinned AndKittyInjector ARM64 + inert smoke library
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            ndk;27.2.12479018
+            cmake;3.30.3
+          accept-android-sdk-licenses: true
+
+      - name: Fetch pinned upstream source (recursive submodules)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --branch v6.0.0 --depth 1 --recurse-submodules \
+            https://github.com/MJx0/AndKittyInjector.git upstream/AndKittyInjector
+          ACTUAL="$(git -C upstream/AndKittyInjector rev-parse HEAD)"
+          EXPECTED="d39b4584cc6dd442bdee7dcd646f78405f9de541"
+          test "$ACTUAL" = "$EXPECTED" || {
+            echo "::error::Unexpected AndKittyInjector source revision: $ACTUAL"
+            exit 1
+          }
+          git -C upstream/AndKittyInjector submodule status --recursive
+          test -f upstream/AndKittyInjector/LICENSE
+          cp upstream/AndKittyInjector/LICENSE upstream-LICENSE.txt
+          echo "UPSTREAM_COMMIT=$ACTUAL" >> "$GITHUB_ENV"
+
+      - name: Configure and build ARM64 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          cmake -S upstream/AndKittyInjector/AndKittyInjector \
+            -B build/andkitty-arm64 \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-29 \
+            -DANDROID_STL=c++_static \
+            -DKT_DISABLE_KEYSTONE=ON \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/andkitty-arm64 --parallel 2
+          BIN="build/andkitty-arm64/AndKittyInjector"
+          test -x "$BIN"
+          "$BIN" --version
+          "$BIN" --help | tee build/andkitty-help.txt
+          grep -q -- "--memfd" build/andkitty-help.txt
+          grep -q -- "--pid" build/andkitty-help.txt
+          "$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$BIN" | tee build/andkitty-elf.txt
+          grep -q "AArch64" build/andkitty-elf.txt
+          file "$BIN"
+
+      - name: Build inert JNI smoke library (no PAL symbols, no PCM hooks)
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          OUT="build/libivanna_inject_smoke.so"
+          mkdir -p build
+          "$CC" -std=c11 -O2 -fPIC -fvisibility=hidden -Wall -Wextra -Werror \
+            -shared hal_integration/moto_g85/andkittyinjector_smoke/smoke.c \
+            -o "$OUT" -Wl,-z,relro,-z,now -Wl,-z,max-page-size=16384 \
+            -Wl,--build-id=sha1 -llog
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$OUT" | tee build/smoke-elf.txt
+          grep -q "AArch64" build/smoke-elf.txt
+          DYN="$("$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -dW "$OUT")"
+          ! grep -qiE "libc\+\+_shared|libpal|libagm" <<<"$DYN"
+          NM="$("$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" -D --defined-only "$OUT")"
+          grep -q "JNI_OnLoad" <<<"$NM"
+          ! grep -Eq "pal_|agm_" <<<"$NM"
+          echo "$DYN" > build/smoke-dynamic.txt
+          echo "$NM" > build/smoke-symbols.txt
+
+      - name: Assemble checksums and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp build/andkitty-arm64/AndKittyInjector out/AndKittyInjector-arm64
+          cp build/libivanna_inject_smoke.so out/
+          cp upstream-LICENSE.txt out/AndKittyInjector-LICENSE.txt
+          cp build/andkitty-elf.txt build/smoke-elf.txt build/smoke-dynamic.txt build/smoke-symbols.txt out/
+          {
+            echo "upstream=https://github.com/MJx0/AndKittyInjector"
+            echo "upstream_tag=v6.0.0"
+            echo "upstream_commit=$UPSTREAM_COMMIT"
+            echo "target_abi=arm64-v8a"
+            echo "android_api=29"
+            echo "ndk=27.2.12479018"
+            echo "memfd_cli_flag=$(grep -c -- '--memfd' build/andkitty-help.txt)"
+            echo "safety=smoke library only; no PAL interposition; no PCM access"
+          } > out/BUILD_INFO.txt
+          (cd out && sha256sum * > SHA256SUMS)
+          cat out/BUILD_INFO.txt
+          cat out/SHA256SUMS
+
+      - name: Upload safe validation bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: moto-g85-andkittyinjector-arm64-smoke
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
