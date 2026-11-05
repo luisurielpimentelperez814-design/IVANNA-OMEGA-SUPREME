@@ -1,3 +1,9 @@
+## v2.5.350 (641) - 2026-11-05
+
+- **EQ evolutivo de Ruta A — interruptor fiel y persistente:** el interruptor se pintaba con el estado "calibrado y activo", falso durante los primeros segundos (la calibración corre en su hilo), y apagarlo no sobrevivía a un reinicio: el nativo vuelve a ON y el usuario lo oía sin saberlo. Ahora la elección se guarda (`EvolutionaryEqPrefs`, `ivanna_ui_prefs`/`evo_eq_enabled`), se reaplica al arrancar en `PersistedStateRestorer` y el panel la lee de ahí. Contrato en `tests/test_route_a_evoeq_contract.py` (mutación comprobada).
+- **Auditoría de paridad A/B corregida (`docs/ROUTE_A_EFFECT_PARITY.md`):** Atlas **sí** existe en Ruta A (`SceneTargetBus` desde `ivanna_ime_jni.cpp`; solo los bits del snapshot son de Ruta B). `AdaptiveEngineV2` queda sin portar a propósito: sería un segundo controlador sobre los mismos actuadores que ya mueve el ADE. Se documenta la curva objetivo del EQ evolutivo y su retardo de 128 muestras.
+- **Alcance:** Kotlin y contratos estructurales; no se compiló con el SDK de Android ni se escuchó en el dispositivo.
+
 ## v2.5.349 (640) - 2026-11-05
 
 - **Ruta A — NPE neuromorfico:** con el motor nativo activo, `PlaybackCaptureService` no ejecuta `IvannaNpeEngine` (Kotlin) para no apilar etapas, así que el interruptor y los parámetros del NPE no tenían efecto en la ruta que de verdad intercepta el audio (solo llegaban al módulo, Ruta B). Ahora `NpeStereoCore` (la misma cadena por muestra que usa Ruta B: NHO, pool LIF, inhibición lateral, compresión OHC, AGC) corre en `nativeProcess` y `nativeProcessBlock` justo antes del punch y el limitador final.

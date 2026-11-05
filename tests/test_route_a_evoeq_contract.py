@@ -33,8 +33,24 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
         self.assertRegex(JNI, r"routeAStartEvoEqCalibration\(\);[^\n]*\n\s*g_initialized\.store\(true, std::memory_order_release\);")
 
     def test_ui_exposes_the_toggle(self):
-        self.assertIn("nativeSetEvolutionaryEqEnabled", UI)
         self.assertIn("EQ EVOLUTIVO 512", UI)
+
+    def test_switch_is_persisted_and_restored_at_startup(self):
+        prefs = open(os.path.join(ROOT, "app/src/main/java/com/ivanna/omega/core/EvolutionaryEqPrefs.kt"), encoding="utf-8").read()
+        restorer = open(os.path.join(ROOT, "app/src/main/java/com/ivanna/omega/core/PersistedStateRestorer.kt"), encoding="utf-8").read()
+        self.assertIn("nativeSetEvolutionaryEqEnabled", prefs)
+        self.assertIn("putBoolean(KEY, enabled)", prefs)
+        self.assertIn("EvolutionaryEqPrefs.restore(ctx)", restorer)
+        # el panel guarda por el objeto (persiste + nativo), no llama al nativo directo
+        self.assertIn("EvolutionaryEqPrefs.setEnabled(context, en)", UI)
+        self.assertNotIn("nativeSetEvolutionaryEqEnabled", UI)
+
+    def test_switch_is_not_painted_from_the_calibration_state(self):
+        # nativeIsEvolutionaryEqActive() es false mientras calibra: pintaria "apagado" estando encendido
+        block = re.search(r"var evoEqEnabled by remember.*?\n    \}?\n", UI, re.S)
+        init = UI[UI.index("var evoEqEnabled by remember"):UI.index("var evoEqEnabled by remember") + 220]
+        self.assertNotIn("nativeIsEvolutionaryEqActive", init)
+        self.assertIn("EvolutionaryEqPrefs.isEnabled(context)", init)
 
 
 if __name__ == "__main__":

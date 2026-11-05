@@ -204,12 +204,10 @@ fun IvannaControlPanel(
             if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsVolterraEnabled() }.getOrDefault(true) else true
         )
     }
-    // EQ evolutivo de 512 bandas en Ruta A (paridad con Ruta B). Lee el estado nativo: ON por defecto.
-    var evoEqEnabled by remember {
-        mutableStateOf(
-            if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsEvolutionaryEqActive() }.getOrDefault(true) else true
-        )
-    }
+    // EQ evolutivo de 512 bandas en Ruta A (paridad con Ruta B). El interruptor es la eleccion PERSISTIDA del
+    // usuario (ON por defecto). No se pinta con nativeIsEvolutionaryEqActive(): ese devuelve false mientras
+    // la calibracion corre en su hilo (unos segundos tras arrancar) y mostraria "apagado" estando encendido.
+    var evoEqEnabled by remember { mutableStateOf(com.ivanna.omega.core.EvolutionaryEqPrefs.isEnabled(context)) }
     var fastRpcEnabled by remember {
         mutableStateOf(
             if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsFastRpcEnabled() }.getOrDefault(false) else false
@@ -659,7 +657,7 @@ fun IvannaControlPanel(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlagToggle("EQ EVOLUTIVO 512", evoEqEnabled, AuroraCyan, Modifier.weight(1f)) { en ->
                     evoEqEnabled = en
-                    if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetEvolutionaryEqEnabled(en) }
+                    com.ivanna.omega.core.EvolutionaryEqPrefs.setEnabled(context, en)
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))

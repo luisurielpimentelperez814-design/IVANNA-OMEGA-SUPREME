@@ -46,6 +46,9 @@ object PersistedStateRestorer {
             runCatching { IvannaNativeLib.nativeSetBeta(acPrefs.nhoLateralInhib) }
             runCatching { IvannaNativeLib.nativeSetAlpha(acPrefs.nhoOhcGain) }
             
+            // EQ evolutivo 512 (Ruta A): el nativo arranca en ON; se reaplica la eleccion guardada.
+            runCatching { EvolutionaryEqPrefs.restore(ctx) }
+
             // Anti-Dolby & Spatial
             runCatching { IvannaNativeLib.nativeInitializeEvolution(acPrefs.evoPopSize, acPrefs.evoGenerations) }
             runCatching { IvannaNativeLib.nativeSetMutationRate(acPrefs.evoMutationRate) }

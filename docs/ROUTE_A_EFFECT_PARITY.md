@@ -28,8 +28,8 @@ La captura de reproducción (Ruta A: `PlaybackCaptureService` → motor nativo d
 | **EvolutionaryEQ** (FIR de 512 bandas) | `m_evoEq->processNEON` | `routeAApplyEvoEq` tras `g_eq` (v2.5.348) | **movido a Ruta A**: misma clase, calibración en hilo propio, toggle en la UI; sin medir en dispositivo |
 | **Escena binaural HRTF de `HrtfManager`** | `m_hrtf->processBinauralScene` | `PDEngine` (NHO + espacial + HRTF) | motores distintos; no equivalentes |
 | **GoldenEar GAN** | `applyGoldenEarGAN` | casi ausente (1 mención) | solo Ruta B |
-| **`AdaptiveEngineV2`** | `ctx->adaptiveEngine` | ausente | solo Ruta B |
-| **Bits `OMEGA_FLAG_ATLAS_*`** | se leen en `omega_effect.cpp` | no se leen | solo Ruta B |
+| **`AdaptiveEngineV2`** | analiza centroide, tonalidad, percusividad y reverb; corrige umbral y razón del compresor y una ganancia que solo atenúa (≤ 1.0, ISO 226 a 1 kHz) | no existe; esos mismos actuadores (compresor, ganancia objetivo, reducción del excitador) los mueven el ADE y los controles del usuario | **no se porta por ahora**: sería un segundo controlador sobre los mismos actuadores (Ruta B ya necesita un `max()` y un producto para arbitrarlos), con efecto acotado a dinámica y atenuación |
+| **Atlas (reconstrucción de escena, dereverb estadístico, ER físico, shaper)** | los bits `OMEGA_FLAG_ATLAS_*` del snapshot se copian a `SceneTargetBus` | el mismo `SceneTargetBus` se controla desde `ivanna_ime_jni.cpp` | **el efecto sí existe en Ruta A**. Corrección: una versión anterior de este documento lo marcaba como solo-B por contar las menciones de los bits, no las del módulo. Solo los bits del snapshot son de Ruta B |
 | **Offload FastRPC** (`IvannaFastRpcClient`) | sí (hardware/root) | — | no trasladable: requiere el DSP del dispositivo |
 | Acciones del daemon sin espejo local (`SET_INTENSITY`, `SET_HARMONIC_GAIN`, `SEND_PERCEPTUAL_STATE`, `SET_PINNA_METRICS`, `SET_ROUTE_PROFILE`, `SET_ADAPTIVE_STATE`, `SET_PF_PARAMS`, `PUSH_YAMNET_SCORES`) | sí | según `docs/ROOT_VS_NOROOT_CAPABILITIES.md` | sin cambio |
 
@@ -50,3 +50,9 @@ Verificado: prueba estructural (`tests/test_magistral_defaults.py`) y el helper 
 1. Decidir con el propietario cuáles de los efectos "solo Ruta B" usa de verdad.
 2. Por cada uno: correspondencia de parámetros, identidad bit-exacta apagado, prueba host y escucha en el dispositivo.
 3. Marcar en la UI los controles que no llegan a Ruta A.
+
+## Actualización v2.5.350
+
+- **Interruptor del EQ evolutivo:** se pintaba con `nativeIsEvolutionaryEqActive()`, que es `false` mientras la calibración corre en su hilo (unos segundos tras arrancar): mostraba "apagado" estando encendido. Y la elección no se guardaba: apagarlo se perdía al reiniciar la app, porque el nativo arranca en ON. Ahora la elección se persiste (`EvolutionaryEqPrefs`) y se reaplica en `PersistedStateRestorer`.
+- **Qué hace el EQ evolutivo (para decidir si dejarlo en ON):** diseña un FIR hacia una curva objetivo de "perfil de presencia" definida en frecuencia **normalizada**: −2 dB (≈ 460 Hz), −1 dB (≈ 1.3 kHz), 0 dB (≈ 3.7 kHz), +2 dB (≈ 6.9 kHz), +3 dB (≈ 13 kHz) y +1.5 dB (≈ 20.6 kHz) a 48 kHz; a 44.1 kHz esas frecuencias bajan un 8 %. El diseño se normaliza para no superar 0 dB de pico. Es la misma curva de Ruta B tras calibrar; la respuesta realmente alcanzada no se ha medido en el dispositivo. Añade 128 muestras (2.7 ms a 48 kHz) de retardo a la cadena: el reinyector de Ruta A estima el retardo del DSP, pero no se ha comprobado con este filtro activo.
+- **Sin portar, a propósito:** `AdaptiveEngineV2` (ver tabla), la escena binaural de `HrtfManager` (por altavoces se apaga en modo AUX) y GoldenEar GAN (un segundo armónico a ≈ −18 dB × el deslizador, con equivalentes en el excitador y Volterra de Ruta A). El offload FastRPC no es trasladable.
