@@ -56,11 +56,25 @@ que la siguiente sesión sepa el estado real.
 **No declarar "transaural validado":** la geometría sigue siendo un modelo nominal del perfil de sala; falta calibración 2×2 altavoz→oído con micrófono binaural y validación en el Moto G85/posición real de escucha.
 **No tocar:** no quitar el tope de realce ni las pruebas `CrosstalkCancellation.*` (impiden volver a un cancelador que no cancela).
 
-### Paridad de efectos Ruta A / Ruta B — captura de reproducción (2026-11-04)
-**Responsable:** sesión Claude, por indicación directa del propietario ("todos los efectos por Ruta A").
-**Hecho (verificado por lectura y prueba estructural, no en dispositivo):** v2.5.346 aplica también en Ruta A (JNI, cadena 4D) la geometría de sala del cancelador de diafonía; antes solo llegaba a Ruta B (`omega_effect.cpp`) y el de Ruta A corría con la de escritorio. Auditoría completa en `docs/ROUTE_A_EFFECT_PARITY.md`: `IvannaFusionEngine` solo se compila en `libomega_effect.so`; sin equivalente en Ruta A: EvolutionaryEQ, escena binaural de `HrtfManager`, GoldenEar GAN, `AdaptiveEngineV2`, bits `ATLAS_*`.
-**Decisión:** **no** se trasladó ningún efecto de B a A; trasladar en bloque duplicaría etapas que Ruta A ya tiene y cambiaría el sonido sin prueba posible aquí (ver el historial del gate de `PlaybackCaptureService` más arriba). Cada traslado: correspondencia de parámetros, identidad apagado, prueba host y escucha en el dispositivo.
-**No tocar:** el bloque "Transaural / CrosstalkCanceller" de arriba pertenece a otra sesión; esta entrada solo añade el cableado de la geometría en Ruta A.
+### Paridad funcional completa Ruta A / Ruta B — captura de reproducción (2026-11-05)
+**Responsable:** sesión ChatGPT actual, autorizada expresamente por el propietario con «Procede». Rama de trabajo: `feat/route-a-full-product-parity-v2.5.351`; destino obligatorio: `main` con release correspondiente.
+
+**Objetivo vinculante:** que las capacidades funcionales del producto se ejecuten en la ruta real `PlaybackCaptureService → DSPBridge/JNI → DSP → AudioTrack`, sin depender de que `libomega_effect.so` procese el audio. No equivale a copiar `IvannaFusionEngine` completo ni a apilar etapas duplicadas: se deben reutilizar núcleos y arbitrar equivalentes con unidades/rangos demostrados.
+
+**Base confirmada:** `main` está en v2.5.350 (641), con HEAD documental `29c8d5a2`. NPE y EvolutionaryEQ ya están conectados a Ruta A por JNI; Atlas comparte `SceneTargetBus`; WFS, upmix, M/S, Volterra, RIR, 4D, limitador y guardas tienen implementaciones locales identificadas. La paridad sigue incompleta para controles/efectos de Ruta B.
+
+**Riesgo crítico descubierto en lectura de código (no medido en dispositivo):** el comentario de `DSPBridge_nativeProcess` documenta que MediaProjection loopback puede capturar salida del mixer DESPUÉS de `omega_effect`, y volver a procesarla en Ruta A. Antes de ampliar la cadena se debe discriminar la procedencia/session/route del buffer; no introducir un gate basado únicamente en que el daemon esté vivo ni desactivar la única captura funcional. El historial de este archivo documenta que ese tipo de gate rompió la captura y provocó bucle de permiso.
+
+**Hallazgo de control:** `IvannaNativeLib.nativeSetHarmonicGain` en Ruta A escribe `PDEngine::set_nho_harmonic` con rango 0..0.65; el snapshot de Ruta B consume `IvannaFusionEngine::setHarmonicGain` con rango 0..4 (el puente Kotlin lo sanea a 0..1). Son motores y semánticas distintas. No enlazar por nombre ni copiar el valor sin arbitraje explícito. `HarmonicExciter`, Volterra, NPE y los ejes transarmónicos ya producen componentes armónicas en Ruta A; GoldenEar no debe añadirse como otra etapa sin resolver su solapamiento.
+
+**Secuencia de trabajo:**
+1. Mapear el origen del audio capturado y cerrar un contrato de ruta única que no dependa del estado del daemon; preservar captura y fallback.
+2. Inventariar por acción/efecto los productores UI/Kotlin, JNI local, consumidor DSP Route A y consumidor Route B; registrar rangos, unidades, defaults, persistencia y bypass.
+3. Cablear por lotes pequeños los controles cuyo equivalente local sea demostrablemente el mismo efecto; cuando no lo sea, diseñar arbitraje/adapter explícito y prueba de identidad en bypass.
+4. Añadir contratos estructurales y pruebas host para cada integración; ejecutar CI/NDK antes de release. Escucha/medición en Moto G85 queda pendiente hasta disponer de ejecución física.
+5. Integrar en `main` y generar el release correspondiente solo después de validar los artefactos y los gates.
+
+**No declarado:** no hay todavía cambios funcionales en esta rama, no hay compilación NDK de esta sesión, no hay prueba de escucha/dispositivo ni se declara paridad completa. Esta entrada reclama el frente y fija la secuencia para evitar colisiones.
 
 ### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
 **Responsable:** sesion Claude, por indicacion directa del propietario.
