@@ -185,10 +185,10 @@ object PersistedStateRestorer {
                 Ivanna4DNative.nativeFourDSetArcDepth(ps.get4dArcDepth())
                 Ivanna4DNative.nativeFourDSetArc(ps.is4dArcOn())
                 Ivanna4DNative.nativeFourDSetHaptics(ps.is4dHapticsOn())
-                Ivanna4DNative.nativeFourDSetCrosstalk(ps.is4dCrosstalkOn())
+                Ivanna4DNative.nativeFourDSetCrosstalk(com.ivanna.omega.audio.ExternalStereoPolicy.allowTransauralXtc(route, saPrefs.externalStereoLineOut, ps.is4dCrosstalkOn()))
                 Ivanna4DNative.nativeFourDSetEnabled(ps.is4dEnabled())
             }
-            FourDRouteB.push(ParameterStore(ctx))   // Ruta B (demonio), en hilo propio
+            FourDRouteB.push(ctx, ParameterStore(ctx), route)   // Ruta B (demonio), en hilo propio
         }.onFailure { Log.w(TAG, "Fallo al restaurar la cadena 4D: ${it.message}") }
 
         Log.i(TAG, "✅ Todos los controles descableados restaurados (Persistencia total conectada)")

@@ -21,6 +21,12 @@
 
 using namespace ivanna::supreme;
 
+TEST(SupremeAxis3_Rir, ExperimentalWetTailCrossmixIsDisabledByDefault) {
+    Ivanna::RirConvolver conv;
+    EXPECT_FLOAT_EQ(conv.transauralXtcStrength(), 0.0f);
+}
+
+
 // ─── EJE 1: WarpedLatticeTransducerInverter ──────────────────────────────────
 TEST(SupremeAxis1_WarpedLattice, SubSampleGroupDelayAndMicroChirpStability) {
     WarpedLatticeTransducerInverter inverter;
@@ -429,7 +435,7 @@ TEST(SofaSafRirMasterKnowledge, TrueStereoXtcDeClipperJilesAthertonAndWpeDerever
         ASSERT_TRUE(std::isfinite(tapeR[i]));
     }
 
-    // 3. Matriz True-Stereo 4-Caminos (LL, LR, RL, RR) + Holografía Transaural XTC en RirConvolver
+    // 3. Matriz True-Stereo 4-Caminos (LL, LR, RL, RR) + crossmix experimental de cola RIR (no XTC calibrado)
     Ivanna::RirConvolver conv;
     conv.applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
     conv.setTrueStereoCrossGain(0.25f);

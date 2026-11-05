@@ -2,14 +2,18 @@ package com.ivanna.omega.audio
 
 /**
  * A USB descriptor cannot tell headphones from an amplifier's analog input.
- * External line-out keeps spatial engines available, but limits binaural HRTF
- * blend because loudspeaker-to-ear crosstalk has not been measured/cancelled.
+ * External line-out keeps a bounded HRTF blend. The separate XTC allow-list
+ * is opt-in through the user's line-out declaration and never applies to headphones.
  */
 object ExternalStereoPolicy {
     const val EXTERNAL_LINE_OUT_HRTF_WET = 0.15f
 
     fun usesExternalSpeakers(route: OutputRoute, declaredLineOut: Boolean): Boolean =
         declaredLineOut && (route == OutputRoute.USB || route == OutputRoute.WIRED_AUX)
+
+    /** XTC is requested by the user and valid only on a declared external L/R speaker route. */
+    fun allowTransauralXtc(route: OutputRoute, declaredLineOut: Boolean, requested: Boolean): Boolean =
+        requested && usesExternalSpeakers(route, declaredLineOut)
 
     /** HRTF intended for headphones only; do not send a personal headphone SAF profile to speakers. */
     fun allowHeadphoneHrtf(route: OutputRoute, declaredLineOut: Boolean, requested: Boolean): Boolean =

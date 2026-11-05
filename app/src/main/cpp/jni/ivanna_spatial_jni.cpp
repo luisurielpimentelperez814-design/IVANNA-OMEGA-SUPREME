@@ -626,7 +626,6 @@ extern "C" float    ivanna_get_routeB_tape_mag() noexcept;
 extern "C" uint32_t ivanna_get_routeB_snn_spikes() noexcept;
 extern "C" float    ivanna_get_routeB_subsample_delay() noexcept;
 extern "C" bool     ivanna_is_routeB_active() noexcept;
-extern "C" void     ivanna_set_route_rir_xtc(int routeIdx) noexcept;
 
 extern "C" JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeSubSampleDelay(JNIEnv*, jclass) {
@@ -652,7 +651,6 @@ Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeKappas(JNIEnv* env, jcla
 extern "C" JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_NativeBridge_setWarpedLatticeRouteArchetype(JNIEnv*, jclass, jint routeIdx) {
     ivanna::spatial::IvannaAudioPipeline::getActiveInstance().warpedLatticeInverter().setRouteArchetype(routeIdx);
-    ivanna_set_route_rir_xtc(routeIdx);
 }
 extern "C" JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_NativeBridge_getWarpedLatticeDeclippedPeaks(JNIEnv*, jclass) {

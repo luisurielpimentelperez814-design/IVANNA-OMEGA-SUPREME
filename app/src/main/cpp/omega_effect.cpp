@@ -557,7 +557,9 @@ static inline void omega_apply_supreme_axes(omega_effect_context_t* ctx,
         ctx->supremeLattice->setRouteArchetype(routeArch);
         if (ctx->rirConvolver) {
             ctx->rirConvolver->setTrueStereoCrossGain(0.20f);
-            ctx->rirConvolver->setTransauralXtcStrength((routeArch == 2) ? 0.38f : ((routeArch == 0) ? 0.16f : 0.0f));
+            // RIR wet-tail crossmix is not a calibrated speaker-to-ear inverse; keep it off.
+            // The route-gated FourD CrosstalkCanceller is the only runtime XTC stage.
+            ctx->rirConvolver->setTransauralXtcStrength(0.0f);
         }
     }
     if (ctx->supremeCvnn) {

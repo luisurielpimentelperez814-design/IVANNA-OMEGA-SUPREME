@@ -50,11 +50,11 @@ que la siguiente sesión sepa el estado real.
 ## 🔒 Frentes actualmente tomados
 
 ### Transaural / CrosstalkCanceller (2026-11-04)
-**Responsable:** sesión Claude, por indicación directa del propietario.
-**Hecho (verificado en host con pruebas de cancelación medida, no en dispositivo):** paso-alto defectuoso corregido (el cancelador mejoraba 0.1 dB) y realce mono acotado a +4 dB. Ver `CHANGELOG.md` v2.5.342.
-**No declarar "transaural validado":** la geometría del oyente no está medida; falta prueba con micrófono binaural en el Moto G85. El XTC de `RirConvolver` ("tipo BACCH") es una resta de un tap, no una cancelación — pendiente de decisión de producto.
+**Responsable:** sesión ChatGPT actual, por autorización del propietario.
+**Hecho (verificado en host):** v2.5.342 corrigió la recurrencia HPF y acotó el realce mono a +4 dB. v2.5.343 añadió el perfil nominal de sala 3.83 × 2.83 × 7.00 m y derivó la geometría del cancelador de los altavoces. v2.5.344 hizo atómico el estado compartido del cancelador; v2.5.345 separa XTC del maestro 4D, lo limita a USB/AUX declarados y fuerza bypass fuera de esa ruta en Ruta A y Ruta B.
+**Decisión de producto:** el crossmix experimental de `RirConvolver` queda en 0.0 en todas las rutas; no se usa como cancelación. La única etapa runtime XTC es `CrosstalkCanceller`. El manifiesto público se actualiza solo después de verificar los artefactos del release.
+**No declarar "transaural validado":** la geometría sigue siendo un modelo nominal del perfil de sala; falta calibración 2×2 altavoz→oído con micrófono binaural y validación en el Moto G85/posición real de escucha.
 **No tocar:** no quitar el tope de realce ni las pruebas `CrosstalkCancellation.*` (impiden volver a un cancelador que no cancela).
-**Actualización (v2.5.343):** la geometría del cancelador ahora se deriva de la sala MAGISTRAL del propietario (3.83×2.83×7.00 m, FL/FR a 2.70 m) y se aplica a los dos cancelladores de la ruta real. Detalle y supuestos (oyente centrado a 3.50 m, TL/TR en el techo, sub x/z sin cambiar) en `docs/TRANSAURAL_MAGISTRAL.md`. Sigue **sin** medición binaural ni prueba en el dispositivo. **No tocar:** `tests/test_magistral_defaults.py` impide que las cuatro copias del layout diverjan; si cambias la sala, cámbiala en todas.
 
 ### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
 **Responsable:** sesion Claude, por indicacion directa del propietario.

@@ -1,3 +1,12 @@
+## v2.5.345 (636) - 2026-11-04
+
+- **Activación transaural por ruta:** XTC se habilita solo en USB/AUX cuando el usuario declara una línea estéreo externa. Si no existe preferencia XTC guardada, la declaración la habilita por defecto; un OFF guardado prevalece. Bluetooth, altavoz interno, rutas desconocidas y salidas USB/AUX sin declaración quedan en bypass. Si se usa el mismo DAC con audífonos, el usuario debe apagar la declaración: Android no identifica la carga analógica.
+- **Independiente del maestro 4D:** la cancelación funciona aunque anticipación/háptica 4D esté apagada; análisis 4D, háptica y dosímetro conservan su propio interruptor. Los cambios de ruta, restauración y parada sincronizan Ruta A y Ruta B; un fallo de evaluación fuerza bypass.
+- **Sin XTC falso en RIR:** el crossmix experimental de `RirConvolver` queda en cero en runtime. RT60 y arquetipo Bark ya no pueden activarlo ni apilarlo con `CrosstalkCanceller`.
+- **Release seguro:** el ZIP contiene un manifiesto candidato alineado con `module.prop`; el manifiesto público solo se actualiza después de subir y verificar ZIP, APK y checksums, sin anunciar un ZIP 404 ni retroceder un versionCode más nuevo.
+- **Hereda v2.5.343 MAGISTRAL:** perfil nominal de sala 3.83 × 2.83 × 7.00 m y geometría aplicada a los canceladores; conserva el HPF corregido y el límite de realce mono de +4 dB de v2.5.342.
+- **Límite acústico:** no se afirma matriz 2×2 medida altavoz→oído, calibración binaural personalizada ni validación física. El perfil de sala es nominal y requiere medición en la posición real de escucha. La declaración de línea externa es necesaria porque Android no distingue un DAC conectado a un amplificador del mismo DAC conectado a audífonos.
+
 ## v2.5.344 (635) - 2026-11-04
 
 - **Transaural — carrera de datos corregida:** `CrosstalkCanceller` guardaba la geometría, ρ, el retardo y el coeficiente del paso-alto como `float` planos que escribían los setters (hilo de control: geometría de sala, rastreador de cabeza) mientras `processBlock()` los leía en el hilo de audio. Ahora todo es `std::atomic<float>` (relaxed), incluido `listenerOffsetM` de v2.5.343. Sin cambio de sonido ni de API.

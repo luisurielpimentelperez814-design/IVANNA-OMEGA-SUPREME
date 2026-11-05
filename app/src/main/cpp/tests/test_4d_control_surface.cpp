@@ -8,6 +8,8 @@
 // 5) publicación real en el SceneTargetBus.
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "music_intelligence/FourDControlSurface.hpp"
 #include "music_intelligence/SceneTargetBus.hpp"
 
@@ -75,6 +77,32 @@ TEST(FourDControlSurface, DisabledIsBitExact) {
     fourd::applyOutputPlanar(l.data(), r.data(), kBlock);
     for (int i = 0; i < kBlock; ++i) { EXPECT_FLOAT_EQ(l[i], l0[i]); EXPECT_FLOAT_EQ(r[i], r0[i]); }
     EXPECT_FALSE(fourd::status().enabled);
+}
+
+TEST(FourDControlSurface, CrosstalkRunsWithFourDMasterDisabled) {
+    fourd::shutdown();
+    fourd::ensureInit(48000.f, kBlock);
+    fourd::setEnabled(false);
+    fourd::setCrosstalkEnabled(true);
+
+    std::vector<float> l(kBlock), r(kBlock);
+    float crossPeak = 0.0f;
+    for (int block = 0; block < 16; ++block) {
+        for (int i = 0; i < kBlock; ++i) {
+            const float phase = static_cast<float>(block * kBlock + i) / kSr;
+            l[i] = 0.25f * std::sin(2.0f * kPi * 700.0f * phase);
+            r[i] = 0.0f;
+        }
+        fourd::applyOutputPlanar(l.data(), r.data(), kBlock);
+        if (block >= 5) {
+            for (float sample : r) crossPeak = std::max(crossPeak, std::fabs(sample));
+        }
+    }
+    EXPECT_FALSE(fourd::status().enabled);
+    EXPECT_GT(crossPeak, 1.0e-4f)
+        << "speaker XTC must remain active independently of the 4D anticipation master";
+    fourd::setCrosstalkEnabled(false);
+    fourd::shutdown();
 }
 
 TEST(FourDControlSurface, PredictsOnsetOn120Bpm) {
