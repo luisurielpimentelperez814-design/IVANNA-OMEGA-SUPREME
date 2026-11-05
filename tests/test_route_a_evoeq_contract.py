@@ -63,6 +63,12 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
         self.assertNotIn("nativeIsEvolutionaryEqActive", init)
         self.assertIn("EvolutionaryEqPrefs.isEnabled(context)", init)
 
+    def test_calibration_readback_is_consumed_as_separate_live_status(self):
+        self.assertIn("nativeIsEvolutionaryEqActive()", UI)
+        self.assertIn("evoEqActive = runCatching", UI)
+        self.assertIn("filtro calibrado, validado y activo", UI)
+        self.assertIn("calibrando/verificando filtro", UI)
+
 
 if __name__ == "__main__":
     unittest.main()
