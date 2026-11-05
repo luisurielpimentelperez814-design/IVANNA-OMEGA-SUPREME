@@ -1,3 +1,9 @@
+## v2.5.352 (643) - 2026-11-05
+
+- **Ruta A — estado real del EQ evolutivo:** la UI consume el read-back JNI cada 500 ms y muestra por separado si el filtro está calibrado/validado y activo, si sigue calibrando/verificando, si el usuario lo desactivó o si la biblioteca nativa no está disponible. El interruptor continúa representando exclusivamente la intención persistida del usuario.
+- **Auditoría JNI:** se conecta el getter nativo que estaba declarado e implementado pero sin consumidor Kotlin. Se añade contrato estructural para impedir que vuelva a quedar huérfano.
+- **Evidencia:** CTest previo pasó 656/656; el workflow host separado falló en la auditoría JNI por este getter sin llamador. El cambio queda sujeto a la nueva ejecución CI y compilación Android. No implica validación en dispositivo ni paridad completa Ruta A/B.
+
 ## v2.5.351 (642) - 2026-11-05
 
 - **Ruta A — recuperación del worker de EvolutionaryEQ:** si la asignación del filtro fallaba o la calibración lanzaba una excepción/no superaba la auto-verificación, el flag `g_evoEqACalibrating` quedaba permanentemente activo y bloqueaba cualquier reintento en ese proceso. Ahora el worker POSIX libera el guard en todos los caminos, descarta filtros no validados y comprueba los códigos de retorno de creación/configuración del hilo. Es compatible con `-fno-exceptions`. El filtro solo se publica tras `isReady()`; la salida permanece en identidad si no hay filtro válido. Sin cambios al callback DSP ni a la curva calibrada.
