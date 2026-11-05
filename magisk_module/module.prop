@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.347
-versionCode=638
+version=v2.5.348
+versionCode=639
 author=Luis Uriel Pimentel Pérez (Gore TNS)
 description=v2.5.345: speaker-only route-gated transaural XTC; independent of 4D master; RIR crossmix disabled
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

@@ -1,3 +1,11 @@
+## v2.5.348 (639) - 2026-11-05
+
+- **Ruta A (captura de reproducción) — EQ evolutivo de 512 bandas:** hasta ahora `EvolutionaryEQ` solo corría en el efecto del sistema (Ruta B); la ruta que realmente intercepta el audio no lo tenía. Ahora `nativeProcess` y `nativeProcessBlock` lo aplican justo tras el EQ paramétrico. Es el mismo FIR de 256 taps que usa Ruta B.
+- **Seguridad de tiempo real:** la calibración (LM-CMA-ES acotada, ~0,6 s en host) corre en un hilo propio desde `nativeInit` y solo se publica, por atómico, si la auto-verificación pasa (FIR finito, pico ≤ 1); hasta entonces es identidad bit-exacta. El hilo de audio no asigna ni calibra. Entra y sale con un crossfade de un bloque (sin click). Por defecto activo, como en Ruta B; toggle «EQ EVOLUTIVO 512» en el panel de control (`nativeSetEvolutionaryEqEnabled`).
+- **`EvolutionaryEQ::processPlanar`:** admite bloques de longitud arbitraria (Ruta A los entrega variables); con n = 128 es bit-exacto con `processNEON`, y partir un bloque en trozos no cambia la salida. Dos pruebas nuevas (8/8 en `test_evolutionary_eq`) y un contrato estructural (`tests/test_route_a_evoeq_contract.py`).
+- **Alcance:** verificado en host (DSP y contrato de lectura; comprobación de sintaxis de la unidad JNI con stubs). **No** se compiló la biblioteca JNI con el NDK ni se escuchó en el dispositivo: el cambio de timbre de este filtro no está medido en el teléfono. La calibración depende de un RNG `thread_local` con semilla fija que avanza entre instancias: el FIR no es idéntico al de Ruta B en el audioserver.
+- **Sigue solo en Ruta B:** escena binaural de `HrtfManager`, GoldenEar GAN, `AdaptiveEngineV2` y los bits `ATLAS_*` (ver `docs/ROUTE_A_EFFECT_PARITY.md`).
+
 ## v2.5.347 (638) - 2026-11-05
 
 - **Diagnóstico `ivanna_control.sh preload reach` (solo lectura, root):** para cada proceso del HAL de audio informa regiones `.so` cargadas desde un dispositivo distinto al vendor original, si el `mountinfo` del HAL contiene la sonda y el dominio SELinux. Veredictos: `HAL_NOT_RUNNING`, `NEEDS_ROOT`, `NO_MODULE_CODE_MAPPED`, `MODULE_FILES_NOT_VISIBLE`, `VISIBLE_NOT_MAPPED`, `MODULE_CODE_MAPPED`. Sin `mountinfo` legible no afirma que el HAL no ve el archivo. 7 pruebas nuevas (29 en `test_preload_link.py`).

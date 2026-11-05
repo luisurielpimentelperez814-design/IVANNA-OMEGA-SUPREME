@@ -24,7 +24,7 @@ La captura de reproducción (Ruta A: `PlaybackCaptureService` → motor nativo d
 | WFS | `IvannaFusionEngine::m_wfs` | `RouteAWfsEngine` | equivalente propio |
 | Upmix / M/S / campo AUX / campo temporal / NPE / corrección de sala | dentro de `IvannaFusionEngine` | globales y `g_upmix`, `g_widener` en el JNI | equivalentes propios, no verificados al mismo nivel |
 | Adaptativo | `ctx->adaptive` (ADE) | ADE en la app (worker Kotlin) | equivalente propio |
-| **EvolutionaryEQ** (FIR de 512 bandas) | `m_evoEq->processNEON` | **ausente** | solo Ruta B. Es identidad hasta `calibrate()`; Ruta A usa `g_eq` (EQ paramétrico), que es otra cosa |
+| **EvolutionaryEQ** (FIR de 512 bandas) | `m_evoEq->processNEON` | `routeAApplyEvoEq` tras `g_eq` (v2.5.348) | **movido a Ruta A**: misma clase, calibración en hilo propio, toggle en la UI; sin medir en dispositivo |
 | **Escena binaural HRTF de `HrtfManager`** | `m_hrtf->processBinauralScene` | `PDEngine` (NHO + espacial + HRTF) | motores distintos; no equivalentes |
 | **GoldenEar GAN** | `applyGoldenEarGAN` | casi ausente (1 mención) | solo Ruta B |
 | **`AdaptiveEngineV2`** | `ctx->adaptiveEngine` | ausente | solo Ruta B |

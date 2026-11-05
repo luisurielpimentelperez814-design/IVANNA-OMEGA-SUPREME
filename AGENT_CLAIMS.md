@@ -2711,3 +2711,6 @@ medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.p
 
 ### v2.5.347 — captura real del HAL (2026-11-05)
 **Hecho (leído en la captura, no medido en audio):** en `android.hardware.audio.service_64` las 461 regiones `.so` son del vendor original; no hay código de IVANNA cargado. **No hecho:** puente PAL/ASRC conectado, productor de reloj PAL, actuador de tasa. `preload reach` es diagnóstico y no inyecta nada.
+
+### v2.5.348 — EQ evolutivo en Ruta A
+**Hecho (verificado en host):** `EvolutionaryEQ` corre también en la cadena de la app (Ruta A) con calibración fuera del callback; 8/8 pruebas del filtro. **No hecho:** compilación NDK de la JNI, escucha/medición en el Moto G85, paridad de sonido con Ruta B (el FIR calibrado puede diferir por el RNG). Pendientes de paridad: HrtfManager (escena binaural), GoldenEar GAN, AdaptiveEngineV2, ATLAS.
