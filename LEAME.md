@@ -125,7 +125,7 @@ Consulta [GitHub Actions](https://github.com/luisurielpimentelperez814-design/IV
 - [ ] Se instaló y probó en el teléfono objetivo.
 - [ ] Se anotaron los errores, límites y resultados reales.
 
-Un CI verde no demuestra por sí solo calidad sonora ni compatibilidad física. Para el Moto G85 con Android 15, consulta el [plan de aceptación y sus pruebas pendientes](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md).
+Un CI verde no demuestra por sí solo calidad sonora ni compatibilidad física. Para el Moto G85 con Android 14 / SDK 34, consulta el [plan de aceptación y sus pruebas pendientes](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md).
 
 ## Seguridad y privacidad
 
