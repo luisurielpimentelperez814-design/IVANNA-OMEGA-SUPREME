@@ -30,7 +30,7 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
         self.assertRegex(JNI, r"if \(eq->isReady\(\)\) g_evoEqA\.store\(eq, std::memory_order_release\)")
 
     def test_calibration_worker_clears_guard_after_success_or_failure(self):
-        body = re.search(r"static void routeAStartEvoEqCalibration\\(\\).*?\\n\\}", JNI, re.S).group(0)
+        body = re.search(r"static void routeAStartEvoEqCalibration\(\).*?\n\}", JNI, re.S).group(0)
         self.assertIn("try {", body)
         self.assertIn("catch (...)", body)
         self.assertIn("delete eq;", body)
