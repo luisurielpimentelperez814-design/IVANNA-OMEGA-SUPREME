@@ -151,3 +151,54 @@ TEST(EvolutionaryEQ, CalibratedProcessingIsFiniteAndBounded) {
         EXPECT_LE(peakAbs(buf.left, BLOCK_SIZE), 1.0f + 1e-4f);
     }
 }
+
+// 7. Ruta A entrega bloques de longitud variable: processPlanar con n == BLOCK_SIZE es bit-exacto con
+//    processNEON, y partir un bloque en trozos irregulares no cambia la salida (el historial FIR continua).
+TEST(EvolutionaryEQ, PlanarMatchesNeonAndIsInvariantToBlockSplitting) {
+    // La calibracion usa un RNG thread_local con semilla fija que AVANZA entre instancias: calibrar tres
+    // veces daria tres FIR distintos. Se calibra una vez y se copia (historial en cero en las copias).
+    EvolutionaryEQ a;
+    a.calibrate(48000.0f);
+    ASSERT_TRUE(a.isReady());
+    EvolutionaryEQ b = a, c = a;
+
+    constexpr size_t kN = 3 * BLOCK_SIZE;
+    std::vector<float> inL(kN), inR(kN);
+    for (size_t i = 0; i < kN; ++i) {
+        inL[i] = 0.4f * std::sin(0.05f * static_cast<float>(i)) + 0.1f * std::sin(1.3f * static_cast<float>(i));
+        inR[i] = 0.4f * std::sin(0.07f * static_cast<float>(i));
+    }
+    // a: tres bloques por processNEON
+    std::vector<float> aL = inL, aR = inR;
+    for (size_t k = 0; k < 3; ++k) {
+        AudioBuffer buf{};
+        std::copy(aL.begin() + k * BLOCK_SIZE, aL.begin() + (k + 1) * BLOCK_SIZE, buf.left);
+        std::copy(aR.begin() + k * BLOCK_SIZE, aR.begin() + (k + 1) * BLOCK_SIZE, buf.right);
+        a.processNEON(&buf);
+        std::copy(buf.left, buf.left + BLOCK_SIZE, aL.begin() + k * BLOCK_SIZE);
+        std::copy(buf.right, buf.right + BLOCK_SIZE, aR.begin() + k * BLOCK_SIZE);
+    }
+    // b: una sola llamada de 384 frames
+    std::vector<float> bL = inL, bR = inR;
+    b.processPlanar(bL.data(), bR.data(), kN);
+    // c: trozos irregulares 37 / 200 / 5 / resto
+    std::vector<float> cL = inL, cR = inR;
+    const size_t cuts[] = {37, 200, 5, kN - 242};
+    size_t off = 0;
+    for (size_t len : cuts) { c.processPlanar(cL.data() + off, cR.data() + off, len); off += len; }
+
+    for (size_t i = 0; i < kN; ++i) {
+        EXPECT_EQ(aL[i], bL[i]) << i; EXPECT_EQ(aR[i], bR[i]) << i;
+        EXPECT_EQ(aL[i], cL[i]) << i; EXPECT_EQ(aR[i], cR[i]) << i;
+    }
+}
+
+// 8. Antes de calibrar processPlanar tampoco toca la senal (identidad bit-exacta, n arbitrario).
+TEST(EvolutionaryEQ, PlanarIsExactIdentityBeforeCalibration) {
+    EvolutionaryEQ eq;
+    std::vector<float> l(77), r(77);
+    for (size_t i = 0; i < l.size(); ++i) { l[i] = std::sin(0.3f * i); r[i] = std::cos(0.2f * i); }
+    auto l0 = l, r0 = r;
+    eq.processPlanar(l.data(), r.data(), l.size());
+    EXPECT_EQ(l, l0); EXPECT_EQ(r, r0);
+}

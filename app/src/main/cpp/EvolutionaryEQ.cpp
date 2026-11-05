@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "EvolutionaryEQ.hpp"
 #include "IvannaFusionCore.hpp"
 #include <cstddef>
@@ -239,51 +240,67 @@ void EvolutionaryEQ::calibrate(float /*sampleRateHz*/) {
 }
 
 void EvolutionaryEQ::processNEON(Ivanna::AudioBuffer* buffer) {
+    processPlanar(buffer->left, buffer->right, BLOCK_SIZE);
+}
+
+// Procesa n frames planares con CUALQUIER n (la Ruta A entrega bloques de longitud variable). Se parte en
+// trozos de <= BLOCK_SIZE sobre el mismo historial: con n == BLOCK_SIZE es bit-exacto con el codigo anterior
+// de processNEON y partir un bloque en trozos no cambia la salida.
+void EvolutionaryEQ::processPlanar(float* left, float* right, size_t n) {
     // GATE: sin calibración verificada el módulo es identidad bit-exacta.
     // Misma doctrina que SaFStimulusRenderer — nunca se activa un filtro sin
     // verificación real. Coste cero cuando no está habilitado.
-    if (!m_ready) return;
+    if (!m_ready || !left || !right) return;
 
-    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-        m_histL[FIR_TAPS - 1 + i] = buffer->left[i];
-        m_histR[FIR_TAPS - 1 + i] = buffer->right[i];
-    }
+    size_t done = 0;
+    while (done < n) {
+        const size_t c = std::min(BLOCK_SIZE, n - done);
+        float* L = left + done;
+        float* R = right + done;
 
-    bool invalid = false;
-    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-        float l_out = 0.0f;
-        float r_out = 0.0f;
-
-        for (size_t t = 0; t < FIR_TAPS; ++t) {
-            l_out += m_firCoeffsL[t] * m_histL[i + t];
-            r_out += m_firCoeffsR[t] * m_histR[i + t];
+        for (size_t i = 0; i < c; ++i) {
+            m_histL[FIR_TAPS - 1 + i] = L[i];
+            m_histR[FIR_TAPS - 1 + i] = R[i];
         }
 
-        // Evitar doble saturación no-lineal: IvannaFusionEngine::process() ya
-        // aplica fast_tanh al final de la cadena. Aquí solo se garantiza el
-        // invariante de rango seguro [-1, 1] y finitud tras el FIR lineal.
-        float l_final = std::fmin(1.0f, std::fmax(-1.0f, l_out));
-        float r_final = std::fmin(1.0f, std::fmax(-1.0f, r_out));
-        if (!std::isfinite(l_final) || !std::isfinite(r_final)) invalid = true;
+        bool invalid = false;
+        for (size_t i = 0; i < c; ++i) {
+            float l_out = 0.0f;
+            float r_out = 0.0f;
 
-        buffer->left[i] = l_final;
-        buffer->right[i] = r_final;
-    }
+            for (size_t t = 0; t < FIR_TAPS; ++t) {
+                l_out += m_firCoeffsL[t] * m_histL[i + t];
+                r_out += m_firCoeffsR[t] * m_histR[i + t];
+            }
 
-    // GUARD: si el FIR produjo una salida no finita (estado corrupto), se
-    // deshabilita la aplicación y se vuelve a identidad verificada.
-    if (invalid) {
-        for (size_t i = 0; i < FIR_TAPS; ++i) {
-            m_firCoeffsL[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
-            m_firCoeffsR[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
+            // Evitar doble saturación no-lineal: IvannaFusionEngine::process() ya
+            // aplica fast_tanh al final de la cadena. Aquí solo se garantiza el
+            // invariante de rango seguro [-1, 1] y finitud tras el FIR lineal.
+            float l_final = std::fmin(1.0f, std::fmax(-1.0f, l_out));
+            float r_final = std::fmin(1.0f, std::fmax(-1.0f, r_out));
+            if (!std::isfinite(l_final) || !std::isfinite(r_final)) invalid = true;
+
+            L[i] = l_final;
+            R[i] = r_final;
         }
-        m_ready = false;
-        m_normalization = 1.0f;
-    }
 
-    for (size_t i = 0; i < FIR_TAPS - 1; ++i) {
-        m_histL[i] = m_histL[BLOCK_SIZE + i];
-        m_histR[i] = m_histR[BLOCK_SIZE + i];
+        // GUARD: si el FIR produjo una salida no finita (estado corrupto), se
+        // deshabilita la aplicación y se vuelve a identidad verificada.
+        if (invalid) {
+            for (size_t i = 0; i < FIR_TAPS; ++i) {
+                m_firCoeffsL[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
+                m_firCoeffsR[i] = (i == FIR_TAPS / 2) ? 1.0f : 0.0f;
+            }
+            m_ready = false;
+            m_normalization = 1.0f;
+        }
+
+        for (size_t i = 0; i < FIR_TAPS - 1; ++i) {
+            m_histL[i] = m_histL[c + i];
+            m_histR[i] = m_histR[c + i];
+        }
+        done += c;
+        if (!m_ready) return;   // el resto del bloque queda tal cual (identidad)
     }
 }
 

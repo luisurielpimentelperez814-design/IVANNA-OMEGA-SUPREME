@@ -30,6 +30,8 @@ public:
     ~EvolutionaryEQ() = default;
 
     void processNEON(Ivanna::AudioBuffer* buffer);
+    /** n frames planares, n arbitrario (Ruta A). Equivalente a processNEON cuando n == BLOCK_SIZE. */
+    void processPlanar(float* left, float* right, size_t n);
     void updateLM_CMA_ES();
 
     /**
