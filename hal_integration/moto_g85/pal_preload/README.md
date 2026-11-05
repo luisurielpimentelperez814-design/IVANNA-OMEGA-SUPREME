@@ -25,11 +25,13 @@ init's root configuration, while module scripts run in later boot stages.
 Therefore the exact active Magisk-patched `init_boot` image and its ramdisk
 layout must be inspected before choosing a reversible injection point.
 
-### Current device facts (reported for this target)
+### Current device facts (owner-confirmed target)
 
-- Moto G85 / malmo, Android 15, Magisk 30.7
-- Active slot previously observed: `_a`
-- `init_boot_a` previously observed as 8 MiB
+- Moto G85 / malmo, Android 14 / SDK 34
+- The supplied `ivanna_init_boot_a.img` identifies build `UUOS34HV-V1-ST11.1` and fingerprint `motorola/malmo_g/malmo:14/UUOS34HV-V1-ST11.1/132c31:user/release-keys`.
+- Active slot `_a` and 8 MiB image size were previously observed; verify them again before any write operation.
+
+A separate older diagnostic snapshot in repository notes was labeled Android 15 / SDK 35. It is historical and must not be treated as the current target or used to infer this Android 14 init import order.
 - Vendor init file:
   `/vendor/etc/init/android.hardware.audio.service_64.rc`
 - Vendor is EROFS/read-only
