@@ -1538,6 +1538,17 @@ static int32_t omega_process(effect_handle_t self,
                 }
                 ctx->volterraEngine->preserveInterleavedTail(volterraScratch, (uint32_t)tailFrames, 2u);
             }
+        } else if (ctx->volterraEngine) {
+            // Sin kernel calibrado o sin el slot nonlinear, mantener la memoria FIR
+            // al día sin reclamar autoridad ni ejecutar el kernel. Así la primera
+            // activación válida no arranca con una línea de retardo vacía.
+            const int tailFrames = std::min(chunk, 64);
+            const int startFrame = chunk - tailFrames;
+            for (int n = 0; n < tailFrames; ++n) {
+                volterraScratch[2 * n]     = L[startFrame + n];
+                volterraScratch[2 * n + 1] = R[startFrame + n];
+            }
+            ctx->volterraEngine->preserveInterleavedTail(volterraScratch, (uint32_t)tailFrames, 2u);
         }
 
         // ── Eje Supremo Neuroacústico: CochlearActiveInverseEngine (Autoridad única Ruta B) ──
