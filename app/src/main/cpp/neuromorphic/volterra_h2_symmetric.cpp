@@ -96,7 +96,7 @@ void VolterraH2Symmetric::updateKernels(
     }
     if (!m_kernels_ready.exchange(false, std::memory_order_seq_cst)) return;
     if (m_active_processes.load(std::memory_order_seq_cst) != 0u ||
-        !m_transition_env.isSilent()) {
+        !m_dsp_silent.load(std::memory_order_acquire)) {
         m_kernels_ready.store(true, std::memory_order_seq_cst);
         return;
     }
@@ -127,7 +127,11 @@ void VolterraH2Symmetric::preserveInterleavedTail(
 ) noexcept {
     if (!input || num_frames == 0 || !m_delay_lines || !m_delay_indices) return;
     const uint32_t K = m_kernel_length;
-    if (K == 0) return;
+    if (K == 0) {
+        m_dsp_silent.store(m_transition_env.isSilent(), std::memory_order_release);
+        m_published_gain.store(m_transition_env.currentGain, std::memory_order_release);
+        return;
+    }
     const uint32_t chCount = std::min(num_channels, m_channels);
     const uint32_t tailFrames = std::min(num_frames, K);
     const uint32_t startFrame = num_frames - tailFrames;
@@ -175,6 +179,8 @@ void VolterraH2Symmetric::processInterleaved(
     const bool wasSilent   = m_transition_env.isSilent();
 
     if (!m_transition_env.beginBlock(targetGain, profile)) {
+        m_dsp_silent.store(true, std::memory_order_release);
+        m_published_gain.store(0.0f, std::memory_order_release);
         preserveInterleavedTail(input, num_frames, num_channels);
         m_continuity_mgr.suspend();
         if (output != input) {
@@ -186,7 +192,11 @@ void VolterraH2Symmetric::processInterleaved(
         m_continuity_mgr.resume();
     }
 
-    if (num_channels == 0) return;
+    if (num_channels == 0) {
+        m_dsp_silent.store(m_transition_env.isSilent(), std::memory_order_release);
+        m_published_gain.store(m_transition_env.currentGain, std::memory_order_release);
+        return;
+    }
     const uint32_t input_channels = num_channels;
     const uint32_t process_channels = std::min(num_channels, m_channels);
 
@@ -334,8 +344,11 @@ void VolterraH2Symmetric::processInterleaved(
         }
     }
 
+    const bool dspSilent = m_transition_env.isSilent();
+    m_dsp_silent.store(dspSilent, std::memory_order_release);
+    m_published_gain.store(m_transition_env.currentGain, std::memory_order_release);
     m_continuity_mgr.preserveState();
-    if (m_transition_env.isSilent()) {
+    if (dspSilent) {
         m_continuity_mgr.suspend();
     }
 }

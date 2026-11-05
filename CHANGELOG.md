@@ -3,7 +3,7 @@
 - **Volterra H2 — bypass matemático real:** kernel inicial h1=[1,0,...], h2=0 reconocido como identidad; passthrough exacto sin convolución FIR ni bucles cuadráticos. Las actualizaciones detectan H1 identidad y H2 nulo por separado.
 - **Actualización segura:** se rechazan coeficientes NaN/Inf, longitudes incorrectas y escrituras mientras el motor está habilitado o el envelope no está silencioso. Puerta atómica + contador de callbacks evitan escrituras concurrentes sin bloquear el hilo RT.
 - **OOM fail-closed y memoria perezosa:** se comprueban todas las asignaciones; cualquier fallo libera asignaciones parciales y deja passthrough seguro. El constructor no reserva H2: el kernel triangular O(K²) se asigna en hilo de control solo cuando llegan coeficientes H2 no nulos. Un motor de 8192 taps deja de reservar ~134 MiB solo para ceros. El destructor tolera inicialización incompleta.
-- **Thread ownership:** setEnabled solo publica intención; el envelope se modifica desde DSP. Corregido stride interleaved cuando la entrada contiene más canales que el motor.
+- **Thread ownership:** setEnabled solo publica intención; el envelope se modifica desde DSP. Estado silencioso y ganancia de transición se publican mediante atomics, evitando lecturas concurrentes del envelope desde el hilo de control. Corregido stride interleaved cuando la entrada contiene más canales que el motor.
 - **Pruebas:** identidad exacta, H1/H2 nulos, rechazo de actualización habilitada/NaN, FIR lineal y kernel cuadrático no nulo con asignación diferida.
 - **Alcance:** robustez y reducción de cómputo en kernel no calibrado. No se carga kernel medido ni se afirma mejora perceptual o validación física.
 

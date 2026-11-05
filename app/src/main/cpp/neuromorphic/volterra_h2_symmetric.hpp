@@ -99,11 +99,11 @@ public:
     }
 
     bool isSilent() const noexcept {
-        return m_transition_env.isSilent();
+        return m_dsp_silent.load(std::memory_order_acquire);
     }
 
     float currentTransitionGain() const noexcept {
-        return m_transition_env.currentGain;
+        return m_published_gain.load(std::memory_order_acquire);
     }
 
     const ivanna::supreme::SupremeStateContinuityManager& continuityManager() const noexcept {
@@ -137,6 +137,9 @@ private:
     std::atomic<bool> m_kernels_ready{false};
     std::atomic<bool> m_effective_kernel{false};
     std::atomic<uint32_t> m_active_processes{0};
+    // Publica telemetría DSP sin leer el envelope mutable desde hilos de control.
+    std::atomic<bool> m_dsp_silent{true};
+    std::atomic<float> m_published_gain{0.0f};
     bool m_h1_identity = true;
     bool m_h2_active = false;
     void releaseStorage() noexcept;
