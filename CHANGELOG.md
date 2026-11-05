@@ -1,3 +1,9 @@
+## v2.5.347 (638) - 2026-11-05
+
+- **Diagnóstico `ivanna_control.sh preload reach` (solo lectura, root):** para cada proceso del HAL de audio informa regiones `.so` cargadas desde un dispositivo distinto al vendor original, si el `mountinfo` del HAL contiene la sonda y el dominio SELinux. Veredictos: `HAL_NOT_RUNNING`, `NEEDS_ROOT`, `NO_MODULE_CODE_MAPPED`, `MODULE_FILES_NOT_VISIBLE`, `VISIBLE_NOT_MAPPED`, `MODULE_CODE_MAPPED`. Sin `mountinfo` legible no afirma que el HAL no ve el archivo. 7 pruebas nuevas (29 en `test_preload_link.py`).
+- **Captura real del HAL analizada** (`hal_integration/moto_g85/AUDIOSERVER_CAPTURE_2026-11-05.md`): las 461 regiones `.so` del proceso `android.hardware.audio.service_64` son del vendor original; ningún código de módulo (ni `libomega_effect.so`, ni las sondas) está cargado; `wrap.*` definido pero sin efecto; `init_boot` sin relación con audio. Aplicando `reach` a esa captura: `NO_MODULE_CODE_MAPPED`.
+- **Alcance:** **el puente PAL/ASRC sigue sin estar conectado.** Falta un productor dentro del HAL (frames+timestamp pareados de PAL) y un actuador de tasa verificado; no se parchea `audio.primary.blair.so`. Verificado en host con árbol `/proc` falso y con la captura real; no ejecutado en el teléfono.
+
 ## Unreleased
 
 - **Moto G85 / Qualcomm AGM:** se documenta el inventario de símbolos dinámicos de `libagm.so` suministrado y se amplía `hook_pal_agm.js` con observación pasiva de escritura/lectura AGM, ciclo de vida de sesión/grafo/dispositivo y consultas de timestamp. Los argumentos se registran como valores opacos: no se asume ABI ni se escriben parámetros. No habilita todavía inyección HAL, interceptación PCM ni ASRC físico; el firmware Android 14 debe confirmar identidad ELF, correlación frames/timestamp y actuador real.

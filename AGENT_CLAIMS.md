@@ -2708,3 +2708,6 @@ medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.p
 - La UI web FotoHolo permite introducir cualquier lugar/entorno, añadir indicaciones, generar la imagen y guardarla.
 - Límite explícito: sin una fotografía de referencia o datos verificados, un lugar real se representa como interpretación ilustrativa, no como reconstrucción documental exacta. El tamaño solicitado no demuestra que el proveedor haya devuelto 3840×2160; verificar dimensiones reales de cada respuesta antes de afirmar 4K nativo.
 - Sin CI, clave Gemini válida, cuota del proveedor ni prueba de despliegue, la generación no se considera verificada. No modifica DSP ni afirma cambios acústicos.
+
+### v2.5.347 — captura real del HAL (2026-11-05)
+**Hecho (leído en la captura, no medido en audio):** en `android.hardware.audio.service_64` las 461 regiones `.so` son del vendor original; no hay código de IVANNA cargado. **No hecho:** puente PAL/ASRC conectado, productor de reloj PAL, actuador de tasa. `preload reach` es diagnóstico y no inyecta nada.
