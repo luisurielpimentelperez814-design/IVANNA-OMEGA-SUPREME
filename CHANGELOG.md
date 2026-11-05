@@ -1,6 +1,6 @@
 ## v2.5.351 (642) - 2026-11-05
 
-- **Ruta A — recuperación del worker de EvolutionaryEQ:** si la asignación del filtro fallaba o la calibración lanzaba una excepción/no superaba la auto-verificación, el flag `g_evoEqACalibrating` quedaba permanentemente activo y bloqueaba cualquier reintento en ese proceso. Ahora el worker libera el guard en todos los caminos, descarta filtros no validados y captura fallos de creación del hilo. El filtro solo se publica tras `isReady()`; la salida permanece en identidad si no hay filtro válido. Sin cambios al callback DSP ni a la curva calibrada.
+- **Ruta A — recuperación del worker de EvolutionaryEQ:** si la asignación del filtro fallaba o la calibración lanzaba una excepción/no superaba la auto-verificación, el flag `g_evoEqACalibrating` quedaba permanentemente activo y bloqueaba cualquier reintento en ese proceso. Ahora el worker POSIX libera el guard en todos los caminos, descarta filtros no validados y comprueba los códigos de retorno de creación/configuración del hilo. Es compatible con `-fno-exceptions`. El filtro solo se publica tras `isReady()`; la salida permanece en identidad si no hay filtro válido. Sin cambios al callback DSP ni a la curva calibrada.
 - **Prueba:** se amplía `tests/test_route_a_evoeq_contract.py` para fijar limpieza del guard y protección de errores.
 - **Alcance:** cambio de robustez por lectura de código + contrato estructural. La compilación NDK, ejecución CI y validación auditiva/dispositivo quedan pendientes de sus logs; no se declara paridad funcional completa.
 
