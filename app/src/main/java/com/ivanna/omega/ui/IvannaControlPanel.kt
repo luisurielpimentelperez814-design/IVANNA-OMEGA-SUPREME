@@ -208,6 +208,8 @@ fun IvannaControlPanel(
     // usuario (ON por defecto). No se pinta con nativeIsEvolutionaryEqActive(): ese devuelve false mientras
     // la calibracion corre en su hilo (unos segundos tras arrancar) y mostraria "apagado" estando encendido.
     var evoEqEnabled by remember { mutableStateOf(com.ivanna.omega.core.EvolutionaryEqPrefs.isEnabled(context)) }
+    // Estado del filtro ya calibrado/validado; separado de la intención persistida del interruptor.
+    var evoEqActive by remember { mutableStateOf(false) }
     var fastRpcEnabled by remember {
         mutableStateOf(
             if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsFastRpcEnabled() }.getOrDefault(false) else false
@@ -236,6 +238,9 @@ fun IvannaControlPanel(
             if (IvannaNativeLib.isLoaded) {
                 unityTelemetry = runCatching { IvannaNativeLib.nativeGetUnityTelemetry() }.getOrDefault(FloatArray(0))
                 punchTelemetry = runCatching { IvannaNativeLib.nativeGetPunchTelemetry() }.getOrDefault(FloatArray(0))
+                evoEqActive = runCatching { IvannaNativeLib.nativeIsEvolutionaryEqActive() }.getOrDefault(false)
+            } else {
+                evoEqActive = false
             }
             delay(500)
         }
@@ -660,6 +665,16 @@ fun IvannaControlPanel(
                     com.ivanna.omega.core.EvolutionaryEqPrefs.setEnabled(context, en)
                 }
             }
+            Text(
+                text = when {
+                    !evoEqEnabled -> "EQ evolutivo: desactivado por el usuario"
+                    !IvannaNativeLib.isLoaded -> "EQ evolutivo: biblioteca nativa no disponible"
+                    evoEqActive -> "EQ evolutivo: filtro calibrado, validado y activo"
+                    else -> "EQ evolutivo: calibrando/verificando filtro"
+                },
+                color = if (evoEqActive) PhosphorGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall
+            )
             Spacer(modifier = Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlagToggle("UNITY MEDIDO", unityEnabled, PhosphorGreen, Modifier.weight(1f)) { en ->
