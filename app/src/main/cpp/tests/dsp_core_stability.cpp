@@ -172,3 +172,38 @@ TEST(VolterraH2Stability, IdentityLinearAndZeroQuadraticKernelIsInactive) {
     v.updateKernels(h1.data(), h2.data(), K);
     EXPECT_FALSE(v.hasEffectiveKernel());
 }
+
+
+TEST(VolterraH2Stability, NonzeroQuadraticKernelIsAllocatedAndApplied) {
+    constexpr uint32_t K = 2;
+    ivanna::dsp::VolterraH2Symmetric v(K, 1);
+    std::vector<float> h1(K, 0.0f), h2(K * (K + 1) / 2, 0.0f);
+    h1[0] = 1.0f;
+    h2[0] = 0.1f;
+    v.setEnabled(false);
+    v.updateKernels(h1.data(), h2.data(), K);
+    ASSERT_TRUE(v.hasEffectiveKernel());
+    v.setEnabled(true);
+    std::vector<float> in(512, 0.1f), out(512, 0.0f);
+    v.processInterleaved(in.data(), out.data(), 512, 1);
+    EXPECT_NEAR(out.back(), 0.101f, 1e-4f);
+}
+
+TEST(VolterraH2Stability, IdentityBypassKeepsDelayHistoryForLaterKernelActivation) {
+    constexpr uint32_t K = 2;
+    ivanna::dsp::VolterraH2Symmetric v(K, 1);
+    v.setEnabled(false);
+    std::vector<float> history(16, 0.2f), historyOut(16, 0.0f);
+    v.processInterleaved(history.data(), historyOut.data(), 16, 1);
+    for (size_t i = 0; i < history.size(); ++i) EXPECT_FLOAT_EQ(history[i], historyOut[i]);
+
+    std::vector<float> h1(K, 0.0f), h2(K * (K + 1) / 2, 0.0f);
+    h1[0] = 0.5f;
+    h1[1] = 0.5f;
+    v.updateKernels(h1.data(), h2.data(), K);
+    ASSERT_TRUE(v.hasEffectiveKernel());
+    v.setEnabled(true);
+    std::vector<float> silence(16, 0.0f), out(16, 0.0f);
+    v.processInterleaved(silence.data(), out.data(), 16, 1);
+    EXPECT_GT(out[0], 0.0f);
+}

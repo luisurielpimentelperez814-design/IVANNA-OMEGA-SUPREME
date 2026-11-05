@@ -162,10 +162,18 @@ void VolterraH2Symmetric::processInterleaved(
         ~ActiveProcessGuard() { count.fetch_sub(1u, std::memory_order_seq_cst); }
     } activeGuard{m_active_processes};
 
-    if (!m_kernels_ready.load(std::memory_order_seq_cst) ||
-        !m_effective_kernel.load(std::memory_order_acquire)) {
+    if (!m_kernels_ready.load(std::memory_order_seq_cst)) {
         if (output != input) {
-            memcpy(output, input, num_frames * num_channels * sizeof(float));
+            memcpy(output, input, static_cast<size_t>(num_frames) * num_channels * sizeof(float));
+        }
+        return;
+    }
+    if (!m_effective_kernel.load(std::memory_order_acquire)) {
+        // Mantener caliente el historial circular aun con H1 identidad/H2 cero.
+        // Una calibración posterior puede entrar sin arrancar con memoria vacía.
+        preserveInterleavedTail(input, num_frames, num_channels);
+        if (output != input) {
+            memcpy(output, input, static_cast<size_t>(num_frames) * num_channels * sizeof(float));
         }
         return;
     }
