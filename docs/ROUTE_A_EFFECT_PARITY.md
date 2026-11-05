@@ -22,7 +22,8 @@ La captura de reproducción (Ruta A: `PlaybackCaptureService` → motor nativo d
 | Volterra H2, anti-Dolby, RIR, punch, limitador, guardas | sí | sí | compartidos (con guardas propias en Ruta A: `s_routeAGuard`) |
 | Cadena 4D (arco, diafonía, dosímetro) | `fourd::*` | `fourd::*` | **mismo módulo**; la geometría de sala del cancelador solo llegaba a Ruta B (corregido en v2.5.346) |
 | WFS | `IvannaFusionEngine::m_wfs` | `RouteAWfsEngine` | equivalente propio |
-| Upmix / M/S / campo AUX / campo temporal / NPE / corrección de sala | dentro de `IvannaFusionEngine` | globales y `g_upmix`, `g_widener` en el JNI | equivalentes propios, no verificados al mismo nivel |
+| NPE neuromórfico | `m_npe` (`NpeStereoCore`) | `routeAApplyNpe` antes del punch (v2.5.349) | **movido a Ruta A**: mismo núcleo, estado por `PiLstmBridge`; sin medir en dispositivo |
+| Upmix / M/S / campo AUX / campo temporal / corrección de sala | dentro de `IvannaFusionEngine` | globales y `g_upmix`, `g_widener` en el JNI | equivalentes propios, no verificados al mismo nivel |
 | Adaptativo | `ctx->adaptive` (ADE) | ADE en la app (worker Kotlin) | equivalente propio |
 | **EvolutionaryEQ** (FIR de 512 bandas) | `m_evoEq->processNEON` | `routeAApplyEvoEq` tras `g_eq` (v2.5.348) | **movido a Ruta A**: misma clase, calibración en hilo propio, toggle en la UI; sin medir en dispositivo |
 | **Escena binaural HRTF de `HrtfManager`** | `m_hrtf->processBinauralScene` | `PDEngine` (NHO + espacial + HRTF) | motores distintos; no equivalentes |

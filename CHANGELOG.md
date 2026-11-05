@@ -1,3 +1,11 @@
+## v2.5.349 (640) - 2026-11-05
+
+- **Ruta A — NPE neuromorfico:** con el motor nativo activo, `PlaybackCaptureService` no ejecuta `IvannaNpeEngine` (Kotlin) para no apilar etapas, así que el interruptor y los parámetros del NPE no tenían efecto en la ruta que de verdad intercepta el audio (solo llegaban al módulo, Ruta B). Ahora `NpeStereoCore` (la misma cadena por muestra que usa Ruta B: NHO, pool LIF, inhibición lateral, compresión OHC, AGC) corre en `nativeProcess` y `nativeProcessBlock` justo antes del punch y el limitador final.
+- **Control:** `PiLstmBridge` aplica el estado a la cadena nativa (`nativeSetNpeLocal`) antes de enviarlo al daemon, sin depender de que el módulo exista. Apagado y con fade 0 es bit-exacto; apagado por defecto hasta que la app lo publique, como en Ruta B. Se prepara en `nativeInit`, nunca en el callback.
+- **Pruebas:** contrato estructural (9 en `tests/test_route_a_evoeq_contract.py`) y `test_npe_core` 5/5 (el núcleo no cambió).
+- **Alcance:** solo lectura de código, comprobación de sintaxis de la JNI con stubs y pruebas host del núcleo. **No** hay compilación NDK ni escucha en el Moto G85; el NPE añade armónicos y ensanche, y su efecto audible en Ruta A no está medido. El mapeo de parámetros (alpha = OHC, beta = inhibición lateral, armónico = ganancia no lineal) sigue el de Ruta B.
+- **Sigue solo en Ruta B:** escena binaural de `HrtfManager`, GoldenEar GAN, `AdaptiveEngineV2`, bits `ATLAS_*`.
+
 ## v2.5.348 (639) - 2026-11-05
 
 - **Ruta A (captura de reproducción) — EQ evolutivo de 512 bandas:** hasta ahora `EvolutionaryEQ` solo corría en el efecto del sistema (Ruta B); la ruta que realmente intercepta el audio no lo tenía. Ahora `nativeProcess` y `nativeProcessBlock` lo aplican justo tras el EQ paramétrico. Es el mismo FIR de 256 taps que usa Ruta B.

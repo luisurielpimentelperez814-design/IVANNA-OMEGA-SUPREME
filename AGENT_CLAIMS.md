@@ -2714,3 +2714,6 @@ medía 52 128 B en lugar de 28 684; se regenera con `scripts/compute_pca_basis.p
 
 ### v2.5.348 — EQ evolutivo en Ruta A
 **Hecho (verificado en host):** `EvolutionaryEQ` corre también en la cadena de la app (Ruta A) con calibración fuera del callback; 8/8 pruebas del filtro. **No hecho:** compilación NDK de la JNI, escucha/medición en el Moto G85, paridad de sonido con Ruta B (el FIR calibrado puede diferir por el RNG). Pendientes de paridad: HrtfManager (escena binaural), GoldenEar GAN, AdaptiveEngineV2, ATLAS.
+
+### v2.5.349 — NPE en Ruta A
+**Hecho (verificado en host):** `NpeStereoCore` corre en la cadena nativa de la app, controlado sin daemon; el núcleo pasa 5/5. **No hecho:** compilación NDK, escucha/medición en el teléfono. Pendientes de paridad: HrtfManager (escena binaural), GoldenEar GAN, AdaptiveEngineV2, ATLAS.
