@@ -10,7 +10,7 @@ This file separates source-level wiring from evidence that requires the physical
 - The SAFMUS Camera2 adapter requires an already-owned Camera2 session and explicit readback. ARCore does not expose its internal camera session as a public Camera2 owner, so this adapter must not be called with a fabricated session.
 - Qualcomm PAL clock integration remains a target binding seam. No verified Moto G85 ASRC ratio actuator or paired hardware frame/timestamp callback is established by source inspection.
 
-## Required on-device evidence (Moto G85, Android 15)
+## Required on-device evidence (Moto G85, Android 14 / SDK 34)
 
 Run from Termux with the phone unlocked and the route under test active. Capture each route separately: speaker, wired USB-C DAC/adapter, and Bluetooth A2DP if available.
 
