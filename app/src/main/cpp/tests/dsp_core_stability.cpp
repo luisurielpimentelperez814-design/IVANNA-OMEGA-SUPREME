@@ -172,3 +172,19 @@ TEST(VolterraH2Stability, IdentityLinearAndZeroQuadraticKernelIsInactive) {
     v.updateKernels(h1.data(), h2.data(), K);
     EXPECT_FALSE(v.hasEffectiveKernel());
 }
+
+
+TEST(VolterraH2Stability, NonzeroQuadraticKernelIsAllocatedAndApplied) {
+    constexpr uint32_t K = 2;
+    ivanna::dsp::VolterraH2Symmetric v(K, 1);
+    std::vector<float> h1(K, 0.0f), h2(K * (K + 1) / 2, 0.0f);
+    h1[0] = 1.0f;
+    h2[0] = 0.1f; // diagonal term h2[0,0] * x[n]^2
+    v.setEnabled(false);
+    v.updateKernels(h1.data(), h2.data(), K);
+    ASSERT_TRUE(v.hasEffectiveKernel());
+    v.setEnabled(true);
+    std::vector<float> in(512, 0.1f), out(512, 0.0f);
+    v.processInterleaved(in.data(), out.data(), 512, 1);
+    EXPECT_NEAR(out.back(), 0.101f, 1e-4f);
+}

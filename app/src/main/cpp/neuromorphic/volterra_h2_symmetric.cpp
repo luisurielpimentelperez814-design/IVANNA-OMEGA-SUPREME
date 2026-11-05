@@ -43,15 +43,15 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     m_transition_env.setImmediate(0.0f);
 
     m_h1 = static_cast<float*>(memalign(align, static_cast<size_t>(m_kernel_length) * sizeof(float)));
-    // H2 es cuadrático O(K²): no reservar cientos de MB para el kernel cero
-    // que acompaña al estado sin calibrar. Se materializa solo al cargar H2 real.
-    m_h2 = nullptr;
+    const size_t h2_size = (static_cast<size_t>(m_kernel_length) * (m_kernel_length + 1u)) / 2u;
+    m_h2 = static_cast<float*>(memalign(align, h2_size * sizeof(float)));
     m_delay_lines = static_cast<float**>(calloc(m_channels, sizeof(float*)));
     m_delay_indices = static_cast<uint32_t*>(calloc(m_channels, sizeof(uint32_t)));
-    if (!m_h1 || !m_delay_lines || !m_delay_indices) {
+    if (!m_h1 || !m_h2 || !m_delay_lines || !m_delay_indices) {
         releaseStorage(); m_channels = 0; return;
     }
     memset(m_h1, 0, static_cast<size_t>(m_kernel_length) * sizeof(float));
+    memset(m_h2, 0, h2_size * sizeof(float));
     m_h1[0] = 1.0f;
     for (uint32_t ch = 0; ch < m_channels; ++ch) {
         m_delay_lines[ch] = static_cast<float*>(memalign(
@@ -80,7 +80,7 @@ void VolterraH2Symmetric::updateKernels(
     const float* h2_kernel,
     uint32_t length
 ) noexcept {
-    if (!h1_kernel || !h2_kernel || !m_h1 || m_channels == 0) return;
+    if (!h1_kernel || !h2_kernel || !m_h1 || !m_h2 || m_channels == 0) return;
     if (length != m_kernel_length || isEnabled()) return;
     const size_t h1_size = static_cast<size_t>(length);
     const size_t h2_size = (h1_size * (h1_size + 1u)) / 2u;
@@ -100,20 +100,8 @@ void VolterraH2Symmetric::updateKernels(
         m_kernels_ready.store(true, std::memory_order_seq_cst);
         return;
     }
-    if (h2_active && !m_h2) {
-        m_h2 = static_cast<float*>(memalign(64, h2_size * sizeof(float)));
-        if (!m_h2) {
-            m_kernels_ready.store(true, std::memory_order_seq_cst);
-            return;
-        }
-    }
     memcpy(m_h1, h1_kernel, h1_size * sizeof(float));
-    if (h2_active) {
-        memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
-    } else if (m_h2) {
-        free(m_h2);
-        m_h2 = nullptr;
-    }
+    memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
     m_h1_identity = h1_identity;
     m_h2_active = h2_active;
     m_effective_kernel.store(!h1_identity || h2_active, std::memory_order_release);

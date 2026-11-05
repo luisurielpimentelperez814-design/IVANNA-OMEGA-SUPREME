@@ -1513,7 +1513,7 @@ static int32_t omega_process(effect_handle_t self,
         // ── Series de Volterra de 2º Orden Truncadas (con SupremeTransitionEnvelope) ──
         // FIX (aliasing inBuf==outBuf en AudioFlinger): usar volterraScratch preasignado
         // en lugar de outChunk para no sobreescribir el buffer de entrada in-place.
-        if (ctx->volterraEngine && ctx->volterraEngine->hasEffectiveKernel() &&
+        if (ctx->volterraEngine &&
             ctx->stabilityGuard.arbitration().claimNonlinearSlot(
                 ivanna::supreme::AcousticModuleId::VolterraKernel)) {
             if (wantVolterraPre || !ctx->volterraEngine->isSilent()) {
