@@ -204,14 +204,29 @@ static float g_evoEqAWet = 0.0f;                  // solo lo toca el hilo de aud
 
 static void routeAStartEvoEqCalibration() noexcept {
     bool expected = false;
-    if (!g_evoEqACalibrating.compare_exchange_strong(expected, true)) return;   // una sola vez por proceso
-    std::thread([] {
-        auto* eq = new (std::nothrow) Ivanna::EvolutionaryEQ();
-        if (!eq) return;
-        eq->calibrate(48000.0f);
-        if (eq->isReady()) g_evoEqA.store(eq, std::memory_order_release);
-        else delete eq;   // calibracion no verificada: se descarta (Ruta A queda en identidad)
-    }).detach();
+    if (!g_evoEqACalibrating.compare_exchange_strong(expected, true)) return;   // una sola vez mientras calibra
+    try {
+        std::thread([] {
+            Ivanna::EvolutionaryEQ* eq = nullptr;
+            try {
+                eq = new (std::nothrow) Ivanna::EvolutionaryEQ();
+                if (eq) {
+                    eq->calibrate(48000.0f);
+                    if (eq->isReady()) {
+                        g_evoEqA.store(eq, std::memory_order_release);
+                        eq = nullptr;  // propiedad transferida al proceso; el hot-path nunca libera el objeto
+                    }
+                }
+            } catch (...) {
+                // Fallo de calibracion: mantener Ruta A en identidad y permitir reintento en el siguiente init.
+            }
+            delete eq;  // incluye asignacion fallida/no verificada; nunca publicar un filtro parcial
+            g_evoEqACalibrating.store(false, std::memory_order_release);
+        }).detach();
+    } catch (...) {
+        // Si no se puede crear el worker, no dejar bloqueado el estado "calibrando".
+        g_evoEqACalibrating.store(false, std::memory_order_release);
+    }
 }
 
 static void routeAApplyEvoEq(float* L, float* R, int n) noexcept {
