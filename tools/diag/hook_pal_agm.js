@@ -5,7 +5,7 @@
 
 const T0 = Date.now();
 const CAP = {};            // tope de líneas por función (evita inundar con timestamps)
-const LIMITS = { pal_get_timestamp: 300, pal_stream_get_mmap_position: 300 };
+const LIMITS = { pal_get_timestamp: 300, pal_stream_get_mmap_position: 300, agm_session_write: 300, agm_get_session_time: 300, agm_get_buffer_timestamp: 300 };
 const DEFAULT_LIMIT = 800;
 
 function emit(o) { o.t = ((Date.now() - T0) / 1000).toFixed(3); o.pid = Process.id; console.log(JSON.stringify(o)); }
@@ -113,6 +113,36 @@ hook('agm_session_set_params', AGM_MODS, function (a) {
 hook('agm_session_set_non_tunnel_mode_config', AGM_MODS, function (a) {
   emit({ ev: 'call', fn: 'agm_session_set_non_tunnel_mode_config', a0: a[0].toString(), a1: a[1].toString(), a2: a[2].toString(), cfg_hex: hex(a[1], 128) });
 }, null, true);
+
+// AGM exported API observer. Arguments are logged as opaque register values only:
+// the uploaded dynsym list does not authenticate the private AGM C ABI or structs.
+// In particular agm_session_write is an 8-byte veneer in this ELF; resolve its
+// branch target separately before interpreting the callee or any argument.
+function hookOpaque(sym, mods, maxArgs) {
+  hook(sym, mods, function (a) {
+    const raw = [];
+    for (let i = 0; i < maxArgs; ++i) raw.push(a[i] ? a[i].toString() : null);
+    emit({ ev: 'agm_opaque_call', fn: sym, args: raw });
+  }, null, false);
+}
+
+hookOpaque('agm_session_write', AGM_MODS, 6);
+hookOpaque('agm_session_read', AGM_MODS, 6);
+hookOpaque('agm_session_open', AGM_MODS, 6);
+hookOpaque('agm_session_prepare', AGM_MODS, 6);
+hookOpaque('agm_session_start', AGM_MODS, 6);
+hookOpaque('agm_session_stop', AGM_MODS, 6);
+hookOpaque('agm_session_close', AGM_MODS, 6);
+hookOpaque('agm_session_get_buf_info', AGM_MODS, 6);
+hookOpaque('agm_get_session_time', AGM_MODS, 6);
+hookOpaque('agm_get_buffer_timestamp', AGM_MODS, 6);
+hookOpaque('graph_open', AGM_MODS, 6);
+hookOpaque('graph_prepare', AGM_MODS, 6);
+hookOpaque('graph_start', AGM_MODS, 6);
+hookOpaque('graph_stop', AGM_MODS, 6);
+hookOpaque('device_open', AGM_MODS, 6);
+hookOpaque('device_prepare', AGM_MODS, 6);
+hookOpaque('device_start', AGM_MODS, 6);
 
 // ---------- tinyalsa: ¿se escribe algún control de razón/reloj al reproducir USB? ----------
 hook('mixer_ctl_set_enum_by_string', TINY_MODS, function (a) {
