@@ -74,7 +74,15 @@ object PiLstmBridge {
         private set
     private val moduleRetrying = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    /** Mismo estado, aplicado tambien en la cadena nativa de la app (Ruta A). No depende del daemon. */
+    private fun applyLocalNpe() {
+        runCatching {
+            IvannaNativeLib.nativeSetNpeLocal(!moduleBypass, lastHarmonicGain, lastBeta.coerceIn(0f, 1f), lastAlpha.coerceIn(0f, 1f), moduleMasterDb)
+        }
+    }
+
     private fun sendModuleNpe(): Boolean = runCatching {
+        applyLocalNpe()
         IvannaNativeLib.nativeSetNpeModule(!moduleBypass, lastBeta.coerceIn(0f, 1f), lastAlpha.coerceIn(0f, 1f), moduleMasterDb)
     }.getOrDefault(false)
 

@@ -398,6 +398,8 @@ object IvannaNativeLib {
     external fun nativeSetRoomCorrection(gainsDb: FloatArray)
 
     /** Motor NPE neuromórfico en el MÓDULO (Ruta B, omega_effect): encendido, inhibición lateral, compresión OHC, master (dB). */
+    /** Ruta A: NPE neuromorfico en la cadena nativa de la app (paridad con el modulo). */
+    external fun nativeSetNpeLocal(enabled: Boolean, harmonic: Float, lateralInhib: Float, ohcCompression: Float, masterDb: Float)
     external fun nativeSetNpeModule(enabled: Boolean, lateralInhib: Float, ohcCompression: Float, masterDb: Float): Boolean
 
     /**

@@ -234,6 +234,25 @@ static void routeAApplyEvoEq(float* L, float* R, int n) noexcept {
     g_evoEqAWet = target;
 }
 
+// ── Ruta A: NPE neuromorfico en la cadena nativa (paridad con Ruta B: IvannaFusionEngine::m_npe) ────────
+// Con el motor nativo activo, PlaybackCaptureService NO ejecuta IvannaNpeEngine (Kotlin) para no apilar etapas:
+// el interruptor y los parametros del NPE no tenian efecto en la ruta que realmente intercepta el audio. Se usa
+// NpeStereoCore (misma cadena por muestra que el modulo, sin asignaciones) justo antes del punch/limitador final.
+// Apagado y con fade 0 es bit-exacto. Parametros por atomicos (control -> audio); mismos rangos que Ruta B.
+static ivanna::neuromorphic::NpeStereoCore g_npeA;
+static std::atomic<bool>  g_npeAOn{false};          // como Ruta B: apagado hasta que la app lo publique
+static std::atomic<float> g_npeAHarm{0.2f}, g_npeALat{0.2f}, g_npeAOhc{0.3f}, g_npeAMasterDb{0.0f};
+static std::atomic<float> g_npeAPreparedSr{0.0f};   // solo se (re)prepara en nativeInit, bajo g_dspProcessMutex
+
+static void routeAApplyNpe(float* L, float* R, int n) noexcept {
+    g_npeA.setParams(g_npeAOn.load(std::memory_order_relaxed),
+                     g_npeAHarm.load(std::memory_order_relaxed),
+                     g_npeALat.load(std::memory_order_relaxed),
+                     g_npeAOhc.load(std::memory_order_relaxed),
+                     g_npeAMasterDb.load(std::memory_order_relaxed));
+    g_npeA.process(L, R, n);
+}
+
 static void routeAApplyDefaultXtcGeometry() noexcept {
     const auto& room = ivanna::spatial::RoomGeometryConfig::defaultLayout();
     routeAApplyXtcGeometry(room.speakerX.data(), room.speakerY.data(), room.speakerZ.data());
@@ -953,6 +972,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // inicializaba el panel de la UI con 48000/480 fijos: sin abrir el panel, feed/apply eran
     // no-ops y con un dispositivo a 44.1 kHz el conductor temporizaba con un bloque erróneo.
     ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
+    if (g_npeAPreparedSr.load(std::memory_order_relaxed) != static_cast<float>(sr)) {
+        g_npeA.prepare(static_cast<float>(sr));   // bajo g_dspProcessMutex: el audio no corre a la vez
+        g_npeAPreparedSr.store(static_cast<float>(sr), std::memory_order_relaxed);
+    }
     routeAStartEvoEqCalibration();   // hilo propio; el efecto se activa solo cuando la calibracion verifica
     g_initialized.store(true, std::memory_order_release);
     // El ADE solo arranca cuando el grafo nativo ya está preparado. La
@@ -1986,6 +2009,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_punch.setImpactBias(ivanna::fourd::arcImpact());   // el drop del arco narrativo 4D realza el golpe (guardas intactas)
     g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);   // y modula el espacio: se abre antes, se recoge en el impacto
     g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
+    routeAApplyNpe(g_ats.pdOutL, g_ats.pdOutR, n);   // paridad con Ruta B (NPE neuromorfico)
     g_punch.process(g_ats.pdOutL, g_ats.pdOutR, n);
     // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
     // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
@@ -2346,6 +2370,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_punch.setImpactBias(ivanna::fourd::arcImpact());
     g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);
     g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
+    routeAApplyNpe(oL, oR, n);   // paridad con Ruta B (NPE neuromorfico)
     g_punch.process(oL, oR, n);
     // Cancelación de diafonía de la Cadena 4D antes del limitador (ver nativeProcess).
     ivanna::fourd::applyOutputPlanar(oL, oR, n);
@@ -2364,6 +2389,16 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloat* pR = env->GetFloatArrayElements(outR, nullptr);
     if (pL) { memcpy(pL, oL, n*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
     if (pR) { memcpy(pR, oR, n*sizeof(float)); env->ReleaseFloatArrayElements(outR, pR, 0); }
+}
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNpeLocal(
+    JNIEnv*, jobject, jboolean enabled, jfloat harmonic, jfloat lateralInhib, jfloat ohcCompression, jfloat masterDb) {
+    // Ruta A: mismos rangos que NpeStereoCore::setParams. Valores no finitos se ignoran (se conserva el anterior).
+    if (std::isfinite(harmonic))       g_npeAHarm.store(std::clamp(harmonic, 0.0f, 2.0f), std::memory_order_relaxed);
+    if (std::isfinite(lateralInhib))   g_npeALat.store(std::clamp(lateralInhib, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(ohcCompression)) g_npeAOhc.store(std::clamp(ohcCompression, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(masterDb))       g_npeAMasterDb.store(std::clamp(masterDb, -24.0f, 12.0f), std::memory_order_relaxed);
+    g_npeAOn.store(enabled == JNI_TRUE, std::memory_order_relaxed);
 }
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvolutionaryEqEnabled(JNIEnv*, jobject, jboolean enabled) {

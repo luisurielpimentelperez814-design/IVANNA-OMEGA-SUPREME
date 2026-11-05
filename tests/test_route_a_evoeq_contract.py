@@ -39,3 +39,24 @@ class RouteAEvolutionaryEqContract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PB = open(os.path.join(ROOT, "app/src/main/java/com/ivanna/omega/neuromorphic/PiLstmBridge.kt"), encoding="utf-8").read()
+
+
+class RouteANpeContract(unittest.TestCase):
+    def test_both_entry_points_apply_npe_right_before_the_punch_and_limiter(self):
+        self.assertRegex(JNI, r"routeAApplyNpe\(g_ats\.pdOutL, g_ats\.pdOutR, n\);[^\n]*\n\s*g_punch\.process\(g_ats\.pdOutL, g_ats\.pdOutR, n\)")
+        self.assertRegex(JNI, r"routeAApplyNpe\(oL, oR, n\);[^\n]*\n\s*g_punch\.process\(oL, oR, n\)")
+
+    def test_off_by_default_until_the_app_publishes_the_state(self):
+        self.assertRegex(JNI, r"g_npeAOn\{false\}")
+
+    def test_prepared_in_native_init_not_in_the_audio_callback(self):
+        apply_body = re.search(r"static void routeAApplyNpe\(.*?\n\}", JNI, re.S).group(0)
+        self.assertNotIn("prepare", apply_body)
+        self.assertRegex(JNI, r"g_npeA\.prepare\(static_cast<float>\(sr\)\)")
+
+    def test_app_state_reaches_the_native_chain_without_the_daemon(self):
+        # applyLocalNpe corre antes del envio al daemon: la Ruta A no depende de que el modulo exista.
+        self.assertRegex(PB, r"applyLocalNpe\(\)\s*\n\s*IvannaNativeLib\.nativeSetNpeModule\(")
