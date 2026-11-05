@@ -56,11 +56,18 @@ que la siguiente sesión sepa el estado real.
 **No declarar "transaural validado":** la geometría sigue siendo un modelo nominal del perfil de sala; falta calibración 2×2 altavoz→oído con micrófono binaural y validación en el Moto G85/posición real de escucha.
 **No tocar:** no quitar el tope de realce ni las pruebas `CrosstalkCancellation.*` (impiden volver a un cancelador que no cancela).
 
-### Paridad de efectos Ruta A / Ruta B — captura de reproducción (2026-11-04)
-**Responsable:** sesión Claude, por indicación directa del propietario ("todos los efectos por Ruta A").
-**Hecho (verificado por lectura y prueba estructural, no en dispositivo):** v2.5.346 aplica también en Ruta A (JNI, cadena 4D) la geometría de sala del cancelador de diafonía; antes solo llegaba a Ruta B (`omega_effect.cpp`) y el de Ruta A corría con la de escritorio. Auditoría completa en `docs/ROUTE_A_EFFECT_PARITY.md`: `IvannaFusionEngine` solo se compila en `libomega_effect.so`; sin equivalente en Ruta A: EvolutionaryEQ, escena binaural de `HrtfManager`, GoldenEar GAN, `AdaptiveEngineV2`, bits `ATLAS_*`.
-**Decisión:** **no** se trasladó ningún efecto de B a A; trasladar en bloque duplicaría etapas que Ruta A ya tiene y cambiaría el sonido sin prueba posible aquí (ver el historial del gate de `PlaybackCaptureService` más arriba). Cada traslado: correspondencia de parámetros, identidad apagado, prueba host y escucha en el dispositivo.
-**No tocar:** el bloque "Transaural / CrosstalkCanceller" de arriba pertenece a otra sesión; esta entrada solo añade el cableado de la geometría en Ruta A.
+### Paridad funcional completa Ruta A / Ruta B — captura de reproducción (2026-11-05)
+**Responsable:** sesión ChatGPT actual, por instrucción directa del propietario. **Entrega directa a `main`; no usar ramas ni PR.** El último push a `main` es la fuente de verdad; cada push debe disparar CI y sus logs gobiernan el siguiente ajuste.
+
+**Objetivo:** todas las capacidades funcionales de IVANNA deben poder ejecutarse por la cadena real `PlaybackCaptureService → DSPBridge/JNI → DSP → AudioTrack`, sin depender de `libomega_effect.so`. No significa copiar `IvannaFusionEngine` en bloque: se comparten núcleos, se arbitran actuadores y se evita apilar etapas equivalentes.
+
+**Base:** v2.5.350 (641). NPE y EvolutionaryEQ ya tienen ejecución local Ruta A; Atlas comparte `SceneTargetBus`; WFS, upmix, M/S, Volterra, RIR, 4D, limitador y guardas tienen implementaciones locales identificadas. Sigue pendiente cerrar equivalencias de HRTF binaural de `HrtfManager`, GoldenEar GAN y controles/acciones de daemon sin espejo local, con arbitraje explícito y parámetros validados. `AdaptiveEngineV2` no debe añadirse como segundo controlador sobre actuadores que ADE ya gobierna.
+
+**Riesgo de doble proceso:** el comentario de `DSPBridge_nativeProcess` identifica que MediaProjection loopback puede capturar salida del mixer después de `omega_effect`. No activar un gate basado solo en `isDaemonRunning()`: ya causó en dispositivo pérdida de audio y bucle de permiso. La discriminación correcta debe identificar origen/session/stream; preservar siempre el camino de captura funcional.
+
+**v2.5.351 directo a Main:** corregido el worker de calibración de EvolutionaryEQ en Ruta A. Si la asignación fallaba o `calibrate()` no validaba, el código anterior dejaba `g_evoEqACalibrating=true` para siempre; además la creación del hilo no estaba protegida dentro de una función `noexcept`. El worker ahora limpia el guard en éxito y fallo, descarta el objeto no validado y captura fallo de creación. El bypass continúa siendo identidad y no se toca el callback DSP. Contrato estructural ampliado; pendiente ejecución CI.
+
+**Método de entrega:** commits directos y pequeños a `main`; ejecutar CI y leer logs reales después de cada push. No declarar compilación NDK, escucha en Moto G85 ni paridad completa sin sus evidencias. Versionar manifiestos coordinados; release binario solo tras confirmar el artefacto generado por CI.
 
 ### LD_PRELOAD PAL de Moto G85 — sonda empaquetada, inyeccion bloqueada (2026-11-03)
 **Responsable:** sesion Claude, por indicacion directa del propietario.
