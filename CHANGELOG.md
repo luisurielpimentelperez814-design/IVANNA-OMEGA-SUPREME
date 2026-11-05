@@ -1,3 +1,7 @@
+## Unreleased
+
+- **Moto G85 / Qualcomm AGM:** se documenta el inventario de símbolos dinámicos de `libagm.so` suministrado y se amplía `hook_pal_agm.js` con observación pasiva de escritura/lectura AGM, ciclo de vida de sesión/grafo/dispositivo y consultas de timestamp. Los argumentos se registran como valores opacos: no se asume ABI ni se escriben parámetros. No habilita todavía inyección HAL, interceptación PCM ni ASRC físico; el firmware Android 14 debe confirmar identidad ELF, correlación frames/timestamp y actuador real.
+
 ## v2.5.346 (637) - 2026-11-04
 
 - **Transaural en Ruta A (captura de reproducción):** la geometría de sala 3.83 × 2.83 × 7.00 m del cancelador de diafonía solo se aplicaba en `omega_effect.cpp` (Ruta B). El cancelador de Ruta A es el de la cadena 4D y seguía con la geometría de escritorio (0.90 m / 0.85 m). Ahora se deriva de FL/FR del layout del WFS de Ruta A con la misma función que Ruta B, al preparar el motor y al cambiar el layout.
