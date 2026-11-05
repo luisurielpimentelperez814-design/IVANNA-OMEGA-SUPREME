@@ -107,6 +107,7 @@ case "$COMMAND" in
                 echo "--- daemon.log (ASRC/HAL-CLOCK/ASRC-LINK, ultimas 15) ---"
                 grep -a -E 'ASRC-SW|HAL-CLOCK|ASRC-LINK' /data/adb/ivanna_omega/daemon.log 2>/dev/null | tail -15 ;;
     hal-probe)  exec "$(dirname "$0")/system/bin/ivanna_hal_probe" ;;  # evidencia PAL/ASRC del dispositivo, solo lectura
+    audio-unify) exec "$(dirname "$0")/audio_unify.sh" "${ARG:-status}" ;;  # consolidación reversible de módulos legacy para el siguiente arranque
     preload)    # ¿esta la sonda LD_PRELOAD realmente mapeada en el HAL de audio? (solo lectura de /proc; requiere root)
                 . "$(dirname "$0")/preload_link.sh"
                 case "$ARG" in
@@ -141,6 +142,7 @@ Uso:
   $0 asrc-link [repair]   Canal ASRC/reloj HAL: diagnostico (repair = recrear dir y permisos)
   $0 hal-probe            Evidencia PAL/ASRC del dispositivo (solo lectura)
   $0 preload [status|report]  Sonda LD_PRELOAD PAL: ¿cargada en el HAL? (solo lectura, root; no inyecta nada)
+  $0 audio-unify [status|apply|rollback]  Unifica módulos legacy de audio (requiere reinicio; no inyecta HAL)
   $0 reload               Releer parámetros
   $0 probe                Estado transport (alive|socket_open_no_nc|no_daemon)
 HELP
