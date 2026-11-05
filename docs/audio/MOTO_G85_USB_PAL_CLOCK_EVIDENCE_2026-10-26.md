@@ -2,7 +2,7 @@
 
 ## Scope and provenance
 
-This note records the structured diagnostic summary supplied for a rooted Moto G85 5G (device `malmo`, Qualcomm platform `blair`), Android 15 / SDK 35. It is evidence inventory, not a claim that the HAL callsite or a physical ASRC actuator has been integrated. The underlying raw report sections for mixer controls and ALSA state were summarized rather than reproduced in full, so details not included below remain unverified.
+This note records a historical structured diagnostic summary supplied for a rooted Moto G85 5G (device `malmo`, Qualcomm platform `blair`), labeled Android 15 / SDK 35. The owner has since confirmed the current target is Android 14 / SDK 34. Treat this capture as historical evidence from a separate/unreconciled build; do not assume its library hashes, symbols, route state or counters match the current Android 14 installation. It is evidence inventory, not a claim that the HAL callsite or a physical ASRC actuator has been integrated. The underlying raw report sections for mixer controls and ALSA state were summarized rather than reproduced in full, so details not included below remain unverified.
 
 ## Device and library inventory
 
