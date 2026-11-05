@@ -133,3 +133,42 @@ TEST(VolterraH2Stability, EnabledStaysFiniteAndSoftClipped) {
         ASSERT_LT(std::fabs(y), 2.0f);
     }
 }
+
+
+TEST(VolterraH2Stability, DefaultKernelIsExactPassthroughAndInactive) {
+    ivanna::dsp::VolterraH2Symmetric v(64, 2);
+    EXPECT_FALSE(v.hasEffectiveKernel());
+    std::vector<float> in(512), out(512, -99.0f);
+    for (size_t i = 0; i < in.size(); ++i) in[i] = 0.31f * std::sin(static_cast<float>(i) * 0.071f);
+    v.processInterleaved(in.data(), out.data(), 256, 2);
+    for (size_t i = 0; i < in.size(); ++i) EXPECT_FLOAT_EQ(in[i], out[i]);
+}
+
+TEST(VolterraH2Stability, KernelUpdateRequiresDisabledSilentEngineAndFiniteCoefficients) {
+    constexpr uint32_t K = 8;
+    ivanna::dsp::VolterraH2Symmetric v(K, 2);
+    std::vector<float> h1(K, 0.0f), h2(K * (K + 1) / 2, 0.0f);
+    h1[0] = 0.5f;
+    v.updateKernels(h1.data(), h2.data(), K);
+    EXPECT_FALSE(v.hasEffectiveKernel());
+    v.setEnabled(false);
+    v.updateKernels(h1.data(), h2.data(), K);
+    EXPECT_TRUE(v.hasEffectiveKernel());
+    h1[0] = std::numeric_limits<float>::quiet_NaN();
+    v.updateKernels(h1.data(), h2.data(), K);
+    EXPECT_TRUE(v.hasEffectiveKernel());
+    v.setEnabled(true);
+    std::vector<float> in(1024, 0.1f), out(1024, 0.0f);
+    v.processInterleaved(in.data(), out.data(), 512, 2);
+    EXPECT_NEAR(out.back(), 0.05f, 1e-4f);
+}
+
+TEST(VolterraH2Stability, IdentityLinearAndZeroQuadraticKernelIsInactive) {
+    constexpr uint32_t K = 16;
+    ivanna::dsp::VolterraH2Symmetric v(K, 1);
+    v.setEnabled(false);
+    std::vector<float> h1(K, 0.0f), h2(K * (K + 1) / 2, 0.0f);
+    h1[0] = 1.0f;
+    v.updateKernels(h1.data(), h2.data(), K);
+    EXPECT_FALSE(v.hasEffectiveKernel());
+}

@@ -34,65 +34,78 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     : m_kernel_length(kernel_length), m_channels(channels) {
 
     const size_t align = 64;
-
     if (m_kernel_length == 0) m_kernel_length = 64;
     if (m_kernel_length > 16384) m_kernel_length = 16384;
     if (m_channels == 0) m_channels = 2;
     if (m_channels > 16) m_channels = 16;
 
-    m_h1 = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
-    if (m_h1) memset(m_h1, 0, m_kernel_length * sizeof(float));
-
-    const size_t h2_size = (m_kernel_length * (m_kernel_length + 1)) / 2;
-    m_h2 = static_cast<float*>(memalign(align, h2_size * sizeof(float)));
-    if (m_h2) memset(m_h2, 0, h2_size * sizeof(float));
-
-    m_delay_lines = static_cast<float**>(malloc(m_channels * sizeof(float*)));
-    if (!m_delay_lines) { m_channels = 0; return; } // OOM: degradar a no-op seguro en lugar de crash RT
-    m_delay_indices = static_cast<uint32_t*>(malloc(m_channels * sizeof(uint32_t)));
-
-    for (uint32_t ch = 0; ch < m_channels; ++ch) {
-        m_delay_lines[ch] = static_cast<float*>(memalign(align, m_kernel_length * sizeof(float)));
-        if (m_delay_lines[ch]) memset(m_delay_lines[ch], 0, m_kernel_length * sizeof(float));
-        m_delay_indices[ch] = 0;
-    }
-
-    if (m_h1) m_h1[0] = 1.0f;
-
     m_transition_env.configure(48000.0f, 8.0f, 18.0f, 35.0f);
-    m_transition_env.setImmediate(1.0f);
+    m_transition_env.setImmediate(0.0f);
 
+    m_h1 = static_cast<float*>(memalign(align, static_cast<size_t>(m_kernel_length) * sizeof(float)));
+    const size_t h2_size = (static_cast<size_t>(m_kernel_length) * (m_kernel_length + 1u)) / 2u;
+    m_h2 = static_cast<float*>(memalign(align, h2_size * sizeof(float)));
+    m_delay_lines = static_cast<float**>(calloc(m_channels, sizeof(float*)));
+    m_delay_indices = static_cast<uint32_t*>(calloc(m_channels, sizeof(uint32_t)));
+    if (!m_h1 || !m_h2 || !m_delay_lines || !m_delay_indices) {
+        releaseStorage(); m_channels = 0; return;
+    }
+    memset(m_h1, 0, static_cast<size_t>(m_kernel_length) * sizeof(float));
+    memset(m_h2, 0, h2_size * sizeof(float));
+    m_h1[0] = 1.0f;
+    for (uint32_t ch = 0; ch < m_channels; ++ch) {
+        m_delay_lines[ch] = static_cast<float*>(memalign(
+            align, static_cast<size_t>(m_kernel_length) * sizeof(float)));
+        if (!m_delay_lines[ch]) {
+            releaseStorage(); m_channels = 0; return;
+        }
+        memset(m_delay_lines[ch], 0, static_cast<size_t>(m_kernel_length) * sizeof(float));
+    }
+    m_h1_identity = true;
+    m_h2_active = false;
+    m_effective_kernel.store(false, std::memory_order_release);
     m_kernels_ready.store(true, std::memory_order_release);
 }
 
-VolterraH2Symmetric::~VolterraH2Symmetric() {
-    free(m_h1);
-    free(m_h2);
-
-    for (uint32_t ch = 0; ch < m_channels; ++ch) {
-        free(m_delay_lines[ch]);
-    }
-    free(m_delay_lines);
-    free(m_delay_indices);
+void VolterraH2Symmetric::releaseStorage() noexcept {
+    if (m_delay_lines) for (uint32_t ch = 0; ch < m_channels; ++ch) free(m_delay_lines[ch]);
+    free(m_delay_lines); free(m_delay_indices); free(m_h1); free(m_h2);
+    m_delay_lines = nullptr; m_delay_indices = nullptr; m_h1 = nullptr; m_h2 = nullptr;
 }
+
+VolterraH2Symmetric::~VolterraH2Symmetric() { releaseStorage(); }
 
 void VolterraH2Symmetric::updateKernels(
     const float* h1_kernel,
     const float* h2_kernel,
     uint32_t length
 ) noexcept {
-    if (!h1_kernel || !h2_kernel) return;
-    if (length != m_kernel_length) return;
-
-    // Cambiar estado atómico de forma segura para detener el hilo caliente de audio
-    m_kernels_ready.store(false, std::memory_order_release);
-
-    if (m_h1) memcpy(m_h1, h1_kernel, length * sizeof(float));
-
-    const size_t h2_size = (length * (length + 1)) / 2;
-    if (m_h2) memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
-
-    m_kernels_ready.store(true, std::memory_order_release);
+    if (!h1_kernel || !h2_kernel || !m_h1 || !m_h2 || m_channels == 0) return;
+    if (length != m_kernel_length || isEnabled()) return;
+    const size_t h1_size = static_cast<size_t>(length);
+    const size_t h2_size = (h1_size * (h1_size + 1u)) / 2u;
+    bool h1_identity = h1_kernel[0] == 1.0f;
+    bool h2_active = false;
+    for (size_t i = 0; i < h1_size; ++i) {
+        if (!std::isfinite(h1_kernel[i])) return;
+        if (i != 0 && h1_kernel[i] != 0.0f) h1_identity = false;
+    }
+    for (size_t i = 0; i < h2_size; ++i) {
+        if (!std::isfinite(h2_kernel[i])) return;
+        if (h2_kernel[i] != 0.0f) h2_active = true;
+    }
+    if (!m_kernels_ready.exchange(false, std::memory_order_seq_cst)) return;
+    if (m_active_processes.load(std::memory_order_seq_cst) != 0u ||
+        !m_transition_env.isSilent()) {
+        m_kernels_ready.store(true, std::memory_order_seq_cst);
+        return;
+    }
+    memcpy(m_h1, h1_kernel, h1_size * sizeof(float));
+    memcpy(m_h2, h2_kernel, h2_size * sizeof(float));
+    m_h1_identity = h1_identity;
+    m_h2_active = h2_active;
+    m_effective_kernel.store(!h1_identity || h2_active, std::memory_order_release);
+    m_kernels_ready.store(true, std::memory_order_seq_cst);
 }
 
 void VolterraH2Symmetric::preserveInterleavedTail(
@@ -127,8 +140,14 @@ void VolterraH2Symmetric::processInterleaved(
     uint32_t num_channels
 ) noexcept {
     if (!input || !output) return;
+    m_active_processes.fetch_add(1u, std::memory_order_seq_cst);
+    struct ActiveProcessGuard {
+        std::atomic<uint32_t>& count;
+        ~ActiveProcessGuard() { count.fetch_sub(1u, std::memory_order_seq_cst); }
+    } activeGuard{m_active_processes};
 
-    if (!m_kernels_ready.load(std::memory_order_acquire)) {
+    if (!m_kernels_ready.load(std::memory_order_seq_cst) ||
+        !m_effective_kernel.load(std::memory_order_acquire)) {
         if (output != input) {
             memcpy(output, input, num_frames * num_channels * sizeof(float));
         }
@@ -155,10 +174,9 @@ void VolterraH2Symmetric::processInterleaved(
         m_continuity_mgr.resume();
     }
 
-    if (num_channels > m_channels) {
-        num_channels = m_channels;
-    }
     if (num_channels == 0) return;
+    const uint32_t input_channels = num_channels;
+    const uint32_t process_channels = std::min(num_channels, m_channels);
 
     // CAPTURA LOCAL SEGURA: Blindaje contra Race Conditions que provocan el desbordamiento de búfer (SIGSEGV)
     const uint32_t K = m_kernel_length;
@@ -183,8 +201,9 @@ void VolterraH2Symmetric::processInterleaved(
 
     for (uint32_t n = 0; n < num_frames; ++n) {
         const float env = m_transition_env.nextSample();
-        for (uint32_t ch = 0; ch < num_channels; ++ch) {
-            const uint32_t idx = n * num_channels + ch;
+        for (uint32_t ch = 0; ch < input_channels; ++ch) {
+            const uint32_t idx = n * input_channels + ch;
+            if (ch >= process_channels) { output[idx] = input[idx]; continue; }
             const float dry = input[idx];
             float x = dry;
 
@@ -205,16 +224,19 @@ void VolterraH2Symmetric::processInterleaved(
 
             // --- PROCESAMIENTO DEL NÚCLEO LINEAL H1 ---
             // write_idx apunta a x[n] (k = 0); (write_idx + K - k) % K apunta a x[n - k].
-            float y_linear = 0.0f;
-            for (uint32_t k = 0; k < K; ++k) {
-                uint32_t delay_k = (write_idx + K - k) % K;
-                y_linear += m_h1[k] * delay[delay_k];
+            float y_linear = x;
+            if (!m_h1_identity) {
+                y_linear = 0.0f;
+                for (uint32_t k = 0; k < K; ++k) {
+                    const uint32_t delay_k = (write_idx + K - k) % K;
+                    y_linear += m_h1[k] * delay[delay_k];
+                }
             }
 
             // --- PROCESAMIENTO DEL NÚCLEO CUADRÁTICO H2 (ARM NEON VECTORIZADO) ---
             float y_quad = 0.0f;
 
-            for (uint32_t k = 0; k < K; ++k) {
+            for (uint32_t k = 0; m_h2_active && k < K; ++k) {
                 uint32_t delay_k = (write_idx + K - k) % K;
                 float x_k = delay[delay_k];
                 

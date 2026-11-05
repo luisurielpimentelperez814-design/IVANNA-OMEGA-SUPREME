@@ -82,10 +82,8 @@ public:
      * Activa/desactiva la corrección H2 (para bypass A/B testing)
      */
     void setEnabled(bool enabled) noexcept {
+        // Solo publica la intención; el envelope pertenece al hilo DSP.
         m_enabled.store(enabled, std::memory_order_release);
-        if (m_transition_env.renderedBlocks == 0u) {
-            m_transition_env.setImmediate(enabled ? 1.0f : 0.0f);
-        }
     }
 
     void setThermalBypass(bool thermalBypass) noexcept {
@@ -94,6 +92,10 @@ public:
 
     bool isEnabled() const noexcept {
         return m_enabled.load(std::memory_order_acquire);
+    }
+
+    bool hasEffectiveKernel() const noexcept {
+        return m_effective_kernel.load(std::memory_order_acquire);
     }
 
     bool isSilent() const noexcept {
@@ -129,10 +131,15 @@ private:
     float** m_delay_lines = nullptr;
     uint32_t* m_delay_indices = nullptr;
 
-    // Estado
+    // Coeficientes mutables solo con ready=false y cero callbacks activos.
     std::atomic<bool> m_enabled{true};
     std::atomic<bool> m_thermal_bypass{false};
     std::atomic<bool> m_kernels_ready{false};
+    std::atomic<bool> m_effective_kernel{false};
+    std::atomic<uint32_t> m_active_processes{0};
+    bool m_h1_identity = true;
+    bool m_h2_active = false;
+    void releaseStorage() noexcept;
     ivanna::supreme::SupremeTransitionEnvelope m_transition_env{};
     ivanna::supreme::SupremeStateContinuityManager m_continuity_mgr{};
 

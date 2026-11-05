@@ -1,3 +1,12 @@
+## v2.5.354 (645) - 2026-11-05
+
+- **Volterra H2 — bypass matemático real:** kernel inicial h1=[1,0,...], h2=0 reconocido como identidad; passthrough exacto sin convolución FIR ni bucles cuadráticos. Las actualizaciones detectan H1 identidad y H2 nulo por separado.
+- **Actualización segura:** se rechazan coeficientes NaN/Inf, longitudes incorrectas y escrituras mientras el motor está habilitado o el envelope no está silencioso. Puerta atómica + contador de callbacks evitan escrituras concurrentes sin bloquear el hilo RT.
+- **OOM fail-closed:** se comprueban todas las asignaciones; cualquier fallo libera asignaciones parciales y deja passthrough seguro. Destructor tolera inicialización incompleta.
+- **Thread ownership:** setEnabled solo publica intención; el envelope se modifica desde DSP. Corregido stride interleaved cuando la entrada contiene más canales que el motor.
+- **Pruebas:** identidad exacta, H1/H2 nulos, rechazo de actualización habilitada/NaN y FIR lineal de prueba.
+- **Alcance:** robustez y reducción de cómputo en kernel no calibrado. No se carga kernel medido ni se afirma mejora perceptual o validación física.
+
 ## v2.5.353 (644) - 2026-11-05
 
 - **Ruta A — HRTF sin asignaciones en el callback:** `PDEngine` reemplaza los dos `std::vector` de scratch HRTF por buffers `std::array` fijos de 2048 frames, coherentes con el límite de `nativeProcess` y los buffers `AudioThreadState`. Se elimina `resize()` del camino de audio.
