@@ -218,6 +218,7 @@ static void* routeAEvoEqCalibrationWorker(void*) noexcept {
 }
 
 static void routeAStartEvoEqCalibration() noexcept {
+    if (g_evoEqA.load(std::memory_order_acquire) != nullptr) return;  // calibracion valida: no recrear ni filtrar el puntero
     bool expected = false;
     if (!g_evoEqACalibrating.compare_exchange_strong(expected, true)) return;   // una sola vez mientras calibra
 
