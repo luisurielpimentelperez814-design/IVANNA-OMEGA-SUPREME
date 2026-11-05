@@ -1,3 +1,9 @@
+## v2.5.344 (635) - 2026-11-04
+
+- **Transaural — carrera de datos corregida:** `CrosstalkCanceller` guardaba la geometría, ρ, el retardo y el coeficiente del paso-alto como `float` planos que escribían los setters (hilo de control: geometría de sala, rastreador de cabeza) mientras `processBlock()` los leía en el hilo de audio. Ahora todo es `std::atomic<float>` (relaxed), incluido `listenerOffsetM` de v2.5.343. Sin cambio de sonido ni de API.
+- **Pruebas:** `GeometryRoundTripKeepsListenerOffset` y `ConcurrentGeometryUpdatesNeverProduceNonFiniteOutput` (2000 bloques con la geometría cambiando en paralelo). `Crosstalk*` 10/10 en host y sin avisos con `g++ -fsanitize=thread`.
+- **Alcance:** verificado en host; no en dispositivo. No cambia el estado de LD_PRELOAD (sigue bloqueado por init_boot) ni se modifica `audio.primary.blair.so`.
+
 ## v2.5.343 (634) - 2026-11-04
 
 - **Transaural MAGISTRAL (sala del propietario):** perfil único 3.83 × 2.83 × 7.00 m — FL/FR a 1.50 m y 2.70 m de separación, SL/SR en las paredes laterales a 3.50 m del frente y 1.80 m de altura, subwoofer en el suelo. Se aplica igual en `RoomGeometryConfig`, el snapshot por defecto, el estado del daemon y la UI (`WfsCalibrationManager`); TL/TR bajan de 3.00 m (sobre el techo) a 2.83 m. `tests/test_magistral_defaults.py` impide que las cuatro copias diverjan.

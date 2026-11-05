@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.343
-versionCode=634
+version=v2.5.344
+versionCode=635
 author=Luis Uriel Pimentel Pérez (Gore TNS)
 description=v2.5.342: transaural (CrosstalkCanceller) now really cancels crosstalk (was ~0.1 dB); centered-content boost capped at +4 dB
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
