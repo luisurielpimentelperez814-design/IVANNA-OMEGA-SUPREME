@@ -235,7 +235,7 @@ class ModuleHonestyContractTest(unittest.TestCase):
         text = open(os.path.join(MOD, "ivanna_control.sh"), encoding="utf-8").read()
         self.assertRegex(text, r"(?m)^\s*preload\)")
         self.assertIn("preload_link.sh", text)
-        self.assertIn("preload [status|report]", text)
+        self.assertIn("preload [status|report|reach]", text)
 
 
 class ProbePackagingContractTest(unittest.TestCase):
@@ -281,6 +281,85 @@ class ProbePackagingContractTest(unittest.TestCase):
         self.assertIn("LD_PRELOAD NO queda activo", text)
         self.assertIn("ivanna_control.sh preload", text)
         self.assertIn("early-init", text)
+
+
+STOCK = "795aa06000-795aa08000 r--p 00000000 fe:0a 19806388  /vendor/lib64/libar-pal.so\n"
+STOCK2 = "795aa16000-795aa18000 r-xp 00010000 fe:0a 19806389  /vendor/lib64/soundfx/libdownmix.so\n"
+FOREIGN = "795ab16000-795ab18000 r-xp 00000000 fe:38 77  /vendor/lib64/soundfx/libivanna_pal_presence_probe.so\n"
+MOUNTINFO_VISIBLE = ("1 2 254:56 /adb/modules/m/system/vendor/lib64/libivanna_pal_presence_probe.so "
+                     "/vendor/lib64/libivanna_pal_presence_probe.so ro - f2fs /dev/x rw\n")
+
+
+class PreloadReachTest(unittest.TestCase):
+    """ivanna_preload_reach: evidencia de si el HAL puede ver/cargar codigo del modulo."""
+
+    def sb(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        return Sandbox(t.name)
+
+    def reach(self, s):
+        r = s.run("ivanna_preload_reach")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r, fields(r.stdout)
+
+    def test_only_stock_vendor_libraries_means_files_not_visible(self):
+        # Replica el hallazgo de la captura real del Moto G85: todo en el dispositivo vendor original.
+        s = self.sb()
+        s.process(100, HAL_CMD, STOCK + STOCK2)
+        write(os.path.join(s.proc, "100", "mountinfo"), "1 2 254:10 / /vendor ro - erofs /dev/x ro\n")
+        r, f = self.reach(s)
+        self.assertEqual(f["verdict"], "MODULE_FILES_NOT_VISIBLE", r.stdout)
+        self.assertIn("mapped_from_module=0", r.stdout)
+        self.assertIn("module_mount_visible=no", r.stdout)
+
+    def test_without_mountinfo_visibility_is_not_claimed(self):
+        # Caso de la captura real: solo hay maps. No se puede afirmar "el HAL no ve el archivo".
+        s = self.sb()
+        s.process(100, HAL_CMD, STOCK + STOCK2)
+        r, f = self.reach(s)
+        self.assertEqual(f["verdict"], "NO_MODULE_CODE_MAPPED", r.stdout)
+        self.assertIn("module_mount_visible=unknown", r.stdout)
+
+    def test_mount_visible_but_not_mapped(self):
+        s = self.sb()
+        s.process(100, HAL_CMD, STOCK + STOCK2)
+        write(os.path.join(s.proc, "100", "mountinfo"), MOUNTINFO_VISIBLE)
+        r, f = self.reach(s)
+        self.assertEqual(f["verdict"], "VISIBLE_NOT_MAPPED", r.stdout)
+        self.assertIn("wrap.*", f["note"])
+
+    def test_region_from_foreign_device_is_module_code(self):
+        s = self.sb()
+        s.process(100, HAL_CMD, STOCK + STOCK2 + FOREIGN)
+        r, f = self.reach(s)
+        self.assertEqual(f["verdict"], "MODULE_CODE_MAPPED", r.stdout)
+        self.assertIn("mapped_from_module=1", r.stdout)
+
+    def test_hal_not_running(self):
+        s = self.sb()
+        s.process(200, "/system/bin/surfaceflinger", STOCK)
+        r, f = self.reach(s)
+        self.assertEqual(f["verdict"], "HAL_NOT_RUNNING", r.stdout)
+
+    def test_unreadable_maps_asks_for_root(self):
+        s = self.sb()
+        s.process(100, HAL_CMD, STOCK)
+        s.unreadable_maps(100)
+        r, f = self.reach(s)
+        self.assertEqual(f["verdict"], "NEEDS_ROOT", r.stdout)
+
+    def test_selinux_domain_is_reported(self):
+        s = self.sb()
+        s.process(100, HAL_CMD, STOCK)
+        write(os.path.join(s.proc, "100", "attr", "current"), "u:r:hal_audio_default:s0\0")
+        r, _ = self.reach(s)
+        self.assertIn("selinux=u:r:hal_audio_default:s0", r.stdout)
+
+    def test_control_script_exposes_reach(self):
+        src = open(os.path.join(MOD, "ivanna_control.sh")).read()
+        self.assertIn("reach)", src)
+        self.assertIn("ivanna_preload_reach", src)
 
 
 if __name__ == "__main__":

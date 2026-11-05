@@ -113,7 +113,8 @@ case "$COMMAND" in
                 case "$ARG" in
                     ''|status) ivanna_preload_status ;;
                     report)    ivanna_preload_report ;;
-                    *)         echo "Uso: $0 preload [status|report]"; exit 1 ;;
+                    reach)     ivanna_preload_reach ;;
+                    *)         echo "Uso: $0 preload [status|report|reach]"; exit 1 ;;
                 esac ;;
     reload)     send_command "RELOAD_PARAMS" ;;
     probe)      # Estado del transport, sin efecto lateral
@@ -141,7 +142,7 @@ Uso:
   $0 clock                Reloj: callback, hardware HAL y estado ASRC software (JSON)
   $0 asrc-link [repair]   Canal ASRC/reloj HAL: diagnostico (repair = recrear dir y permisos)
   $0 hal-probe            Evidencia PAL/ASRC del dispositivo (solo lectura)
-  $0 preload [status|report]  Sonda LD_PRELOAD PAL: ¿cargada en el HAL? (solo lectura, root; no inyecta nada)
+  $0 preload [status|report|reach]  Sonda LD_PRELOAD PAL: ¿cargada en el HAL? (solo lectura, root; no inyecta nada)
   $0 audio-unify [status|apply|rollback]  Unifica módulos legacy de audio (requiere reinicio; no inyecta HAL)
   $0 reload               Releer parámetros
   $0 probe                Estado transport (alive|socket_open_no_nc|no_daemon)

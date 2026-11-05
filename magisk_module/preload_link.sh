@@ -145,3 +145,57 @@ ivanna_preload_report() {
     fi
     return 0
 }
+
+# ── ivanna_preload_reach — ¿el HAL de audio puede siquiera VER y CARGAR código del modulo? ──────────
+# Solo lectura. Responde con /proc/<pid>/{maps,mountinfo,attr/current}:
+#   - mapped_from_module: regiones de .so mapeadas cuyo dispositivo NO es el del vendor original
+#     (el dispositivo de /vendor/lib64/libagm.so se toma como "stock"). 0 = ningun codigo de modulo en el HAL.
+#   - module_mount_visible: la ruta de la sonda aparece en el mountinfo DEL HAL (su namespace de montajes).
+#   - selinux: dominio del HAL (si el dominio no puede leer archivos del modulo, la carga fallaria con AVC).
+# Veredictos: HAL_NOT_RUNNING | NEEDS_ROOT | NO_MODULE_CODE_MAPPED | MODULE_FILES_NOT_VISIBLE | VISIBLE_NOT_MAPPED | MODULE_CODE_MAPPED
+ivanna_preload_reach() {
+    _pids=$(ivanna_preload_hal_pids)
+    if [ -z "$_pids" ]; then
+        echo "verdict=HAL_NOT_RUNNING"; echo "note=no hay proceso '$PRELOAD_HAL_PATTERN*' en $PRELOAD_PROC"; return 0
+    fi
+    _any_visible=0; _any_mapped=0; _any_unreadable=0; _any_unknown=0
+    for _p in $_pids; do
+        _maps="$PRELOAD_PROC/$_p/maps"; _mi="$PRELOAD_PROC/$_p/mountinfo"
+        if ! [ -r "$_maps" ] || ! grep -q . "$_maps" 2>/dev/null ; then
+            echo "hal_pid=$_p maps=unreadable"; _any_unreadable=$((_any_unreadable + 1)); continue
+        fi
+        # dispositivo "stock": el de la libreria vendor que SIEMPRE esta en el HAL de Qualcomm
+        _stock=$(grep -m1 'libar-pal.so\|libagm.so\|audio.primary' "$_maps" | awk '{print $4}')
+        _libs=$(awk '$6 ~ /\.so/ {print $4}' "$_maps" | wc -l | tr -d ' ')
+        if [ -n "$_stock" ]; then
+            _foreign=$(awk -v s="$_stock" '$6 ~ /\.so/ && $4 != s {n++} END{print n+0}' "$_maps")
+        else
+            _foreign=unknown
+        fi
+        if [ -r "$_mi" ]; then
+            _vis=no
+            grep -q "$PRELOAD_LIB_NAME" "$_mi" 2>/dev/null && _vis=yes
+        else
+            _vis=unknown   # sin mountinfo no se puede afirmar que el HAL NO ve el archivo
+        fi
+        _ctx=""
+        [ -r "$PRELOAD_PROC/$_p/attr/current" ] && _ctx=$(tr -d '\0' < "$PRELOAD_PROC/$_p/attr/current" 2>/dev/null)
+        echo "hal_pid=$_p so_regions=$_libs stock_dev=${_stock:-unknown} mapped_from_module=$_foreign module_mount_visible=$_vis selinux=${_ctx:-unreadable}"
+        [ "$_vis" = yes ] && _any_visible=1
+        [ "$_vis" = unknown ] && _any_unknown=1
+        if [ "$_foreign" != unknown ] && [ "$_foreign" -gt 0 ] 2>/dev/null ; then _any_mapped=1; fi
+    done
+    if [ "$_any_unreadable" -gt 0 ] && [ "$_any_visible" -eq 0 ] && [ "$_any_mapped" -eq 0 ]; then
+        _verdict=NEEDS_ROOT; _note="no se pudo leer /proc/<pid>/maps del HAL; ejecuta como root (su -c)"
+    elif [ "$_any_mapped" -eq 1 ]; then
+        _verdict=MODULE_CODE_MAPPED; _note="hay regiones .so de un dispositivo distinto al vendor original; confirma con 'preload status' que es la sonda"
+    elif [ "$_any_visible" -eq 1 ]; then
+        _verdict=VISIBLE_NOT_MAPPED; _note="el HAL ve el archivo del modulo pero no lo cargo: falta quien lo cargue (no basta wrap.*; ver docs)"
+    elif [ "$_any_unknown" -eq 1 ]; then
+        _verdict=NO_MODULE_CODE_MAPPED; _note="ninguna region .so del modulo en el HAL; sin mountinfo legible no se sabe si el HAL ve los archivos"
+    else
+        _verdict=MODULE_FILES_NOT_VISIBLE; _note="el namespace de montajes del HAL no contiene la sonda: los mounts del modulo no llegan a ese proceso"
+    fi
+    echo "verdict=$_verdict"; echo "note=$_note"
+    return 0
+}
