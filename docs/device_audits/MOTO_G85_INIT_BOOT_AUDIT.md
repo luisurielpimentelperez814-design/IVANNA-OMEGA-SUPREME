@@ -5,7 +5,7 @@
 **SHA-256:** `db3dd9987183fb843b7b274f43dd7ec66a7670d737853df6d00f24361759e9e1`  
 **Tamaño:** 8,388,608 bytes (8 MiB)
 
-> **Conclusión ejecutiva:** esta imagen contiene el ramdisk de arranque de una compilación Motorola Android 14 / SDK 34. No contiene PAL, AGM, Audio HAL ni un servicio de IVANNA. Su contenido no proporciona el puente de reloj PAL→ASRC y no justifica modificar `init_boot`. La imagen tampoco demuestra ser el `init_boot` actualmente activo en el teléfono Android 15.
+> **Conclusión ejecutiva:** esta imagen contiene el ramdisk de arranque de una compilación Motorola Android 14 / SDK 34. No contiene PAL, AGM, Audio HAL ni un servicio de IVANNA. Su contenido no proporciona el puente de reloj PAL→ASRC y no justifica modificar `init_boot`. La imagen corresponde al entorno Android 14 / SDK 34 del Moto G85, según la identidad incluida en el propio ramdisk y confirmada por el propietario del dispositivo.
 
 ## 1. Identificación de la imagen
 
@@ -83,7 +83,7 @@ En una captura de firmware distinta y anterior se habían observado estos símbo
 - `pal_get_timestamp`, offset ELF reportado `0x2ec120`.
 - `pal_stream_get_mmap_position`, offset ELF reportado `0x2ec180`.
 
-Son observaciones de una biblioteca concreta, no direcciones universales. No se deben codificar como offsets fijos ni atribuir a la imagen Android 14 aquí analizada. La integración debe resolver símbolos dinámicamente y validar build-id, ABI, prototipos y disponibilidad en el proceso objetivo.
+Son observaciones de una biblioteca concreta, no direcciones universales. No se deben codificar como offsets fijos ni atribuir a esta imagen `init_boot`. Antes de usarlos, hay que comprobar que las bibliotecas pertenecen al mismo build Android 14 del dispositivo y validar build-id, ABI, prototipos y disponibilidad en el proceso objetivo.
 
 La arquitectura documentada para el puente mantiene separados:
 
@@ -104,7 +104,7 @@ La corrección de deriva requiere además un convertidor de razón variable ya p
 
 El puente debe integrarse en el HAL/proceso con acceso legítimo al stream, o mediante un IPC mínimo desde ese componente autorizado. El arranque temprano de Magisk no implica que PAL o el grafo de audio estén disponibles.
 
-## 6. Validación pendiente en el firmware Android 15 activo
+## 6. Validación pendiente en el firmware Android 14 activo
 
 Antes de activar cualquier corrección en el Moto G85:
 
