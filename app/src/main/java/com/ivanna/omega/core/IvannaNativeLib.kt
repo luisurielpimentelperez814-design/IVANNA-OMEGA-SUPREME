@@ -73,6 +73,10 @@ object IvannaNativeLib {
     external fun nativeSetSpatialWet(v: Float)
     /** Eje Supremo: activa/desactiva el motor Cochlear-PINN (alias para PiLstmBridge). */
     external fun nativeSetCochlearEnabled(enabled: Boolean)
+    /** Ruta A: EQ evolutivo de 512 bandas (paridad con Ruta B). Por defecto activo una vez calibrado. */
+    external fun nativeSetEvolutionaryEqEnabled(enabled: Boolean)
+    /** True si la calibracion verifico y el efecto esta habilitado (estado, no medicion). */
+    external fun nativeIsEvolutionaryEqActive(): Boolean
     external fun nativeSetHarmonicGain(v: Float)
     external fun nativeSetHRTFEnabled(en: Boolean)
     external fun nativeSetAdaptEnabled(en: Boolean)

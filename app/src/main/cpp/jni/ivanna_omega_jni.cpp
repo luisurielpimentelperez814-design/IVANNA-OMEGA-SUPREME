@@ -9,6 +9,7 @@
  *   EvolutionaryKernel movido a modo OFFLINE (no corre en audio thread)
  */
 #include <jni.h>
+#include "../EvolutionaryEQ.hpp"
 #include "omega_perceptual_guard.h"
 #include "../include/audio_thread_priority.h"
 #include "../include/omega_control_bus.h"   // effectControlBus(), OmegaDspSnapshot, OMEGA_EFFECT_LOCAL_BUS_PATH
@@ -189,6 +190,50 @@ static void routeAApplyXtcGeometry(const float* x, const float* y, const float* 
     g.spanMeters = pl.spanM; g.distanceMeters = pl.distanceM; g.listenerOffsetM = pl.listenerOffsetM;
     ivanna::fourd::setSpeakerGeometry(g);
 }
+// ── Ruta A: EQ evolutivo de 512 bandas (paridad con Ruta B: IvannaFusionEngine::m_evoEq) ───────────────
+// Antes solo existia en el efecto del sistema (Ruta B). La calibracion (LM-CMA-ES acotada, ~0.6 s en host)
+// NUNCA corre en el hilo de audio ni bloquea nativeInit: un hilo la ejecuta sobre una instancia propia y la
+// publica con un atomico (release). Hasta entonces el efecto es identidad bit-exacta. La instancia publicada
+// no se libera (vive lo que el proceso; ~15 KB) para que el hilo de audio nunca vea un puntero colgante.
+// El filtro es el mismo de Ruta B (FIR de 256 taps hacia la curva objetivo del modulo); entra y sale con un
+// crossfade de 1 bloque para que activarlo/desactivarlo no haga click.
+static std::atomic<Ivanna::EvolutionaryEQ*> g_evoEqA{nullptr};
+static std::atomic<bool> g_evoEqAEnabled{true};   // por defecto ON: Ruta B lo aplica siempre una vez calibrado
+static std::atomic<bool> g_evoEqACalibrating{false};
+static float g_evoEqAWet = 0.0f;                  // solo lo toca el hilo de audio (bajo g_dspProcessMutex)
+
+static void routeAStartEvoEqCalibration() noexcept {
+    bool expected = false;
+    if (!g_evoEqACalibrating.compare_exchange_strong(expected, true)) return;   // una sola vez por proceso
+    std::thread([] {
+        auto* eq = new (std::nothrow) Ivanna::EvolutionaryEQ();
+        if (!eq) return;
+        eq->calibrate(48000.0f);
+        if (eq->isReady()) g_evoEqA.store(eq, std::memory_order_release);
+        else delete eq;   // calibracion no verificada: se descarta (Ruta A queda en identidad)
+    }).detach();
+}
+
+static void routeAApplyEvoEq(float* L, float* R, int n) noexcept {
+    Ivanna::EvolutionaryEQ* eq = g_evoEqA.load(std::memory_order_acquire);
+    const float target = (eq && g_evoEqAEnabled.load(std::memory_order_relaxed)) ? 1.0f : 0.0f;
+    if (!eq || (g_evoEqAWet == 0.0f && target == 0.0f)) { g_evoEqAWet = target; return; }
+    if (n <= 0 || n > 2048) return;
+    float dryL[2048], dryR[2048];
+    std::memcpy(dryL, L, n * sizeof(float));
+    std::memcpy(dryR, R, n * sizeof(float));
+    eq->processPlanar(L, R, static_cast<size_t>(n));   // el historial FIR avanza siempre: sin salto al reactivar
+    const float w0 = g_evoEqAWet;
+    if (w0 == 1.0f && target == 1.0f) return;          // estado estable: salida 100 % procesada
+    const float inv = 1.0f / static_cast<float>(n);
+    for (int i = 0; i < n; ++i) {
+        const float w = w0 + (target - w0) * (static_cast<float>(i + 1) * inv);
+        L[i] = dryL[i] + w * (L[i] - dryL[i]);
+        R[i] = dryR[i] + w * (R[i] - dryR[i]);
+    }
+    g_evoEqAWet = target;
+}
+
 static void routeAApplyDefaultXtcGeometry() noexcept {
     const auto& room = ivanna::spatial::RoomGeometryConfig::defaultLayout();
     routeAApplyXtcGeometry(room.speakerX.data(), room.speakerY.data(), room.speakerZ.data());
@@ -908,6 +953,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // inicializaba el panel de la UI con 48000/480 fijos: sin abrir el panel, feed/apply eran
     // no-ops y con un dispositivo a 44.1 kHz el conductor temporizaba con un bloque erróneo.
     ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
+    routeAStartEvoEqCalibration();   // hilo propio; el efecto se activa solo cuando la calibracion verifica
     g_initialized.store(true, std::memory_order_release);
     // El ADE solo arranca cuando el grafo nativo ya está preparado. La
     // preferencia puede haberse fijado antes por Application/UI; ensure()
@@ -1344,6 +1390,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         0.0f, std::clamp(g_lastAdaptiveEqTiltDb.load(std::memory_order_relaxed), -3.0f, 0.0f),
         adaptive_ui_strength()));
     g_eq.process(g_ats.chL, g_ats.chR, n);
+    routeAApplyEvoEq(g_ats.chL, g_ats.chR, n);   // paridad con Ruta B (EQ evolutivo 512 bandas)
     // ═══ P0 (cierre del Adaptive Feedback Loop): target_gain/compressor_amount/
     // exciter_reduction ahora se aplican a los módulos DSP REALES
     // (GainStage/Compressor/HarmonicExciter), no como ajustes paralelos
@@ -2181,6 +2228,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // hilo distinto, mismo patrón que blkTgSmooth vs targetGainSmooth). Lógica en BlockPeakGuard.h.
     ivanna::blockPeakGuard(lBuf, rBuf, n, g_ats.blkPeakGuardScale);
     g_eq.process(lBuf, rBuf, n);
+    routeAApplyEvoEq(lBuf, rBuf, n);   // paridad con Ruta B (EQ evolutivo 512 bandas)
     g_gain.setRuntimeGain(g_ats.blkTgSmooth);
     g_comp.setRuntimeAmount(g_ats.blkCaSmooth);
     g_comp.process(lBuf, rBuf, n);
@@ -2316,6 +2364,16 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     jfloat* pR = env->GetFloatArrayElements(outR, nullptr);
     if (pL) { memcpy(pL, oL, n*sizeof(float)); env->ReleaseFloatArrayElements(outL, pL, 0); }
     if (pR) { memcpy(pR, oR, n*sizeof(float)); env->ReleaseFloatArrayElements(outR, pR, 0); }
+}
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvolutionaryEqEnabled(JNIEnv*, jobject, jboolean enabled) {
+    g_evoEqAEnabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+}
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsEvolutionaryEqActive(JNIEnv*, jobject) {
+    // Read-back de estado (calibrado y habilitado); no es una medicion de la senal.
+    return (g_evoEqA.load(std::memory_order_acquire) != nullptr && g_evoEqAEnabled.load(std::memory_order_relaxed))
+               ? JNI_TRUE : JNI_FALSE;
 }
 JNIEXPORT jint JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetClipCount(JNIEnv*, jobject) {
