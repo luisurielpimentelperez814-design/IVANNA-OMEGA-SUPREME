@@ -1,6 +1,6 @@
 # IVANNA Adaptive SRC — Moto G85 integration and verification plan
 
-**Scope:** software sample-rate conversion and clock-drift correction for IVANNA OMEGA SUPREME on Moto G85 5G / Android 15 / Qualcomm blair platform.
+**Scope:** software sample-rate conversion and clock-drift correction for IVANNA OMEGA SUPREME on Moto G85 5G / Android 14 (SDK 34) / Qualcomm blair platform.
 
 **Status:** source-level implementation exists; device-wide HAL/PAL actuation is not verified. This document separates app-owned conversion from vendor hardware control.
 
