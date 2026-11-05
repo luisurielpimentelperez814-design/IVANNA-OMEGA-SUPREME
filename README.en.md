@@ -33,7 +33,7 @@ integration points, not features.
    and have a way to recover (see [SECURITY.md](SECURITY.md)).
 
 A green CI badge is not proof of sound quality or hardware compatibility. The reference test device is a
-Moto G85 on Android 15; see [the acceptance plan](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md) for the physical tests
+Moto G85 on Android 14 (SDK 34); see [the acceptance plan](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md) for the physical tests
 that are still pending.
 
 ## Build and test on a computer (no Android SDK needed)
