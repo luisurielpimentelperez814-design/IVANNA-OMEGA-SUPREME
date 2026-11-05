@@ -1135,6 +1135,8 @@ add_test(NAME test_phase4_5_header_rt_wiring COMMAND test_phase4_5_header_rt_wir
 # ── FASE A4: Detector dinámico en host de 0 malloc / 0 new en callbacks RT ───
 add_executable(test_rt_no_alloc
   test_rt_no_alloc.cpp
+  ../evolutionary_kernel_v2.cpp
+  ../phase_oracle.cpp
   ../spatial/HRTFInterpolator.cpp
   ../spatial/HRTFDatabase.cpp
   ../spatial/IntelligentUpmixer.cpp
