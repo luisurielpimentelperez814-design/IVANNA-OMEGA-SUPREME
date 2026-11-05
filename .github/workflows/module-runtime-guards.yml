@@ -1,0 +1,43 @@
+name: Magisk module runtime guards
+
+on:
+  push:
+    paths:
+      - 'magisk_module/post-fs-data.sh'
+      - 'magisk_module/service.sh'
+      - 'magisk_module/core/ivanna_boot_guard.sh'
+      - 'magisk_module/core/ivanna_elf_guard.sh'
+      - 'tests/test_module_runtime_guards.py'
+      - '.github/workflows/module-runtime-guards.yml'
+  pull_request:
+    paths:
+      - 'magisk_module/post-fs-data.sh'
+      - 'magisk_module/service.sh'
+      - 'magisk_module/core/ivanna_boot_guard.sh'
+      - 'magisk_module/core/ivanna_elf_guard.sh'
+      - 'tests/test_module_runtime_guards.py'
+      - '.github/workflows/module-runtime-guards.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: module-runtime-guards-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guards:
+    name: Boot health + ELF header regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check POSIX shell syntax
+        run: |
+          sh -n magisk_module/post-fs-data.sh
+          sh -n magisk_module/service.sh
+          sh -n magisk_module/core/ivanna_boot_guard.sh
+          sh -n magisk_module/core/ivanna_elf_guard.sh
+      - name: Run isolated Magisk shell-guard tests
+        run: python3 tests/test_module_runtime_guards.py
