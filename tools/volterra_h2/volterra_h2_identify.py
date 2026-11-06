@@ -69,7 +69,10 @@ def apply_volterra(x: np.ndarray, h1: np.ndarray, h2: np.ndarray) -> np.ndarray:
         if m <= 0:
             continue
         # y[l:] += h2[idx] * x[l-k]*x[...]: x[n-k]*x[n-l] evaluated for n >= l
-        y[l:] += h2[idx] * x[: n - l] * x[l - k: n - k]
+        # C++ expands the symmetric matrix sum: off-diagonal (k,l)
+        # contributes both (k,l) and (l,k), hence the factor 2.
+        symmetry = 1.0 if k == l else 2.0
+        y[l:] += symmetry * h2[idx] * x[: n - l] * x[l - k: n - k]
     return y
 
 
@@ -119,7 +122,8 @@ def estimate_kernels_time_domain(x: np.ndarray, y: np.ndarray, K: int,
     pairs = triangular_index_map(K)
     for (k, l) in pairs:
         c = np.zeros(n)
-        c[l:] = x[: n - l] * x[l - k: n - k]
+        symmetry = 1.0 if k == l else 2.0
+        c[l:] = symmetry * x[: n - l] * x[l - k: n - k]
         cols.append(c)
     A = np.column_stack(cols)
 
