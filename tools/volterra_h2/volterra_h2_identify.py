@@ -18,9 +18,10 @@ Model (discrete time, symmetric truncated kernels):
     y[n] = sum_{k=0}^{K-1} h1[k] x[n-k]
          + sum_{k=0}^{K-1} sum_{l=k}^{K-1} h2[k,l] x[n-k] x[n-l]
 
-The quadratic design uses the standard symmetric index map
-i = l*(l+1)/2 + k  (0-based, k<=l), matching the triangular storage used by
-ivanna::dsp::VolterraH2Symmetric::updateKernels.
+The quadratic design uses the row-major upper-triangle index map used by
+VolterraH2Symmetric::processInterleaved:
+i = k*K - k*(k+1)/2 + l  (0-based, k<=l).
+Do not replace this with column-major packing without changing the C++ reader.
 """
 from __future__ import annotations
 
@@ -36,8 +37,8 @@ import numpy as np
 def triangular_index_map(K: int):
     """Return [(k, l)] pairs in the order used for the flattened h2 vector."""
     pairs = []
-    for l in range(K):
-        for k in range(l + 1):
+    for k in range(K):
+        for l in range(k, K):
             pairs.append((k, l))
     return pairs
 
