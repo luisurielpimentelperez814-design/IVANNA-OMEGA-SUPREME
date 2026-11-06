@@ -86,6 +86,23 @@ def main() -> int:
         if "OMEGA_EFFECT_LOCAL_BUS_PATH" not in bridge:
             raise AssertionError("app fallback bridge has no real per-effect PCM telemetry source")
 
+        # Route B telemetry must have a dedicated writer in audioserver even
+        # while the daemon control reader is open, plus a dedicated app reader.
+        for needle in (
+            "static ivanna::OmegaControlBus& omegaLocalTelemetryBus()",
+            "omega_ensure_local_telemetry_bus()",
+            "omega_publish_local_telemetry(ctx->pendingSnap)",
+            "g_omegaLocalTelemetryPublishBusy.test_and_set",
+        ):
+            if needle not in effect:
+                raise AssertionError(f"dedicated non-blocking Route B telemetry bus missing: {needle}")
+        if "ivanna::effectControlBus().openWriter(OMEGA_LOCAL_BUS_PATH)" in effect:
+            raise AssertionError("Route B telemetry must not turn the daemon control-reader singleton into a writer")
+        if "static ivanna::OmegaControlBus s_routeBTelemetryReader;" not in bridge:
+            raise AssertionError("app telemetry reader must not alias the JNI control-bus singleton")
+        if "s_routeBTelemetryReader.readLatest(snap, s_lastGen)" not in bridge:
+            raise AssertionError("app route bridge is not consuming the dedicated telemetry SHM")
+
         if "rawM.voice_score = std::clamp((rawM.band_mid_energy" in spatial:
             raise AssertionError("spatial pipeline still derives voice from mid-band energy")
         if "rawM.band_energy_valid = true;" not in spatial:

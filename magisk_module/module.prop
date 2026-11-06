@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.356
-versionCode=647
+version=v2.5.357
+versionCode=648
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.356: infraestructura cientifica Volterra H2 sobre dataset publico REW (parser/exportacion/identificabilidad/loader con tests); GoldenEar/Volterra slot unico intacto GoldenEar/Volterra slot no lineal único con release de cola aislado;  Volterra H2 identity fast-path, kernels finitos, OOM fail-closed y actualizacion offline segura; HRTF Ruta A scratch fijo 2048 frames;  Route-A EvolutionaryEQ calibration worker recovery and live calibration-status UI;  speaker-only route-gated transaural XTC; independent of 4D master; RIR crossmix disabled
+description=v2.5.357: bus de telemetría Ruta B separado del control plane; publicación RT no bloqueante;  infraestructura cientifica Volterra H2 sobre dataset publico REW (parser/exportacion/identificabilidad/loader con tests); GoldenEar/Volterra slot unico intacto GoldenEar/Volterra slot no lineal único con release de cola aislado;  Volterra H2 identity fast-path, kernels finitos, OOM fail-closed y actualizacion offline segura; HRTF Ruta A scratch fijo 2048 frames;  Route-A EvolutionaryEQ calibration worker recovery and live calibration-status UI;  speaker-only route-gated transaural XTC; independent of 4D master; RIR crossmix disabled
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

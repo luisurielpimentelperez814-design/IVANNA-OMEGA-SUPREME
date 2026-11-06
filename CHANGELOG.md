@@ -1,3 +1,9 @@
+# v2.5.357 (648) - 2026-11-05
+
+- **Ruta B — telemetría app-side restaurada sin tocar el control plane:** `omega_effect` mantiene un SHM local dedicado para RMS/peak, contadores y generación aplicada incluso cuando el daemon está conectado como reader del bus de control. El writer de telemetría es una instancia separada de `effectControlBus()`; nunca abre el SHM root-only del daemon como segundo writer.
+- **Seguridad RT:** el SHM se abre durante la creación de la instancia (fuera del callback). Las publicaciones usan un `atomic_flag` try-lock; si dos sesiones coinciden, se descarta una muestra en lugar de bloquear el hilo de audio. La app sigue leyendo por `OMEGA_EFFECT_LOCAL_BUS_PATH`.
+- **Validación:** se amplía `check_adaptive_metric_truth.py` para impedir que el reader del daemon y el writer local compartan singleton o que desaparezca el canal de telemetría. CI debe confirmar compilación y contratos. No se declara validación auditiva ni en Moto G85.
+
 ## v2.5.356 (647) - 2026-11-06
 
 - **Dataset público REW → infraestructura Volterra H2:** el dataset Zenodo 10.5281/zenodo.20567124 (CC BY 4.0, .mdat de Java Serialization v5) se procesó con herramientas propias de solo lectura: `tools/volterra_h2/mdat_parser.py` (deserializador) y `export_dataset.py` (CSV/JSON/NPY + análisis Fase III). Inventario verificado: 6 barridos (48 kHz, 54 613 puntos, RI de 1 048 576 muestras @96 kHz) y 6 stepped-sine (96 kHz, 31 puntos, −20 dBFS).

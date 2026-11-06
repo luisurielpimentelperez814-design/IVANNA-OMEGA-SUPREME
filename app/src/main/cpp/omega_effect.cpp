@@ -79,16 +79,13 @@ using namespace Ivanna;
 // el bus quedaba mudo y omega_process corría con los defaults del core.
 //
 // Este bloque cierra el ciclo SIN romper nada:
-//   1. El efecto abre un writer del bus (path per-proceso, no colisiona con
-//      el del daemon) SOLO si openReader() del daemon falló, evitando dos
-//      writers concurrentes sobre la misma SHM.
-//   2. Cuando llega SET_PARAM, el efecto:
-//        a) Aplica el parámetro directamente al ctx->fusionCore (no se
-//           pierde antes del próximo readLatest()).
-//        b) Publica un OmegaDspSnapshot al bus (writer local, o al daemon
-//           via bus si el daemon corre — en ese caso la app debería usar
-//           su LocalSocket, pero si por lo que sea llega aquí, aplicamos
-//           local y ya está).
+//   1. El efecto conserva un reader del bus autoritativo del daemon cuando
+//      está disponible; nunca crea un segundo writer sobre ese SHM.
+//   2. Un writer independiente publica telemetría de salida en
+//      OMEGA_EFFECT_LOCAL_BUS_PATH, incluso con daemon activo.
+//   3. Cuando llega SET_PARAM, el efecto aplica directamente al DSP local y
+//      publica el snapshot en el canal de telemetría, sin alterar el control
+//      plane ni depender de un writer compartido con el daemon.
 //   3. IDs de parámetro: rango proprietary 0x00010000+, nunca colisiona
 //      con IDs AOSP reservados (0..0x00FFFFFF están reservados pero AOSP
 //      no reclama subrangos concretos para efectos custom con UUID propio).
@@ -302,7 +299,7 @@ struct omega_effect_context_t {
     // dispositivos sin daemon. Solo se abre si el reader del daemon falló.
     // Snapshot que se publica al recibir SET_PARAM: se conserva entre
     // llamadas para no perder los valores ya recibidos.
-    bool                     localWriterOpen;
+    std::atomic<bool>        localWriterOpen{false}; // writer de telemetría local, separado del reader de control
     ivanna::OmegaDspSnapshot pendingSnap;
     ivanna::PunchEngine punch;    // v2.5.41: impacto predictivo (amount desde snapshot.ext_flags)
     float adaptWfsScale = 1.0f;   // v2.5.15: wfs_spread_scale del ADE
@@ -329,19 +326,42 @@ struct omega_effect_context_t {
     ivanna::audio::HardwareClockTracker* hardwareClockTracker; // estima frecuencia física; no altera PCM
 };
 
-// AUDIT FIX #4: writer local por instancia. El SHM del daemon vive en
-// /data/adb/ivanna_omega/... — path root-only. El writer local usa una
-// región propia por-proceso (audioserver), NUNCA la del daemon: dos writers
-// concurrentes romperían el seqlock. Solo se abre si openReader() falló.
-// Path unificado en include/omega_control_bus.h (OMEGA_EFFECT_LOCAL_BUS_PATH).
+// Bus LOCAL exclusivo de TELEMETRÍA de Ruta B. No comparte archivo ni
+// instancia con effectControlBus(), que sigue siendo reader del snapshot
+// autoritativo del daemon (/data/adb/ivanna_omega/omega_control_snapshot).
+// El writer local es único por proceso audioserver; app/JNI lo abre como reader.
+// Publicar aquí no compite con command_server ni modifica el control plane.
 static constexpr const char* OMEGA_LOCAL_BUS_PATH =
     ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH;
 
-// Publica ctx->pendingSnap al bus local (writer local del efecto), o aplica
-// directo si el writer aún no está abierto. Idempotente: si el reader
-// (daemon) está activo y publica su propio snapshot después, ambos
-// terminan aplicando la misma familia de parámetros — el último gana, que
-// es el mismo comportamiento que UI -> daemon -> SHM.
+static ivanna::OmegaControlBus& omegaLocalTelemetryBus() noexcept {
+    static ivanna::OmegaControlBus bus;
+    return bus;
+}
+static std::mutex g_omegaLocalTelemetryInitMutex;
+static std::atomic<bool> g_omegaLocalTelemetryReady{false};
+static std::atomic_flag g_omegaLocalTelemetryPublishBusy = ATOMIC_FLAG_INIT;
+
+static bool omega_ensure_local_telemetry_bus() noexcept {
+    if (g_omegaLocalTelemetryReady.load(std::memory_order_acquire)) return true;
+    std::lock_guard<std::mutex> lock(g_omegaLocalTelemetryInitMutex);
+    if (g_omegaLocalTelemetryReady.load(std::memory_order_relaxed)) return true;
+    if (!omegaLocalTelemetryBus().openWriter(OMEGA_LOCAL_BUS_PATH)) return false;
+    g_omegaLocalTelemetryReady.store(true, std::memory_order_release);
+    LOGI("OmegaControlBus telemetry writer ready at %s", OMEGA_LOCAL_BUS_PATH);
+    return true;
+}
+
+// RT-safe: escritor lógico único. Si dos sesiones coinciden, la segunda
+// descarta ese frame (no espera ni bloquea el callback).
+static bool omega_publish_local_telemetry(const ivanna::OmegaDspSnapshot& snap) noexcept {
+    if (!g_omegaLocalTelemetryReady.load(std::memory_order_acquire)) return false;
+    if (g_omegaLocalTelemetryPublishBusy.test_and_set(std::memory_order_acquire)) return false;
+    const bool ok = omegaLocalTelemetryBus().publish(snap);
+    g_omegaLocalTelemetryPublishBusy.clear(std::memory_order_release);
+    return ok;
+}
+
 static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept;
 
 // Capacidad máxima esperada por bloque. AudioFlinger normalmente pasa
@@ -1798,9 +1818,9 @@ if (ctx->adaptive && ctx->adaptiveEnabled) {
             }
         }
 
-        // publish() es no-op si el daemon no abrió el bus — seguro en ruta caliente
-        if (ctx->localWriterOpen) {
-            ivanna::effectControlBus().publish(ctx->pendingSnap);
+        // Publicación best-effort al SHM local de telemetría, separado del control plane.
+        if (ctx->localWriterOpen.load(std::memory_order_acquire)) {
+            (void)omega_publish_local_telemetry(ctx->pendingSnap);
         }
     }
     // Beacon (RT-safe): un bloque paso por TODO el DSP. Es la unica senal que la app puede
@@ -2439,7 +2459,8 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->adaptiveApplyBlocks = 0;
     ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
     ctx->ctrlBusOpen    = false;
-    ctx->localWriterOpen = false;  // AUDIT FIX #4: writer local se abre lazy
+    // Writer de telemetría independiente del reader de control; apertura fuera de RT.
+    ctx->localWriterOpen.store(omega_ensure_local_telemetry_bus(), std::memory_order_release);
     // pendingSnap queda con magic=0 hasta el primer SET_PARAM (se sembrará
     // con makeDefault() ahí).
     memset(&ctx->pendingSnap, 0, sizeof(ctx->pendingSnap));
@@ -2453,36 +2474,21 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     return 0;
 }
 
-// AUDIT FIX #4: implementación del writer local + apply directo. Se pone
-// aquí (post-declaración de ctx) para no reordenar los símbolos AELI.
+// Apply directo para SET_PARAM + publicación en el canal local de telemetría.
+// El writer local es distinto del reader del bus autoritativo del daemon.
 static void omega_local_publish_or_apply(omega_effect_context_t* ctx) noexcept {
     if (!ctx) return;
     ctx->adaptiveEnabled =
         (ctx->pendingSnap.temporal_field & ivanna::OMEGA_EFFECT_ADAPTIVE_ENABLED_BIT) != 0u;
     if (!ctx->adaptiveEnabled) omega_neutralize_adaptive_snapshot(ctx->pendingSnap);
-    // (a) Apply directo al DSP local — nunca se pierde el parámetro.
     if (ctx->fusionCore) {
         omega_apply_snapshot(ctx->fusionCore, ctx->antiDolby, ctx->pendingSnap);
     }
-    // (b) Publicar al bus SHM para que otras instancias del efecto en el
-    //     mismo proceso audioserver (múltiples sesiones AudioFlinger) vean
-    //     el cambio en el próximo readLatest(). Solo abrimos writer local
-    //     si el reader del daemon NO está activo — dos writers sobre el
-    //     mismo SHM romperían el seqlock.
-    if (ctx->ctrlBusOpen) {
-        // Daemon activo → él es el writer autoritativo. El apply directo
-        // de (a) es suficiente hasta el siguiente publish() del daemon.
-        return;
+    if (!ctx->localWriterOpen.load(std::memory_order_acquire)) {
+        ctx->localWriterOpen.store(omega_ensure_local_telemetry_bus(), std::memory_order_release);
     }
-    if (!ctx->localWriterOpen) {
-        ctx->localWriterOpen =
-            ivanna::effectControlBus().openWriter(OMEGA_LOCAL_BUS_PATH);
-        if (ctx->localWriterOpen) {
-            LOGI("OmegaControlBus local writer opened at %s", OMEGA_LOCAL_BUS_PATH);
-        }
-    }
-    if (ctx->localWriterOpen) {
-        ivanna::effectControlBus().publish(ctx->pendingSnap);
+    if (ctx->localWriterOpen.load(std::memory_order_acquire)) {
+        (void)omega_publish_local_telemetry(ctx->pendingSnap);
     }
 }
 

@@ -677,6 +677,9 @@ static void audioRouteBridgeLoop() {
     float lastRms = -1.0f, lastPeak = -1.0f;
     uint64_t frameCounter = 0;
     auto lastLogTime = std::chrono::steady_clock::now();
+    // Reader dedicado: no compartir el singleton effectControlBus() usado
+    // por otros setters/lectores JNI del plano de control de la app.
+    static ivanna::OmegaControlBus s_routeBTelemetryReader;
     while (g_bridgeRunning.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         // Este puente app-side solo observa el bus local del efecto, que
@@ -692,7 +695,7 @@ static void audioRouteBridgeLoop() {
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());
             if (nowMs >= s_retryMs) {
-                s_busOpen = ivanna::effectControlBus().openReader(
+                s_busOpen = s_routeBTelemetryReader.openReader(
                                 ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH);
                 s_retryMs = nowMs + 1000ULL;
             }
@@ -700,7 +703,7 @@ static void audioRouteBridgeLoop() {
         if (!s_busOpen) continue;
         static uint64_t s_lastGen = 0;
         ivanna::OmegaDspSnapshot snap{};
-        if (ivanna::effectControlBus().readLatest(snap, s_lastGen)) {
+        if (s_routeBTelemetryReader.readLatest(snap, s_lastGen)) {
             rms  = snap.raw_rms;
             peak = snap.raw_peak;
             g_routeB_declippedPeaks.store(snap.supreme_declipped_peaks, std::memory_order_relaxed);

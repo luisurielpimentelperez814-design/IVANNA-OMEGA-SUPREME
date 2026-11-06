@@ -744,14 +744,13 @@ inline OmegaControlBus& controlBus() noexcept {
     return instance;
 }
 
-// ── Path del bus LOCAL del efecto (Ruta B sin daemon) ───────────────────────
-// Fuente única de verdad: la escribe omega_effect.cpp (writer, proceso
-// audioserver) y la lee audioRouteBridgeLoop() (reader, proceso app) cuando
-// omega_daemon_get_shared_state() es stub (sin root / sin daemon).
-// /data/local/tmp es escribible por shell/system y legible cross-process con
-// SELinux permissive en userdebug; si el DAC/SELinux lo bloquea en un
-// dispositivo concreto, el reader simplemente no abre y la UI sigue OFFLINE
-// (mismo comportamiento que antes del fallback — no hay regresión).
+// ── Bus LOCAL de telemetría del efecto (Ruta B, daemon presente o ausente) ──
+// Writer único: instancia dedicada de OmegaControlBus en omega_effect.cpp
+// (proceso audioserver). Reader: audioRouteBridgeLoop() en el proceso app.
+// Es un SHM distinto del controlBus() root-only del daemon; nunca se usa como
+// segundo writer del snapshot autoritativo. La app solo consume métricas PCM
+// y generación aplicada. openWriter fija permisos 0644; SELinux aún puede
+// denegar el acceso y en ese caso la telemetría queda explícitamente offline.
 inline constexpr const char* OMEGA_EFFECT_LOCAL_BUS_PATH =
     "/data/local/tmp/omega_effect_ctrl_local";
 
