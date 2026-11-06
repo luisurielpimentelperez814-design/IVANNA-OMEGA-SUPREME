@@ -18,6 +18,7 @@
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
+#include "neuromorphic/sony_hcd_pz1d_profile.hpp"
 #include "hexagon/ivanna_fastrpc_client.hpp"
 #include "supreme/WarpedLatticeTransducerInverter.hpp"
 #include "supreme/PhaseCoherentTransharmonicSynthesizer.hpp"
@@ -280,6 +281,7 @@ struct omega_effect_context_t {
     AntiDolbyState* antiDolby;
     // Supremacía Acústica: Volterra H2 & Hexagon cDSP FastRPC
     ivanna::dsp::VolterraH2Symmetric* volterraEngine;
+    ivanna::dsp::sony_hcd_pz1d::ClassHState sonyClassHState;
     ivanna::dsp::IvannaFastRpcClient* fastRpcClient;
     bool fastRpcAvailable;
     // Eje Supremo Coclear: CochlearActiveInverseEngine
@@ -1556,9 +1558,22 @@ static int32_t omega_process(effect_handle_t self,
                 volterraScratch[2 * n + 1] = R[n];
             }
             ctx->volterraEngine->processInterleaved(volterraScratch, volterraScratch, (uint32_t)chunk, 2);
+            const uint32_t sonySampleRate = (ctx->config.outputCfg.samplingRate != 0u)
+                ? ctx->config.outputCfg.samplingRate : 48000u;
             for (int n = 0; n < chunk; ++n) {
-                L[n] = volterraScratch[2 * n];
-                R[n] = volterraScratch[2 * n + 1];
+                float left = volterraScratch[2 * n];
+                float right = volterraScratch[2 * n + 1];
+                // Calibration anchor: PCM peak 1.0 corresponds to 24.5 Vpk
+                // (50 W / 6 ohm). The effect models the measured transition
+                // signature; it does not electrically switch the Sony's rails.
+                const float pcmPeak = std::max(std::fabs(left), std::fabs(right));
+                const bool highRail = ctx->sonyClassHState.update(
+                    pcmPeak * ivanna::dsp::sony_hcd_pz1d::kPcmPeakReferenceVoltageV,
+                    sonySampleRate);
+                left = ivanna::dsp::sony_hcd_pz1d::applyH3(left, highRail);
+                right = ivanna::dsp::sony_hcd_pz1d::applyH3(right, highRail);
+                L[n] = left;
+                R[n] = right;
             }
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::VolterraKernel,
@@ -1994,15 +2009,14 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 if (!ctx->volterraEngine) {
                     ctx->volterraEngine = new (std::nothrow) ivanna::dsp::VolterraH2Symmetric(64, 2, sr);
                     if (ctx->volterraEngine) {
-                        // EXPERIMENTO EXPLÍCITO: surrogate Sony STK416-130-E.
-                        // El datasheet publica THD típica 0.4% en condiciones de
-                        // ensayo concretas, pero no fase H2 ni memoria. Se aproxima
-                        // toda esa THD como un término cuadrático instantáneo, fase 0.
-                        // NO es calibración del Genezy; coeficiente limitado a 0.008.
+                        // Perfil medido Sony HCD-PZ1D: H2 a 1 kHz / 6 ohm / 50 W.
+                        // El kernel Volterra recibe a2 = 2*10^(H2_dBc/20), con
+                        // x_peak=1 en el punto de calibración; H3 se aplica justo
+                        // después, usando el estado de transición Clase H por instancia.
                         float experimentalH1[64] = {};
                         float experimentalH2[2080] = {};
                         experimentalH1[0] = 1.0f;
-                        experimentalH2[0] = 0.008f; // c=2*0.004 para x_peak normalizado a 1
+                        experimentalH2[0] = ivanna::dsp::sony_hcd_pz1d::kA2Nominal;
                         ctx->volterraEngine->setEnabled(false);
                         ctx->volterraEngine->updateKernels(
                             experimentalH1, experimentalH2, 64u);
@@ -2011,7 +2025,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                                 "Experimental Sony surrogate rejected; keeping H2 bypass");
                         } else {
                             __android_log_print(ANDROID_LOG_WARN, "IVANNA-Volterra",
-                                "EXPERIMENTAL surrogate H2 loaded (STK416-130-E); not a measured Genezy kernel");
+                                "Sony HCD-PZ1D measured H2 profile loaded; H3/Class-H stage attached to AudioEffect PCM path");
                         }
                     }
                 }
