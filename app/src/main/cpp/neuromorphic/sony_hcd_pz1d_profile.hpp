@@ -21,6 +21,8 @@ constexpr float kHighRailFullPowerMagnitudeV = 52.4f;
 constexpr float kLowRailPositiveV = 31.5f;
 constexpr float kLowRailNegativeV = -31.5f;
 constexpr float kClassHSwitchThresholdPeakV = 24.5f;
+// Calibration anchor: normalized PCM peak 1.0 represents the reported 50 W / 6 ohm test point.
+constexpr float kPcmPeakReferenceVoltageV = 24.5f;
 constexpr float kClassHGuardBandV = 7.0f;
 constexpr uint32_t kClassHTurnOnNs = 850u;
 constexpr float kClassHReleaseMinMs = 4.5f;
@@ -81,7 +83,15 @@ private:
     uint32_t belowThresholdSamples_ = 0u;
 };
 
-// Memoryless harmonic emulator for the stated calibration point only.
+// Apply only the measured H3 component after the Volterra H2 kernel.
+inline float applyH3(float x, bool classHHighRail) noexcept {
+    if (!std::isfinite(x)) return 0.0f;
+    const float a3 = classHHighRail ? kA3DuringTransition : kA3BelowThreshold;
+    const float y = x + a3 * x * x * x;
+    return std::isfinite(y) ? y : x;
+}
+
+// Memoryless harmonic reference model for tests and offline comparisons.
 // Kept separate from VolterraH2Symmetric: this is not an H2/H3 memory kernel.
 inline HarmonicOutput simulateMeasuredHarmonics(float x, bool classHHighRail) noexcept {
     if (!std::isfinite(x)) return {0.0f, classHHighRail};
