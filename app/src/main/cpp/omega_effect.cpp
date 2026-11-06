@@ -1993,6 +1993,27 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // Supremacía Acústica: Motores de Volterra H2 y Qualcomm cDSP FastRPC
                 if (!ctx->volterraEngine) {
                     ctx->volterraEngine = new (std::nothrow) ivanna::dsp::VolterraH2Symmetric(64, 2, sr);
+                    if (ctx->volterraEngine) {
+                        // EXPERIMENTO EXPLÍCITO: surrogate Sony STK416-130-E.
+                        // El datasheet publica THD típica 0.4% en condiciones de
+                        // ensayo concretas, pero no fase H2 ni memoria. Se aproxima
+                        // toda esa THD como un término cuadrático instantáneo, fase 0.
+                        // NO es calibración del Genezy; coeficiente limitado a 0.008.
+                        float experimentalH1[64] = {};
+                        float experimentalH2[2080] = {};
+                        experimentalH1[0] = 1.0f;
+                        experimentalH2[0] = 0.008f; // c=2*0.004 para x_peak normalizado a 1
+                        ctx->volterraEngine->setEnabled(false);
+                        ctx->volterraEngine->updateKernels(
+                            experimentalH1, experimentalH2, 64u);
+                        if (!ctx->volterraEngine->hasEffectiveKernel()) {
+                            __android_log_print(ANDROID_LOG_WARN, "IVANNA-Volterra",
+                                "Experimental Sony surrogate rejected; keeping H2 bypass");
+                        } else {
+                            __android_log_print(ANDROID_LOG_WARN, "IVANNA-Volterra",
+                                "EXPERIMENTAL surrogate H2 loaded (STK416-130-E); not a measured Genezy kernel");
+                        }
+                    }
                 }
                 if (ctx->volterraEngine) ctx->volterraEngine->requestSampleRate(sr);
                 if (!ctx->fastRpcClient) {
