@@ -282,6 +282,7 @@ struct omega_effect_context_t {
     // Supremacía Acústica: Volterra H2 & Hexagon cDSP FastRPC
     ivanna::dsp::VolterraH2Symmetric* volterraEngine;
     ivanna::dsp::sony_hcd_pz1d::ClassHState sonyClassHState;
+    float sonyH3WetPrev;
     ivanna::dsp::IvannaFastRpcClient* fastRpcClient;
     bool fastRpcAvailable;
     // Eje Supremo Coclear: CochlearActiveInverseEngine
@@ -1560,6 +1561,8 @@ static int32_t omega_process(effect_handle_t self,
             ctx->volterraEngine->processInterleaved(volterraScratch, volterraScratch, (uint32_t)chunk, 2);
             const uint32_t sonySampleRate = (ctx->config.outputCfg.samplingRate != 0u)
                 ? ctx->config.outputCfg.samplingRate : 48000u;
+            const float sonyH3WetEnd = ctx->volterraEngine->currentTransitionGain();
+            const float sonyH3WetStart = std::clamp(ctx->sonyH3WetPrev, 0.0f, 1.0f);
             for (int n = 0; n < chunk; ++n) {
                 float left = volterraScratch[2 * n];
                 float right = volterraScratch[2 * n + 1];
@@ -1570,12 +1573,14 @@ static int32_t omega_process(effect_handle_t self,
                 const bool highRail = ctx->sonyClassHState.update(
                     pcmPeak * ivanna::dsp::sony_hcd_pz1d::kPcmPeakReferenceVoltageV,
                     sonySampleRate);
-                const float sonyHarmonicWet = ctx->volterraEngine->currentTransitionGain();
+                const float ramp = static_cast<float>(n + 1) / static_cast<float>(std::max(chunk, 1));
+                const float sonyHarmonicWet = sonyH3WetStart + (sonyH3WetEnd - sonyH3WetStart) * ramp;
                 left = ivanna::dsp::sony_hcd_pz1d::applyH3(left, highRail, sonyHarmonicWet);
                 right = ivanna::dsp::sony_hcd_pz1d::applyH3(right, highRail, sonyHarmonicWet);
                 L[n] = left;
                 R[n] = right;
             }
+            ctx->sonyH3WetPrev = sonyH3WetEnd;
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::VolterraKernel,
                 L, R, (size_t)chunk, 1.20f, 0.95f);
@@ -1589,6 +1594,7 @@ static int32_t omega_process(effect_handle_t self,
             }
             ctx->volterraEngine->processInterleaved(
                 volterraScratch, volterraScratch, (uint32_t)chunk, 2);
+            ctx->sonyH3WetPrev = ctx->volterraEngine->currentTransitionGain();
         } else if (ctx->volterraEngine) {
             // Sin kernel efectivo o completamente silencioso: mantener caliente el
             // historial FIR sin reclamar autoridad ni ejecutar el kernel.
