@@ -88,6 +88,8 @@ ivanna_add_test(gammatone_numerical_stability)
 ivanna_add_test(no_denormals_low_level)
 ivanna_add_test(test_phase_oracle_kalman)
 ivanna_add_test(dsp_core_stability)
+# Paquete IVH2 de kernels Volterra + carga segura (coeficientes SINTÉTICOS; no calibra el Genezy).
+ivanna_add_test(test_volterra_kernel_package)
 ivanna_add_test(test_hires_config)
 # Continuidad de ganancia del techo por etapa (tronidos al subir volumen).
 ivanna_add_test(test_stage_ceiling_continuity)

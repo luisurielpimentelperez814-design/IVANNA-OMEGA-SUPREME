@@ -84,6 +84,16 @@ class KernelLoaderTests(unittest.TestCase):
         self.assertIsNone(KL.load_kernel(p[:20], K, FS, DEV))
         self.assertIsNone(KL.load_kernel(b"XXXX" + p[4:], K, FS, DEV))
 
+    def test_dataset_id_is_explicit_and_synthetic_needs_opt_in(self):
+        h1 = [0.8] + [0.0] * (K - 1)
+        h2 = [0.0] * (K * (K + 1) // 2)
+        syn = KL.build_payload(K, FS, DEV, h1, h2, dataset_id=b"SYNTH000")
+        self.assertIsNone(KL.load_kernel(syn, K, FS, DEV))  # por defecto solo DATASET0
+        self.assertIsNotNone(KL.load_kernel(syn, K, FS, DEV, allowed_dataset_ids=("SYNTH000",)))
+        self.assertEqual(syn[16:24], b"SYNTH000")
+        # compatibilidad hacia atrás: sin dataset_id sigue siendo DATASET0
+        self.assertEqual(good_payload()[16:24], b"DATASET0")
+
 
 if __name__ == "__main__":
     unittest.main()

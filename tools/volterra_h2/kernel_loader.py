@@ -48,24 +48,24 @@ class LoadedKernel:
 
 
 def build_payload(kernel_length: int, sample_rate: int, device_id: str,
-                  h1, h2) -> bytes:
+                  h1, h2, dataset_id: bytes = b"DATASET0") -> bytes:
     h1 = list(h1)
     h2 = list(h2)
     tri = kernel_length * (kernel_length + 1) // 2
     if len(h1) != kernel_length or len(h2) != tri:
         raise ValueError("dimensiones de kernel incorrectas")
     dev = device_id.encode()[:16].ljust(16, b"\0")
-    header_wo_crc = struct.pack("<4sHHII8s", MAGIC, FORMAT_VERSION, kernel_length,
-                                sample_rate, 0, b"DATASET0"[:8])
+    dataset_id = dataset_id[:8].ljust(8, b"\0")
     body = struct.pack(f"<{kernel_length}f", *h1) + struct.pack(f"<{tri}f", *h2)
     crc = zlib.crc32(dev + body) & 0xFFFFFFFF
     return struct.pack("<4sHHII8s", MAGIC, FORMAT_VERSION, kernel_length,
-                       sample_rate, crc, b"DATASET0"[:8]) + dev + body
+                       sample_rate, crc, dataset_id) + dev + body
 
 
 def load_kernel(payload: bytes, expected_kernel_length: int, expected_sample_rate: int,
                 authorized_device_id: str,
-                dataset_sha256: str = DATASET_SHA256) -> LoadedKernel | None:
+                dataset_sha256: str = DATASET_SHA256,
+                allowed_dataset_ids: tuple = ("DATASET0",)) -> LoadedKernel | None:
     """Devuelve LoadedKernel o None con la razón impresa. Fail-closed siempre."""
     def reject(reason):
         print(f"[kernel_loader] RECHAZADO: {reason}")
@@ -78,7 +78,7 @@ def load_kernel(payload: bytes, expected_kernel_length: int, expected_sample_rat
         return reject("magic inválido")
     if version != FORMAT_VERSION:
         return reject(f"versión de formato {version} no soportada")
-    if dsid.rstrip(b"\0").decode("ascii", "replace") != "DATASET0":
+    if dsid.rstrip(b"\0").decode("ascii", "replace") not in allowed_dataset_ids:
         return reject("identificador de dataset desconocido")
     dev = payload[24:40]
     device_id = dev.rstrip(b"\0").decode("utf-8", "replace")

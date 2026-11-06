@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.358
-versionCode=649
+version=v2.5.359
+versionCode=650
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.358: Ruta A EvolutionaryEQ corrige el colapso a identidad; perfil espectral de presencia con límite de pico y SafetyLimiter conservado.
+description=v2.5.359: puerta de carga C++ de kernels Volterra IVK1 con rechazo por causa y bypass seguro; sin kernel medido, el motor sigue en identidad.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

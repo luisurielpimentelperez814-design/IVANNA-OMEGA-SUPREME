@@ -16,6 +16,7 @@
  */
 
 #include "../include/volterra_h2_symmetric.hpp"
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -80,31 +81,53 @@ void VolterraH2Symmetric::updateKernels(
     const float* h2_kernel,
     uint32_t length
 ) noexcept {
-    if (!h1_kernel || !h2_kernel || !m_h1 || m_channels == 0) return;
-    if (length != m_kernel_length || isEnabled()) return;
+    // Semántica legacy intacta: rechazo silencioso. Ver updateKernelsChecked().
+    (void)updateKernelsChecked(h1_kernel, h2_kernel, length);
+}
+
+VolterraLoadStatus VolterraH2Symmetric::updateKernelsChecked(
+    const float* h1_kernel,
+    const float* h2_kernel,
+    uint32_t length
+) noexcept {
+    if (!h1_kernel || !h2_kernel) return VolterraLoadStatus::NullArgument;
+    return applyKernels(h1_kernel, h2_kernel, length);
+}
+
+VolterraLoadStatus VolterraH2Symmetric::applyKernels(
+    const float* h1_kernel,
+    const float* h2_kernel,
+    uint32_t length
+) noexcept {
+    using S = VolterraLoadStatus;
+    if (!h1_kernel || !m_h1 || m_channels == 0) return S::EngineUnavailable;
+    if (length != m_kernel_length) return S::KernelLengthMismatch;
+    if (isEnabled()) return S::EngineBusy;
     const size_t h1_size = static_cast<size_t>(length);
     const size_t h2_size = (h1_size * (h1_size + 1u)) / 2u;
     bool h1_identity = h1_kernel[0] == 1.0f;
     bool h2_active = false;
     for (size_t i = 0; i < h1_size; ++i) {
-        if (!std::isfinite(h1_kernel[i])) return;
+        if (!std::isfinite(h1_kernel[i])) return S::NonFinite;
         if (i != 0 && h1_kernel[i] != 0.0f) h1_identity = false;
     }
-    for (size_t i = 0; i < h2_size; ++i) {
-        if (!std::isfinite(h2_kernel[i])) return;
-        if (h2_kernel[i] != 0.0f) h2_active = true;
+    if (h2_kernel) {
+        for (size_t i = 0; i < h2_size; ++i) {
+            if (!std::isfinite(h2_kernel[i])) return S::NonFinite;
+            if (h2_kernel[i] != 0.0f) h2_active = true;
+        }
     }
-    if (!m_kernels_ready.exchange(false, std::memory_order_seq_cst)) return;
+    if (!m_kernels_ready.exchange(false, std::memory_order_seq_cst)) return S::EngineBusy;
     if (m_active_processes.load(std::memory_order_seq_cst) != 0u ||
         !m_dsp_silent.load(std::memory_order_acquire)) {
         m_kernels_ready.store(true, std::memory_order_seq_cst);
-        return;
+        return S::EngineBusy;
     }
     if (h2_active && !m_h2) {
         m_h2 = static_cast<float*>(memalign(64, h2_size * sizeof(float)));
         if (!m_h2) {
             m_kernels_ready.store(true, std::memory_order_seq_cst);
-            return;
+            return S::AllocFailed;
         }
     }
     memcpy(m_h1, h1_kernel, h1_size * sizeof(float));
@@ -118,6 +141,43 @@ void VolterraH2Symmetric::updateKernels(
     m_h2_active = h2_active;
     m_effective_kernel.store(!h1_identity || h2_active, std::memory_order_release);
     m_kernels_ready.store(true, std::memory_order_seq_cst);
+    return S::Ok;
+}
+
+VolterraLoadStatus VolterraH2Symmetric::loadKernelPackage(
+    const uint8_t* package,
+    size_t package_size,
+    const VolterraLoadPolicy& policy
+) noexcept {
+    using S = VolterraLoadStatus;
+    VolterraLoadPolicy pol = policy;
+    pol.expected_kernel_length = m_kernel_length;
+    VolterraPackageView view{};
+    S st = volterraValidatePackage(package, package_size, pol, &view);
+    if (st == S::Ok) {
+        const size_t K = view.kernel_length;
+        const size_t h2n = view.h2_bytes ? (K * (K + 1u)) / 2u : 0u;
+        const bool h1Aligned = (reinterpret_cast<uintptr_t>(view.h1_bytes) % alignof(float)) == 0u;
+        const bool h2Aligned = !view.h2_bytes ||
+            (reinterpret_cast<uintptr_t>(view.h2_bytes) % alignof(float)) == 0u;
+        float* tmp1 = nullptr;
+        float* tmp2 = nullptr;
+        const float* p1 = reinterpret_cast<const float*>(view.h1_bytes);
+        const float* p2 = reinterpret_cast<const float*>(view.h2_bytes);
+        if (!h1Aligned) {  // hilo de control: copia alineada (sin UB por acceso no alineado)
+            tmp1 = static_cast<float*>(malloc(K * sizeof(float)));
+            if (!tmp1) st = S::AllocFailed; else { memcpy(tmp1, view.h1_bytes, K * sizeof(float)); p1 = tmp1; }
+        }
+        if (st == S::Ok && !h2Aligned) {
+            tmp2 = static_cast<float*>(malloc(h2n * sizeof(float)));
+            if (!tmp2) st = S::AllocFailed; else { memcpy(tmp2, view.h2_bytes, h2n * sizeof(float)); p2 = tmp2; }
+        }
+        if (st == S::Ok) st = applyKernels(p1, p2, static_cast<uint32_t>(K));
+        free(tmp1);
+        free(tmp2);
+    }
+    if (st != S::Ok) setEnabled(false);  // bypass inmediato; kernels previos intactos
+    return st;
 }
 
 void VolterraH2Symmetric::preserveInterleavedTail(

@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <atomic>
 #include "../supreme/SupremeTransitionEnvelope.hpp"
+#include "volterra_kernel_package.hpp"
 
 namespace ivanna {
 namespace dsp {
@@ -77,6 +78,41 @@ public:
         const float* h2_kernel,
         uint32_t length
     ) noexcept;
+
+    /**
+     * Igual que updateKernels() (misma validación y mismos efectos) pero
+     * informa POR QUÉ rechaza: updateKernels() descarta en silencio.
+     *
+     * Contrato para el consumidor (hilo de CONTROL, nunca el de audio):
+     *   1. setEnabled(false)            -> el envelope fundea a silencio
+     *   2. esperar isSilent() == true   -> sin callbacks mezclando wet
+     *   3. updateKernelsChecked(...) / loadKernelPackage(...) == Ok
+     *   4. setEnabled(true)             -> sólo si el estado resultante se desea
+     * Con el motor habilitado devuelve EngineBusy sin tocar nada.
+     * Nota RT: puede llamar memalign/free (H2 se materializa/libera) por lo que
+     * NUNCA debe invocarse desde el callback de audio.
+     */
+    VolterraLoadStatus updateKernelsChecked(
+        const float* h1_kernel,
+        const float* h2_kernel,
+        uint32_t length
+    ) noexcept;
+
+    /**
+     * Valida un paquete IVK1 (neuromorphic/volterra_kernel_package.hpp) contra
+     * `policy` (expected_kernel_length se fuerza al K de este motor) y, sólo si
+     * es Ok, lo aplica con la misma ruta que updateKernelsChecked().
+     * Ante CUALQUIER error deja el motor en bypass inmediato (setEnabled(false))
+     * y no toca los kernels ya aplicados. En éxito NO habilita el motor.
+     * Un paquete sin H2 (flag H2_PRESENT apagado) aplica H2 = 0.
+     */
+    VolterraLoadStatus loadKernelPackage(
+        const uint8_t* package,
+        size_t package_size,
+        const VolterraLoadPolicy& policy
+    ) noexcept;
+
+    uint32_t kernelLength() const noexcept { return m_kernel_length; }
 
     /**
      * Activa/desactiva la corrección H2 (para bypass A/B testing)
@@ -143,6 +179,9 @@ private:
     bool m_h1_identity = true;
     bool m_h2_active = false;
     void releaseStorage() noexcept;
+    // h2_kernel == nullptr equivale a H2 = 0 (sólo ruta de paquete).
+    VolterraLoadStatus applyKernels(const float* h1_kernel, const float* h2_kernel,
+                                    uint32_t length) noexcept;
     ivanna::supreme::SupremeTransitionEnvelope m_transition_env{};
     ivanna::supreme::SupremeStateContinuityManager m_continuity_mgr{};
 

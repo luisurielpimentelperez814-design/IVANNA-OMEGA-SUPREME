@@ -1,3 +1,11 @@
+# v2.5.359 (650) - 2026-11-06
+
+- **Volterra H2 — puerta de carga de kernels en el motor (C++):** nuevo `neuromorphic/volterra_kernel_package.hpp` valida el MISMO contenedor IVK1 que produce `tools/volterra_h2/kernel_loader.py` (magic, versión, CRC32 de `device_id`+coeficientes, tamaño exacto, fs, K, `device_id`, finitud, amplitud, l1(h1)≤1 que acota |H1|, presupuesto de H2). Devuelve un código de estado por causa (`VolterraLoadStatus`) en lugar del rechazo silencioso de `updateKernels()`.
+- **Procedencia:** el dataset público REW (`DATASET0`) se rechaza SIEMPRE (es de otro sistema); `SYNTH000` solo con `allow_synthetic` (pruebas); `GENEZY01` queda reservado a una medición física futura según `GENEZY_CHARACTERIZATION_PROTOCOL.md`. IVK1 no cubre K, fs ni dataset_id con el CRC (limitación documentada); se compensa con tamaño exacto e igualdad contra la política.
+- **Motor:** `VolterraH2Symmetric::updateKernelsChecked()` y `loadKernelPackage()`; `updateKernels()` conserva su semántica exacta (delegando). Ante cualquier error la carga deja el motor en bypass (`setEnabled(false)`) sin tocar los kernels aplicados. Cargar un paquete no activa el motor.
+- **Pruebas:** 18 pruebas nuevas (`test_volterra_kernel_package`), incluido un paquete generado por Python aceptado por C++ y byte-idéntico al construido en C++, paridad bit a bit con `updateKernels()`, bypass tras fallo en marcha, buffer no alineado e identidad exacta por defecto; `test_kernel_loader.py` +1 (`dataset_id`).
+- **Alcance honesto:** NO existe ningún kernel medido del sistema Moto G85+DAC+Genezy; no hay consumidor de producción cableado (JNI/Kotlin) y la producción sigue en identidad (passthrough exacto). Esta versión no cambia el sonido; deja lista y verificada la ruta de carga. Auditoría: `docs/research/volterra_h2_public_dataset/UPDATEKERNELS_INTEGRATION_AUDIT.md`.
+
 # v2.5.358 (649) - 2026-11-05
 
 - **Ruta A — EQ evolutivo con respuesta espectral efectiva:** se corrige el colapso práctico a identidad. El regularizador de continuidad bajaba el fitness tanto que anulaba el error respecto a la curva objetivo; además, la población no incluía el genoma vigente aunque el comentario afirmaba lo contrario. El peso de suavidad baja de 0.5 a 0.01, el paso de búsqueda sube de 0.1 a 0.5 y el genoma actual se conserva como elite.
