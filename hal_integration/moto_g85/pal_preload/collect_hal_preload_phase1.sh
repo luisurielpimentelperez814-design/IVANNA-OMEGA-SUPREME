@@ -5,7 +5,8 @@
 R=/data/local/tmp/ivanna_phase1.txt
 : > "$R"
 sec() { printf '\n===== %s =====\n' "$1" >> "$R"; }
-run() { printf '$ %s\n' "$*" >> "$R"; "$@" >> "$R" 2>&1; printf '[rc=%s]\n' "$?" >> "$R"; }
+T() { if command -v timeout >/dev/null 2>&1; then timeout 20 "$@"; else "$@"; fi; }
+run() { printf '$ %s\n' "$*" >> "$R"; T "$@" >> "$R" 2>&1; printf '[rc=%s]\n' "$?" >> "$R"; echo "  ok: $1 $2" >&2; }
 
 sec "0. Identidad (la auditoría del repo dice Android 14/SDK 34; la orden dice 15/35: verificar)"
 for p in ro.build.version.release ro.build.version.sdk ro.build.fingerprint ro.product.model \
@@ -16,7 +17,7 @@ run /data/adb/magisk/magisk -v
 run /data/adb/magisk/magisk -V
 
 sec "1. Orden REAL de parseo de RC (init los registra en el log del kernel)"
-dmesg 2>/dev/null | grep -E "init: .*(Parsing file|Parsed|Added|Loaded)" | head -120 >> "$R"
+T dmesg 2>/dev/null | grep -E "init: .*(Parsing file|Parsed|Added|Loaded)" | head -120 >> "$R"
 [ -s "$R" ] || true
 echo "(si lo anterior esta vacio: dmesg restringido o buffer rotado; reintentar justo tras boot)" >> "$R"
 
@@ -27,9 +28,9 @@ for f in /vendor/etc/init/hw/init.$HW.rc /vendor/etc/init/hw/init.qcom.rc; do
 done
 
 sec "3/4. TODAS las definiciones de vendor.audio-hal y quien usa override"
-for d in /system/etc/init /system_ext/etc/init /vendor/etc/init /odm/etc/init /product/etc/init /overlay.d /debug_ramdisk; do
+for d in /system/etc/init /system_ext/etc/init /vendor/etc/init /odm/etc/init /product/etc/init; do
   [ -d "$d" ] || continue
-  grep -rIl "vendor.audio-hal" "$d" 2>/dev/null | while read -r f; do
+  T grep -Il "vendor.audio-hal" "$d"/*.rc "$d"/hw/*.rc 2>/dev/null | while read -r f; do
     echo "--- $f" >> "$R"; ls -lZ "$f" >> "$R" 2>&1
     awk '/^service vendor.audio-hal/{p=1} p{print NR": "$0} /^$/{p=0}' "$f" >> "$R" 2>&1
   done
@@ -43,9 +44,8 @@ run ls -la /data/adb/modules/ivanna_audio_probe
 run ls -la /data/adb/modules/ivanna_audio_probe/disable /data/adb/modules/ivanna_audio_probe/skip_mount
 
 sec "7. overlay.d / init de Magisk"
-run ls -laZ /debug_ramdisk
-run ls -la /debug_ramdisk/overlay.d
-dmesg 2>/dev/null | grep -iE "magisk|overlay" | head -40 >> "$R"
+run ls -la /debug_ramdisk
+T dmesg 2>/dev/null | grep -iE "magisk|overlay" | head -40 >> "$R"
 
 sec "8. HAL activo: AT_SECURE, dominio, entorno, maps, linker"
 P=$(getprop init.svc_debug_pid.vendor.audio-hal)
@@ -69,7 +69,6 @@ if [ -n "$P" ] && [ -d "/proc/$P" ]; then
   run cat /proc/$P/cgroup
 fi
 run ls -l /sys/fs/selinux/policy
-run sha256sum /sys/fs/selinux/policy
 run ls -ldZ /vendor/lib64/hw/audio.primary.blair.so /vendor/lib64/libar-pal.so /vendor/lib64/libagm.so
 
 sec "Fin"
