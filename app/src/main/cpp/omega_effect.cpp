@@ -1992,8 +1992,9 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 }
                 // Supremacía Acústica: Motores de Volterra H2 y Qualcomm cDSP FastRPC
                 if (!ctx->volterraEngine) {
-                    ctx->volterraEngine = new (std::nothrow) ivanna::dsp::VolterraH2Symmetric(64, 2);
+                    ctx->volterraEngine = new (std::nothrow) ivanna::dsp::VolterraH2Symmetric(64, 2, sr);
                 }
+                if (ctx->volterraEngine) ctx->volterraEngine->requestSampleRate(sr);
                 if (!ctx->fastRpcClient) {
                     ctx->fastRpcClient = new (std::nothrow) ivanna::dsp::IvannaFastRpcClient();
                     if (ctx->fastRpcClient) {
