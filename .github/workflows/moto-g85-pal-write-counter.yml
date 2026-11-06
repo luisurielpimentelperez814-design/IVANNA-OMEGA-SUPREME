@@ -1,0 +1,42 @@
+name: Moto G85 PAL write counter probe
+on:
+  push:
+    branches: ["main"]
+    paths: ["hal_integration/moto_g85/pal_preload_probe/**", ".github/workflows/moto-g85-pal-write-counter.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+        with: { packages: platform-tools, accept-android-sdk-licenses: true }
+      - run: sdkmanager "ndk;27.2.12479018"
+      - name: Safety checks and host transparency test
+        run: |
+          cd hal_integration/moto_g85/pal_preload_probe
+          python3 validate_write_counter.py
+          sh -n swap_probe_with_rollback.sh
+          sh host_test/run.sh
+      - name: Compile ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          B="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p out
+          "$B/aarch64-linux-android29-clang" -std=gnu11 -O2 -fPIC -fvisibility=hidden -Wall -Wextra -Werror -shared \
+            hal_integration/moto_g85/pal_preload_probe/ivanna_pal_write_counter.c -o out/libivanna_pal_write_counter.so \
+            -Wl,-z,relro,-z,now -ldl -llog
+          "$B/llvm-readelf" -h out/libivanna_pal_write_counter.so | grep -q AArch64
+          "$B/llvm-readelf" --dyn-syms -W out/libivanna_pal_write_counter.so | grep -E "pal_stream_write" | tee out/dynsyms.txt
+          "$B/llvm-readelf" --dyn-syms -W out/libivanna_pal_write_counter.so | grep -E " UND " | grep -E "pal_" && { echo "unexpected pal_* import"; exit 1; } || true
+          sha256sum out/libivanna_pal_write_counter.so | tee out/sha256.txt
+          cp hal_integration/moto_g85/pal_preload_probe/swap_probe_with_rollback.sh out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Omega_PAL_Write_Counter_arm64
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
