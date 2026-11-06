@@ -123,3 +123,16 @@ El archivo app/src/main/cpp/neuromorphic/sony_hcd_pz1d_profile.hpp contiene los 
 - Los valores de esta sección se aceptan como mediciones aportadas por el usuario y se preservan sin sustituirlos por valores de datasheet.
 - Los valores de hoja de datos del STK416-130-E siguen en la sección anterior como especificaciones del componente aislado; no deben mezclarse con las mediciones de la unidad Sony.
 - El perfil conserva el identificador de equipo SONY_HCD_PZ1D, la condición de ensayo y la procedencia user_lab_measurements_2026-11-06.
+
+
+## Integración en la ruta PCM real de AudioEffect
+
+El perfil HCD-PZ1D ya no queda aislado como referencia offline. En la rama de integración:
+
+- `omega_effect.cpp` instancia el perfil por contexto de efecto y carga `kA2Nominal` como coeficiente diagonal de retardo cero del kernel H2 de Volterra.
+- Tras `processInterleaved()`, la ruta PCM aplica H3 con el valor medido correspondiente al estado Clase H.
+- El estado usa el ancla de calibración declarada: PCM peak 1.0 representa 24.5 V pico en el ensayo 50 W / 6 Ω. El estado conserva el riel alto durante 12 ms (extremo conservador del intervalo medido).
+- H3 comparte la envolvente de transición del motor Volterra para evitar un escalón al activar/desactivar el efecto.
+- El estado es por instancia de AudioEffect. La arbitración GoldenEar, el bypass térmico y el control `OMEGA_FLAG_VOLTERRA_ON` siguen gobernando la autoridad del slot no lineal.
+
+**Límite físico:** AudioEffect procesa muestras PCM y no controla eléctricamente los rieles VH/VL del amplificador Sony. La implementación aplica la firma armónica medida al flujo digital; no conmuta la fuente física del STK. La verificación final requiere instalar el APK/módulo y comprobar la salida real en el equipo.
