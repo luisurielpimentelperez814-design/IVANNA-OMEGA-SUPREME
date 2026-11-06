@@ -35,3 +35,11 @@ TEST(SonyHcdPz1dProfile, HarmonicModelSelectsTransitionH3) {
     EXPECT_GT(high.sample, low.sample);
     EXPECT_TRUE(high.class_h_high_rail);
 }
+
+TEST(SonyHcdPz1dProfile, RuntimeH3StageHasSmoothWetControl) {
+    const float x = 0.5f;
+    EXPECT_FLOAT_EQ(applyH3(x, false, 0.0f), x);
+    EXPECT_GT(applyH3(x, true, 1.0f), applyH3(x, false, 1.0f));
+    EXPECT_NEAR(applyH3(x, true, 0.5f),
+                x + 0.5f * kA3DuringTransition * x * x * x, 1.0e-7f);
+}
