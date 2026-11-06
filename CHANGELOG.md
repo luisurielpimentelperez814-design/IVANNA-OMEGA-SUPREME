@@ -1,3 +1,9 @@
+# v2.5.358 (649) - 2026-11-05
+
+- **Ruta A — EQ evolutivo con respuesta espectral efectiva:** se corrige el colapso práctico a identidad. El regularizador de continuidad bajaba el fitness tanto que anulaba el error respecto a la curva objetivo; además, la población no incluía el genoma vigente aunque el comentario afirmaba lo contrario. El peso de suavidad baja de 0.5 a 0.01, el paso de búsqueda sube de 0.1 a 0.5 y el genoma actual se conserva como elite.
+- **Impacto esperado y acotado:** la respuesta deja de quedarse en ±0.4 dB y se aproxima al perfil declarado (recorte de graves y presencia/aire), con pico objetivo limitado por la normalización existente. No se aumenta el volumen maestro ni se desactiva el SafetyLimiter.
+- **Regresión:** nuevo test nativo mide la respuesta FIR en 458 Hz, 6.9 kHz y 13 kHz; falla si el EQ vuelve a identidad o excede el límite de presencia. CI y validación auditiva en Moto G85 siguen pendientes; el perfil no se considera calibración personalizada de auriculares.
+
 # v2.5.357 (648) - 2026-11-05
 
 - **Ruta B — telemetría app-side restaurada sin tocar el control plane:** `omega_effect` mantiene un SHM local dedicado para RMS/peak, contadores y generación aplicada incluso cuando el daemon está conectado como reader del bus de control. El writer de telemetría es una instancia separada de `effectControlBus()`; nunca abre el SHM root-only del daemon como segundo writer.
