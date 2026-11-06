@@ -1570,8 +1570,9 @@ static int32_t omega_process(effect_handle_t self,
                 const bool highRail = ctx->sonyClassHState.update(
                     pcmPeak * ivanna::dsp::sony_hcd_pz1d::kPcmPeakReferenceVoltageV,
                     sonySampleRate);
-                left = ivanna::dsp::sony_hcd_pz1d::applyH3(left, highRail);
-                right = ivanna::dsp::sony_hcd_pz1d::applyH3(right, highRail);
+                const float sonyHarmonicWet = ctx->volterraEngine->currentTransitionGain();
+                left = ivanna::dsp::sony_hcd_pz1d::applyH3(left, highRail, sonyHarmonicWet);
+                right = ivanna::dsp::sony_hcd_pz1d::applyH3(right, highRail, sonyHarmonicWet);
                 L[n] = left;
                 R[n] = right;
             }
