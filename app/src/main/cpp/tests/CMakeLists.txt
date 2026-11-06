@@ -1585,3 +1585,7 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_magistral_room_xtc PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_magistral_room_xtc)
+
+
+# Sony HCD-PZ1D measured profile: rail-state and harmonic simulation contract.
+ivanna_add_test(test_sony_hcd_pz1d_profile)
