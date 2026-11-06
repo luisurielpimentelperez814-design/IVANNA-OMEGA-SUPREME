@@ -30,7 +30,8 @@
 namespace ivanna {
 namespace dsp {
 
-VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels)
+VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels,
+                                           uint32_t sample_rate)
     : m_kernel_length(kernel_length), m_channels(channels) {
 
     const size_t align = 64;
@@ -39,7 +40,9 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
     if (m_channels == 0) m_channels = 2;
     if (m_channels > 16) m_channels = 16;
 
-    m_transition_env.configure(48000.0f, 8.0f, 18.0f, 35.0f);
+    const uint32_t initialSr = (sample_rate >= 8000u && sample_rate <= 768000u)
+        ? sample_rate : 48000u;
+    m_transition_env.configure(static_cast<float>(initialSr), 8.0f, 18.0f, 35.0f);
     m_transition_env.setImmediate(0.0f);
 
     m_h1 = static_cast<float*>(memalign(align, static_cast<size_t>(m_kernel_length) * sizeof(float)));
@@ -168,6 +171,20 @@ void VolterraH2Symmetric::processInterleaved(
         }
         return;
     }
+    // Apply a route-rate change only on the DSP thread. Re-anchor the envelope
+    // at its current gain so the next beginBlock() rebuilds the remaining ramp
+    // using the new sample clock without a discontinuity.
+    const uint32_t requestedSr = m_pending_sample_rate.exchange(0u, std::memory_order_acq_rel);
+    if (requestedSr >= 8000u && requestedSr <= 768000u &&
+        static_cast<uint32_t>(m_transition_env.sampleRate) != requestedSr) {
+        const float gain = m_transition_env.currentGain;
+        m_transition_env.configure(static_cast<float>(requestedSr), 8.0f, 18.0f, 35.0f);
+        m_transition_env.currentGain = gain;
+        m_transition_env.targetGain = gain;
+        m_transition_env.step = 0.0f;
+        m_transition_env.remainingSamples = 0u;
+    }
+
     if (!m_effective_kernel.load(std::memory_order_acquire)) {
         // Mantener caliente el historial circular aun con H1 identidad/H2 cero.
         // Una calibración posterior puede entrar sin arrancar con memoria vacía.
