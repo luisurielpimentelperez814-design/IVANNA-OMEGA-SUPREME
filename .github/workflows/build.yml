@@ -1176,6 +1176,7 @@ jobs:
   # ── HARDWARE VALIDATION: public prerelease, never the production update channel ──
   # Explicit opt-in via commit message marker. This publishes verified build artifacts
   # for on-device testing while leaving the HWS-01..04 production gate untouched.
+# Sony HCD-PZ1D: feature branches can publish a non-production hardware-validation prerelease after artifact verification.
   publish-hardware-validation:
     name: Publish hardware-validation prerelease for integration branch (non-production)
     runs-on: ubuntu-22.04
