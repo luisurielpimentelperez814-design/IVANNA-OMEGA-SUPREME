@@ -29,6 +29,10 @@ namespace {
 constexpr float kPi = 3.14159265358979f;
 
 constexpr int   kNumTargets = 6;
+// Penalizacion de suavidad: 0.5 dominaba el error espectral (20.25 para
+// identidad) y empujaba el optimizador a una respuesta casi plana. 0.01
+// conserva continuidad entre bandas sin cancelar la curva objetivo.
+constexpr float kSmoothnessWeight = 0.01f;
 // frecuencia normalizada (0..π) y ganancia objetivo (dB) por punto
 constexpr float kTargetWn[kNumTargets] = {
     0.060f, 0.170f, 0.480f, 0.900f, 1.700f, 2.700f
@@ -122,13 +126,14 @@ float EvolutionaryEQ::calculateFitness(const float* genome) {
         err += d * d;
     }
 
-    // Regularizador (NO criterio principal): peso bajo a propósito.
+    // Regularizador (NO criterio principal): peso 0.01; mantiene continuidad
+    // sin dominar el error espectral ni colapsar el filtro a identidad.
     float smooth = 0.0f;
     for (size_t i = 1; i < BANDS_512; ++i) {
         const float diff = genome[i] - genome[i - 1];
         smooth += diff * diff;
     }
-    err += 0.5f * smooth;
+    err += kSmoothnessWeight * smooth;
 
     // El pico NO se penaliza aquí: penalizarlo (o normalizarlo) lleva el
     // óptimo al identidad trivial (toda magnitud en 1). El pico se controla
@@ -179,9 +184,16 @@ void EvolutionaryEQ::updateLM_CMA_ES() {
     float population[lambda][BANDS_512];
     float fitness[lambda];
 
+    // El genoma actual ocupa el primer slot como elite. Antes los ocho
+    // candidatos eran mutaciones: el comentario afirmaba que el promedio
+    // actual estaba en la poblacion, pero el codigo no lo incluia.
+    // Con el elite explicito, el proceso conserva una referencia conocida
+    // y solo se desplaza cuando las mutaciones mejoran el fitness real.
     for (size_t p = 0; p < lambda; ++p) {
         for (size_t i = 0; i < BANDS_512; ++i) {
-            population[p][i] = m_meanGenome[i] + m_stepSize * fast_rand();
+            population[p][i] = (p == 0)
+                ? m_meanGenome[i]
+                : m_meanGenome[i] + m_stepSize * fast_rand();
         }
         fitness[p] = calculateFitness(population[p]);
     }
