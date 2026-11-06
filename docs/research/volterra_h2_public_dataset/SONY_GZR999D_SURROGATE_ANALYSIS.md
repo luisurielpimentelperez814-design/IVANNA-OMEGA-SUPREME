@@ -57,3 +57,69 @@ Por ello, no es matemáticamente válido fabricar `h2[k,l]` a partir de 135 W, 1
 3. No generar ni cargar coeficientes H2 Sony como si fueran mediciones del equipo objetivo.
 4. Mantener H2 fail-closed/bypass hasta que exista una identificación compleja y de dos tonos del conjunto exacto.
 5. El cargador IVK1 de producción debe rechazar kernels con identidad de equipo/dataset no autorizada, sample rate distinto, CRC inválido, coeficientes no finitos o límites de estabilidad excedidos.
+
+
+## Perfil experimental medido aportado para Sony HCD-PZ1D / MHC-PZ1D
+
+**Procedencia:** conjunto de datos de laboratorio aportado por el usuario en la conversación del 2026-11-06. Para este perfil se incorporan como mediciones del usuario; no se atribuyen al datasheet de Sanyo ni al manual Sony. Mantener la trazabilidad de esta procedencia al exportar o entrenar kernels.
+
+### Rieles y umbral Clase H
+
+| Variable | Valor incorporado | Condición / interpretación |
+|---|---:|---|
+| VH positivo / negativo | ±58.2 V DC | Nominal operativo reportado |
+| VH en vacío | ±62.1 V DC | Reportado |
+| VH a máxima potencia, 6 Ω | ±52.4 V DC | Reportado |
+| VL positivo / negativo | ±31.5 V DC | Reportado como estabilizado |
+| Umbral de conmutación | ±24.5 V pico | Medido en nodos de salida, pines 11/12/13 según el usuario |
+| Margen de guarda | 7.0 V | 31.5 − 24.5 V |
+| Tiempo de encendido | 850 ns | Reportado |
+| Retención / apagado | 4.5–12 ms | Reportado; se conserva como intervalo, no como constante única |
+
+El umbral de 24.5 V pico sobre una carga resistiva de 6 Ω equivale a 50.0 W sinusoidales: P = Vpk²/(2R). Esta equivalencia es una comprobación matemática.
+
+### Armónicos reportados
+
+| Condición | Componente | Nivel | Relación de amplitud |
+|---|---|---:|---:|
+| 1 kHz, 6 Ω, 50 W | H2 | −68 a −72 dBc | 0.03981–0.02512 % |
+| Bajo umbral | H3 | −78 dBc | 0.01259 % |
+| Transición de rieles | H3 | −62 dBc | 0.07943 % |
+
+Los valores espectrales quedan asociados a la condición de ensayo declarada: 1 kHz, 6 Ω y 50 W. No extrapolarlos automáticamente a toda frecuencia, potencia, temperatura o carga reactiva.
+
+### Protección reportada
+
+| Variable | Valor aportado |
+|---|---:|
+| Umbral de pico de corriente | >7.5 A pico |
+| Tiempo de disparo por pico | <15 ms |
+| Sobrecarga sostenida | 4.5–5.5 A durante aproximadamente 1.2 s |
+| Red DET_DC | 47 kΩ y 47 μF |
+| Constante RC | 2.209 s |
+| Frecuencia de corte RC | 0.072 Hz |
+| Offset DC de disparo | ±1.5 V |
+| Tiempo de detección DC | 340 ms |
+
+Los valores de protección se registran como datos de caracterización del equipo aportados por el usuario. No son umbrales universales del STK ni deben usarse para diseñar protecciones sustitutas sin validar el circuito físico.
+
+### Conversión a coeficientes para simulación normalizada
+
+Para generar un estímulo de simulación se adopta la convención x_peak = 1 en el punto de ensayo de 50 W / 6 Ω. Para el polinomio memoryless y = x + a2*x² + a3*x³, los armónicos de una senoide dan a2 = 2*H2 y a3 = 4*H3 (relaciones lineales de amplitud). Por tanto:
+
+- a2 derivado del intervalo H2: 0.00050238–0.00079621.
+- a2 central para −70 dBc: 0.00063246.
+- a3 bajo umbral para −78 dBc: 0.00050357.
+- a3 durante transición para −62 dBc: 0.00317731.
+
+Estas constantes son coeficientes de un **modelo polinómico de prueba normalizado**, no kernels Volterra H2/H3 con memoria identificada. La fase de los armónicos no fue incluida en los datos aportados; el simulador usa fase cero solo como convención inicial y debe permitir sustituirla cuando exista medición compleja.
+
+### Uso en IVANNA
+
+El archivo app/src/main/cpp/neuromorphic/sony_hcd_pz1d_profile.hpp contiene los parámetros y las funciones auxiliares de simulación. El perfil se incorpora como modelo experimental separado: no modifica automáticamente el kernel H2 de producción ni habilita una ruta PAL/HAL. La máquina de estado Clase H es una aproximación discreta para simulación y no reemplaza el circuito analógico real.
+
+### Límites y trazabilidad
+
+- Los valores de esta sección se aceptan como mediciones aportadas por el usuario y se preservan sin sustituirlos por valores de datasheet.
+- Los valores de hoja de datos del STK416-130-E siguen en la sección anterior como especificaciones del componente aislado; no deben mezclarse con las mediciones de la unidad Sony.
+- El perfil conserva el identificador de equipo SONY_HCD_PZ1D, la condición de ensayo y la procedencia user_lab_measurements_2026-11-06.
