@@ -549,5 +549,14 @@ target_include_directories(test_supreme_acoustic_continuity PRIVATE
 target_link_libraries(test_supreme_acoustic_continuity PRIVATE gtest gtest_main ${log-lib})
 add_test(NAME SupremeAcousticContinuityTest COMMAND test_supreme_acoustic_continuity)
 
-
-
+# Evolutionary EQ: regression of the calibrated frequency response (not just readiness).
+add_executable(test_evolutionary_eq_impact
+    tests/test_evolutionary_eq_impact.cpp
+    EvolutionaryEQ.cpp
+)
+target_include_directories(test_evolutionary_eq_impact PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/third_party/googletest/googletest/include
+)
+target_link_libraries(test_evolutionary_eq_impact PRIVATE gtest gtest_main)
+add_test(NAME evolutionary_eq_impact COMMAND test_evolutionary_eq_impact)
