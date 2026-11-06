@@ -18,6 +18,7 @@
 #include "anti_dolby.h"
 #include "neuromorphic/CochlearActiveInverseModel.hpp"
 #include "neuromorphic/volterra_h2_symmetric.hpp"
+#include "neuromorphic/sony_hcd_pz1d_profile.hpp"
 #include "hexagon/ivanna_fastrpc_client.hpp"
 #include "supreme/WarpedLatticeTransducerInverter.hpp"
 #include "supreme/PhaseCoherentTransharmonicSynthesizer.hpp"
@@ -280,6 +281,8 @@ struct omega_effect_context_t {
     AntiDolbyState* antiDolby;
     // Supremacía Acústica: Volterra H2 & Hexagon cDSP FastRPC
     ivanna::dsp::VolterraH2Symmetric* volterraEngine;
+    ivanna::dsp::sony_hcd_pz1d::ClassHState sonyClassHState;
+    float sonyH3WetPrev;
     ivanna::dsp::IvannaFastRpcClient* fastRpcClient;
     bool fastRpcAvailable;
     // Eje Supremo Coclear: CochlearActiveInverseEngine
@@ -1556,10 +1559,28 @@ static int32_t omega_process(effect_handle_t self,
                 volterraScratch[2 * n + 1] = R[n];
             }
             ctx->volterraEngine->processInterleaved(volterraScratch, volterraScratch, (uint32_t)chunk, 2);
+            const uint32_t sonySampleRate = (ctx->config.outputCfg.samplingRate != 0u)
+                ? ctx->config.outputCfg.samplingRate : 48000u;
+            const float sonyH3WetEnd = ctx->volterraEngine->currentTransitionGain();
+            const float sonyH3WetStart = std::clamp(ctx->sonyH3WetPrev, 0.0f, 1.0f);
             for (int n = 0; n < chunk; ++n) {
-                L[n] = volterraScratch[2 * n];
-                R[n] = volterraScratch[2 * n + 1];
+                float left = volterraScratch[2 * n];
+                float right = volterraScratch[2 * n + 1];
+                // Calibration anchor: PCM peak 1.0 corresponds to 24.5 Vpk
+                // (50 W / 6 ohm). The effect models the measured transition
+                // signature; it does not electrically switch the Sony's rails.
+                const float pcmPeak = std::max(std::fabs(left), std::fabs(right));
+                const bool highRail = ctx->sonyClassHState.update(
+                    pcmPeak * ivanna::dsp::sony_hcd_pz1d::kPcmPeakReferenceVoltageV,
+                    sonySampleRate);
+                const float ramp = static_cast<float>(n + 1) / static_cast<float>(std::max(chunk, 1));
+                const float sonyHarmonicWet = sonyH3WetStart + (sonyH3WetEnd - sonyH3WetStart) * ramp;
+                left = ivanna::dsp::sony_hcd_pz1d::applyH3(left, highRail, sonyHarmonicWet);
+                right = ivanna::dsp::sony_hcd_pz1d::applyH3(right, highRail, sonyHarmonicWet);
+                L[n] = left;
+                R[n] = right;
             }
+            ctx->sonyH3WetPrev = sonyH3WetEnd;
             ctx->stabilityGuard.enforceStageEnergyCeiling(
                 ivanna::supreme::AcousticModuleId::VolterraKernel,
                 L, R, (size_t)chunk, 1.20f, 0.95f);
@@ -1573,6 +1594,7 @@ static int32_t omega_process(effect_handle_t self,
             }
             ctx->volterraEngine->processInterleaved(
                 volterraScratch, volterraScratch, (uint32_t)chunk, 2);
+            ctx->sonyH3WetPrev = ctx->volterraEngine->currentTransitionGain();
         } else if (ctx->volterraEngine) {
             // Sin kernel efectivo o completamente silencioso: mantener caliente el
             // historial FIR sin reclamar autoridad ni ejecutar el kernel.
@@ -1992,8 +2014,29 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 }
                 // Supremacía Acústica: Motores de Volterra H2 y Qualcomm cDSP FastRPC
                 if (!ctx->volterraEngine) {
-                    ctx->volterraEngine = new (std::nothrow) ivanna::dsp::VolterraH2Symmetric(64, 2);
+                    ctx->volterraEngine = new (std::nothrow) ivanna::dsp::VolterraH2Symmetric(64, 2, sr);
+                    if (ctx->volterraEngine) {
+                        // Perfil medido Sony HCD-PZ1D: H2 a 1 kHz / 6 ohm / 50 W.
+                        // El kernel Volterra recibe a2 = 2*10^(H2_dBc/20), con
+                        // x_peak=1 en el punto de calibración; H3 se aplica justo
+                        // después, usando el estado de transición Clase H por instancia.
+                        float experimentalH1[64] = {};
+                        float experimentalH2[2080] = {};
+                        experimentalH1[0] = 1.0f;
+                        experimentalH2[0] = ivanna::dsp::sony_hcd_pz1d::kA2Nominal;
+                        ctx->volterraEngine->setEnabled(false);
+                        ctx->volterraEngine->updateKernels(
+                            experimentalH1, experimentalH2, 64u);
+                        if (!ctx->volterraEngine->hasEffectiveKernel()) {
+                            __android_log_print(ANDROID_LOG_WARN, "IVANNA-Volterra",
+                                "Experimental Sony surrogate rejected; keeping H2 bypass");
+                        } else {
+                            __android_log_print(ANDROID_LOG_WARN, "IVANNA-Volterra",
+                                "Sony HCD-PZ1D measured H2 profile loaded; H3/Class-H stage attached to AudioEffect PCM path");
+                        }
+                    }
                 }
+                if (ctx->volterraEngine) ctx->volterraEngine->requestSampleRate(sr);
                 if (!ctx->fastRpcClient) {
                     ctx->fastRpcClient = new (std::nothrow) ivanna::dsp::IvannaFastRpcClient();
                     if (ctx->fastRpcClient) {
