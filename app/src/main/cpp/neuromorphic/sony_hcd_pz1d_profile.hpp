@@ -1,11 +1,13 @@
 #pragma once
 
 #include <cmath>
+#include <algorithm>
 #include <cstdint>
 
 // Sony HCD-PZ1D / MHC-PZ1D experimental lab profile.
 // Source: user-supplied laboratory measurements, 2026-11-06.
-// Simulation profile only; not a Sanyo datasheet specification.
+// Runtime PCM profile for the live AudioEffect path; it models the measured output signature,
+// but cannot electrically command the external Sony amplifier's supply rails.
 namespace ivanna { namespace dsp { namespace sony_hcd_pz1d {
 
 constexpr char kProfileId[] = "SONY_HCD_PZ1D";
@@ -84,10 +86,11 @@ private:
 };
 
 // Apply only the measured H3 component after the Volterra H2 kernel.
-inline float applyH3(float x, bool classHHighRail) noexcept {
-    if (!std::isfinite(x)) return 0.0f;
+inline float applyH3(float x, bool classHHighRail, float wet = 1.0f) noexcept {
+    if (!std::isfinite(x) || !std::isfinite(wet)) return 0.0f;
     const float a3 = classHHighRail ? kA3DuringTransition : kA3BelowThreshold;
-    const float y = x + a3 * x * x * x;
+    const float amount = std::clamp(wet, 0.0f, 1.0f);
+    const float y = x + amount * a3 * x * x * x;
     return std::isfinite(y) ? y : x;
 }
 
