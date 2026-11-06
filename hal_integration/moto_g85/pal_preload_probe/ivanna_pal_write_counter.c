@@ -80,7 +80,7 @@ static struct slot *find_slot(uintptr_t h) {
     return NULL;
 }
 
-ssize_t pal_stream_write(void *stream, void *buf) {
+__attribute__((visibility("default"))) ssize_t pal_stream_write(void *stream, void *buf) {
     ssize_t (*real)(void *, void *) = atomic_load_explicit(&g_real, memory_order_acquire);
     if (!real) {
         real = (ssize_t (*)(void *, void *))dlsym(RTLD_NEXT, "pal_stream_write");
