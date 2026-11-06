@@ -1,3 +1,12 @@
+## v2.5.356 (647) - 2026-11-06
+
+- **Dataset público REW → infraestructura Volterra H2:** el dataset Zenodo 10.5281/zenodo.20567124 (CC BY 4.0, .mdat de Java Serialization v5) se procesó con herramientas propias de solo lectura: `tools/volterra_h2/mdat_parser.py` (deserializador) y `export_dataset.py` (CSV/JSON/NPY + análisis Fase III). Inventario verificado: 6 barridos (48 kHz, 54 613 puntos, RI de 1 048 576 muestras @96 kHz) y 6 stepped-sine (96 kHz, 31 puntos, −20 dBFS).
+- **Identificabilidad H2:** veredicto reproducible (`volterra_h2_identify.py`): H1 identificable desde las RI almacenadas; H2 NO identificable (sin excitación cruda, sin salida cruda, sin fase de armónicos, sin dos tonos, sin serie de niveles). Ningún coeficiente se fabrica; el estimador LS regularizado se valida solo en sistemas Volterra sintéticos etiquetados (residuo 1e-16, err<2e-8, K=8).
+- **Puerta de carga de kernels:** `tools/volterra_h2/kernel_loader.py` valida integridad (CRC32), procedencia, dispositivo, dimensiones, fs, finitez, amplitud y estabilidad con 9 pruebas positivas/negativas (`tests/test_kernel_loader.py`). Ningún kernel externo llega al motor de producción: `updateKernels()` sigue sin consumidor de producción (auditoría documentada).
+- **Documentación:** `docs/research/volterra_h2_public_dataset/` (procedencia, inventario, análisis, identificabilidad, pipeline, protocolo de caracterización Genezy, informe de validación, hashes).
+- **CI:** `run_check kernel_loader` añadido a la puerta host; los tools Python no tocan el DSP de producción (Ruta A/B y GoldenEar sin cambios funcionales).
+- **Alcance:** infraestructura y evidencia. No hay kernel medido cargado ni validación acústica en dispositivo; la caracterización Genezy requiere el protocolo de Fase VII.
+
 ## v2.5.355 (646)
 
 - En Ruta B, GoldenEar reclama el único slot no lineal antes de ejecutar `processStereo()` y conserva la reserva mientras su envolvente mantiene cola audible.

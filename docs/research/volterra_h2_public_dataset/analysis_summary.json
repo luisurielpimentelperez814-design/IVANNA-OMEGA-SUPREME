@@ -1,0 +1,189 @@
+{
+ "sweeps": {
+  "digi_vaimennin_impulssi": {
+   "spl_mean_200hz_20khz_db": 78.998849306063,
+   "spl_at_1khz_db": 86.4690815153576,
+   "spl_max_db": 107.39876556396484,
+   "ir_abs_max": 0.0029599021654576063,
+   "ir_peak_index": 524288
+  },
+  "digi_vaimennin_step_sini": {
+   "spl_mean_200hz_20khz_db": NaN,
+   "spl_at_1khz_db": NaN,
+   "spl_max_db": 99.02816009521484,
+   "ir_abs_max": null,
+   "ir_peak_index": null
+  },
+  "digi_vaimennin_impulssi_2": {
+   "spl_mean_200hz_20khz_db": 78.97192288021856,
+   "spl_at_1khz_db": 84.76897676349122,
+   "spl_max_db": 107.64000701904297,
+   "ir_abs_max": 0.0029737688601017,
+   "ir_peak_index": 524288
+  },
+  "digi_vaimennin_step_sini_2": {
+   "spl_mean_200hz_20khz_db": NaN,
+   "spl_at_1khz_db": NaN,
+   "spl_max_db": 99.28838348388672,
+   "ir_abs_max": null,
+   "ir_peak_index": null
+  },
+  "digi_ei_vaimenninta_impulssi": {
+   "spl_mean_200hz_20khz_db": 76.31752867325345,
+   "spl_at_1khz_db": 83.63675561143366,
+   "spl_max_db": 106.1920166015625,
+   "ir_abs_max": 0.0021571542602032423,
+   "ir_peak_index": 524288
+  },
+  "digi_ei_vaimenninta_step_sini": {
+   "spl_mean_200hz_20khz_db": NaN,
+   "spl_at_1khz_db": NaN,
+   "spl_max_db": 96.82418060302734,
+   "ir_abs_max": null,
+   "ir_peak_index": null
+  },
+  "digi_ei_vaimenninta_impulssi_2": {
+   "spl_mean_200hz_20khz_db": 76.35044021454047,
+   "spl_at_1khz_db": 83.92079321892707,
+   "spl_max_db": 106.22762298583984,
+   "ir_abs_max": 0.0022379430010914803,
+   "ir_peak_index": 524288
+  },
+  "digi_ei_vaimenninta_step_sini_2": {
+   "spl_mean_200hz_20khz_db": NaN,
+   "spl_at_1khz_db": NaN,
+   "spl_max_db": 96.84677124023438,
+   "ir_abs_max": null,
+   "ir_peak_index": null
+  },
+  "kaiuttimet_ei_vaiment_impulssi": {
+   "spl_mean_200hz_20khz_db": 76.60484125625322,
+   "spl_at_1khz_db": 83.43694545759823,
+   "spl_max_db": 106.11055755615234,
+   "ir_abs_max": 0.002365203807130456,
+   "ir_peak_index": 524288
+  },
+  "kaiuttimet_ei_vaiment_step_sini": {
+   "spl_mean_200hz_20khz_db": NaN,
+   "spl_at_1khz_db": NaN,
+   "spl_max_db": 96.76289367675781,
+   "ir_abs_max": null,
+   "ir_peak_index": null
+  },
+  "kaiuttimet_ei_vaiment_impulssi2": {
+   "spl_mean_200hz_20khz_db": 76.67979318610061,
+   "spl_at_1khz_db": 82.39014004438351,
+   "spl_max_db": 106.16735076904297,
+   "ir_abs_max": 0.0023902319371700287,
+   "ir_peak_index": 524288
+  },
+  "kaiuttimet_ei_vaiment_step_sin2": {
+   "spl_mean_200hz_20khz_db": NaN,
+   "spl_at_1khz_db": NaN,
+   "spl_max_db": 96.739501953125,
+   "ir_abs_max": null,
+   "ir_peak_index": null
+  }
+ },
+ "stepped": {
+  "digi_vaimennin_step_sini": {
+   "freq_points": 31,
+   "max_harmonics_recorded": 9,
+   "generator_level_dbfs": [
+    -20.0
+   ],
+   "imd_measured": false,
+   "computed_thd_pct_min": 1.4832852793869116,
+   "computed_thd_pct_max": 18776.055452472592,
+   "dominant_harmonic_below_1khz": 2
+  },
+  "digi_vaimennin_step_sini_2": {
+   "freq_points": 31,
+   "max_harmonics_recorded": 9,
+   "generator_level_dbfs": [
+    -20.0
+   ],
+   "imd_measured": false,
+   "computed_thd_pct_min": 1.7811433572667421,
+   "computed_thd_pct_max": 17048.801920814192,
+   "dominant_harmonic_below_1khz": 2
+  },
+  "digi_ei_vaimenninta_step_sini": {
+   "freq_points": 31,
+   "max_harmonics_recorded": 9,
+   "generator_level_dbfs": [
+    -20.0
+   ],
+   "imd_measured": false,
+   "computed_thd_pct_min": 1.3328911940822328,
+   "computed_thd_pct_max": 14702.546601991728,
+   "dominant_harmonic_below_1khz": 2
+  },
+  "digi_ei_vaimenninta_step_sini_2": {
+   "freq_points": 31,
+   "max_harmonics_recorded": 9,
+   "generator_level_dbfs": [
+    -20.0
+   ],
+   "imd_measured": false,
+   "computed_thd_pct_min": 1.3936150528435192,
+   "computed_thd_pct_max": 14499.958447419178,
+   "dominant_harmonic_below_1khz": 2
+  },
+  "kaiuttimet_ei_vaiment_step_sini": {
+   "freq_points": 31,
+   "max_harmonics_recorded": 9,
+   "generator_level_dbfs": [
+    -20.0
+   ],
+   "imd_measured": false,
+   "computed_thd_pct_min": 1.483977212221239,
+   "computed_thd_pct_max": 20645.58399821836,
+   "dominant_harmonic_below_1khz": 2
+  },
+  "kaiuttimet_ei_vaiment_step_sin2": {
+   "freq_points": 31,
+   "max_harmonics_recorded": 9,
+   "generator_level_dbfs": [
+    -20.0
+   ],
+   "imd_measured": false,
+   "computed_thd_pct_min": 1.405722181228097,
+   "computed_thd_pct_max": 19634.853256618597,
+   "dominant_harmonic_below_1khz": 2
+  }
+ },
+ "comparisons": {
+  "repeatability::digi_vaimennin_impulssi vs digi_vaimennin_impulssi_2": {
+   "mean_delta_db": 0.026926425844444702,
+   "rms_delta_db": 4.435748162317938,
+   "max_abs_delta_db": 42.35860824584961
+  },
+  "repeatability::digi_ei_vaimenninta_impulssi vs digi_ei_vaimenninta_impulssi_2": {
+   "mean_delta_db": -0.03291154128701227,
+   "rms_delta_db": 2.286820966820511,
+   "max_abs_delta_db": 41.110843658447266
+  },
+  "repeatability::kaiuttimet_ei_vaiment_impulssi vs kaiuttimet_ei_vaiment_impulssi2": {
+   "mean_delta_db": -0.07495192984738103,
+   "rms_delta_db": 2.1753117371416204,
+   "max_abs_delta_db": 50.46149826049805
+  },
+  "A_damped_vs_dac_nodamper": {
+   "mean_delta_db": 2.681320632809547,
+   "rms_delta_db": 4.682502300129107,
+   "max_abs_delta_db": 37.2451286315918
+  },
+  "B_damped_vs_speaker_nodamper": {
+   "mean_delta_db": 2.3940080498097718,
+   "rms_delta_db": 5.789739614978521,
+   "max_abs_delta_db": 44.3156623840332
+  }
+ },
+ "level_series_available": false,
+ "notes": [
+  "All sweep measurements share one excitation level (-12 dBFS); stepped-sine at -20 dBFS only.",
+  "No raw excitation or output time series are embedded (MeasData.ir=null, audioDataLength=0).",
+  "No IMD/multitone data (distortionData.isIMD=false, imddB placeholders 0.0)."
+ ]
+}

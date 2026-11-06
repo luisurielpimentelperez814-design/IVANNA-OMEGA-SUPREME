@@ -1,0 +1,26 @@
+{
+ "identifiability": {
+  "observable": [
+   "H1 (linear chain response): identified from the 6 stored impulse responses (1,048,576 samples stored at 96 kHz, acquired from 48 kHz sweeps)."
+  ],
+  "unobservable": [
+   "h2[k,l] time-domain kernel values: require concurrent raw excitation and raw output records (none are stored; MeasData.ir=null, audioDataLength=0 in all 12 measurements).",
+   "complex H2 (magnitude AND phase) per harmonic: only magnitudes are stored (dBHarmonicData), no phase, so the complex quadratic transfer function cannot be formed.",
+   "separation of H2 from compression/AGC and level-dependent behavior: requires a level series (>=2 levels); the sweeps use -12 dBFS only and the stepped-sine runs -20 dBFS only.",
+   "intermodulation terms h2(f1,f2) at sum/difference frequencies: distortionData.isIMD=false and imddB placeholders are 0.0; no two-tone record exists."
+  ],
+  "verdict": "H2 is NOT identifiable from this dataset; H1 is. Any H2 loaded from this data would be fabricated."
+ },
+ "synthetic_validation": {
+  "synthetic": true,
+  "K": 8,
+  "n": 8192,
+  "ok": true,
+  "cond_number": 5.526250930378479,
+  "relative_residual": 1.0281904773598336e-16,
+  "h1_relative_error": 1.0164481633234045e-08,
+  "h2_relative_error": 1.8043475128750607e-08,
+  "short_record_refused": true,
+  "short_record_reason": "insufficient data: 64 samples < 4x44 params"
+ }
+}

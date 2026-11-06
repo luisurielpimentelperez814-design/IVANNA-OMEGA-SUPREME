@@ -1,0 +1,65 @@
+{
+  "dataset": {
+    "doi": "10.5281/zenodo.20567124",
+    "concept_doi": "10.5281/zenodo.20567123",
+    "url": "https://zenodo.org/records/20567124",
+    "title": "Room EQ Wizard Measurement Data for Optimized Soft-Enclosure Particle Dampers for Audio Equipment and Loudspeakers",
+    "creators": ["Kortela, Jukka", "Korhonen, Marko", "Gasik, Michael"],
+    "publication_date": "2026-06-06",
+    "license": "CC-BY-4.0",
+    "acquisition_dates": ["2025-09-14", "2025-09-21"]
+  },
+  "distribution": {
+    "zip": {
+      "name": "optimized_soft_enclosure_particle_dampers_rew_dataset_v1.zip",
+      "size_bytes": 27668997,
+      "md5_published": "ffaf14519b100eca3bc7c36c87b817f9",
+      "md5_verified_match": true,
+      "sha256": "053231c8d4649de35115389adee36a228c51e4bd58dd2da4a89ef3a571490c4c"
+    },
+    "entries": [
+      {"name": "kuulavaimennintesti202050914_nimetty.mdat", "size_bytes": 31291126, "sha256": "580a1c323449d0c986e468ab4190d5f40f5e91122d0f002bc3bb8ff661cd497a", "format": "Java serialization stream v5 (REW Measurement Data File V2)"},
+      {"name": "checksums_sha256.txt", "size_bytes": 64, "sha256": "9cb129669e8f0261026ac602294021eabe201ed90ceebdb82321f694135ebae4", "note": "hash sin nombre de archivo; coincide con el .mdat"},
+      {"name": "README.md", "size_bytes": 7631, "sha256": "c8cbe7080df1e2a1cfb1486921eb04c4f52b29f1e4dcb8c91658d46d29d7305f"},
+      {"name": "__MACOSX/._* (3 resource forks)", "note": "excluidos del análisis; sin datos acústicos"}
+    ]
+  },
+  "measurement_file": {
+    "name": "kuulavaimennintesti202050914_nimetty.mdat",
+    "rew_version_reported": "5.20 (.13)",
+    "jre": "1.8.0_345 64-bit",
+    "os": "mac os x 12.7.4",
+    "measurement_count": 12,
+    "classes_in_stream": ["roomeqwizard.MeasData", "roomeqwizard.IRData", "roomeqwizard.SampledData", "roomeqwizard.DistortionData", "roomeqwizard.SteppedSineDataPoint", "roomeqwizard.Filter", "roomeqwizard.FilterSet", "roomeqwizard.CalData", "roomeqwizard.MeasSweepFunction", "roomeqwizard.WindowSettings", "roomeqwizard.TargetShape", "roomeqwizard.TimingReference", "roomeqwizard.NoiseFilter", "roomeqwizard.OctaveFilterSettings", "roomeqwizard.XOverChoice", "roomeqwizard.XOverSlope", "roomeqwizard.Interpolation", "javax.swing.ImageIcon"]
+  },
+  "measurements": [
+    {"name": "digi_vaimennin_impulssi", "condition": "damped_reference", "type": "sweep", "sampleRate": 48000, "gridLength": 54613, "irStored": true, "irSamples": 1048576, "irSampleRate": 96000, "sourceDate": "2025-09-14", "level": "-12 dBFS"},
+    {"name": "digi_vaimennin_impulssi_2", "condition": "damped_reference", "type": "sweep", "sampleRate": 48000, "gridLength": 54613, "irStored": true, "irSampleRate": 96000, "sourceDate": "2025-09-21", "level": "-12 dBFS"},
+    {"name": "digi_ei_vaimenninta_impulssi", "condition": "dac_no_damper", "type": "sweep", "sampleRate": 48000, "gridLength": 54613, "irStored": true, "irSampleRate": 96000, "sourceDate": "2025-09-21", "level": "-12 dBFS"},
+    {"name": "digi_ei_vaimenninta_impulssi_2", "condition": "dac_no_damper", "type": "sweep", "sampleRate": 48000, "gridLength": 54613, "irStored": true, "irSampleRate": 96000, "sourceDate": "2025-09-21", "level": "-12 dBFS"},
+    {"name": "kaiuttimet_ei_vaiment_impulssi", "condition": "speaker_no_damper", "type": "sweep", "sampleRate": 48000, "gridLength": 54613, "irStored": true, "irSampleRate": 96000, "sourceDate": "2025-09-21", "level": "-12 dBFS"},
+    {"name": "kaiuttimet_ei_vaiment_impulssi2", "condition": "speaker_no_damper", "type": "sweep", "sampleRate": 48000, "gridLength": 54613, "irStored": true, "irSampleRate": 96000, "sourceDate": "2025-09-21", "level": "-12 dBFS"},
+    {"name": "digi_vaimennin_step_sini", "condition": "damped_reference", "type": "stepped_sine_thd", "sampleRate": 96000, "points": 31, "ppo": 3, "freqRange": [20.5, 19999.5], "level": "-20 dBFS", "averages": 2, "fftLength": 65536},
+    {"name": "digi_vaimennin_step_sini_2", "condition": "damped_reference", "type": "stepped_sine_thd", "sampleRate": 96000, "points": 31, "ppo": 3, "freqRange": [20.5, 19999.5], "level": "-20 dBFS", "averages": 2, "fftLength": 65536},
+    {"name": "digi_ei_vaimenninta_step_sini", "condition": "dac_no_damper", "type": "stepped_sine_thd", "sampleRate": 96000, "points": 31, "ppo": 3, "freqRange": [20.5, 19999.5], "level": "-20 dBFS", "averages": 2, "fftLength": 65536},
+    {"name": "digi_ei_vaimenninta_step_sini_2", "condition": "dac_no_damper", "type": "stepped_sine_thd", "sampleRate": 96000, "points": 31, "ppo": 3, "freqRange": [20.5, 19999.5], "level": "-20 dBFS", "averages": 2, "fftLength": 65536},
+    {"name": "kaiuttimet_ei_vaiment_step_sini", "condition": "speaker_no_damper", "type": "stepped_sine_thd", "sampleRate": 96000, "points": 31, "ppo": 3, "freqRange": [20.5, 19999.5], "level": "-20 dBFS", "averages": 2, "fftLength": 65536},
+    {"name": "kaiuttimet_ei_vaiment_step_sin2", "condition": "speaker_no_damper", "type": "stepped_sine_thd", "sampleRate": 96000, "points": 31, "ppo": 3, "freqRange": [20.5, 19999.5], "level": "-20 dBFS", "averages": 2, "fftLength": 65536}
+  ],
+  "fields_present_per_measurement": {
+    "sweep": ["splValues[54613]", "phaseValues[54613]", "unwPhaseValues[54613]", "gdValues[54613] (ms)", "irData.ir.data[1048576] @96 kHz", "distortionData.freqs/harmData(10 curvas 1/96 oct)/noiseFloorSPL", "filterSet", "geometría de sala", "nombres de dispositivos", "nivel del generador"],
+    "stepped_sine": ["splValues[31]", "steppedSineResults[31] (THD%, THD+N%, THD dB, THD+N dB, inputRMSdB, dBHarmonicData por punto, longitud variable 2-9 armónicos)", "distortionData.freqs/levels/noiseFloorSPL"]
+  },
+  "fields_absent_all_measurements": {
+    "raw_excitation_signal": "MeasData.ir=null, audioDataLength=0",
+    "raw_output_signal": "no almacenada",
+    "impulse_response_time_series_for_stepped": "irData=null en las 6 stepped-sine",
+    "harmonic_phase": "solo magnitudes (dB)",
+    "imd_multitone_records": "distortionData.isIMD=false, imddB/imdRefdB=0.0 (placeholders)",
+    "level_series": "un único nivel por modalidad (-12 dBFS sweeps, -20 dBFS stepped)",
+    "spectrum_array": "distortionData.spectrum=null",
+    "mic_calibration": "scCal/meterCal sin arrays, micSensitivity=null",
+    "timing_reference": "TimingReference.NONE, usedTimingRef=false"
+  },
+  "extraction_tooling": ["tools/volterra_h2/mdat_parser.py", "tools/volterra_h2/export_dataset.py", "tools/volterra_h2/volterra_h2_identify.py"]
+}
