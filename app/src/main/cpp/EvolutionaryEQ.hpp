@@ -63,7 +63,7 @@ private:
 
     float m_meanGenome[BANDS_512];
     float m_evolutionPath[BANDS_512];
-    float m_stepSize{0.1f};
+    float m_stepSize{0.5f}; // mutacion suficiente para converger al perfil espectral objetivo
 
     float m_normalization{1.0f};
     bool  m_ready{false};
