@@ -18,7 +18,12 @@ El motor se instancia con K=64 taps y 2 canales.
 - Mínimo de muestras impuesto por el estimador actual: 4×2,144 = 8,576 muestras por registro. Esto es un umbral de tamaño, no garantía de identificabilidad.
 - Memoria de coeficientes float32: (64 + 2,080)×4 = 8,576 bytes por canal; 17,152 bytes para dos canales si se almacenan kernels independientes. La implementación actual comparte una instancia/coeficientes entre canales y mantiene historial por canal; no debe confundirse con calibración L/R independiente.
 
-### 2.2 Especificación de entrada AUX documentada
+#
+### 2.4 Coste temporal del K=64 actual
+
+A 48 kHz, el soporte temporal de 64 muestras es 64/48000 = 1.333 ms. A 96 kHz es 0.667 ms. El bloque H2 contiene 2,080 pares por muestra y canal: a 48 kHz son 99.84 millones de términos por segundo por canal, o 199.68 millones de términos por segundo en estéreo. A 96 kHz se duplica. Es una cuenta de operaciones del modelo, no un benchmark del Moto G85; antes de habilitar por defecto debe medirse el tiempo de callback y el margen de AudioFlinger con NEON y con el resto de etapas activas.
+
+## 2.2 Especificación de entrada AUX documentada
 
 El manual MHC-PZ1D indica 250/450 mV y 47 kΩ para VIDEO/SAT AUDIO IN L/R. Interpretando los voltajes como RMS sobre esa impedancia:
 
