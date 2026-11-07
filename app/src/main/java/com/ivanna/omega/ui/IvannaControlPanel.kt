@@ -111,6 +111,7 @@ fun IvannaControlPanel(
     initialAuxXoverHz: Float = 120f,
     initialAuxCoherence: Float = 1f,
     initialPunchAmount: Float = 0f,
+    initialCrossfeed: Float = 0f,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -139,6 +140,7 @@ fun IvannaControlPanel(
     onWfsSpreadChange: (Float) -> Unit = {},
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
     onPunchChange: (Float) -> Unit = {},
+    onCrossfeedChange: (Float) -> Unit = {},
     onTemporalFieldChange: (Boolean, Float, Boolean) -> Unit = { _, _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
@@ -226,6 +228,7 @@ fun IvannaControlPanel(
     var unityEnabled by remember { mutableStateOf(unityPrefs.getBoolean("enabled", true)) }
     var unityTelemetry by remember { mutableStateOf(FloatArray(0)) }
     var punchAmount by remember { mutableFloatStateOf(initialPunchAmount) }
+    var crossfeed by remember { mutableFloatStateOf(initialCrossfeed) }
     var punchTelemetry by remember { mutableStateOf(FloatArray(0)) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -1087,6 +1090,26 @@ fun IvannaControlPanel(
                         "ataque ${"%.0f".format(pt[3] * 100f)} %   latencia ${"%.1f".format(pt[5])} ms" +
                         (if (pt[4] > 0.5f) "   · guarda activa" else "")
                 },
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted
+            )
+        }
+
+        GlassCard(
+            title = "CRUCE DE GRAVES · AUDÍFONOS / DAC",
+            accent = AuroraCyan,
+            subtitle = if (crossfeed > 0f)
+                "Activo: los graves cruzan al otro oído con 0,26 ms de retardo (altavoces a ±30°) · centro y agudos intactos · saca el sonido de dentro de la cabeza"
+            else
+                "Con audífonos cada oído oye solo su canal en graves. Esto restituye el cruce natural de unos altavoces. Apagado = audio intacto (bypass exacto)"
+        ) {
+            AuroraSlider("CRUCE", crossfeed, 0f..1f,
+                displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
+                crossfeed = it
+                onCrossfeedChange(it)
+            }
+            Text(
+                "Pensado para audífonos o DAC. No lo combines con altavoces/transaural: ahí ya existe el cruce físico.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )

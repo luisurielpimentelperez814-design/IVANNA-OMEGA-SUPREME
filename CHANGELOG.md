@@ -1,3 +1,8 @@
+# v2.5.362 (653) - 2026-11-07
+
+- **UI: control "CRUCE DE GRAVES · AUDIFONOS / DAC" en CONTROL** para el crossfeed con ITD de v2.5.361: slider 0-100 % (0 = apagado, bypass exacto), persistente en `ParameterStore` (`crossfeed_strength`) y reaplicado al nativo por `PersistedStateRestorer` al abrir la app. Cableado igual que Impacto predictivo (panel -> ControlTabScreen/MainActivity -> `IvannaNativeLib.nativeSetCrossfeed`), con `runCatching` para builds sin el simbolo.
+- Apagado por defecto: sin tocarlo no cambia nada de lo que suena. Aviso en la tarjeta: pensado para audifonos/DAC, no combinar con altavoces/transaural. Sin escucha ni medicion en el Moto G85 todavia; el Kotlin lo valida CI (Build APK).
+
 # v2.5.361 (652) - 2026-11-07
 
 - **Nuevo efecto: crossfeed de graves con ITD (`dsp/HeadphoneCrossfeed.hpp`, Ruta A).** Con audifonos/DAC cada oido oye solo su canal en graves (separacion infinita), lo que ubica el sonido "dentro de la cabeza". El efecto mezcla los graves hacia el otro oido con retardo de 0,261 ms (ITD de Woodworth a 30 grados, altavoces a +-30) y pasa-bajos de 700 Hz: `out_L = L + g(Rd-Ld)`, `out_R = R - g(Rd-Ld)`. Propiedades verificadas en tests: strength 0 = bypass bit-exacto; L==R sale identico (centro y mono intactos); con un canal solo, el cruce coincide con la prediccion analitica del filtro (g=1/3: -6 dB a 100 Hz, antes separacion infinita); agudos sin tocar; retardo de ~12,5 muestras @48 kHz; estable y acotado de 44,1 a 384 kHz.

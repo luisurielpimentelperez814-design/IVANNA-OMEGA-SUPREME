@@ -126,6 +126,7 @@ class ParameterStore(context: Context) {
         private const val KEY_AUX_XOVER   = "aux_field_xover_hz"
         private const val KEY_AUX_COH     = "aux_field_coherence"
         private const val KEY_PUNCH       = "punch_amount"
+        private const val KEY_CROSSFEED   = "crossfeed_strength"
         private const val KEY_4D_ENABLED  = "fourd_enabled"
         private const val KEY_4D_HAPTICS  = "fourd_haptics"
         private const val KEY_4D_HSCALE   = "fourd_haptic_scale"
@@ -409,6 +410,9 @@ class ParameterStore(context: Context) {
     // ── Impacto predictivo (PunchEngine) ── 0 = apagado por defecto: bypass exacto, el audio no cambia hasta activarlo
     fun getPunchAmount(): Float = safeGetFloat(KEY_PUNCH, 0f)
     fun setPunchAmount(amount: Float) = prefs.edit().putFloat(KEY_PUNCH, amount.coerceIn(0f, 1f)).apply()
+    // Crossfeed de graves con ITD (audifonos/DAC, Ruta A). 0 = apagado.
+    fun getCrossfeedStrength(): Float = safeGetFloat(KEY_CROSSFEED, 0f)
+    fun setCrossfeedStrength(s: Float) = prefs.edit().putFloat(KEY_CROSSFEED, if (s.isFinite()) s.coerceIn(0f, 1f) else 0f).apply()
 
     // ── Cadena 4D (anticipación, arco, háptica, diafonía, dosímetro) ── todo apagado por defecto
     fun is4dEnabled(): Boolean = safeGetBoolean(KEY_4D_ENABLED, false)

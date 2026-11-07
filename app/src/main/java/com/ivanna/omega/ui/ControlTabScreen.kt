@@ -238,6 +238,7 @@ fun ControlTabScreen(
         initialAuxXoverHz = paramStore.getAuxXoverHz(),
         initialAuxCoherence = paramStore.getAuxCoherence(),
         initialPunchAmount = paramStore.getPunchAmount(),
+        initialCrossfeed = paramStore.getCrossfeedStrength(),
         initialPhaseOracleIntensity = audioState.phaseOracleIntensity,
         metrics              = metrics,
         adaptiveTelemetry    = adaptiveTelemetry,
@@ -388,6 +389,11 @@ fun ControlTabScreen(
             paramStore.setPunchAmount(a)
             if (IvannaNativeLib.isLoaded)
                 runCatching { IvannaNativeLib.nativeSetPunch(a.coerceIn(0f, 1f)) }
+        },
+        onCrossfeedChange = { s ->
+            paramStore.setCrossfeedStrength(s)
+            if (IvannaNativeLib.isLoaded)
+                runCatching { IvannaNativeLib.nativeSetCrossfeed(s.coerceIn(0f, 1f)) }
         },
         onAuxFieldChange = { en, xo, co ->
             paramStore.setAuxField(en, xo, co)

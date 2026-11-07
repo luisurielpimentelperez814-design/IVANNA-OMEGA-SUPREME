@@ -101,6 +101,8 @@ object PersistedStateRestorer {
             }
             // Impacto predictivo (PunchEngine): restaura la cantidad (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetPunch(paramStore.getPunchAmount()) }
+            // Crossfeed de graves con ITD (Ruta A): restaura la intensidad (0 = apagado).
+            runCatching { IvannaNativeLib.nativeSetCrossfeed(paramStore.getCrossfeedStrength()) }
             // 4D temporal: restaura estado y profundidad (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetTemporalField(paramStore.isTemporalFieldEnabled(), paramStore.getTemporalFieldAmount(), paramStore.isTemporalFieldAdaptive()) }
             // Háptica de graves (4D): vive en Kotlin (ruta A), no depende de la librería nativa.

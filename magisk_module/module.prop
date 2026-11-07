@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.361
-versionCode=652
+version=v2.5.362
+versionCode=653
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.361: nuevo crossfeed de graves con ITD (Woodworth 30 grados) para audifonos/DAC en Ruta A; apagado por defecto (bypass exacto), sin UI todavia; 688/688 tests.
+description=v2.5.362: control CRUCE DE GRAVES en CONTROL (persistente, restaurado al abrir) para el crossfeed con ITD de audifonos/DAC; apagado por defecto.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

@@ -1369,6 +1369,7 @@ fun DashboardScreen(
             initialAuxXoverHz = paramStore.getAuxXoverHz(),
             initialAuxCoherence = paramStore.getAuxCoherence(),
             initialPunchAmount = paramStore.getPunchAmount(),
+            initialCrossfeed = paramStore.getCrossfeedStrength(),
             initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
             initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
             initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
@@ -1451,6 +1452,11 @@ fun DashboardScreen(
                 if (IvannaNativeLib.isLoaded) runCatching {
                     IvannaNativeLib.nativeSetAuxField(enabled, boundedXover, boundedCoherence)
                 }
+            },
+            onCrossfeedChange = { s ->
+                val bounded = s.coerceIn(0f, 1f)
+                paramStore.setCrossfeedStrength(bounded)
+                if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetCrossfeed(bounded) }
             },
             onPunchChange = { amount ->
                 val bounded = amount.coerceIn(0f, 1f)
