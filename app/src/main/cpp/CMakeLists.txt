@@ -179,9 +179,15 @@ add_library(ivanna_omega SHARED
     # (extern en jni/ivanna_omega_jni.cpp) pero no estaba en ningún target
     # → undefined symbols al enlazar libivanna_omega.so.
     wfs_controls_bridge.cpp
+    # ORBE: atomics g_orbe_* del proceso app (extern en jni/ivanna_omega_jni.cpp
+    # e IvannaFusionCore.cpp). Solo en este target — el stub del efecto es
+    # orbe_globals_effect.cpp (ODR si se duplica).
+    orbe_controls_bridge.cpp
     # Ruta A reutiliza el renderer WFS real compartido con AudioFlinger.
     spatial/RouteAWfsEngine.cpp
     spatial/WfsRenderer.cpp
+    # ORBE: núcleo STFT de campo cercano (instancia g_orbeRouteA del JNI).
+    spatial/OrbeBinaural.cpp
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp
@@ -325,6 +331,11 @@ add_library(omega_effect SHARED
     # ivanna_omega: ODR violation con wfs_controls_bridge.cpp.
     wfs_globals_effect.cpp
 
+    # ORBE: stub de g_orbe_* para el proceso audioserver (mismo patrón que
+    # wfs_globals_effect.cpp; la definición real está en orbe_controls_bridge.cpp,
+    # target ivanna_omega). NO añadir a ivanna_omega: ODR violation.
+    orbe_globals_effect.cpp
+
     HrtfManager.cpp
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
@@ -342,6 +353,7 @@ add_library(omega_effect SHARED
     neuromorphic/ivanna_neural_upmixer.cpp
     neuromorphic/neuro_cochlear_manifold.cpp
     spatial/IntelligentUpmixer.cpp
+    spatial/OrbeBinaural.cpp
     spatial/WfsRenderer.cpp
     spatial/HoaBinauralDecoder.cpp
     hexagon/ivanna_fastrpc_client.cpp

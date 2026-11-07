@@ -428,9 +428,14 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
                            std::clamp(s.head_pitch_rad, -0.78539816f, 0.78539816f), 0.0f);
     }
 
-    // Spatial width: si HOA o WFS están activos, el ensanchador M/S se neutraliza
-    // para no alterar la física del frente de onda ni introducir filtro de peine.
-    if (upmixOn || wfsOn) {
+    // Spatial width: si HOA, WFS u ORBE están activos, el ensanchador M/S se
+    // neutraliza para no alterar la física del frente de onda ni introducir
+    // filtro de peine. ORBE hoy no tiene campos en el snapshot (ABI v8 sin
+    // orbe_* — ver IMPLEMENTACION_ORBE.md): isOrbeEnabled() lee el atomic
+    // del proceso audioserver, que queda en default (off) hasta un futuro
+    // bump de ABI que añada los campos y su reenvío aquí vía setOrbeParams().
+    const bool orbeOn = fc->isOrbeEnabled();
+    if (upmixOn || wfsOn || orbeOn) {
         fc->setSpatialWidth(1.0f);
     } else if (std::isfinite(s.spatial_width) && s.spatial_width >= 0.f) {
         fc->setSpatialWidth(s.spatial_width);
@@ -449,7 +454,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     if (std::isfinite(s.intensity) && s.intensity > 0.f) {
         fc->setIntensity(s.intensity);
     }
-    const float widMult = (upmixOn || wfsOn) ? 1.0f : (std::isfinite(s.widener_mult) && s.widener_mult > 0.f ? s.widener_mult : 1.0f);
+    const float widMult = (upmixOn || wfsOn || orbeOn) ? 1.0f : (std::isfinite(s.widener_mult) && s.widener_mult > 0.f ? s.widener_mult : 1.0f);
     fc->setRouteProfile(s.bass_boost_db, s.dialog_boost_db, widMult);
     fc->setEqGains(s.eq_gains, ivanna::OMEGA_CTRL_EQ_BANDS, s.listen_phon, s.ref_phon);
     // ── Cable SAF → Ruta B — vector latente q[7] → motor HRTF ──────────────

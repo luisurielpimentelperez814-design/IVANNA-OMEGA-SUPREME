@@ -588,6 +588,35 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_intelligent_upmixer)
 
+# ORBE (Binaural Esférico de Campo Cercano): el modelo de cabeza es
+# header-only; el núcleo STFT se compila directo (como
+# test_intelligent_upmixer) porque IvannaFusionCore no se enlaza en host.
+ivanna_add_test(test_near_field_head_model)
+add_executable(test_orbe_binaural
+  test_orbe_binaural.cpp
+  ../spatial/OrbeBinaural.cpp
+)
+target_link_libraries(test_orbe_binaural PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_orbe_binaural PRIVATE .. ../include host_stubs)
+target_compile_options(test_orbe_binaural PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_orbe_binaural PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_orbe_binaural PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_orbe_binaural)
+add_executable(test_orbe_chain
+  test_orbe_chain.cpp
+  ../spatial/OrbeBinaural.cpp
+)
+target_link_libraries(test_orbe_chain PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_orbe_chain PRIVATE .. ../include host_stubs)
+target_compile_options(test_orbe_chain PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_orbe_chain PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_orbe_chain PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_orbe_chain)
+
 # Native 3D stem pose contract: the production NeuralUpmixer implementation is
 # compiled directly so these tests exercise the same atomic buffer publication
 # and validation used by JNI, rather than a parallel test-only implementation.

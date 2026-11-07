@@ -7,6 +7,7 @@
 #include "IvannaFusionCore.hpp"
 #include "spatial/IntelligentUpmixer.hpp"
 #include "spatial/HoaBinauralDecoder.hpp"
+#include "spatial/OrbeBinaural.hpp"
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/WfsSpreadGovernor.hpp"
 #include "spatial/AuxFieldCoherence.hpp"
@@ -61,6 +62,7 @@ public:
         m_xtc.prepare(sampleRate, 2048);
         m_upmixer.prepare(sampleRate);
         m_hoaDecoder.prepare(sampleRate, 8);
+        m_orbe.prepare(sampleRate);
     }
 
     void process(Ivanna::AudioBuffer* buffer);
@@ -85,6 +87,15 @@ public:
     void setWfsEnabled(bool enable) noexcept;
     bool isWfsEnabled() const noexcept;
     void setWfsSpread(float spread) noexcept;
+    // ORBE — Binaural Esférico de Campo Cercano. Escriben los mismos
+    // atomics g_orbe_* que process() lee cada bloque (definidos en
+    // orbe_controls_bridge.cpp / orbe_globals_effect.cpp — mismo patrón
+    // que g_wfs_*). Apagado por defecto (amount=0 = bypass bit-exacto)
+    // hasta que la puerta auditiva dé GREEN.
+    void setOrbeEnabled(bool enable) noexcept;
+    void setOrbeParams(float amount, float distanceM, float spread, float proximityDb,
+                       float diffuse, bool headTracking) noexcept;
+    bool isOrbeEnabled() const noexcept;
     // x/y/z: coordenadas de SALA absolutas (metros; x=ancho,y=altura,
     // z=profundidad), 7 altavoces, orden FL,FR,SL,SR,TL,TR,SW — mismo
     // formato que OmegaDspSnapshot::wfs_speaker_{x,y,z}. Se convierten
@@ -143,6 +154,7 @@ public:
         m_sampleRateF = sr;
         m_upmixer.prepare(sr);
         m_hoaDecoder.prepare(sr, 8);
+        m_orbe.prepare(sr);
         m_wfs.init(sr, Ivanna::BLOCK_SIZE, 16);
         m_wfsInit = true;
         resetFifo();
@@ -344,6 +356,9 @@ private:
 
     IntelligentUpmixer m_upmixer;
     HoaBinauralDecoder m_hoaDecoder;
+    // ORBE — Binaural Esférico de Campo Cercano (última etapa espacial de
+    // process(): tras upmixer/HRTF y tras el blend WFS, antes del M/S).
+    ivanna::OrbeBinaural m_orbe;
 
     // ── Wave Field Synthesis (2026-09-19) — ruta real de audio ──
     // El renderer sintetiza el campo de ondas de la señal estéreo como
