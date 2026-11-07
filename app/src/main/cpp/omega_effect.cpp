@@ -443,10 +443,46 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
                           s.orbe_head_tracking != 0u);
     }
     const bool orbeOn = fc->isOrbeEnabled();
-    // Spatial width: si HOA, WFS u ORBE están activos, el ensanchador M/S se
+    // HOLOS — Operador Único de Campo Acústico (ABI v10): los parámetros
+    // llegan por el snapshot desde la app (CONTROL / PersistedStateRestorer)
+    // y se aplican al FusionCore de esta instancia. amount 0 = apagado
+    // (default). Se clampean defensivamente: un snapshot corrupto no debe
+    // mover el motor. El EQ estático de Γ va plano por defecto (no-op).
+    if (std::isfinite(s.holos_amount) && std::isfinite(s.holos_distance_m) &&
+        std::isfinite(s.holos_spread) && std::isfinite(s.holos_proximity_db) &&
+        std::isfinite(s.holos_diffuse) && std::isfinite(s.holos_harmonics) &&
+        std::isfinite(s.holos_warmth) && std::isfinite(s.holos_dynamics) &&
+        std::isfinite(s.holos_width) && std::isfinite(s.holos_gamma) &&
+        std::isfinite(s.holos_room_rt60)) {
+        fc->setHolosParams(std::clamp(s.holos_amount, 0.f, 1.f),
+                           std::clamp(s.holos_distance_m, 0.15f, 2.0f),
+                           std::clamp(s.holos_spread, 0.f, 1.5f),
+                           std::clamp(s.holos_proximity_db, 0.f, 6.f),
+                           std::clamp(s.holos_diffuse, 0.f, 1.f),
+                           std::clamp(s.holos_harmonics, 0.f, 1.f),
+                           std::clamp(s.holos_warmth, 0.f, 1.f),
+                           std::clamp(s.holos_dynamics, 0.f, 1.f),
+                           std::clamp(s.holos_width, 0.f, 1.5f),
+                           std::clamp(s.holos_gamma, 0.5f, 1.f),
+                           std::clamp(s.holos_room_rt60, 0.18f, 1.8f),
+                           s.holos_head_tracking != 0u,
+                           (s.holos_band_count == 12u) ? 12 : 24);
+        if (std::isfinite(s.holos_eq_low) && std::isfinite(s.holos_eq_mid) &&
+            std::isfinite(s.holos_eq_high) && std::isfinite(s.holos_eq_presence) &&
+            std::isfinite(s.holos_eq_tilt_db) && std::isfinite(s.holos_eq_freq)) {
+            fc->setHolosEq(std::clamp(s.holos_eq_low, -12.f, 12.f),
+                           std::clamp(s.holos_eq_mid, -12.f, 12.f),
+                           std::clamp(s.holos_eq_high, -12.f, 12.f),
+                           std::clamp(s.holos_eq_presence, -12.f, 12.f),
+                           std::clamp(s.holos_eq_tilt_db, -12.f, 12.f),
+                           std::clamp(s.holos_eq_freq, 20.f, 20000.f));
+        }
+    }
+    const bool holosOn = fc->isHolosEnabled();
+    // Spatial width: si HOA, WFS, ORBE u HOLOS están activos, el ensanchador M/S se
     // neutraliza para no alterar la física del frente de onda ni introducir
     // filtro de peine.
-    if (upmixOn || wfsOn || orbeOn) {
+    if (upmixOn || wfsOn || orbeOn || holosOn) {
         fc->setSpatialWidth(1.0f);
     } else if (std::isfinite(s.spatial_width) && s.spatial_width >= 0.f) {
         fc->setSpatialWidth(s.spatial_width);
@@ -465,7 +501,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     if (std::isfinite(s.intensity) && s.intensity > 0.f) {
         fc->setIntensity(s.intensity);
     }
-    const float widMult = (upmixOn || wfsOn || orbeOn) ? 1.0f : (std::isfinite(s.widener_mult) && s.widener_mult > 0.f ? s.widener_mult : 1.0f);
+    const float widMult = (upmixOn || wfsOn || orbeOn || holosOn) ? 1.0f : (std::isfinite(s.widener_mult) && s.widener_mult > 0.f ? s.widener_mult : 1.0f);
     fc->setRouteProfile(s.bass_boost_db, s.dialog_boost_db, widMult);
     fc->setEqGains(s.eq_gains, ivanna::OMEGA_CTRL_EQ_BANDS, s.listen_phon, s.ref_phon);
     // ── Cable SAF → Ruta B — vector latente q[7] → motor HRTF ──────────────
@@ -1207,6 +1243,23 @@ static int32_t omega_process(effect_handle_t self,
     // configuran antes del loop; dentro del loop solo corre process(L, R, chunk).
     if (ctx->fusionCore) ctx->fusionCore->setNpeShed(ctx->thermalSkipVolterra);   // NPE: mismo recorte térmico/CPU
     if (ctx->fusionCore) ctx->fusionCore->setOrbeThermalShed(ctx->thermalSkipVolterra);  // ORBE: idem (12 bandas -> off)
+    // HOLOS: shed por TIERS (FUSION.md §7.3), no por booleano. El bool
+    // setHolosThermalShed(true) forzaría Bypass en FusionCore y saltaría los
+    // tiers Warm/Limited, así que aquí se usa setHolosThermalTier. Mapa
+    // governor → HOLOS (umbrales del governor 45/55/65/75 °C vs FUSION
+    // 65/70/75 °C: aproximación conservadora, documentada): FULL/REDUCED →
+    // Normal, LIMITED → Warm (12 bandas, H3 off, difuso ×0.5), PROTECTED →
+    // Limited (difuso off, Volterra K=32, gamma 1.0), BYPASS → Bypass
+    // (legacy bit-exacto). cpuShed (sobrecarga CPU) fuerza como mínimo Limited.
+    if (ctx->fusionCore) {
+        const auto govTier = ivanna::getThermalGovernor().getCurrentTier();
+        int holosTier = 0;  // Normal
+        if (govTier >= ivanna::ThermalTier::BYPASS) holosTier = 3;
+        else if (govTier >= ivanna::ThermalTier::PROTECTED) holosTier = 2;
+        else if (govTier >= ivanna::ThermalTier::LIMITED) holosTier = 1;
+        if (ctx->cpuShed && holosTier < 2) holosTier = 2;
+        ctx->fusionCore->setHolosThermalTier(holosTier);
+    }
     const bool wantVolterraPre = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
     const bool goldenEarRequestedPre = ctx->fusionCore && ctx->fusionCore->goldenEarNeedsNonlinearSlot();
     const bool volterraTargetEnabled = wantVolterraPre &&

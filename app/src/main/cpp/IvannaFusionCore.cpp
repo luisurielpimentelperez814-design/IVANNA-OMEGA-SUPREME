@@ -35,6 +35,25 @@ extern std::atomic<float> g_orbe_spread;
 extern std::atomic<float> g_orbe_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<bool>  g_orbe_head_tracking;
+extern std::atomic<float> g_holos_amount;          // HOLOS: 0 = bypass bit-exacto (default)
+extern std::atomic<float> g_holos_distance_m;
+extern std::atomic<float> g_holos_spread;
+extern std::atomic<float> g_holos_proximity_db;
+extern std::atomic<float> g_holos_diffuse;
+extern std::atomic<float> g_holos_harmonics;
+extern std::atomic<float> g_holos_warmth;
+extern std::atomic<float> g_holos_dynamics;
+extern std::atomic<float> g_holos_width;
+extern std::atomic<float> g_holos_gamma;
+extern std::atomic<float> g_holos_room_rt60;
+extern std::atomic<bool>  g_holos_head_tracking;
+extern std::atomic<int>   g_holos_band_count;   // 12 o 24 bandas ERB (24 = default)
+extern std::atomic<float> g_holos_eq_low;
+extern std::atomic<float> g_holos_eq_mid;
+extern std::atomic<float> g_holos_eq_high;
+extern std::atomic<float> g_holos_eq_presence;
+extern std::atomic<float> g_holos_eq_tilt_db;
+extern std::atomic<float> g_holos_eq_freq;
 extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
@@ -164,6 +183,8 @@ void IvannaFusionEngine::updateHeadPose(float yaw, float pitch, float roll) noex
     // ORBE v1: solo compensación de guiñada (parallax de rotación); la
     // traslación necesita una pose de traslación que hoy no existe.
     m_orbe.setHeadPose(yaw);
+    // HOLOS: mismo parallax de rotación (misma pose, mismo hilo).
+    m_holos.setHeadPose(yaw);
 }
 
 void IvannaFusionEngine::setGoldenEarMode(bool enable) {
@@ -211,6 +232,40 @@ void IvannaFusionEngine::setOrbeParams(float amount, float distanceM, float spre
     if (std::isfinite(proximityDb)) g_orbe_proximity_db.store(proximityDb, std::memory_order_relaxed);
     if (std::isfinite(diffuse)) g_orbe_diffuse.store(diffuse, std::memory_order_relaxed);
     g_orbe_head_tracking.store(headTracking, std::memory_order_relaxed);
+}
+void IvannaFusionEngine::setHolosEnabled(bool enable) noexcept {
+    g_holos_amount.store(enable ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+bool IvannaFusionEngine::isHolosEnabled() const noexcept {
+    return g_holos_amount.load(std::memory_order_relaxed) > 0.0f;
+}
+void IvannaFusionEngine::setHolosParams(float amount, float distanceM, float spread,
+                                        float proximityDb, float diffuse, float harmonics,
+                                        float warmth, float dynamics, float width,
+                                        float gamma, float roomRt60,
+                                        bool headTracking, int bandCount) noexcept {
+    if (std::isfinite(amount)) g_holos_amount.store(amount, std::memory_order_relaxed);
+    if (std::isfinite(distanceM)) g_holos_distance_m.store(distanceM, std::memory_order_relaxed);
+    if (std::isfinite(spread)) g_holos_spread.store(spread, std::memory_order_relaxed);
+    if (std::isfinite(proximityDb)) g_holos_proximity_db.store(proximityDb, std::memory_order_relaxed);
+    if (std::isfinite(diffuse)) g_holos_diffuse.store(diffuse, std::memory_order_relaxed);
+    if (std::isfinite(harmonics)) g_holos_harmonics.store(harmonics, std::memory_order_relaxed);
+    if (std::isfinite(warmth)) g_holos_warmth.store(warmth, std::memory_order_relaxed);
+    if (std::isfinite(dynamics)) g_holos_dynamics.store(dynamics, std::memory_order_relaxed);
+    if (std::isfinite(width)) g_holos_width.store(width, std::memory_order_relaxed);
+    if (std::isfinite(gamma)) g_holos_gamma.store(gamma, std::memory_order_relaxed);
+    if (std::isfinite(roomRt60)) g_holos_room_rt60.store(roomRt60, std::memory_order_relaxed);
+    g_holos_head_tracking.store(headTracking, std::memory_order_relaxed);
+    g_holos_band_count.store((bandCount == 12) ? 12 : 24, std::memory_order_relaxed);
+}
+void IvannaFusionEngine::setHolosEq(float low, float mid, float high, float presence,
+                                    float tiltDb, float freq) noexcept {
+    if (std::isfinite(low)) g_holos_eq_low.store(low, std::memory_order_relaxed);
+    if (std::isfinite(mid)) g_holos_eq_mid.store(mid, std::memory_order_relaxed);
+    if (std::isfinite(high)) g_holos_eq_high.store(high, std::memory_order_relaxed);
+    if (std::isfinite(presence)) g_holos_eq_presence.store(presence, std::memory_order_relaxed);
+    if (std::isfinite(tiltDb)) g_holos_eq_tilt_db.store(tiltDb, std::memory_order_relaxed);
+    if (std::isfinite(freq)) g_holos_eq_freq.store(freq, std::memory_order_relaxed);
 }
 void IvannaFusionEngine::setWfsSpeakerLayout(const float x[7], const float y[7], const float z[7]) noexcept {
     if (x == nullptr || y == nullptr || z == nullptr) return;
@@ -393,37 +448,67 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
-    // ── ORBE (Binaural Esférico de Campo Cercano) — última etapa espacial ──
-    // Va DESPUÉS del blend WFS (no antes, como decía el diseño inicial):
-    // ORBE retrasa 512 muestras y el blend WFS se calcula con el bloque
-    // actual — insertarlo antes desalineaba la rama WFS 512 muestras
-    // respecto a la seca. Aquí retrasa el conjunto (HOA/WFS) por igual y
-    // todo lo que sigue (M/S, compresor, limiter) ve el stream retardado
-    // de forma coherente. Lee los atomics g_orbe_* cada bloque; con
-    // amount=0 es bypass bit-exacto de coste cero (fast-path interno).
+    // ── HOLOS (Operador Único de Campo Acústico) — última etapa espacial ──
+    // Ocupa el LUGAR DE ORBE (tras el blend WFS, antes del M/S): cuando
+    // HOLOS está activo ORBE no corre (doble render con doble retardo de
+    // 512 muestras). Con amount=0 HOLOS es bypass bit-exacto de coste
+    // cero (fast-path interno) y ORBE corre como siempre (fallback
+    // legacy). Lee los atomics g_holos_* cada bloque.
     {
-        ivanna::OrbeParams op;
-        op.amount = g_orbe_amount.load(std::memory_order_relaxed);
-        op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
-        op.spread = g_orbe_spread.load(std::memory_order_relaxed);
-        op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
-        op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
-        op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
-        op.bandCount = 24;
-        m_orbe.setThermalShed(m_orbeShed_);
-        m_orbe.setParams(op);
-        m_orbe.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+        const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
+        if (holosAmount > 0.0f) {
+            ivanna::HolosParams hp;
+            hp.amount = holosAmount;
+            hp.distanceM = g_holos_distance_m.load(std::memory_order_relaxed);
+            hp.spread = g_holos_spread.load(std::memory_order_relaxed);
+            hp.proximityDb = g_holos_proximity_db.load(std::memory_order_relaxed);
+            hp.diffuse = g_holos_diffuse.load(std::memory_order_relaxed);
+            hp.harmonics = g_holos_harmonics.load(std::memory_order_relaxed);
+            hp.warmth = g_holos_warmth.load(std::memory_order_relaxed);
+            hp.dynamics = g_holos_dynamics.load(std::memory_order_relaxed);
+            hp.width = g_holos_width.load(std::memory_order_relaxed);
+            hp.gamma = g_holos_gamma.load(std::memory_order_relaxed);
+            hp.roomRt60 = g_holos_room_rt60.load(std::memory_order_relaxed);
+            hp.headTracking = g_holos_head_tracking.load(std::memory_order_relaxed);
+            hp.eqLow = g_holos_eq_low.load(std::memory_order_relaxed);
+            hp.eqMid = g_holos_eq_mid.load(std::memory_order_relaxed);
+            hp.eqHigh = g_holos_eq_high.load(std::memory_order_relaxed);
+            hp.eqPresence = g_holos_eq_presence.load(std::memory_order_relaxed);
+            hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
+            hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
+            hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
+            const ivanna::HolosThermalTier tier =
+                m_holosShed_ ? ivanna::HolosThermalTier::Bypass
+                             : (ivanna::HolosThermalTier)std::clamp(m_holosTier_, 0, 3);
+            m_holos.setThermalTier(tier);
+            m_holos.setParams(hp);
+            m_holos.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+        } else {
+            // ── ORBE (fallback legacy) ──
+            ivanna::OrbeParams op;
+            op.amount = g_orbe_amount.load(std::memory_order_relaxed);
+            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.bandCount = 24;
+            m_orbe.setThermalShed(m_orbeShed_);
+            m_orbe.setParams(op);
+            m_orbe.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+        }
     }
 
     // ── Matriz Mid/Side con Slew-Limiter por muestra (arbitrada con HOA/WFS) ──
     {
         static constexpr float kWidthSlew = 1.0f / 4096.0f;
         const float rawTargetW = std::clamp(m_spatialWidthTarget_ * m_routeWidenerMult_, 0.0f, 3.0f);
-        // Cuando HOA Upmixer, WFS u ORBE ya sintetizaron la escena binaural 3D,
+        // Cuando HOA Upmixer, WFS, ORBE u HOLOS ya sintetizaron la escena binaural 3D,
         // neutralizar el ensanchamiento M/S redundante para preservar las
         // claves ITD/ILD.
         const bool orbeActive = g_orbe_amount.load(std::memory_order_relaxed) > 0.0f;
-        const float targetW = (upmixingActive || wantWfs || orbeActive) ? 1.0f : rawTargetW;
+        const bool holosActive = g_holos_amount.load(std::memory_order_relaxed) > 0.0f;
+        const float targetW = (upmixingActive || wantWfs || orbeActive || holosActive) ? 1.0f : rawTargetW;
         if (std::fabs(m_spatialWidthSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetW - 1.0f) > 1.0e-4f) {
             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                 if (m_spatialWidthSmoothed_ < targetW)

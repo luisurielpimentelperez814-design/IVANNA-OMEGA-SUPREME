@@ -164,6 +164,29 @@ struct OmegaDspState {
     float orbe_proximity_db = 3.0f;
     float orbe_diffuse = 0.5f;
     bool  orbe_head_tracking = true;
+
+    // HOLOS — Operador Único de Campo Acústico (ABI v10). Al FINAL del struct,
+    // tras ORBE (kDefaultState inicializa por posición). amount 0 = apagado
+    // por defecto; EQ estático plano (no-op) hasta que la UI lo exponga.
+    float holos_amount = 0.f;
+    float holos_distance_m = 0.35f;
+    float holos_spread = 1.0f;
+    float holos_proximity_db = 3.0f;
+    float holos_diffuse = 0.5f;
+    float holos_harmonics = 0.32f;
+    float holos_warmth = 0.5f;
+    float holos_dynamics = 1.0f;
+    float holos_width = 1.0f;
+    float holos_gamma = 1.0f;
+    float holos_room_rt60 = 0.34f;
+    bool  holos_head_tracking = true;
+    int   holos_band_count = 24;
+    float holos_eq_low = 0.f;
+    float holos_eq_mid = 0.f;
+    float holos_eq_high = 0.f;
+    float holos_eq_presence = 0.f;
+    float holos_eq_tilt_db = 0.f;
+    float holos_eq_freq = 1000.f;
 };
 
 class CommandServer {

@@ -142,6 +142,26 @@ static uint64_t publishCurrentState(const OmegaDspState& s, bool updateSharedSta
     snap.orbe_proximity_db=s.orbe_proximity_db;
     snap.orbe_diffuse=s.orbe_diffuse;
     snap.orbe_head_tracking=s.orbe_head_tracking ? 1u : 0u;
+    // HOLOS (ABI v10): la Ruta B recibe los parámetros por el snapshot; amount 0 = off.
+    snap.holos_amount=s.holos_amount;
+    snap.holos_distance_m=s.holos_distance_m;
+    snap.holos_spread=s.holos_spread;
+    snap.holos_proximity_db=s.holos_proximity_db;
+    snap.holos_diffuse=s.holos_diffuse;
+    snap.holos_harmonics=s.holos_harmonics;
+    snap.holos_warmth=s.holos_warmth;
+    snap.holos_dynamics=s.holos_dynamics;
+    snap.holos_width=s.holos_width;
+    snap.holos_gamma=s.holos_gamma;
+    snap.holos_room_rt60=s.holos_room_rt60;
+    snap.holos_head_tracking=s.holos_head_tracking ? 1u : 0u;
+    snap.holos_band_count=static_cast<uint32_t>((s.holos_band_count == 12) ? 12 : 24);
+    snap.holos_eq_low=s.holos_eq_low;
+    snap.holos_eq_mid=s.holos_eq_mid;
+    snap.holos_eq_high=s.holos_eq_high;
+    snap.holos_eq_presence=s.holos_eq_presence;
+    snap.holos_eq_tilt_db=s.holos_eq_tilt_db;
+    snap.holos_eq_freq=s.holos_eq_freq;
     snap.wfs_enabled=static_cast<uint32_t>(s.wfs_enabled);
     snap.wfs_spread=s.wfs_spread;
     for (int i = 0; i < ivanna::OMEGA_CTRL_WFS_SPEAKERS && i < 7; ++i) {
@@ -331,6 +351,29 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         m_state.orbe_proximity_db = _clamp(_jsonFloat(json,"orbeProximityDb", m_state.orbe_proximity_db), 0.f, 6.f);
         m_state.orbe_diffuse = _clamp(_jsonFloat(json,"orbeDiffuse", m_state.orbe_diffuse), 0.f, 1.f);
         m_state.orbe_head_tracking = _jsonFloat(json,"orbeHeadTracking", m_state.orbe_head_tracking ? 1.f : 0.f) >= 0.5f;
+        // HOLOS (ABI v10): la app (CONTROL / PersistedStateRestorer) publica
+        // los 13 parámetros + EQ estático por SET_PERCEPTUAL_STATE; ausentes
+        // = se conserva el actual. band_count solo acepta 12 o 24.
+        m_state.holos_amount = _clamp(_jsonFloat(json,"holosAmount", m_state.holos_amount), 0.f, 1.f);
+        m_state.holos_distance_m = _clamp(_jsonFloat(json,"holosDistanceM", m_state.holos_distance_m), 0.15f, 2.0f);
+        m_state.holos_spread = _clamp(_jsonFloat(json,"holosSpread", m_state.holos_spread), 0.f, 1.5f);
+        m_state.holos_proximity_db = _clamp(_jsonFloat(json,"holosProximityDb", m_state.holos_proximity_db), 0.f, 6.f);
+        m_state.holos_diffuse = _clamp(_jsonFloat(json,"holosDiffuse", m_state.holos_diffuse), 0.f, 1.f);
+        m_state.holos_harmonics = _clamp(_jsonFloat(json,"holosHarmonics", m_state.holos_harmonics), 0.f, 1.f);
+        m_state.holos_warmth = _clamp(_jsonFloat(json,"holosWarmth", m_state.holos_warmth), 0.f, 1.f);
+        m_state.holos_dynamics = _clamp(_jsonFloat(json,"holosDynamics", m_state.holos_dynamics), 0.f, 1.f);
+        m_state.holos_width = _clamp(_jsonFloat(json,"holosWidth", m_state.holos_width), 0.f, 1.5f);
+        m_state.holos_gamma = _clamp(_jsonFloat(json,"holosGamma", m_state.holos_gamma), 0.5f, 1.f);
+        m_state.holos_room_rt60 = _clamp(_jsonFloat(json,"holosRoomRt60", m_state.holos_room_rt60), 0.18f, 1.8f);
+        m_state.holos_head_tracking = _jsonFloat(json,"holosHeadTracking", m_state.holos_head_tracking ? 1.f : 0.f) >= 0.5f;
+        { const float bc = _jsonFloat(json,"holosBandCount", (float)m_state.holos_band_count);
+          m_state.holos_band_count = (bc <= 18.f) ? 12 : 24; }
+        m_state.holos_eq_low = _clamp(_jsonFloat(json,"holosEqLow", m_state.holos_eq_low), -12.f, 12.f);
+        m_state.holos_eq_mid = _clamp(_jsonFloat(json,"holosEqMid", m_state.holos_eq_mid), -12.f, 12.f);
+        m_state.holos_eq_high = _clamp(_jsonFloat(json,"holosEqHigh", m_state.holos_eq_high), -12.f, 12.f);
+        m_state.holos_eq_presence = _clamp(_jsonFloat(json,"holosEqPresence", m_state.holos_eq_presence), -12.f, 12.f);
+        m_state.holos_eq_tilt_db = _clamp(_jsonFloat(json,"holosEqTiltDb", m_state.holos_eq_tilt_db), -12.f, 12.f);
+        m_state.holos_eq_freq = _clamp(_jsonFloat(json,"holosEqFreq", m_state.holos_eq_freq), 20.f, 20000.f);
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 

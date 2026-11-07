@@ -119,6 +119,20 @@ fun IvannaControlPanel(
     initialOrbeProximityDb: Float = 3.0f,
     initialOrbeDiffuse: Float = 0.5f,
     initialOrbeHeadTracking: Boolean = true,
+    // HOLOS — Operador Único de Campo Acústico (v2.5.364). amount 0 = apagado por defecto.
+    initialHolosAmount: Float = 0f,
+    initialHolosDistanceM: Float = 0.35f,
+    initialHolosSpread: Float = 1.0f,
+    initialHolosProximityDb: Float = 3.0f,
+    initialHolosDiffuse: Float = 0.5f,
+    initialHolosHarmonics: Float = 0.32f,
+    initialHolosWarmth: Float = 0.5f,
+    initialHolosDynamics: Float = 1.0f,
+    initialHolosWidth: Float = 1.0f,
+    initialHolosGamma: Float = 1.0f,
+    initialHolosRoomRt60: Float = 0.34f,
+    initialHolosHeadTracking: Boolean = true,
+    initialHolosBandCount: Int = 24,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -150,6 +164,9 @@ fun IvannaControlPanel(
     onCrossfeedChange: (Float) -> Unit = {},
     // ORBE: (amount, distanceM, spread, proximityDb, diffuse, headTracking)
     onOrbeChange: (Float, Float, Float, Float, Float, Boolean) -> Unit = { _, _, _, _, _, _ -> },
+    // HOLOS: (amount, distanceM, spread, proximityDb, diffuse, harmonics,
+    // warmth, dynamics, width, gamma, roomRt60, headTracking, bandCount)
+    onHolosChange: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Boolean, Int) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
     onTemporalFieldChange: (Boolean, Float, Boolean) -> Unit = { _, _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
@@ -245,6 +262,19 @@ fun IvannaControlPanel(
     var orbeProximityDb by remember { mutableFloatStateOf(initialOrbeProximityDb) }
     var orbeDiffuse by remember { mutableFloatStateOf(initialOrbeDiffuse) }
     var orbeHeadTracking by remember { mutableStateOf(initialOrbeHeadTracking) }
+    var holosAmount by remember { mutableFloatStateOf(initialHolosAmount) }
+    var holosDistanceM by remember { mutableFloatStateOf(initialHolosDistanceM) }
+    var holosSpread by remember { mutableFloatStateOf(initialHolosSpread) }
+    var holosProximityDb by remember { mutableFloatStateOf(initialHolosProximityDb) }
+    var holosDiffuse by remember { mutableFloatStateOf(initialHolosDiffuse) }
+    var holosHarmonics by remember { mutableFloatStateOf(initialHolosHarmonics) }
+    var holosWarmth by remember { mutableFloatStateOf(initialHolosWarmth) }
+    var holosDynamics by remember { mutableFloatStateOf(initialHolosDynamics) }
+    var holosWidth by remember { mutableFloatStateOf(initialHolosWidth) }
+    var holosGamma by remember { mutableFloatStateOf(initialHolosGamma) }
+    var holosRoomRt60 by remember { mutableFloatStateOf(initialHolosRoomRt60) }
+    var holosHeadTracking by remember { mutableStateOf(initialHolosHeadTracking) }
+    var holosBandCount by remember { mutableIntStateOf(initialHolosBandCount) }
     var punchTelemetry by remember { mutableStateOf(FloatArray(0)) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -1177,6 +1207,98 @@ fun IvannaControlPanel(
             }
             Text(
                 "Sin puerta auditiva (GREEN) no se enciende por defecto. A 384 kHz el governor térmico puede bajarlo a 12 bandas o apagarlo.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted
+            )
+        }
+
+        GlassCard(
+            title = "HOLOS · CAMPO UNIFICADO",
+            accent = NeonMagenta,
+            subtitle = if (holosAmount > 0f)
+                "Activo: un solo operador (Green + Volterra + ganancia) por banda ERB · +10.7 ms de latencia"
+            else
+                "Doce funciones en un solo operador: campo, armónicos y dinámica evaluados de una vez por banda. Apagado = audio intacto (bypass exacto)"
+        ) {
+            AuroraSlider("CANTIDAD HOLOS", holosAmount, 0f..1f,
+                displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
+                holosAmount = it
+                onHolosChange(it, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("DISTANCIA", holosDistanceM, 0.15f..2.0f,
+                displayValue = { "${"%.2f".format(it)} m" }) {
+                holosDistanceM = it
+                onHolosChange(holosAmount, it, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("APERTURA", holosSpread, 0f..1.5f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                holosSpread = it
+                onHolosChange(holosAmount, holosDistanceM, it, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("PROXIMIDAD (graves)", holosProximityDb, 0f..6f, unit = " dB",
+                displayValue = { "${"%.1f".format(it)} dB" }) {
+                holosProximityDb = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, it, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("DIFUSO → SALA", holosDiffuse, 0f..1f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                holosDiffuse = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, it, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("ARMÓNICOS (K)", holosHarmonics, 0f..1f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                holosHarmonics = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, it, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("CALIDEZ (par/impar)", holosWarmth, 0f..1f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                holosWarmth = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, it, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("DINÁMICA (Γ)", holosDynamics, 0f..1f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                holosDynamics = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, it, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("ANCHO (Γ)", holosWidth, 0f..1.5f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                holosWidth = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, it, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("DIVERGENCIA γ", holosGamma, 0.5f..1.0f,
+                displayValue = { "${"%.2f".format(it)}" }) {
+                holosGamma = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, it, holosRoomRt60, holosHeadTracking, holosBandCount)
+            }
+            AuroraSlider("SALA RT60", holosRoomRt60, 0.18f..1.8f,
+                displayValue = { "${"%.2f".format(it)} s" }) {
+                holosRoomRt60 = it
+                onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, it, holosHeadTracking, holosBandCount)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("SEGUIMIENTO DE CABEZA", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Switch(holosHeadTracking, onCheckedChange = {
+                    holosHeadTracking = it
+                    onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, it, holosBandCount)
+                })
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("12 BANDAS (AHORRO CPU)", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Switch(holosBandCount == 12, onCheckedChange = {
+                    holosBandCount = if (it) 12 else 24
+                    onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+                })
+            }
+            Text(
+                "Sin puerta auditiva (GREEN) no se enciende por defecto. En Ruta B el governor térmico baja 24→12 bandas, apaga el difuso y puede apagar HOLOS; en Ruta A el shed es manual. El EQ estático de Γ va plano en v1 (sin controles).",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )

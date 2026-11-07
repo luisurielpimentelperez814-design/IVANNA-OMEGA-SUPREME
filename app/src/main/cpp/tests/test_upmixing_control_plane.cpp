@@ -23,14 +23,15 @@ const char* kTestPath2 = "./omega_upmixing_ctrl_test_2";
 TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
     // Barrera ABI: el snapshot debe seguir siendo POD y caber en el limite.
     EXPECT_TRUE(std::is_trivially_copyable<OmegaDspSnapshot>::value);
-    EXPECT_LE(sizeof(OmegaDspSnapshot), 544u);  // v9: ORBE sube el snapshot a 536 B
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 640u);  // v10: HOLOS sube el snapshot a 616 B
+    EXPECT_EQ(sizeof(OmegaDspSnapshot), 616u);   // tamaño exacto v10 (76 B de campos holos_* + 4 B de padding a 8 B)
     OmegaDspSnapshot d = OmegaDspSnapshot::makeDefault();
     EXPECT_TRUE(d.isMagicValid());
     EXPECT_TRUE(d.isVersionValid());
     EXPECT_TRUE(d.isCrcValid());
     EXPECT_EQ(d.upmixing_enabled, 0u);          // default OFF (cero degradacion)
     EXPECT_FLOAT_EQ(d.upmixing_immersivity, 1.0f);
-    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 9u);  // v9: campos ORBE
+    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 10u);  // v10: campos HOLOS
     EXPECT_FLOAT_EQ(d.head_yaw_rad, 0.f);
     EXPECT_FLOAT_EQ(d.head_pitch_rad, 0.f);
     // ORBE (ABI v9): apagado por defecto — amount 0 = bypass bit-exacto.
@@ -40,6 +41,27 @@ TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
     EXPECT_FLOAT_EQ(d.orbe_proximity_db, 3.0f);
     EXPECT_FLOAT_EQ(d.orbe_diffuse, 0.5f);
     EXPECT_EQ(d.orbe_head_tracking, 1u);
+    // HOLOS (ABI v10): apagado por defecto — amount 0 = bypass bit-exacto;
+    // el resto son los defaults de FUSION.md §6; EQ estático plano (no-op).
+    EXPECT_FLOAT_EQ(d.holos_amount, 0.f);
+    EXPECT_FLOAT_EQ(d.holos_distance_m, 0.35f);
+    EXPECT_FLOAT_EQ(d.holos_spread, 1.0f);
+    EXPECT_FLOAT_EQ(d.holos_proximity_db, 3.0f);
+    EXPECT_FLOAT_EQ(d.holos_diffuse, 0.5f);
+    EXPECT_FLOAT_EQ(d.holos_harmonics, 0.32f);
+    EXPECT_FLOAT_EQ(d.holos_warmth, 0.5f);
+    EXPECT_FLOAT_EQ(d.holos_dynamics, 1.0f);
+    EXPECT_FLOAT_EQ(d.holos_width, 1.0f);
+    EXPECT_FLOAT_EQ(d.holos_gamma, 1.0f);
+    EXPECT_FLOAT_EQ(d.holos_room_rt60, 0.34f);
+    EXPECT_EQ(d.holos_head_tracking, 1u);
+    EXPECT_EQ(d.holos_band_count, 24u);
+    EXPECT_FLOAT_EQ(d.holos_eq_low, 0.f);
+    EXPECT_FLOAT_EQ(d.holos_eq_mid, 0.f);
+    EXPECT_FLOAT_EQ(d.holos_eq_high, 0.f);
+    EXPECT_FLOAT_EQ(d.holos_eq_presence, 0.f);
+    EXPECT_FLOAT_EQ(d.holos_eq_tilt_db, 0.f);
+    EXPECT_FLOAT_EQ(d.holos_eq_freq, 1000.f);
 }
 
 TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {

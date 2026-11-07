@@ -25,8 +25,9 @@
  *   - OmegaDspSnapshot es trivialmente copiable (POD puro, sin punteros)
  *   - Seqlock embebido: guard es odd durante escritura, even en reposo
  *   - Validable por MAGIC + VERSION + CRC32
- *   - Tamaño <= 544 bytes (verificado con static_assert; v9 sube de 512 a
- *     536 por los campos ORBE — el presupuesto de 512 B quedó agotado)
+ *   - Tamaño <= 640 bytes (verificado con static_assert; v9 sube de 512 a
+ *     536 por los campos ORBE, v10 a 616 por los campos HOLOS — el
+ *     presupuesto de 512 B quedó agotado en v9)
  *   - Sin malloc, sin std::vector, sin std::string, sin heap
  *   - Seguro para placement-new sobre región mmap
  *   - Sin locks del SO en el hot path de lectura
@@ -180,7 +181,14 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // por diseño (isVersionValid()); el reader cae a defaults (ORBE off) hasta que
 // el daemon publique con la ABI nueva — sin ruido audible. App y daemon se
 // distribuyen juntos en el mismo release (APK + módulo Magisk v2.5.363).
-constexpr uint16_t OMEGA_CTRL_VERSION = 9u;   // v9: ORBE (campo cercano) para la Ruta B.
+// ABI v10 (2026-11-07): añadidos los campos HOLOS (Operador Único de Campo
+// Acústico, FUSION.md) — los 13 parámetros de §6 + el EQ estático de Γ (6
+// campos, plano por defecto). El snapshot v9 estaba en 536 B: v10 sube a
+// 616 B y el static_assert pasa a <= 640 B. Mismo contrato que v9: el bump
+// invalida snapshots viejos; el reader cae a defaults (HOLOS off) hasta que
+// el daemon publique con la ABI nueva. App y daemon se distribuyen juntos
+// en el mismo release (APK + módulo Magisk v2.5.364).
+constexpr uint16_t OMEGA_CTRL_VERSION = 10u;  // v10: HOLOS (campo unificado) para la Ruta B.
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
@@ -530,6 +538,31 @@ struct OmegaDspSnapshot {
     float    orbe_diffuse;
     uint32_t orbe_head_tracking;
 
+    // ── HOLOS — Operador Único de Campo Acústico (ABI v10) ───────────────────
+    // Los 13 parámetros de FUSION.md §6 + EQ estático de Γ (plano = no-op).
+    // amount 0 = apagado (bypass bit-exacto, default); band_count 12 o 24
+    // (24 = default; el tier térmico puede forzar 12). Los lee
+    // omega_apply_snapshot (Ruta B) vía fc->setHolosParams()/setHolosEq().
+    float    holos_amount;
+    float    holos_distance_m;
+    float    holos_spread;
+    float    holos_proximity_db;
+    float    holos_diffuse;
+    float    holos_harmonics;
+    float    holos_warmth;
+    float    holos_dynamics;
+    float    holos_width;
+    float    holos_gamma;
+    float    holos_room_rt60;
+    uint32_t holos_head_tracking;
+    uint32_t holos_band_count;
+    float    holos_eq_low;
+    float    holos_eq_mid;
+    float    holos_eq_high;
+    float    holos_eq_presence;
+    float    holos_eq_tilt_db;
+    float    holos_eq_freq;
+
     // ── Integridad ────────────────────────────────────────────────────────────
     uint32_t crc32;            // CRC32 de bytes [magic .. effect_frames] inclusive
 
@@ -575,6 +608,15 @@ struct OmegaDspSnapshot {
         // ORBE (ABI v9): apagado por defecto — amount 0 = bypass bit-exacto.
         s.orbe_amount = 0.f; s.orbe_distance_m = 0.35f; s.orbe_spread = 1.0f;
         s.orbe_proximity_db = 3.0f; s.orbe_diffuse = 0.5f; s.orbe_head_tracking = 1u;
+        // HOLOS (ABI v10): apagado por defecto — amount 0 = bypass bit-exacto.
+        // El resto son los defaults de FUSION.md §6; EQ estático plano (no-op).
+        s.holos_amount = 0.f; s.holos_distance_m = 0.35f; s.holos_spread = 1.0f;
+        s.holos_proximity_db = 3.0f; s.holos_diffuse = 0.5f;
+        s.holos_harmonics = 0.32f; s.holos_warmth = 0.5f; s.holos_dynamics = 1.0f;
+        s.holos_width = 1.0f; s.holos_gamma = 1.0f; s.holos_room_rt60 = 0.34f;
+        s.holos_head_tracking = 1u; s.holos_band_count = 24u;
+        s.holos_eq_low = 0.f; s.holos_eq_mid = 0.f; s.holos_eq_high = 0.f;
+        s.holos_eq_presence = 0.f; s.holos_eq_tilt_db = 0.f; s.holos_eq_freq = 1000.f;
         s.room_rt60_s = 0.34f;  // Golden Master Studio Control Room (rir_0051.wav, RT60=0.340s, DRR=10.31dB)
         s.room_idx    = 51;
         s.room_wet    = 0.22f;
@@ -668,8 +710,8 @@ struct OmegaDspSnapshot {
 };
 
 // Validar tamaño en tiempo de compilación (host + ARM64)
-static_assert(sizeof(OmegaDspSnapshot) <= 544,
-    "OmegaDspSnapshot supera 544 bytes — revisar campos o padding");
+static_assert(sizeof(OmegaDspSnapshot) <= 640,
+    "OmegaDspSnapshot supera 640 bytes — revisar campos o padding");
 static_assert(std::is_trivially_copyable<OmegaDspSnapshot>::value,
     "OmegaDspSnapshot debe ser trivialmente copiable (POD) para seqlock + mmap");
 

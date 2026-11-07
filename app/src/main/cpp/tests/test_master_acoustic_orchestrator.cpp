@@ -32,8 +32,8 @@ TEST(MasterAcousticOrchestratorTest, UnifiedArchitecture_ZeroAllocationsAndPOD) 
     static_assert(sizeof(RawAudioMetrics) % sizeof(uint32_t) == 0,
                   "RawAudioMetrics debe ser múltiplo de 4 bytes para seqlock atómico");
 
-    // Verificar que OmegaDspSnapshot respeta el presupuesto máximo de ABI (<= 544 bytes; v9 = 536 B).
-    EXPECT_LE(sizeof(OmegaDspSnapshot), 544u);
+    // Verificar que OmegaDspSnapshot respeta el presupuesto máximo de ABI (<= 640 bytes; v10 = 616 B).
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 640u);
 }
 
 // ── FASE 1: Estabilidad de Referencia — Robustez Numérica y Cero NaN ─────────
