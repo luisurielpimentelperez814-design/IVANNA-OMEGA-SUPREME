@@ -21,6 +21,7 @@ std::atomic<float> g_holos_width{1.0f};
 std::atomic<float> g_holos_gamma{1.0f};
 std::atomic<float> g_holos_room_rt60{0.34f};
 std::atomic<bool>  g_holos_head_tracking{true};
+std::atomic<int>   g_holos_band_count{24};
 std::atomic<float> g_holos_eq_low{0.0f};
 std::atomic<float> g_holos_eq_mid{0.0f};
 std::atomic<float> g_holos_eq_high{0.0f};

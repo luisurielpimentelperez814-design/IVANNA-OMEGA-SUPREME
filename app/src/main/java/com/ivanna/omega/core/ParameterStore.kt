@@ -134,6 +134,20 @@ class ParameterStore(context: Context) {
         private const val KEY_ORBE_PROXIMITY_DB = "orbe_proximity_db"
         private const val KEY_ORBE_DIFFUSE      = "orbe_diffuse"
         private const val KEY_ORBE_HEAD_TRACKING = "orbe_head_tracking"
+        // HOLOS — Operador Único de Campo Acústico (v2.5.364). amount 0 = apagado por defecto.
+        private const val KEY_HOLOS_AMOUNT       = "holos_amount"
+        private const val KEY_HOLOS_DISTANCE_M   = "holos_distance_m"
+        private const val KEY_HOLOS_SPREAD       = "holos_spread"
+        private const val KEY_HOLOS_PROXIMITY_DB = "holos_proximity_db"
+        private const val KEY_HOLOS_DIFFUSE      = "holos_diffuse"
+        private const val KEY_HOLOS_HARMONICS    = "holos_harmonics"
+        private const val KEY_HOLOS_WARMTH       = "holos_warmth"
+        private const val KEY_HOLOS_DYNAMICS     = "holos_dynamics"
+        private const val KEY_HOLOS_WIDTH        = "holos_width"
+        private const val KEY_HOLOS_GAMMA        = "holos_gamma"
+        private const val KEY_HOLOS_ROOM_RT60    = "holos_room_rt60"
+        private const val KEY_HOLOS_HEAD_TRACKING = "holos_head_tracking"
+        private const val KEY_HOLOS_BAND_COUNT   = "holos_band_count"
         private const val KEY_4D_ENABLED  = "fourd_enabled"
         private const val KEY_4D_HAPTICS  = "fourd_haptics"
         private const val KEY_4D_HSCALE   = "fourd_haptic_scale"
@@ -439,6 +453,43 @@ class ParameterStore(context: Context) {
         .putFloat(KEY_ORBE_PROXIMITY_DB, if (proximityDb.isFinite()) proximityDb.coerceIn(0f, 6f) else 3.0f)
         .putFloat(KEY_ORBE_DIFFUSE, if (diffuse.isFinite()) diffuse.coerceIn(0f, 1f) else 0.5f)
         .putBoolean(KEY_ORBE_HEAD_TRACKING, headTracking)
+        .apply()
+
+    // ── HOLOS — Operador Único de Campo Acústico (v2.5.364) ── apagado por defecto:
+    // amount 0 = bypass bit-exacto, el audio no cambia hasta activarlo. Los 13
+    // parámetros de FUSION.md §6; band_count 12 o 24 (24 = default).
+    fun getHolosAmount(): Float = safeGetFloat(KEY_HOLOS_AMOUNT, 0f)
+    fun getHolosDistanceM(): Float = safeGetFloat(KEY_HOLOS_DISTANCE_M, 0.35f)
+    fun getHolosSpread(): Float = safeGetFloat(KEY_HOLOS_SPREAD, 1.0f)
+    fun getHolosProximityDb(): Float = safeGetFloat(KEY_HOLOS_PROXIMITY_DB, 3.0f)
+    fun getHolosDiffuse(): Float = safeGetFloat(KEY_HOLOS_DIFFUSE, 0.5f)
+    fun getHolosHarmonics(): Float = safeGetFloat(KEY_HOLOS_HARMONICS, 0.32f)
+    fun getHolosWarmth(): Float = safeGetFloat(KEY_HOLOS_WARMTH, 0.5f)
+    fun getHolosDynamics(): Float = safeGetFloat(KEY_HOLOS_DYNAMICS, 1.0f)
+    fun getHolosWidth(): Float = safeGetFloat(KEY_HOLOS_WIDTH, 1.0f)
+    fun getHolosGamma(): Float = safeGetFloat(KEY_HOLOS_GAMMA, 1.0f)
+    fun getHolosRoomRt60(): Float = safeGetFloat(KEY_HOLOS_ROOM_RT60, 0.34f)
+    fun isHolosHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_HOLOS_HEAD_TRACKING, true)
+    fun getHolosBandCount(): Int = safeGetInt(KEY_HOLOS_BAND_COUNT, 24).let { if (it == 12) 12 else 24 }
+    fun setHolosParams(
+        amount: Float, distanceM: Float, spread: Float,
+        proximityDb: Float, diffuse: Float, harmonics: Float,
+        warmth: Float, dynamics: Float, width: Float, gamma: Float,
+        roomRt60: Float, headTracking: Boolean, bandCount: Int
+    ) = prefs.edit()
+        .putFloat(KEY_HOLOS_AMOUNT, if (amount.isFinite()) amount.coerceIn(0f, 1f) else 0f)
+        .putFloat(KEY_HOLOS_DISTANCE_M, if (distanceM.isFinite()) distanceM.coerceIn(0.15f, 2.0f) else 0.35f)
+        .putFloat(KEY_HOLOS_SPREAD, if (spread.isFinite()) spread.coerceIn(0f, 1.5f) else 1.0f)
+        .putFloat(KEY_HOLOS_PROXIMITY_DB, if (proximityDb.isFinite()) proximityDb.coerceIn(0f, 6f) else 3.0f)
+        .putFloat(KEY_HOLOS_DIFFUSE, if (diffuse.isFinite()) diffuse.coerceIn(0f, 1f) else 0.5f)
+        .putFloat(KEY_HOLOS_HARMONICS, if (harmonics.isFinite()) harmonics.coerceIn(0f, 1f) else 0.32f)
+        .putFloat(KEY_HOLOS_WARMTH, if (warmth.isFinite()) warmth.coerceIn(0f, 1f) else 0.5f)
+        .putFloat(KEY_HOLOS_DYNAMICS, if (dynamics.isFinite()) dynamics.coerceIn(0f, 1f) else 1.0f)
+        .putFloat(KEY_HOLOS_WIDTH, if (width.isFinite()) width.coerceIn(0f, 1.5f) else 1.0f)
+        .putFloat(KEY_HOLOS_GAMMA, if (gamma.isFinite()) gamma.coerceIn(0.5f, 1f) else 1.0f)
+        .putFloat(KEY_HOLOS_ROOM_RT60, if (roomRt60.isFinite()) roomRt60.coerceIn(0.18f, 1.8f) else 0.34f)
+        .putBoolean(KEY_HOLOS_HEAD_TRACKING, headTracking)
+        .putInt(KEY_HOLOS_BAND_COUNT, if (bandCount == 12) 12 else 24)
         .apply()
 
     // ── Cadena 4D (anticipación, arco, háptica, diafonía, dosímetro) ── todo apagado por defecto

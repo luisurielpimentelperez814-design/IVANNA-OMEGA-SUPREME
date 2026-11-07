@@ -178,6 +178,7 @@ extern std::atomic<float> g_holos_width;
 extern std::atomic<float> g_holos_gamma;
 extern std::atomic<float> g_holos_room_rt60;
 extern std::atomic<bool>  g_holos_head_tracking;
+extern std::atomic<int>   g_holos_band_count;   // 12 o 24 bandas ERB (24 = default)
 extern std::atomic<float> g_holos_eq_low;
 extern std::atomic<float> g_holos_eq_mid;
 extern std::atomic<float> g_holos_eq_high;
@@ -1576,7 +1577,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             hp.eqPresence = g_holos_eq_presence.load(std::memory_order_relaxed);
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
-            hp.bandCount = 24;
+            hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
             g_holosRouteA.setParams(hp);
             g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
         } else {
@@ -2439,7 +2440,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             hp.eqPresence = g_holos_eq_presence.load(std::memory_order_relaxed);
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
-            hp.bandCount = 24;
+            hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
             g_holosRouteA.setParams(hp);
             g_holosRouteA.process(oL, oR, n);
         } else {
@@ -2841,13 +2842,15 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeEnabled(JNIEnv*, jobject
 }
 
 // HOLOS (v2.5.364): mismo patrón que nativeSetOrbeParams/nativeSetOrbeEnabled.
-// Sin UI Kotlin todavía (fase posterior): estos JNI son el cableado para
-// DSPBridge.kt. amount=0 = bypass bit-exacto (default) hasta GREEN.
+// Cableado a la UI Kotlin (IvannaNativeLib.kt) y al daemon por
+// SET_PERCEPTUAL_STATE (Ruta B, snapshot ABI v10). amount=0 = bypass
+// bit-exacto (default) hasta GREEN.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosParams(JNIEnv*, jobject,
         jfloat amount, jfloat distanceM, jfloat spread, jfloat proximityDb,
         jfloat diffuse, jfloat harmonics, jfloat warmth, jfloat dynamics,
-        jfloat width, jfloat gamma, jfloat roomRt60, jboolean headTracking) {
+        jfloat width, jfloat gamma, jfloat roomRt60, jboolean headTracking,
+        jint bandCount) {
     if (std::isfinite(amount)) g_holos_amount.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
     if (std::isfinite(distanceM)) g_holos_distance_m.store(std::clamp(distanceM, 0.15f, 2.0f), std::memory_order_relaxed);
     if (std::isfinite(spread)) g_holos_spread.store(std::clamp(spread, 0.0f, 1.5f), std::memory_order_relaxed);
@@ -2860,11 +2863,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosParams(JNIEnv*, jobject
     if (std::isfinite(gamma)) g_holos_gamma.store(std::clamp(gamma, 0.5f, 1.0f), std::memory_order_relaxed);
     if (std::isfinite(roomRt60)) g_holos_room_rt60.store(std::clamp(roomRt60, 0.18f, 1.8f), std::memory_order_relaxed);
     g_holos_head_tracking.store(headTracking == JNI_TRUE, std::memory_order_relaxed);
-}
-
-JNIEXPORT void JNICALL
-Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosEnabled(JNIEnv*, jobject, jboolean enabled) {
-    g_holos_amount.store(enabled == JNI_TRUE ? 1.0f : 0.0f, std::memory_order_relaxed);
+    g_holos_band_count.store((bandCount == 12) ? 12 : 24, std::memory_order_relaxed);
 }
 
 JNIEXPORT void JNICALL

@@ -106,7 +106,8 @@ public:
     void setHolosEnabled(bool enable) noexcept;
     void setHolosParams(float amount, float distanceM, float spread, float proximityDb,
                         float diffuse, float harmonics, float warmth, float dynamics,
-                        float width, float gamma, float roomRt60, bool headTracking) noexcept;
+                        float width, float gamma, float roomRt60, bool headTracking,
+                        int bandCount) noexcept;
     void setHolosEq(float low, float mid, float high, float presence,
                     float tiltDb, float freq) noexcept;
     bool isHolosEnabled() const noexcept;

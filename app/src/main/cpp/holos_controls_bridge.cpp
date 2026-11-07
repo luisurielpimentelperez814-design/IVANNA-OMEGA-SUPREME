@@ -25,6 +25,9 @@ std::atomic<float> g_holos_width{1.0f};
 std::atomic<float> g_holos_gamma{1.0f};
 std::atomic<float> g_holos_room_rt60{0.34f};
 std::atomic<bool>  g_holos_head_tracking{true};
+// Bandas ERB (12 o 24; 24 por defecto). Lo gobierna la UI (ahorro de CPU)
+// y el tier térmico (Warm+ fuerza 12); el operador toma min(usuario, tier).
+std::atomic<int>   g_holos_band_count{24};
 // EQ estático de Γ (plano por defecto = no-op bit-exacto).
 std::atomic<float> g_holos_eq_low{0.0f};
 std::atomic<float> g_holos_eq_mid{0.0f};

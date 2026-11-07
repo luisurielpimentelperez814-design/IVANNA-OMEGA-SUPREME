@@ -366,6 +366,27 @@ object IvannaNativeLib {
     )
     /** Atajo: enabled=true pone amount=1, false pone amount=0 (conserva el resto de params). */
     external fun nativeSetOrbeEnabled(enabled: Boolean)
+    /** HOLOS — Operador Único de Campo Acústico (v2.5.364). Los 13 parámetros
+     *  de FUSION.md §6: amount 0..1 (0 = apagado, bypass bit-exacto, por
+     *  defecto), distancia 0.15..2.0 m, spread 0..1.5, proximidad 0..6 dB,
+     *  difuso 0..1, armónicos 0..1, calidez 0..1, dinámica 0..1, ancho 0..1.5,
+     *  gamma 0.5..1.0, sala RT60 0.18..1.8 s, head-tracking on/off y bandas
+     *  ERB 12/24 (24 = default; el tier térmico puede forzar 12). Escriben
+     *  los atomics g_holos_* (Ruta A) y viajan al daemon por
+     *  SET_PERCEPTUAL_STATE (Ruta B, snapshot ABI v10). */
+    external fun nativeSetHolosParams(
+        amount: Float, distanceM: Float, spread: Float,
+        proximityDb: Float, diffuse: Float, harmonics: Float,
+        warmth: Float, dynamics: Float, width: Float, gamma: Float,
+        roomRt60: Float, headTracking: Boolean, bandCount: Int
+    )
+    /** EQ estático de Γ (plano por defecto = no-op): graves/medios/agudos/
+     *  presencia/tilt en dB (-12..12) y frecuencia de tilt en Hz. Sin UI en
+     *  v1; existe para que Ruta A y Ruta B (snapshot ABI v10) coincidan. */
+    external fun nativeSetHolosEq(
+        low: Float, mid: Float, high: Float, presence: Float,
+        tiltDb: Float, freq: Float
+    )
     /** [0..2] ganancia dB bajo/medio/alto · [3] actividad de ataque 0..1 · [4] guarda activa 0/1 · [5] latencia ms. */
     external fun nativeGetPunchTelemetry(): FloatArray
     external fun nativeSetSpscRingFactor(factor: Float)

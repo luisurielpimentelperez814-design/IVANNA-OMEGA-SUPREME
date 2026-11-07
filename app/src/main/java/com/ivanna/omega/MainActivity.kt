@@ -1376,6 +1376,19 @@ fun DashboardScreen(
             initialOrbeProximityDb = paramStore.getOrbeProximityDb(),
             initialOrbeDiffuse = paramStore.getOrbeDiffuse(),
             initialOrbeHeadTracking = paramStore.isOrbeHeadTrackingEnabled(),
+            initialHolosAmount = paramStore.getHolosAmount(),
+            initialHolosDistanceM = paramStore.getHolosDistanceM(),
+            initialHolosSpread = paramStore.getHolosSpread(),
+            initialHolosProximityDb = paramStore.getHolosProximityDb(),
+            initialHolosDiffuse = paramStore.getHolosDiffuse(),
+            initialHolosHarmonics = paramStore.getHolosHarmonics(),
+            initialHolosWarmth = paramStore.getHolosWarmth(),
+            initialHolosDynamics = paramStore.getHolosDynamics(),
+            initialHolosWidth = paramStore.getHolosWidth(),
+            initialHolosGamma = paramStore.getHolosGamma(),
+            initialHolosRoomRt60 = paramStore.getHolosRoomRt60(),
+            initialHolosHeadTracking = paramStore.isHolosHeadTrackingEnabled(),
+            initialHolosBandCount = paramStore.getHolosBandCount(),
             initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
             initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
             initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
@@ -1476,6 +1489,27 @@ fun DashboardScreen(
                 }
                 perceptualCommands.trySend(
                     """{"action":"SET_PERCEPTUAL_STATE","orbeAmount":$a,"orbeDistanceM":$d,"orbeSpread":$sp,"orbeProximityDb":$px,"orbeDiffuse":$df,"orbeHeadTracking":${if (headTracking) 1.0f else 0.0f}}"""
+                )
+            },
+            onHolosChange = { amount, distanceM, spread, proximityDb, diffuse, harmonics, warmth, dynamics, width, gamma, roomRt60, headTracking, bandCount ->
+                val a = amount.coerceIn(0f, 1f)
+                val d = distanceM.coerceIn(0.15f, 2.0f)
+                val sp = spread.coerceIn(0f, 1.5f)
+                val px = proximityDb.coerceIn(0f, 6f)
+                val df = diffuse.coerceIn(0f, 1f)
+                val hm = harmonics.coerceIn(0f, 1f)
+                val wm = warmth.coerceIn(0f, 1f)
+                val dy = dynamics.coerceIn(0f, 1f)
+                val wd = width.coerceIn(0f, 1.5f)
+                val gm = gamma.coerceIn(0.5f, 1f)
+                val rt = roomRt60.coerceIn(0.18f, 1.8f)
+                val bc = if (bandCount == 12) 12 else 24
+                paramStore.setHolosParams(a, d, sp, px, df, hm, wm, dy, wd, gm, rt, headTracking, bc)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetHolosParams(a, d, sp, px, df, hm, wm, dy, wd, gm, rt, headTracking, bc)
+                }
+                perceptualCommands.trySend(
+                    """{"action":"SET_PERCEPTUAL_STATE","holosAmount":$a,"holosDistanceM":$d,"holosSpread":$sp,"holosProximityDb":$px,"holosDiffuse":$df,"holosHarmonics":$hm,"holosWarmth":$wm,"holosDynamics":$dy,"holosWidth":$wd,"holosGamma":$gm,"holosRoomRt60":$rt,"holosHeadTracking":${if (headTracking) 1.0f else 0.0f},"holosBandCount":$bc}"""
                 )
             },
             onPunchChange = { amount ->

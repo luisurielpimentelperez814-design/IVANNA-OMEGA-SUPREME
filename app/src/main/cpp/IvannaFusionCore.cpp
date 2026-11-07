@@ -47,6 +47,7 @@ extern std::atomic<float> g_holos_width;
 extern std::atomic<float> g_holos_gamma;
 extern std::atomic<float> g_holos_room_rt60;
 extern std::atomic<bool>  g_holos_head_tracking;
+extern std::atomic<int>   g_holos_band_count;   // 12 o 24 bandas ERB (24 = default)
 extern std::atomic<float> g_holos_eq_low;
 extern std::atomic<float> g_holos_eq_mid;
 extern std::atomic<float> g_holos_eq_high;
@@ -242,7 +243,7 @@ void IvannaFusionEngine::setHolosParams(float amount, float distanceM, float spr
                                         float proximityDb, float diffuse, float harmonics,
                                         float warmth, float dynamics, float width,
                                         float gamma, float roomRt60,
-                                        bool headTracking) noexcept {
+                                        bool headTracking, int bandCount) noexcept {
     if (std::isfinite(amount)) g_holos_amount.store(amount, std::memory_order_relaxed);
     if (std::isfinite(distanceM)) g_holos_distance_m.store(distanceM, std::memory_order_relaxed);
     if (std::isfinite(spread)) g_holos_spread.store(spread, std::memory_order_relaxed);
@@ -255,6 +256,7 @@ void IvannaFusionEngine::setHolosParams(float amount, float distanceM, float spr
     if (std::isfinite(gamma)) g_holos_gamma.store(gamma, std::memory_order_relaxed);
     if (std::isfinite(roomRt60)) g_holos_room_rt60.store(roomRt60, std::memory_order_relaxed);
     g_holos_head_tracking.store(headTracking, std::memory_order_relaxed);
+    g_holos_band_count.store((bandCount == 12) ? 12 : 24, std::memory_order_relaxed);
 }
 void IvannaFusionEngine::setHolosEq(float low, float mid, float high, float presence,
                                     float tiltDb, float freq) noexcept {
@@ -474,7 +476,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             hp.eqPresence = g_holos_eq_presence.load(std::memory_order_relaxed);
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
-            hp.bandCount = 24;
+            hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
             const ivanna::HolosThermalTier tier =
                 m_holosShed_ ? ivanna::HolosThermalTier::Bypass
                              : (ivanna::HolosThermalTier)std::clamp(m_holosTier_, 0, 3);
