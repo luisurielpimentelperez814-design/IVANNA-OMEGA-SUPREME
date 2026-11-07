@@ -320,6 +320,9 @@ public:
     void setCrosstalk(bool on) noexcept { m_xtc.setEngage(on); }
     /// Recorte por térmico/CPU (mismo criterio que Volterra): el NPE se desvanece (20 ms) y vuelve solo.
     void setNpeShed(bool shed) noexcept { m_npeShed_ = shed; }
+    /// Recorte térmico/CPU de ORBE (mismo criterio que NPE/Volterra, tier >= LIMITED):
+    /// el núcleo cae a bypass (12 bandas -> off) y vuelve solo al enfriarse.
+    void setOrbeThermalShed(bool shed) noexcept { m_orbeShed_ = shed; }
     int npeSpikes() const noexcept { return m_npe.lastSpikes(); }
     void setIntensity(float intensity) noexcept {
         if (std::isfinite(intensity)) {
@@ -371,7 +374,7 @@ private:
     ivanna::spatial::WfsRenderer m_wfs;
     ivanna::spatial::CrosstalkCanceller m_xtc;        // diafonía para altavoces (apagado = identidad)
     ivanna::neuromorphic::NpeStereoCore m_npe;        // NPE neuromórfico en Ruta B (apagado = bit-exacto)
-    bool  m_npeOn_ = false, m_npeShed_ = false;
+    bool  m_npeOn_ = false, m_npeShed_ = false, m_orbeShed_ = false;
     float m_npeHarm_ = 0.2f, m_npeLat_ = 0.2f, m_npeOhc_ = 0.3f, m_npeMasterDb_ = 0.0f;
     ivanna::dsp::RoomCorrectionEq m_userEq;           // EQ de 10 bandas del usuario (antes solo se aplicaba su media como trim)
     float m_userEqDb_[10] = {};

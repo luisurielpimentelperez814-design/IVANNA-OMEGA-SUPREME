@@ -356,6 +356,16 @@ object IvannaNativeLib {
     external fun nativeSetPunch(amount: Float)
     /** Crossfeed de graves con ITD para audifonos/DAC (Ruta A). 0 = apagado (bypass exacto). */
     external fun nativeSetCrossfeed(strength: Float)
+    /** ORBE — Binaural Esférico de Campo Cercano (v2.5.363). amount 0..1 (0 = apagado,
+     *  bypass bit-exacto, por defecto), distancia 0.15..2.0 m, spread 0..1.5,
+     *  proximidad 0..6 dB, difuso 0..1, head-tracking on/off. Escriben los
+     *  atomics g_orbe_* (Ruta A) y viajan al daemon por SET_PERCEPTUAL_STATE (Ruta B). */
+    external fun nativeSetOrbeParams(
+        amount: Float, distanceM: Float, spread: Float,
+        proximityDb: Float, diffuse: Float, headTracking: Boolean
+    )
+    /** Atajo: enabled=true pone amount=1, false pone amount=0 (conserva el resto de params). */
+    external fun nativeSetOrbeEnabled(enabled: Boolean)
     /** [0..2] ganancia dB bajo/medio/alto · [3] actividad de ataque 0..1 · [4] guarda activa 0/1 · [5] latencia ms. */
     external fun nativeGetPunchTelemetry(): FloatArray
     external fun nativeSetSpscRingFactor(factor: Float)

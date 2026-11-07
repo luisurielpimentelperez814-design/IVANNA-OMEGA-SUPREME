@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.362
-versionCode=653
+version=v2.5.363
+versionCode=654
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.362: control CRUCE DE GRAVES en CONTROL (persistente, restaurado al abrir) para el crossfeed con ITD de audifonos/DAC; apagado por defecto.
+description=v2.5.363: ORBE (Binaural Esferico de Campo Cercano) en CONTROL con 6 controles persistentes (cantidad, distancia 0.15-2.0 m, apertura, proximidad, difuso, seguimiento de cabeza); cableado a Ruta A y Ruta B (snapshot ABI v9); apagado por defecto.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

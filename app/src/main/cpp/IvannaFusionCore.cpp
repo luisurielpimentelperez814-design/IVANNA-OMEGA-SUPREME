@@ -410,6 +410,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
         op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
         op.bandCount = 24;
+        m_orbe.setThermalShed(m_orbeShed_);
         m_orbe.setParams(op);
         m_orbe.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
     }

@@ -2358,6 +2358,22 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // Misma etapa WFS que DSPBridge.nativeProcess: evita divergencia entre APIs JNI.
     processRouteAWfs(oL, oR, n);
 
+    // ── ORBE (Ruta A/C, v2.5.363): mismo bloque que nativeProcess, tras el WFS
+    // y antes de la RIR. Comparte g_orbeRouteA con nativeProcess (nunca corren
+    // a la vez: g_dspProcessMutex). amount=0 = bypass bit-exacto de coste cero.
+    {
+        ivanna::OrbeParams op;
+        op.amount = g_orbe_amount.load(std::memory_order_relaxed);
+        op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+        op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+        op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+        op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+        op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+        op.bandCount = 24;
+        g_orbeRouteA.setParams(op);
+        g_orbeRouteA.process(oL, oR, n);
+    }
+
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
     if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
         if (s_rirConvolver->isLoaded()) {
@@ -2722,10 +2738,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCrossfeed(JNIEnv*, jobject, 
 // amount 0..1 (0 = apagado, bypass bit-exacto, default), distancia 0.15..2.0 m,
 // spread 0..1.5, proximidad 0..6 dB, difuso 0..1, head-tracking on/off.
 // Escriben los atomics g_orbe_* que leen la Ruta A (aquí, g_orbeRouteA) y la
-// Ruta B (IvannaFusionEngine::m_orbe). Sin reenvío al daemon: OmegaDspSnapshot
-// ABI v8 no tiene campos orbe_* (ver IMPLEMENTACION_ORBE.md) — la Ruta B queda
-// en defaults (off) hasta un futuro bump de ABI. Las declaraciones Kotlin
-// llegan con la UI (CONTROL); estos nativos ya son llamables.
+// Ruta B (IvannaFusionEngine::m_orbe). La Ruta B además recibe los parámetros
+// por el snapshot ABI v9 (orbe_*): la app los publica al daemon por
+// SET_PERCEPTUAL_STATE y omega_apply_snapshot los reenvía vía setOrbeParams().
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeParams(JNIEnv*, jobject,
         jfloat amount, jfloat distanceM, jfloat spread, jfloat proximityDb,

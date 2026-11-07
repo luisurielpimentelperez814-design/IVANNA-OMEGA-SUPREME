@@ -135,6 +135,13 @@ static uint64_t publishCurrentState(const OmegaDspState& s, bool updateSharedSta
     snap.bass_boost_db=s.bass_boost; snap.dialog_boost_db=s.dialog_boost; snap.widener_mult=s.widener_mult;
     snap.upmixing_enabled=static_cast<uint32_t>(s.upmixing_enabled);
     snap.upmixing_immersivity=s.upmixing_immersivity;
+    // ORBE (ABI v9): la Ruta B recibe los parámetros por el snapshot; amount 0 = off.
+    snap.orbe_amount=s.orbe_amount;
+    snap.orbe_distance_m=s.orbe_distance_m;
+    snap.orbe_spread=s.orbe_spread;
+    snap.orbe_proximity_db=s.orbe_proximity_db;
+    snap.orbe_diffuse=s.orbe_diffuse;
+    snap.orbe_head_tracking=s.orbe_head_tracking ? 1u : 0u;
     snap.wfs_enabled=static_cast<uint32_t>(s.wfs_enabled);
     snap.wfs_spread=s.wfs_spread;
     for (int i = 0; i < ivanna::OMEGA_CTRL_WFS_SPEAKERS && i < 7; ++i) {
@@ -316,6 +323,14 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         if (ad1!=9999.f) m_state.anti_dolby = ad1; else if (ad2!=9999.f) m_state.anti_dolby = ad2;
         m_state.upmixing_enabled = _jsonFloat(json,"upmixingEnabled", m_state.upmixing_enabled);
         m_state.upmixing_immersivity = _jsonFloat(json,"upmixingImmersivity", m_state.upmixing_immersivity);
+        // ORBE (ABI v9): la app (CONTROL / PersistedStateRestorer) publica los 6
+        // parámetros por SET_PERCEPTUAL_STATE; ausentes = se conserva el actual.
+        m_state.orbe_amount = _clamp(_jsonFloat(json,"orbeAmount", m_state.orbe_amount), 0.f, 1.f);
+        m_state.orbe_distance_m = _clamp(_jsonFloat(json,"orbeDistanceM", m_state.orbe_distance_m), 0.15f, 2.0f);
+        m_state.orbe_spread = _clamp(_jsonFloat(json,"orbeSpread", m_state.orbe_spread), 0.f, 1.5f);
+        m_state.orbe_proximity_db = _clamp(_jsonFloat(json,"orbeProximityDb", m_state.orbe_proximity_db), 0.f, 6.f);
+        m_state.orbe_diffuse = _clamp(_jsonFloat(json,"orbeDiffuse", m_state.orbe_diffuse), 0.f, 1.f);
+        m_state.orbe_head_tracking = _jsonFloat(json,"orbeHeadTracking", m_state.orbe_head_tracking ? 1.f : 0.f) >= 0.5f;
         uint64_t gen = publishCurrentState(m_state);
         n = buildRichReply(reply,reply_sz,true,action, gen>0?"applied":"accepted_pending_consumer", gen, "SYSTEM_WIDE", nullptr);
 

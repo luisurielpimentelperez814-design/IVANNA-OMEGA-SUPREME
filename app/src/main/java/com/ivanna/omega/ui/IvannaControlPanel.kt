@@ -112,6 +112,13 @@ fun IvannaControlPanel(
     initialAuxCoherence: Float = 1f,
     initialPunchAmount: Float = 0f,
     initialCrossfeed: Float = 0f,
+    // ORBE — Binaural Esférico de Campo Cercano (v2.5.363). amount 0 = apagado por defecto.
+    initialOrbeAmount: Float = 0f,
+    initialOrbeDistanceM: Float = 0.35f,
+    initialOrbeSpread: Float = 1.0f,
+    initialOrbeProximityDb: Float = 3.0f,
+    initialOrbeDiffuse: Float = 0.5f,
+    initialOrbeHeadTracking: Boolean = true,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -141,6 +148,8 @@ fun IvannaControlPanel(
     onAuxFieldChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
     onPunchChange: (Float) -> Unit = {},
     onCrossfeedChange: (Float) -> Unit = {},
+    // ORBE: (amount, distanceM, spread, proximityDb, diffuse, headTracking)
+    onOrbeChange: (Float, Float, Float, Float, Float, Boolean) -> Unit = { _, _, _, _, _, _ -> },
     onTemporalFieldChange: (Boolean, Float, Boolean) -> Unit = { _, _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
@@ -229,6 +238,13 @@ fun IvannaControlPanel(
     var unityTelemetry by remember { mutableStateOf(FloatArray(0)) }
     var punchAmount by remember { mutableFloatStateOf(initialPunchAmount) }
     var crossfeed by remember { mutableFloatStateOf(initialCrossfeed) }
+    // ORBE — Binaural Esférico de Campo Cercano (v2.5.363), apagado por defecto.
+    var orbeAmount by remember { mutableFloatStateOf(initialOrbeAmount) }
+    var orbeDistanceM by remember { mutableFloatStateOf(initialOrbeDistanceM) }
+    var orbeSpread by remember { mutableFloatStateOf(initialOrbeSpread) }
+    var orbeProximityDb by remember { mutableFloatStateOf(initialOrbeProximityDb) }
+    var orbeDiffuse by remember { mutableFloatStateOf(initialOrbeDiffuse) }
+    var orbeHeadTracking by remember { mutableStateOf(initialOrbeHeadTracking) }
     var punchTelemetry by remember { mutableStateOf(FloatArray(0)) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -1110,6 +1126,57 @@ fun IvannaControlPanel(
             }
             Text(
                 "Pensado para audífonos o DAC. No lo combines con altavoces/transaural: ahí ya existe el cruce físico.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted
+            )
+        }
+
+        GlassCard(
+            title = "ORBE · CAMPO CERCANO",
+            accent = NeonMagenta,
+            subtitle = if (orbeAmount > 0f)
+                "Activo: cada banda suena a ${"%.2f".format(orbeDistanceM)} m, con ILD de campo cercano y parallax de cabeza · +10.7 ms de latencia"
+            else
+                "Binaural esférico de campo cercano: las fuentes se acercan a 0.15–2.0 m en vez de quedarse a 1 m. Apagado = audio intacto (bypass exacto)"
+        ) {
+            AuroraSlider("CANTIDAD ORBE", orbeAmount, 0f..1f,
+                displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
+                orbeAmount = it
+                onOrbeChange(it, orbeDistanceM, orbeSpread, orbeProximityDb, orbeDiffuse, orbeHeadTracking)
+            }
+            AuroraSlider("DISTANCIA", orbeDistanceM, 0.15f..2.0f,
+                displayValue = { "${"%.2f".format(it)} m" }) {
+                orbeDistanceM = it
+                onOrbeChange(orbeAmount, it, orbeSpread, orbeProximityDb, orbeDiffuse, orbeHeadTracking)
+            }
+            AuroraSlider("APERTURA", orbeSpread, 0f..1.5f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                orbeSpread = it
+                onOrbeChange(orbeAmount, orbeDistanceM, it, orbeProximityDb, orbeDiffuse, orbeHeadTracking)
+            }
+            AuroraSlider("PROXIMIDAD (graves)", orbeProximityDb, 0f..6f, unit = " dB",
+                displayValue = { "${"%.1f".format(it)} dB" }) {
+                orbeProximityDb = it
+                onOrbeChange(orbeAmount, orbeDistanceM, orbeSpread, it, orbeDiffuse, orbeHeadTracking)
+            }
+            AuroraSlider("DIFUSO → SALA", orbeDiffuse, 0f..1f,
+                displayValue = { "${Math.round(it * 100f)} %" }) {
+                orbeDiffuse = it
+                onOrbeChange(orbeAmount, orbeDistanceM, orbeSpread, orbeProximityDb, it, orbeHeadTracking)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("SEGUIMIENTO DE CABEZA", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Switch(orbeHeadTracking, onCheckedChange = {
+                    orbeHeadTracking = it
+                    onOrbeChange(orbeAmount, orbeDistanceM, orbeSpread, orbeProximityDb, orbeDiffuse, it)
+                })
+            }
+            Text(
+                "Sin puerta auditiva (GREEN) no se enciende por defecto. A 384 kHz el governor térmico puede bajarlo a 12 bandas o apagarlo.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )

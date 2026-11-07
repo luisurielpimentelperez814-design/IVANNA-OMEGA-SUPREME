@@ -23,16 +23,23 @@ const char* kTestPath2 = "./omega_upmixing_ctrl_test_2";
 TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
     // Barrera ABI: el snapshot debe seguir siendo POD y caber en el limite.
     EXPECT_TRUE(std::is_trivially_copyable<OmegaDspSnapshot>::value);
-    EXPECT_LE(sizeof(OmegaDspSnapshot), 512u);
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 544u);  // v9: ORBE sube el snapshot a 536 B
     OmegaDspSnapshot d = OmegaDspSnapshot::makeDefault();
     EXPECT_TRUE(d.isMagicValid());
     EXPECT_TRUE(d.isVersionValid());
     EXPECT_TRUE(d.isCrcValid());
     EXPECT_EQ(d.upmixing_enabled, 0u);          // default OFF (cero degradacion)
     EXPECT_FLOAT_EQ(d.upmixing_immersivity, 1.0f);
-    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 8u);
+    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 9u);  // v9: campos ORBE
     EXPECT_FLOAT_EQ(d.head_yaw_rad, 0.f);
     EXPECT_FLOAT_EQ(d.head_pitch_rad, 0.f);
+    // ORBE (ABI v9): apagado por defecto — amount 0 = bypass bit-exacto.
+    EXPECT_FLOAT_EQ(d.orbe_amount, 0.f);
+    EXPECT_FLOAT_EQ(d.orbe_distance_m, 0.35f);
+    EXPECT_FLOAT_EQ(d.orbe_spread, 1.0f);
+    EXPECT_FLOAT_EQ(d.orbe_proximity_db, 3.0f);
+    EXPECT_FLOAT_EQ(d.orbe_diffuse, 0.5f);
+    EXPECT_EQ(d.orbe_head_tracking, 1u);
 }
 
 TEST(UpmixingControlPlane, PublishYReadLatestTransportanUpmixing) {

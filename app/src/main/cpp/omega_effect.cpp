@@ -428,13 +428,24 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
                            std::clamp(s.head_pitch_rad, -0.78539816f, 0.78539816f), 0.0f);
     }
 
+    // ORBE — Binaural Esférico de Campo Cercano (ABI v9): los parámetros llegan
+    // por el snapshot desde la app (CONTROL / PersistedStateRestorer) y se
+    // aplican al FusionCore de esta instancia. amount 0 = apagado (default).
+    // Se clampean defensivamente: un snapshot corrupto no debe mover el motor.
+    if (std::isfinite(s.orbe_amount) && std::isfinite(s.orbe_distance_m) &&
+        std::isfinite(s.orbe_spread) && std::isfinite(s.orbe_proximity_db) &&
+        std::isfinite(s.orbe_diffuse)) {
+        fc->setOrbeParams(std::clamp(s.orbe_amount, 0.f, 1.f),
+                          std::clamp(s.orbe_distance_m, 0.15f, 2.0f),
+                          std::clamp(s.orbe_spread, 0.f, 1.5f),
+                          std::clamp(s.orbe_proximity_db, 0.f, 6.f),
+                          std::clamp(s.orbe_diffuse, 0.f, 1.f),
+                          s.orbe_head_tracking != 0u);
+    }
+    const bool orbeOn = fc->isOrbeEnabled();
     // Spatial width: si HOA, WFS u ORBE están activos, el ensanchador M/S se
     // neutraliza para no alterar la física del frente de onda ni introducir
-    // filtro de peine. ORBE hoy no tiene campos en el snapshot (ABI v8 sin
-    // orbe_* — ver IMPLEMENTACION_ORBE.md): isOrbeEnabled() lee el atomic
-    // del proceso audioserver, que queda en default (off) hasta un futuro
-    // bump de ABI que añada los campos y su reenvío aquí vía setOrbeParams().
-    const bool orbeOn = fc->isOrbeEnabled();
+    // filtro de peine.
     if (upmixOn || wfsOn || orbeOn) {
         fc->setSpatialWidth(1.0f);
     } else if (std::isfinite(s.spatial_width) && s.spatial_width >= 0.f) {
@@ -1195,6 +1206,7 @@ static int32_t omega_process(effect_handle_t self,
     // estado si se llaman por cada chunk dentro de while(offset < frames). Aquí se
     // configuran antes del loop; dentro del loop solo corre process(L, R, chunk).
     if (ctx->fusionCore) ctx->fusionCore->setNpeShed(ctx->thermalSkipVolterra);   // NPE: mismo recorte térmico/CPU
+    if (ctx->fusionCore) ctx->fusionCore->setOrbeThermalShed(ctx->thermalSkipVolterra);  // ORBE: idem (12 bandas -> off)
     const bool wantVolterraPre = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
     const bool goldenEarRequestedPre = ctx->fusionCore && ctx->fusionCore->goldenEarNeedsNonlinearSlot();
     const bool volterraTargetEnabled = wantVolterraPre &&
