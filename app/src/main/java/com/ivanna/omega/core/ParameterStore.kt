@@ -127,6 +127,13 @@ class ParameterStore(context: Context) {
         private const val KEY_AUX_COH     = "aux_field_coherence"
         private const val KEY_PUNCH       = "punch_amount"
         private const val KEY_CROSSFEED   = "crossfeed_strength"
+        // ORBE — Binaural Esférico de Campo Cercano (v2.5.363). amount 0 = apagado por defecto.
+        private const val KEY_ORBE_AMOUNT       = "orbe_amount"
+        private const val KEY_ORBE_DISTANCE_M   = "orbe_distance_m"
+        private const val KEY_ORBE_SPREAD       = "orbe_spread"
+        private const val KEY_ORBE_PROXIMITY_DB = "orbe_proximity_db"
+        private const val KEY_ORBE_DIFFUSE      = "orbe_diffuse"
+        private const val KEY_ORBE_HEAD_TRACKING = "orbe_head_tracking"
         private const val KEY_4D_ENABLED  = "fourd_enabled"
         private const val KEY_4D_HAPTICS  = "fourd_haptics"
         private const val KEY_4D_HSCALE   = "fourd_haptic_scale"
@@ -413,6 +420,26 @@ class ParameterStore(context: Context) {
     // Crossfeed de graves con ITD (audifonos/DAC, Ruta A). 0 = apagado.
     fun getCrossfeedStrength(): Float = safeGetFloat(KEY_CROSSFEED, 0f)
     fun setCrossfeedStrength(s: Float) = prefs.edit().putFloat(KEY_CROSSFEED, if (s.isFinite()) s.coerceIn(0f, 1f) else 0f).apply()
+
+    // ── ORBE — Binaural Esférico de Campo Cercano (v2.5.363) ── apagado por defecto:
+    // amount 0 = bypass bit-exacto, el audio no cambia hasta activarlo.
+    fun getOrbeAmount(): Float = safeGetFloat(KEY_ORBE_AMOUNT, 0f)
+    fun getOrbeDistanceM(): Float = safeGetFloat(KEY_ORBE_DISTANCE_M, 0.35f)
+    fun getOrbeSpread(): Float = safeGetFloat(KEY_ORBE_SPREAD, 1.0f)
+    fun getOrbeProximityDb(): Float = safeGetFloat(KEY_ORBE_PROXIMITY_DB, 3.0f)
+    fun getOrbeDiffuse(): Float = safeGetFloat(KEY_ORBE_DIFFUSE, 0.5f)
+    fun isOrbeHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_ORBE_HEAD_TRACKING, true)
+    fun setOrbeParams(
+        amount: Float, distanceM: Float, spread: Float,
+        proximityDb: Float, diffuse: Float, headTracking: Boolean
+    ) = prefs.edit()
+        .putFloat(KEY_ORBE_AMOUNT, if (amount.isFinite()) amount.coerceIn(0f, 1f) else 0f)
+        .putFloat(KEY_ORBE_DISTANCE_M, if (distanceM.isFinite()) distanceM.coerceIn(0.15f, 2.0f) else 0.35f)
+        .putFloat(KEY_ORBE_SPREAD, if (spread.isFinite()) spread.coerceIn(0f, 1.5f) else 1.0f)
+        .putFloat(KEY_ORBE_PROXIMITY_DB, if (proximityDb.isFinite()) proximityDb.coerceIn(0f, 6f) else 3.0f)
+        .putFloat(KEY_ORBE_DIFFUSE, if (diffuse.isFinite()) diffuse.coerceIn(0f, 1f) else 0.5f)
+        .putBoolean(KEY_ORBE_HEAD_TRACKING, headTracking)
+        .apply()
 
     // ── Cadena 4D (anticipación, arco, háptica, diafonía, dosímetro) ── todo apagado por defecto
     fun is4dEnabled(): Boolean = safeGetBoolean(KEY_4D_ENABLED, false)

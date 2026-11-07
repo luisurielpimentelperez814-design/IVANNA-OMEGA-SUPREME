@@ -29,6 +29,12 @@ extern std::atomic<bool>  g_hrtf_flush_req;
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
 extern std::atomic<float> g_wfs_applied_spread;   // read-back: spread REALMENTE aplicado
+extern std::atomic<float> g_orbe_amount;           // ORBE: 0 = bypass bit-exacto (default)
+extern std::atomic<float> g_orbe_distance_m;
+extern std::atomic<float> g_orbe_spread;
+extern std::atomic<float> g_orbe_proximity_db;
+extern std::atomic<float> g_orbe_diffuse;
+extern std::atomic<bool>  g_orbe_head_tracking;
 extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
@@ -155,6 +161,9 @@ bool IvannaFusionEngine::loadCustomHrtf(const char* path) noexcept {
 
 void IvannaFusionEngine::updateHeadPose(float yaw, float pitch, float roll) noexcept {
     if (m_hrtf) m_hrtf->setHeadPose(yaw, pitch, roll);
+    // ORBE v1: solo compensación de guiñada (parallax de rotación); la
+    // traslación necesita una pose de traslación que hoy no existe.
+    m_orbe.setHeadPose(yaw);
 }
 
 void IvannaFusionEngine::setGoldenEarMode(bool enable) {
@@ -186,6 +195,22 @@ void IvannaFusionEngine::setAuxField(bool enabled, float xoverHz, float coherenc
 }
 void IvannaFusionEngine::setWfsSpread(float spread) noexcept {
     if (std::isfinite(spread)) g_wfs_spread.store(spread, std::memory_order_relaxed);
+}
+void IvannaFusionEngine::setOrbeEnabled(bool enable) noexcept {
+    g_orbe_amount.store(enable ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+bool IvannaFusionEngine::isOrbeEnabled() const noexcept {
+    return g_orbe_amount.load(std::memory_order_relaxed) > 0.0f;
+}
+void IvannaFusionEngine::setOrbeParams(float amount, float distanceM, float spread,
+                                       float proximityDb, float diffuse,
+                                       bool headTracking) noexcept {
+    if (std::isfinite(amount)) g_orbe_amount.store(amount, std::memory_order_relaxed);
+    if (std::isfinite(distanceM)) g_orbe_distance_m.store(distanceM, std::memory_order_relaxed);
+    if (std::isfinite(spread)) g_orbe_spread.store(spread, std::memory_order_relaxed);
+    if (std::isfinite(proximityDb)) g_orbe_proximity_db.store(proximityDb, std::memory_order_relaxed);
+    if (std::isfinite(diffuse)) g_orbe_diffuse.store(diffuse, std::memory_order_relaxed);
+    g_orbe_head_tracking.store(headTracking, std::memory_order_relaxed);
 }
 void IvannaFusionEngine::setWfsSpeakerLayout(const float x[7], const float y[7], const float z[7]) noexcept {
     if (x == nullptr || y == nullptr || z == nullptr) return;
@@ -368,13 +393,37 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
+    // ── ORBE (Binaural Esférico de Campo Cercano) — última etapa espacial ──
+    // Va DESPUÉS del blend WFS (no antes, como decía el diseño inicial):
+    // ORBE retrasa 512 muestras y el blend WFS se calcula con el bloque
+    // actual — insertarlo antes desalineaba la rama WFS 512 muestras
+    // respecto a la seca. Aquí retrasa el conjunto (HOA/WFS) por igual y
+    // todo lo que sigue (M/S, compresor, limiter) ve el stream retardado
+    // de forma coherente. Lee los atomics g_orbe_* cada bloque; con
+    // amount=0 es bypass bit-exacto de coste cero (fast-path interno).
+    {
+        ivanna::OrbeParams op;
+        op.amount = g_orbe_amount.load(std::memory_order_relaxed);
+        op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+        op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+        op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+        op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+        op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+        op.bandCount = 24;
+        m_orbe.setThermalShed(m_orbeShed_);
+        m_orbe.setParams(op);
+        m_orbe.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+    }
+
     // ── Matriz Mid/Side con Slew-Limiter por muestra (arbitrada con HOA/WFS) ──
     {
         static constexpr float kWidthSlew = 1.0f / 4096.0f;
         const float rawTargetW = std::clamp(m_spatialWidthTarget_ * m_routeWidenerMult_, 0.0f, 3.0f);
-        // Cuando HOA Upmixer o WFS ya sintetizaron la escena binaural 3D, neutralizar
-        // el ensanchamiento M/S redundante para preservar las claves ITD/ILD.
-        const float targetW = (upmixingActive || wantWfs) ? 1.0f : rawTargetW;
+        // Cuando HOA Upmixer, WFS u ORBE ya sintetizaron la escena binaural 3D,
+        // neutralizar el ensanchamiento M/S redundante para preservar las
+        // claves ITD/ILD.
+        const bool orbeActive = g_orbe_amount.load(std::memory_order_relaxed) > 0.0f;
+        const float targetW = (upmixingActive || wantWfs || orbeActive) ? 1.0f : rawTargetW;
         if (std::fabs(m_spatialWidthSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetW - 1.0f) > 1.0e-4f) {
             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                 if (m_spatialWidthSmoothed_ < targetW)

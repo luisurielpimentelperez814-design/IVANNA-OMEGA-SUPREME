@@ -1370,6 +1370,12 @@ fun DashboardScreen(
             initialAuxCoherence = paramStore.getAuxCoherence(),
             initialPunchAmount = paramStore.getPunchAmount(),
             initialCrossfeed = paramStore.getCrossfeedStrength(),
+            initialOrbeAmount = paramStore.getOrbeAmount(),
+            initialOrbeDistanceM = paramStore.getOrbeDistanceM(),
+            initialOrbeSpread = paramStore.getOrbeSpread(),
+            initialOrbeProximityDb = paramStore.getOrbeProximityDb(),
+            initialOrbeDiffuse = paramStore.getOrbeDiffuse(),
+            initialOrbeHeadTracking = paramStore.isOrbeHeadTrackingEnabled(),
             initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
             initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
             initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
@@ -1457,6 +1463,20 @@ fun DashboardScreen(
                 val bounded = s.coerceIn(0f, 1f)
                 paramStore.setCrossfeedStrength(bounded)
                 if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetCrossfeed(bounded) }
+            },
+            onOrbeChange = { amount, distanceM, spread, proximityDb, diffuse, headTracking ->
+                val a = amount.coerceIn(0f, 1f)
+                val d = distanceM.coerceIn(0.15f, 2.0f)
+                val sp = spread.coerceIn(0f, 1.5f)
+                val px = proximityDb.coerceIn(0f, 6f)
+                val df = diffuse.coerceIn(0f, 1f)
+                paramStore.setOrbeParams(a, d, sp, px, df, headTracking)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetOrbeParams(a, d, sp, px, df, headTracking)
+                }
+                perceptualCommands.trySend(
+                    """{"action":"SET_PERCEPTUAL_STATE","orbeAmount":$a,"orbeDistanceM":$d,"orbeSpread":$sp,"orbeProximityDb":$px,"orbeDiffuse":$df,"orbeHeadTracking":${if (headTracking) 1.0f else 0.0f}}"""
+                )
             },
             onPunchChange = { amount ->
                 val bounded = amount.coerceIn(0f, 1f)

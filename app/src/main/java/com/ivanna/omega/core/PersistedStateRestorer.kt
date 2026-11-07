@@ -103,6 +103,21 @@ object PersistedStateRestorer {
             runCatching { IvannaNativeLib.nativeSetPunch(paramStore.getPunchAmount()) }
             // Crossfeed de graves con ITD (Ruta A): restaura la intensidad (0 = apagado).
             runCatching { IvannaNativeLib.nativeSetCrossfeed(paramStore.getCrossfeedStrength()) }
+            // ORBE — Binaural Esférico de Campo Cercano (v2.5.363): restaura los 6
+            // parámetros (amount 0 = apagado por defecto) en la Ruta A por JNI y en
+            // la Ruta B por SET_PERCEPTUAL_STATE al daemon (snapshot ABI v9).
+            runCatching {
+                IvannaNativeLib.nativeSetOrbeParams(
+                    paramStore.getOrbeAmount(), paramStore.getOrbeDistanceM(),
+                    paramStore.getOrbeSpread(), paramStore.getOrbeProximityDb(),
+                    paramStore.getOrbeDiffuse(), paramStore.isOrbeHeadTrackingEnabled()
+                )
+            }
+            runCatching {
+                com.ivanna.omega.magisk.MagiskBridge.sendCommand(
+                    """{"action":"SET_PERCEPTUAL_STATE","orbeAmount":${paramStore.getOrbeAmount()},"orbeDistanceM":${paramStore.getOrbeDistanceM()},"orbeSpread":${paramStore.getOrbeSpread()},"orbeProximityDb":${paramStore.getOrbeProximityDb()},"orbeDiffuse":${paramStore.getOrbeDiffuse()},"orbeHeadTracking":${if (paramStore.isOrbeHeadTrackingEnabled()) 1.0f else 0.0f}}"""
+                )
+            }
             // 4D temporal: restaura estado y profundidad (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetTemporalField(paramStore.isTemporalFieldEnabled(), paramStore.getTemporalFieldAmount(), paramStore.isTemporalFieldAdaptive()) }
             // Háptica de graves (4D): vive en Kotlin (ruta A), no depende de la librería nativa.

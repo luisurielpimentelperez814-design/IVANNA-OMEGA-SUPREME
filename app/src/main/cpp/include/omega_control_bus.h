@@ -25,7 +25,8 @@
  *   - OmegaDspSnapshot es trivialmente copiable (POD puro, sin punteros)
  *   - Seqlock embebido: guard es odd durante escritura, even en reposo
  *   - Validable por MAGIC + VERSION + CRC32
- *   - Tamaño <= 512 bytes (verificado con static_assert)
+ *   - Tamaño <= 544 bytes (verificado con static_assert; v9 sube de 512 a
+ *     536 por los campos ORBE — el presupuesto de 512 B quedó agotado)
  *   - Sin malloc, sin std::vector, sin std::string, sin heap
  *   - Seguro para placement-new sobre región mmap
  *   - Sin locks del SO en el hot path de lectura
@@ -172,7 +173,14 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // ABI v5 (2026-09-26): añadidos los 5 Ejes de Supremacía Cuántico-Neuromórfica
 // (8 flags OMEGA_FLAG_SUPREME_* + 11 escalares supreme_*) manteniendo
 // sizeof(OmegaDspSnapshot) <= 512 bytes y copia trivial cross-process.
-constexpr uint16_t OMEGA_CTRL_VERSION = 8u;   // v8: yaw/pitch para el consumidor HRTF de Ruta B.
+// ABI v9 (2026-11-07): añadidos los campos ORBE (Binaural Esférico de Campo
+// Cercano) al snapshot — amount/distancia/spread/proximidad/difuso/head-tracking.
+// El snapshot v8 estaba exactamente en 512 B (sin campo nuevo posible): v9 sube
+// a 536 B y el static_assert pasa a <= 544 B. El bump invalida snapshots viejos
+// por diseño (isVersionValid()); el reader cae a defaults (ORBE off) hasta que
+// el daemon publique con la ABI nueva — sin ruido audible. App y daemon se
+// distribuyen juntos en el mismo release (APK + módulo Magisk v2.5.363).
+constexpr uint16_t OMEGA_CTRL_VERSION = 9u;   // v9: ORBE (campo cercano) para la Ruta B.
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
@@ -254,7 +262,8 @@ inline Omega4DExt omega_4d_decode(uint32_t ext) noexcept {
     return e;
 }
 // v8 — Distancia de la escena para la Ruta B (azimut/elevación viajan en head_yaw_rad/head_pitch_rad).
-// 16 bits en npe_ctl bits 16..31 (el snapshot v8 está al límite de 512 B: sin campo nuevo). 0 = sin distancia publicada
+// 16 bits en npe_ctl bits 16..31 (el snapshot v8 estaba al límite de 512 B: sin campo nuevo;
+// la v9 lo rompió para ORBE, 536 B). 0 = sin distancia publicada
 // (el efecto no toca el nivel); 1..65535 mapean linealmente 0.5..2.0 (escala relativa al campo lejano de referencia).
 // omega_npe_ctl_decode() solo mira los bits 0 y 8..15: compatible con lectores antiguos. No finito / fuera de rango -> 0.
 constexpr uint32_t OMEGA_SCENE_DIST_SHIFT = 16u;
@@ -510,6 +519,17 @@ struct OmegaDspSnapshot {
     float    head_yaw_rad;
     float    head_pitch_rad;
 
+    // ── ORBE — Binaural Esférico de Campo Cercano (ABI v9) ───────────────────
+    // amount 0 = apagado (bypass bit-exacto, default); distancia 0.15..2.0 m;
+    // spread 0..1.5; proximidad 0..6 dB; difuso 0..1; head_tracking 1 = parallax
+    // por yaw. Los lee omega_apply_snapshot (Ruta B) vía fc->setOrbeParams().
+    float    orbe_amount;
+    float    orbe_distance_m;
+    float    orbe_spread;
+    float    orbe_proximity_db;
+    float    orbe_diffuse;
+    uint32_t orbe_head_tracking;
+
     // ── Integridad ────────────────────────────────────────────────────────────
     uint32_t crc32;            // CRC32 de bytes [magic .. effect_frames] inclusive
 
@@ -552,6 +572,9 @@ struct OmegaDspSnapshot {
         s.widener_mult      = 1.38f;
         s.npe_ctl = omega_npe_ctl_encode(true, 0.0f); s.npe_lateral_inhib = 0.2f; s.npe_ohc_compression = 0.3f;
         s.head_yaw_rad = 0.f; s.head_pitch_rad = 0.f;
+        // ORBE (ABI v9): apagado por defecto — amount 0 = bypass bit-exacto.
+        s.orbe_amount = 0.f; s.orbe_distance_m = 0.35f; s.orbe_spread = 1.0f;
+        s.orbe_proximity_db = 3.0f; s.orbe_diffuse = 0.5f; s.orbe_head_tracking = 1u;
         s.room_rt60_s = 0.34f;  // Golden Master Studio Control Room (rir_0051.wav, RT60=0.340s, DRR=10.31dB)
         s.room_idx    = 51;
         s.room_wet    = 0.22f;
@@ -645,8 +668,8 @@ struct OmegaDspSnapshot {
 };
 
 // Validar tamaño en tiempo de compilación (host + ARM64)
-static_assert(sizeof(OmegaDspSnapshot) <= 512,
-    "OmegaDspSnapshot supera 512 bytes — revisar campos o padding");
+static_assert(sizeof(OmegaDspSnapshot) <= 544,
+    "OmegaDspSnapshot supera 544 bytes — revisar campos o padding");
 static_assert(std::is_trivially_copyable<OmegaDspSnapshot>::value,
     "OmegaDspSnapshot debe ser trivialmente copiable (POD) para seqlock + mmap");
 

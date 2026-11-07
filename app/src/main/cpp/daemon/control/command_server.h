@@ -155,6 +155,15 @@ struct OmegaDspState {
     // Route-B global effect switches. Defaults preserve current processing.
     bool hrtf_enabled = true;
     bool adaptive_enabled = true;
+
+    // ORBE — Binaural Esférico de Campo Cercano (ABI v9). Al FINAL del struct
+    // (kDefaultState inicializa por posición). amount 0 = apagado por defecto.
+    float orbe_amount = 0.f;
+    float orbe_distance_m = 0.35f;
+    float orbe_spread = 1.0f;
+    float orbe_proximity_db = 3.0f;
+    float orbe_diffuse = 0.5f;
+    bool  orbe_head_tracking = true;
 };
 
 class CommandServer {

@@ -42,6 +42,7 @@
 #include "../include/HarmonicExciter.h"
 #include "../include/StereoWidener.h"
 #include "../dsp/HeadphoneCrossfeed.hpp"
+#include "../spatial/OrbeBinaural.hpp"
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
@@ -128,6 +129,11 @@ static HarmonicExciter g_exciter;
 static StereoWidener  g_widener;
 // Crossfeed de graves con ITD (audifonos/DAC), Ruta A. strength 0 = apagado = bypass bit-exacto (default).
 static ivanna::HeadphoneCrossfeed g_crossfeed;
+// ORBE (Binaural Esférico de Campo Cercano), Ruta A: instancia propia del proceso app.
+// amount=0 = bypass bit-exacto (default). Se prepara en nativeInit/nativeInitDSP
+// y se procesa en nativeProcess tras el crossfeed. La Ruta B usa su propia
+// instancia (IvannaFusionEngine::m_orbe) en el proceso audioserver.
+static ivanna::OrbeBinaural g_orbeRouteA;
 static GainStage      g_gain;
 // Anti-ruido digital: DC-block + sanitizer NaN/Inf en el borde de salida.
 static ivanna::DcBlocker g_dcBlockL, g_dcBlockR;
@@ -145,6 +151,13 @@ extern std::atomic<bool> g_upmixing_enabled;
 extern std::atomic<float> g_upmixing_immersivity;
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
+// ORBE: definidos en orbe_controls_bridge.cpp (este target). Mismo patrón que g_wfs_*.
+extern std::atomic<float> g_orbe_amount;
+extern std::atomic<float> g_orbe_distance_m;
+extern std::atomic<float> g_orbe_spread;
+extern std::atomic<float> g_orbe_proximity_db;
+extern std::atomic<float> g_orbe_diffuse;
+extern std::atomic<bool>  g_orbe_head_tracking;
 extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
@@ -906,6 +919,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
     g_crossfeed.setSampleRate((float)sr);
+    g_orbeRouteA.prepare((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
     // El ADE se inicia al final, después de que g_initialized confirme el grafo DSP.
     // El consumidor de snapshots es observabilidad, no el motor. Debe vivir
@@ -1508,6 +1522,22 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_exciter.process(g_ats.chL, g_ats.chR, n);
     g_widener.process(g_ats.chL, g_ats.chR, n);
     g_crossfeed.process(g_ats.chL, g_ats.chR, n);   // despues del widener y antes de la ganancia de salida/limiter
+    // ORBE (Ruta A): etapa de campo cercano tras el crossfeed, antes de la ganancia
+    // de salida. Sin HOA en proceso en esta ruta, ORBE aplica aquí directamente.
+    // Lee los atomics g_orbe_* cada bloque; amount=0 es bypass bit-exacto de
+    // coste cero. Activo añade 512 muestras de latencia (10.7 ms @48 kHz).
+    {
+        ivanna::OrbeParams op;
+        op.amount = g_orbe_amount.load(std::memory_order_relaxed);
+        op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+        op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+        op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+        op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+        op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+        op.bandCount = 24;
+        g_orbeRouteA.setParams(op);
+        g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
+    }
     g_gain.processOutput(g_ats.chL, g_ats.chR, n);
     // FIX distorsión: g_safety_limiter se aplicaba aquí (antes de PDEngine)
     // Y OTRA VEZ en FASE 4B (después de PDEngine) — dos limiters en serie.
@@ -2147,6 +2177,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
     g_crossfeed.setSampleRate((float)sr);
+    g_orbeRouteA.prepare((float)sr);
     // Eje Supremo: pre-compute biquad BPF + Heun coefficients for the cochlear engine.
     // Called here (UI thread, non-RT) — process() will never allocate.
     g_cochlearEngine.prepare(static_cast<float>(sr), 512);
@@ -2326,6 +2357,22 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
     // Misma etapa WFS que DSPBridge.nativeProcess: evita divergencia entre APIs JNI.
     processRouteAWfs(oL, oR, n);
+
+    // ── ORBE (Ruta A/C, v2.5.363): mismo bloque que nativeProcess, tras el WFS
+    // y antes de la RIR. Comparte g_orbeRouteA con nativeProcess (nunca corren
+    // a la vez: g_dspProcessMutex). amount=0 = bypass bit-exacto de coste cero.
+    {
+        ivanna::OrbeParams op;
+        op.amount = g_orbe_amount.load(std::memory_order_relaxed);
+        op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+        op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+        op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+        op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+        op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+        op.bandCount = 24;
+        g_orbeRouteA.setParams(op);
+        g_orbeRouteA.process(oL, oR, n);
+    }
 
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
     if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
@@ -2685,6 +2732,30 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPunch(JNIEnv*, jobject, jflo
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCrossfeed(JNIEnv*, jobject, jfloat strength) {
     g_crossfeed.setStrength(std::isfinite(strength) ? std::clamp(strength, 0.0f, 1.0f) : 0.0f);
+}
+
+// ORBE (Binaural Esférico de Campo Cercano), rama feature/orbe-nearfield-binaural.
+// amount 0..1 (0 = apagado, bypass bit-exacto, default), distancia 0.15..2.0 m,
+// spread 0..1.5, proximidad 0..6 dB, difuso 0..1, head-tracking on/off.
+// Escriben los atomics g_orbe_* que leen la Ruta A (aquí, g_orbeRouteA) y la
+// Ruta B (IvannaFusionEngine::m_orbe). La Ruta B además recibe los parámetros
+// por el snapshot ABI v9 (orbe_*): la app los publica al daemon por
+// SET_PERCEPTUAL_STATE y omega_apply_snapshot los reenvía vía setOrbeParams().
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeParams(JNIEnv*, jobject,
+        jfloat amount, jfloat distanceM, jfloat spread, jfloat proximityDb,
+        jfloat diffuse, jboolean headTracking) {
+    if (std::isfinite(amount)) g_orbe_amount.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(distanceM)) g_orbe_distance_m.store(std::clamp(distanceM, 0.15f, 2.0f), std::memory_order_relaxed);
+    if (std::isfinite(spread)) g_orbe_spread.store(std::clamp(spread, 0.0f, 1.5f), std::memory_order_relaxed);
+    if (std::isfinite(proximityDb)) g_orbe_proximity_db.store(std::clamp(proximityDb, 0.0f, 6.0f), std::memory_order_relaxed);
+    if (std::isfinite(diffuse)) g_orbe_diffuse.store(std::clamp(diffuse, 0.0f, 1.0f), std::memory_order_relaxed);
+    g_orbe_head_tracking.store(headTracking == JNI_TRUE, std::memory_order_relaxed);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeEnabled(JNIEnv*, jobject, jboolean enabled) {
+    g_orbe_amount.store(enabled == JNI_TRUE ? 1.0f : 0.0f, std::memory_order_relaxed);
 }
 
 // [0..2] ganancia dB por banda (bajo/medio/alto), [3] actividad de ataque 0..1, [4] guarda activa 0/1, [5] latencia ms.

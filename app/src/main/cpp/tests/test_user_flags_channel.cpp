@@ -469,8 +469,8 @@ TEST(TemporalFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
 }
 
 TEST(RoomCorrectionChannel, DaemonPublishesMeasuredCorrectionAndItSurvivesOtherCommands) {
-    EXPECT_EQ(OMEGA_CTRL_VERSION, 8u);                           // snapshot v8: head pose + npe_* + room_corr_db[10]
-    EXPECT_LE(sizeof(OmegaDspSnapshot), 512u);
+    EXPECT_EQ(OMEGA_CTRL_VERSION, 9u);                           // snapshot v9: head pose + npe_* + room_corr_db[10] + orbe_*
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 544u);  // v9: ORBE sube el snapshot a 536 B
     Harness h;
     CommandServer cs;
     char reply[4096];
@@ -809,5 +809,5 @@ TEST(FotoHoloDaemon, RouteBControlReachesSnapshotWithoutChangingAbi) {
     omega_fotoholo_decode(snap.temporal_field, enabled, intensity);
     EXPECT_FALSE(enabled);
     EXPECT_NEAR(intensity, 0.75f, 1.0f / 511.0f);
-    EXPECT_EQ(OMEGA_CTRL_VERSION, 8u);
+    EXPECT_EQ(OMEGA_CTRL_VERSION, 9u);  // v9: campos ORBE
 }

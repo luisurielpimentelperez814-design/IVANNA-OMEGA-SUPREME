@@ -274,7 +274,7 @@ TEST(SupremeFiveAxesPipelineIntegration, FullControlsAndTelemetryEndToEnd) {
 TEST(SupremeFiveAxesPipelineIntegration, CrossProcessSnapshotAndLaboratoryCalibrations) {
     // 1. Verificar ABI y transporte cross-process de los 5 Ejes en OmegaDspSnapshot
     ivanna::OmegaDspSnapshot snap = ivanna::OmegaDspSnapshot::makeDefault();
-    EXPECT_LE(sizeof(ivanna::OmegaDspSnapshot), 512u);
+    EXPECT_LE(sizeof(ivanna::OmegaDspSnapshot), 544u);  // v9: ORBE sube el snapshot a 536 B
     snap.flags |= ivanna::OMEGA_FLAG_SUPREME_LATTICE_ON
                 | ivanna::OMEGA_FLAG_SUPREME_MICROCHIRP_ON
                 | ivanna::OMEGA_FLAG_SUPREME_CVNN_ON
