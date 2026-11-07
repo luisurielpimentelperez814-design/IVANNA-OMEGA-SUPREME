@@ -617,6 +617,79 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_orbe_chain)
 
+# HOLOS — Operador Único de Campo Acústico (FUSION.md, v2.5.364).
+# Mismo patrón que los tests ORBE. Las fuentes DSP (Compressor,
+# ParametricEQ, SafetyLimiter, HarmonicExciter, volterra_h2_symmetric)
+# ya están en ivanna_dsp_under_test: aquí solo se listan las fuentes
+# HOLOS/RIR/ORBE que no están en la librería.
+add_executable(test_holos_green_kernel
+  test_holos_green_kernel.cpp
+)
+target_link_libraries(test_holos_green_kernel PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_holos_green_kernel PRIVATE .. ../include host_stubs)
+target_compile_options(test_holos_green_kernel PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_holos_green_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_holos_green_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_holos_green_kernel)
+
+add_executable(test_holos_gain_field
+  test_holos_gain_field.cpp
+)
+target_link_libraries(test_holos_gain_field PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_holos_gain_field PRIVATE .. ../include host_stubs)
+target_compile_options(test_holos_gain_field PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_holos_gain_field PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_holos_gain_field PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_holos_gain_field)
+
+add_executable(test_holos_volterra_kernel
+  test_holos_volterra_kernel.cpp
+  ../spatial/HolosVolterraKernel.cpp
+)
+target_link_libraries(test_holos_volterra_kernel PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_holos_volterra_kernel PRIVATE .. ../include host_stubs)
+target_compile_options(test_holos_volterra_kernel PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_holos_volterra_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_holos_volterra_kernel PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_holos_volterra_kernel)
+
+add_executable(test_holos_operator
+  test_holos_operator.cpp
+  ../spatial/HolosOperator.cpp
+  ../spatial/HolosVolterraKernel.cpp
+  ../spatial/RirConvolver.cpp
+)
+target_link_libraries(test_holos_operator PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_holos_operator PRIVATE .. ../include host_stubs)
+target_compile_options(test_holos_operator PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_holos_operator PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_holos_operator PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_holos_operator)
+
+add_executable(test_holos_chain
+  test_holos_chain.cpp
+  ../spatial/HolosOperator.cpp
+  ../spatial/HolosVolterraKernel.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/OrbeBinaural.cpp
+)
+target_link_libraries(test_holos_chain PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_holos_chain PRIVATE .. ../include host_stubs)
+target_compile_options(test_holos_chain PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_holos_chain PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_holos_chain PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_holos_chain)
+
 # Native 3D stem pose contract: the production NeuralUpmixer implementation is
 # compiled directly so these tests exercise the same atomic buffer publication
 # and validation used by JNI, rather than a parallel test-only implementation.

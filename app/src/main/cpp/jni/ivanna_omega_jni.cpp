@@ -42,6 +42,7 @@
 #include "../include/HarmonicExciter.h"
 #include "../include/StereoWidener.h"
 #include "../dsp/HeadphoneCrossfeed.hpp"
+#include "../spatial/HolosOperator.hpp"
 #include "../spatial/OrbeBinaural.hpp"
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
@@ -134,6 +135,12 @@ static ivanna::HeadphoneCrossfeed g_crossfeed;
 // y se procesa en nativeProcess tras el crossfeed. La Ruta B usa su propia
 // instancia (IvannaFusionEngine::m_orbe) en el proceso audioserver.
 static ivanna::OrbeBinaural g_orbeRouteA;
+// HOLOS (Operador Único de Campo Acústico), Ruta A: instancia propia del proceso app.
+// amount=0 = bypass bit-exacto (default). Se prepara en nativeInit/nativeInitDSP
+// y se procesa en nativeProcess tras el crossfeed, EN EL LUGAR DE ORBE:
+// cuando HOLOS está activo ORBE no corre. La Ruta B usa su propia
+// instancia (IvannaFusionEngine::m_holos) en el proceso audioserver.
+static ivanna::HolosOperator g_holosRouteA;
 static GainStage      g_gain;
 // Anti-ruido digital: DC-block + sanitizer NaN/Inf en el borde de salida.
 static ivanna::DcBlocker g_dcBlockL, g_dcBlockR;
@@ -158,6 +165,25 @@ extern std::atomic<float> g_orbe_spread;
 extern std::atomic<float> g_orbe_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<bool>  g_orbe_head_tracking;
+// HOLOS: definidos en holos_controls_bridge.cpp (este target).
+extern std::atomic<float> g_holos_amount;
+extern std::atomic<float> g_holos_distance_m;
+extern std::atomic<float> g_holos_spread;
+extern std::atomic<float> g_holos_proximity_db;
+extern std::atomic<float> g_holos_diffuse;
+extern std::atomic<float> g_holos_harmonics;
+extern std::atomic<float> g_holos_warmth;
+extern std::atomic<float> g_holos_dynamics;
+extern std::atomic<float> g_holos_width;
+extern std::atomic<float> g_holos_gamma;
+extern std::atomic<float> g_holos_room_rt60;
+extern std::atomic<bool>  g_holos_head_tracking;
+extern std::atomic<float> g_holos_eq_low;
+extern std::atomic<float> g_holos_eq_mid;
+extern std::atomic<float> g_holos_eq_high;
+extern std::atomic<float> g_holos_eq_presence;
+extern std::atomic<float> g_holos_eq_tilt_db;
+extern std::atomic<float> g_holos_eq_freq;
 extern std::atomic<bool>  g_aux_field_enabled;
 extern std::atomic<float> g_aux_field_xover_hz;
 extern std::atomic<float> g_aux_field_coherence;
@@ -920,6 +946,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_safety_limiter.setSampleRate((float)sr);
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
+    g_holosRouteA.prepare((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
     // El ADE se inicia al final, después de que g_initialized confirme el grafo DSP.
     // El consumidor de snapshots es observabilidad, no el motor. Debe vivir
@@ -1524,19 +1551,46 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_crossfeed.process(g_ats.chL, g_ats.chR, n);   // despues del widener y antes de la ganancia de salida/limiter
     // ORBE (Ruta A): etapa de campo cercano tras el crossfeed, antes de la ganancia
     // de salida. Sin HOA en proceso en esta ruta, ORBE aplica aquí directamente.
-    // Lee los atomics g_orbe_* cada bloque; amount=0 es bypass bit-exacto de
+    // HOLOS ocupa el lugar de ORBE: cuando HOLOS está activo ORBE no corre.
+    // Lee los atomics g_holos_*/g_orbe_* cada bloque; amount=0 es bypass bit-exacto de
     // coste cero. Activo añade 512 muestras de latencia (10.7 ms @48 kHz).
     {
-        ivanna::OrbeParams op;
-        op.amount = g_orbe_amount.load(std::memory_order_relaxed);
-        op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
-        op.spread = g_orbe_spread.load(std::memory_order_relaxed);
-        op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
-        op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
-        op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
-        op.bandCount = 24;
-        g_orbeRouteA.setParams(op);
-        g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
+        const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
+        if (holosAmount > 0.0f) {
+            ivanna::HolosParams hp;
+            hp.amount = holosAmount;
+            hp.distanceM = g_holos_distance_m.load(std::memory_order_relaxed);
+            hp.spread = g_holos_spread.load(std::memory_order_relaxed);
+            hp.proximityDb = g_holos_proximity_db.load(std::memory_order_relaxed);
+            hp.diffuse = g_holos_diffuse.load(std::memory_order_relaxed);
+            hp.harmonics = g_holos_harmonics.load(std::memory_order_relaxed);
+            hp.warmth = g_holos_warmth.load(std::memory_order_relaxed);
+            hp.dynamics = g_holos_dynamics.load(std::memory_order_relaxed);
+            hp.width = g_holos_width.load(std::memory_order_relaxed);
+            hp.gamma = g_holos_gamma.load(std::memory_order_relaxed);
+            hp.roomRt60 = g_holos_room_rt60.load(std::memory_order_relaxed);
+            hp.headTracking = g_holos_head_tracking.load(std::memory_order_relaxed);
+            hp.eqLow = g_holos_eq_low.load(std::memory_order_relaxed);
+            hp.eqMid = g_holos_eq_mid.load(std::memory_order_relaxed);
+            hp.eqHigh = g_holos_eq_high.load(std::memory_order_relaxed);
+            hp.eqPresence = g_holos_eq_presence.load(std::memory_order_relaxed);
+            hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
+            hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
+            hp.bandCount = 24;
+            g_holosRouteA.setParams(hp);
+            g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
+        } else {
+            ivanna::OrbeParams op;
+            op.amount = g_orbe_amount.load(std::memory_order_relaxed);
+            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.bandCount = 24;
+            g_orbeRouteA.setParams(op);
+            g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
+        }
     }
     g_gain.processOutput(g_ats.chL, g_ats.chR, n);
     // FIX distorsión: g_safety_limiter se aplicaba aquí (antes de PDEngine)
@@ -2178,6 +2232,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_safety_limiter.setSampleRate((float)sr);
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
+    g_holosRouteA.prepare((float)sr);
     // Eje Supremo: pre-compute biquad BPF + Heun coefficients for the cochlear engine.
     // Called here (UI thread, non-RT) — process() will never allocate.
     g_cochlearEngine.prepare(static_cast<float>(sr), 512);
@@ -2360,18 +2415,45 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
 
     // ── ORBE (Ruta A/C, v2.5.363): mismo bloque que nativeProcess, tras el WFS
     // y antes de la RIR. Comparte g_orbeRouteA con nativeProcess (nunca corren
-    // a la vez: g_dspProcessMutex). amount=0 = bypass bit-exacto de coste cero.
+    // a la vez: g_dspProcessMutex). HOLOS ocupa el lugar de ORBE cuando está
+    // activo (misma instancia compartida g_holosRouteA). amount=0 = bypass bit-exacto de coste cero.
     {
-        ivanna::OrbeParams op;
-        op.amount = g_orbe_amount.load(std::memory_order_relaxed);
-        op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
-        op.spread = g_orbe_spread.load(std::memory_order_relaxed);
-        op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
-        op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
-        op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
-        op.bandCount = 24;
-        g_orbeRouteA.setParams(op);
-        g_orbeRouteA.process(oL, oR, n);
+        const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
+        if (holosAmount > 0.0f) {
+            ivanna::HolosParams hp;
+            hp.amount = holosAmount;
+            hp.distanceM = g_holos_distance_m.load(std::memory_order_relaxed);
+            hp.spread = g_holos_spread.load(std::memory_order_relaxed);
+            hp.proximityDb = g_holos_proximity_db.load(std::memory_order_relaxed);
+            hp.diffuse = g_holos_diffuse.load(std::memory_order_relaxed);
+            hp.harmonics = g_holos_harmonics.load(std::memory_order_relaxed);
+            hp.warmth = g_holos_warmth.load(std::memory_order_relaxed);
+            hp.dynamics = g_holos_dynamics.load(std::memory_order_relaxed);
+            hp.width = g_holos_width.load(std::memory_order_relaxed);
+            hp.gamma = g_holos_gamma.load(std::memory_order_relaxed);
+            hp.roomRt60 = g_holos_room_rt60.load(std::memory_order_relaxed);
+            hp.headTracking = g_holos_head_tracking.load(std::memory_order_relaxed);
+            hp.eqLow = g_holos_eq_low.load(std::memory_order_relaxed);
+            hp.eqMid = g_holos_eq_mid.load(std::memory_order_relaxed);
+            hp.eqHigh = g_holos_eq_high.load(std::memory_order_relaxed);
+            hp.eqPresence = g_holos_eq_presence.load(std::memory_order_relaxed);
+            hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
+            hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
+            hp.bandCount = 24;
+            g_holosRouteA.setParams(hp);
+            g_holosRouteA.process(oL, oR, n);
+        } else {
+            ivanna::OrbeParams op;
+            op.amount = g_orbe_amount.load(std::memory_order_relaxed);
+            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.bandCount = 24;
+            g_orbeRouteA.setParams(op);
+            g_orbeRouteA.process(oL, oR, n);
+        }
     }
 
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
@@ -2756,6 +2838,45 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeParams(JNIEnv*, jobject,
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeEnabled(JNIEnv*, jobject, jboolean enabled) {
     g_orbe_amount.store(enabled == JNI_TRUE ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+
+// HOLOS (v2.5.364): mismo patrón que nativeSetOrbeParams/nativeSetOrbeEnabled.
+// Sin UI Kotlin todavía (fase posterior): estos JNI son el cableado para
+// DSPBridge.kt. amount=0 = bypass bit-exacto (default) hasta GREEN.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosParams(JNIEnv*, jobject,
+        jfloat amount, jfloat distanceM, jfloat spread, jfloat proximityDb,
+        jfloat diffuse, jfloat harmonics, jfloat warmth, jfloat dynamics,
+        jfloat width, jfloat gamma, jfloat roomRt60, jboolean headTracking) {
+    if (std::isfinite(amount)) g_holos_amount.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(distanceM)) g_holos_distance_m.store(std::clamp(distanceM, 0.15f, 2.0f), std::memory_order_relaxed);
+    if (std::isfinite(spread)) g_holos_spread.store(std::clamp(spread, 0.0f, 1.5f), std::memory_order_relaxed);
+    if (std::isfinite(proximityDb)) g_holos_proximity_db.store(std::clamp(proximityDb, 0.0f, 6.0f), std::memory_order_relaxed);
+    if (std::isfinite(diffuse)) g_holos_diffuse.store(std::clamp(diffuse, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(harmonics)) g_holos_harmonics.store(std::clamp(harmonics, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(warmth)) g_holos_warmth.store(std::clamp(warmth, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(dynamics)) g_holos_dynamics.store(std::clamp(dynamics, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(width)) g_holos_width.store(std::clamp(width, 0.0f, 1.5f), std::memory_order_relaxed);
+    if (std::isfinite(gamma)) g_holos_gamma.store(std::clamp(gamma, 0.5f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(roomRt60)) g_holos_room_rt60.store(std::clamp(roomRt60, 0.18f, 1.8f), std::memory_order_relaxed);
+    g_holos_head_tracking.store(headTracking == JNI_TRUE, std::memory_order_relaxed);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosEnabled(JNIEnv*, jobject, jboolean enabled) {
+    g_holos_amount.store(enabled == JNI_TRUE ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosEq(JNIEnv*, jobject,
+        jfloat low, jfloat mid, jfloat high, jfloat presence,
+        jfloat tiltDb, jfloat freq) {
+    if (std::isfinite(low)) g_holos_eq_low.store(std::clamp(low, -12.0f, 12.0f), std::memory_order_relaxed);
+    if (std::isfinite(mid)) g_holos_eq_mid.store(std::clamp(mid, -12.0f, 12.0f), std::memory_order_relaxed);
+    if (std::isfinite(high)) g_holos_eq_high.store(std::clamp(high, -12.0f, 12.0f), std::memory_order_relaxed);
+    if (std::isfinite(presence)) g_holos_eq_presence.store(std::clamp(presence, -12.0f, 12.0f), std::memory_order_relaxed);
+    if (std::isfinite(tiltDb)) g_holos_eq_tilt_db.store(std::clamp(tiltDb, -12.0f, 12.0f), std::memory_order_relaxed);
+    if (std::isfinite(freq)) g_holos_eq_freq.store(std::clamp(freq, 20.0f, 20000.0f), std::memory_order_relaxed);
 }
 
 // [0..2] ganancia dB por banda (bajo/medio/alto), [3] actividad de ataque 0..1, [4] guarda activa 0/1, [5] latencia ms.

@@ -7,6 +7,7 @@
 #include "IvannaFusionCore.hpp"
 #include "spatial/IntelligentUpmixer.hpp"
 #include "spatial/HoaBinauralDecoder.hpp"
+#include "spatial/HolosOperator.hpp"
 #include "spatial/OrbeBinaural.hpp"
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/WfsSpreadGovernor.hpp"
@@ -63,6 +64,7 @@ public:
         m_upmixer.prepare(sampleRate);
         m_hoaDecoder.prepare(sampleRate, 8);
         m_orbe.prepare(sampleRate);
+        m_holos.prepare(sampleRate);
     }
 
     void process(Ivanna::AudioBuffer* buffer);
@@ -96,6 +98,18 @@ public:
     void setOrbeParams(float amount, float distanceM, float spread, float proximityDb,
                        float diffuse, bool headTracking) noexcept;
     bool isOrbeEnabled() const noexcept;
+    // HOLOS — Operador Único de Campo Acústico (FUSION.md). Entra EN EL
+    // LUGAR DE ORBE (tras el blend WFS, antes del M/S): cuando HOLOS está
+    // activo ORBE no corre (doble render con doble retardo de 512). Mismo
+    // patrón de atomics g_holos_* que ORBE (holos_controls_bridge.cpp).
+    // Apagado por defecto (amount=0 = bypass bit-exacto) hasta GREEN.
+    void setHolosEnabled(bool enable) noexcept;
+    void setHolosParams(float amount, float distanceM, float spread, float proximityDb,
+                        float diffuse, float harmonics, float warmth, float dynamics,
+                        float width, float gamma, float roomRt60, bool headTracking) noexcept;
+    void setHolosEq(float low, float mid, float high, float presence,
+                    float tiltDb, float freq) noexcept;
+    bool isHolosEnabled() const noexcept;
     // x/y/z: coordenadas de SALA absolutas (metros; x=ancho,y=altura,
     // z=profundidad), 7 altavoces, orden FL,FR,SL,SR,TL,TR,SW — mismo
     // formato que OmegaDspSnapshot::wfs_speaker_{x,y,z}. Se convierten
@@ -155,6 +169,7 @@ public:
         m_upmixer.prepare(sr);
         m_hoaDecoder.prepare(sr, 8);
         m_orbe.prepare(sr);
+        m_holos.prepare(sr);
         m_wfs.init(sr, Ivanna::BLOCK_SIZE, 16);
         m_wfsInit = true;
         resetFifo();
@@ -323,6 +338,11 @@ public:
     /// Recorte térmico/CPU de ORBE (mismo criterio que NPE/Volterra, tier >= LIMITED):
     /// el núcleo cae a bypass (12 bandas -> off) y vuelve solo al enfriarse.
     void setOrbeThermalShed(bool shed) noexcept { m_orbeShed_ = shed; }
+    /// Recorte térmico/CPU de HOLOS: al activarse, HOLOS pasa a Bypass
+    /// (tier 3 → cadena legacy bit-exacta). Los tiers intermedios
+    /// (Warm/Limited) los gobierna el gestor térmico con setHolosThermalTier.
+    void setHolosThermalShed(bool shed) noexcept { m_holosShed_ = shed; }
+    void setHolosThermalTier(int tier) noexcept { m_holosTier_ = tier; }
     int npeSpikes() const noexcept { return m_npe.lastSpikes(); }
     void setIntensity(float intensity) noexcept {
         if (std::isfinite(intensity)) {
@@ -362,6 +382,9 @@ private:
     // ORBE — Binaural Esférico de Campo Cercano (última etapa espacial de
     // process(): tras upmixer/HRTF y tras el blend WFS, antes del M/S).
     ivanna::OrbeBinaural m_orbe;
+    // HOLOS — Operador Único de Campo Acústico. Ocupa el lugar de ORBE
+    // cuando está activo (ver process()); ORBE queda como fallback legacy.
+    ivanna::HolosOperator m_holos;
 
     // ── Wave Field Synthesis (2026-09-19) — ruta real de audio ──
     // El renderer sintetiza el campo de ondas de la señal estéreo como
@@ -374,7 +397,8 @@ private:
     ivanna::spatial::WfsRenderer m_wfs;
     ivanna::spatial::CrosstalkCanceller m_xtc;        // diafonía para altavoces (apagado = identidad)
     ivanna::neuromorphic::NpeStereoCore m_npe;        // NPE neuromórfico en Ruta B (apagado = bit-exacto)
-    bool  m_npeOn_ = false, m_npeShed_ = false, m_orbeShed_ = false;
+    bool  m_npeOn_ = false, m_npeShed_ = false, m_orbeShed_ = false, m_holosShed_ = false;
+    int   m_holosTier_ = 0;  // HolosThermalTier (0 Normal … 3 Bypass)
     float m_npeHarm_ = 0.2f, m_npeLat_ = 0.2f, m_npeOhc_ = 0.3f, m_npeMasterDb_ = 0.0f;
     ivanna::dsp::RoomCorrectionEq m_userEq;           // EQ de 10 bandas del usuario (antes solo se aplicaba su media como trim)
     float m_userEqDb_[10] = {};

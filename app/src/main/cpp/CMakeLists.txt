@@ -183,11 +183,16 @@ add_library(ivanna_omega SHARED
     # e IvannaFusionCore.cpp). Solo en este target — el stub del efecto es
     # orbe_globals_effect.cpp (ODR si se duplica).
     orbe_controls_bridge.cpp
+    # HOLOS: atomics g_holos_* del proceso app (mismo patrón que ORBE).
+    holos_controls_bridge.cpp
     # Ruta A reutiliza el renderer WFS real compartido con AudioFlinger.
     spatial/RouteAWfsEngine.cpp
     spatial/WfsRenderer.cpp
     # ORBE: núcleo STFT de campo cercano (instancia g_orbeRouteA del JNI).
     spatial/OrbeBinaural.cpp
+    # HOLOS: operador único de campo acústico (instancia g_holosRouteA del JNI).
+    spatial/HolosOperator.cpp
+    spatial/HolosVolterraKernel.cpp
 
     # Audio orchestrator (JNI para AudioEngine.kt) — FIX v1.5
     audio_orchestrator.cpp
@@ -336,6 +341,10 @@ add_library(omega_effect SHARED
     # target ivanna_omega). NO añadir a ivanna_omega: ODR violation.
     orbe_globals_effect.cpp
 
+    # HOLOS: stub de g_holos_* para el proceso audioserver (mismo patrón que
+    # ORBE; defaults off hasta ABI v10). NO añadir a ivanna_omega: ODR violation.
+    holos_globals_effect.cpp
+
     HrtfManager.cpp
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp
@@ -354,6 +363,8 @@ add_library(omega_effect SHARED
     neuromorphic/neuro_cochlear_manifold.cpp
     spatial/IntelligentUpmixer.cpp
     spatial/OrbeBinaural.cpp
+    spatial/HolosOperator.cpp
+    spatial/HolosVolterraKernel.cpp
     spatial/WfsRenderer.cpp
     spatial/HoaBinauralDecoder.cpp
     hexagon/ivanna_fastrpc_client.cpp

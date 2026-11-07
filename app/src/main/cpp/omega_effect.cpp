@@ -443,10 +443,16 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
                           s.orbe_head_tracking != 0u);
     }
     const bool orbeOn = fc->isOrbeEnabled();
-    // Spatial width: si HOA, WFS u ORBE están activos, el ensanchador M/S se
+    // HOLOS (ABI v10 pendiente): el snapshot v9 no tiene campos holos_*,
+    // así que en Ruta B HOLOS usa los defaults off del stub
+    // (holos_globals_effect.cpp) hasta el bump de ABI. La neutralización
+    // ya está cableada: cuando ABI v10 lo active, el width se neutraliza
+    // igual que con ORBE.
+    const bool holosOn = fc->isHolosEnabled();
+    // Spatial width: si HOA, WFS, ORBE u HOLOS están activos, el ensanchador M/S se
     // neutraliza para no alterar la física del frente de onda ni introducir
     // filtro de peine.
-    if (upmixOn || wfsOn || orbeOn) {
+    if (upmixOn || wfsOn || orbeOn || holosOn) {
         fc->setSpatialWidth(1.0f);
     } else if (std::isfinite(s.spatial_width) && s.spatial_width >= 0.f) {
         fc->setSpatialWidth(s.spatial_width);
@@ -465,7 +471,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     if (std::isfinite(s.intensity) && s.intensity > 0.f) {
         fc->setIntensity(s.intensity);
     }
-    const float widMult = (upmixOn || wfsOn || orbeOn) ? 1.0f : (std::isfinite(s.widener_mult) && s.widener_mult > 0.f ? s.widener_mult : 1.0f);
+    const float widMult = (upmixOn || wfsOn || orbeOn || holosOn) ? 1.0f : (std::isfinite(s.widener_mult) && s.widener_mult > 0.f ? s.widener_mult : 1.0f);
     fc->setRouteProfile(s.bass_boost_db, s.dialog_boost_db, widMult);
     fc->setEqGains(s.eq_gains, ivanna::OMEGA_CTRL_EQ_BANDS, s.listen_phon, s.ref_phon);
     // ── Cable SAF → Ruta B — vector latente q[7] → motor HRTF ──────────────
@@ -1207,6 +1213,7 @@ static int32_t omega_process(effect_handle_t self,
     // configuran antes del loop; dentro del loop solo corre process(L, R, chunk).
     if (ctx->fusionCore) ctx->fusionCore->setNpeShed(ctx->thermalSkipVolterra);   // NPE: mismo recorte térmico/CPU
     if (ctx->fusionCore) ctx->fusionCore->setOrbeThermalShed(ctx->thermalSkipVolterra);  // ORBE: idem (12 bandas -> off)
+    if (ctx->fusionCore) ctx->fusionCore->setHolosThermalShed(ctx->thermalSkipVolterra);  // HOLOS: idem (tier Bypass -> legacy bit-exacto)
     const bool wantVolterraPre = (ctx->pendingSnap.flags & ivanna::OMEGA_FLAG_VOLTERRA_ON) != 0;
     const bool goldenEarRequestedPre = ctx->fusionCore && ctx->fusionCore->goldenEarNeedsNonlinearSlot();
     const bool volterraTargetEnabled = wantVolterraPre &&
