@@ -6,8 +6,8 @@
 
 **Audio espacial Android · un solo motor, dos rutas, evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.363-c8a96b?style=flat-square)](version.properties)
-[![HOLOS](https://img.shields.io/badge/HOLOS-en%20desarrollo%20v2.5.364-9fb7d0?style=flat-square)](#5-holos--operador-único-de-campo-acústico-)
+[![Versión](https://img.shields.io/badge/versión-2.5.364-c8a96b?style=flat-square)](version.properties)
+[![HOLOS](https://img.shields.io/badge/HOLOS-publicado%20v2.5.364-9fb7d0?style=flat-square)](#5-holos--operador-único-de-campo-acústico-)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -22,8 +22,8 @@
 
 | Rama / versión | Contenido | Estado |
 |:---|:---|:---|
+| `main` · **v2.5.364** (655) | **HOLOS** — Operador Único de Campo Acústico: las 12 funciones fusionadas en un solo operador, con UI en CONTROL, ABI v10 y release publicado | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.364) — APK + zip Magisk + `SHA256SUMS.txt` |
 | `main` · **v2.5.363** (654) | **ORBE** — binaural esférico de campo cercano, con UI en CONTROL, ABI v9 y release publicado | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.363) — APK (210 MB) + zip Magisk (108 MB) + `SHA256SUMS.txt` |
-| `feature/holos-unified-field` · para **v2.5.364** | **HOLOS** — Operador Único de Campo Acústico: las 12 funciones fusionadas en un solo operador | 🚧 En desarrollo: núcleo + tests 38/38 + cableado completo; **sin publicar**, sin merge a `main` |
 
 > **Lee esto primero.** Todo lo nuevo (ORBE y HOLOS) nace **apagado por defecto** y no se enciende hasta que la **puerta auditiva** dé `GREEN` en el Moto G85: escucha ciega con niveles igualados. Nada en este README promete un efecto audible que no haya pasado esa puerta. Los números que verás son mediciones de host, no de teléfono: **la CPU y la latencia en dispositivo siguen sin medirse**.
 
@@ -130,9 +130,9 @@ entrada estéreo → STFT (hop 128 / FFT 512, escalable con SR)
 
 ---
 
-## 5. HOLOS · Operador Único de Campo Acústico 🚧
+## 5. HOLOS · Operador Único de Campo Acústico ✅
 
-**En desarrollo, para v2.5.364. No lanzado. No lo busques en `main`.**
+**Publicado en v2.5.364.** Implementado, testeado y cableado — pero **apagado por defecto hasta que la puerta auditiva dé GREEN** en el Moto G85. Sin GREEN, HOLOS es código que existe, no un efecto que suene.
 
 La tesis, en un párrafo: las doce funciones no son doce matemáticas distintas. Son **tres operadores** escritos doce veces con constantes distintas, en dominios distintos y en serie, peleándose entre ellos. El operador espacial es en todos los casos una evaluación de la **función de Green acústica** (HOA, WFS, RIR, HRTF, ORBE y crossfeed son la misma física). El operador no lineal es en todos los casos un **término de una serie de Volterra** (Chebyshev T2, `2x²`, Padé/tanh y la OHC coclear son el mismo monomio con o sin memoria). El operador de dinámica/EQ/ancho es en todos los casos un **campo de ganancia** por banda e instante. HOLOS evalúa los tres en un solo dominio (STFT hop 128 / FFT 512, 24 bandas ERB) a partir de un solo vector de estado por banda `s_b = (θ, r, coherencia, DRR, envolvente, nivel, transitorio)`, y cada módulo legacy es un caso degenerado suyo (ORBE *es* HOLOS con K = identidad y Γ = 1).
 
