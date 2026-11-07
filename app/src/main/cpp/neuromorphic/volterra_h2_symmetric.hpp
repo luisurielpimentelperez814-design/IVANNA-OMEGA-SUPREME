@@ -47,7 +47,8 @@ public:
      * @param kernel_length Longitud del kernel de memoria (taps)
      * @param channels Número de canales (1 o 2)
      */
-    VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels);
+    VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels,
+                       uint32_t sample_rate = 48000u);
     ~VolterraH2Symmetric();
 
     /**
@@ -122,6 +123,14 @@ public:
         m_enabled.store(enabled, std::memory_order_release);
     }
 
+    // Publica el sample rate real desde SET_CONFIG; el hilo DSP aplica el cambio
+    // al comienzo del siguiente bloque, sin carreras ni reconfiguración en control.
+    void requestSampleRate(uint32_t sampleRate) noexcept {
+        if (sampleRate >= 8000u && sampleRate <= 768000u) {
+            m_pending_sample_rate.store(sampleRate, std::memory_order_release);
+        }
+    }
+
     void setThermalBypass(bool thermalBypass) noexcept {
         m_thermal_bypass.store(thermalBypass, std::memory_order_relaxed);
     }
@@ -173,6 +182,7 @@ private:
     std::atomic<bool> m_kernels_ready{false};
     std::atomic<bool> m_effective_kernel{false};
     std::atomic<uint32_t> m_active_processes{0};
+    std::atomic<uint32_t> m_pending_sample_rate{0u};
     // Publica telemetría DSP sin leer el envelope mutable desde hilos de control.
     std::atomic<bool> m_dsp_silent{true};
     std::atomic<float> m_published_gain{0.0f};
