@@ -56,6 +56,7 @@ private:
     float makeupGain_ = 1.0f;   // lineal (solo informativo/compat)
     float makeupDb_ = 0.0f;     // techo de compensacion en dB
     float env_ = 0.0f;
+    float envSmooth_ = 0.0f;   // 2a etapa del detector: filtra el rizado a 2f de |x| (distorsion armonica)
     float runtimeAmount_ = 0.0f;   // valor suavizado (uso real en process)
     float runtimeTarget_ = 0.0f;   // objetivo fijado por setRuntimeAmount
     uint32_t lastSr_ = 0;             // sample rate con el que se armo el sidechain

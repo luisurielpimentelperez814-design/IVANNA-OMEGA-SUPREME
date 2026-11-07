@@ -168,6 +168,10 @@ TEST(MeasureChain, SteadyStateCompressorDistortionIsBounded) {
         const auto r = runTone(defaultParams(), f0, amp, 3.0, 4);
         const auto t = thdn(r.out.data() + (int)(2 * kFs), (int)kFs, kFs, f0);
         EXPECT_LT(t.thdnDb, -55.0) << f0 << " Hz";
+        // Detector de dos etapas (v2.5.360): suelo medido por frecuencia, con margen de ~3 dB.
+        // Antes de la 2a etapa: 150 Hz -61 dB, 1 kHz -76 dB, 5 kHz -89 dB.
+        const double floorDb = f0 <= 150.0 ? -73.0 : f0 <= 500.0 ? -93.0 : f0 <= 1000.0 ? -105.0 : -129.0;
+        EXPECT_LT(t.thdnDb, floorDb) << f0 << " Hz";
     }
 }
 

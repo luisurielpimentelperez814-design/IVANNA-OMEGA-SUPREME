@@ -154,6 +154,13 @@ void Compressor::process(float* __restrict__ left,
         makeupDb_ + grAdditional * 0.10f;
 
     float env = env_;
+    float envS = envSmooth_;
+    // Detector de dos etapas. La envolvente de |x| (pico rectificado) tiene rizado a 2f; con un ataque
+    // de 5 ms ese rizado modulaba la ganancia dentro del propio ciclo y generaba armonicos
+    // (medido: THD+N -61 dB a 150 Hz con 1-3 dB de reduccion, mejorando ~6 dB/octava). Un segundo
+    // one-pole de 3 ms (corte ~53 Hz) atenua el rizado a 300 Hz unos 15 dB sin mover el valor medio
+    // (la reduccion estatica es la misma) y solo suma 3 ms al ataque efectivo.
+    const float smoothCoef = std::exp(-1.0f / (sr_ * 0.003f));
 
     for (int i = 0; i < frames; ++i) {
 
@@ -179,9 +186,10 @@ void Compressor::process(float* __restrict__ left,
             coef * env +
             (1.0f - coef) * peak;
 
+        envS = smoothCoef * envS + (1.0f - smoothCoef) * env;
 
         float envDb =
-            k20DivLn10 * std::log(env);
+            k20DivLn10 * std::log(envS);
 
         float gainDb = 0.0f;
 
@@ -229,12 +237,14 @@ void Compressor::process(float* __restrict__ left,
     }
 
     env_ = env;
+    envSmooth_ = envS;
 }
 
 
 void Compressor::reset() {
 
     env_ = 0.0f;
+    envSmooth_ = 0.0f;
 
     scHpfL_.reset();
     scHpfR_.reset();

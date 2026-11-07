@@ -1,3 +1,8 @@
+# v2.5.360 (651) - 2026-11-07
+
+- **Compresor (Ruta A y Ruta B, C++):** el detector era un seguidor de picos de |x| con ataque de 5 ms; su rizado a 2f modulaba la ganancia dentro del propio ciclo y generaba armonicos. Medido con el arnes de Fase 1 (host x86, senoidal a -3 dBFS con 1-3 dB de reduccion): THD+N 150 Hz -61 -> -76 dB, 200 Hz -63 -> -81 dB, 500 Hz -71 -> -96 dB, 1 kHz -76 -> -108 dB, 5 kHz -90 -> -132 dB. La reduccion estatica de ganancia es identica (-1,92 dB a 1 kHz) y la liberacion no cambia; el ataque efectivo suma 3 ms (segundo one-pole de 3 ms sobre la envolvente).
+- Cobertura: `test_measure_baseline` fija suelos de THD+N por frecuencia; 681/681 pruebas nativas de host pasan. No hay medicion en el Moto G85: el efecto en escucha real queda por comprobar.
+
 # v2.5.359 (650) - 2026-11-06
 
 - **Volterra H2 — puerta de carga de kernels en el motor (C++):** nuevo `neuromorphic/volterra_kernel_package.hpp` valida el MISMO contenedor IVK1 que produce `tools/volterra_h2/kernel_loader.py` (magic, versión, CRC32 de `device_id`+coeficientes, tamaño exacto, fs, K, `device_id`, finitud, amplitud, l1(h1)≤1 que acota |H1|, presupuesto de H2). Devuelve un código de estado por causa (`VolterraLoadStatus`) en lugar del rechazo silencioso de `updateKernels()`.

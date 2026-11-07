@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.359
-versionCode=650
+version=v2.5.360
+versionCode=651
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.359: puerta de carga C++ de kernels Volterra IVK1 con rechazo por causa y bypass seguro; sin kernel medido, el motor sigue en identidad.
+description=v2.5.360: compresor de Ruta A con detector de dos etapas: THD+N -61→-76 dB a 150 Hz y -76→-108 dB a 1 kHz con la misma reduccion estatica; 681/681 tests.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
