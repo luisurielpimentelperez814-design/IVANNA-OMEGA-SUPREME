@@ -1197,6 +1197,7 @@ ivanna_add_test(test_ime_style_blender)
 ivanna_add_test(test_scene_bus)
 ivanna_add_test(test_late_reverb_suppressor)
 ivanna_add_test(test_woodworth_itd)
+ivanna_add_test(test_headphone_crossfeed)
 ivanna_add_test(test_er_tap_time)
 ivanna_add_test(test_cheb_shaper)
 

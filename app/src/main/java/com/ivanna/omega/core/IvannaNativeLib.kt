@@ -354,6 +354,8 @@ object IvannaNativeLib {
     // ═══ Impacto predictivo por bandas / PunchEngine (v2.5.49) ═════════════════════════════════════
     /** amount 0..1 (0 = apagado: bypass exacto y latencia 0). Ruta A en proceso + Ruta B vía daemon (SET_PUNCH). */
     external fun nativeSetPunch(amount: Float)
+    /** Crossfeed de graves con ITD para audifonos/DAC (Ruta A). 0 = apagado (bypass exacto). */
+    external fun nativeSetCrossfeed(strength: Float)
     /** [0..2] ganancia dB bajo/medio/alto · [3] actividad de ataque 0..1 · [4] guarda activa 0/1 · [5] latencia ms. */
     external fun nativeGetPunchTelemetry(): FloatArray
     external fun nativeSetSpscRingFactor(factor: Float)

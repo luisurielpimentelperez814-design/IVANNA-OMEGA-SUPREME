@@ -41,6 +41,7 @@
 #include "../include/Compressor.h"
 #include "../include/HarmonicExciter.h"
 #include "../include/StereoWidener.h"
+#include "../dsp/HeadphoneCrossfeed.hpp"
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
@@ -125,6 +126,8 @@ static ParametricEQ   g_eq;
 static Compressor     g_comp;
 static HarmonicExciter g_exciter;
 static StereoWidener  g_widener;
+// Crossfeed de graves con ITD (audifonos/DAC), Ruta A. strength 0 = apagado = bypass bit-exacto (default).
+static ivanna::HeadphoneCrossfeed g_crossfeed;
 static GainStage      g_gain;
 // Anti-ruido digital: DC-block + sanitizer NaN/Inf en el borde de salida.
 static ivanna::DcBlocker g_dcBlockL, g_dcBlockR;
@@ -902,6 +905,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     // si nativeInit se re-llama por cambio de SR.
     g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
+    g_crossfeed.setSampleRate((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
     // El ADE se inicia al final, después de que g_initialized confirme el grafo DSP.
     // El consumidor de snapshots es observabilidad, no el motor. Debe vivir
@@ -1503,6 +1507,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
 
     g_exciter.process(g_ats.chL, g_ats.chR, n);
     g_widener.process(g_ats.chL, g_ats.chR, n);
+    g_crossfeed.process(g_ats.chL, g_ats.chR, n);   // despues del widener y antes de la ganancia de salida/limiter
     g_gain.processOutput(g_ats.chL, g_ats.chR, n);
     // FIX distorsión: g_safety_limiter se aplicaba aquí (antes de PDEngine)
     // Y OTRA VEZ en FASE 4B (después de PDEngine) — dos limiters en serie.
@@ -2141,6 +2146,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     // (ataque 0.19ms = distorsion armonica; release 6.25ms = bombeo).
     g_safety_limiter.setParams(0.891251f, 0.98855f);  // umbral -1 dBFS (antes -4: limitaba siempre)
     g_safety_limiter.setSampleRate((float)sr);
+    g_crossfeed.setSampleRate((float)sr);
     // Eje Supremo: pre-compute biquad BPF + Heun coefficients for the cochlear engine.
     // Called here (UI thread, non-RT) — process() will never allocate.
     g_cochlearEngine.prepare(static_cast<float>(sr), 512);
@@ -2672,6 +2678,13 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetPunch(JNIEnv*, jobject, jflo
     const float a = std::isfinite(amount) ? std::clamp(amount, 0.0f, 1.0f) : 0.0f;
     g_punch.setAmount(a);                 // Ruta A (atómico: seguro desde el hilo de UI)
     ivanna::omegaSendPunch(a);            // Ruta B (audioserver, vía daemon)
+}
+
+// strength 0..1 (0 = apagado, bypass exacto). Mezcla los graves hacia el otro oido con ITD de 0,26 ms
+// (altavoces a +-30 grados): reduce la separacion de graves de audifonos/DAC sin tocar centro ni agudos.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCrossfeed(JNIEnv*, jobject, jfloat strength) {
+    g_crossfeed.setStrength(std::isfinite(strength) ? std::clamp(strength, 0.0f, 1.0f) : 0.0f);
 }
 
 // [0..2] ganancia dB por banda (bajo/medio/alto), [3] actividad de ataque 0..1, [4] guarda activa 0/1, [5] latencia ms.
