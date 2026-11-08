@@ -154,10 +154,24 @@ object ThermalGovernor {
                 IvannaNativeLib.nativeSetSpatialWidth(1.0f - spatialCut)
                 lastSpatialCut = spatialCut
             }
+            // HOLOS / ORBE / NPE de la Ruta A: antes ningún componente les pasaba el nivel
+            // térmico (solo la Ruta B lo hacía en omega_effect). Mismo mapa que allí:
+            // LIMITED → Warm, PROTECTED → Limited; ORBE y NPE se apagan desde LIMITED.
+            val holosTier = when (tier) {
+                ThermalTier.FULL, ThermalTier.REDUCED -> 0
+                ThermalTier.LIMITED -> 1
+                ThermalTier.PROTECTED -> 2
+            }
+            if (holosTier != lastHolosTier) {
+                IvannaNativeLib.nativeSetHolosThermalTier(holosTier, holosTier >= 1)
+                lastHolosTier = holosTier
+                Log.i(TAG, "SAFMUS/DSP: HOLOS tier=$holosTier (tier=${tier.label})")
+            }
         }.onFailure { Log.w(TAG, "applyThermalPolicy: ${it.message}") }
     }
 
     @Volatile private var lastExciterRed = 0f
     @Volatile private var lastSpatialCut = 0f
     @Volatile private var lastCompCut = 0f
+    @Volatile private var lastHolosTier = 0
 }

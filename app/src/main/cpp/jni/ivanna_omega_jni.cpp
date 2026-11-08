@@ -141,6 +141,13 @@ static ivanna::OrbeBinaural g_orbeRouteA;
 // cuando HOLOS está activo ORBE no corre. La Ruta B usa su propia
 // instancia (IvannaFusionEngine::m_holos) en el proceso audioserver.
 static ivanna::HolosOperator g_holosRouteA;
+// Recorte térmico de la Ruta A (paridad con omega_effect.cpp, Ruta B). Lo escribe el
+// ThermalGovernor Kotlin por JNI; el hilo de audio lo lee una vez por bloque.
+//   g_holosTierA: HolosThermalTier 0 Normal / 1 Warm / 2 Limited / 3 Bypass.
+//   g_spatialShedA: ORBE y NPE se apagan con fundido propio (mismo criterio que Ruta B:
+//   tier >= LIMITED o sobrecarga de CPU).
+static std::atomic<int>  g_holosTierA{0};
+static std::atomic<bool> g_spatialShedA{false};
 static GainStage      g_gain;
 // Anti-ruido digital: DC-block + sanitizer NaN/Inf en el borde de salida.
 static ivanna::DcBlocker g_dcBlockL, g_dcBlockR;
@@ -313,7 +320,8 @@ static std::atomic<float> g_npeAHarm{0.2f}, g_npeALat{0.2f}, g_npeAOhc{0.3f}, g_
 static std::atomic<float> g_npeAPreparedSr{0.0f};   // solo se (re)prepara en nativeInit, bajo g_dspProcessMutex
 
 static void routeAApplyNpe(float* L, float* R, int n) noexcept {
-    g_npeA.setParams(g_npeAOn.load(std::memory_order_relaxed),
+    g_npeA.setParams(g_npeAOn.load(std::memory_order_relaxed) &&
+                         !g_spatialShedA.load(std::memory_order_relaxed),
                      g_npeAHarm.load(std::memory_order_relaxed),
                      g_npeALat.load(std::memory_order_relaxed),
                      g_npeAOhc.load(std::memory_order_relaxed),
@@ -1578,6 +1586,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
             hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
+            g_holosRouteA.setThermalTier(static_cast<ivanna::HolosThermalTier>(
+                std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
             g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
         } else {
@@ -1589,6 +1599,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
             op.bandCount = 24;
+            g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
             g_orbeRouteA.setParams(op);
             g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
         }
@@ -2441,6 +2452,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
             hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
+            g_holosRouteA.setThermalTier(static_cast<ivanna::HolosThermalTier>(
+                std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
             g_holosRouteA.process(oL, oR, n);
         } else {
@@ -2452,6 +2465,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
             op.bandCount = 24;
+            g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
             g_orbeRouteA.setParams(op);
             g_orbeRouteA.process(oL, oR, n);
         }
@@ -2876,6 +2890,16 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosEq(JNIEnv*, jobject,
     if (std::isfinite(presence)) g_holos_eq_presence.store(std::clamp(presence, -12.0f, 12.0f), std::memory_order_relaxed);
     if (std::isfinite(tiltDb)) g_holos_eq_tilt_db.store(std::clamp(tiltDb, -12.0f, 12.0f), std::memory_order_relaxed);
     if (std::isfinite(freq)) g_holos_eq_freq.store(std::clamp(freq, 20.0f, 20000.0f), std::memory_order_relaxed);
+}
+
+// Recorte térmico de la Ruta A: lo publica el ThermalGovernor Kotlin en cada cambio de nivel.
+// holosTier 0 Normal / 1 Warm (12 bandas, H3 off, difuso x0.5) / 2 Limited (difuso off) /
+// 3 Bypass (legacy bit-exacto). spatialShed apaga ORBE y NPE (mismo criterio que la Ruta B).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosThermalTier(JNIEnv*, jobject,
+        jint holosTier, jboolean spatialShed) {
+    g_holosTierA.store(std::clamp(static_cast<int>(holosTier), 0, 3), std::memory_order_relaxed);
+    g_spatialShedA.store(spatialShed == JNI_TRUE, std::memory_order_relaxed);
 }
 
 // [0..2] ganancia dB por banda (bajo/medio/alto), [3] actividad de ataque 0..1, [4] guarda activa 0/1, [5] latencia ms.

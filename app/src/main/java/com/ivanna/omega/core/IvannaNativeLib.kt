@@ -387,6 +387,10 @@ object IvannaNativeLib {
         low: Float, mid: Float, high: Float, presence: Float,
         tiltDb: Float, freq: Float
     )
+    /** Recorte térmico de la Ruta A (paridad con la Ruta B): [holosTier] 0 Normal, 1 Warm
+     *  (12 bandas, H3 off, difuso ×0.5), 2 Limited (difuso off), 3 Bypass (legacy bit-exacto);
+     *  [spatialShed] apaga ORBE y NPE. Lo publica el ThermalGovernor en cada cambio de nivel. */
+    external fun nativeSetHolosThermalTier(holosTier: Int, spatialShed: Boolean)
     /** [0..2] ganancia dB bajo/medio/alto · [3] actividad de ataque 0..1 · [4] guarda activa 0/1 · [5] latencia ms. */
     external fun nativeGetPunchTelemetry(): FloatArray
     external fun nativeSetSpscRingFactor(factor: Float)
