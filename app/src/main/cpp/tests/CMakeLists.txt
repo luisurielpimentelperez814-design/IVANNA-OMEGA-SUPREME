@@ -1024,6 +1024,25 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_homogeneous_fusion)
 
+# Pilares pendientes (v2.5.368): Volterra diagonal K=4096, DoP v1.1,
+# EQ de elevación por pinna (Blauert), estimador EMF Thiele-Small.
+add_executable(test_pilares_pendientes
+  test_pilares_pendientes.cpp
+)
+target_link_libraries(test_pilares_pendientes PRIVATE GTest::gtest_main)
+target_include_directories(test_pilares_pendientes PRIVATE
+  ..
+  ../include
+  ../neuromorphic
+  host_stubs
+)
+target_compile_options(test_pilares_pendientes PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_pilares_pendientes PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_pilares_pendientes PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_pilares_pendientes)
+
 # ── 5 Ejes de Supremacía Neuroacústica (Warped Lattice, CVNN+DDSP, SNN+NMF HOA, Pinna INR, SHM+Farrow5) ──
 add_executable(test_supreme_five_axes
   test_supreme_five_axes.cpp
