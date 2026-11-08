@@ -169,7 +169,7 @@ $$Y_b(t) = G_b(s_b) \;\circledast\; \big[\, K_b(s_b) \cdot X_b(t) \,\big] \cdot 
 | Seguimiento de cabeza | on/off | on si hay pose |
 | 12 bandas (ahorro CPU) | on/off | off (24 bandas) |
 
-13 parámetros, todos off por defecto (`holos_amount = 0`) hasta GREEN. El EQ estático de Γ va plano en v1, sin controles en UI (los 6 atomics `g_holos_eq_*` existen en nativo, sin cablear). Entra en `FusionCore` tras el blend WFS, antes del M/S; `amount = 0` es la cadena legacy bit-exacta, con crossfade de 15 ms y fail-closed por término. Shed térmico en 4 tiers (24→12 bandas → H3 off → difuso sin convolución → HOLOS off). Cero alloc en el callback.
+13 parámetros, todos off por defecto (`holos_amount = 0`) hasta GREEN. El EQ estático de Γ (graves, medios, agudos, presencia, tilt dB y frecuencia del tilt, ±12 dB) tiene 6 controles en CONTROL, persiste en `ParameterStore`, se restaura al abrir y llega a las dos rutas (JNI `nativeSetHolosEq` en Ruta A; `holosEq*` en `SET_PERCEPTUAL_STATE` → snapshot ABI v10 en Ruta B); plano por defecto = no-op. Entra en `FusionCore` tras el blend WFS, antes del M/S; `amount = 0` es la cadena legacy bit-exacta, con crossfade de 15 ms y fail-closed por término. Shed térmico en 4 tiers (24→12 bandas → H3 off → difuso sin convolución → HOLOS off). Cero alloc en el callback.
 
 **Mediciones en host (48 kHz) — con las banderas rojas incluidas:**
 
@@ -195,7 +195,7 @@ Las dos banderas rojas son honestas y están en el informe de diseño: **los def
 | Requisitos | Instalar el APK | Root + Magisk + el zip **de la misma versión** (un snapshot v9/v10 viejo se rechaza y deja la Ruta B en defaults) |
 | Parámetros | Atomics nativos directos (`g_orbe_*`, `g_holos_*`) | Snapshot ABI: app → `SET_PERCEPTUAL_STATE` → daemon → efecto |
 | Snapshot ABI | — | **v10 · 616 B** ([`OmegaDspSnapshot.h:12`](app/src/main/cpp/daemon/core/OmegaDspSnapshot.h), fijado por test); v9 era 536 B |
-| Shed térmico | Manual (pendiente de cablear) | Automático por tiers en el daemon |
+| Shed térmico | `ThermalGovernor` (Kotlin) → `nativeSetHolosThermalTier`: HOLOS por tiers (LIMITED→Warm, PROTECTED→Limited) y ORBE/NPE apagados desde LIMITED; sin medir en dispositivo | Automático por tiers en el daemon |
 | Para probar ORBE/HOLOS | Basta el APK | Solo si quieres system-wide |
 
 **⚠️ Firma del APK:** sin el secreto `ANDROID_KEYSTORE_B64` en la CI, el APK se firma con llave efímera y **no puede actualizar una instalación previa**: hay que desinstalar la versión anterior antes de instalar la nueva. Los hashes de cada release están en `SHA256SUMS.txt`.
