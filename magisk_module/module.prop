@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.366
-versionCode=657
+version=v2.5.367
+versionCode=658
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.366: Ruta AUX Genezi / auto (DAC USB-C + Aux 3.5 mm): presets GeneziRoom/CarCabin (XTC + campo AUX coherente) en Rutas A y B, puerta Volterra solo kernel medido GENEZY01 K=64; veredicto honesto de los 5 pilares en docs/AUX_GENEZI_ROUTE.md. v2.5.364: HOLOS (Operador Unico de Campo Acustico) en CONTROL con 13 controles persistentes (cantidad, distancia, apertura, proximidad, difuso, armonicos, calidez, dinamica, ancho, divergencia, sala, seguimiento de cabeza, 12 bandas); cableado a Ruta A y Ruta B (snapshot ABI v10); apagado por defecto.
+description=v2.5.367: Fusión Homogénea Φ: un solo coordinador (bucle neuro + ruta AUX + puerta Volterra) con un solo update() por bloque; Z_emf identidad; doc de los 4 paradigmas con investigación real. v2.5.366: Ruta AUX Genezi / auto (DAC USB-C + Aux 3.5 mm): presets GeneziRoom/CarCabin (XTC + campo AUX coherente) en Rutas A y B, puerta Volterra solo kernel medido GENEZY01 K=64; veredicto honesto de los 5 pilares en docs/AUX_GENEZI_ROUTE.md. v2.5.364: HOLOS (Operador Unico de Campo Acustico) en CONTROL con 13 controles persistentes (cantidad, distancia, apertura, proximidad, difuso, armonicos, calidez, dinamica, ancho, divergencia, sala, seguimiento de cabeza, 12 bandas); cableado a Ruta A y Ruta B (snapshot ABI v10); apagado por defecto.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json

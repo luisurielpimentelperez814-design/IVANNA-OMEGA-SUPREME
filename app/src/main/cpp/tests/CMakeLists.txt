@@ -1005,6 +1005,25 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_aux_genezi_route)
 
+# Fusión Homogénea Φ (v2.5.367): un solo estado (neuro + ruta AUX +
+# puerta Volterra), Z_emf siempre identidad, fail-closed.
+add_executable(test_homogeneous_fusion
+  test_homogeneous_fusion.cpp
+)
+target_link_libraries(test_homogeneous_fusion PRIVATE GTest::gtest_main)
+target_include_directories(test_homogeneous_fusion PRIVATE
+  ..
+  ../include
+  ../neuromorphic
+  host_stubs
+)
+target_compile_options(test_homogeneous_fusion PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_homogeneous_fusion PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_homogeneous_fusion PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_homogeneous_fusion)
+
 # ── 5 Ejes de Supremacía Neuroacústica (Warped Lattice, CVNN+DDSP, SNN+NMF HOA, Pinna INR, SHM+Farrow5) ──
 add_executable(test_supreme_five_axes
   test_supreme_five_axes.cpp
