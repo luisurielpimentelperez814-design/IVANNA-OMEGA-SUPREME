@@ -133,6 +133,13 @@ fun IvannaControlPanel(
     initialHolosRoomRt60: Float = 0.34f,
     initialHolosHeadTracking: Boolean = true,
     initialHolosBandCount: Int = 24,
+    // EQ estático de Γ (dB -12..12, frecuencia del tilt en Hz). Plano = no-op.
+    initialHolosEqLow: Float = 0f,
+    initialHolosEqMid: Float = 0f,
+    initialHolosEqHigh: Float = 0f,
+    initialHolosEqPresence: Float = 0f,
+    initialHolosEqTiltDb: Float = 0f,
+    initialHolosEqFreq: Float = 1000f,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -167,6 +174,8 @@ fun IvannaControlPanel(
     // HOLOS: (amount, distanceM, spread, proximityDb, diffuse, harmonics,
     // warmth, dynamics, width, gamma, roomRt60, headTracking, bandCount)
     onHolosChange: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Boolean, Int) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
+    // HOLOS EQ de Γ: (low, mid, high, presence, tiltDb, freq)
+    onHolosEqChange: (Float, Float, Float, Float, Float, Float) -> Unit = { _, _, _, _, _, _ -> },
     onTemporalFieldChange: (Boolean, Float, Boolean) -> Unit = { _, _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
@@ -275,6 +284,12 @@ fun IvannaControlPanel(
     var holosRoomRt60 by remember { mutableFloatStateOf(initialHolosRoomRt60) }
     var holosHeadTracking by remember { mutableStateOf(initialHolosHeadTracking) }
     var holosBandCount by remember { mutableIntStateOf(initialHolosBandCount) }
+    var holosEqLow by remember { mutableFloatStateOf(initialHolosEqLow) }
+    var holosEqMid by remember { mutableFloatStateOf(initialHolosEqMid) }
+    var holosEqHigh by remember { mutableFloatStateOf(initialHolosEqHigh) }
+    var holosEqPresence by remember { mutableFloatStateOf(initialHolosEqPresence) }
+    var holosEqTiltDb by remember { mutableFloatStateOf(initialHolosEqTiltDb) }
+    var holosEqFreq by remember { mutableFloatStateOf(initialHolosEqFreq) }
     var punchTelemetry by remember { mutableStateOf(FloatArray(0)) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -1297,8 +1312,38 @@ fun IvannaControlPanel(
                     onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
                 })
             }
+            AuroraSlider("EQ Γ · GRAVES", holosEqLow, -12f..12f, unit = "dB",
+                displayValue = { "${"%+.1f".format(it)} dB" }) {
+                holosEqLow = it
+                onHolosEqChange(it, holosEqMid, holosEqHigh, holosEqPresence, holosEqTiltDb, holosEqFreq)
+            }
+            AuroraSlider("EQ Γ · MEDIOS", holosEqMid, -12f..12f, unit = "dB",
+                displayValue = { "${"%+.1f".format(it)} dB" }) {
+                holosEqMid = it
+                onHolosEqChange(holosEqLow, it, holosEqHigh, holosEqPresence, holosEqTiltDb, holosEqFreq)
+            }
+            AuroraSlider("EQ Γ · AGUDOS", holosEqHigh, -12f..12f, unit = "dB",
+                displayValue = { "${"%+.1f".format(it)} dB" }) {
+                holosEqHigh = it
+                onHolosEqChange(holosEqLow, holosEqMid, it, holosEqPresence, holosEqTiltDb, holosEqFreq)
+            }
+            AuroraSlider("EQ Γ · PRESENCIA", holosEqPresence, -12f..12f, unit = "dB",
+                displayValue = { "${"%+.1f".format(it)} dB" }) {
+                holosEqPresence = it
+                onHolosEqChange(holosEqLow, holosEqMid, holosEqHigh, it, holosEqTiltDb, holosEqFreq)
+            }
+            AuroraSlider("EQ Γ · INCLINACIÓN (TILT)", holosEqTiltDb, -12f..12f, unit = "dB",
+                displayValue = { "${"%+.1f".format(it)} dB" }) {
+                holosEqTiltDb = it
+                onHolosEqChange(holosEqLow, holosEqMid, holosEqHigh, holosEqPresence, it, holosEqFreq)
+            }
+            AuroraSlider("EQ Γ · FRECUENCIA DEL TILT", holosEqFreq, 200f..8000f, unit = "Hz",
+                displayValue = { "${Math.round(it)} Hz" }) {
+                holosEqFreq = it
+                onHolosEqChange(holosEqLow, holosEqMid, holosEqHigh, holosEqPresence, holosEqTiltDb, it)
+            }
             Text(
-                "Sin puerta auditiva (GREEN) no se enciende por defecto. En Ruta B el governor térmico baja 24→12 bandas, apaga el difuso y puede apagar HOLOS; en Ruta A el shed es manual. El EQ estático de Γ va plano en v1 (sin controles).",
+                "Sin puerta auditiva (GREEN) no se enciende por defecto. El governor térmico baja 24→12 bandas, apaga el difuso y puede apagar HOLOS en las dos rutas (Ruta A por ThermalGovernor, Ruta B en el daemon). El EQ de Γ es estático y plano por defecto.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )

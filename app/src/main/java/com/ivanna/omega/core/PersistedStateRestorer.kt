@@ -121,7 +121,7 @@ object PersistedStateRestorer {
             // HOLOS — Operador Único de Campo Acústico (v2.5.364): restaura los 13
             // parámetros (amount 0 = apagado por defecto) en la Ruta A por JNI y en
             // la Ruta B por SET_PERCEPTUAL_STATE al daemon (snapshot ABI v10).
-            // El EQ estático de Γ va plano (no-op) hasta que la UI lo exponga.
+            // El EQ estático de Γ se restaura de ParameterStore (plano = no-op).
             runCatching {
                 IvannaNativeLib.nativeSetHolosParams(
                     paramStore.getHolosAmount(), paramStore.getHolosDistanceM(),
@@ -132,11 +132,15 @@ object PersistedStateRestorer {
                     paramStore.getHolosRoomRt60(), paramStore.isHolosHeadTrackingEnabled(),
                     paramStore.getHolosBandCount()
                 )
-                IvannaNativeLib.nativeSetHolosEq(0f, 0f, 0f, 0f, 0f, 1000f)
+                IvannaNativeLib.nativeSetHolosEq(
+                    paramStore.getHolosEqLow(), paramStore.getHolosEqMid(),
+                    paramStore.getHolosEqHigh(), paramStore.getHolosEqPresence(),
+                    paramStore.getHolosEqTiltDb(), paramStore.getHolosEqFreq()
+                )
             }
             runCatching {
                 com.ivanna.omega.magisk.MagiskBridge.sendCommand(
-                    """{"action":"SET_PERCEPTUAL_STATE","holosAmount":${paramStore.getHolosAmount()},"holosDistanceM":${paramStore.getHolosDistanceM()},"holosSpread":${paramStore.getHolosSpread()},"holosProximityDb":${paramStore.getHolosProximityDb()},"holosDiffuse":${paramStore.getHolosDiffuse()},"holosHarmonics":${paramStore.getHolosHarmonics()},"holosWarmth":${paramStore.getHolosWarmth()},"holosDynamics":${paramStore.getHolosDynamics()},"holosWidth":${paramStore.getHolosWidth()},"holosGamma":${paramStore.getHolosGamma()},"holosRoomRt60":${paramStore.getHolosRoomRt60()},"holosHeadTracking":${if (paramStore.isHolosHeadTrackingEnabled()) 1.0f else 0.0f},"holosBandCount":${paramStore.getHolosBandCount()},"holosEqLow":0.0,"holosEqMid":0.0,"holosEqHigh":0.0,"holosEqPresence":0.0,"holosEqTiltDb":0.0,"holosEqFreq":1000.0}"""
+                    """{"action":"SET_PERCEPTUAL_STATE","holosAmount":${paramStore.getHolosAmount()},"holosDistanceM":${paramStore.getHolosDistanceM()},"holosSpread":${paramStore.getHolosSpread()},"holosProximityDb":${paramStore.getHolosProximityDb()},"holosDiffuse":${paramStore.getHolosDiffuse()},"holosHarmonics":${paramStore.getHolosHarmonics()},"holosWarmth":${paramStore.getHolosWarmth()},"holosDynamics":${paramStore.getHolosDynamics()},"holosWidth":${paramStore.getHolosWidth()},"holosGamma":${paramStore.getHolosGamma()},"holosRoomRt60":${paramStore.getHolosRoomRt60()},"holosHeadTracking":${if (paramStore.isHolosHeadTrackingEnabled()) 1.0f else 0.0f},"holosBandCount":${paramStore.getHolosBandCount()},"holosEqLow":${paramStore.getHolosEqLow()},"holosEqMid":${paramStore.getHolosEqMid()},"holosEqHigh":${paramStore.getHolosEqHigh()},"holosEqPresence":${paramStore.getHolosEqPresence()},"holosEqTiltDb":${paramStore.getHolosEqTiltDb()},"holosEqFreq":${paramStore.getHolosEqFreq()}}"""
                 )
             }
             // 4D temporal: restaura estado y profundidad (ruta A + daemon/ruta B).

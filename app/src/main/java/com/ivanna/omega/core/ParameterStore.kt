@@ -148,6 +148,12 @@ class ParameterStore(context: Context) {
         private const val KEY_HOLOS_ROOM_RT60    = "holos_room_rt60"
         private const val KEY_HOLOS_HEAD_TRACKING = "holos_head_tracking"
         private const val KEY_HOLOS_BAND_COUNT   = "holos_band_count"
+        private const val KEY_HOLOS_EQ_LOW       = "holos_eq_low"
+        private const val KEY_HOLOS_EQ_MID       = "holos_eq_mid"
+        private const val KEY_HOLOS_EQ_HIGH      = "holos_eq_high"
+        private const val KEY_HOLOS_EQ_PRESENCE  = "holos_eq_presence"
+        private const val KEY_HOLOS_EQ_TILT_DB   = "holos_eq_tilt_db"
+        private const val KEY_HOLOS_EQ_FREQ      = "holos_eq_freq"
         private const val KEY_4D_ENABLED  = "fourd_enabled"
         private const val KEY_4D_HAPTICS  = "fourd_haptics"
         private const val KEY_4D_HSCALE   = "fourd_haptic_scale"
@@ -471,6 +477,23 @@ class ParameterStore(context: Context) {
     fun getHolosRoomRt60(): Float = safeGetFloat(KEY_HOLOS_ROOM_RT60, 0.34f)
     fun isHolosHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_HOLOS_HEAD_TRACKING, true)
     fun getHolosBandCount(): Int = safeGetInt(KEY_HOLOS_BAND_COUNT, 24).let { if (it == 12) 12 else 24 }
+    // EQ estático de Γ (dB -12..12; frecuencia del tilt 20..20000 Hz). Plano = no-op.
+    fun getHolosEqLow(): Float = safeGetFloat(KEY_HOLOS_EQ_LOW, 0f)
+    fun getHolosEqMid(): Float = safeGetFloat(KEY_HOLOS_EQ_MID, 0f)
+    fun getHolosEqHigh(): Float = safeGetFloat(KEY_HOLOS_EQ_HIGH, 0f)
+    fun getHolosEqPresence(): Float = safeGetFloat(KEY_HOLOS_EQ_PRESENCE, 0f)
+    fun getHolosEqTiltDb(): Float = safeGetFloat(KEY_HOLOS_EQ_TILT_DB, 0f)
+    fun getHolosEqFreq(): Float = safeGetFloat(KEY_HOLOS_EQ_FREQ, 1000f)
+    fun setHolosEq(
+        low: Float, mid: Float, high: Float, presence: Float, tiltDb: Float, freq: Float
+    ) = prefs.edit()
+        .putFloat(KEY_HOLOS_EQ_LOW, if (low.isFinite()) low.coerceIn(-12f, 12f) else 0f)
+        .putFloat(KEY_HOLOS_EQ_MID, if (mid.isFinite()) mid.coerceIn(-12f, 12f) else 0f)
+        .putFloat(KEY_HOLOS_EQ_HIGH, if (high.isFinite()) high.coerceIn(-12f, 12f) else 0f)
+        .putFloat(KEY_HOLOS_EQ_PRESENCE, if (presence.isFinite()) presence.coerceIn(-12f, 12f) else 0f)
+        .putFloat(KEY_HOLOS_EQ_TILT_DB, if (tiltDb.isFinite()) tiltDb.coerceIn(-12f, 12f) else 0f)
+        .putFloat(KEY_HOLOS_EQ_FREQ, if (freq.isFinite()) freq.coerceIn(20f, 20000f) else 1000f)
+        .apply()
     fun setHolosParams(
         amount: Float, distanceM: Float, spread: Float,
         proximityDb: Float, diffuse: Float, harmonics: Float,

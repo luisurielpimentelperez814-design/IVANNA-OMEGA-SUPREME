@@ -1389,6 +1389,12 @@ fun DashboardScreen(
             initialHolosRoomRt60 = paramStore.getHolosRoomRt60(),
             initialHolosHeadTracking = paramStore.isHolosHeadTrackingEnabled(),
             initialHolosBandCount = paramStore.getHolosBandCount(),
+            initialHolosEqLow = paramStore.getHolosEqLow(),
+            initialHolosEqMid = paramStore.getHolosEqMid(),
+            initialHolosEqHigh = paramStore.getHolosEqHigh(),
+            initialHolosEqPresence = paramStore.getHolosEqPresence(),
+            initialHolosEqTiltDb = paramStore.getHolosEqTiltDb(),
+            initialHolosEqFreq = paramStore.getHolosEqFreq(),
             initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
             initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
             initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
@@ -1510,6 +1516,21 @@ fun DashboardScreen(
                 }
                 perceptualCommands.trySend(
                     """{"action":"SET_PERCEPTUAL_STATE","holosAmount":$a,"holosDistanceM":$d,"holosSpread":$sp,"holosProximityDb":$px,"holosDiffuse":$df,"holosHarmonics":$hm,"holosWarmth":$wm,"holosDynamics":$dy,"holosWidth":$wd,"holosGamma":$gm,"holosRoomRt60":$rt,"holosHeadTracking":${if (headTracking) 1.0f else 0.0f},"holosBandCount":$bc}"""
+                )
+            },
+            onHolosEqChange = { low, mid, high, presence, tiltDb, freq ->
+                val lo = low.coerceIn(-12f, 12f)
+                val mi = mid.coerceIn(-12f, 12f)
+                val hi = high.coerceIn(-12f, 12f)
+                val pr = presence.coerceIn(-12f, 12f)
+                val tl = tiltDb.coerceIn(-12f, 12f)
+                val fq = freq.coerceIn(20f, 20000f)
+                paramStore.setHolosEq(lo, mi, hi, pr, tl, fq)
+                if (IvannaNativeLib.isLoaded) runCatching {
+                    IvannaNativeLib.nativeSetHolosEq(lo, mi, hi, pr, tl, fq)
+                }
+                perceptualCommands.trySend(
+                    """{"action":"SET_PERCEPTUAL_STATE","holosEqLow":$lo,"holosEqMid":$mi,"holosEqHigh":$hi,"holosEqPresence":$pr,"holosEqTiltDb":$tl,"holosEqFreq":$fq}"""
                 )
             },
             onPunchChange = { amount ->
