@@ -963,6 +963,29 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_cochlear_inverse_model)
 
+# ── Interfaz Neuro-Acústica en Bucle Cerrado v1 ─────────────────────────────
+# neuro_acoustic_closed_loop.hpp es header-only (cero .cpp propios):
+# firma auditiva por usuario (8 bandas Greenwood) + LIF real del NPE +
+# ajustes acotados HOLOS/ORBE + fail-closed. Sensor real = interfaz
+# NeuroFrame; el test usa el sensor simulado (determinista) y frames
+# sintéticos EEG/ABR/fNIRS. Sin hardware medido en v1.
+add_executable(test_neuro_acoustic_closed_loop
+  test_neuro_acoustic_closed_loop.cpp
+)
+target_link_libraries(test_neuro_acoustic_closed_loop PRIVATE GTest::gtest_main)
+target_include_directories(test_neuro_acoustic_closed_loop PRIVATE
+  ..
+  ../include
+  ../neuromorphic
+  host_stubs
+)
+target_compile_options(test_neuro_acoustic_closed_loop PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_neuro_acoustic_closed_loop PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_neuro_acoustic_closed_loop PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_neuro_acoustic_closed_loop)
+
 # ── 5 Ejes de Supremacía Neuroacústica (Warped Lattice, CVNN+DDSP, SNN+NMF HOA, Pinna INR, SHM+Farrow5) ──
 add_executable(test_supreme_five_axes
   test_supreme_five_axes.cpp

@@ -391,6 +391,25 @@ object IvannaNativeLib {
      *  (12 bandas, H3 off, difuso ×0.5), 2 Limited (difuso off), 3 Bypass (legacy bit-exacto);
      *  [spatialShed] apaga ORBE y NPE. Lo publica el ThermalGovernor en cada cambio de nivel. */
     external fun nativeSetHolosThermalTier(holosTier: Int, spatialShed: Boolean)
+
+    // ── Bucle cerrado neuro-acústico (v2.5.365) ─────────────────────────────
+    /** Activa/desactiva el bucle cerrado (Ruta A). Apagado por defecto.
+     *  Sin frames reales el bucle nunca se activa (fail-closed). */
+    external fun nativeSetNeuroLoopEnabled(enabled: Boolean)
+    /** Ingiere UN frame real de sensor. kind: 2=EEG en auricular, 3=ABR,
+     *  4=fNIRS (0/1 se rechazan en C++). timestampUs: CLOCK_MONOTONIC en
+     *  microsegundos (SystemClock.uptimeMillis()*1000). response/coherence:
+     *  FloatArray[8] en [0..1], bandas Greenwood. Devuelve true si el
+     *  frame se aceptó y se aprendió. Solo lo llama NeuroSensorGateway,
+     *  con frames que llegan de un driver de sensor real. */
+    external fun nativeNeuroLoopIngest(
+        kind: Int, timestampUs: Long,
+        response: FloatArray, coherence: FloatArray, quality: Float,
+        abrWaveVLatencyMs: Float, fnirsHbO: Float
+    ): Boolean
+    /** Telemetría: [0] active 0/1, [1] confidence 0..1, [2] framesLearned,
+     *  [3] wet 0..1. */
+    external fun nativeNeuroLoopStatus(): FloatArray
     /** [0..2] ganancia dB bajo/medio/alto · [3] actividad de ataque 0..1 · [4] guarda activa 0/1 · [5] latencia ms. */
     external fun nativeGetPunchTelemetry(): FloatArray
     external fun nativeSetSpscRingFactor(factor: Float)

@@ -15,6 +15,7 @@
 #include "spatial/TemporalSpatialDynamics.hpp"
 #include "spatial/RoomCorrectionEq.hpp"
 #include "neuromorphic/NpeStereoCore.hpp"
+#include "neuromorphic/neuro_acoustic_closed_loop.hpp"
 #include "spatial/CrosstalkCanceller.hpp"
 #include "spatial/RoomGeometryConfig.hpp"
 #include "supreme/SupremeTransitionEnvelope.hpp"
@@ -65,9 +66,17 @@ public:
         m_hoaDecoder.prepare(sampleRate, 8);
         m_orbe.prepare(sampleRate);
         m_holos.prepare(sampleRate);
+        m_neuroLoop_.prepare(sampleRate, static_cast<int>(Ivanna::BLOCK_SIZE));
+        m_neuroBandEq_.prepare(sampleRate);
     }
 
     void process(Ivanna::AudioBuffer* buffer);
+
+    // Bucle cerrado: 1× por bloque de audio, antes de HOLOS/ORBE.
+    // Devuelve los ajustes (identidad si está apagado o inactivo) y
+    // aplica la ganancia por banda con NeuroBandEq. Hilo de audio.
+    ivanna::neuromorphic::NeuroAdjustments updateNeuroLoop(
+        Ivanna::AudioBuffer* buffer) noexcept;
 
     void runAcousticProfiling();
     void setUpmixingEnabled(bool enable) { m_upmixer.setUpmixingEnabled(enable); }
@@ -171,6 +180,8 @@ public:
         m_hoaDecoder.prepare(sr, 8);
         m_orbe.prepare(sr);
         m_holos.prepare(sr);
+        m_neuroLoop_.prepare(sr, static_cast<int>(Ivanna::BLOCK_SIZE));
+        m_neuroBandEq_.prepare(sr);
         m_wfs.init(sr, Ivanna::BLOCK_SIZE, 16);
         m_wfsInit = true;
         resetFifo();
@@ -351,6 +362,53 @@ public:
         }
     }
 
+    // ── Bucle cerrado neuro-acústico (v2.5.365, Ruta B) ─────────────────────
+    // Apagado por defecto. Sin frames reales (EEG/ABR/fNIRS por JNI) el
+    // bucle nunca se activa: compute() falla cerrado a identidad y
+    // NeuroBandEq es bypass bit-exacto. ingestNeuroFrame() solo acepta
+    // kinds reales (2=EEG, 3=ABR, 4=fNIRS); kind 0/1 se rechaza.
+    // timestampUs debe ser CLOCK_MONOTONIC en microsegundos, el mismo
+    // dominio que usa compute() (ver monotonicNowUs()): en Kotlin,
+    // SystemClock.uptimeMillis() * 1000. Un timestamp en otro dominio
+    // se ve como obsoleto/futuro y el bucle no aprende.
+    void setNeuroLoopEnabled(bool enable) noexcept {
+        m_neuroLoopEnabled_ = enable;
+        if (!enable) {
+            m_neuroLoop_.reset();
+            const std::array<float, 8> zero{};
+            m_neuroBandEq_.setGains(zero, m_sampleRateF);
+        }
+    }
+    bool isNeuroLoopEnabled() const noexcept { return m_neuroLoopEnabled_; }
+    bool ingestNeuroFrame(int kind, std::uint64_t timestampUs,
+                          const float* response8, const float* coherence8,
+                          float quality, float abrWaveVLatencyMs,
+                          float fnirsHbO) noexcept {
+        if (!m_neuroLoopEnabled_ || !response8 || !coherence8) return false;
+        if (kind != 2 && kind != 3 && kind != 4) return false;
+        ivanna::neuromorphic::NeuroFrame frame{};
+        frame.kind = static_cast<ivanna::neuromorphic::NeuroSensorKind>(kind);
+        frame.timestampUs = timestampUs;
+        frame.quality = quality;
+        frame.abrWaveVLatencyMs = abrWaveVLatencyMs;
+        frame.fnirsHbO = fnirsHbO;
+        for (int b = 0; b < 8; ++b) {
+            frame.response[static_cast<std::size_t>(b)] = response8[b];
+            frame.coherence[static_cast<std::size_t>(b)] = coherence8[b];
+        }
+        return m_neuroLoop_.ingest(frame);
+    }
+    // Telemetría del bucle (hilo de control; no toca el audio).
+    void neuroLoopStatus(bool& active, float& confidence,
+                         std::uint64_t& framesLearned, float& wet) const noexcept {
+        active = m_neuroLoopEnabled_ &&
+                 m_neuroLoop_.isActive(
+                     ivanna::neuromorphic::monotonicNowUs());
+        confidence = m_neuroLoop_.confidence();
+        framesLearned = m_neuroLoop_.framesLearned();
+        wet = m_neuroLoop_.lastWetScale();
+    }
+
     IvannaAudioClassifier*     getClassifier()    const noexcept { return m_classifier; }
     IvannaVoiceProsodyEngine*  getProsodyEngine() const noexcept { return m_prosody; }
     const IntelligentUpmixer&  getUpmixer()       const noexcept { return m_upmixer; }
@@ -398,6 +456,13 @@ private:
     ivanna::spatial::WfsRenderer m_wfs;
     ivanna::spatial::CrosstalkCanceller m_xtc;        // diafonía para altavoces (apagado = identidad)
     ivanna::neuromorphic::NpeStereoCore m_npe;        // NPE neuromórfico en Ruta B (apagado = bit-exacto)
+    // Bucle cerrado neuro-acústico (v2.5.365): controlador + EQ por banda.
+    // Se prepara en el ctor / initSpatial con el sampleRate real; process()
+    // lo actualiza 1× por bloque ANTES de HOLOS/ORBE (ver updateNeuroLoop
+    // en IvannaFusionCore.cpp). Apagado por defecto.
+    ivanna::neuromorphic::ClosedLoopController m_neuroLoop_;
+    ivanna::neuromorphic::NeuroBandEq m_neuroBandEq_;
+    bool m_neuroLoopEnabled_ = false;
     bool  m_npeOn_ = false, m_npeShed_ = false, m_orbeShed_ = false, m_holosShed_ = false;
     int   m_holosTier_ = 0;  // HolosThermalTier (0 Normal … 3 Bypass)
     float m_npeHarm_ = 0.2f, m_npeLat_ = 0.2f, m_npeOhc_ = 0.3f, m_npeMasterDb_ = 0.0f;

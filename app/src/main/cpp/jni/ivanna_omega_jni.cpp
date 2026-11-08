@@ -52,6 +52,7 @@
 #include "../spatial/SceneGeometryRenderer.hpp"
 #include "../spatial/RouteAWfsEngine.hpp"
 #include "../neuromorphic/NpeStereoCore.hpp"
+#include "../neuromorphic/neuro_acoustic_closed_loop.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../include/BlockPeakGuard.h"
 #include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
@@ -141,6 +142,66 @@ static ivanna::OrbeBinaural g_orbeRouteA;
 // cuando HOLOS está activo ORBE no corre. La Ruta B usa su propia
 // instancia (IvannaFusionEngine::m_holos) en el proceso audioserver.
 static ivanna::HolosOperator g_holosRouteA;
+// Bucle cerrado neuro-acústico (v2.5.365), Ruta A: instancia propia del
+// proceso app (paridad con IvannaFusionEngine::m_neuroLoop_ en Ruta B).
+// Apagado por defecto (g_neuroLoopEnabledA=false). Sin frames reales
+// (EEG/ABR/fNIRS por nativeNeuroLoopIngest) nunca se activa: compute()
+// falla cerrado a identidad y NeuroBandEq es bypass bit-exacto.
+// El reloj es CLOCK_MONOTONIC (monotonicNowUs()), el mismo dominio que
+// deben usar los timestamps de los frames (Kotlin: uptimeMillis()*1000).
+static ivanna::neuromorphic::ClosedLoopController g_neuroLoopRouteA;
+static ivanna::neuromorphic::NeuroBandEq g_neuroBandEqRouteA;
+static std::atomic<bool> g_neuroLoopEnabledA{false};
+// Externs de los atomics HOLOS/ORBE (definidos en holos/orbe_controls_
+// bridge.cpp; las declaraciones completas están más abajo en este TU,
+// pero los helpers del bucle cerrado viven aquí arriba).
+extern std::atomic<float> g_holos_gamma;
+extern std::atomic<float> g_holos_width;
+extern std::atomic<float> g_holos_diffuse;
+extern std::atomic<float> g_holos_distance_m;
+extern std::atomic<float> g_holos_proximity_db;
+extern std::atomic<float> g_orbe_diffuse;
+extern std::atomic<float> g_orbe_distance_m;
+extern std::atomic<float> g_orbe_proximity_db;
+
+// 1× por bloque de audio, ANTES de HOLOS/ORBE. Aplica la ganancia por
+// banda (NeuroBandEq) y devuelve los ajustes para modular hp/op.
+// Hilo de audio; nunca se llama dos veces por bloque.
+static ivanna::neuromorphic::NeuroAdjustments neuroLoopRouteAUpdate(
+    float* left, float* right, int n, float sampleRate) noexcept {
+    using namespace ivanna::neuromorphic;
+    NeuroAdjustments identity{};
+    if (!left || !right || n <= 0) return identity;
+    if (!g_neuroLoopEnabledA.load(std::memory_order_relaxed)) return identity;
+    const float sr = (sampleRate > 8000.0f) ? sampleRate : 48000.0f;
+    NeuroAdjustments adj = g_neuroLoopRouteA.compute(monotonicNowUs());
+    g_neuroBandEqRouteA.setGains(adj.gainDb, sr);
+    g_neuroBandEqRouteA.process(left, right, n);
+    return adj;
+}
+
+// Deltas locales sobre la base del usuario (atomics g_holos_*/g_orbe_*,
+// que NUNCA se reescriben). Se aplican a las copias hp/op del bloque.
+static ivanna::neuromorphic::ClosedLoopTargets neuroLoopTargetsHolos(
+    const ivanna::neuromorphic::NeuroAdjustments& adj) noexcept {
+    using namespace ivanna::neuromorphic;
+    ClosedLoopTargets base{};
+    base.holosGamma = g_holos_gamma.load(std::memory_order_relaxed);
+    base.holosWidth = g_holos_width.load(std::memory_order_relaxed);
+    base.holosDiffuse = g_holos_diffuse.load(std::memory_order_relaxed);
+    base.orbeDistanceM = g_holos_distance_m.load(std::memory_order_relaxed);
+    base.orbeProximityDb = g_holos_proximity_db.load(std::memory_order_relaxed);
+    return applyAdjustments(base, adj);
+}
+static ivanna::neuromorphic::ClosedLoopTargets neuroLoopTargetsOrbe(
+    const ivanna::neuromorphic::NeuroAdjustments& adj) noexcept {
+    using namespace ivanna::neuromorphic;
+    ClosedLoopTargets base{};
+    base.holosDiffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+    base.orbeDistanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+    base.orbeProximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+    return applyAdjustments(base, adj);
+}
 // Recorte térmico de la Ruta A (paridad con omega_effect.cpp, Ruta B). Lo escribe el
 // ThermalGovernor Kotlin por JNI; el hilo de audio lo lee una vez por bloque.
 //   g_holosTierA: HolosThermalTier 0 Normal / 1 Warm / 2 Limited / 3 Bypass.
@@ -956,6 +1017,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_neuroLoopRouteA.prepare((float)sr, 128);
+    g_neuroBandEqRouteA.prepare((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
     // El ADE se inicia al final, después de que g_initialized confirme el grafo DSP.
     // El consumidor de snapshots es observabilidad, no el motor. Debe vivir
@@ -1563,6 +1626,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // HOLOS ocupa el lugar de ORBE: cuando HOLOS está activo ORBE no corre.
     // Lee los atomics g_holos_*/g_orbe_* cada bloque; amount=0 es bypass bit-exacto de
     // coste cero. Activo añade 512 muestras de latencia (10.7 ms @48 kHz).
+    // Bucle cerrado neuro-acústico (v2.5.365): 1x por bloque, ANTES de
+    // HOLOS/ORBE — NeuroBandEq + deltas acotados sobre hp/op. Apagado o
+    // sin frames frescos -> identidad bit-exacta.
+    const auto neuroAdjA = neuroLoopRouteAUpdate(
+        g_ats.chL, g_ats.chR, n,
+        static_cast<float>(std::max(g_params.sampleRate, 8000u)));
     {
         const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
         if (holosAmount > 0.0f) {
@@ -1586,6 +1655,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
             hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
+            {   // Bucle cerrado: deltas locales sobre la base del usuario.
+                const auto tgt = neuroLoopTargetsHolos(neuroAdjA);
+                hp.gamma = tgt.holosGamma;
+                hp.width = tgt.holosWidth;
+                hp.diffuse = tgt.holosDiffuse;
+                hp.distanceM = tgt.orbeDistanceM;
+                hp.proximityDb = tgt.orbeProximityDb;
+            }
             g_holosRouteA.setThermalTier(static_cast<ivanna::HolosThermalTier>(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
@@ -1599,6 +1676,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
             op.bandCount = 24;
+            {   // Bucle cerrado: deltas locales sobre la base del usuario.
+                const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
+                op.distanceM = tgt.orbeDistanceM;
+                op.proximityDb = tgt.orbeProximityDb;
+                op.diffuse = tgt.holosDiffuse;
+            }
             g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
             g_orbeRouteA.setParams(op);
             g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
@@ -2245,6 +2328,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_neuroLoopRouteA.prepare((float)sr, 128);
+    g_neuroBandEqRouteA.prepare((float)sr);
     // Eje Supremo: pre-compute biquad BPF + Heun coefficients for the cochlear engine.
     // Called here (UI thread, non-RT) — process() will never allocate.
     g_cochlearEngine.prepare(static_cast<float>(sr), 512);
@@ -2429,6 +2514,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // y antes de la RIR. Comparte g_orbeRouteA con nativeProcess (nunca corren
     // a la vez: g_dspProcessMutex). HOLOS ocupa el lugar de ORBE cuando está
     // activo (misma instancia compartida g_holosRouteA). amount=0 = bypass bit-exacto de coste cero.
+    // Bucle cerrado neuro-acústico (v2.5.365): 1x por bloque, ANTES de
+    // HOLOS/ORBE — NeuroBandEq + deltas acotados sobre hp/op.
+    const auto neuroAdjA = neuroLoopRouteAUpdate(
+        oL, oR, n, static_cast<float>(std::max(g_params.sampleRate, 8000u)));
     {
         const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
         if (holosAmount > 0.0f) {
@@ -2452,6 +2541,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
             hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
+            {   // Bucle cerrado: deltas locales sobre la base del usuario.
+                const auto tgt = neuroLoopTargetsHolos(neuroAdjA);
+                hp.gamma = tgt.holosGamma;
+                hp.width = tgt.holosWidth;
+                hp.diffuse = tgt.holosDiffuse;
+                hp.distanceM = tgt.orbeDistanceM;
+                hp.proximityDb = tgt.orbeProximityDb;
+            }
             g_holosRouteA.setThermalTier(static_cast<ivanna::HolosThermalTier>(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
@@ -2465,6 +2562,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
             op.bandCount = 24;
+            {   // Bucle cerrado: deltas locales sobre la base del usuario.
+                const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
+                op.distanceM = tgt.orbeDistanceM;
+                op.proximityDb = tgt.orbeProximityDb;
+                op.diffuse = tgt.holosDiffuse;
+            }
             g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
             g_orbeRouteA.setParams(op);
             g_orbeRouteA.process(oL, oR, n);
@@ -2900,6 +3003,76 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosThermalTier(JNIEnv*, jo
         jint holosTier, jboolean spatialShed) {
     g_holosTierA.store(std::clamp(static_cast<int>(holosTier), 0, 3), std::memory_order_relaxed);
     g_spatialShedA.store(spatialShed == JNI_TRUE, std::memory_order_relaxed);
+}
+
+// ── Bucle cerrado neuro-acústico (v2.5.365), Ruta A ─────────────────────────
+// nativeSetNeuroLoopEnabled: apagado por defecto. Al apagar, el controlador
+// se resetea y la ganancia por banda vuelve a 0 (bypass bit-exacto).
+// nativeNeuroLoopIngest: frames REALES de sensor (kind 2=EEG en auricular,
+// 3=ABR, 4=fNIRS). kind 0/1 se rechaza en C++. timestampUs es
+// CLOCK_MONOTONIC en microsegundos (Kotlin: SystemClock.uptimeMillis()*1000).
+// response/coherence son FloatArray[8] en [0..1], bandas Greenwood.
+// nativeNeuroLoopStatus: out[4] = {active 0/1, confidence 0..1,
+// framesLearned, wet 0..1}. Sin driver de sensor enchufado, active=0
+// siempre: el bucle no inventa datos.
+// NOTA DE RUTA: estas JNI alimentan la Ruta A (proceso app). La Ruta B
+// (IvannaFusionEngine::ingestNeuroFrame, proceso audioserver) tiene la
+// misma API en C++, pero su transporte (campo en el snapshot del daemon)
+// queda pendiente: hoy ningún frame llega a Ruta B por JNI.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNeuroLoopEnabled(
+        JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_neuroLoopEnabledA.store(on, std::memory_order_relaxed);
+    if (!on) {
+        g_neuroLoopRouteA.reset();
+        const std::array<float, 8> zero{};
+        g_neuroBandEqRouteA.setGains(zero, 48000.0f);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeNeuroLoopIngest(
+        JNIEnv* env, jobject, jint kind, jlong timestampUs,
+        jfloatArray response, jfloatArray coherence, jfloat quality,
+        jfloat abrWaveVLatencyMs, jfloat fnirsHbO) {
+    if (!g_neuroLoopEnabledA.load(std::memory_order_relaxed)) return JNI_FALSE;
+    if (kind != 2 && kind != 3 && kind != 4) return JNI_FALSE;
+    if (!response || !coherence) return JNI_FALSE;
+    if (env->GetArrayLength(response) < 8 ||
+        env->GetArrayLength(coherence) < 8) return JNI_FALSE;
+    jfloat resp[8] = {};
+    jfloat coh[8] = {};
+    env->GetFloatArrayRegion(response, 0, 8, resp);
+    env->GetFloatArrayRegion(coherence, 0, 8, coh);
+    ivanna::neuromorphic::NeuroFrame frame{};
+    frame.kind = static_cast<ivanna::neuromorphic::NeuroSensorKind>(kind);
+    frame.timestampUs = static_cast<std::uint64_t>(timestampUs);
+    frame.quality = quality;
+    frame.abrWaveVLatencyMs = abrWaveVLatencyMs;
+    frame.fnirsHbO = fnirsHbO;
+    for (int b = 0; b < 8; ++b) {
+        frame.response[static_cast<std::size_t>(b)] = resp[b];
+        frame.coherence[static_cast<std::size_t>(b)] = coh[b];
+    }
+    return g_neuroLoopRouteA.ingest(frame) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeNeuroLoopStatus(
+        JNIEnv* env, jobject) {
+    jfloat v[4] = {};
+    const bool active =
+        g_neuroLoopEnabledA.load(std::memory_order_relaxed) &&
+        g_neuroLoopRouteA.isActive(ivanna::neuromorphic::monotonicNowUs());
+    v[0] = active ? 1.0f : 0.0f;
+    v[1] = g_neuroLoopRouteA.confidence();
+    v[2] = static_cast<float>(g_neuroLoopRouteA.framesLearned());
+    v[3] = g_neuroLoopRouteA.lastWetScale();
+    jfloatArray out = env->NewFloatArray(4);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, 4, v);
+    return out;
 }
 
 // [0..2] ganancia dB por banda (bajo/medio/alto), [3] actividad de ataque 0..1, [4] guarda activa 0/1, [5] latencia ms.

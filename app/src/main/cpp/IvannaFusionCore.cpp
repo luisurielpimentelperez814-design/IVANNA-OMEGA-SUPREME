@@ -132,6 +132,8 @@ IvannaFusionEngine::IvannaFusionEngine() {
     
     m_upmixer.prepare(48000.0f);
     m_hoaDecoder.prepare(48000.0f, 8); // 8 virtual speakers
+    m_neuroLoop_.prepare(48000.0f, static_cast<int>(Ivanna::BLOCK_SIZE));
+    m_neuroBandEq_.prepare(48000.0f);
     m_upmixEnv_.configure(48000.0f, 10.0f, 18.0f, 35.0f);
     m_upmixEnv_.setImmediate(1.0f);
     m_wfs.init(48000.0f, Ivanna::BLOCK_SIZE, 16);
@@ -294,6 +296,24 @@ void IvannaFusionEngine::setWfsSpeakerLayout(const float x[7], const float y[7],
     }
 }
 
+ivanna::neuromorphic::NeuroAdjustments IvannaFusionEngine::updateNeuroLoop(
+    Ivanna::AudioBuffer* buffer) noexcept {
+    using namespace ivanna::neuromorphic;
+    NeuroAdjustments identity{};
+    if (!buffer) return identity;
+    if (!m_neuroLoopEnabled_) {
+        // Apagado: la ganancia por banda ya se puso a 0 en
+        // setNeuroLoopEnabled(false); NeuroBandEq es bypass bit-exacto.
+        return identity;
+    }
+    const float sr = (m_sampleRateF > 8000.0f) ? m_sampleRateF : 48000.0f;
+    NeuroAdjustments adj = m_neuroLoop_.compute(monotonicNowUs());
+    m_neuroBandEq_.setGains(adj.gainDb, sr);
+    m_neuroBandEq_.process(buffer->left, buffer->right,
+                           static_cast<int>(Ivanna::BLOCK_SIZE));
+    return adj;
+}
+
 void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // FASE 1: SPSC Lock-Free Ring Buffer async push
     // Solo encolamos (ingest) sin bloquear el hilo principal de audio
@@ -448,6 +468,15 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
+    // ── Bucle cerrado neuro-acústico (v2.5.365) ──
+    // 1× por bloque, ANTES de HOLOS/ORBE: ganancia por banda en el audio
+    // (NeuroBandEq) + deltas acotados sobre los parámetros HOLOS/ORBE.
+    // La base son los atomics del usuario (g_holos_*/g_orbe_*); el bucle
+    // NUNCA los reescribe, solo ajusta las copias locales hp/op de este
+    // bloque. Apagado o sin frames frescos -> identidad bit-exacta.
+    const ivanna::neuromorphic::NeuroAdjustments neuroAdj =
+        updateNeuroLoop(buffer);
+
     // ── HOLOS (Operador Único de Campo Acústico) — última etapa espacial ──
     // Ocupa el LUGAR DE ORBE (tras el blend WFS, antes del M/S): cuando
     // HOLOS está activo ORBE no corre (doble render con doble retardo de
@@ -477,6 +506,21 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             hp.eqTiltDb = g_holos_eq_tilt_db.load(std::memory_order_relaxed);
             hp.eqFreq = g_holos_eq_freq.load(std::memory_order_relaxed);
             hp.bandCount = (g_holos_band_count.load(std::memory_order_relaxed) == 12) ? 12 : 24;
+            // Bucle cerrado: deltas locales sobre la base del usuario.
+            {
+                ivanna::neuromorphic::ClosedLoopTargets base{};
+                base.holosGamma = hp.gamma;
+                base.holosWidth = hp.width;
+                base.holosDiffuse = hp.diffuse;
+                base.orbeDistanceM = hp.distanceM;
+                base.orbeProximityDb = hp.proximityDb;
+                const auto tgt = ivanna::neuromorphic::applyAdjustments(base, neuroAdj);
+                hp.gamma = tgt.holosGamma;
+                hp.width = tgt.holosWidth;
+                hp.diffuse = tgt.holosDiffuse;
+                hp.distanceM = tgt.orbeDistanceM;
+                hp.proximityDb = tgt.orbeProximityDb;
+            }
             const ivanna::HolosThermalTier tier =
                 m_holosShed_ ? ivanna::HolosThermalTier::Bypass
                              : (ivanna::HolosThermalTier)std::clamp(m_holosTier_, 0, 3);
@@ -493,6 +537,17 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
             op.bandCount = 24;
+            // Bucle cerrado: deltas locales sobre la base del usuario.
+            {
+                ivanna::neuromorphic::ClosedLoopTargets base{};
+                base.holosDiffuse = op.diffuse;
+                base.orbeDistanceM = op.distanceM;
+                base.orbeProximityDb = op.proximityDb;
+                const auto tgt = ivanna::neuromorphic::applyAdjustments(base, neuroAdj);
+                op.distanceM = tgt.orbeDistanceM;
+                op.proximityDb = tgt.orbeProximityDb;
+                op.diffuse = tgt.holosDiffuse;
+            }
             m_orbe.setThermalShed(m_orbeShed_);
             m_orbe.setParams(op);
             m_orbe.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
