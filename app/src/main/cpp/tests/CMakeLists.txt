@@ -986,6 +986,25 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_neuro_acoustic_closed_loop)
 
+# Ruta AUX Genezi / auto (v2.5.366): presets, puerta Volterra IVK1 y
+# coste O(K^2) que hace inviable K=4096 en tiempo real.
+add_executable(test_aux_genezi_route
+  test_aux_genezi_route.cpp
+)
+target_link_libraries(test_aux_genezi_route PRIVATE GTest::gtest_main)
+target_include_directories(test_aux_genezi_route PRIVATE
+  ..
+  ../include
+  ../neuromorphic
+  host_stubs
+)
+target_compile_options(test_aux_genezi_route PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_aux_genezi_route PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_aux_genezi_route PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_aux_genezi_route)
+
 # ── 5 Ejes de Supremacía Neuroacústica (Warped Lattice, CVNN+DDSP, SNN+NMF HOA, Pinna INR, SHM+Farrow5) ──
 add_executable(test_supreme_five_axes
   test_supreme_five_axes.cpp

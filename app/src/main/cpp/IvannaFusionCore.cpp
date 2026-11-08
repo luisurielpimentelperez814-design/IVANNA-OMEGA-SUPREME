@@ -18,6 +18,7 @@ std::atomic<float> g_upmixing_immersivity{1.25f};
 #include "include/acoustic_reality_hyperengine.hpp"
 #include "include/acoustic_unity_engine.hpp"
 #include "spatial/SafmusLatentGuard.hpp"
+#include "spatial/AuxGeneziRoute.hpp"
 #include <iostream>
 #include <atomic>
 
@@ -215,6 +216,21 @@ void IvannaFusionEngine::setAuxField(bool enabled, float xoverHz, float coherenc
     if (std::isfinite(xoverHz))   g_aux_field_xover_hz.store(xoverHz, std::memory_order_relaxed);
     if (std::isfinite(coherence)) g_aux_field_coherence.store(coherence, std::memory_order_relaxed);
     g_aux_field_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+// Ruta AUX Genezi / auto (v2.5.366): preset completo en Ruta B.
+// Geometría XTC del par + campo AUX coherente. No toca el kernel
+// Volterra (lo carga el loader IVK1 con AuxVolterraGate) ni el wet
+// HRTF (process() lo fuerza a 0 con AUX activo, por diseño).
+void IvannaFusionEngine::setAuxGeneziPreset(int preset) noexcept {
+    using namespace ivanna::spatial;
+    const AuxPresetKind kind =
+        (preset == static_cast<int>(AuxPresetKind::CarCabin))
+            ? AuxPresetKind::CarCabin
+            : AuxPresetKind::GeneziRoom;
+    const AuxRouteParams p = auxPreset(kind);
+    m_xtc.setGeometry(p.xtc);
+    setAuxField(p.auxFieldEnabled, p.auxXoverHz, p.auxCoherence);
 }
 void IvannaFusionEngine::setWfsSpread(float spread) noexcept {
     if (std::isfinite(spread)) g_wfs_spread.store(spread, std::memory_order_relaxed);

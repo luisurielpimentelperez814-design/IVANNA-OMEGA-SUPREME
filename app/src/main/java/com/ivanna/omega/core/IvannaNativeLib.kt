@@ -450,6 +450,12 @@ object IvannaNativeLib {
     /** Modo AUX/altavoces: campo de presion coherente (graves en fase). crossover 60..200 Hz, coherencia 0..1. */
     external fun nativeSetAuxField(enabled: Boolean, crossoverHz: Float, coherence: Float)
 
+    /** Ruta AUX Genezi / auto (v2.5.366): preset completo — geometría XTC del
+     *  par de altavoces + campo AUX coherente. preset: 0 = Genezi en habitación,
+     *  1 = habitáculo (asiento del conductor, LHD). No aplica kernel Volterra
+     *  (solo IVK1 medido GENEZY01) ni HRTF binaural (en AUX el wet es 0). */
+    external fun nativeSetAuxGeneziPreset(preset: Int)
+
     /** Corrección acústica de sala: 10 ganancias (dB, una por banda de octava 31.5 Hz…16 kHz); todo 0 = apagado. Ruta A + daemon. */
     external fun nativeSetRoomCorrection(gainsDb: FloatArray)
 

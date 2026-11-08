@@ -93,6 +93,12 @@ public:
     // el hilo de audio — mismo criterio ya establecido para setObject()).
     /// Modo AUX/altavoces: escribe los mismos atomics que lee process() cada bloque.
     void setAuxField(bool enabled, float xoverHz, float coherence) noexcept;
+    /// Ruta AUX Genezi / auto (v2.5.366): aplica el preset completo —
+    /// geometría XTC del par de altavoces + campo AUX coherente. Hilo de
+    /// control. Nota: un snapshot WFS posterior puede reescribir la
+    /// geometría XTC (setWfsSpeakerLayout); el preset se vuelve a aplicar
+    /// llamando de nuevo. HRTF wet queda en 0 en ruta AUX por diseño.
+    void setAuxGeneziPreset(int preset) noexcept;
     void setTemporalField(bool enabled, float amount, bool autoMode = false) noexcept;
     void setRoomCorrection(const float* gainsDb10) noexcept;   // corrección acústica de sala (10 bandas de octava, dB)   // dinámica espacial temporal ("4D")
     void setWfsEnabled(bool enable) noexcept;

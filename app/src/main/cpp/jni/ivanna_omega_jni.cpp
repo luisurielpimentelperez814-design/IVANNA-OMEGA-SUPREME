@@ -65,6 +65,7 @@
 #include "../music_intelligence/FourDControlSurface.hpp"   // Cadena 4D: alimentación, diafonía y dosímetro (v2.5.48)
 #include "../spatial/RoomGeometryConfig.hpp"
 #include "../spatial/CrosstalkCanceller.hpp"
+#include "../spatial/AuxGeneziRoute.hpp"
 #include "../pd_engine.hpp"
 #include "../control_frame.hpp"
 #include "../include/dc_blocker.hpp"
@@ -3643,6 +3644,40 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAuxField(
     g_aux_field_coherence.store(co, std::memory_order_relaxed);
     g_aux_field_enabled.store(en, std::memory_order_relaxed);     // ruta A (en proceso)
     omegaSendAuxFieldToDaemon(en, xo, co);                        // ruta B (audioserver, via daemon)
+    auto& bus = ivanna::effectControlBus();
+    ivanna::OmegaDspSnapshot snap;
+    uint64_t seen = 0;
+    if (bus.readLatest(snap, seen)) {
+        snap.flags = (snap.flags & ~(OMEGA_FLAG_AUX_FIELD_ON | OMEGA_FLAG_AUX_XOVER_MASK | OMEGA_FLAG_AUX_COH_MASK))
+                   | omega_aux_field_encode(en, xo, co);
+        bus.publish(snap);
+    }
+}
+
+// ── Ruta AUX Genezi / auto (v2.5.366): preset completo en Ruta A ─────────
+// preset: 0 = Genezi en habitación, 1 = habitáculo (asiento conductor LHD).
+// Aplica la geometría XTC del par a la cadena 4D (fourd::setSpeakerGeometry,
+// misma vía que routeAApplyXtcGeometry) y el campo AUX coherente por los
+// mismos atomics + daemon + snapshot que nativeSetAuxField. No toca el
+// kernel Volterra (lo carga el loader IVK1 con AuxVolterraGate) ni el wet
+// HRTF (en ruta AUX el binaural no aplica).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetAuxGeneziPreset(
+    JNIEnv*, jobject, jint preset) {
+    using namespace ivanna::spatial;
+    const AuxPresetKind kind =
+        (preset == static_cast<jint>(AuxPresetKind::CarCabin))
+            ? AuxPresetKind::CarCabin
+            : AuxPresetKind::GeneziRoom;
+    const AuxRouteParams p = auxPreset(kind);
+    ivanna::fourd::setSpeakerGeometry(p.xtc);
+    const float xo = std::clamp(p.auxXoverHz, 60.0f, 200.0f);
+    const float co = std::clamp(p.auxCoherence, 0.0f, 1.0f);
+    const bool en = p.auxFieldEnabled;
+    g_aux_field_xover_hz.store(xo, std::memory_order_relaxed);
+    g_aux_field_coherence.store(co, std::memory_order_relaxed);
+    g_aux_field_enabled.store(en, std::memory_order_relaxed);
+    omegaSendAuxFieldToDaemon(en, xo, co);
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
     uint64_t seen = 0;
