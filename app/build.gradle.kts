@@ -287,9 +287,6 @@ androidComponents {
             val cmakeSoPath = layout.buildDirectory.file(
                 "intermediates/cmake/${variantName.lowercase()}/obj/arm64-v8a/libivanna_omega.so"
             )
-            val strippedSoPath = layout.buildDirectory.file(
-                "intermediates/stripped_native_libs/${variantName.lowercase()}/out/lib/arm64-v8a/libivanna_omega.so"
-            )
             val outFile = file("${projectDir}/src/main/assets/ivanna_so_hashes.txt")
             // FIX (2026-11-09, CI run 42583087688): NO declarar la .so
             // strippeada como inputs.file(): Gradle valida que los inputs
@@ -306,15 +303,30 @@ androidComponents {
             // solo si AGP strippeó (release); en debug se usa el intermedio.
             // En release, si no hay .so strippeada, el build FALLA con
             // mensaje claro en vez de empaquetar un hash que no coincide.
+            // FIX (2026-11-09, CI run 42585350769): búsqueda DINÁMICA de la
+            // .so strippeada. La ruta fija
+            // intermediates/stripped_native_libs/<variant>/out/lib/arm64-v8a/
+            // NO existe tras stripReleaseDebugSymbols en AGP 8.5.2 (el
+            // doFirst anterior fallaba con 'no se encontró la .so
+            // strippeada'). Se busca cualquier libivanna_omega.so bajo un
+            // directorio stripped_native_libs en el buildDir; si no hay,
+            // el error lista TODOS los candidatos para diagnosticar la
+            // ruta real en vez de adivinarla.
             doFirst {
-                val stripped = strippedSoPath.get().asFile
                 val cmake = cmakeSoPath.get().asFile
+                val buildDir = layout.buildDirectory.get().asFile
+                val candidates = buildDir.walkTopDown()
+                    .filter { it.isFile && it.name == "libivanna_omega.so" }
+                    .toList()
+                val stripped = candidates.firstOrNull { "stripped_native_libs" in it.path }
                 val so = when {
-                    stripped.isFile -> stripped
+                    stripped != null -> stripped
                     variantName == "release" -> throw GradleException(
-                        "generateSoHashes: no se encontró la .so strippeada en ${stripped.absolutePath} " +
-                        "(AGP no strippeó o cambió la ruta). Sin ella el asset llevaría el hash del " +
-                        "intermedio de CMake y el IntegrityGate bloquearía la instalación release."
+                        "generateSoHashes: no se encontró libivanna_omega.so bajo stripped_native_libs. " +
+                        "Candidatos en ${buildDir.absolutePath}: " +
+                        (candidates.joinToString(", ") { it.absolutePath }.ifEmpty { "(ninguno)" }) +
+                        ". Sin la .so strippeada el asset llevaría el hash del intermedio de CMake y el " +
+                        "IntegrityGate bloquearía la instalación release."
                     )
                     else -> cmake
                 }
