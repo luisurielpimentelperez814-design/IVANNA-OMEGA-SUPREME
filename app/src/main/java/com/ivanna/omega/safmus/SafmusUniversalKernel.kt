@@ -102,7 +102,12 @@ object SafmusUniversalKernel {
     }
 
     enum class Route { ROUTE_A, ROUTE_B, NONE }
-    enum class EvidenceKind { MEASURED, SIMULATED, ESTIMATED, USER_DECLARED, UNKNOWN }
+    // VENDOR_DOC: hoja pública del fabricante (núcleos, frecuencias, DSP).
+    // La usa HardwareKnowledgeBase para los 21 SoCs no medidos en vivo; la
+    // taxonomía la documenta ese archivo ("misma taxonomía que
+    // SafmusUniversalKernel"). Sin esta entrada, compileReleaseKotlin falla
+    // con "Unresolved reference 'VENDOR_DOC'" (CI 372, run 42602408649).
+    enum class EvidenceKind { MEASURED, VENDOR_DOC, SIMULATED, ESTIMATED, USER_DECLARED, UNKNOWN }
 
     data class RouteEvidence(
         val systemWideEffectActive: Boolean,
