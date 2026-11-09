@@ -221,7 +221,8 @@ fun MainScaffold(
                     onOpenNetwork   = { outerNav.navigate(IvannaRoute.NETWORK) },
                     onOpenAdaptiveProfiles = { outerNav.navigate("adaptive_profiles") },
                     onOpenHiRes     = { outerNav.navigate("hires") },
-                    onOpenMusicIntel = { outerNav.navigate("music_intelligence") }
+                    onOpenMusicIntel = { outerNav.navigate("music_intelligence") },
+                    onOpenRockConcerts = { outerNav.navigate(IvannaRoute.ROCK_CONCERTS) }
                 )
             }
         }
@@ -297,7 +298,8 @@ fun SystemHubScreen(
     onOpenNetwork   : () -> Unit = {},
     onOpenAdaptiveProfiles : () -> Unit = {},
     onOpenHiRes     : () -> Unit = {},
-    onOpenMusicIntel : () -> Unit = {}
+    onOpenMusicIntel : () -> Unit = {},
+    onOpenRockConcerts : () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showDiagnosticDialog by remember { mutableStateOf(false) }
@@ -411,6 +413,9 @@ fun SystemHubScreen(
         HubCard("MUSIC INTELLIGENCE",
             "Análisis musical en tiempo real · género · tempo · tonalidad",
             PhosphorGreen, onOpenMusicIntel)
+        HubCard("CONCIERTOS LEGENDARIOS",
+            "Los 30 mejores conciertos de rock · destacado del día · por género",
+            AmberSignal, onOpenRockConcerts)
     }
 }
 
@@ -483,6 +488,7 @@ private fun hubIconFor(title: String): androidx.compose.ui.graphics.vector.Image
     title.contains("RED") -> Icons.Filled.Wifi
     title.contains("HI-RES") -> Icons.Filled.HighQuality
     title.contains("MUSIC INTELLIGENCE") -> Icons.Filled.LibraryMusic
+    title.contains("CONCIERTOS") -> Icons.Filled.MusicVideo
     else -> Icons.Filled.Circle
 }
 

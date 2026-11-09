@@ -605,6 +605,21 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_saf_phi_infinity COMMAND test_saf_phi_infinity)
 
+# ── Auto-Auditoría de Dispositivo (2026-11-09): perfilador nativo ──
+# test_device_cpu_profiler.cpp es standalone (su propio main(), sin gtest),
+# mismo patrón que test_adaptive_engine: se agrega como ejecutable aparte.
+add_executable(test_device_cpu_profiler
+  test_device_cpu_profiler.cpp
+)
+target_include_directories(test_device_cpu_profiler PRIVATE .. ../include)
+target_compile_options(test_device_cpu_profiler PRIVATE -Wall -Wextra)
+target_link_libraries(test_device_cpu_profiler PRIVATE Threads::Threads)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_device_cpu_profiler PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_device_cpu_profiler PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_device_cpu_profiler COMMAND test_device_cpu_profiler)
+
 
 # FIX (build rojo, 2026-09-15): HoaBinauralDecoder e IntelligentUpmixer usan
 # ivanna::HRTFConvolver cuyas definiciones viven en spatial/hrtf_convolver.cpp.

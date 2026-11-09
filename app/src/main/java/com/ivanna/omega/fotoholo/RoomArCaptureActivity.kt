@@ -339,8 +339,11 @@ class RoomArCaptureActivity : Activity(), GLSurfaceView.Renderer {
                 trackingState = lastTrackingState
             )
         }
+        // SAFMUS Nivel 6: voxel mas fino (0.005 m) y tope maximo (250_000
+        // puntos) segun el nivel de potencia activo.
         val optimizedCloud = SafmusUniversalKernel.optimizeSpatialPointCloud(
-            rawSnapshot.points.map { SafmusUniversalKernel.SpatialPoint3(it.x, it.y, it.z) }
+            rawSnapshot.points.map { SafmusUniversalKernel.SpatialPoint3(it.x, it.y, it.z) },
+            SafmusUniversalKernel.powerLevel
         )
         val snapshot = rawSnapshot.copy(
             points = optimizedCloud.points.map { Point3(it.x, it.y, it.z) },

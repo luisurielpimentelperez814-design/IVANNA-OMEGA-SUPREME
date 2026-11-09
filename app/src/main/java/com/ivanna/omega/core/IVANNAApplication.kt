@@ -334,6 +334,11 @@ class IVANNAApplication : Application() {
             com.ivanna.omega.safmus.SafmusHardwareCoordinator.start(this, appScope)
         }.onFailure { Log.w(TAG, "SAFMUS hardware coordinator unavailable (non-fatal): ${it.message}") }
 
+        // Auto-auditoría de dispositivo (primera instalación): perfil + auditoría
+        // + optimizaciones en caliente fail-closed. No fatal si falla.
+        runCatching { com.ivanna.omega.device.FirstRunSelfAudit.runIfNeeded(this) }
+            .onFailure { Log.w(TAG, "Auto-auditoría de dispositivo falló (no fatal): ${it.message}") }
+
         // ── Capacidades reales del teléfono (sin pedir permisos) ───────────
         // Solo consulta catálogos del sistema: no activa micrófono, cámara ni sensores.
         // Queda en HardwareProbe.last para los paneles y en logcat (tag IvannaHW) como

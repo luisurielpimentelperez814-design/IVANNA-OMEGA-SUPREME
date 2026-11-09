@@ -53,6 +53,9 @@ object IvannaRoute {
     // Panel de conectividad WiFi / datos / Gemini Agent
     const val NETWORK = "network_status"
 
+    // Colección de los 30 mejores conciertos de rock (v2.5.372)
+    const val ROCK_CONCERTS = "rock_concerts"
+
     // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Prompt Maestro 2026) ─────
     const val SUPREME_AXES_HUB       = "supreme_axes_hub"
     const val SUPREME_AXIS_1_LATTICE = "supreme_axis_1_lattice"

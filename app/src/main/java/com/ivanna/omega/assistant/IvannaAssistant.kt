@@ -417,7 +417,7 @@ class IvannaAssistant(
                 }
                 IvannaLanguageCore.AcousticIntent.GENERAL_CHAT -> {
                     val reply = if (agentResponse is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Offline) {
-                        "Ahora mismo estoy sin conexión, así que no puedo consultar mi modelo de conocimiento amplio. Puedo seguir con las funciones locales de audio y retomar la conversación completa cuando vuelva la conexión."
+                        IvannaSmallTalk.generalChatResponse()
                     } else {
                         IvannaSmallTalk.generalChatResponse()
                     }

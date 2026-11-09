@@ -352,11 +352,17 @@ fun OmegaApp() {
             )
         }
         var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
-        NavHost(nav, startDestination = "splash") {
-            composable("splash") { SplashScreen { nav.navigate("introVideo") } }
+        val introAlreadyShown = remember { com.ivanna.omega.ui.IntroVideoGate.hasShownIntroVideo(context) }
+        NavHost(nav, startDestination = if (introAlreadyShown) "splash" else "introVideo") {
+            composable("splash") {
+                SplashScreen {
+                    nav.navigate(if (com.ivanna.omega.ui.IntroVideoGate.hasShownIntroVideo(context)) "intro" else "introVideo")
+                }
+            }
             composable("introVideo") {
                 IntroVideoScreen {
-                    nav.navigate("intro") { popUpTo("introVideo") { inclusive = true } }
+                    com.ivanna.omega.ui.IntroVideoGate.markIntroVideoShown(context)
+                    nav.navigate("splash") { popUpTo("introVideo") { inclusive = true } }
                 }
             }
             composable("intro") {
@@ -374,6 +380,8 @@ fun OmegaApp() {
                 ) { com.ivanna.omega.ui.MusicIntelligencePanel(); com.ivanna.omega.ui.FourDPredictionPanel() }
             }
             composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
+            // Colección de los 30 mejores conciertos de rock (v2.5.372).
+            composable(IvannaRoute.ROCK_CONCERTS) { com.ivanna.omega.ui.RockConcertsScreen(onBack = { nav.popBackStack() }) }
             composable("dashboard") {
                 LaunchedEffect(Unit) {
                     com.ivanna.omega.assistant.IvannaLaunchGreeting.greetOnce(context)

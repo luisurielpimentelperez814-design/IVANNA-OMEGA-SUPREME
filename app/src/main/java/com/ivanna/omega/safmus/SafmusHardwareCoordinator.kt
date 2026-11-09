@@ -30,7 +30,6 @@ import kotlinx.coroutines.launch
 object SafmusHardwareCoordinator {
     private const val TAG = "SAFMUS-Hardware"
     private const val PREFS = "safmus_hardware_runtime"
-    private const val POLL_MS = 5_000L
     @Volatile private var job: Job? = null
 
     enum class Budget { NORMAL, CONSERVATIVE, SAFE }
@@ -81,11 +80,25 @@ object SafmusHardwareCoordinator {
         if (job?.isActive == true) return
         val app = context.applicationContext
         job = scope.launch(Dispatchers.IO) {
+            // SAFMUS Nivel 6: bucle partido en dos cadencias. Las senales
+            // rapidas (memoria/termica/bateria/power-save) se muestrean cada
+            // fastIntervalMs del nivel (2 s en Nivel 6, antes 5 s fijos) para
+            // que el DSP reaccione antes a la presion; el inventario lento
+            // (HardwareProbe/camara/sensores/pantalla) solo se repite cada
+            // slowIntervalMs (10 s en Nivel 6) o en el primer arranque, porque
+            // casi no cambia y antes se repetia en cada tick a 5 s. Bajo
+            // presion termica o de bateria se conserva la cadencia de
+            // seguridad existente (8/12 s): maxima potencia sin quemar bateria.
+            var lastDeepProbeMs = 0L
             while (isActive) {
                 val previousBudget = lastSnapshot?.budget
-                val deepProbe = previousBudget == null || previousBudget == Budget.NORMAL
+                val level = SafmusUniversalKernel.powerLevel
+                val nowMs = System.currentTimeMillis()
+                val deepProbe = (previousBudget == null || previousBudget == Budget.NORMAL) &&
+                    (previousBudget == null || nowMs - lastDeepProbeMs >= level.slowIntervalMs)
                 runCatching {
                     val snapshot = collect(app, deepProbe)
+                    if (deepProbe) lastDeepProbeMs = nowMs
                     lastSnapshot = snapshot
                     // Connect the cross-domain resource budget to IVANNA's existing
                     // native DSP governor; NORMAL restores its baseline tier.
@@ -116,7 +129,14 @@ object SafmusHardwareCoordinator {
                     Budget.CONSERVATIVE -> SafmusAdapterPolicy.Load.CONSERVATIVE
                     Budget.SAFE -> SafmusAdapterPolicy.Load.SAFE
                 }
-                delay(SafmusAdapterPolicy.cadence(load).intervalMs)
+                // Nivel 6 en condiciones normales: 2 s. Bajo presion, la
+                // cadencia de seguridad del nivel de carga (8/12 s).
+                val intervalMs = if ((lastSnapshot?.budget ?: Budget.NORMAL) == Budget.NORMAL) {
+                    SafmusUniversalKernel.powerLevel.fastIntervalMs
+                } else {
+                    SafmusAdapterPolicy.cadence(load).intervalMs
+                }
+                delay(intervalMs)
             }
         }
     }

@@ -26,22 +26,26 @@ bool update(
 )
 {
     if (!ivanna::safmus::isFiniteLatent(q.data()) || !std::isfinite(azimuth)) return false;
-    auto decoded =
-        decoder_.decode(
-            q.data(),
-            7
-        );
-
-    if(decoded.empty())
-        return false;
-
+    // SAFMUS Nivel 6: decodeInto() sin asignacion por llamada. El modelo
+    // horneado decodifica 256 valores (búfer en pila); un modelo cargado
+    // mayor usa el heap una sola vez por llamada, como antes.
+    const std::size_t len = decoder_.decodedLength();
+    float stackBuf[256];
+    std::vector<float> heapBuf;
+    float* decoded = stackBuf;
+    if (len > sizeof(stackBuf) / sizeof(stackBuf[0])) {
+        heapBuf.resize(len);
+        decoded = heapBuf.data();
+    }
+    const std::size_t n = decoder_.decodeInto(q.data(), 7, decoded, len);
+    if (n == 0) return false;
 
     // Ajuste perceptual espacial:
     // usa la energía PCA para modificar la agresividad HRTF
     float energy = 0.0f;
 
-    for(float v : decoded)
-        energy += v*v;
+    for (std::size_t k = 0; k < n; ++k)
+        energy += decoded[k] * decoded[k];
 
 
     float aggr =

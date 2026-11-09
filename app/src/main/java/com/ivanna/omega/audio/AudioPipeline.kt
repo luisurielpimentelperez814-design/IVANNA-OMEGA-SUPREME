@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import com.ivanna.omega.safmus.SafmusAdapterPolicy
 import com.ivanna.omega.core.IVANNAApplication
 import com.ivanna.omega.safmus.SafmusHardwareCoordinator
+import com.ivanna.omega.safmus.SafmusUniversalKernel
 import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.dsp.DSPState
 import kotlinx.coroutines.*
@@ -184,10 +185,13 @@ class AudioPipeline {
             SafmusHardwareCoordinator.Budget.SAFE -> SafmusAdapterPolicy.Load.SAFE
             else -> SafmusAdapterPolicy.Load.NORMAL
         }
+        // SAFMUS Nivel 6: el anillo usa el maximo de bloques del nivel (8),
+        // para absorber el jitter del planificador sin anadir retardo fijo.
         val captureRingBytes = SafmusAdapterPolicy.captureBufferBytes(
             minBytes = minIn,
             bytesPerBlock = BUFFER_SIZE * Float.SIZE_BYTES,
-            load = adapterLoad
+            load = adapterLoad,
+            level = SafmusUniversalKernel.powerLevel
         )
         val record = try {
             AudioRecord(MediaRecorder.AudioSource.UNPROCESSED, SAMPLE_RATE,

@@ -27,13 +27,23 @@ object SafmusAdapterPolicy {
      * Choose an AudioRecord ring size for the owning capture session.
      * Bigger rings absorb scheduler jitter with few extra bytes; the audio loop
      * still consumes one block at a time, so this is not an added fixed delay.
+     *
+     * Nivel 6: el nivel fija un minimo de bloques (8 en Nivel 6 = maxima
+     * absorcion de jitter); la presion de recursos solo puede aumentarlo,
+     * nunca reducirlo por debajo del nivel.
      */
-    fun captureBufferBytes(minBytes: Int, bytesPerBlock: Int, load: Load): Int {
-        val blocks = when (load) {
+    fun captureBufferBytes(
+        minBytes: Int,
+        bytesPerBlock: Int,
+        load: Load,
+        level: SafmusUniversalKernel.PowerLevel = SafmusUniversalKernel.powerLevel
+    ): Int {
+        val loadBlocks = when (load) {
             Load.NORMAL -> 4
             Load.CONSERVATIVE -> 6
             Load.SAFE -> 8
         }
+        val blocks = maxOf(level.captureRingBlocks, loadBlocks)
         return maxOf(minBytes.toLong(), bytesPerBlock.coerceAtLeast(1).toLong() * blocks)
             .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
