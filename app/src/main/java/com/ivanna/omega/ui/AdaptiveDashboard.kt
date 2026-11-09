@@ -188,10 +188,10 @@ fun AdaptiveDashboard(
                     MeterRow("Tonalidad",     tonality,   0f, 1f, AuroraCyan,   "${"%.0f".format(Locale.ROOT, tonality*100)}%")
                     Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)) {
                         androidx.compose.material3.Text("Centroide espectral: ${"%.0f".format(Locale.ROOT, centroid)} Hz",
-                            color = androidx.compose.ui.graphics.TextPrimary.copy(0.5f),
+                            color = TextPrimary.copy(0.5f),
                             fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                         androidx.compose.material3.Text("Spread: ${"%.0f".format(Locale.ROOT, spread)} Hz",
-                            color = androidx.compose.ui.graphics.TextPrimary.copy(0.5f),
+                            color = TextPrimary.copy(0.5f),
                             fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                     }
                 }

@@ -77,7 +77,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
-                    .background(bgSub)
+                    .background(ObsidianInset)
                     .padding(10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -382,7 +382,7 @@ private fun StyleChip(
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) accent.copy(alpha = 0.18f) else bgSub)
+            .background(if (selected) accent.copy(alpha = 0.18f) else ObsidianInset)
             .border(
                 width = if (selected) 1.5.dp else 1.dp,
                 color = if (selected) accent else ObsidianRaised,
@@ -417,7 +417,7 @@ private fun BandPill(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(bgSub)
+            .background(ObsidianInset)
             .padding(vertical = 5.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

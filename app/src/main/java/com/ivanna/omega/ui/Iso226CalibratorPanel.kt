@@ -19,10 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.Iso226Calibrator
 import com.ivanna.omega.audio.IvannaGlobalEffectManager
 import com.ivanna.omega.core.IVANNAApplication
-import com.ivanna.omega.ui.theme.AuroraCyan
-import com.ivanna.omega.ui.theme.ObsidianVoid
-import com.ivanna.omega.ui.theme.ObsidianSoft
-import com.ivanna.omega.ui.theme.TextMuted
+import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 

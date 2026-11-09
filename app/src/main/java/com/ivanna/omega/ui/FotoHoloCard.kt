@@ -39,8 +39,7 @@ import com.ivanna.omega.fotoholo.FotoHoloRouteB
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import com.ivanna.omega.fotoholo.FotoHoloMath
-import com.ivanna.omega.ui.theme.AuroraCyan
-import com.ivanna.omega.ui.theme.ObsidianDeep
+import com.ivanna.omega.ui.theme.*
 
 /**
  * FOTOHOLOGRAFÍA · NANOTOMIX — control + escena paramétrica.

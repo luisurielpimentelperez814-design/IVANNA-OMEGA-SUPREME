@@ -463,7 +463,7 @@ private fun hubIconFor(title: String): androidx.compose.ui.graphics.vector.Image
     title.contains("COCLEAR") -> Icons.Filled.Psychology
     title.contains("SOFA") -> Icons.Filled.Folder
     title.contains("SAF") -> Icons.Filled.Person
-    title.contains("CONTROL ESPACIAL") -> Icons.Filled.ThreeDRotation
+    title.contains("CONTROL ESPACIAL") -> Icons.Filled.ViewInAr
     title.contains("VISUALIZADOR") -> Icons.Filled.BarChart
     title.contains("OPE") -> Icons.Filled.Tune
     title.contains("BINAURAL") -> Icons.Filled.Headphones
