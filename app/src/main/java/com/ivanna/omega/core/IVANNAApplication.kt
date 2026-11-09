@@ -99,6 +99,17 @@ class IVANNAApplication : Application() {
         // primero: cualquier código que corra antes no depende del DSP.
         runCatching { com.ivanna.omega.security.IntegrityGate.verify(this) }
             .onFailure { android.util.Log.w(TAG, "IntegrityGate.verify falló: ${it.message}") }
+        // FIX (control loop detenido, 2026-11-09): el loop es de proceso, no de
+        // pantalla, pero solo se arrancaba en MainActivity.onCreate (dentro de
+        // un launch IO condicional). Si ese arranque se saltaba o la Activity se
+        // destruía sin recrear el proceso, el loop quedaba detenido aunque la app
+        // siguiera viva. Se arranca aquí, a nivel proceso, con el mismo gate de
+        // integridad que MainActivity. start() es idempotente, así que el arranque
+        // de MainActivity sigue siendo un no-op. Los ticks ya verifican
+        // IvannaNativeLib.isLoaded antes de llamar al nativo.
+        if (!com.ivanna.omega.security.IntegrityGate.isLocked) {
+            runCatching { com.ivanna.omega.audio.IvannaControlLoop.start() }
+        }
         // Live diagnostics: initializes locally at boot; network upload stays disabled until explicit opt-in.
         runCatching { LiveDiagnosticConnector.start(this) }
             .onFailure { Log.w(TAG, "Live diagnostic connector unavailable (non-fatal): ${it.message}") }
