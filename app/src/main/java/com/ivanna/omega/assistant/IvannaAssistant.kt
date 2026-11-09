@@ -151,6 +151,37 @@ class IvannaAssistant(
         _ui.value = _ui.value.copy(listening = false, statusLine = "Escucha detenida.")
     }
 
+    /**
+     * Mapeo canónico comando-DSP → intención acústica. Una sola fuente de
+     * verdad para los dos productores de comandos: Gemini (agentCommand) y
+     * el router léxico local (VoiceController.processCommand). Los comandos
+     * musicales de VoiceController (epic/abbey_road/vinyl/...) no tienen
+     * intención propia: caen a MUSICAL_INTENT para que el motor de presets
+     * los resuelva desde el texto crudo.
+     */
+    private fun commandToIntent(cmd: String): IvannaLanguageCore.AcousticIntent? = when (cmd) {
+        "voice_clarity" -> IvannaLanguageCore.AcousticIntent.VOICE_CLARITY
+        "cinema_mode"   -> IvannaLanguageCore.AcousticIntent.MOVIE_IMMERSION
+        "music_mode"    -> IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS
+        "concert_mode"  -> IvannaLanguageCore.AcousticIntent.CONCERT_LIVE
+        "spatial_mode"  -> IvannaLanguageCore.AcousticIntent.SPATIAL_EXPANSION
+        "gentle_mode"   -> IvannaLanguageCore.AcousticIntent.GENTLE_MODE
+        "flat_mode"     -> IvannaLanguageCore.AcousticIntent.FLAT_NEUTRAL
+        "volume_up"     -> IvannaLanguageCore.AcousticIntent.VOLUME_UP
+        "volume_down"   -> IvannaLanguageCore.AcousticIntent.VOLUME_DOWN
+        "bass_boost"    -> IvannaLanguageCore.AcousticIntent.BASS_BOOST
+        "treble_reduce" -> IvannaLanguageCore.AcousticIntent.TREBLE_REDUCE
+        "optimize"      -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
+        "auto_optimize" -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
+        "self_heal"     -> IvannaLanguageCore.AcousticIntent.SELF_HEAL
+        "diagnose"      -> IvannaLanguageCore.AcousticIntent.DIAGNOSE
+        "musical_intent",
+        "epic_mode", "abbey_road_mode", "vinyl_mode", "concert_massive",
+        "cinematic_mode", "analog_mode", "studio_pro_mode",
+        "microdetail_mode" -> IvannaLanguageCore.AcousticIntent.MUSICAL_INTENT
+        else -> null
+    }
+
     /** También acepta texto escrito (pruebas / accesibilidad). */
     fun onUserSaid(text: String) {
         _ui.value = _ui.value.copy(listening = false, processing = true, statusLine = "Procesando…")
@@ -185,33 +216,35 @@ class IvannaAssistant(
                 ?.commands?.firstOrNull()
             
             // Si el agente resuelve la petición con un comando conocido, lo inyectamos al pipeline nativo
-            val simulatedIntent = agentCommand?.let {
-                when(it) {
-                    "voice_clarity" -> IvannaLanguageCore.AcousticIntent.VOICE_CLARITY
-                    "cinema_mode"   -> IvannaLanguageCore.AcousticIntent.MOVIE_IMMERSION
-                    "music_mode"    -> IvannaLanguageCore.AcousticIntent.MUSIC_FULLNESS
-                    "concert_mode"  -> IvannaLanguageCore.AcousticIntent.CONCERT_LIVE
-                    "spatial_mode"  -> IvannaLanguageCore.AcousticIntent.SPATIAL_EXPANSION
-                    "gentle_mode"   -> IvannaLanguageCore.AcousticIntent.GENTLE_MODE
-                    "flat_mode"     -> IvannaLanguageCore.AcousticIntent.FLAT_NEUTRAL
-                    "volume_up"     -> IvannaLanguageCore.AcousticIntent.VOLUME_UP
-                    "volume_down"   -> IvannaLanguageCore.AcousticIntent.VOLUME_DOWN
-                    "bass_boost"    -> IvannaLanguageCore.AcousticIntent.BASS_BOOST
-                    "treble_reduce" -> IvannaLanguageCore.AcousticIntent.TREBLE_REDUCE
-                    "optimize"      -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
-                    "auto_optimize" -> IvannaLanguageCore.AcousticIntent.OPTIMIZE
-                    "self_heal"     -> IvannaLanguageCore.AcousticIntent.SELF_HEAL
-                    "diagnose"      -> IvannaLanguageCore.AcousticIntent.DIAGNOSE
-                    "musical_intent"-> IvannaLanguageCore.AcousticIntent.MUSICAL_INTENT
-                    else -> null
-                }
-            }
+            val simulatedIntent = agentCommand?.let { commandToIntent(it) }
 
             // ── IVANNA Language Core → intención acústica estructurada ────────
-            val parsed = if (simulatedIntent != null) {
+            var parsed = if (simulatedIntent != null) {
                 IvannaLanguageCore.ParsedIntent(text, simulatedIntent, 0.99f, true, "")
             } else {
                 IvannaLanguageCore.parse(text, scene ?: "UNKNOWN")
+            }
+
+            // ── Fallback léxico local (VoiceController) ───────────────────────
+            // El diccionario de sinónimos en español de VoiceController
+            // ("subir volumen", "modo cine", "vinilo", "abbey road", "válvulas"...)
+            // existía pero NADIE lo consultaba: processCommand() no tenía
+            // ningún caller. Solo se intenta si Gemini no dio comando y el
+            // parse local devolvió UNKNOWN — así un falso positivo del matcher
+            // por substring nunca pisa una intención real. Confianza 0.85
+            // (menor que 0.99 de Gemini): es un match léxico, no semántico.
+            // Los comandos musicales caen a MUSICAL_INTENT para que el motor
+            // de presets (IvannaMusicalIntentEngine.detect) los resuelva
+            // desde el texto crudo, igual que en la rama Gemini.
+            if (parsed.acousticIntent == IvannaLanguageCore.AcousticIntent.UNKNOWN && simulatedIntent == null) {
+                val lexicalCmd = runCatching { voiceController.processCommand(text) }.getOrNull()
+                val lexicalIntent = lexicalCmd?.takeIf { it != "none" }?.let { commandToIntent(it) }
+                if (lexicalIntent != null) {
+                    parsed = IvannaLanguageCore.ParsedIntent(
+                        text, lexicalIntent, 0.85f, true,
+                        "Comando reconocido por sinónimos locales"
+                    )
+                }
             }
 
             // ── Verificación proactiva de fatiga ──────────────────────────────

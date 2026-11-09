@@ -14,15 +14,16 @@ import com.ivanna.omega.dsp.ConcertMode
  * VoiceController — routing de perfiles disparado por clasificación de audio
  * (YAMNet) y/o por comandos de texto explícitos.
  *
- * IMPORTANTE — LÍMITE HONESTO DE ESTA CLASE:
- * NO hace Speech-to-Text. Reconocer palabras habladas ("subir volumen",
- * "modo cine", etc.) requiere un motor STT (Vosk, Whisper, Google STT) que
- * este proyecto todavía no integra. Mientras eso no exista:
- *   - [processAudio]  ⇒ solo puede decidir según lo que YAMNet clasifica
+ * NOTA — DÓNDE VIVE EL STT: esta clase NO hace Speech-to-Text, pero el
+ * proyecto SÍ lo integra desde 2026-09: IvannaSpeechRecognizer
+ * (android.speech.SpeechRecognizer del sistema) → IvannaAssistant, que
+ * resuelve la intención por IvannaLanguageCore.parse / Gemini y, como
+ * último recurso léxico, por [processCommand] (los sinónimos en español de
+ * esta clase: "subir volumen", "modo cine", "vinilo"...). Es decir:
+ *   - [processAudio]  ⇒ solo decide según lo que YAMNet clasifica
  *                        (música, voz, ruido). No sabe QUÉ dice la voz.
- *   - [processCommand] ⇒ recibe un String ya reconocido (el que produzca
- *                        un STT externo cuando se conecte) y decide qué
- *                        preset aplicar.
+ *   - [processCommand] ⇒ recibe un String ya reconocido (del STT real vía
+ *                        IvannaAssistant) y decide qué preset aplicar.
  * La versión anterior de este archivo simulaba STT devolviendo siempre la
  * cadena "subir volumen": eso se eliminó para no mentir en la telemetría.
  */
