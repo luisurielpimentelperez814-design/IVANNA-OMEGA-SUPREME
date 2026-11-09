@@ -326,16 +326,53 @@ object IntegrityGate {
             Log.w(TAG, "Asset de hashes sin entrada para libivanna_omega.so")
             return false
         }
-        val soPath = File(context.applicationInfo.nativeLibraryDir, "libivanna_omega.so").absolutePath
-        val actual = runCatching { nativeSha256File(soPath) }.getOrNull()
+        val actual = hashInstalledSo(context)
         if (actual.isNullOrEmpty()) {
-            Log.w(TAG, "No se pudo hashear la .so instalada ($soPath)")
+            Log.w(TAG, "No se pudo hashear la .so instalada")
             return false
         }
         if (actual.length != expectedHash.length) return false
         var diff = 0
         for (i in actual.indices) diff = diff or (actual[i].code xor expectedHash[i].code)
         return diff == 0
+    }
+
+    /**
+     * SHA-256 de la libivanna_omega.so instalada.
+     *
+     * FIX (2026-11-09, falso positivo): con useLegacyPackaging=false la .so
+     * NO se extrae a nativeLibraryDir — se carga directamente desde el APK
+     * (base.apk) y ese directorio queda vacío. El código anterior hasheaba
+     * solo nativeLibraryDir/libivanna_omega.so, que no existe -> null ->
+     * bloqueo fail-closed en TODA instalación release (verificado en el
+     * Moto G85: lib/arm64/ vacío, sin libivanna_omega.so en /data/app).
+     * Ahora: si no está extraída, se hashea la entrada
+     * lib/<abi>/libivanna_omega.so del APK (sourceDir) en streaming.
+     * La comparación sigue siendo contra el hash de build (asset); la
+     * protección (detectar sustitución de la .so) queda intacta.
+     */
+    private fun hashInstalledSo(context: Context): String? {
+        val extracted = File(context.applicationInfo.nativeLibraryDir, "libivanna_omega.so")
+        if (extracted.isFile) {
+            runCatching { nativeSha256File(extracted.absolutePath) }.getOrNull()?.let { return it }
+        }
+        return runCatching {
+            val apk = File(context.applicationInfo.sourceDir)
+            val digest = MessageDigest.getInstance("SHA-256")
+            java.util.zip.ZipFile(apk).use { zip ->
+                val entry = android.os.Build.SUPPORTED_ABIS
+                    .asSequence()
+                    .map { abi -> zip.getEntry("lib/$abi/libivanna_omega.so") }
+                    .firstOrNull { it != null }
+                    ?: return@runCatching null
+                zip.getInputStream(entry).use { input ->
+                    val buf = ByteArray(65536)
+                    var n: Int
+                    while (input.read(buf).also { n = it } > 0) digest.update(buf, 0, n)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+        }.getOrNull()
     }
 
     private fun currentVersionCode(context: Context): Long {

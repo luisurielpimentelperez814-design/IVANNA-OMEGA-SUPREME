@@ -461,6 +461,11 @@ jobs:
       # compara en runtime con la .so instalada. Si el asset falta, el build
       # release queda bloqueado fail-closed -> el job muere aquí, no en el
       # teléfono del usuario.
+      # GUARD (2026-11-09): no basta con que el asset EXISTA — el hash debe
+      # coincidir con la .so EMPAQUETADA (strippeada). En la v2.5.369 el asset
+      # llevaba el hash del intermedio de CMake (sin strippear) y el gate
+      # bloqueaba TODA instalación release (ADE muerto, RMS 0, "ADE no pudo
+      # iniciarse" cada 45 s). Si los hashes difieren, el job muere aquí.
       - name: Validate ivanna_so_hashes.txt asset in APK (phase 2)
         run: |
           set -euo pipefail
@@ -469,6 +474,11 @@ jobs:
           unzip -l "$APK_PATH" | grep -q "assets/ivanna_so_hashes.txt" || { echo "ERROR: $APK_PATH no contiene assets/ivanna_so_hashes.txt — generateSoHashes no corrió o falló"; exit 1; }
           echo "OK: APK contiene assets/ivanna_so_hashes.txt"
           unzip -p "$APK_PATH" assets/ivanna_so_hashes.txt
+          EXPECTED=$(unzip -p "$APK_PATH" assets/ivanna_so_hashes.txt | awk '/libivanna_omega\.so/ {print $2}')
+          ACTUAL=$(unzip -p "$APK_PATH" lib/arm64-v8a/libivanna_omega.so | sha256sum | awk '{print $1}')
+          test -n "$EXPECTED" || { echo "ERROR: asset sin entrada para libivanna_omega.so"; exit 1; }
+          [ "$EXPECTED" = "$ACTUAL" ] || { echo "ERROR: hash .so en asset ($EXPECTED) != hash .so empaquetada ($ACTUAL) — IntegrityGate bloquearía la instalación release (ver 2026-11-09)"; exit 1; }
+          echo "OK: hash del asset coincide con la .so empaquetada ($ACTUAL)"
 
       # ── STAGING OBLIGATORIO: prohibido copiar "si existe", siempre ────
       # ── se copia el binario recién validado o el job muere. ────────────

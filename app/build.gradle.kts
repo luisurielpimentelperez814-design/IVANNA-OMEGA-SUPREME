@@ -271,18 +271,53 @@ androidComponents {
         val capName = variantName.replaceFirstChar { it.uppercase() }
         val genTask = tasks.register<Exec>("generateSoHashes$capName") {
             dependsOn("externalNativeBuild$capName")
-            val soPath = layout.buildDirectory.file(
+            // FIX (2026-11-09, falso positivo que bloqueaba TODA instalación
+            // release): AGP strippea la .so al empaquetar (quita .symtab), así
+            // que la .so del APK tiene OTRO hash que el intermedio de CMake
+            // (sin strippear) que se hasheaba antes. IntegrityGate paso 4
+            // comparaba el asset contra la .so instalada -> mismatch siempre
+            // -> isLocked=true -> DSP/ADE/control loop muertos (RMS 0,
+            // clasificador SILENCIO, "ADE no pudo iniciarse" cada 45 s).
+            // Verificado en el APK v2.5.369: asset 40c16e7c… vs .so del APK
+            // dc5dc3d8… (strippeada, 2.481.456 B). Se hashea la .so
+            // STRIPPEADA que realmente se empaqueta (salida de
+            // strip<Variant>DebugSymbols); si no existe (debug no strippea),
+            // se usa el intermedio de CMake.
+            dependsOn(tasks.matching { it.name == "strip${capName}DebugSymbols" })
+            val cmakeSoPath = layout.buildDirectory.file(
                 "intermediates/cmake/${variantName.lowercase()}/obj/arm64-v8a/libivanna_omega.so"
             )
-            val outFile = file("${projectDir}/src/main/assets/ivanna_so_hashes.txt")
-            inputs.file(soPath)
-            outputs.file(outFile)
-            commandLine(
-                "python3",
-                "${projectDir}/../tools/security/generate_so_hashes.py",
-                "--so", soPath.get().asFile.absolutePath,
-                "--out", outFile.absolutePath
+            val strippedSoPath = layout.buildDirectory.file(
+                "intermediates/stripped_native_libs/${variantName.lowercase()}/out/lib/arm64-v8a/libivanna_omega.so"
             )
+            val outFile = file("${projectDir}/src/main/assets/ivanna_so_hashes.txt")
+            inputs.file(cmakeSoPath)
+            inputs.file(strippedSoPath)
+            outputs.file(outFile)
+            // La elección se resuelve en ejecución: la .so strippeada existe
+            // solo si AGP strippeó (release); en debug se usa el intermedio.
+            // En release, si no hay .so strippeada, el build FALLA con
+            // mensaje claro en vez de empaquetar un hash que no coincide.
+            doFirst {
+                val stripped = strippedSoPath.get().asFile
+                val cmake = cmakeSoPath.get().asFile
+                val so = when {
+                    stripped.isFile -> stripped
+                    variantName == "release" -> throw GradleException(
+                        "generateSoHashes: no se encontró la .so strippeada en ${stripped.absolutePath} " +
+                        "(AGP no strippeó o cambió la ruta). Sin ella el asset llevaría el hash del " +
+                        "intermedio de CMake y el IntegrityGate bloquearía la instalación release."
+                    )
+                    else -> cmake
+                }
+                logger.lifecycle("generateSoHashes: hasheando ${so.absolutePath}")
+                commandLine(
+                    "python3",
+                    "${projectDir}/../tools/security/generate_so_hashes.py",
+                    "--so", so.absolutePath,
+                    "--out", outFile.absolutePath
+                )
+            }
         }
         // El asset debe existir antes de empaquetar los assets del APK.
         // matching+configureEach (perezoso): merge<Variant>Assets aún no existe
