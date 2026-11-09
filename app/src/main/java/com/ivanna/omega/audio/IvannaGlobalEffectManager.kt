@@ -638,8 +638,8 @@ class IvannaGlobalEffectManager(
     }
 
     /**
-     * Sondea las configuraciones de reproducción activas y abre las sesiones
-     * que aún no están rastreadas. Complemento del broadcast
+     * Sondea las configuraciones de reproducción activas (SOLO diagnóstico:
+     * cuenta cuántos jugadores ve el sistema). Complemento del broadcast
      * (AudioSessionReceiver): el broadcast solo avisa de sesiones creadas
      * DESPUÉS de que la app empiece a escuchar, así que una sesión que ya
      * existía (música sonando antes de abrir IVANNA) o un broadcast perdido
@@ -655,19 +655,15 @@ class IvannaGlobalEffectManager(
      * sondeo NO puede descubrir el sessionId de YouTube Music ni de ninguna
      * app de terceros — ese es el motivo por el que el broadcast es el
      * mecanismo sancionado (Wavelet/Poweramp) y por el que el fix principal
-     * de la 374 es el receiver (RECEIVER_EXPORTED + fail-open). El sondeo
-     * sigue siendo útil: abre las sesiones propias que el sistema sí expone
-     * con id real, y deja constancia en log de cuántas configuraciones
-     * activas ve el sistema (diagnóstico: si el sistema reporta N jugadores
-     * activos pero 0 con sessionId usable, la anonimización está actuando
-     * y solo el broadcast puede descubrirlos).
+     * de la 374 es el receiver (RECEIVER_EXPORTED + fail-open).
      *
-     * Solo AÑADE sesiones (nunca cierra): una sesión pausada no aparece en
-     * la lista de activas y cerrarla por ausencia rompería el DSP al
-     * reanudar. El cierre lo sigue haciendo el broadcast CLOSE y el
-     * watchdog de sesiones muertas.
+     * Además, el SDK público NO expone audioSessionId ni clientUid en
+     * AudioPlaybackConfiguration (son APIs ocultas @hide de AOSP): el
+     * intento de leerlos no compila contra android.jar. Por eso el sondeo
+     * es solo diagnóstico (conteo) y nunca abre sesiones; el broadcast
+     * sigue siendo el único mecanismo que descubre sesiones.
      *
-     * @return cuántas sesiones nuevas se abrieron en este pase.
+     * @return siempre 0 (diagnóstico; no abre sesiones).
      */
     @Synchronized
     fun scanActivePlaybackSessions(): Int {
@@ -675,29 +671,14 @@ class IvannaGlobalEffectManager(
         val am = audioManager ?: return 0
         val configs: List<AudioPlaybackConfiguration> =
             runCatching { am.activePlaybackConfigurations }.getOrNull() ?: return 0
-        if (configs.isEmpty()) return 0
-        var usable = 0
-        var opened = 0
-        for (cfg in configs) {
-            val sid = runCatching { cfg.audioSessionId }.getOrNull() ?: 0
-            if (sid <= 0) continue
-            usable++
-            if (activeSessions.containsKey(sid)) continue
-            val pkg = resolvePackageForUid(runCatching { cfg.clientUid }.getOrNull() ?: 0)
-            if (pkg == context.packageName) continue
-            openSession(sid, pkg)
-            opened++
-        }
-        Log.d(TAG, "scanActivePlaybackSessions: ${configs.size} configs activas, $usable con sessionId usable, $opened sesiones nuevas")
-        return opened
-    }
-
-    /** Resuelve el paquete de un UID (best-effort; null si no se puede). */
-    private fun resolvePackageForUid(uid: Int): String? {
-        if (uid <= 0) return null
-        return runCatching {
-            context.packageManager.getPackagesForUid(uid)?.firstOrNull()
-        }.getOrNull()
+        // Solo diagnóstico: el SDK público NO expone audioSessionId ni
+        // clientUid en AudioPlaybackConfiguration (son APIs ocultas @hide
+        // de AOSP), así que el sondeo no puede abrir sesiones. El broadcast
+        // (RECEIVER_EXPORTED + fail-open) sigue siendo el mecanismo que
+        // descubre sesiones. Este conteo solo deja constancia de cuántos
+        // jugadores activos ve el sistema.
+        Log.d(TAG, "scanActivePlaybackSessions: ${configs.size} configs activas (diagnóstico; sin sessionId por API pública)")
+        return 0
     }
 
     private fun probeStatus(fx: SessionEffects): Int {
