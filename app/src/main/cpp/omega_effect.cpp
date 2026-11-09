@@ -731,7 +731,8 @@ static std::atomic<Ivanna::RirDataset*> g_rirDataset{nullptr};
 // Idempotente: solo carga la primera vez que tiene éxito.
 static void omega_rir_dataset_init() noexcept {
     if (g_rirDataset.load(std::memory_order_acquire) != nullptr) return;
-    Ivanna::RirDataset* ds = new Ivanna::RirDataset();
+    Ivanna::RirDataset* ds = new (std::nothrow) Ivanna::RirDataset();
+    if (!ds) return;  // FIX (v2.5.373): nothrow — esta función es noexcept y un new que lanza tumbaría audioserver.
     const char* base = "/data/adb/ivanna_omega/rir";
     if (!ds->load(base)) {
         LOGW("RirDataset: no se pudo cargar desde %s — sala desactivada", base);
@@ -2013,16 +2014,24 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // AUDIT FIX (session isolation): DSP se instancia POR CONTEXTO.
                 // Cada sesión AudioFlinger llega aquí y crea su propio
                 // IvannaFusionCore; ya no se pisa el global entre sesiones.
+                // FIX (v2.5.373, higiene): new (std::nothrow) en los tres.
+                // Este target compila con -fno-exceptions (BASE_FLAGS,
+                // arm64-v8a): un try/catch no compila aquí, y un new que
+                // lanza ante falta de memoria llamaría a std::terminate y
+                // tumbaría audioserver. Los tres punteros admiten nullptr
+                // (fusionCore: passthrough fail-closed; adaptiveEngine y
+                // antiDolby: usos guardados); el bloque se reintenta en la
+                // próxima configuración si alguno quedó en null.
                 if (!ctx->fusionCore) {
-                    ctx->fusionCore = new IvannaFusionEngine((float)sr);
+                    ctx->fusionCore = new (std::nothrow) IvannaFusionEngine((float)sr);
                     if (!ctx->adaptiveEngine) {
-                        ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
+                        ctx->adaptiveEngine = new (std::nothrow) ivanna::adaptive::AdaptiveEngineV2();
                     }
                     if (!ctx->antiDolby) {
-                        ctx->antiDolby = new AntiDolbyState();
+                        ctx->antiDolby = new (std::nothrow) AntiDolbyState();
                     }
                 }
-                ctx->fusionCore->initSpatial((float)sr, 4096);
+                if (ctx->fusionCore) ctx->fusionCore->initSpatial((float)sr, 4096);
                 // AUDIT FIX (realtime allocation): preasignar buffers L/R
                 // AQUÍ (fuera de la ruta caliente) para que omega_process
                 // no tenga que llamar a malloc/resize en el callback.
@@ -2053,7 +2062,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // ivanna_omega_jni.cpp (g_safety_limiter) pero por-contexto,
                 // asi dos sesiones simultaneas no comparten estado de gain-
                 // reduction ni se contaminan la telemetria entre si.
-                if (!ctx->safetyLimiter) ctx->safetyLimiter = new ivanna::SafetyLimiter();
+                if (!ctx->safetyLimiter) ctx->safetyLimiter = new (std::nothrow) ivanna::SafetyLimiter();  // FIX (v2.5.373): nothrow — usos guardados, null = sin limiter (passthrough seguro)
                 if (ctx->safetyLimiter) {
                     // FIX (distorsion constante): umbral -4 dBFS hacia que cualquier
                     // master moderno (picos > 0.63) estuviera SIEMPRE bajo reduccion
@@ -2172,10 +2181,15 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 ivanna::fourd::ensureInit(static_cast<float>(sr), ivanna::fourd::kAnalysisChunk);
                 ivanna::effectEvidence().open();   // NO-RT: mmap de evidencia por procesador
                 if (!ctx->rirConvolver) {
-                    ctx->rirConvolver = new Ivanna::RirConvolver();
-                    ctx->rirConvolver->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
-                    ctx->rirConvolver->synthesizeMasterStudioBrir(0.34f, static_cast<int>(sr));
-                    ctx->rirConvolver->setWetDry(0.0f);
+                    ctx->rirConvolver = new (std::nothrow) Ivanna::RirConvolver();
+                    // FIX (v2.5.373): nothrow — null = sala desactivada (los usos
+                    // están guardados); sin guarda, un fallo de asignación aquí
+                    // desreferenciaría null.
+                    if (ctx->rirConvolver) {
+                        ctx->rirConvolver->applySofaCoupling(ivanna::master::kMasterSafGoldenQ);
+                        ctx->rirConvolver->synthesizeMasterStudioBrir(0.34f, static_cast<int>(sr));
+                        ctx->rirConvolver->setWetDry(0.0f);
+                    }
                 }
                 // FIX RT (2026-08-27): arrancar el worker de carga de IR
                 // (hilo de control, proceso-global). Idempotente; el hilo
@@ -2189,7 +2203,7 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                     // liberar -> sin UAF aunque el hilo sobreviva al efecto).
                 }
                 if (!ctx->adaptive) {
-                    ctx->adaptive = new ivanna::experimental::AdaptiveDecisionEngine();
+                    ctx->adaptive = new (std::nothrow) ivanna::experimental::AdaptiveDecisionEngine();  // FIX (v2.5.373): nothrow — usos guardados, null = sin motor adaptativo
                     ctx->lastAdaptiveSeq = 0;
                 }
                 // SET_CONFIG is a non-realtime control callback. Retry start
@@ -2629,7 +2643,16 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->rtL = nullptr;          // AUDIT FIX: buffers RT se reservan en SET_CONFIG
     ctx->rtR = nullptr;
     ctx->rtCapacity = 0;
-    ctx->adaptiveEngine = new ivanna::adaptive::AdaptiveEngineV2();
+    // FIX (v2.5.373, Error -3 / higiene): new (std::nothrow), NO new con
+    // lanzamiento. Este target compila con -fno-exceptions (BASE_FLAGS,
+    // arm64-v8a): un try/catch no compila aquí, y un new que lanza ante
+    // falta de memoria llamaría a std::terminate y tumbaría audioserver
+    // en vez de devolver error. Con nothrow, si la asignación falla el
+    // motor queda en nullptr — estado válido y tolerado: todos los usos
+    // están guardados (línea ~1470) y el bloque lazy de SET_CONFIG
+    // (~2018) lo crea más tarde si sigue en null. adaptiveEnabled ya
+    // nace en false, así que no hay adaptación sin motor.
+    ctx->adaptiveEngine = new (std::nothrow) ivanna::adaptive::AdaptiveEngineV2();
     // Fail closed until a valid control snapshot explicitly requests adaptation.
     // The daemon's makeDefault() carries the saved/default feature bit when
     // available; an absent control plane is not permission to self-enable.
@@ -2638,7 +2661,21 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     ctx->lastAppliedGen = 0;     // AUDIT FIX: control plane empieza sin generation
     ctx->ctrlBusOpen    = false;
     // Writer de telemetría independiente del reader de control; apertura fuera de RT.
-    ctx->localWriterOpen.store(omega_ensure_local_telemetry_bus(), std::memory_order_release);
+    // FIX (Ruta B, Moto G85 2026-11-09): si el bus local no abre, el beacon y la
+    // telemetría de Ruta B quedan offline y la app no puede confirmar Ruta B
+    // (consumer=null, effect_state=-1). Antes fallaba en silencio; se loguea una
+    // sola vez para que el diagnóstico sea visible en logcat.
+    const bool localBusOk = omega_ensure_local_telemetry_bus();
+    if (!localBusOk) {
+        static std::atomic<bool> s_localBusFailureLogged{false};
+        if (!s_localBusFailureLogged.exchange(true, std::memory_order_acq_rel)) {
+            LOGE("Ruta B bus local de telemetria NO disponible (%s): beacon/telemetria offline; "
+                 "el efecto no pudo crear/abrir el archivo en /data/local/tmp "
+                 "(revisar pre-creacion 0666 del demonio y permisos del directorio)",
+                 OMEGA_LOCAL_BUS_PATH);
+        }
+    }
+    ctx->localWriterOpen.store(localBusOk, std::memory_order_release);
     // pendingSnap queda con magic=0 hasta el primer SET_PARAM (se sembrará
     // con makeDefault() ahí).
     memset(&ctx->pendingSnap, 0, sizeof(ctx->pendingSnap));

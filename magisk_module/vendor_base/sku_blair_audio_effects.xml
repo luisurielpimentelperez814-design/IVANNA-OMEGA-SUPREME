@@ -55,7 +55,6 @@
 </effects>
     <postprocess>
         <stream type="music">
-            <apply effect="omega_effect"/>
             <apply effect="music_helper"/>
             <apply effect="dlb_music_listener"/>
         </stream>

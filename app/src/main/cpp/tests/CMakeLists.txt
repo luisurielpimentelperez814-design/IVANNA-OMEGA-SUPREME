@@ -240,6 +240,18 @@ target_compile_options(test_effect_beacon PRIVATE -Wall -Wextra)
 target_link_libraries(test_effect_beacon PRIVATE Threads::Threads)
 add_test(NAME test_effect_beacon COMMAND test_effect_beacon)
 
+# ── test_effect_local_files: pre-creación 0666 de archivos locales de Ruta B ──
+# Regresión del FIX Moto G85 2026-11-09 (daemon/effect_local_files.h): el efecto
+# (UID no-root) no puede crear /data/local/tmp/omega_effect_ctrl_local ni
+# omega_effect_beacon; el demonio (root) los pre-crea en cada arranque. El test
+# fija: creación con 0666+tamaño exacto, no tocar archivo con tamaño correcto,
+# dimensionar vacío, no truncar parcial, rechazar args inválidos, idempotencia.
+add_executable(test_effect_local_files test_effect_local_files.cpp)
+target_include_directories(test_effect_local_files PRIVATE .. ../include)
+target_compile_options(test_effect_local_files PRIVATE -Wall -Wextra)
+target_link_libraries(test_effect_local_files PRIVATE Threads::Threads)
+add_test(NAME test_effect_local_files COMMAND test_effect_local_files)
+
 # ── test_audio_effect_library_tag: AUDIO_EFFECT_LIBRARY_TAG == valor real AOSP ──
 # Regresión del hallazgo v2.5.139: el shim audio_effect_compat.h tenía los
 # shifts de bits de AUDIO_EFFECT_LIBRARY_TAG en orden inverso al real de AOSP

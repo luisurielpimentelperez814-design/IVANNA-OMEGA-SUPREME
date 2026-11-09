@@ -446,9 +446,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private val antiPopEngine      = ProfessionalAntiPopEngine(SAMPLE_RATE)
         private val budgetGuard        = AudioThreadBudgetGuard()
         @Volatile private var trackMuted = false
-        // FIX (micro-cortes/crujido): RouteArbiter.isSystemWideEffectActive() hace
-        // AudioEffect.queryEffects() = llamada Binder a audioserver. Se ejecutaba en el hilo
-        // de audio EN CADA bloque (~150/s); cualquier demora del Binder (>20 ms con CPU cargada)
+        // FIX (micro-cortes/crujido): RouteArbiter.systemWideEffectProcessing() lee el
+        // beacon del efecto (JNI + open/mmap del archivo beacon). Se ejecutaba en el hilo
+        // de audio EN CADA bloque (~150/s); cualquier demora de I/O con CPU cargada
         // vaciaba el AudioTrack -> underrun audible. Ahora se cachea y se refresca cada 2 s
         // en un hilo aparte; el hilo de audio solo lee un booleano.
         @Volatile private var systemWideCached = false
@@ -470,31 +470,39 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         }
 
         fun start() {
-            // GUARDA REAL (2026-09-17): antes de duplicar el stream con
-            // captura+reproceso propio, comprobar si el efecto de sistema
-            // "omega_effect" (libomega_effect.so, instalado vía
+            // GUARDA REAL (2026-09-17, revisada 2026-11-09): antes de duplicar el
+            // stream con captura+reproceso propio, comprobar si el efecto de
+            // sistema "omega_effect" (libomega_effect.so, instalado vía
             // magisk_module/system/etc/audio_effects_ivanna_omega.xml como
-            // postprocess del stream "music") ya está registrado en el
-            // dispositivo. Si AudioFlinger ya lo aplica en sitio sobre TODO
-            // el stream music (Tidal incluido), esta captura estaría
-            // reprocesando una señal que YA fue procesada y reproduciéndola
-            // encima del original — eco digital garantizado, e
-            // independiente de bocina/audífonos (coincide exactamente con
-            // el síntoma reportado). Comprobación con API pública, sin
-            // permisos nuevos: AudioEffect.queryEffects() lista TODOS los
-            // efectos que el sistema tiene registrados desde
-            // /system|vendor/etc/audio_effects*.xml, incluido el nuestro si
-            // el módulo Magisk lo instaló correctamente en este dispositivo.
-            val omegaSystemEffectPresence = RouteArbiter.systemWideEffectPresence()
-            if (omegaSystemEffectPresence != false) {
-                val reason = if (omegaSystemEffectPresence == true) {
-                    "omega_effect está registrado como postprocess global"
-                } else {
-                    "no se pudo verificar la propiedad global del audio"
-                }
+            // postprocess del stream "music") está REALMENTE PROCESANDO en el
+            // dispositivo. Si AudioFlinger ya lo aplica en sitio sobre TODO el
+            // stream music (Tidal incluido), esta captura estaría reprocesando
+            // una señal que YA fue procesada y reproduciéndola encima del
+            // original — eco digital garantizado, e independiente de
+            // bocina/audífonos (coincide exactamente con el síntoma reportado).
+            // La evidencia es el beacon del propio efecto
+            // (RouteArbiter.systemWideEffectProcessing() ->
+            // DSPBridge.effectState()): ENABLED_IDLE o PROCESSING. El mero
+            // registro en AudioEffect.queryEffects() YA NO BASTA: en el Moto G85
+            // (2026-11-09) el efecto estaba registrado pero mudo (nunca
+            // inicializó su beacon porque no pudo crear
+            // /data/local/tmp/omega_effect_beacon) y abortar solo por registro
+            // dejaba a IVANNA sin procesar en ninguna ruta.
+            val omegaProcessing = RouteArbiter.systemWideEffectProcessing()
+            if (omegaProcessing) {
+                val reason = "omega_effect procesando como postprocess global (beacon: efecto habilitado/procesando)"
                 Log.w(TAG, "$reason — se aborta la captura+reproceso propia para evitar doble procesamiento.")
                 onError("$reason; se mantiene la salida segura sin reinyección por software.")
                 return
+            }
+            // Ruta B registrada pero sin evidencia de procesamiento (o no
+            // registrada): Ruta A procede. Se deja constancia para diagnóstico;
+            // el refresco periódico de systemWideCached reevalúa cada 2 s y
+            // Ruta A retoma/silencia sola si Ruta B cambia de estado.
+            when (RouteArbiter.systemWideEffectPresence()) {
+                true -> Log.i(TAG, "omega_effect registrado pero sin evidencia de procesamiento (beacon mudo) — Ruta A procede; el tick periódico reevaluará Ruta B.")
+                null -> Log.i(TAG, "no se pudo verificar la presencia de omega_effect; sin evidencia de procesamiento — Ruta A procede.")
+                false -> { /* efecto no registrado: nada que reportar */ }
             }
             if (!setupHardware()) {
                 cleanupHardwareOnly()
@@ -932,7 +940,12 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         systemWideRefreshing.compareAndSet(false, true)) {
                         systemWideCheckedAtMs = nowSwMs
                         Thread({
-                            try { systemWideCached = RouteArbiter.systemWideEffectPresence() ?: true }
+                            // FIX (Ruta B, Moto G85 2026-11-09): el refresco usa evidencia
+                            // REAL de procesamiento (beacon), no el mero registro en
+                            // queryEffects(). Si Ruta B queda muda, el beacon deja de
+                            // mostrar procesamiento y Ruta A retoma sola la reinyección
+                            // en ≤2 s; si Ruta B empieza a procesar, se silencia sola.
+                            try { systemWideCached = RouteArbiter.systemWideEffectProcessing() }
                             finally { systemWideRefreshing.set(false) }
                         }, "ivanna-routecheck").apply { isDaemon = true }.start()
                     }

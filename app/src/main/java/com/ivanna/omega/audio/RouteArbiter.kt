@@ -2,6 +2,7 @@ package com.ivanna.omega.audio
 
 import android.media.audiofx.AudioEffect
 import android.util.Log
+import com.ivanna.omega.dsp.DSPBridge
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
@@ -64,6 +65,10 @@ object RouteArbiter {
      * identica a la que ya usaba el guard original en
      * CaptureEngine.start(). Segura de llamar desde un hilo de control
      * (hace binder call, no debe llamarse desde el hilo de audio).
+     *
+     * OJO: esto solo prueba REGISTRO, no procesamiento. Un efecto registrado
+     * pero mudo (nunca inicializó su beacon) NO debe abortar Ruta A: para
+     * decidir la propiedad del audio usar systemWideEffectProcessing().
      */
     /**
      * null means AudioEffect enumeration was unavailable. Callers controlling output
@@ -73,28 +78,61 @@ object RouteArbiter {
         AudioEffect.queryEffects()?.any { it.uuid == OMEGA_SYSTEM_EFFECT_UUID }
     }.getOrNull()
 
+    /**
+     * Evidencia REAL de que Ruta B está procesando, leída del beacon que el
+     * propio efecto mantiene (DSPBridge.effectState() -> readEffectBeacon()).
+     * A diferencia de systemWideEffectPresence() (solo registro en
+     * AudioEffect.queryEffects()), esto prueba que el efecto está insertado y
+     * habilitado en audioserver.
+     *
+     * FIX (Ruta B, Moto G85 2026-11-09): el efecto puede estar REGISTRADO pero
+     * mudo (nunca inicializó su beacon porque no pudo crear
+     * /data/local/tmp/omega_effect_beacon). Abortar Ruta A solo por registro
+     * dejaba a IVANNA sin procesar en ninguna ruta. Misma política que
+     * AudioBackendSelector.isRouteBConfirmed(): ENABLED_IDLE o PROCESSING
+     * confirman Ruta B; NO_EFFECT o UNAVAILABLE (beacon ilegible/inexistente)
+     * = sin evidencia => Ruta A NO aborta y retoma automáticamente si Ruta B
+     * vuelve a quedar muda. Si la librería nativa no está cargada, el beacon
+     * es ilegible (UNAVAILABLE) y se devuelve false: la decisión la reevalúa
+     * el tick periódico cuando el nativo esté disponible.
+     */
+    fun systemWideEffectProcessing(): Boolean {
+        return when (runCatching { DSPBridge.effectState() }.getOrNull()) {
+            DSPBridge.EffectState.ENABLED_IDLE,
+            DSPBridge.EffectState.PROCESSING -> true
+            else -> false
+        }
+    }
+
     /** Legacy convenience only; safety-critical route owners must use the tri-state API. */
     fun isSystemWideEffectActive(): Boolean = systemWideEffectPresence() ?: false
 
     /**
-     * Reevalua el estado combinando la presencia de Ruta B con si Ruta A
-     * esta corriendo actualmente. Pensado para llamarse periodicamente
-     * desde un hilo de control (ver PlaybackCaptureService.routeArbiterTick).
+     * Reevalua el estado combinando la evidencia de procesamiento de Ruta B
+     * con si Ruta A esta corriendo actualmente. Pensado para llamarse
+     * periodicamente desde un hilo de control (ver
+     * PlaybackCaptureService.routeArbiterTick).
+     *
+     * FIX (Ruta B, Moto G85 2026-11-09): el estado se calcula con evidencia
+     * REAL de procesamiento (systemWideEffectProcessing(), beacon), no con el
+     * mero registro en queryEffects(). Un efecto registrado pero mudo ya no
+     * clasifica como SYSTEM_WIDE_ONLY/LOOPBACK_PROCESSING: Ruta A sigue
+     * (CAPTURE_ONLY) hasta que Ruta B demuestre que procesa de verdad.
      *
      * @param routeARunning si CaptureEngine esta activo en este momento.
      * @return el RouteState resultante.
      */
     fun evaluate(routeARunning: Boolean): RouteState {
+        val processing = systemWideEffectProcessing()
         val presence = systemWideEffectPresence()
-        val newState = when (presence) {
-            true -> if (routeARunning) RouteState.LOOPBACK_PROCESSING else RouteState.SYSTEM_WIDE_ONLY
-            false -> if (routeARunning) RouteState.CAPTURE_ONLY else RouteState.DISABLED
-            null -> if (routeARunning) RouteState.LOOPBACK_PROCESSING else RouteState.SYSTEM_WIDE_ONLY
+        val newState = when {
+            processing -> if (routeARunning) RouteState.LOOPBACK_PROCESSING else RouteState.SYSTEM_WIDE_ONLY
+            else -> if (routeARunning) RouteState.CAPTURE_ONLY else RouteState.DISABLED
         }
         val prev = currentState.getAndSet(newState)
         if (prev != newState) {
             Log.i(TAG, "[ROUTE_ARBITER] state=$prev -> $newState " +
-                "system_wide=${presence ?: "UNKNOWN"} route_a_running=$routeARunning")
+                "system_wide_processing=$processing system_wide_registered=${presence ?: "UNKNOWN"} route_a_running=$routeARunning")
         }
         return newState
     }

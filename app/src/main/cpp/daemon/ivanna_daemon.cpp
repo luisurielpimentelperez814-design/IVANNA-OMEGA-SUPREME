@@ -8,11 +8,14 @@
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
 #include "../include/omega_control_bus.h"
+#include "../include/omega_effect_beacon.h"  // OMEGA_EFFECT_BEACON_PATH/SIZE (FIX Ruta B 2026-11-09)
+#include "effect_local_files.h"             // pre-creación 0666 de archivos locales de Ruta B
 #include "../IvannaSelfHealingEngine.hpp"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <cstring>
 #include <cstddef>
@@ -168,6 +171,25 @@ int setup_shared_memory(int sampleRate) {
     return ivanna::shmManager().fd();
 }
 
+// FIX (Ruta B, Moto G85 2026-11-09): el efecto corre en audioserver/HAL con UID
+// no-root y NO PUEDE crear archivos en /data/local/tmp/ (0771 root:shell, cero
+// reglas SELinux para crearlo). El demonio (root) pre-crea los dos archivos con
+// 0666 en cada arranque para que el open(O_CREAT) del efecto ya no necesite
+// permiso de creación del directorio. Solo existencia + permisos + tamaño; el
+// efecto los inicializa (magic, contadores) al mapearlos. Un fallo aquí no es
+// fatal: se loguea y el arranque sigue (el efecto puede reintentarlo).
+static void precreateEffectLocalFiles() {
+    const std::pair<const char*, std::size_t> files[] = {
+        {ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH, ivanna::OmegaControlBus::REGION_SIZE},
+        {ivanna::OMEGA_EFFECT_BEACON_PATH, ivanna::OMEGA_EFFECT_BEACON_SIZE},
+    };
+    for (const auto& f : files) {
+        const ivanna::LocalFilePrecreateResult r = ivanna::precreateLocalFile(f.first, f.second);
+        log_message(std::string("EFFECT-LOCAL-FILES: ") + f.first + " -> " +
+                    (r.ok ? "OK (" : "FALLO (") + r.detail + ")");
+    }
+}
+
 int create_socket_server(const std::string& socket_path) {
     if (socket_path[0] != '@') unlink(socket_path.c_str());
     int server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -274,6 +296,10 @@ int main(int argc, char* argv[]) {
         log_message("WARN: SHM no disponible — el daemon sigue sirviendo el socket de comandos (modo degradado).");
     }
     log_message("DSP sample rate configured: " + std::to_string(rate));
+    // FIX (Ruta B, Moto G85 2026-11-09): pre-crear con 0666 los archivos locales
+    // del efecto (control + beacon) ANTES de bindear el socket, para que el
+    // efecto (UID no-root) no necesite crearlos en /data/local/tmp/.
+    precreateEffectLocalFiles();
     // FIX (socket DESCONECTADO con daemon CORRIENDO, 2026-08-31): si bind()
     // falla — EADDRINUSE por una instancia zombie que aun retiene el nombre
     // abstracto (no se puede unlink en el abstract namespace), o early-boot

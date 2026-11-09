@@ -195,11 +195,23 @@ audio_registration_view() {
     }' "$1"
 }
 # merge_omega_xml <src_oem_xml> <dst_merged_xml>
-# Copia el XML OEM a <dst> y fusiona el registro de librería/efecto omega +
-# los <apply> de postprocess (music/movie/game), validando cada paso.
+# Copia el XML OEM a <dst> y fusiona SOLO el registro de librería/efecto
+# omega (sin <apply> de postprocess), validando cada paso.
 # Devuelve 0 si el merge quedó validado, 1 si no (sin abortar: el llamador
 # decide si es fatal). Ante un fallo, el destino queda con la copia OEM sin
 # fusionar — nunca se destruye el OEM ni se instala un XML a medias.
+# POLÍTICA (Error -3 / Ruta B, v2.5.373): el XML fusionado NO debe contener
+# ningún <apply effect="omega_effect"/> en postprocess. Un <apply> global
+# crea una instancia del efecto en la cadena del output al arrancar
+# audioserver; cuando la app intenta crear OTRA instancia del mismo UUID
+# por sesión (IvannaGlobalEffectManager.createOmegaEffect), AudioFlinger
+# la rechaza como duplicado en la cadena: createEffect() devuelve
+# BAD_VALUE (-22, "effect not found") y la app lo ve como Error -3.
+# La activación real es por UUID por sesión desde la app, no por
+# postprocess global. Por eso el merge ELIMINA cualquier apply de omega
+# que la base OEM ya trajera, en vez de insertarlo. El registro
+# (librería + <effect>) SÍ se conserva: sin él, la app no puede crear
+# el efecto por UUID.
 # RAZÓN (Ruta B, 2026-11-07): la factoría de efectos puede leer una
 # configuración DISTINTA de la primera encontrada (SKU blair o /system/etc).
 # Si solo se fusiona la primera, el HAL no conoce el UUID omega y la app no
@@ -244,14 +256,17 @@ merge_omega_xml() {
        printf '%s\n' "$REG_EFFECT" | grep -qv '[[:space:]]uuid="4956414e-4e41-4f4d-4547-415355505245"'; then
         return 1
     fi
-    # Postprocess: asegurar <apply effect="omega_effect"/> en music/movie/game.
-    # Se corre tras copiar el OEM, así se preservan los demás efectos.
+    # Postprocess: ELIMINAR cualquier <apply effect="omega_effect"/> del
+    # XML fusionado — nunca insertarlo (Error -3, v2.5.373; ver la cabecera
+    # de esta función). Se corre tras copiar el OEM, así se preservan los
+    # demás efectos OEM. Un stream que quede vacío tras la eliminación es
+    # XML válido y AudioFlinger lo ignora.
     if [ -s "$MG_DST" ]; then
         PP_TMP="$MG_DST.ivanna.${PPID:-0}"
         PP_INPUT="$MG_DST.input.${PPID:-0}"
         # OEM XML may place <stream>...</stream> on one line. Normalize those
-        # tags onto separate lines first so AWK inserts <apply> INSIDE the stream,
-        # never before the whole one-line stream element.
+        # tags onto separate lines first so the removal below never leaves a
+        # half-removed one-line stream element behind.
         sed 's#<stream[[:space:]][^>]*>#&\
 #g; s#</stream>#\
 </stream>\
@@ -260,75 +275,17 @@ merge_omega_xml() {
             ui_print "  ! No se pudo normalizar XML OEM; se conserva la base"
             return 1
         }
-        awk '
-    function supported(t) { return t=="music" || t=="movie" || t=="game" }
-    {
-        line[NR]=$0
-    }
-    END {
-        in_pp=0; pp_found=0
-        for (i=1; i<=NR; i++) {
-            if (line[i] ~ /<postprocess([ >])/ ) { in_pp=1; pp_found=1 }
-            if (in_pp && line[i] ~ /<stream[[:space:]]+type="[[:alnum:]_-]+"/) {
-                t=line[i]
-                sub(/^.*type="/,"",t); sub(/".*$/,"",t)
-                if (supported(t)) {
-                    found[t]=1
-                    has_apply=0; close_at=0
-                    for (j=i; j<=NR; j++) {
-                        if (line[j] ~ /<apply[[:space:]]+effect="omega_effect"/) has_apply=1
-                        if (line[j] ~ /<\/stream>/) { close_at=j; break }
-                    }
-                    if (!has_apply && close_at>0) add_before[close_at]="        <apply effect=\"omega_effect\"/>"
-                }
-            }
-            if (in_pp && line[i] ~ /<\/postprocess>/) {
-                for (tidx=1; tidx<=3; tidx++) {
-                    t=(tidx==1 ? "music" : (tidx==2 ? "movie" : "game"))
-                    if (!found[t]) {
-                        add_before[i]="        <stream type=\"" t "\">\n            <apply effect=\"omega_effect\"/>\n        </stream>\n" add_before[i]
-                    }
-                }
-                in_pp=0
-            }
-        }
-        if (!pp_found) {
-            root_close=0
-            for (i=1; i<=NR; i++) if (line[i] ~ /<\/audio_effects_conf>/) root_close=i
-            if (root_close>0) {
-                add_before[root_close]="    <postprocess>\n        <stream type=\"music\"><apply effect=\"omega_effect\"/></stream>\n        <stream type=\"movie\"><apply effect=\"omega_effect\"/></stream>\n        <stream type=\"game\"><apply effect=\"omega_effect\"/></stream>\n    </postprocess>\n" add_before[root_close]
-            }
-        }
-        for (i=1; i<=NR; i++) {
-            if (i in add_before) printf "%s\n", add_before[i]
-            print line[i]
-        }
-    }' "$PP_INPUT" > "$PP_TMP" || {
+        # Delete only the omega apply TAG (not the whole line): an OEM line
+        # could share several <apply> tags, and the other OEM applies must
+        # survive. Pattern is attribute-order/spacing tolerant.
+        sed 's#<apply[^>]*effect="omega_effect"[^>]*/>##g' "$PP_INPUT" > "$PP_TMP" || {
             rm -f "$PP_INPUT" "$PP_TMP"
-            ui_print "  ! No se pudo fusionar postprocess; se conserva XML OEM original"
+            ui_print "  ! No se pudo depurar postprocess; se conserva XML OEM original"
             return 1
         }
         rm -f "$PP_INPUT"
-        # Do not accept a single matching apply as proof for all target streams.
-        PP_VALID=1
-        for PP_STREAM in music movie game; do
-            if ! awk -v want="$PP_STREAM" '
-            /<stream[[:space:]]+type="/ {
-                t=$0; sub(/^.*type="/,"",t); sub(/".*$/,"",t)
-                active=(t==want); has_apply=0
-            }
-            active && /<apply[[:space:]]+effect="omega_effect"/ { has_apply=1 }
-            /<\/stream>/ {
-                if (active) { if (!has_apply) exit 1; found=1 }
-                active=0
-            }
-            END { if (!found) exit 1 }
-        ' "$PP_TMP"; then
-                PP_VALID=0
-                ui_print "  ! Postprocess incompleto: falta apply dentro del stream $PP_STREAM"
-            fi
-        done
-        if grep -q '<audio_effects_conf' "$PP_TMP" && [ "$PP_VALID" -eq 1 ]; then
+        # Validate: root element intact AND no omega apply remains anywhere.
+        if grep -q '<audio_effects_conf' "$PP_TMP" && ! grep -q '<apply[^>]*effect="omega_effect"' "$PP_TMP"; then
             mv -f "$PP_TMP" "$MG_DST"
         else
             rm -f "$PP_TMP"
@@ -371,7 +328,7 @@ ui_print "  ✓ Base detectada: $ORIG_XML"
 ui_print "  ✓ Destino del merge alineado a la misma partición: $TARGET_XML"
 merge_omega_xml "$ORIG_XML" "$TARGET_XML" || abort "ERROR: no se pudo fusionar el XML OEM principal ($ORIG_XML); se cancela para proteger el HAL y conservar sus efectos propietarios."
 ui_print "  ✓ Registro de librería y UUID de IVANNA validados por separado"
-ui_print "  ✓ Registro y apply de music/movie/game validados; efectos OEM preservados"
+ui_print "  ✓ Sin apply global de omega en postprocess (activación por UUID por sesión); efectos OEM preservados"
 
 # ── Fusión adicional: SKU y /system/etc ──────────────────────────────────────
 # La factoría de efectos puede leer una configuración DISTINTA de la primera
@@ -412,12 +369,28 @@ if [ -f "$PRELOAD_PROBE" ]; then
     set_perm "$PRELOAD_PROBE" root root 0644 u:object_r:vendor_file:s0 \
         || ui_print "  ⚠ no se pudo etiquetar la sonda LD_PRELOAD (diagnostico opcional; el resto del modulo no se ve afectado)"
 fi
+
+# libomega_effect.so (Ruta B): etiqueta vendor_file para que audioserver/HAL
+# pueda cargarla desde /vendor. Sin esto el .so aterriza como system_file y
+# AudioFlinger lo salta ("XML effect configuration partially loaded, skipped
+# N elements") hasta un chcon manual (Ruta B, Moto G85 2026-11-09).
+for OMEGA_EFFECT_SO in \
+    "$MODPATH/system/vendor/lib64/soundfx/libomega_effect.so" \
+    "$MODPATH/system/lib64/soundfx/libomega_effect.so"; do
+    if [ -f "$OMEGA_EFFECT_SO" ]; then
+        set_perm "$OMEGA_EFFECT_SO" root root 0644 u:object_r:vendor_file:s0 \
+            || ui_print "  ⚠ no se pudo etiquetar $OMEGA_EFFECT_SO como vendor_file (Ruta B no cargará hasta un chcon manual)"
+    fi
+done
 set_perm_recursive "$MODPATH/core" root root 0755 0755
 
 # ── SELinux policy — aplicar en tiempo de instalación (live) ─────────────────
 # Permite que la app (untrusted_app) se conecte al socket abstracto del daemon.
 # Sin esto, Android bloquea connect() silenciosamente en API 26+.
-# service.sh también lo aplica en boot para sobrevivir reinicios de SELinux.
+# service.sh reaplica la policy COMPLETA en cada boot (mismo fallback línea por
+# línea que aquí) para sobrevivir reinicios de SELinux: Magisk 31.1 no carga
+# sepolicy.rule en boot, así que sin esa reaplicación las reglas live de
+# instalación se perderían en el primer reinicio (Ruta B, Moto G85 2026-11-09).
 ui_print "- Aplicando reglas SELinux (socket daemon)..."
 if command -v magiskpolicy >/dev/null 2>&1; then
     # FIX: --apply aborta al primer error (p.ej. tipo untrusted_app_34

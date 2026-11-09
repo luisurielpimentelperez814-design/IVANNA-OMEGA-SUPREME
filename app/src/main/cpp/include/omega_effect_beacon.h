@@ -15,6 +15,7 @@
 #pragma once
 
 #include <atomic>
+#include <cerrno>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -24,6 +25,19 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+// OMEGA_CTRL_LOGW compartido con omega_control_bus.h: si ese header ya lo
+// definió (omega_effect.cpp incluye ambos), no redefinir. En host (sin
+// __ANDROID__) cae a stderr para que los tests host sigan compilando.
+#ifndef OMEGA_CTRL_LOGW
+#  if defined(__ANDROID__)
+#    include <android/log.h>
+#    define OMEGA_CTRL_LOGW(fmt, ...) __android_log_print(ANDROID_LOG_WARN, "OmegaCtrlBus", fmt, ##__VA_ARGS__)
+#  else
+#    include <cstdio>
+#    define OMEGA_CTRL_LOGW(fmt, ...) std::fprintf(stderr, "[OCB WRN] " fmt "\n", ##__VA_ARGS__)
+#  endif
+#endif
 
 namespace ivanna {
 
@@ -212,7 +226,8 @@ inline EffectBeaconState readEffectBeacon(uint64_t idleMs = 2000ull,
 // ── Lado escritor (audioserver). Un único mapeo por proceso, compartido por instancias. ──
 class EffectBeaconWriter {
 public:
-    // NO-RT. Idempotente. false si el archivo no se puede crear/mapear (se degrada en silencio).
+    // NO-RT. Idempotente. false si el archivo no se puede crear/mapear
+    // (logea el motivo con OMEGA_CTRL_LOGW y se degrada; antes era silencio total).
     bool open(const char* path = OMEGA_EFFECT_BEACON_PATH) noexcept {
         if (m_beacon.load(std::memory_order_acquire)) return true;
         // Varias instancias del efecto (sesiones AudioFlinger) pueden llegar aqui a la vez desde
@@ -221,12 +236,27 @@ public:
         std::lock_guard<std::mutex> lk(m_openMtx);
         if (m_beacon.load(std::memory_order_acquire)) return true;
         const int fd = ::open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
-        if (fd < 0) return false;
+        if (fd < 0) {
+            // FIX (Ruta B, Moto G85 2026-11-09): el efecto (UID no-root) no puede
+            // crear el archivo en /data/local/tmp/ (0771 root:shell). Antes este
+            // fallo era silencio total y Ruta B quedaba muda sin pista en logcat.
+            OMEGA_CTRL_LOGW("beacon open(%s) failed: %s", path, std::strerror(errno));
+            return false;
+        }
         ::fchmod(fd, 0666);  // la app (otro uid) debe poder leerlo
-        if (::ftruncate(fd, OMEGA_EFFECT_BEACON_SIZE) < 0) { ::close(fd); return false; }
+        if (::ftruncate(fd, OMEGA_EFFECT_BEACON_SIZE) < 0) {
+            const int e = errno;
+            ::close(fd);
+            OMEGA_CTRL_LOGW("beacon ftruncate(%s) failed: %s", path, std::strerror(e));
+            return false;
+        }
         void* addr = ::mmap(nullptr, OMEGA_EFFECT_BEACON_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        const int mmapErrno = (addr == MAP_FAILED) ? errno : 0;
         ::close(fd);
-        if (addr == MAP_FAILED) return false;
+        if (addr == MAP_FAILED) {
+            OMEGA_CTRL_LOGW("beacon mmap(%s) failed: %s", path, std::strerror(mmapErrno));
+            return false;
+        }
         auto* b = static_cast<EffectBeacon*>(addr);
         // Primer open de este proceso: descartar contadores de un audioserver anterior.
         b->enabled_count.store(0u, std::memory_order_relaxed);

@@ -35,6 +35,29 @@ if command -v magiskpolicy >/dev/null 2>&1; then
     fi
 fi
 
+# FIX (Ruta B, Moto G85 2026-11-09): Magisk 31.1 NO carga sepolicy.rule en boot,
+# así que las reglas live de customize.sh no sobreviven al reinicio. Sin ellas,
+# audioserver no puede leer el snapshot del demonio
+# (/data/adb/ivanna_omega/omega_control_snapshot) y el efecto queda sin control
+# aunque el daemon responda. Se reaplica la policy COMPLETA en vivo en cada
+# arranque, con el mismo fallback línea por línea de customize.sh
+# (magiskpolicy --live --apply aborta al primer tipo inexistente en esta
+# versión de Android y no aplicaría ninguna regla).
+if command -v magiskpolicy >/dev/null 2>&1 && [ -f "$MODDIR/sepolicy.rule" ]; then
+    if magiskpolicy --live --apply "$MODDIR/sepolicy.rule" 2>/dev/null; then
+        echo "$(date) SELINUX-BOOT: sepolicy.rule aplicada (--apply)" >> "$LOG"
+    else
+        SE_OK=0; SE_FAIL=0
+        while IFS= read -r RULE; do
+            case "$RULE" in ''|'#'*) continue ;; esac
+            if magiskpolicy --live "$RULE" 2>/dev/null; then SE_OK=$((SE_OK+1)); else SE_FAIL=$((SE_FAIL+1)); fi
+        done < "$MODDIR/sepolicy.rule"
+        echo "$(date) SELINUX-BOOT: sepolicy.rule línea por línea: $SE_OK aplicadas, $SE_FAIL omitidas (tipos ausentes en esta versión)" >> "$LOG"
+    fi
+else
+    echo "$(date) SELINUX-BOOT: magiskpolicy o sepolicy.rule no disponible — policy no reaplicada en boot" >> "$LOG"
+fi
+
 # Load the decision engine if present; keep boot compatible with older packages.
 CORE="$MODDIR/core/ivanna_autonomous_core.sh"
 if [ -f "$CORE" ]; then

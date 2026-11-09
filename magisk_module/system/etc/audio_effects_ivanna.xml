@@ -39,17 +39,9 @@
                 priority="1000"/>
     </effects>
 
-    <!-- Preprocesamiento -->
-    <postprocess>
-        <stream type="music">
-            <apply effect="omega_effect"/>
-        </stream>
-        <stream type="movie">
-            <apply effect="omega_effect"/>
-        </stream>
-        <stream type="game">
-            <apply effect="omega_effect"/>
-        </stream>
-    </postprocess>
+    <!-- Sin <postprocess>: la activación es por UUID por sesión desde la
+         app (IvannaGlobalEffectManager.createOmegaEffect). Un <apply> global
+         de omega crearía una instancia en la cadena del output y bloquearía
+         la creación por sesión (Error -3, v2.5.373). -->
 
 </audio_effects_conf>
