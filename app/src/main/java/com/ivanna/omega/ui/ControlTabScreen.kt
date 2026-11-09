@@ -264,6 +264,11 @@ fun ControlTabScreen(
         initialHolosEqPresence = paramStore.getHolosEqPresence(),
         initialHolosEqTiltDb = paramStore.getHolosEqTiltDb(),
         initialHolosEqFreq = paramStore.getHolosEqFreq(),
+        initialHyperAmount = paramStore.getHyperAmount(),
+        initialHyperPreset = paramStore.getHyperPreset(),
+        initialHyperXtc = paramStore.isHyperXtcEnabled(),
+        initialHyperTargetKind = paramStore.getHyperTargetKind(),
+        initialHyperBassTrimDb = paramStore.getHyperBassTrimDb(),
         initialPhaseOracleIntensity = audioState.phaseOracleIntensity,
         metrics              = metrics,
         adaptiveTelemetry    = adaptiveTelemetry,
@@ -456,6 +461,21 @@ fun ControlTabScreen(
             perceptualCommands.trySend(
                 """{"action":"SET_PERCEPTUAL_STATE","holosAmount":$a,"holosDistanceM":$d,"holosSpread":$sp,"holosProximityDb":$px,"holosDiffuse":$df,"holosHarmonics":$hm,"holosWarmth":$wm,"holosDynamics":$dy,"holosWidth":$wd,"holosGamma":$gm,"holosRoomRt60":$rt,"holosHeadTracking":${if (headTracking) 1.0f else 0.0f},"holosBandCount":$bc}"""
             )
+        },
+        // ── Hiper-Operador de Estado Φ (v2.5.369) — persist + JNI (Ruta A).
+        // La parte daemon (Ruta B) queda pendiente: el snapshot ABI v10 no
+        // tiene campos hyper_* (mismo precedente que HOLOS antes de v10).
+        // runCatching para no romper en builds sin el símbolo nativo ──
+        onHyperChange = { amount, preset, xtcEnabled, targetKind, bassTrimDb ->
+            val a = amount.coerceIn(0f, 1f)
+            val p = if (preset in 0..2) preset else 0
+            val tk = if (targetKind in 0..3) targetKind else 0
+            val bt = bassTrimDb.coerceIn(-3f, 3f)
+            paramStore.setHyperParams(a, p, xtcEnabled, tk, bt)
+            if (IvannaNativeLib.isLoaded) {
+                runCatching { IvannaNativeLib.nativeSetHyperAmount(a, p, xtcEnabled) }
+                runCatching { IvannaNativeLib.nativeSetHyperTarget(tk, bt) }
+            }
         },
         // ── HOLOS · EQ estático de Γ — persist + JNI (Ruta A) + daemon (Ruta B, snapshot ABI v10) ──
         onHolosEqChange = { low, mid, high, presence, tiltDb, freq ->

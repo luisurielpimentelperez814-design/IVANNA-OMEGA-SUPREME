@@ -8,6 +8,7 @@
 #include "spatial/IntelligentUpmixer.hpp"
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/HolosOperator.hpp"
+#include "spatial/HyperStateOperator.hpp"
 #include "spatial/OrbeBinaural.hpp"
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/WfsSpreadGovernor.hpp"
@@ -66,6 +67,7 @@ public:
         m_hoaDecoder.prepare(sampleRate, 8);
         m_orbe.prepare(sampleRate);
         m_holos.prepare(sampleRate);
+        m_hyper.prepare(sampleRate);
         m_neuroLoop_.prepare(sampleRate, static_cast<int>(Ivanna::BLOCK_SIZE));
         m_neuroBandEq_.prepare(sampleRate);
     }
@@ -126,6 +128,25 @@ public:
     void setHolosEq(float low, float mid, float high, float presence,
                     float tiltDb, float freq) noexcept;
     bool isHolosEnabled() const noexcept;
+    // Hiper-Operador de Estado Φ (v2.5.369). Entra tras la corrección de
+    // sala (m_room) y antes del XTC (m_xtc), es decir, antes del
+    // compresor/limitador y después de HOLOS/ORBE/AUX/NPE: una sola
+    // ganancia unificada al final de la cadena. Apagado por defecto
+    // (amount=0 = bypass bit-exacto). Los parámetros viven en los atomics
+    // g_hyper_* (hyper_controls_bridge.cpp / hyper_globals_effect.cpp).
+    // En Ruta B hoy NO llegan frames de sensor (el snapshot del daemon
+    // no transporta SensorFrame/NeuroFrame): el operador corre en modo
+    // APROXIMADO (balance espectral hacia Harman 2018) hasta que el
+    // transporte exista. ingestHyperSensorFrame/ingestHyperNeuroFrame son
+    // la API lista para ese transporte (mismo patrón que ingestNeuroFrame).
+    void setHyperEnabled(bool enable) noexcept;
+    void setHyperAmount(float amount, int preset, bool xtcEnabled) noexcept;
+    bool isHyperEnabled() const noexcept;
+    bool ingestHyperSensorFrame(const ivanna::spatial::SensorFrame& frame) noexcept;
+    bool ingestHyperNeuroFrame(int kind, std::uint64_t timestampUs,
+                               const float* response8, const float* coherence8,
+                               float quality, float abrWaveVLatencyMs,
+                               float fnirsHbO) noexcept;
     // x/y/z: coordenadas de SALA absolutas (metros; x=ancho,y=altura,
     // z=profundidad), 7 altavoces, orden FL,FR,SL,SR,TL,TR,SW — mismo
     // formato que OmegaDspSnapshot::wfs_speaker_{x,y,z}. Se convierten
@@ -186,6 +207,7 @@ public:
         m_hoaDecoder.prepare(sr, 8);
         m_orbe.prepare(sr);
         m_holos.prepare(sr);
+        m_hyper.prepare(sr);
         m_neuroLoop_.prepare(sr, static_cast<int>(Ivanna::BLOCK_SIZE));
         m_neuroBandEq_.prepare(sr);
         m_wfs.init(sr, Ivanna::BLOCK_SIZE, 16);
@@ -450,6 +472,9 @@ private:
     // HOLOS — Operador Único de Campo Acústico. Ocupa el lugar de ORBE
     // cuando está activo (ver process()); ORBE queda como fallback legacy.
     ivanna::HolosOperator m_holos;
+    // Hiper-Operador de Estado Φ (v2.5.369): muestra a muestra, sin FFT.
+    // Tras m_room, antes de m_xtc (ver process()).
+    ivanna::spatial::HyperStateOperator m_hyper;
 
     // ── Wave Field Synthesis (2026-09-19) — ruta real de audio ──
     // El renderer sintetiza el campo de ondas de la señal estéreo como

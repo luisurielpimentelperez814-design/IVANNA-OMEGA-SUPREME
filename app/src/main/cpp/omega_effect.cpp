@@ -38,6 +38,8 @@
 #include "audio_effect_compat.h"
 #include "include/omega_control_bus.h"
 #include <string.h>
+#include "security/ivanna_integrity.h"  // Anti-piratería v2.5.369: self-check de ruta de carga (Ruta B fail-closed).
+#include "security/ivanna_antitamper.h"  // Anti-piratería fase 2: anti-debug/anti-hook en Ruta B (fail-closed).
 #include <stdlib.h>
 #include <errno.h>
 #include <new>
@@ -1104,6 +1106,33 @@ static int32_t omega_process(effect_handle_t self,
         }
     }
     const size_t frameBytes = omega_bytes_per_sample(inFmt) * 2u;
+
+    // ── Seguridad anti-piratería (v2.5.369, Ruta B fail-closed) ────────────
+    // Si libomega_effect.so fue cargada desde una ruta no legítima (sideload
+    // o inyección de una .so copiada fuera de /vendor|/system|/odm|/product),
+    // no procesar: passthrough limpio. El chequeo se cachea (una sola vez
+    // por proceso); el coste por bloque es un atomic load. El audio sigue
+    // fluyendo; solo se desactiva el DSP. La verificación completa (pin de
+    // certificado + vinculación) la hace IntegrityGate.kt en el proceso app.
+    if (!ivanna::security::integrity_self_check()) {
+        if (outBuf->raw != inBuf->raw) {
+            memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
+        }
+        return 0;
+    }
+
+    // ── Seguridad anti-piratería fase 2: anti-tamper en Ruta B ─────────────
+    // Depurador, Frida, framework de hooks o emulador en el proceso
+    // audioserver -> passthrough limpio (mismo patrón que el self-check).
+    // La evaluación se cachea (una sola vez por proceso); el coste por
+    // bloque es un atomic load. Root por sí solo NO dispara (el producto
+    // está diseñado para dispositivos rooteados; el daemon corre como root).
+    if (ivanna::security::antitamper_should_lockdown()) {
+        if (outBuf->raw != inBuf->raw) {
+            memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
+        }
+        return 0;
+    }
 
     // AUDIT FIX (session isolation): usar el fusionCore de ESTA instancia,
     // nunca el global g_fusionCore. Motor aún no configurado: passthrough.

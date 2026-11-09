@@ -211,6 +211,13 @@ class AudioEngine {
     private var widthAmount = 0.5f
 
     fun initialize(sampleRate: Int = SAMPLE_RATE) {
+        // Seguridad anti-piratería (v2.5.369): si la integridad falló
+        // (IntegrityGate.isLocked), no inicializar el DSP. Fail-closed:
+        // el audio pasa en limpio y el teléfono sigue funcionando.
+        if (com.ivanna.omega.security.IntegrityGate.isLocked) {
+            Log.w(TAG, "Integridad bloqueada — DSP no inicializado (fail-closed)")
+            return
+        }
         if (!libLoaded) {
             Log.w(TAG, "Librería nativa no disponible — modo degradado")
             return

@@ -19,6 +19,12 @@ add_executable(ivanna_daemon
     core/shm_manager.cpp
     core/omega_control_bus.cpp
     ../IvannaSelfHealingEngine.cpp
+    # ── Seguridad anti-piratería fase 2 ────────────────────────────────────
+    # ivanna_integrity: SHA-256 autocontenido (integrity_sha256_file) para
+    # hashear la .so stageada. effect_integrity: verificación de la .so del
+    # efecto contra el hash del módulo + gate SET_* en CommandServer.
+    ../security/ivanna_integrity.cpp
+    core/effect_integrity.cpp
 )
 
 set_target_properties(ivanna_daemon PROPERTIES
@@ -45,6 +51,9 @@ target_include_directories(ivanna_daemon PRIVATE
 target_compile_options(ivanna_daemon PRIVATE
     -O3 -fPIE
     -Wall -Wno-unused-parameter -Wno-unused-function
+    # Endurecimiento anti-piratería (v2.5.369): canarios de pila en
+    # funciones con buffers (el daemon corre como root vía Magisk).
+    -fstack-protector-strong
 )
 
 # Hardening: RELRO + BIND_NOW + new-dtags (LINKER: y -Wl para compatibilidad universal)
@@ -56,6 +65,9 @@ target_link_options(ivanna_daemon PRIVATE
     -Wl,-z,relro
     -Wl,-z,now
     -Wl,--enable-new-dtags
+    # Endurecimiento anti-piratería (v2.5.369): -s (strip de .symtab) —
+    # el binario stageado al módulo Magisk ya no lleva símbolos de depuración.
+    -Wl,-s
     $<$<BOOL:${ANDROID}>:-nostdlib++>
 )
 

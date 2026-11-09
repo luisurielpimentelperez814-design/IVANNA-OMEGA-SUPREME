@@ -49,6 +49,9 @@
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
 #include "../spatial/RoomProbe.hpp"
+#include "../spatial/RealAcousticSensor.hpp"   // sensor acústico real por micrófono (v2.5.369, Ruta A)
+#include "../spatial/HyperStateOperator.hpp"  // Hiper-Operador de Estado Φ (v2.5.369, Ruta A)
+#include "../spatial/RoomCorrectionEq.hpp"     // corrección de sala en vivo por el sensor (v2.5.369, Ruta A)
 #include "../spatial/SceneGeometryRenderer.hpp"
 #include "../spatial/RouteAWfsEngine.hpp"
 #include "../neuromorphic/NpeStereoCore.hpp"
@@ -153,10 +156,40 @@ static ivanna::HolosOperator g_holosRouteA;
 static ivanna::neuromorphic::ClosedLoopController g_neuroLoopRouteA;
 static ivanna::neuromorphic::NeuroBandEq g_neuroBandEqRouteA;
 static std::atomic<bool> g_neuroLoopEnabledA{false};
+// Sensor acústico real por micrófono (v2.5.369), Ruta A: instancia propia
+// del proceso app. El micrófono del teléfono (Android 13+) mide la salida
+// real de los altavoces en la habitación/cabina y el bucle cerrado corrige
+// el balance tonal en vivo (RoomCorrectionEq, bit-exacto si el bucle está
+// apagado).
+// La referencia (lo que sale al altavoz) la empuja nativeProcessBlock al
+// anillo SPSC del sensor, sin mutex ni bloqueo en audio. Sin micrófono
+// (sin permiso RECORD_AUDIO o sin captura) el sensor no publica frames
+// válidos y la corrección se desvanece a 0 (fail-closed).
+static ivanna::spatial::RealAcousticSensor g_acousticSensorA;
+static ivanna::dsp::RoomCorrectionEq g_sensorRoomEqA;
+static std::atomic<bool> g_sensorRoomCorrEnabledA{false};
+static std::atomic<float> g_sensorRoomCorrAmountA{0.0f};
+// Hiper-Operador de Estado Φ (v2.5.369), Ruta A: instancia propia del
+// proceso app (paridad con IvannaFusionEngine::m_hyper en Ruta B).
+// Apagado por defecto (g_hyper_amount=0 → identidad bit-exacta).
+// Se alimenta del SensorFrame vivo del micrófono (g_acousticSensorA):
+// en modo MEDIDO corrige hacia el target élite (Harman 2018 por defecto,
+// mismo target que el sensor); sin frames frescos cae a APROXIMADO
+// (balance espectral hacia el mismo target, solo corte). Para cualquier
+// Android 13+; el Moto G85 es solo el dispositivo de desarrollo.
+static ivanna::spatial::HyperStateOperator g_hyperRouteA;
+// g_hyperMeasuredA es local al JNI (guarda anti-doble-corrección). Los
+// parámetros (amount/preset/xtc) viven en hyper_controls_bridge.cpp
+// (patrón HOLOS: una sola fuente para Ruta A (JNI) y Ruta B (FusionCore);
+// el stub del efecto está en hyper_globals_effect.cpp).
+static std::atomic<bool> g_hyperMeasuredA{false};
 // Externs de los atomics HOLOS/ORBE (definidos en holos/orbe_controls_
 // bridge.cpp; las declaraciones completas están más abajo en este TU,
 // pero los helpers del bucle cerrado viven aquí arriba).
 extern std::atomic<float> g_holos_gamma;
+extern std::atomic<float> g_hyper_amount;
+extern std::atomic<int> g_hyper_preset;
+extern std::atomic<bool> g_hyper_xtc;
 extern std::atomic<float> g_holos_width;
 extern std::atomic<float> g_holos_diffuse;
 extern std::atomic<float> g_holos_distance_m;
@@ -245,6 +278,9 @@ extern std::atomic<float> g_holos_warmth;
 extern std::atomic<float> g_holos_dynamics;
 extern std::atomic<float> g_holos_width;
 extern std::atomic<float> g_holos_gamma;
+extern std::atomic<float> g_hyper_amount;
+extern std::atomic<int> g_hyper_preset;
+extern std::atomic<bool> g_hyper_xtc;
 extern std::atomic<float> g_holos_room_rt60;
 extern std::atomic<bool>  g_holos_head_tracking;
 extern std::atomic<int>   g_holos_band_count;   // 12 o 24 bandas ERB (24 = default)
@@ -1018,6 +1054,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
     g_neuroBandEqRouteA.prepare((float)sr);
     g_loudnessMeterInit.store(true, std::memory_order_release);
@@ -1688,6 +1725,10 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
         }
     }
+    // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la ganancia
+    // de salida y del limiter. amount=0 = no-op.
+    hyperProcessRouteA(g_ats.chL, g_ats.chR, n,
+                       static_cast<float>(std::max(g_params.sampleRate, 8000u)));
     g_gain.processOutput(g_ats.chL, g_ats.chR, n);
     // FIX distorsión: g_safety_limiter se aplicaba aquí (antes de PDEngine)
     // Y OTRA VEZ en FASE 4B (después de PDEngine) — dos limiters en serie.
@@ -2329,6 +2370,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
     g_neuroBandEqRouteA.prepare((float)sr);
     // Eje Supremo: pre-compute biquad BPF + Heun coefficients for the cochlear engine.
@@ -2396,6 +2438,104 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     }
     LOGI("IvannaNativeLib DSP @ %d Hz (EvolutionaryKernel online)", sr);
     return JNI_TRUE;
+}
+
+// ── Sensor acústico real → corrección de sala en vivo (Ruta A, v2.5.369) ───
+// Bucle cerrado por micrófono, en el hilo de audio, SIN bloquear jamás:
+//   1. Lee el último SensorFrame (lock-free, seqlock).
+//   2. Si el bucle está habilitado y el frame es válido y fresco (nuevo
+//      frame_index en el último segundo): traduce error_db ERB →
+//      corrección RoomProbe (10 bandas) y la pone como objetivo del
+//      RoomCorrectionEq (que desliza a 0.25 dB/bloque, sin clics).
+//      Si el frame es inválido o rancio: objetivo 0 (la corrección se
+//      desvanece sola, fail-closed).
+//   3. Aplica la corrección (bit-exacta si el objetivo es 0).
+//   4. Empuja la salida mono (post-corrección = lo que sale al altavoz)
+//      al anillo SPSC de referencia del sensor (lock-free, sin mutex).
+// La corrección es LENTA (frame de ~85 ms + suavizado 250 ms + slew del
+// EQ): es una medida de sala, no una corrección muestra a muestra. Por
+// eso el impacto es tonal (boom/valle de sala), no un cambio instantáneo.
+// Aproximación honesta: el micrófono mide el punto donde está el
+// teléfono, no los oídos; la corrección es la del balance tonal en ese
+// punto (ver docs/REAL_ACOUSTIC_SENSOR.md).
+// NOTA: aquí NUNCA se llama a g_acousticSensorA.prepare() (toma el mutex
+// del sensor y bloquearía el audio). El sensor se prepara en
+// nativeSensorInit (hilo de Kotlin, al arrancar la captura) y su
+// constructor ya lo deja en 48 kHz.
+// Hiper-Operador Φ en Ruta A (v2.5.369). Se llama tras HOLOS/ORBE en
+// nativeProcess y nativeProcessBlock, ANTES de la RIR y del limiter.
+// Alimenta al operador con el SensorFrame vivo del micrófono (el sensor
+// corre en su propio hilo; latestFrame() es lock-free) y aplica amount /
+// preset / XTC desde los atomics. amount=0 → retorno inmediato, cero
+// coste (el operador es identidad bit-exacta apagado). Registra en
+// g_hyperMeasuredA si el operador está en modo MEDIDO: en ese caso
+// sensorRoomCorrectionRouteA NO aplica su propia corrección (la Γ del
+// operador YA es la corrección; dos EQs sobre el mismo error duplicarían
+// la corrección). En modo APROXIMADO la guarda no se activa: el EQ de
+// sala del sensor (apagado por defecto) sigue disponible.
+static void hyperProcessRouteA(float* oL, float* oR, int n, float sr) noexcept {
+    const float amount = g_hyper_amount.load(std::memory_order_relaxed);
+    if (amount <= 0.0f || oL == nullptr || oR == nullptr || n <= 0) {
+        g_hyperMeasuredA.store(false, std::memory_order_relaxed);
+        return;
+    }
+    static float preparedSr = 0.0f;
+    const float s = (std::isfinite(sr) && sr >= 8000.0f) ? sr : 48000.0f;
+    if (preparedSr != s) {
+        g_hyperRouteA.prepare(s);
+        preparedSr = s;
+    }
+    const ivanna::spatial::SensorFrame fr = g_acousticSensorA.latestFrame();
+    g_hyperRouteA.setSensorFrame(fr);
+    g_hyperRouteA.setAmount(amount);
+    const int preset = g_hyper_preset.load(std::memory_order_relaxed);
+    g_hyperRouteA.setRoutePreset(
+        static_cast<ivanna::spatial::HyperRoutePreset>(
+            std::clamp(preset, 0, 2)));
+    g_hyperRouteA.setXtcEnabled(g_hyper_xtc.load(std::memory_order_relaxed));
+    g_hyperRouteA.processBlock(oL, oR, n);
+    g_hyperMeasuredA.store(
+        g_hyperRouteA.status().mode == ivanna::spatial::HyperMode::Measured,
+        std::memory_order_relaxed);
+}
+
+static void sensorRoomCorrectionRouteA(float* oL, float* oR, int n, float sr) noexcept {
+    static float preparedSr = 0.0f;
+    const float s = (std::isfinite(sr) && sr >= 8000.0f) ? sr : 48000.0f;
+    if (preparedSr != s) {
+        g_sensorRoomEqA.prepare(s);
+        preparedSr = s;
+    }
+    const ivanna::spatial::SensorFrame fr = g_acousticSensorA.latestFrame();
+    const bool loopOn = g_sensorRoomCorrEnabledA.load(std::memory_order_relaxed);
+    const float amount = g_sensorRoomCorrAmountA.load(std::memory_order_relaxed);
+    static std::chrono::steady_clock::time_point lastNewFrame =
+        std::chrono::steady_clock::now();
+    static uint64_t lastSeenIndex = 0;
+    if (fr.valid && fr.frame_index != lastSeenIndex) {
+        lastSeenIndex = fr.frame_index;
+        lastNewFrame = std::chrono::steady_clock::now();
+    }
+    const bool fresh = fr.valid &&
+        (std::chrono::steady_clock::now() - lastNewFrame) < std::chrono::seconds(1);
+    float corrDb[10] = {};
+    // Guarda anti-doble-corrección (v2.5.369): si el operador Φ está en
+    // modo MEDIDO, su Γ ya corrige este mismo error_db — el EQ de sala
+    // no aplica nada (corrDb queda en 0). Sin Φ medido, se comporta igual
+    // que antes.
+    const bool hyperMeasured = g_hyperMeasuredA.load(std::memory_order_relaxed);
+    if (loopOn && fresh && amount > 0.0f && !hyperMeasured) {
+        g_acousticSensorA.mapErrorToRoomCorrection(fr.error_db, amount, corrDb);
+    }
+    g_sensorRoomEqA.setTarget(corrDb);
+    if (oL != nullptr && oR != nullptr && n > 0) {
+        g_sensorRoomEqA.process(oL, oR, n);
+        // Referencia: mezcla mono post-corrección (lo que sale al altavoz).
+        float mono[2048];
+        const int m = std::min(n, 2048);
+        for (int i = 0; i < m; ++i) mono[i] = 0.5f * (oL[i] + oR[i]);
+        g_acousticSensorA.pushReference(mono, (std::size_t)m);
+    }
 }
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
@@ -2575,6 +2715,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         }
     }
 
+    // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la RIR y del
+    // limiter. Es la etapa que el usuario ESCUCHA en Ruta A cuando
+    // hyper_amount > 0. amount=0 = no-op.
+    hyperProcessRouteA(oL, oR, n,
+                       static_cast<float>(std::max(g_params.sampleRate, 8000u)));
+
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
     if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
         if (s_rirConvolver->isLoaded()) {
@@ -2665,6 +2811,11 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         if (!std::isfinite(oL[i])) { oL[i] = 0.f; g_ats.blkNanRecoveries++; }
         if (!std::isfinite(oR[i])) { oR[i] = 0.f; g_ats.blkNanRecoveries++; }
     }
+    // ── Sensor acústico real → corrección de sala en vivo (Ruta A, v2.5.369) ──
+    // Última etapa: la corrección medida por el micrófono (RoomCorrectionEq,
+    // bit-exacta si el bucle está apagado) y la salida mono alimenta la
+    // referencia del sensor (coherencia). Ver sensorRoomCorrectionRouteA().
+    sensorRoomCorrectionRouteA(oL, oR, n, static_cast<float>(std::max(g_params.sampleRate, 8000u)));
     // Dosímetro sobre la señal final saneada (ver nativeProcess).
     ivanna::fourd::meterOutputPlanar(oL, oR, n);
     jfloat* pL = env->GetFloatArrayElements(outL, nullptr);
@@ -3056,7 +3207,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeNeuroLoopIngest(
         frame.response[static_cast<std::size_t>(b)] = resp[b];
         frame.coherence[static_cast<std::size_t>(b)] = coh[b];
     }
-    return g_neuroLoopRouteA.ingest(frame) ? JNI_TRUE : JNI_FALSE;
+    // El mismo frame real alimenta también al operador Φ (sus trims EEG
+    // por banda a Γ). Cada consumidor mantiene su propio estado; sin
+    // frames, ambos fallan cerrados a identidad.
+    const bool okLoop = g_neuroLoopRouteA.ingest(frame);
+    g_hyperRouteA.setNeuroFrame(frame);
+    return okLoop ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -3073,6 +3229,199 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeNeuroLoopStatus(
     jfloatArray out = env->NewFloatArray(4);
     if (!out) return nullptr;
     env->SetFloatArrayRegion(out, 0, 4, v);
+    return out;
+}
+
+// ── Sensor acústico real por micrófono (v2.5.369), Ruta A ─────────────────
+// El micrófono del teléfono (AudioRecord, hilo de Kotlin, Android 13+)
+// alimenta el sensor nativo; la referencia (la salida al altavoz) la
+// empuja nativeProcessBlock al anillo SPSC, sin JNI. La corrección de
+// sala en vivo (RoomCorrectionEq) se aplica en nativeProcessBlock cuando
+// el bucle está habilitado (nativeSensorRoomCorrectionSetEnabled/Amount,
+// apagado por defecto). Sin micrófono no hay frames válidos y la
+// corrección se desvanece a 0 (fail-closed).
+// nativeSensorLatestFrame: FloatArray[74] = mag[0..23], err[24..47],
+// coh[48..71], level[72], valid[73] (1/0). nativeSensorFrameIndex: long.
+// nativeSensorRoomCorrectionStatus: [0] enabled 0/1, [1] amount 0..1,
+// [2] frame válido 0/1, [3] coherencia media 0..1.
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorInit(
+        JNIEnv*, jobject, jint sampleRate) {
+    const int sr = (sampleRate >= 8000 && sampleRate <= 192000) ? (int)sampleRate : 48000;
+    g_acousticSensorA.prepare((float)sr);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorFeedMic(
+        JNIEnv* env, jobject, jfloatArray pcm, jint n) {
+    if (pcm == nullptr || n <= 0) return JNI_FALSE;
+    const jsize len = env->GetArrayLength(pcm);
+    if (len < n) return JNI_FALSE;
+    // PCM_FLOAT directo (mismo patrón que RoomMeasurement / PlaybackCapture):
+    // sin conversión, el C++ recibe float [-1,1]. En trozos (pila).
+    constexpr int kChunk = 4096;
+    jfloat flt[kChunk];
+    int done = 0;
+    while (done < (int)n) {
+        const int c = std::min(kChunk, (int)n - done);
+        env->GetFloatArrayRegion(pcm, done, c, flt);
+        if (!g_acousticSensorA.feedMic(flt, (std::size_t)c)) return JNI_FALSE;
+        done += c;
+    }
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorSetTarget(
+        JNIEnv* env, jobject, jfloatArray targetDb) {
+    if (targetDb == nullptr || env->GetArrayLength(targetDb) < 24) return JNI_FALSE;
+    jfloat t[24] = {};
+    env->GetFloatArrayRegion(targetDb, 0, 24, t);
+    g_acousticSensorA.setTarget(t);
+    return JNI_TRUE;
+}
+
+// nativeSensorSetEliteTarget: preset élite + control de graves para el
+// sensor (modo MEDIDO). preset: 0 Harman 2018 (default), 1 Harman
+// élite-lean, 2 campo difuso H&M, 3 altavoces en sala. bassTrimDb: ±3 dB.
+// Espejo de HyperStateOperator::setEliteTarget: el mismo JNI
+// (nativeSetHyperTarget) debe llamar a ambos cuando el operador esté
+// instanciado en la Ruta A, para que ambos corrijan hacia la misma curva.
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorSetEliteTarget(
+        JNIEnv*, jobject, jint preset, jfloat bassTrimDb) {
+    const int k = (int)preset;
+    const ivanna::spatial::EliteTargetKind kind =
+        (k >= 0 && k < ivanna::spatial::kEliteTargetKindCount)
+            ? static_cast<ivanna::spatial::EliteTargetKind>(k)
+            : ivanna::spatial::EliteTargetKind::Harman2018;
+    g_acousticSensorA.setEliteTarget(kind, (float)bassTrimDb);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorSetBassTrimDb(
+        JNIEnv*, jobject, jfloat bassTrimDb) {
+    g_acousticSensorA.setBassTrimDb((float)bassTrimDb);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorTargetKind(
+        JNIEnv*, jobject) {
+    return (jint)static_cast<int>(g_acousticSensorA.targetKind());
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorLatestFrame(
+        JNIEnv* env, jobject) {
+    const ivanna::spatial::SensorFrame fr = g_acousticSensorA.latestFrame();
+    jfloat v[74] = {};
+    for (int b = 0; b < 24; ++b) {
+        v[b] = fr.magnitude_db[b];
+        v[24 + b] = fr.error_db[b];
+        v[48 + b] = fr.coherence[b];
+    }
+    v[72] = fr.level_dbfs;
+    v[73] = fr.valid ? 1.0f : 0.0f;
+    jfloatArray out = env->NewFloatArray(74);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, 74, v);
+    return out;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorFrameIndex(
+        JNIEnv*, jobject) {
+    return (jlong)g_acousticSensorA.framesPublished();
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorRoomCorrectionSetEnabled(
+        JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    g_sensorRoomCorrEnabledA.store(on, std::memory_order_relaxed);
+    if (!on) g_sensorRoomCorrAmountA.store(0.0f, std::memory_order_relaxed);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorRoomCorrectionSetAmount(
+        JNIEnv*, jobject, jfloat amount) {
+    if (!std::isfinite(amount)) return;
+    g_sensorRoomCorrAmountA.store(std::clamp(amount, 0.0f, 1.0f),
+                                  std::memory_order_relaxed);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorRoomCorrectionStatus(
+        JNIEnv* env, jobject) {
+    jfloat v[4] = {};
+    v[0] = g_sensorRoomCorrEnabledA.load(std::memory_order_relaxed) ? 1.0f : 0.0f;
+    v[1] = g_sensorRoomCorrAmountA.load(std::memory_order_relaxed);
+    const ivanna::spatial::SensorFrame fr = g_acousticSensorA.latestFrame();
+    v[2] = fr.valid ? 1.0f : 0.0f;
+    float meanCoh = 0.0f;
+    for (int b = 0; b < 24; ++b) meanCoh += fr.coherence[b];
+    v[3] = meanCoh / 24.0f;
+    jfloatArray out = env->NewFloatArray(4);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, 4, v);
+    return out;
+}
+
+// ── Hiper-Operador de Estado Φ (v2.5.369), Ruta A ─────────────────────────
+// nativeSetHyperAmount(amount 0..1, preset 0..2, xtcEnabled): amount=0 es
+// identidad bit-exacta (default). preset: 0 altavoz del teléfono,
+// 1 sala Genezi (Aux), 2 cabina de auto (Aux).
+// nativeSetHyperTarget(kind, bassTrimDb): curva objetivo élite por preset
+// (0 Harman 2018, 1 élite-lean, 2 campo difuso H&M, 3 altavoces en sala)
+// + control de graves ±3 dB. Aplica LA MISMA curva al operador (modo
+// APROXIMADO) y al sensor (modo MEDIDO, vía setTarget): un solo dueño
+// por modo, sin doble aplicación, sin divergencia.
+// nativeHyperStatus: out[6] = {amount, mode (0 off/1 aprox/2 medido),
+// preset, neuroActive 0/1, spikeRate, framesReceived}.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHyperAmount(
+        JNIEnv*, jobject, jfloat amount, jint preset, jboolean xtcEnabled) {
+    if (!std::isfinite(amount)) return;
+    g_hyper_amount.store(std::clamp(amount, 0.0f, 1.0f),
+                         std::memory_order_relaxed);
+    g_hyper_preset.store(std::clamp((int)preset, 0, 2),
+                         std::memory_order_relaxed);
+    g_hyper_xtc.store(xtcEnabled == JNI_TRUE, std::memory_order_relaxed);
+    if (amount <= 0.0f) g_hyperMeasuredA.store(false, std::memory_order_relaxed);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHyperTarget(
+        JNIEnv*, jobject, jint kind, jfloat bassTrimDb) {
+    const auto k = static_cast<ivanna::spatial::EliteTargetKind>(
+        std::clamp((int)kind, 0, 3));
+    const float trim = std::isfinite(bassTrimDb)
+                           ? std::clamp(bassTrimDb, -3.0f, 3.0f)
+                           : 0.0f;
+    // Misma curva en ambos: el operador (modo APROXIMADO) y el sensor
+    // (modo MEDIDO, su error_db ya la incluye). Espejos exactos
+    // (EliteTargetCurves.hpp): un solo dueño por modo, sin duplicar.
+    g_hyperRouteA.setEliteTarget(k, trim);
+    g_acousticSensorA.setEliteTarget(k, trim);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeHyperStatus(
+        JNIEnv* env, jobject) {
+    jfloat v[6] = {};
+    const auto st = g_hyperRouteA.status();
+    v[0] = g_hyper_amount.load(std::memory_order_relaxed);
+    v[1] = static_cast<float>(st.mode);
+    v[2] = static_cast<float>(g_hyper_preset.load(std::memory_order_relaxed));
+    v[3] = st.neuroActive ? 1.0f : 0.0f;
+    v[4] = st.spikeRate;
+    v[5] = static_cast<float>(st.framesReceived);
+    jfloatArray out = env->NewFloatArray(6);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, 6, v);
     return out;
 }
 

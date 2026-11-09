@@ -4,6 +4,7 @@
 #include "../include/audio_hardware_clock_bridge.hpp"
 #include "../include/asrc_state_bridge.hpp"
 #include "control/peer_auth.hpp"
+#include "core/effect_integrity.h"
 #include "core/shm_manager.h"
 #include "../include/omega_shared.h"
 #include "../include/omega_control_bus.h"
@@ -307,6 +308,22 @@ int main(int argc, char* argv[]) {
         // FIX: antes este fallo era SILENCIOSO. El socket de control es
         // secundario — no abortamos el daemon principal, solo lo logueamos.
         log_message("WARN: no se pudo bindear @omega_command_socket (secundario) — el daemon principal sigue activo.");
+    }
+
+    // ── Seguridad anti-piratería fase 2: integridad del efecto stageado ───
+    // Verifica una sola vez que libomega_effect.so en /vendor coincida con
+    // el hash generado por CI en el módulo. Si no coincide, el daemon NO
+    // aplica parámetros DSP (el servidor de comandos rechaza los SET_*) y
+    // el efecto queda en sus valores por defecto. Si el módulo no trae el
+    // archivo de hash (módulo viejo), se avisa y se continúa.
+    {
+        const ivanna::security::EffectIntegrity eff =
+            ivanna::security::effect_integrity_verify();
+        log_message(std::string("EFFECT-INTEGRITY: libomega_effect.so -> ") +
+                    ivanna::security::effect_integrity_status_string(eff));
+        if (!ivanna::security::effect_integrity_ok()) {
+            log_message("EFFECT-INTEGRITY: MISMATCH — no se aplicarán parámetros DSP al efecto (fail-closed)");
+        }
     }
 
     // Watchdog de heartbeat DEDICADO: 1 Hz, no depende del accept loop ni de @omega_command_socket.

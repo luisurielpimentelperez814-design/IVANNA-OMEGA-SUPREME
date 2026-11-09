@@ -28,6 +28,19 @@
 #define CS_TAG  "IVANNA_CMD"
 #define CS_LOG(fmt, ...) __android_log_print(ANDROID_LOG_INFO, CS_TAG, fmt, ##__VA_ARGS__)
 
+// ── Seguridad anti-piratería fase 2: gate de integridad del efecto ────────
+// effect_integrity_ok() vive en daemon/core/effect_integrity.cpp y se
+// enlaza en el build del daemon (NDK). Se declara DÉBIL aquí porque los
+// tests host compilan command_server.cpp SIN effect_integrity.cpp (no se
+// toca tests/CMakeLists.txt): en host el símbolo es nulo y el gate se
+// omite (no hay módulo Magisk en host). En el daemon el símbolo siempre
+// está presente: ivanna_daemon.cpp llama a effect_integrity_verify() de
+// forma fuerte, así que el daemon no enlaza sin el módulo. Si el símbolo
+// es nulo, el gate NO bloquea (fail-open solo en host, donde no aplica).
+namespace ivanna::security {
+__attribute__((weak)) bool effect_integrity_ok();
+}  // namespace ivanna::security
+
 static const OmegaDspState kDefaultState = {
     {2.4f, 2.0f, 1.4f, 0.5f, 0.0f, 0.0f, 0.9f, 1.6f, 2.0f, 1.7f},
     62.f, 82.f, true, -5.5f, 0.15f, 19500.f, 1.55f, -16.f, 0.78f, 0.85f, 1.0f, 0.22f, 0.15f,
@@ -305,6 +318,24 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
     ivanna::shmManager().bumpHealthCounter(3); // comandos_procesados
     char action[64]; _jsonAction(json, action, sizeof(action));
     int n=0;
+
+    // ── Seguridad anti-piratería fase 2: integridad del efecto stageado ───
+    // Si libomega_effect.so en /vendor no coincide con el hash del módulo
+    // (sustitución/manipulación), no se aplica NINGÚN parámetro DSP: el
+    // efecto queda en sus valores por defecto (passthrough). Solo se
+    // rechazan las acciones SET_* (las que pilotan el efecto); las
+    // consultas y la telemetría (GET_STATUS, etc.) siguen funcionando.
+    // El resultado de la verificación se cachea en el arranque del daemon.
+    // El símbolo es débil (ver arriba): en host es nulo y el gate se omite.
+    if (std::strncmp(action, "SET_", 4) == 0 &&
+        ivanna::security::effect_integrity_ok != nullptr &&
+        !ivanna::security::effect_integrity_ok()) {
+        ivanna::shmManager().noteCommandResult(false);
+        n = buildRichReply(reply, reply_sz, false, action, "rejected", 0,
+                           "SYSTEM_WIDE", "\"effect_integrity_failed\"");
+        pthread_mutex_unlock(&m_mutex);
+        return n;
+    }
 
     if (strcmp(action,"SET_EQ_BANDS")==0) {
         float gains[OMEGA_EQ_BANDS]={}; bool ok=_jsonFloatArray(json,"gains",gains,OMEGA_EQ_BANDS);

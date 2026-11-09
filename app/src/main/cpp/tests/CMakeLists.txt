@@ -1043,6 +1043,43 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_pilares_pendientes)
 
+# Hiper-Operador de Estado Φ v2.5.369: muestra a muestra, sin FFT.
+# BiquadEnvelopeBank llama phase_oracle_tick (igual que test_npe_core):
+# phase_oracle.cpp entra como fuente explícita. El operador es header-only.
+add_executable(test_hyper_state_operator
+  test_hyper_state_operator.cpp
+  ../phase_oracle.cpp
+)
+target_link_libraries(test_hyper_state_operator PRIVATE GTest::gtest_main)
+target_include_directories(test_hyper_state_operator PRIVATE
+  ..
+  ../include
+  ../neuromorphic
+  host_stubs
+)
+target_compile_options(test_hyper_state_operator PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_hyper_state_operator PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_hyper_state_operator PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_hyper_state_operator)
+
+# Curvas objetivo ÉLITE v2.5.369 (Harman 2018, élite-lean, campo difuso,
+# altavoces en sala): header-only, sin dependencias de DSP.
+add_executable(test_elite_target_curves test_elite_target_curves.cpp)
+target_link_libraries(test_elite_target_curves PRIVATE GTest::gtest_main)
+target_include_directories(test_elite_target_curves PRIVATE
+  ..
+  ../include
+  host_stubs
+)
+target_compile_options(test_elite_target_curves PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_elite_target_curves PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_elite_target_curves PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_elite_target_curves)
+
 # ── 5 Ejes de Supremacía Neuroacústica (Warped Lattice, CVNN+DDSP, SNN+NMF HOA, Pinna INR, SHM+Farrow5) ──
 add_executable(test_supreme_five_axes
   test_supreme_five_axes.cpp
@@ -1467,6 +1504,18 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_room_probe PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_room_probe)
+
+# Sensor acústico real por micrófono (Moto G85, v2.5.369): header-only,
+# sin ivanna_dsp_under_test (solo GTest + FFTRadix2 + RoomProbe).
+add_executable(test_real_acoustic_sensor test_real_acoustic_sensor.cpp)
+target_link_libraries(test_real_acoustic_sensor PRIVATE GTest::gtest_main)
+target_include_directories(test_real_acoustic_sensor PRIVATE .. ../include ../spatial ../dsp host_stubs)
+target_compile_options(test_real_acoustic_sensor PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_real_acoustic_sensor PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_real_acoustic_sensor PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_real_acoustic_sensor)
 
 add_executable(test_ab_harness test_ab_harness.cpp)
 target_link_libraries(test_ab_harness PRIVATE GTest::gtest_main)

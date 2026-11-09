@@ -55,6 +55,10 @@ object DSPBridge {
     // de SR fijo (filtros desafinados) ya reparado en IVANNAApplication y
     // BootRestoreReceiver. Sin default: el compilador obliga a pasar SR real.
     fun init(sampleRate: Int) {
+        // Seguridad anti-piratería (v2.5.369): si la integridad falló
+        // (IntegrityGate.isLocked), no inicializar el DSP. Fail-closed:
+        // el audio pasa en limpio y el teléfono sigue funcionando.
+        if (com.ivanna.omega.security.IntegrityGate.isLocked) return
         if (loaded) nativeInit(sampleRate)
     }
 

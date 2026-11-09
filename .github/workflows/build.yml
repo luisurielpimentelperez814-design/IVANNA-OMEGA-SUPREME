@@ -455,6 +455,21 @@ jobs:
           ls -lh "./$APK_NAME"
           echo "APK_ARTIFACT_NAME=$APK_NAME" >> "$GITHUB_ENV"
 
+      # ── Seguridad anti-piratería fase 2: el APK debe llevar el asset ────
+      # generateSoHashes (Gradle) escribe app/src/main/assets/ivanna_so_hashes.txt
+      # con el SHA-256 de libivanna_omega.so. IntegrityGate.kt (paso 4) lo
+      # compara en runtime con la .so instalada. Si el asset falta, el build
+      # release queda bloqueado fail-closed -> el job muere aquí, no en el
+      # teléfono del usuario.
+      - name: Validate ivanna_so_hashes.txt asset in APK (phase 2)
+        run: |
+          set -euo pipefail
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          test -n "$APK_PATH" || { echo "ERROR: no existe APK generado por Gradle"; exit 1; }
+          unzip -l "$APK_PATH" | grep -q "assets/ivanna_so_hashes.txt" || { echo "ERROR: $APK_PATH no contiene assets/ivanna_so_hashes.txt — generateSoHashes no corrió o falló"; exit 1; }
+          echo "OK: APK contiene assets/ivanna_so_hashes.txt"
+          unzip -p "$APK_PATH" assets/ivanna_so_hashes.txt
+
       # ── STAGING OBLIGATORIO: prohibido copiar "si existe", siempre ────
       # ── se copia el binario recién validado o el job muere. ────────────
       - name: Stage daemon + effect lib into Magisk module (no legacy copy)
@@ -474,6 +489,14 @@ jobs:
           cp "$EFFECT_SO" magisk_module/system/vendor/lib64/soundfx/libomega_effect.so
           cp "$EFFECT_SO" ./libomega_effect_arm64.so
           file libomega_effect_arm64.so
+          # Seguridad anti-piratería fase 2: hash del efecto para el daemon.
+          # El daemon verifica en arranque que la .so stageada coincida con
+          # este hash (ivanna_effect_hash.txt, junto a la .so). Si no coincide,
+          # el daemon no aplica parámetros DSP (fail-closed). El archivo se
+          # instala en /vendor/lib64/soundfx/ junto a la .so por el overlay
+          # de Magisk.
+          sha256sum magisk_module/system/vendor/lib64/soundfx/libomega_effect.so | awk '{print $1}' > magisk_module/system/vendor/lib64/soundfx/ivanna_effect_hash.txt
+          echo "effect hash: $(cat magisk_module/system/vendor/lib64/soundfx/ivanna_effect_hash.txt)"
           READELF=readelf
           command -v "$READELF" >/dev/null 2>&1 || READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
           EFFECT_NEEDED="$("$READELF" -d -W ./libomega_effect_arm64.so 2>/dev/null || "$READELF" -dW ./libomega_effect_arm64.so 2>/dev/null || "$READELF" --dynamic-table ./libomega_effect_arm64.so 2>/dev/null || true)"

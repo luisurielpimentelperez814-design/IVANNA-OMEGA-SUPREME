@@ -67,6 +67,4 @@ with synthetic signals and listened-to-on-device are kept distinct. See [CONTRIB
 
 ## License
 
-The repository does not declare an open-source license. Treat the project's own code as proprietary unless the
-owner states otherwise; third-party components keep their own licenses (see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+**IVANNA-OMEGA-SUPREME is proprietary software owned by Luis Uriel Pimentel Pérez. All rights reserved. It is NOT open source.** The repository is public on GitHub (visible), but it has no open-source license: the project's own code may not be reproduced, distributed, modified, or used without the author's express authorization. Third-party components keep their own licenses (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

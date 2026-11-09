@@ -145,7 +145,7 @@ Un CI verde no demuestra por sí solo calidad sonora ni compatibilidad física. 
 
 ## Propiedad intelectual
 
-IVANNA OMEGA SUPREME se presenta como un producto propietario. El acceso público al repositorio no concede por sí solo permiso para reutilizar el código propio. Los componentes de terceros mantienen sus licencias y avisos; las concesiones expresas aplicables a versiones anteriores siguen sujetas a sus términos.
+**IVANNA OMEGA SUPREME es software propietario de Luis Uriel Pimentel Pérez. Todos los derechos reservados. NO es código abierto.** El repositorio es público en GitHub (visible), pero no tiene licencia open source: el código propio no puede reproducirse, distribuirse, modificarse ni usarse sin autorización expresa del autor. Los componentes de terceros mantienen sus licencias y avisos.
 
 <div align="center">
 

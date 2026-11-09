@@ -140,6 +140,14 @@ fun IvannaControlPanel(
     initialHolosEqPresence: Float = 0f,
     initialHolosEqTiltDb: Float = 0f,
     initialHolosEqFreq: Float = 1000f,
+    // Hiper-Operador de Estado Φ (v2.5.369). amount 0 = apagado por defecto.
+    // preset 0 teléfono / 1 sala Genezi / 2 auto. target kind 0 Harman 2018
+    // (default) / 1 élite-lean / 2 campo difuso H&M / 3 altavoces en sala.
+    initialHyperAmount: Float = 0f,
+    initialHyperPreset: Int = 0,
+    initialHyperXtc: Boolean = true,
+    initialHyperTargetKind: Int = 0,
+    initialHyperBassTrimDb: Float = 0f,
     onExciterChange: (Float) -> Unit,
     onEqChange: (Float) -> Unit,
     onWidthChange: (Float) -> Unit,
@@ -176,6 +184,8 @@ fun IvannaControlPanel(
     onHolosChange: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Boolean, Int) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
     // HOLOS EQ de Γ: (low, mid, high, presence, tiltDb, freq)
     onHolosEqChange: (Float, Float, Float, Float, Float, Float) -> Unit = { _, _, _, _, _, _ -> },
+    // Hiper-Operador de Estado Φ: (amount, preset, xtcEnabled, targetKind, bassTrimDb)
+    onHyperChange: (Float, Int, Boolean, Int, Float) -> Unit = { _, _, _, _, _ -> },
     onTemporalFieldChange: (Boolean, Float, Boolean) -> Unit = { _, _, _ -> },
     onBassHapticChange: (Boolean, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onOpenVisualizer: () -> Unit = {},
@@ -290,6 +300,12 @@ fun IvannaControlPanel(
     var holosEqPresence by remember { mutableFloatStateOf(initialHolosEqPresence) }
     var holosEqTiltDb by remember { mutableFloatStateOf(initialHolosEqTiltDb) }
     var holosEqFreq by remember { mutableFloatStateOf(initialHolosEqFreq) }
+    // Hiper-Operador de Estado Φ (v2.5.369).
+    var hyperAmount by remember { mutableFloatStateOf(initialHyperAmount) }
+    var hyperPreset by remember { mutableIntStateOf(initialHyperPreset) }
+    var hyperXtc by remember { mutableStateOf(initialHyperXtc) }
+    var hyperTargetKind by remember { mutableIntStateOf(initialHyperTargetKind) }
+    var hyperBassTrimDb by remember { mutableFloatStateOf(initialHyperBassTrimDb) }
     var punchTelemetry by remember { mutableStateOf(FloatArray(0)) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -1344,6 +1360,85 @@ fun IvannaControlPanel(
             }
             Text(
                 "Sin puerta auditiva (GREEN) no se enciende por defecto. El governor térmico baja 24→12 bandas, apaga el difuso y puede apagar HOLOS en las dos rutas (Ruta A por ThermalGovernor, Ruta B en el daemon). El EQ de Γ es estático y plano por defecto.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted
+            )
+        }
+
+        GlassCard(
+            title = "HYPER · ESTADO Φ",
+            accent = NeonMagenta,
+            subtitle = if (hyperAmount > 0f)
+                "Activo: un solo operador muestra a muestra (NPE + EMF + campo) hacia el target élite · sin FFT · fail-closed"
+            else
+                "Evolución de HOLOS al dominio temporal: el micrófono mide la sala real y el operador corrige hacia la curva Harman 2018. Apagado = audio intacto (bypass exacto)"
+        ) {
+            AuroraSlider("CANTIDAD HYPER", hyperAmount, 0f..1f,
+                displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
+                hyperAmount = it
+                onHyperChange(it, hyperPreset, hyperXtc, hyperTargetKind, hyperBassTrimDb)
+            }
+            Text("RUTA / GEOMETRÍA", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                listOf("TELÉFONO", "SALA (AUX)", "AUTO (AUX)").forEachIndexed { idx, label ->
+                    SegmentedButton(
+                        selected = hyperPreset == idx,
+                        onClick = {
+                            hyperPreset = idx
+                            onHyperChange(hyperAmount, idx, hyperXtc, hyperTargetKind, hyperBassTrimDb)
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(idx, 3),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = NeonMagenta.copy(alpha = 0.20f),
+                            activeContentColor = NeonMagenta,
+                            activeBorderColor = NeonMagenta,
+                            inactiveContainerColor = Color.Transparent,
+                            inactiveContentColor = TextSecondary,
+                            inactiveBorderColor = ObsidianEdge
+                        )
+                    ) { Text(label, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("CANCELACIÓN DE DIAFONÍA (XTC)", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Switch(hyperXtc, onCheckedChange = {
+                    hyperXtc = it
+                    onHyperChange(hyperAmount, hyperPreset, it, hyperTargetKind, hyperBassTrimDb)
+                })
+            }
+            Text("CURVA OBJETIVO ÉLITE", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                listOf("HARMAN", "ÉLITE-LEAN", "DIFUSO", "SALA").forEachIndexed { idx, label ->
+                    SegmentedButton(
+                        selected = hyperTargetKind == idx,
+                        onClick = {
+                            hyperTargetKind = idx
+                            onHyperChange(hyperAmount, hyperPreset, hyperXtc, idx, hyperBassTrimDb)
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(idx, 4),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = NeonMagenta.copy(alpha = 0.20f),
+                            activeContentColor = NeonMagenta,
+                            activeBorderColor = NeonMagenta,
+                            inactiveContainerColor = Color.Transparent,
+                            inactiveContentColor = TextSecondary,
+                            inactiveBorderColor = ObsidianEdge
+                        )
+                    ) { Text(label, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+            AuroraSlider("GRAVES (PREFERENCIA)", hyperBassTrimDb, -3f..3f, unit = "dB",
+                displayValue = { "${"%+.1f".format(it)} dB" }) {
+                hyperBassTrimDb = it
+                onHyperChange(hyperAmount, hyperPreset, hyperXtc, hyperTargetKind, it)
+            }
+            Text(
+                "Target por defecto: Harman AE/OE 2018 (Olive/Welti/Khonsaripour, AES 2018; 31 modelos, 130 oyentes, r=0.86). Con micrófono, el sensor mide la salida real y el operador corrige hacia el target (modo MEDIDO); sin micrófono, el operador doma el balance espectral hacia el mismo target (modo APROXIMADO, solo corte). El control de graves es ±3 dB alrededor de la curva (la preferencia individual varía mucho: Olive 2025). Para cualquier Android 13+.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )

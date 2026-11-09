@@ -90,6 +90,15 @@ class IVANNAApplication : Application() {
 
     override fun onCreate() {
         instance = this
+        // Seguridad anti-piratería (v2.5.369): verifica pin de certificado,
+        // vinculación de instalación y self-check nativo ANTES de cualquier
+        // init DSP. Fail-closed: si falla, IntegrityGate.isLocked = true y
+        // los inits DSP (DSPBridge/MainActivity/AudioEngine) no corren ->
+        // audio en passthrough, teléfono intacto. Funciona en cualquier
+        // Android 13+ (sin supuestos de dispositivo concreto). Debe ser lo
+        // primero: cualquier código que corra antes no depende del DSP.
+        runCatching { com.ivanna.omega.security.IntegrityGate.verify(this) }
+            .onFailure { android.util.Log.w(TAG, "IntegrityGate.verify falló: ${it.message}") }
         // Live diagnostics: initializes locally at boot; network upload stays disabled until explicit opt-in.
         runCatching { LiveDiagnosticConnector.start(this) }
             .onFailure { Log.w(TAG, "Live diagnostic connector unavailable (non-fatal): ${it.message}") }

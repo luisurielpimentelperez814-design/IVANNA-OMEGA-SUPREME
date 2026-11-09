@@ -47,7 +47,7 @@ módulo Magisk se compilan en CI; Kotlin no se puede compilar sin el SDK de Andr
 
 ## Licencia de las contribuciones
 
-El repositorio aún no declara una licencia explícita (decisión pendiente del titular). Al enviar un PR confirmas
+IVANNA-OMEGA-SUPREME es software propietario de Luis Uriel Pimentel Pérez. Todos los derechos reservados. NO es código abierto y no tiene licencia open source. Al enviar un PR confirmas
 que eres autor/a de lo que aportas y que no incluye código ni datos con licencia incompatible; detalla en el PR
 cualquier material de terceros (ver `THIRD_PARTY_NOTICES.md`).
 

@@ -143,6 +143,21 @@ object PersistedStateRestorer {
                     """{"action":"SET_PERCEPTUAL_STATE","holosAmount":${paramStore.getHolosAmount()},"holosDistanceM":${paramStore.getHolosDistanceM()},"holosSpread":${paramStore.getHolosSpread()},"holosProximityDb":${paramStore.getHolosProximityDb()},"holosDiffuse":${paramStore.getHolosDiffuse()},"holosHarmonics":${paramStore.getHolosHarmonics()},"holosWarmth":${paramStore.getHolosWarmth()},"holosDynamics":${paramStore.getHolosDynamics()},"holosWidth":${paramStore.getHolosWidth()},"holosGamma":${paramStore.getHolosGamma()},"holosRoomRt60":${paramStore.getHolosRoomRt60()},"holosHeadTracking":${if (paramStore.isHolosHeadTrackingEnabled()) 1.0f else 0.0f},"holosBandCount":${paramStore.getHolosBandCount()},"holosEqLow":${paramStore.getHolosEqLow()},"holosEqMid":${paramStore.getHolosEqMid()},"holosEqHigh":${paramStore.getHolosEqHigh()},"holosEqPresence":${paramStore.getHolosEqPresence()},"holosEqTiltDb":${paramStore.getHolosEqTiltDb()},"holosEqFreq":${paramStore.getHolosEqFreq()}}"""
                 )
             }
+            // Hiper-Operador de Estado Φ (v2.5.369): restaura amount/preset/
+            // XTC y la curva objetivo élite (Harman 2018 por defecto) en la
+            // Ruta A por JNI. La parte daemon (Ruta B) queda pendiente: el
+            // snapshot ABI v10 no tiene campos hyper_* (mismo precedente
+            // que HOLOS antes de v10); Ruta B usa los defaults del efecto
+            // (off) hasta el bump de ABI.
+            runCatching {
+                IvannaNativeLib.nativeSetHyperAmount(
+                    paramStore.getHyperAmount(), paramStore.getHyperPreset(),
+                    paramStore.isHyperXtcEnabled()
+                )
+                IvannaNativeLib.nativeSetHyperTarget(
+                    paramStore.getHyperTargetKind(), paramStore.getHyperBassTrimDb()
+                )
+            }
             // 4D temporal: restaura estado y profundidad (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetTemporalField(paramStore.isTemporalFieldEnabled(), paramStore.getTemporalFieldAmount(), paramStore.isTemporalFieldAdaptive()) }
             // Háptica de graves (4D): vive en Kotlin (ruta A), no depende de la librería nativa.

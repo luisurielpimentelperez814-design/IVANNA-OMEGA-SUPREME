@@ -37,6 +37,9 @@ extern std::atomic<float> g_orbe_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<bool>  g_orbe_head_tracking;
 extern std::atomic<float> g_holos_amount;          // HOLOS: 0 = bypass bit-exacto (default)
+extern std::atomic<float> g_hyper_amount;          // Φ: 0 = bypass bit-exacto (default)
+extern std::atomic<int> g_hyper_preset;            // Φ: 0 teléfono, 1 sala, 2 auto
+extern std::atomic<bool> g_hyper_xtc;              // Φ: XTC on/off
 extern std::atomic<float> g_holos_distance_m;
 extern std::atomic<float> g_holos_spread;
 extern std::atomic<float> g_holos_proximity_db;
@@ -284,6 +287,40 @@ void IvannaFusionEngine::setHolosEq(float low, float mid, float high, float pres
     if (std::isfinite(presence)) g_holos_eq_presence.store(presence, std::memory_order_relaxed);
     if (std::isfinite(tiltDb)) g_holos_eq_tilt_db.store(tiltDb, std::memory_order_relaxed);
     if (std::isfinite(freq)) g_holos_eq_freq.store(freq, std::memory_order_relaxed);
+}
+void IvannaFusionEngine::setHyperEnabled(bool enable) noexcept {
+    g_hyper_amount.store(enable ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+bool IvannaFusionEngine::isHyperEnabled() const noexcept {
+    return g_hyper_amount.load(std::memory_order_relaxed) > 0.0f;
+}
+void IvannaFusionEngine::setHyperAmount(float amount, int preset, bool xtcEnabled) noexcept {
+    if (std::isfinite(amount)) g_hyper_amount.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
+    g_hyper_preset.store(std::clamp(preset, 0, 2), std::memory_order_relaxed);
+    g_hyper_xtc.store(xtcEnabled, std::memory_order_relaxed);
+}
+bool IvannaFusionEngine::ingestHyperSensorFrame(const ivanna::spatial::SensorFrame& frame) noexcept {
+    // Sin transporte por snapshot hoy, el daemon no llama a esto: queda
+    // como API lista. Cuando llegue, el operador pasará a modo MEDIDO.
+    return m_hyper.setSensorFrame(frame);
+}
+bool IvannaFusionEngine::ingestHyperNeuroFrame(int kind, std::uint64_t timestampUs,
+                                               const float* response8, const float* coherence8,
+                                               float quality, float abrWaveVLatencyMs,
+                                               float fnirsHbO) noexcept {
+    if (!response8 || !coherence8) return false;
+    if (kind != 2 && kind != 3 && kind != 4) return false;
+    ivanna::neuromorphic::NeuroFrame frame{};
+    frame.kind = static_cast<ivanna::neuromorphic::NeuroSensorKind>(kind);
+    frame.timestampUs = timestampUs;
+    frame.quality = quality;
+    frame.abrWaveVLatencyMs = abrWaveVLatencyMs;
+    frame.fnirsHbO = fnirsHbO;
+    for (int b = 0; b < 8; ++b) {
+        frame.response[static_cast<std::size_t>(b)] = response8[b];
+        frame.coherence[static_cast<std::size_t>(b)] = coherence8[b];
+    }
+    return m_hyper.setNeuroFrame(frame);
 }
 void IvannaFusionEngine::setWfsSpeakerLayout(const float x[7], const float y[7], const float z[7]) noexcept {
     if (x == nullptr || y == nullptr || z == nullptr) return;
@@ -620,6 +657,22 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         for (int b = 0; b < 10; ++b) roomTarget[b] = g_room_corr_db[b].load(std::memory_order_relaxed);
         m_room.setTarget(roomTarget);
         m_room.process(buffer->left, buffer->right, BLOCK_SIZE);
+    }
+
+    // Hiper-Operador de Estado Φ (v2.5.369): tras m_room, antes de m_xtc
+    // y del compresor/limitador. En Ruta B hoy no llegan SensorFrames
+    // (sin transporte por snapshot): corre en modo APROXIMADO hacia el
+    // target élite (Harman 2018). amount=0 = no-op.
+    {
+        const float hyperAmount = g_hyper_amount.load(std::memory_order_relaxed);
+        if (hyperAmount > 0.0f) {
+            m_hyper.setAmount(hyperAmount);
+            m_hyper.setRoutePreset(
+                static_cast<ivanna::spatial::HyperRoutePreset>(
+                    std::clamp(g_hyper_preset.load(std::memory_order_relaxed), 0, 2)));
+            m_hyper.setXtcEnabled(g_hyper_xtc.load(std::memory_order_relaxed));
+            m_hyper.processBlock(buffer->left, buffer->right, BLOCK_SIZE);
+        }
     }
 
     // Cancelación de diafonía (solo altavoces; el usuario la enciende). Antes del compresor/limitador: puede subir picos.

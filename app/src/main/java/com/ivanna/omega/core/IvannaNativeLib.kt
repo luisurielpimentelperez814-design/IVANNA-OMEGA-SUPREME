@@ -410,6 +410,49 @@ object IvannaNativeLib {
     /** Telemetría: [0] active 0/1, [1] confidence 0..1, [2] framesLearned,
      *  [3] wet 0..1. */
     external fun nativeNeuroLoopStatus(): FloatArray
+
+    // ── Sensor acústico real por micrófono (v2.5.369), Ruta A ───────────────
+    /** Prepara el sensor para la frecuencia de muestreo del micrófono. */
+    external fun nativeSensorInit(sampleRate: Int): Boolean
+    /** Alimenta PCM del micrófono (float, mono, [-1,1]). Devuelve false si se rechaza. */
+    external fun nativeSensorFeedMic(pcm: FloatArray, n: Int): Boolean
+    /** Objetivo por banda (forma deseada, dB, plano = 0). FloatArray[24]. */
+    external fun nativeSensorSetTarget(targetDb: FloatArray): Boolean
+    /** Preset élite + control de graves para el sensor (modo MEDIDO).
+     *  preset: 0 Harman 2018 (default), 1 Harman élite-lean, 2 campo
+     *  difuso H&M, 3 altavoces en sala. bassTrimDb: ±3 dB. */
+    external fun nativeSensorSetEliteTarget(preset: Int, bassTrimDb: Float): Boolean
+    /** Control de graves ±3 dB sobre el preset vigente. */
+    external fun nativeSensorSetBassTrimDb(bassTrimDb: Float): Boolean
+    /** Preset vigente del sensor (0..3, ver nativeSensorSetEliteTarget). */
+    external fun nativeSensorTargetKind(): Int
+    /** Último frame: FloatArray[74] = mag[0..23], err[24..47], coh[48..71],
+     *  level[72], valid[73] (1/0). */
+    external fun nativeSensorLatestFrame(): FloatArray
+    /** Contador de frames publicados por el sensor. */
+    external fun nativeSensorFrameIndex(): Long
+    /** Activa/desactiva el bucle cerrado de corrección de sala en vivo
+     *  (Ruta A). Apagado por defecto. Al apagar, el amount vuelve a 0. */
+    external fun nativeSensorRoomCorrectionSetEnabled(enabled: Boolean)
+    /** Cantidad de corrección 0..1 (0 = sin corrección, 1 = corrección total). */
+    external fun nativeSensorRoomCorrectionSetAmount(amount: Float)
+    /** [0] enabled 0/1, [1] amount 0..1, [2] frame válido 0/1,
+     *  [3] coherencia media 0..1. */
+    external fun nativeSensorRoomCorrectionStatus(): FloatArray
+
+    // ── Hiper-Operador de Estado Φ (v2.5.369), Ruta A ─────────────────────────
+    /** Cantidad 0..1 (0 = apagado, identidad bit-exacta, por defecto),
+     *  preset de ruta 0 teléfono / 1 sala Genezi (Aux) / 2 auto (Aux),
+     *  XTC on/off. Escribe los atomics g_hyper_* (Ruta A y Ruta B). */
+    external fun nativeSetHyperAmount(amount: Float, preset: Int, xtcEnabled: Boolean)
+    /** Curva objetivo élite + control de graves. kind: 0 Harman 2018
+     *  (default), 1 Harman élite-lean, 2 campo difuso H&M, 3 altavoces en
+     *  sala. bassTrimDb: ±3 dB. Aplica LA MISMA curva al operador (modo
+     *  APROXIMADO) y al sensor (modo MEDIDO). */
+    external fun nativeSetHyperTarget(kind: Int, bassTrimDb: Float)
+    /** Telemetría: [0] amount, [1] mode (0 off / 1 aprox / 2 medido),
+     *  [2] preset, [3] neuroActive 0/1, [4] spikeRate, [5] framesReceived. */
+    external fun nativeHyperStatus(): FloatArray
     /** [0..2] ganancia dB bajo/medio/alto · [3] actividad de ataque 0..1 · [4] guarda activa 0/1 · [5] latencia ms. */
     external fun nativeGetPunchTelemetry(): FloatArray
     external fun nativeSetSpscRingFactor(factor: Float)

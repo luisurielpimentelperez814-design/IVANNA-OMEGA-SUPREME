@@ -185,7 +185,10 @@ class MainActivity : ComponentActivity() {
         // jank/ANR en el primer frame. El sample rate sigue siendo el del HAL.
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { DSPBridge.init(sr) }
-            if (IvannaNativeLib.isLoaded) {
+            // Seguridad anti-piratería (v2.5.369): si la integridad falló
+            // (IntegrityGate.isLocked), no inicializar el DSP ni crear el
+            // motor adaptativo. Fail-closed: audio en passthrough.
+            if (!com.ivanna.omega.security.IntegrityGate.isLocked && IvannaNativeLib.isLoaded) {
                 val dspReady = runCatching {
                     IvannaNativeLib.nativeInitDSP(sr)
                 }.getOrDefault(false)

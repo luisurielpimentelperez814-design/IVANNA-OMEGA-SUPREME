@@ -227,6 +227,68 @@ tasks.register("validateUnifiedVersion") {
 }
 tasks.named("preBuild") { dependsOn("validateUnifiedVersion") }
 
+// ── Seguridad anti-piratería (v2.5.369): genera el pin de certificado ──────
+// Lee el SHA-256 del certificado del keystore que firma ESE build y lo
+// escribe en app/src/main/cpp/security/ivanna_build_pins.h (generado,
+// gitignored). IntegrityGate.kt compara en runtime el cert del APK contra
+// ese pin (detecta re-firma). La tarea FALLA si no puede generar el pin:
+// un build release sin pin quedaría bloqueado fail-closed. Usa la misma
+// lógica de keystore que signingConfig (KEYSTORE_FILE o
+// ~/.android/debug.keystore; storepass/alias "android"/"androiddebugkey").
+tasks.register<Exec>("generateSecurityPins") {
+    val keystoreFile = providers.environmentVariable("KEYSTORE_FILE")
+        .orElse(file("${System.getProperty("user.home")}/.android/debug.keystore").absolutePath)
+    val storePass = providers.environmentVariable("KEYSTORE_PASSWORD")
+        .orElse("android")
+    val keyAlias = providers.environmentVariable("KEY_ALIAS")
+        .orElse("androiddebugkey")
+    commandLine(
+        "python3",
+        "${projectDir}/../tools/security/generate_build_pins.py",
+        "--keystore", keystoreFile.get(),
+        "--storepass", storePass.get(),
+        "--alias", keyAlias.get(),
+        "--out", "${projectDir}/src/main/cpp/security/ivanna_build_pins.h"
+    )
+}
+
+// El pin de certificado se genera antes de compilar el código nativo
+// (ivanna_integrity.cpp lo incluye en build-time).
+tasks.named("preBuild") { dependsOn("generateSecurityPins") }
+
+// ── Seguridad anti-piratería fase 2: hash de la .so en runtime ────────────
+// Tras externalNativeBuild, hashea libivanna_omega.so y escribe el asset
+// app/src/main/assets/ivanna_so_hashes.txt ("libivanna_omega.so <sha256>").
+// IntegrityGate.kt (paso 4) compara en runtime el hash de la .so instalada
+// contra este asset (detecta sustitución de la .so por una copia modificada).
+// La tarea FALLA si la .so no existe (el script sale con error): un APK
+// release sin asset quedaría bloqueado fail-closed por IntegrityGate, así
+// que es mejor fallar el build que empaquetar sin asset. La CI verifica que
+// el APK contenga el asset (ver .github/workflows/build.yml).
+androidComponents {
+    onVariants { variant ->
+        val variantName = variant.name // "debug" / "release" (sin flavors)
+        val capName = variantName.replaceFirstChar { it.uppercase() }
+        val genTask = tasks.register<Exec>("generateSoHashes$capName") {
+            dependsOn("externalNativeBuild$capName")
+            val soPath = layout.buildDirectory.file(
+                "intermediates/cmake/${variantName.lowercase()}/obj/arm64-v8a/libivanna_omega.so"
+            )
+            val outFile = file("${projectDir}/src/main/assets/ivanna_so_hashes.txt")
+            inputs.file(soPath)
+            outputs.file(outFile)
+            commandLine(
+                "python3",
+                "${projectDir}/../tools/security/generate_so_hashes.py",
+                "--so", soPath.get().asFile.absolutePath,
+                "--out", outFile.absolutePath
+            )
+        }
+        // El asset debe existir antes de empaquetar los assets del APK.
+        tasks.named("merge${capName}Assets") { dependsOn(genTask) }
+    }
+}
+
 configurations.all {
     resolutionStrategy {
         force(

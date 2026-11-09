@@ -154,6 +154,12 @@ class ParameterStore(context: Context) {
         private const val KEY_HOLOS_EQ_PRESENCE  = "holos_eq_presence"
         private const val KEY_HOLOS_EQ_TILT_DB   = "holos_eq_tilt_db"
         private const val KEY_HOLOS_EQ_FREQ      = "holos_eq_freq"
+        // Hiper-Operador de Estado Φ (v2.5.369). amount 0 = apagado.
+        private const val KEY_HYPER_AMOUNT       = "hyper_amount"
+        private const val KEY_HYPER_PRESET       = "hyper_preset"
+        private const val KEY_HYPER_XTC          = "hyper_xtc"
+        private const val KEY_HYPER_TARGET_KIND  = "hyper_target_kind"
+        private const val KEY_HYPER_BASS_TRIM_DB = "hyper_bass_trim_db"
         private const val KEY_4D_ENABLED  = "fourd_enabled"
         private const val KEY_4D_HAPTICS  = "fourd_haptics"
         private const val KEY_4D_HSCALE   = "fourd_haptic_scale"
@@ -513,6 +519,26 @@ class ParameterStore(context: Context) {
         .putFloat(KEY_HOLOS_ROOM_RT60, if (roomRt60.isFinite()) roomRt60.coerceIn(0.18f, 1.8f) else 0.34f)
         .putBoolean(KEY_HOLOS_HEAD_TRACKING, headTracking)
         .putInt(KEY_HOLOS_BAND_COUNT, if (bandCount == 12) 12 else 24)
+        .apply()
+
+    // ── Hiper-Operador de Estado Φ (v2.5.369) ── apagado por defecto:
+    // amount 0 = bypass bit-exacto. preset 0 teléfono / 1 sala Genezi /
+    // 2 auto. target kind 0 Harman 2018 (default) / 1 élite-lean /
+    // 2 campo difuso H&M / 3 altavoces en sala. bass trim ±3 dB.
+    fun getHyperAmount(): Float = safeGetFloat(KEY_HYPER_AMOUNT, 0f)
+    fun getHyperPreset(): Int = safeGetInt(KEY_HYPER_PRESET, 0).let { if (it in 0..2) it else 0 }
+    fun isHyperXtcEnabled(): Boolean = safeGetBoolean(KEY_HYPER_XTC, true)
+    fun getHyperTargetKind(): Int = safeGetInt(KEY_HYPER_TARGET_KIND, 0).let { if (it in 0..3) it else 0 }
+    fun getHyperBassTrimDb(): Float = safeGetFloat(KEY_HYPER_BASS_TRIM_DB, 0f)
+    fun setHyperParams(
+        amount: Float, preset: Int, xtcEnabled: Boolean,
+        targetKind: Int, bassTrimDb: Float
+    ) = prefs.edit()
+        .putFloat(KEY_HYPER_AMOUNT, if (amount.isFinite()) amount.coerceIn(0f, 1f) else 0f)
+        .putInt(KEY_HYPER_PRESET, if (preset in 0..2) preset else 0)
+        .putBoolean(KEY_HYPER_XTC, xtcEnabled)
+        .putInt(KEY_HYPER_TARGET_KIND, if (targetKind in 0..3) targetKind else 0)
+        .putFloat(KEY_HYPER_BASS_TRIM_DB, if (bassTrimDb.isFinite()) bassTrimDb.coerceIn(-3f, 3f) else 0f)
         .apply()
 
     // ── Cadena 4D (anticipación, arco, háptica, diafonía, dosímetro) ── todo apagado por defecto

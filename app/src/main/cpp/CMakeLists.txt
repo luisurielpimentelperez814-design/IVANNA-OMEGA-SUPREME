@@ -16,6 +16,19 @@ set(BASE_FLAGS
     -Werror=return-type
     -Wno-unused-result
     -Wno-unused-variable
+    # ── Endurecimiento anti-piratería (v2.5.369) ──────────────────────────
+    # -fvisibility=hidden: solo los símbolos JNIEXPORT (funciones JNI) y
+    # AELI (export explícito) quedan en .dynsym; el resto del DSP es
+    # invisible a dlsym/ingeniería inversa. Seguro: las 145 funciones JNI
+    # usan JNIEXPORT (visibilidad default forzada) y AELI se exporta por
+    # --export-dynamic-symbol. Las referencias intra-librería no se ven
+    # afectadas (se resuelven en tiempo de enlace).
+    # -fstack-protector-strong: canarios de pila en funciones con buffers.
+    # _FORTIFY_SOURCE lo activa ya el toolchain NDK en Release; no se
+    # redefine aquí para no chocar con su definición.
+    -fvisibility=hidden
+    -fvisibility-inlines-hidden
+    -fstack-protector-strong
 )
 
 # ── ABI-specific flags ───────────────────────────────────────────────────────
@@ -23,6 +36,18 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     list(APPEND BASE_FLAGS -march=armv8-a+fp+simd -funroll-loops -fno-exceptions -fno-rtti)
 elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
     list(APPEND BASE_FLAGS -march=armv7-a -mfpu=neon)
+endif()
+
+# ── LTO opt-in para las fuentes de seguridad (fase 2) ──────────────────────
+# IVANNA_SECURITY_LTO=ON añade -flto=thin a la compilación y el enlace de
+# ivanna_omega y omega_effect. Efecto: el linker puede inlinear y eliminar
+# código muerto de las fuentes de seguridad (y del resto), lo que endurece
+# la ofuscación (menos símbolos, menos estructura). Default OFF porque el
+# build NDK no se puede verificar en la VM de desarrollo (sin NDK/SDK) y
+# LTO cambia el tiempo de enlace; la CI debe verificarlo al activarlo.
+option(IVANNA_SECURITY_LTO "Enable thin LTO for the security sources (phase 2)" OFF)
+if(IVANNA_SECURITY_LTO)
+    message(STATUS "IVANNA: LTO thin habilitado para ivanna_omega y omega_effect")
 endif()
 
 # ── Definiciones globales ─────────────────────────────────────────────────────
@@ -35,6 +60,17 @@ add_compile_definitions(IVANNA_NATIVE_FLAGS="${IVANNA_NATIVE_FLAGS_STR} -std=c++
 # Target: libivanna_omega.so (APK NDK library)
 # ────────────────────────────────────────────────────────────────────────────
 add_library(ivanna_omega SHARED
+    # ── Seguridad anti-piratería (v2.5.369, módulo separado) ───────────────
+    # ivanna_integrity: pin de certificado, self-check de ruta, gate
+    # fail-closed. ivanna_integrity_jni: puente JNI para IntegrityGate.kt.
+    # No modifica FusionCore, HyperStateOperator ni RealAcousticSensor.
+    security/ivanna_integrity.cpp
+    security/ivanna_integrity_jni.cpp
+    # ── Seguridad anti-piratería fase 2 ────────────────────────────────────
+    # ivanna_antitamper: anti-debug (TracerPid), anti-hook (Frida/Xposed),
+    # root y emulador como señales informativas. El lockdown lo decide el
+    # llamador (Ruta A/B fail-closed: passthrough, audio sigue fluyendo).
+    security/ivanna_antitamper.cpp
     # Bus SHM seqlock — reader del bus local del efecto (Ruta B,
     # telemetría UI "SIN AUDIO"). Antes NO se enlazaba en este target:
     # audioRouteBridgeLoop() no podía abrir OMEGA_EFFECT_LOCAL_BUS_PATH.
@@ -185,6 +221,8 @@ add_library(ivanna_omega SHARED
     orbe_controls_bridge.cpp
     # HOLOS: atomics g_holos_* del proceso app (mismo patrón que ORBE).
     holos_controls_bridge.cpp
+    # Φ: atomics g_hyper_* del proceso app (mismo patrón que HOLOS).
+    hyper_controls_bridge.cpp
     # Ruta A reutiliza el renderer WFS real compartido con AudioFlinger.
     spatial/RouteAWfsEngine.cpp
     spatial/WfsRenderer.cpp
@@ -273,6 +311,12 @@ add_library(ivanna_omega SHARED
 
 target_compile_options(ivanna_omega PRIVATE ${BASE_FLAGS})
 
+# LTO thin opt-in (fase 2): solo si IVANNA_SECURITY_LTO=ON.
+if(IVANNA_SECURITY_LTO)
+    target_compile_options(ivanna_omega PRIVATE -flto=thin)
+    target_link_options(ivanna_omega PRIVATE -flto=thin)
+endif()
+
 target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}
@@ -297,7 +341,14 @@ endif()
 # ABI: alineacion de segmentos LOAD a 16 KB (Android 15+ con paginas de 16 KB; requisito de Google Play).
 # Medido sobre el Release v2.5.177: p_align=0x1000 (4 KB) en libivanna_omega.so/libomega_effect.so/ivanna_daemon,
 # mientras libc++_shared.so ya iba a 0x4000. Un max-page-size mayor es valido tambien en dispositivos de 4 KB.
-target_link_options(ivanna_omega PRIVATE -Wl,-z,max-page-size=16384)
+# Endurecimiento anti-piratería (v2.5.369): RELRO + BIND_NOW + noexecstack y
+# -s (strip de .symtab; .dynsym se conserva para JNI). El .so que viaja en el
+# APK y el que se stagea al módulo Magisk ya no llevan símbolos de depuración.
+target_link_options(ivanna_omega PRIVATE
+    -Wl,-z,max-page-size=16384
+    -Wl,-z,relro,-z,now,-z,noexecstack
+    -Wl,-s
+)
 
 target_link_libraries(ivanna_omega
     ${log-lib}
@@ -309,6 +360,14 @@ target_link_libraries(ivanna_omega
 # Target: libomega_effect.so (AudioFlinger GlobalEffect — Magisk module)
 # ────────────────────────────────────────────────────────────────────────────
 add_library(omega_effect SHARED
+    # ── Seguridad anti-piratería (v2.5.369, módulo separado) ───────────────
+    # ivanna_integrity: pin de certificado, self-check de ruta, gate
+    # fail-closed (omega_process lo usa para passthrough si la .so viene de
+    # una ruta no legítima). Sin JNI aquí (audioserver no usa JNI).
+    security/ivanna_integrity.cpp
+    # Fase 2: anti-debug/anti-hook en Ruta B (audioserver). omega_process
+    # hace passthrough si antitamper_should_lockdown() es true.
+    security/ivanna_antitamper.cpp
     omega_effect.cpp
     ivanna_hires_jni.cpp
     # FIX(build): omega_effect.cpp incluye IvannaFusionCore.cpp via unity-build
@@ -344,6 +403,11 @@ add_library(omega_effect SHARED
     # HOLOS: stub de g_holos_* para el proceso audioserver (mismo patrón que
     # ORBE; defaults off hasta ABI v10). NO añadir a ivanna_omega: ODR violation.
     holos_globals_effect.cpp
+
+    # Φ: stub de g_hyper_* para el proceso audioserver (mismo patrón que
+    # HOLOS; defaults off hasta bump de ABI con campos hyper_*).
+    # NO añadir a ivanna_omega: ODR violation.
+    hyper_globals_effect.cpp
 
     HrtfManager.cpp
     EvolutionaryEQ.cpp
@@ -415,6 +479,12 @@ add_library(omega_effect SHARED
 
 target_compile_options(omega_effect PRIVATE ${BASE_FLAGS})
 
+# LTO thin opt-in (fase 2): solo si IVANNA_SECURITY_LTO=ON.
+if(IVANNA_SECURITY_LTO)
+    target_compile_options(omega_effect PRIVATE -flto=thin)
+    target_link_options(omega_effect PRIVATE -flto=thin)
+endif()
+
 target_include_directories(omega_effect PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -433,6 +503,12 @@ target_link_options(omega_effect PRIVATE
     -Wl,-z,relro
     -Wl,-z,now
     -Wl,--enable-new-dtags
+    # Endurecimiento anti-piratería (v2.5.369): noexecstack + -s (strip de
+    # .symtab; .dynsym se conserva: JNI no aplica aquí, AELI se exporta
+    # explícito arriba). El .so stageado al módulo Magisk ya no lleva
+    # símbolos de depuración.
+    -Wl,-z,noexecstack
+    -Wl,-s
     $<$<BOOL:${ANDROID}>:-nostdlib++>
 )
 
