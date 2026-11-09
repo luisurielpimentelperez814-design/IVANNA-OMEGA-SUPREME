@@ -291,8 +291,16 @@ androidComponents {
                 "intermediates/stripped_native_libs/${variantName.lowercase()}/out/lib/arm64-v8a/libivanna_omega.so"
             )
             val outFile = file("${projectDir}/src/main/assets/ivanna_so_hashes.txt")
+            // FIX (2026-11-09, CI run 42583087688): NO declarar la .so
+            // strippeada como inputs.file(): Gradle valida que los inputs
+            // existan y la .so strippeada no existe hasta que
+            // strip<Variant>DebugSymbols corre, así que la validación
+            // (WorkValidationException) mataba el build antes de ejecutar.
+            // La .so strippeada se resuelve en doFirst (tras el strip, por
+            // el dependsOn) y en release el build falla con mensaje claro
+            // si no está. El input cmakeSoPath basta para el up-to-date
+            // check (la strippeada deriva de ella, determinista).
             inputs.file(cmakeSoPath)
-            inputs.file(strippedSoPath)
             outputs.file(outFile)
             // La elección se resuelve en ejecución: la .so strippeada existe
             // solo si AGP strippeó (release); en debug se usa el intermedio.
