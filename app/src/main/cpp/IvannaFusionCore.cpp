@@ -383,7 +383,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     // (Ya no llamamos a processInference() aquí, corre en background)
 
     m_psycho->predictAndMitigateFatigue(buffer);
-    m_evoEq->processNEON(buffer);
+    if (m_evoEqEnabled.load(std::memory_order_relaxed)) m_evoEq->processNEON(buffer);
     m_psycho->applyMaskingCompensation(buffer);
 
     // FIX DAC USB-C: aplicar wet/dry y flush antes de la convolución.

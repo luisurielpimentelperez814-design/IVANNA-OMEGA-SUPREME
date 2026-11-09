@@ -402,6 +402,10 @@ static void routeAApplyEvoEq(float* L, float* R, int n) noexcept {
     float dryL[2048], dryR[2048];
     std::memcpy(dryL, L, n * sizeof(float));
     std::memcpy(dryR, R, n * sizeof(float));
+    // Al reactivar (wet==0 -> target==1) el historial FIR es obsoleto (no
+    // avanzó mientras estaba apagado): se vacía para no convolver con audio
+    // viejo. El crossfade de 1 bloque enmascara el arranque limpio.
+    if (g_evoEqAWet == 0.0f && target == 1.0f) eq->resetHistory();
     eq->processPlanar(L, R, static_cast<size_t>(n));   // el historial FIR avanza siempre: sin salto al reactivar
     const float w0 = g_evoEqAWet;
     if (w0 == 1.0f && target == 1.0f) return;          // estado estable: salida 100 % procesada

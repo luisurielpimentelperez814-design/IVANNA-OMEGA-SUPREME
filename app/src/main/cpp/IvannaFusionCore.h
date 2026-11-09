@@ -195,6 +195,18 @@ public:
     void setAtiEnabled(bool enable) noexcept { m_atiEnabled = enable; }
     bool isAtiEnabled() const noexcept { return m_atiEnabled; }
 
+    // ── EQ evolutivo (Ruta B): interruptor de aplicación ─────────────────────
+    // Paridad con Ruta A (JNI g_evoEqAEnabled). Antes Ruta B aplicaba el EvoEq
+    // SIEMPRE una vez calibrado, sin interruptor: el toggle de la UI mentía
+    // en Ruta B (decía OFF pero el efecto seguía aplicado). Ahora el engine
+    // respeta este flag (default true = ON, como Ruta A). El cableado
+    // Kotlin/JNI/SET_PARAM que lo gobierna desde el toggle es un pendiente
+    // documentado (ver docs/EVOLUTIONARY_EQ.md § Integración); el hook C++
+    // queda listo aquí. No afecta a m_ready: si no está calibrado sigue
+    // siendo identidad aunque esté habilitado.
+    void setEvoEqEnabled(bool enable) noexcept { m_evoEqEnabled.store(enable, std::memory_order_relaxed); }
+    bool isEvoEqEnabled() const noexcept { return m_evoEqEnabled.load(std::memory_order_relaxed); }
+
     // ── API de compatibilidad con omega_effect.cpp / OmegaControlBus ─────────
     // Estos métodos reciben los parámetros del Control Plane (snapshot SHM) y
     // los enrutan a los subsistemas internos del engine.
@@ -454,6 +466,9 @@ private:
     HrtfManager* m_hrtf = nullptr;
     std::atomic<bool> m_hrtfEnabled_{true};
     EvolutionaryEQ* m_evoEq = nullptr;
+    // Interruptor Ruta B del EvoEq (paridad con Ruta A g_evoEqAEnabled).
+    // Default true (ON). Lo gobierna setEvoEqEnabled(); ver nota ahí.
+    std::atomic<bool> m_evoEqEnabled{true};
     Psychoacoustics* m_psycho = nullptr;
     IvannaAudioClassifier* m_classifier = nullptr;
     IvannaVoiceProsodyEngine* m_prosody = nullptr;
