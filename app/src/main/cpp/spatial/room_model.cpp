@@ -1,4 +1,5 @@
 #include "room_model.h"
+#include <algorithm>
 #include <cstring>
 #include <cmath>
 
@@ -86,46 +87,64 @@ void apply_reverb_f(const float* __restrict__ in,
 // Wrapper de compatibilidad con la API int16 original
 void apply_reverb(const int16_t* in, int16_t* out, int samples,
                   int delay_ms, float decay) {
-    // Conversión vectorizada int16→float
-    alignas(16) float fbuf_in[samples];
-    alignas(16) float fbuf_out[samples];
+    // El NDK Clang no admite VLA (variable length array) en C++ estándar:
+    // `float buf[samples]` con `samples` en runtime es una extensión de
+    // GNU/Clang y `alignas` sobre VLA es un error duro en el build Android
+    // (task ':app:buildCMakeRelWithDebInfo[arm64-v8a]' — CI run 42563522464).
+    // Se procesa en chunks con un buffer fijo de stack alineado a 16 bytes
+    // para el path NEON. El estado FDN es global y persistente, así que
+    // llamar a apply_reverb_f por chunk es correcto (muestra a muestra).
+    constexpr int kChunk = 1024;
+    alignas(16) float fbuf_in[kChunk];
+    alignas(16) float fbuf_out[kChunk];
 
+    int processed = 0;
+    while (processed < samples) {
+        const int n = std::min(kChunk, samples - processed);
+        const int16_t* in_c = in + processed;
+        int16_t* out_c = out + processed;
+
+        // Conversión vectorizada int16→float (chunk)
 #ifdef __aarch64__
-    int i = 0;
-    float32x4_t vscale = vdupq_n_f32(1.f / 32768.f);
-    int blocks = samples >> 3;
-    for (int b = 0; b < blocks; ++b, i += 8) {
-        int16x8_t vi = vld1q_s16(in + i);
-        int32x4_t lo = vmovl_s16(vget_low_s16(vi));
-        int32x4_t hi = vmovl_s16(vget_high_s16(vi));
-        vst1q_f32(fbuf_in + i,     vmulq_f32(vcvtq_f32_s32(lo), vscale));
-        vst1q_f32(fbuf_in + i + 4, vmulq_f32(vcvtq_f32_s32(hi), vscale));
-    }
-    for (; i < samples; ++i) fbuf_in[i] = in[i] * (1.f / 32768.f);
+        int i = 0;
+        float32x4_t vscale = vdupq_n_f32(1.f / 32768.f);
+        int blocks = n >> 3;
+        for (int b = 0; b < blocks; ++b, i += 8) {
+            int16x8_t vi = vld1q_s16(in_c + i);
+            int32x4_t lo = vmovl_s16(vget_low_s16(vi));
+            int32x4_t hi = vmovl_s16(vget_high_s16(vi));
+            vst1q_f32(fbuf_in + i,     vmulq_f32(vcvtq_f32_s32(lo), vscale));
+            vst1q_f32(fbuf_in + i + 4, vmulq_f32(vcvtq_f32_s32(hi), vscale));
+        }
+        for (; i < n; ++i) fbuf_in[i] = in_c[i] * (1.f / 32768.f);
 #else
-    for (int i = 0; i < samples; ++i) fbuf_in[i] = in[i] * (1.f / 32768.f);
+        for (int i = 0; i < n; ++i) fbuf_in[i] = in_c[i] * (1.f / 32768.f);
 #endif
 
-    apply_reverb_f(fbuf_in, fbuf_out, samples, delay_ms, decay);
+        apply_reverb_f(fbuf_in, fbuf_out, n, delay_ms, decay);
 
+        // Conversión float→int16 con saturación (chunk)
 #ifdef __aarch64__
-    int i2 = 0;
-    float32x4_t vscale2 = vdupq_n_f32(32767.f);
-    int blocks2 = samples >> 2;
-    for (int b = 0; b < blocks2; ++b, i2 += 4) {
-        float32x4_t vf = vmulq_f32(vld1q_f32(fbuf_out + i2), vscale2);
-        int32x4_t   vi = vcvtq_s32_f32(vf);
-        int16x4_t   vs = vqmovn_s32(vi); // saturating narrow
-        vst1_s16(out + i2, vs);
-    }
-    for (; i2 < samples; ++i2) {
-        int v = (int)(fbuf_out[i2] * 32767.f);
-        out[i2] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
-    }
+        int i2 = 0;
+        float32x4_t vscale2 = vdupq_n_f32(32767.f);
+        int blocks2 = n >> 2;
+        for (int b = 0; b < blocks2; ++b, i2 += 4) {
+            float32x4_t vf = vmulq_f32(vld1q_f32(fbuf_out + i2), vscale2);
+            int32x4_t   vi = vcvtq_s32_f32(vf);
+            int16x4_t   vs = vqmovn_s32(vi); // saturating narrow
+            vst1_s16(out_c + i2, vs);
+        }
+        for (; i2 < n; ++i2) {
+            int v = (int)(fbuf_out[i2] * 32767.f);
+            out_c[i2] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        }
 #else
-    for (int i = 0; i < samples; ++i) {
-        int v = (int)(fbuf_out[i] * 32767.f);
-        out[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
-    }
+        for (int i = 0; i < n; ++i) {
+            int v = (int)(fbuf_out[i] * 32767.f);
+            out_c[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        }
 #endif
+
+        processed += n;
+    }
 }
