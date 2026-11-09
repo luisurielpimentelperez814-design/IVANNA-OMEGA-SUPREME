@@ -50,12 +50,19 @@ object BehaviorEvolution {
 
     private var prefs: android.content.SharedPreferences? = null
 
-    /** Llamar una vez al arrancar (SelfHealingAgent.start lo hace). */
+    /** Llamar una vez al arrancar (SelfHealingAgent.start lo hace).
+     *
+     * FIX (v2.5.371, CI rojo): antes solo se enlazaba `prefs` si era null.
+     * El singleton sobrevive entre tests (Robolectric crea una Application
+     * nueva por método), así que `prefs` quedaba apuntando a las
+     * SharedPreferences de la Application anterior, con valores ya
+     * adaptados: el test "sin inicializar ni adaptar el piso es el
+     * default" leía el valor obsoleto (0.55/0.60) en vez del default
+     * (0.65). Re-enlazar siempre es seguro en producción (una sola
+     * Application, mismo archivo) y hace que init() sea idempotente. */
     @Synchronized
     fun init(context: Context) {
-        if (prefs == null) {
-            prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        }
+        prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
 
     /** Valor vigente; default si no está inicializado o no hay adaptación. */

@@ -120,11 +120,14 @@ object IvannaDecisionAuthority {
 
     private var prefs: android.content.SharedPreferences? = null
 
+    // FIX (v2.5.371, mismo bug que BehaviorEvolution): antes `prefs` solo
+    // se enlazaba si era null, y el singleton sobrevive entre tests
+    // (Robolectric crea una Application nueva por método), así que `prefs`
+    // quedaba apuntando a las SharedPreferences obsoletas. Re-enlazar
+    // siempre es seguro en producción (una sola Application, mismo archivo).
     @Synchronized
     fun init(context: Context) {
-        if (prefs == null) {
-            prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        }
+        prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
 
     fun tierOf(action: String): Tier = TIERS[action] ?: Tier.NEEDS_CONFIRMATION
