@@ -28,6 +28,11 @@ object IvannaNativeLib {
     // paquete IVK1 DEFAULT de Volterra. El Genezi anterior queda como
     // alternativo (no se borra el asset).
     private const val PZ1D_VOLTERRA_ASSET = "kernels/moto_g85_pz1d.ivk1"
+    // v2.5.369 (selector PZ1D/Genezi): device ids de los dos kernels
+    // autorizados por la puerta de producción. El PZ1D refinado es el
+    // DEFAULT; el Genezi es el alternativo.
+    const val VOLTERRA_KERNEL_PZ1D = "MOTO_G85_PZ1D"
+    const val VOLTERRA_KERNEL_GENEZI = "MOTO_G85_GENEZY"
     private const val TAG = "IvannaNativeLib"
 
     inline fun <T> guardedNative(fallback: T, block: () -> T): T {
@@ -357,13 +362,151 @@ object IvannaNativeLib {
     external fun nativeLoadVolterraKernelPackage(pkg: ByteArray): Int
     // v2.5.369 (Genezi): ¿tiene el motor de Ruta A un kernel efectivo cargado?
     external fun nativeHasVolterraKernel(): Boolean
+    // v2.5.369 (selector PZ1D/Genezi): REEMPLAZA el paquete IVK1 del motor
+    // Volterra H2 de Ruta A en runtime. A diferencia de
+    // nativeLoadVolterraKernelPackage (primera carga), espera a que el
+    // motor quede en silencio (o detecta que no hay audio fluyendo) antes
+    // de aplicar el paquete nuevo, así que funciona con música sonando y
+    // en pausa. La puerta de producción se aplica al paquete nuevo ANTES
+    // de tocar el motor; ante cualquier error el kernel anterior queda
+    // intacto y el motor vuelve a habilitarse si Volterra estaba
+    // encendido. Devuelve VolterraLoadStatus como Int (0 = Ok).
+    // Requiere la vía nativa (ivanna_omega_jni.cpp,
+    // nativeReplaceVolterraKernelPackage); si la .so aún no la tiene,
+    // loadPackageWithReplace cae al fallback clásico (ver abajo).
+    external fun nativeReplaceVolterraKernelPackage(pkg: ByteArray): Int
+    // v2.5.369 (selector): device id del kernel Volterra ACTIVO en Ruta A
+    // ("MOTO_G85_PZ1D", "MOTO_G85_GENEZY", o "" si no hay kernel).
+    // Es la fuente de verdad para la UI (la preferencia persistida solo
+    // dice cuál se pidió cargar).
+    external fun nativeGetVolterraKernelId(): String
+
+    /**
+     * Device id del kernel Volterra que está sonando de verdad en Ruta A.
+     * Prefiere la vía nativa (fuente de verdad); si la .so aún no la tiene
+     * (UnsatisfiedLinkError), cae al id persistido cuando hay kernel
+     * efectivo. "" = sin kernel (bypass). Nunca lanza.
+     */
+    fun activeVolterraKernelId(context: Context): String {
+        if (!isLoaded) return ""
+        val nativeId = try {
+            nativeGetVolterraKernelId()
+        } catch (_: Throwable) {
+            ""
+        }
+        if (nativeId.isNotEmpty()) return nativeId
+        return try {
+            if (nativeHasVolterraKernel()) ParameterStore(context).getVolterraKernelId() else ""
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    // ── Carga / reemplazo de kernel Volterra (selector PZ1D/Genezi) ──
+    // La vía canónica es loadPackageWithReplace(): reemplazo nativo con
+    // espera de silencio + detección de pausa, con fallback clásico
+    // (carga + reintentos) si la .so aún no trae la vía nueva. Ambas
+    // vías aplican la puerta de producción al paquete nuevo ANTES de
+    // tocar el motor; ante cualquier error el kernel anterior queda
+    // intacto. En éxito se persiste el id del kernel activo (para el
+    // arranque y para la UI) y se escribe el marcador de selección de
+    // Ruta B. Hilo de CONTROL, nunca el de audio.
+
+    /**
+     * Aplica un paquete IVK1 ya leído al motor de Ruta A, por la vía de
+     * reemplazo si existe, o por la vía clásica con reintentos si no.
+     * Devuelve VolterraLoadStatus como Int (0 = Ok; 20 = EngineBusy).
+     * En fracaso, si había kernel efectivo y Volterra estaba encendido,
+     * se restaura el motor para que un reemplazo fallido no deje
+     * Volterra en bypass silencioso con el kernel anterior intacto.
+     */
+    private fun loadPackageWithReplace(pkgBytes: ByteArray): Int {
+        if (!isLoaded) return -1
+        // Vía nueva (JNI nativeReplaceVolterraKernelPackage).
+        val replaceStatus = try {
+            nativeReplaceVolterraKernelPackage(pkgBytes)
+        } catch (_: UnsatisfiedLinkError) {
+            null  // .so sin la vía nueva: fallback clásico
+        } catch (_: Throwable) {
+            null
+        }
+        if (replaceStatus != null) {
+            if (replaceStatus != 0) restoreVolterraAfterFailedSwitch()
+            return replaceStatus
+        }
+        // Fallback clásico: nativeLoadVolterraKernelPackage + reintentos.
+        // La primera llamada ya deshabilitó el motor; el envelope fundea
+        // en ~18 ms si hay audio, así que los reintentos encuentran
+        // silencio y aplican. Funciona con música sonando; en pausa
+        // devuelve EngineBusy (20) tras los reintentos.
+        var last = try {
+            nativeLoadVolterraKernelPackage(pkgBytes)
+        } catch (_: Throwable) {
+            -1
+        }
+        var tries = 0
+        while (last == 20 && tries < 5) {
+            try { Thread.sleep(60) } catch (_: InterruptedException) { Thread.currentThread().interrupt(); break }
+            last = try {
+                nativeLoadVolterraKernelPackage(pkgBytes)
+            } catch (_: Throwable) {
+                -1
+            }
+            tries++
+        }
+        if (last != 0) restoreVolterraAfterFailedSwitch()
+        return last
+    }
+
+    /** Tras un reemplazo fallido, si había kernel efectivo y Volterra
+     * estaba encendido, vuelve a habilitar el motor para que siga
+     * sonando el kernel anterior (nunca dejar bypass silencioso). */
+    private fun restoreVolterraAfterFailedSwitch() {
+        try {
+            if (nativeHasVolterraKernel() && nativeIsVolterraEnabled()) {
+                nativeSetVolterraEnabled(true)
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * Carga (o reemplaza) un kernel Volterra desde un asset: lee los
+     * bytes, los aplica por loadPackageWithReplace y, solo en éxito,
+     * copia el .ivk1 a `files/ivanna_omega/kernels/` (Ruta B), escribe
+     * el marcador `selected_kernel.txt` con el device id (omega_effect
+     * lo lee en init para ordenar sus candidatos) y persiste el id del
+     * kernel activo. En fracaso no toca nada persistido: el kernel
+     * anterior sigue siendo el activo.
+     */
+    private fun loadVolterraAsset(context: Context, asset: String, fileName: String, kernelId: String): Int {
+        if (!isLoaded) return -1
+        return try {
+            val bytes = context.assets.open(asset).use { it.readBytes() }
+            val st = loadPackageWithReplace(bytes)
+            if (st == 0) {
+                runCatching {
+                    val dir = java.io.File(context.filesDir, "ivanna_omega/kernels")
+                    dir.mkdirs()
+                    java.io.File(dir, fileName).writeBytes(bytes)
+                    java.io.File(dir, "selected_kernel.txt").writeText(kernelId)
+                    ParameterStore(context).setVolterraKernelId(kernelId)
+                }.onFailure { Log.w(TAG, "loadVolterraAsset: no se pudo copiar a files/ (Ruta B sin kernel)", it) }
+            }
+            st
+        } catch (t: Throwable) {
+            Log.e(TAG, "loadVolterraAsset: error", t)
+            -1
+        }
+    }
 
     /**
      * Carga el kernel Volterra H1/H2 del Sony Genezi MHC-PZ1D (ESS Farina,
      * h1 normalizado por L1) en el motor de Ruta A, desde el asset
      * `kernels/genezy_mhc_pz1d.ivk1`. ALTERNATIVO en v2.5.369: el kernel
      * DEFAULT es el PZ1D refinado (`loadMotoG85Pz1dVolterraKernel`).
-     * Idempotente: si el motor ya tiene un kernel efectivo, no recarga
+     * Si el PZ1D está activo, lo REEMPLAZA (con espera de silencio /
+     * detección de pausa); si el Genezi ya es el activo, no hace nada
      * (devuelve 0). También copia el .ivk1 a
      * `files/ivanna_omega/kernels/` para que Ruta B (omega_effect, proceso
      * audioserver) pueda leerlo por ruta de archivo — mismo patrón que el
@@ -378,23 +521,8 @@ object IvannaNativeLib {
      */
     fun loadGeneziVolterraKernel(context: Context): Int {
         if (!isLoaded) return -1
-        return try {
-            if (nativeHasVolterraKernel()) return 0
-            val bytes = context.assets.open(GENEZY_VOLTERRA_ASSET).use { it.readBytes() }
-            // Copia para Ruta B (el efecto no puede leer assets de la app).
-            runCatching {
-                val out = java.io.File(
-                    context.filesDir,
-                    "ivanna_omega/kernels/genezy_mhc_pz1d.ivk1"
-                )
-                out.parentFile?.mkdirs()
-                out.writeBytes(bytes)
-            }.onFailure { Log.w(TAG, "loadGeneziVolterraKernel: no se pudo copiar a files/ (Ruta B sin kernel)", it) }
-            nativeLoadVolterraKernelPackage(bytes)
-        } catch (t: Throwable) {
-            Log.e(TAG, "loadGeneziVolterraKernel: error", t)
-            -1
-        }
+        if (activeVolterraKernelId(context) == VOLTERRA_KERNEL_GENEZI) return 0
+        return loadVolterraAsset(context, GENEZY_VOLTERRA_ASSET, "genezy_mhc_pz1d.ivk1", VOLTERRA_KERNEL_GENEZI)
     }
 
     /**
@@ -402,8 +530,9 @@ object IvannaNativeLib {
      * DAC USB-C + Sony Genezi MHC-PZ1D (h1 normalizado por L1, h2 solo
      * diagonal) en el motor de Ruta A, desde el asset
      * `kernels/moto_g85_pz1d.ivk1`. Es el kernel DEFAULT de Volterra en
-     * v2.5.369 (el Genezi anterior queda como alternativo). Idempotente:
-     * si el motor ya tiene un kernel efectivo, no recarga (devuelve 0).
+     * v2.5.369 (el Genezi anterior queda como alternativo). Si el Genezi
+     * está activo, lo REEMPLAZA (con espera de silencio / detección de
+     * pausa); si el PZ1D ya es el activo, no hace nada (devuelve 0).
      * También copia el .ivk1 a `files/ivanna_omega/kernels/` para Ruta B
      * (omega_effect busca primero el PZ1D y luego el Genezi).
      *
@@ -413,22 +542,25 @@ object IvannaNativeLib {
      */
     fun loadMotoG85Pz1dVolterraKernel(context: Context): Int {
         if (!isLoaded) return -1
-        return try {
-            if (nativeHasVolterraKernel()) return 0
-            val bytes = context.assets.open(PZ1D_VOLTERRA_ASSET).use { it.readBytes() }
-            // Copia para Ruta B (el efecto no puede leer assets de la app).
-            runCatching {
-                val out = java.io.File(
-                    context.filesDir,
-                    "ivanna_omega/kernels/moto_g85_pz1d.ivk1"
-                )
-                out.parentFile?.mkdirs()
-                out.writeBytes(bytes)
-            }.onFailure { Log.w(TAG, "loadMotoG85Pz1dVolterraKernel: no se pudo copiar a files/ (Ruta B sin kernel)", it) }
-            nativeLoadVolterraKernelPackage(bytes)
-        } catch (t: Throwable) {
-            Log.e(TAG, "loadMotoG85Pz1dVolterraKernel: error", t)
-            -1
+        if (activeVolterraKernelId(context) == VOLTERRA_KERNEL_PZ1D) return 0
+        return loadVolterraAsset(context, PZ1D_VOLTERRA_ASSET, "moto_g85_pz1d.ivk1", VOLTERRA_KERNEL_PZ1D)
+    }
+
+    /**
+     * Punto de entrada único del selector de kernel Volterra (PZ1D /
+     * Genezi). Carga el kernel pedido (reemplazando el activo si es
+     * distinto) y persiste la elección solo en éxito, así que el
+     * arranque siguiente carga el mismo kernel. Devuelve
+     * VolterraLoadStatus como Int (0 = Ok; -1 = librería no cargada o
+     * error de E/S; -2 = id desconocido; 20 = EngineBusy, p. ej. cambio
+     * en pausa sin la vía nativa nueva — reintentar con música sonando).
+     * Hilo de CONTROL, nunca el de audio.
+     */
+    fun setVolterraKernel(context: Context, kernelId: String): Int {
+        return when (kernelId) {
+            VOLTERRA_KERNEL_GENEZI -> loadGeneziVolterraKernel(context)
+            VOLTERRA_KERNEL_PZ1D -> loadMotoG85Pz1dVolterraKernel(context)
+            else -> -2
         }
     }
     external fun nativeSetFastRpcEnabled(enabled: Boolean)

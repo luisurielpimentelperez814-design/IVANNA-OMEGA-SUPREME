@@ -259,6 +259,16 @@ fun IvannaControlPanel(
     // intención del usuario; esto dice el estado real del motor. Se refresca
     // en el bucle de telemetría de 500 ms junto a unity/punch/evoEq.
     var volterraKernelLoaded by remember { mutableStateOf(false) }
+    // v2.5.369 (selector PZ1D/Genezi): device id del kernel que suena de
+    // verdad ("MOTO_G85_PZ1D" / "MOTO_G85_GENEZY" / "" si no hay kernel).
+    // Se refresca en el mismo bucle de 500 ms. Mientras cambia,
+    // volterraSwitching bloquea el selector para no solapar cambios.
+    var volterraKernelId by remember { mutableStateOf("") }
+    var volterraSwitching by remember { mutableStateOf(false) }
+    // Petición de cambio de kernel (selector): la ejecuta el
+    // LaunchedEffect de abajo en el hilo de CONTROL (la vía nativa puede
+    // dormir ~300 ms esperando silencio); nunca bloquear la UI.
+    var volterraSwitchRequest by remember { mutableStateOf<String?>(null) }
     // Sensor acústico en vivo (v2.5.369): alimenta Φ en MEDIDO. Se lee del
     // sensor real (RealAcousticSensor), no se supone. sensorMicDenied marca
     // que el permiso quedó denegado (el botón pasa a abrir Ajustes).
@@ -343,9 +353,13 @@ fun IvannaControlPanel(
                 punchTelemetry = runCatching { IvannaNativeLib.nativeGetPunchTelemetry() }.getOrDefault(FloatArray(0))
                 evoEqActive = runCatching { IvannaNativeLib.nativeIsEvolutionaryEqActive() }.getOrDefault(false)
                 volterraKernelLoaded = runCatching { IvannaNativeLib.nativeHasVolterraKernel() }.getOrDefault(false)
+                if (!volterraSwitching) {
+                    volterraKernelId = runCatching { IvannaNativeLib.activeVolterraKernelId(context) }.getOrDefault("")
+                }
             } else {
                 evoEqActive = false
                 volterraKernelLoaded = false
+                if (!volterraSwitching) volterraKernelId = ""
             }
             // Sensor acústico: se lee del objeto real, independiente de la
             // biblioteca nativa (frameIndex() devuelve -1 sin .so).
@@ -356,6 +370,20 @@ fun IvannaControlPanel(
         }
     
         }
+    }
+    // v2.5.369 (selector PZ1D/Genezi): ejecuta el cambio de kernel pedido
+    // por el selector. Corre en el hilo de CONTROL (la vía nativa puede
+    // dormir ~300 ms esperando silencio); la UI nunca se bloquea. Al
+    // terminar se lee el id REAL del motor: si el cambio falló, sigue el
+    // kernel anterior y el selector vuelve a él solo.
+    LaunchedEffect(volterraSwitchRequest) {
+        val target = volterraSwitchRequest ?: return@LaunchedEffect
+        withContext(Dispatchers.Default) {
+            runCatching { IvannaNativeLib.setVolterraKernel(context, target) }
+        }
+        volterraKernelId = runCatching { IvannaNativeLib.activeVolterraKernelId(context) }.getOrDefault(volterraKernelId)
+        volterraSwitchRequest = null
+        volterraSwitching = false
     }
 
     // Persistencia inmediata en cada cambio para todos los controles del panel.
@@ -769,14 +797,18 @@ fun IvannaControlPanel(
                     // en el siguiente arranque; el restore lo reaplica.
                     runCatching { com.ivanna.omega.core.ParameterStore(context).setVolterraEnabled(en) }
                     if (IvannaNativeLib.isLoaded) runCatching {
-                        // Al encender se carga el kernel IVK1 DEFAULT
-                        // (PZ1D refinado; idempotente; si ya estaba cargado
-                        // no recarga).
+                        // Al encender se carga el kernel SELECCIONADO
+                        // persistido (PZ1D por defecto; Genezi si el
+                        // usuario lo eligió en el selector). Idempotente:
+                        // si ya es el activo no recarga.
                         // Cargar != habilitar: el kernel solo suena tras
                         // nativeSetVolterraEnabled(true). Si la carga falla,
                         // el motor queda en bypass (fail-closed) y el toggle
                         // sigue controlando el interruptor.
-                        if (en) IvannaNativeLib.loadMotoG85Pz1dVolterraKernel(context)
+                        if (en) {
+                            val selected = com.ivanna.omega.core.ParameterStore(context).getVolterraKernelId()
+                            IvannaNativeLib.setVolterraKernel(context, selected)
+                        }
                         IvannaNativeLib.nativeSetVolterraEnabled(en)
                     }
                 }
@@ -791,16 +823,48 @@ fun IvannaControlPanel(
                     if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAtiEnabled(en) }
                 }
             }
-            // v2.5.369: el toggle VOLTERRA H2 dice la intención; esta línea
-            // dice el estado real del motor (kernel PZ1D cargado o no).
-            // El único kernel que se carga al arrancar es el PZ1D refinado
-            // (PersistedStateRestorer + este toggle); el Genezi alternativo
-            // no tiene llamador en runtime, así que "cargado" = PZ1D.
+            // v2.5.369 (selector PZ1D/Genezi): el toggle VOLTERRA H2 dice
+            // la intención (on/off); el selector dice QUÉ kernel suena.
+            // El cambio es en vivo: reemplaza el kernel activo con espera
+            // de silencio / detección de pausa (sin clics); si falla, el
+            // kernel anterior sigue sonando y el selector vuelve a él.
+            // La elección persiste y el arranque siguiente carga el mismo.
+            Text("KERNEL VOLTERRA", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                listOf(
+                    IvannaNativeLib.VOLTERRA_KERNEL_PZ1D to "PZ1D REFINADO",
+                    IvannaNativeLib.VOLTERRA_KERNEL_GENEZI to "GENEZI"
+                ).forEachIndexed { idx, (kernelId, label) ->
+                    SegmentedButton(
+                        selected = volterraKernelId == kernelId,
+                        onClick = {
+                            if (volterraSwitching || volterraKernelId == kernelId) return@SegmentedButton
+                            volterraSwitching = true
+                            volterraSwitchRequest = kernelId
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(idx, 2),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = AuroraCyan.copy(alpha = 0.20f),
+                            activeContentColor = AuroraCyan,
+                            activeBorderColor = AuroraCyan,
+                            inactiveContainerColor = Color.Transparent,
+                            inactiveContentColor = TextSecondary,
+                            inactiveBorderColor = ObsidianEdge
+                        ),
+                        enabled = IvannaNativeLib.isLoaded && !volterraSwitching
+                    ) { Text(label, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+            // El toggle VOLTERRA H2 dice la intención; esta línea dice el
+            // estado real del motor (qué kernel está cargado y sonando).
             Text(
                 text = when {
-                    !volterraEnabled -> "Volterra H2: apagado por el usuario · kernel PZ1D en espera"
+                    !volterraEnabled -> "Volterra H2: apagado por el usuario · kernel en espera"
                     !IvannaNativeLib.isLoaded -> "Volterra H2: biblioteca nativa no disponible"
-                    volterraKernelLoaded -> "Volterra H2: kernel PZ1D refinado cargado · activo"
+                    volterraSwitching -> "Volterra H2: cambiando de kernel…"
+                    volterraKernelId == IvannaNativeLib.VOLTERRA_KERNEL_PZ1D -> "Volterra H2: kernel PZ1D refinado cargado · activo"
+                    volterraKernelId == IvannaNativeLib.VOLTERRA_KERNEL_GENEZI -> "Volterra H2: kernel Genezi MHC-PZ1D cargado · activo"
+                    volterraKernelLoaded -> "Volterra H2: kernel cargado · activo"
                     else -> "Volterra H2: sin kernel cargado (bypass) · cargando…"
                 },
                 color = if (volterraEnabled && volterraKernelLoaded) PhosphorGreen else MaterialTheme.colorScheme.onSurfaceVariant,

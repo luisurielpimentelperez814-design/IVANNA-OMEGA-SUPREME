@@ -2275,6 +2275,17 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // efecto no puede leer assets de la app; la app copia el
                 // asset a files/ivanna_omega/kernels/ al arrancar, y el
                 // módulo Magisk puede ponerlo en /data/adb/ivanna_omega/).
+                // SELECTOR (v2.5.369): la app escribe el kernel ACTIVO en
+                // files/ivanna_omega/kernels/selected_kernel.txt al cargar
+                // o reemplazar (Ruta A). El efecto lo lee en init y ordena
+                // sus candidatos para que Ruta B siga la selección en el
+                // próximo inicio del efecto. NO es un cambio en vivo: el
+                // efecto no tiene canal de control para intercambiar el
+                // kernel en runtime (el daemon no expone esa orden); si el
+                // usuario cambia el kernel, Ruta B lo aplica cuando el
+                // efecto se recrea (nueva sesión / reinicio del
+                // audioserver). Sin marcador (o ilegible) se mantiene el
+                // orden default (PZ1D primero).
                 // DEFAULT: el PZ1D refinado (G85 + DAC + Genezi); el
                 // Genezi anterior queda como respaldo si el PZ1D no está
                 // o la puerta lo rechaza. Camino NO-RT (init del efecto).
@@ -2282,15 +2293,38 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                 // volterraTargetEnabled (flag OMEGA_FLAG_VOLTERRA_ON) lo
                 // encienda vía setEnabled() en el callback de proceso.
                 if (ctx->volterraEngine && !ctx->volterraEngine->hasEffectiveKernel()) {
-                    static const char* kPz1dIvk1Candidates[] = {
+                    bool preferGenezi = false;
+                    static const char* kMarkerCandidates[] = {
+                        "/data/adb/ivanna_omega/kernels/selected_kernel.txt",
+                        "/data/data/com.ivanna.omega/files/ivanna_omega/kernels/selected_kernel.txt",
+                        "/data/user/0/com.ivanna.omega/files/ivanna_omega/kernels/selected_kernel.txt"
+                    };
+                    for (const char* marker : kMarkerCandidates) {
+                        FILE* mf = std::fopen(marker, "rb");
+                        if (!mf) continue;
+                        char buf[32] = {};
+                        const size_t got = std::fread(buf, 1, sizeof(buf) - 1, mf);
+                        std::fclose(mf);
+                        if (got == 0) continue;
+                        if (strncmp(buf, "MOTO_G85_GENEZY", 15) == 0) { preferGenezi = true; break; }
+                        if (strncmp(buf, "MOTO_G85_PZ1D", 13) == 0) { preferGenezi = false; break; }
+                    }
+                    static const char* kPz1dFiles[] = {
                         "/data/adb/ivanna_omega/kernels/moto_g85_pz1d.ivk1",
                         "/data/data/com.ivanna.omega/files/ivanna_omega/kernels/moto_g85_pz1d.ivk1",
-                        "/data/user/0/com.ivanna.omega/files/ivanna_omega/kernels/moto_g85_pz1d.ivk1",
+                        "/data/user/0/com.ivanna.omega/files/ivanna_omega/kernels/moto_g85_pz1d.ivk1"
+                    };
+                    static const char* kGeneziFiles[] = {
                         "/data/adb/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1",
                         "/data/data/com.ivanna.omega/files/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1",
                         "/data/user/0/com.ivanna.omega/files/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1"
                     };
-                    for (const char* cand : kPz1dIvk1Candidates) {
+                    // Orden: el seleccionado primero (sus 3 rutas), luego el otro.
+                    const char* ordered[6];
+                    const char** first = preferGenezi ? kGeneziFiles : kPz1dFiles;
+                    const char** second = preferGenezi ? kPz1dFiles : kGeneziFiles;
+                    for (int i = 0; i < 3; ++i) { ordered[i] = first[i]; ordered[3 + i] = second[i]; }
+                    for (const char* cand : ordered) {
                         FILE* f = std::fopen(cand, "rb");
                         if (!f) continue;
                         std::fseek(f, 0, SEEK_END);

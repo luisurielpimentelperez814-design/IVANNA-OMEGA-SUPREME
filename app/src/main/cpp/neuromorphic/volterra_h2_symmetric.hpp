@@ -105,12 +105,56 @@ public:
      * Ante CUALQUIER error deja el motor en bypass inmediato (setEnabled(false))
      * y no toca los kernels ya aplicados. En éxito NO habilita el motor.
      * Un paquete sin H2 (flag H2_PRESENT apagado) aplica H2 = 0.
+     * Es la vía de PRIMERA carga (arranque, motor aún silencioso). Para
+     * cambiar de kernel con audio sonando usar replaceKernelPackage().
      */
     VolterraLoadStatus loadKernelPackage(
         const uint8_t* package,
         size_t package_size,
         const VolterraLoadPolicy& policy
     ) noexcept;
+
+    /**
+     * REEMPLAZO de kernel en runtime (selector PZ1D / Genezi, v2.5.369).
+     * Misma validación y misma aplicación que loadKernelPackage(), pero
+     * con protocolo de cambio seguro con audio sonando:
+     *   1. La puerta valida el paquete NUEVO primero: si lo rechaza, el
+     *      motor NO se toca en absoluto (el kernel anterior sigue sonando).
+     *   2. setEnabled(false): el envelope fundea a silencio en ~18 ms
+     *      (release estándar) si hay bloques fluyendo.
+     *   3. Espera quiescencia con tope (~300 ms): silencio real del DSP,
+     *      o —si no hay audio fluyendo (música en pausa)— ganancia
+     *      publicada congelada 50 ms con cero procesos activos. Sin
+     *      bloques no se produce salida, así que el hueco de la pausa
+     *      enmascara la transición y el cambio es inaudible.
+     *   4. Aplica el paquete nuevo (revalida no-habilitado, sin procesos
+     *      activos; en el caso sin-audio no exige m_dsp_silent, que queda
+     *      obsoleto sin bloques). En éxito registra el device_id del
+     *      paquete como kernel activo. En éxito NO habilita el motor: el
+     *      llamador restaura setEnabled() según la preferencia del usuario.
+     * Ante CUALQUIER error el motor queda en bypass (setEnabled(false)) y
+     * los kernels previos quedan intactos; el llamador debe restaurar
+     * setEnabled(true) si Volterra estaba encendido y había kernel
+     * efectivo, para que siga sonando el anterior.
+     * Hilo de CONTROL, nunca el de audio (puede dormir y llamar
+     * memalign/free).
+     */
+    VolterraLoadStatus replaceKernelPackage(
+        const uint8_t* package,
+        size_t package_size,
+        const VolterraLoadPolicy& policy
+    ) noexcept;
+
+    /**
+     * Device id del kernel ACTIVO ("MOTO_G85_PZ1D", "MOTO_G85_GENEZY", o
+     * "" si no hay kernel de paquete aplicado). Se registra al aplicar un
+     * paquete IVK1 con éxito; los kernels crudos (updateKernelsChecked)
+     * no tienen procedencia y lo dejan en "". Solo lo lee/escribe el hilo
+     * de CONTROL (el hilo de audio nunca lo toca).
+     */
+    const char* activeKernelDeviceId() const noexcept {
+        return m_active_kernel_device_id;
+    }
 
     uint32_t kernelLength() const noexcept { return m_kernel_length; }
 
@@ -191,12 +235,25 @@ private:
     // Publica telemetría DSP sin leer el envelope mutable desde hilos de control.
     std::atomic<bool> m_dsp_silent{true};
     std::atomic<float> m_published_gain{0.0f};
+    // Device id del paquete IVK1 aplicado con éxito (16 bytes + NUL).
+    // "" = sin kernel de paquete (o kernels crudos sin procedencia).
+    // Solo hilo de CONTROL (ver activeKernelDeviceId()).
+    char m_active_kernel_device_id[17]{};
+
     bool m_h1_identity = true;
     bool m_h2_active = false;
     void releaseStorage() noexcept;
     // h2_kernel == nullptr equivale a H2 = 0 (sólo ruta de paquete).
+    // requireSilent=true exige m_dsp_silent (vía normal); =false lo omite
+    // (solo replaceKernelPackage cuando probó que no hay bloques fluyendo:
+    // sin salida no hay transición que proteger; m_active_processes==0 y
+    // el intercambio de m_kernels_ready se siguen exigiendo siempre).
     VolterraLoadStatus applyKernels(const float* h1_kernel, const float* h2_kernel,
-                                    uint32_t length) noexcept;
+                                    uint32_t length, bool requireSilent = true) noexcept;
+    // Aplica una vista YA VALIDADA (alineación de h1/h2 + applyKernels).
+    // Compartido por loadKernelPackage y replaceKernelPackage.
+    VolterraLoadStatus applyPackageView(const VolterraPackageView& view,
+                                       bool requireSilent) noexcept;
     ivanna::supreme::SupremeTransitionEnvelope m_transition_env{};
     ivanna::supreme::SupremeStateContinuityManager m_continuity_mgr{};
 

@@ -22,6 +22,8 @@
 #include <cmath>
 #include <malloc.h>
 #include <algorithm>
+#include <thread>   // replaceKernelPackage: espera de quiescencia (hilo de CONTROL)
+#include <chrono>   // (mismo patrón que IvannaTinyMLKernel / SelfHealingEngine)
 
 // Inclusión obligatoria de las intrínsecas vectoriales por hardware de ARM
 #if defined(__arm64__) || defined(__aarch64__) || defined(__ARM_NEON)
@@ -165,13 +167,18 @@ VolterraLoadStatus VolterraH2Symmetric::updateKernelsChecked(
     uint32_t length
 ) noexcept {
     if (!h1_kernel || !h2_kernel) return VolterraLoadStatus::NullArgument;
-    return applyKernels(h1_kernel, h2_kernel, length);
+    const VolterraLoadStatus st = applyKernels(h1_kernel, h2_kernel, length);
+    // Los kernels crudos no tienen procedencia de paquete: la identidad
+    // del kernel activo deja de ser un device medido.
+    if (st == VolterraLoadStatus::Ok) m_active_kernel_device_id[0] = '\0';
+    return st;
 }
 
 VolterraLoadStatus VolterraH2Symmetric::applyKernels(
     const float* h1_kernel,
     const float* h2_kernel,
-    uint32_t length
+    uint32_t length,
+    bool requireSilent
 ) noexcept {
     using S = VolterraLoadStatus;
     if (!h1_kernel || !m_h1 || m_channels == 0) return S::EngineUnavailable;
@@ -193,7 +200,7 @@ VolterraLoadStatus VolterraH2Symmetric::applyKernels(
     }
     if (!m_kernels_ready.exchange(false, std::memory_order_seq_cst)) return S::EngineBusy;
     if (m_active_processes.load(std::memory_order_seq_cst) != 0u ||
-        !m_dsp_silent.load(std::memory_order_acquire)) {
+        (requireSilent && !m_dsp_silent.load(std::memory_order_acquire))) {
         m_kernels_ready.store(true, std::memory_order_seq_cst);
         return S::EngineBusy;
     }
@@ -256,6 +263,40 @@ VolterraLoadStatus VolterraH2Symmetric::applyKernels(
     return S::Ok;
 }
 
+// Copia el device_id (16 bytes, relleno NUL) de un paquete IVK1 ya
+// validado al registro del kernel activo. Hilo de CONTROL.
+static void recordKernelDeviceId(char (&dst)[17], const uint8_t* package) noexcept {
+    std::memcpy(dst, package + ivk1::kOffDeviceId, ivk1::kDeviceIdSize);
+    dst[ivk1::kDeviceIdSize] = '\0';
+}
+
+VolterraLoadStatus VolterraH2Symmetric::applyPackageView(
+    const VolterraPackageView& view, bool requireSilent) noexcept {
+    using S = VolterraLoadStatus;
+    const size_t K = view.kernel_length;
+    const size_t h2n = view.h2_bytes ? (K * (K + 1u)) / 2u : 0u;
+    const bool h1Aligned = (reinterpret_cast<uintptr_t>(view.h1_bytes) % alignof(float)) == 0u;
+    const bool h2Aligned = !view.h2_bytes ||
+        (reinterpret_cast<uintptr_t>(view.h2_bytes) % alignof(float)) == 0u;
+    float* tmp1 = nullptr;
+    float* tmp2 = nullptr;
+    const float* p1 = reinterpret_cast<const float*>(view.h1_bytes);
+    const float* p2 = reinterpret_cast<const float*>(view.h2_bytes);
+    S st = S::Ok;
+    if (!h1Aligned) {  // hilo de control: copia alineada (sin UB por acceso no alineado)
+        tmp1 = static_cast<float*>(malloc(K * sizeof(float)));
+        if (!tmp1) st = S::AllocFailed; else { memcpy(tmp1, view.h1_bytes, K * sizeof(float)); p1 = tmp1; }
+    }
+    if (st == S::Ok && !h2Aligned) {
+        tmp2 = static_cast<float*>(malloc(h2n * sizeof(float)));
+        if (!tmp2) st = S::AllocFailed; else { memcpy(tmp2, view.h2_bytes, h2n * sizeof(float)); p2 = tmp2; }
+    }
+    if (st == S::Ok) st = applyKernels(p1, p2, static_cast<uint32_t>(K), requireSilent);
+    free(tmp1);
+    free(tmp2);
+    return st;
+}
+
 VolterraLoadStatus VolterraH2Symmetric::loadKernelPackage(
     const uint8_t* package,
     size_t package_size,
@@ -267,28 +308,81 @@ VolterraLoadStatus VolterraH2Symmetric::loadKernelPackage(
     VolterraPackageView view{};
     S st = volterraValidatePackage(package, package_size, pol, &view);
     if (st == S::Ok) {
-        const size_t K = view.kernel_length;
-        const size_t h2n = view.h2_bytes ? (K * (K + 1u)) / 2u : 0u;
-        const bool h1Aligned = (reinterpret_cast<uintptr_t>(view.h1_bytes) % alignof(float)) == 0u;
-        const bool h2Aligned = !view.h2_bytes ||
-            (reinterpret_cast<uintptr_t>(view.h2_bytes) % alignof(float)) == 0u;
-        float* tmp1 = nullptr;
-        float* tmp2 = nullptr;
-        const float* p1 = reinterpret_cast<const float*>(view.h1_bytes);
-        const float* p2 = reinterpret_cast<const float*>(view.h2_bytes);
-        if (!h1Aligned) {  // hilo de control: copia alineada (sin UB por acceso no alineado)
-            tmp1 = static_cast<float*>(malloc(K * sizeof(float)));
-            if (!tmp1) st = S::AllocFailed; else { memcpy(tmp1, view.h1_bytes, K * sizeof(float)); p1 = tmp1; }
-        }
-        if (st == S::Ok && !h2Aligned) {
-            tmp2 = static_cast<float*>(malloc(h2n * sizeof(float)));
-            if (!tmp2) st = S::AllocFailed; else { memcpy(tmp2, view.h2_bytes, h2n * sizeof(float)); p2 = tmp2; }
-        }
-        if (st == S::Ok) st = applyKernels(p1, p2, static_cast<uint32_t>(K));
-        free(tmp1);
-        free(tmp2);
+        st = applyPackageView(view, /*requireSilent=*/true);
+        if (st == S::Ok) recordKernelDeviceId(m_active_kernel_device_id, package);
     }
     if (st != S::Ok) setEnabled(false);  // bypass inmediato; kernels previos intactos
+    return st;
+}
+
+VolterraLoadStatus VolterraH2Symmetric::replaceKernelPackage(
+    const uint8_t* package,
+    size_t package_size,
+    const VolterraLoadPolicy& policy
+) noexcept {
+    using S = VolterraLoadStatus;
+    // 1. La puerta PRIMERO: un paquete inválido no toca el motor en
+    //    absoluto (ni siquiera lo deshabilita: el kernel anterior sigue
+    //    sonando con su envelope intacto).
+    VolterraLoadPolicy pol = policy;
+    pol.expected_kernel_length = m_kernel_length;
+    VolterraPackageView view{};
+    S st = volterraValidatePackage(package, package_size, pol, &view);
+    if (st != S::Ok) return st;
+
+    // 2. Deshabilitar: el envelope fundea a silencio (~18 ms, release
+    //    estándar) si hay bloques fluyendo. El llamador restaura
+    //    setEnabled() según la preferencia del usuario.
+    setEnabled(false);
+
+    // 3. Esperar quiescencia (hilo de CONTROL; duerme 1 ms por sondeo).
+    //    Caso (a) hay audio: el envelope fundea y m_dsp_silent se vuelve
+    //    true en ~7 bloques. Caso (b) no hay audio (música en pausa): la
+    //    ganancia publicada queda CONGELADA y m_dsp_silent nunca se
+    //    actualiza; pero sin bloques no se produce salida, así que el
+    //    hueco de la pausa enmascara la transición. Se detecta por
+    //    ganancia sin cambio durante kIdleGraceMs con cero procesos
+    //    activos (a 48 kHz los bloques llegan cada ~2.7 ms; 50 ms son
+    //    ~18 bloques de ausencia, imposible con audio fluyendo).
+    constexpr int kTimeoutMs = 300;    // >> 18 ms de release: sobra si hay audio
+    constexpr int kIdleGraceMs = 50;
+    float lastGain = m_published_gain.load(std::memory_order_acquire);
+    int idleMs = 0;
+    bool idle = false;
+    bool silent = false;
+    for (int waited = 0; waited < kTimeoutMs; ++waited) {
+        if (m_dsp_silent.load(std::memory_order_acquire) &&
+            m_active_processes.load(std::memory_order_seq_cst) == 0u) {
+            silent = true;
+            break;
+        }
+        const float g = m_published_gain.load(std::memory_order_acquire);
+        if (g == lastGain) {
+            if (++idleMs >= kIdleGraceMs &&
+                m_active_processes.load(std::memory_order_seq_cst) == 0u) {
+                idle = true;
+                break;
+            }
+        } else {
+            lastGain = g;
+            idleMs = 0;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!silent && !idle) {
+        // Nunca llegó a silencio y el audio sigue fluyendo: no se toca
+        // nada. El motor queda en bypass con el kernel anterior intacto;
+        // el llamador debe restaurar setEnabled(true) si Volterra estaba
+        // encendido y había kernel efectivo.
+        return S::EngineBusy;
+    }
+
+    // 4. Aplicar. En el caso sin-audio no se exige m_dsp_silent (obsoleto
+    //    sin bloques); m_active_processes==0 y el intercambio de
+    //    m_kernels_ready se exigen siempre (ver applyKernels).
+    st = applyPackageView(view, /*requireSilent=*/!idle);
+    if (st == S::Ok) recordKernelDeviceId(m_active_kernel_device_id, package);
+    else setEnabled(false);  // bypass; kernels previos intactos
     return st;
 }
 

@@ -164,6 +164,12 @@ class ParameterStore(context: Context) {
         // Volterra H2 Genezi (v2.5.369). ON por defecto: el kernel se carga
         // al arrancar y suena salvo que el usuario lo apague (persistido).
         private const val KEY_VOLTERRA_ENABLED   = "volterra_enabled"
+        // Selector de kernel Volterra (v2.5.369): device id del kernel
+        // ACTIVO ("MOTO_G85_PZ1D" default, "MOTO_G85_GENEZY" alternativo).
+        // Se persiste solo en éxito de carga/reemplazo, así que el
+        // arranque siguiente carga el mismo kernel que sonaba. Un valor
+        // desconocido o vacío se trata como el default PZ1D.
+        private const val KEY_VOLTERRA_KERNEL_ID = "volterra_kernel_id"
         private const val KEY_4D_ENABLED  = "fourd_enabled"
         private const val KEY_4D_HAPTICS  = "fourd_haptics"
         private const val KEY_4D_HSCALE   = "fourd_haptic_scale"
@@ -556,6 +562,19 @@ class ParameterStore(context: Context) {
     // UI persiste y se respeta en el siguiente arranque.
     fun isVolterraEnabled(): Boolean = safeGetBoolean(KEY_VOLTERRA_ENABLED, true)
     fun setVolterraEnabled(v: Boolean) = prefs.edit().putBoolean(KEY_VOLTERRA_ENABLED, v).apply()
+
+    // ── Selector de kernel Volterra (v2.5.369) ── device id del kernel
+    // activo. Default PZ1D (el refinado); el Genezi es el alternativo.
+    // Solo IvannaNativeLib lo escribe, y solo en éxito de carga o
+    // reemplazo, así que nunca apunta a un kernel que no sonó.
+    fun getVolterraKernelId(): String {
+        val id = try { prefs.getString(KEY_VOLTERRA_KERNEL_ID, null) } catch (_: Throwable) { null }
+        return if (id == "MOTO_G85_GENEZY" || id == "MOTO_G85_PZ1D") id else "MOTO_G85_PZ1D"
+    }
+    fun setVolterraKernelId(id: String) {
+        if (id != "MOTO_G85_GENEZY" && id != "MOTO_G85_PZ1D") return
+        prefs.edit().putString(KEY_VOLTERRA_KERNEL_ID, id).apply()
+    }
 
     // ── Cadena 4D (anticipación, arco, háptica, diafonía, dosímetro) ── todo apagado por defecto
     fun is4dEnabled(): Boolean = safeGetBoolean(KEY_4D_ENABLED, false)

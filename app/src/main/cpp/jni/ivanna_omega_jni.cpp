@@ -3150,6 +3150,84 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeHasVolterraKernel(
     return g_volterra_engine.hasEffectiveKernel() ? JNI_TRUE : JNI_FALSE;
 }
 
+// v2.5.369 (selector PZ1D / Genezi): reemplaza el paquete IVK1 del motor
+// Volterra H2 de Ruta A EN RUNTIME, sin reiniciar ni cortar el audio.
+// Es la vía que usa el selector de la UI; nativeLoadVolterraKernelPackage
+// queda como primera carga (arranque). Contrato (motor,
+// VolterraH2Symmetric::replaceKernelPackage):
+//   1. la puerta de producción valida el paquete nuevo PRIMERO; si lo
+//      rechaza, el motor no se toca (sigue sonando el kernel anterior).
+//   2. setEnabled(false) -> el envelope fundea a silencio en ~18 ms; se
+//      espera quiescencia con tope ~300 ms (silencio real, o ganancia
+//      congelada ~50 ms si la música está en pausa).
+//   3. en éxito se restaura setEnabled(g_volterra_enabled) -> el kernel
+//      nuevo suena si Volterra estaba encendido. En fracaso se restaura
+//      el estado anterior si había kernel efectivo y Volterra estaba ON
+//      (el motor queda deshabilitado por el intento solo cuando el fallo
+//      llegó tras el paso 2; si el fallo fue de validación, el motor ni
+//      se deshabilitó: la restauración es idempotente en ambos casos).
+// Hilo de CONTROL, nunca el de audio. Fail-closed: ante CUALQUIER error
+// el kernel anterior queda intacto o el motor cae a bypass bit-exacto;
+// nunca silencio, nunca audio corrupto.
+// Devuelve el VolterraLoadStatus como int (0 = Ok). Ver
+// neuromorphic/volterra_kernel_package.hpp.
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeReplaceVolterraKernelPackage(
+    JNIEnv* env, jobject, jbyteArray pkg) {
+    if (pkg == nullptr) {
+        LOGE("[IvannaNativeLib] nativeReplaceVolterraKernelPackage: pkg null");
+        return static_cast<jint>(ivanna::dsp::VolterraLoadStatus::NullArgument);
+    }
+    const jsize len = env->GetArrayLength(pkg);
+    if (len <= 0) {
+        LOGE("[IvannaNativeLib] nativeReplaceVolterraKernelPackage: pkg vacío");
+        return static_cast<jint>(ivanna::dsp::VolterraLoadStatus::Truncated);
+    }
+    jbyte* raw = env->GetByteArrayElements(pkg, nullptr);
+    if (raw == nullptr) {
+        LOGE("[IvannaNativeLib] nativeReplaceVolterraKernelPackage: no se pudo leer el array");
+        return static_cast<jint>(ivanna::dsp::VolterraLoadStatus::NullArgument);
+    }
+    // Copia local: replaceKernelPackage valida y aplica desde el buffer.
+    std::vector<std::uint8_t> bytes(
+        reinterpret_cast<const std::uint8_t*>(raw),
+        reinterpret_cast<const std::uint8_t*>(raw) + len);
+    env->ReleaseByteArrayElements(pkg, raw, JNI_ABORT);
+    ivanna::dsp::VolterraLoadPolicy prod;  // producción (GENEZY01 / MOTO_G85_GENEZY | MOTO_G85_PZ1D)
+    const ivanna::dsp::VolterraLoadStatus st =
+        g_volterra_engine.replaceKernelPackage(bytes.data(), bytes.size(), prod);
+    if (st == ivanna::dsp::VolterraLoadStatus::Ok) {
+        g_volterra_engine.setEnabled(g_volterra_enabled.load(std::memory_order_acquire));
+        LOGI("[IvannaNativeLib] Volterra kernel REEMPLAZADO: id=%s "
+             "hasEffectiveKernel=%d enabled=%d",
+             g_volterra_engine.activeKernelDeviceId(),
+             g_volterra_engine.hasEffectiveKernel() ? 1 : 0,
+             g_volterra_engine.isEnabled() ? 1 : 0);
+    } else {
+        // Fail-closed: si el intento deshabilitó el motor y había un kernel
+        // efectivo con Volterra encendido, el anterior vuelve a sonar.
+        if (g_volterra_engine.hasEffectiveKernel() &&
+            g_volterra_enabled.load(std::memory_order_acquire) &&
+            !g_volterra_engine.isEnabled()) {
+            g_volterra_engine.setEnabled(true);
+        }
+        LOGE("[IvannaNativeLib] Volterra kernel REEMPLAZO RECHAZADO: %s (%d) "
+             "(kernel anterior intacto)",
+             ivanna::dsp::volterraLoadStatusName(st), static_cast<int>(st));
+    }
+    return static_cast<jint>(st);
+}
+
+// v2.5.369 (selector PZ1D / Genezi): device id del kernel ACTIVO del motor
+// de Ruta A ("MOTO_G85_PZ1D", "MOTO_G85_GENEZY" o "" si no hay paquete
+// aplicado). Es la fuente de verdad que lee la UI: nunca se infiere del
+// id persistido, que puede quedar desfasado.
+JNIEXPORT jstring JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetVolterraKernelId(
+    JNIEnv* env, jobject) {
+    return env->NewStringUTF(g_volterra_engine.activeKernelDeviceId());
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // JNI API: Acoustic Unity Engine (v2.5.15) — interruptor y telemetría medida
 // ═══════════════════════════════════════════════════════════════════════════

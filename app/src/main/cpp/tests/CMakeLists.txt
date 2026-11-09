@@ -105,6 +105,14 @@ target_compile_definitions(test_volterra_genezy_mhc_pz1d PRIVATE
 ivanna_add_test(test_volterra_moto_g85_pz1d)
 target_compile_definitions(test_volterra_moto_g85_pz1d PRIVATE
   IVANNA_PZ1D_IVK1_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/kernels/moto_g85_pz1d.ivk1")
+# Selector de kernel Volterra en runtime (v2.5.369): reemplazo PZ1D <->
+# Genezi vía VolterraH2Symmetric::replaceKernelPackage (fail-closed,
+# quiescencia con tope, puerta de producción antes de aplicar). Lee
+# AMBOS .ivk1 (el default PZ1D y el alternativo Genezi).
+ivanna_add_test(test_volterra_kernel_switch)
+target_compile_definitions(test_volterra_kernel_switch PRIVATE
+  IVANNA_PZ1D_IVK1_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/kernels/moto_g85_pz1d.ivk1"
+  IVANNA_GENEZY_IVK1_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/kernels/genezy_mhc_pz1d.ivk1")
 ivanna_add_test(test_hires_config)
 # Continuidad de ganancia del techo por etapa (tronidos al subir volumen).
 ivanna_add_test(test_stage_ceiling_continuity)
