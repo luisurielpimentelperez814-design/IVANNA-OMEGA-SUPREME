@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,7 +47,15 @@ internal fun OmniHeroHeader(
     spatialActive: Boolean,
     autoMode: Boolean,
     omniLevel: Float,
-    routeState: com.ivanna.omega.audio.PipelineState = com.ivanna.omega.audio.PipelineState()
+    routeState: com.ivanna.omega.audio.PipelineState = com.ivanna.omega.audio.PipelineState(),
+    // v2.5.369: las funciones insignia activas por defecto (ORBE, HOLOS,
+    // Φ, Volterra) también se ven aquí arriba — antes el héroe solo
+    // mostraba OPE/NPE/BINAURAL/AUTO/RUTA y había que bajar dos tercios
+    // del panel para saber que ORBE/HOLOS/Φ/Volterra están sonando.
+    orbeActive: Boolean = false,
+    holosActive: Boolean = false,
+    hyperActive: Boolean = false,
+    volterraActive: Boolean = false
 ) {
     val infinite = rememberInfiniteTransition(label = "omniPulse")
     val pulse by infinite.animateFloat(
@@ -116,6 +124,12 @@ internal fun OmniHeroHeader(
                 if (npeActive) StatusPill("NPE", NeonMagenta)
                 if (spatialActive) StatusPill("BINAURAL", PhosphorGreen)
                 if (autoMode) StatusPill("AUTO IA", AmberSignal)
+                // Funciones insignia activas (v2.5.369): se muestran solo
+                // cuando suenan de verdad (amount > 0 / toggle ON).
+                if (orbeActive) StatusPill("ORBE", NeonMagenta)
+                if (holosActive) StatusPill("HOLOS", NeonMagenta)
+                if (hyperActive) StatusPill("Φ", AuroraCyan)
+                if (volterraActive) StatusPill("VOLTERRA", AmberSignal)
                 val routeText = when (routeState.activeRoute) {
                     com.ivanna.omega.audio.ActiveRoute.ROUTE_A -> "RUTA A"
                     com.ivanna.omega.audio.ActiveRoute.ROUTE_B -> "RUTA B"
@@ -233,7 +247,9 @@ internal fun MasterBar(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = AuroraCyan)
+                    // v2.5.369: icono de barras (espectro), no de play —
+                    // el visualizador no reproduce nada, muestra el espectro.
+                    Icon(Icons.Filled.BarChart, contentDescription = null, tint = AuroraCyan)
                     Spacer(Modifier.width(4.dp))
                     Text("VISUALIZER", style = MaterialTheme.typography.labelMedium, color = AuroraCyan, fontWeight = FontWeight.Bold)
                 }

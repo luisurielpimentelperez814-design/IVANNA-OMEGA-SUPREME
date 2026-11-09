@@ -448,6 +448,44 @@ private fun HubHeader(title: String, subtitle: String, accent: Color) {
     }
 }
 
+// v2.5.369 (refactor visual): cada tarjeta del hub tenía el mismo punto
+// de color como "icono" — 30 tarjetas indistinguibles de un vistazo.
+// Ahora cada superficie tiene su icono Material real, derivado del título
+// (los títulos son literales en este mismo archivo). El fallback es un
+// círculo, como antes, para cualquier título futuro sin mapear.
+private fun hubIconFor(title: String): androidx.compose.ui.graphics.vector.ImageVector = when {
+    title.contains("5 EJES") -> Icons.Filled.Hub
+    title.contains("EJE 1") -> Icons.Filled.GridOn
+    title.contains("EJE 2") -> Icons.Filled.Waves
+    title.contains("EJE 3") -> Icons.Filled.GraphicEq
+    title.contains("EJE 4") -> Icons.Filled.Hearing
+    title.contains("EJE 5") -> Icons.Filled.Speed
+    title.contains("COCLEAR") -> Icons.Filled.Psychology
+    title.contains("SOFA") -> Icons.Filled.Folder
+    title.contains("SAF") -> Icons.Filled.Person
+    title.contains("CONTROL ESPACIAL") -> Icons.Filled.ThreeDRotation
+    title.contains("VISUALIZADOR") -> Icons.Filled.BarChart
+    title.contains("OPE") -> Icons.Filled.Tune
+    title.contains("BINAURAL") -> Icons.Filled.Headphones
+    title.contains("AUDITIVA") -> Icons.Filled.MusicNote
+    title.contains("ABX") -> Icons.Filled.Science
+    title.contains("BENCHMARK") -> Icons.Filled.Assessment
+    title.contains("FASE 7") -> Icons.Filled.AutoAwesome
+    title.contains("WFS") -> Icons.Filled.Speaker
+    title.contains("COGNITIVO") -> Icons.Filled.Psychology
+    title.contains("DIAGNÓSTICO") -> Icons.Filled.BugReport
+    title.contains("ASSISTANT") -> Icons.Filled.Chat
+    title.contains("OEM") -> Icons.Filled.Dashboard
+    title.contains("MAGISK") -> Icons.Filled.Security
+    title.contains("PERFILES") -> Icons.Filled.Person
+    title.contains("LABORATORIO") -> Icons.Filled.Science
+    title.contains("MOTORES") -> Icons.Filled.Memory
+    title.contains("RED") -> Icons.Filled.Wifi
+    title.contains("HI-RES") -> Icons.Filled.HighQuality
+    title.contains("MUSIC INTELLIGENCE") -> Icons.Filled.LibraryMusic
+    else -> Icons.Filled.Circle
+}
+
 @Composable
 private fun HubCard(title: String, subtitle: String, accent: Color, onClick: () -> Unit) {
     Surface(
@@ -470,7 +508,12 @@ private fun HubCard(title: String, subtitle: String, accent: Color, onClick: () 
                 ).border(1.dp, accent.copy(alpha = 0.38f), RoundedCornerShape(13.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Box(Modifier.size(7.dp).background(accent, androidx.compose.foundation.shape.CircleShape))
+                Icon(
+                    hubIconFor(title),
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(22.dp)
+                )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(

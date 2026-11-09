@@ -8,11 +8,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.ui.theme.AmberSignal
+import com.ivanna.omega.ui.theme.AuroraCyan
+import com.ivanna.omega.ui.theme.CoralWarn
+import com.ivanna.omega.ui.theme.GlassOutline
+import com.ivanna.omega.ui.theme.ObsidianRaised
+import com.ivanna.omega.ui.theme.PhosphorGreen
+import com.ivanna.omega.ui.theme.TextMuted
+import com.ivanna.omega.ui.theme.TextPrimary
+import com.ivanna.omega.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -23,6 +31,11 @@ import kotlinx.coroutines.withContext
  * llamaba desde Kotlin: nativeCreateAdaptiveEngine, nativeGetAdaptiveParameters,
  * nativeInitPILSTM y nativePredictSamples. Todo dato mostrado viene del JNI;
  * si el handle es 0 o la lectura falla, se muestra "—" (nunca se inventa).
+ *
+ * v2.5.369 (refactor visual): antes usaba una escala de grises propia
+ * (0xFF101418, 0xFF1F2B2B, 0xFFA0A0A0, 0xFF666666, 0xFF7F8C8D) y un cian
+ * 0xFF00E5FF distintos de la paleta Aurora Obsidiana. Ahora usa las
+ * constantes del tema; los valores mostrados no cambian.
  */
 @Composable
 fun AdaptiveEngineLivePanel(modifier: Modifier = Modifier) {
@@ -69,45 +82,45 @@ fun AdaptiveEngineLivePanel(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF101418), RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0xFF1F2B2B), RoundedCornerShape(12.dp))
+            .background(ObsidianRaised, RoundedCornerShape(12.dp))
+            .border(1.dp, GlassOutline, RoundedCornerShape(12.dp))
             .padding(14.dp)
     ) {
-        Text("ADAPTIVE ENGINE — EN VIVO", color = Color(0xFF00E5FF),
+        Text("ADAPTIVE ENGINE — EN VIVO", color = AuroraCyan,
              fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
         Spacer(Modifier.height(10.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Handle nativo", color = Color(0xFFA0A0A0), fontSize = 11.sp)
+            Text("Handle nativo", color = TextSecondary, fontSize = 11.sp)
             Text(if (engineHandle != 0L) "0x${engineHandle.toString(16)}" else "—",
-                 color = if (engineHandle != 0L) Color(0xFF23F09A) else Color(0xFFFF5C4D),
+                 color = if (engineHandle != 0L) PhosphorGreen else CoralWarn,
                  fontSize = 11.sp)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Pi-LSTM predictor", color = Color(0xFFA0A0A0), fontSize = 11.sp)
+            Text("Pi-LSTM predictor", color = TextSecondary, fontSize = 11.sp)
             Text(if (pilstmReady) "ACTIVO" else "—",
-                 color = if (pilstmReady) Color(0xFF23F09A) else Color(0xFFFF5C4D),
+                 color = if (pilstmReady) PhosphorGreen else CoralWarn,
                  fontSize = 11.sp)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Clips acumulados", color = Color(0xFFA0A0A0), fontSize = 11.sp)
+            Text("Clips acumulados", color = TextSecondary, fontSize = 11.sp)
             Text(if (clipCount >= 0) "$clipCount" else "—",
-                 color = if (clipCount > 0) Color(0xFFF7B733) else Color.White, fontSize = 11.sp)
+                 color = if (clipCount > 0) AmberSignal else TextPrimary, fontSize = 11.sp)
         }
         Spacer(Modifier.height(8.dp))
 
         val p = params
         if (p == null) {
             Text("Parámetros adaptativos: — (engine no inicializado)",
-                 color = Color(0xFF666666), fontSize = 11.sp)
+                 color = TextMuted, fontSize = 11.sp)
         } else {
-            Text("Parámetros adaptativos [${p.size}]", color = Color(0xFFA0A0A0), fontSize = 11.sp)
+            Text("Parámetros adaptativos [${p.size}]", color = TextSecondary, fontSize = 11.sp)
             Spacer(Modifier.height(4.dp))
             val labels = listOf("threshold dB", "ratio", "attack ms", "release ms", "makeup dB", "knee")
             p.take(6).forEachIndexed { i, v ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(labels.getOrElse(i) { "param[$i]" }, color = Color(0xFF7F8C8D), fontSize = 10.sp)
-                    Text("%.3f".format(v), color = Color.White, fontSize = 10.sp)
+                    Text(labels.getOrElse(i) { "param[$i]" }, color = TextMuted, fontSize = 10.sp)
+                    Text("%.3f".format(v), color = TextPrimary, fontSize = 10.sp)
                 }
             }
         }
@@ -116,7 +129,7 @@ fun AdaptiveEngineLivePanel(modifier: Modifier = Modifier) {
         if (pr != null && pr.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text("Pi-LSTM latente: ${"%.4f".format(pr.first())} (${pr.size} taps)",
-                 color = Color(0xFF6FF3FF), fontSize = 10.sp)
+                 color = AuroraCyan, fontSize = 10.sp)
         }
 
         if (clipCount > 0) {
@@ -124,7 +137,7 @@ fun AdaptiveEngineLivePanel(modifier: Modifier = Modifier) {
             TextButton(onClick = {
                 runCatching { IvannaNativeLib.nativeResetClipCount() }
                 clipCount = 0
-            }) { Text("RESET CLIP COUNTER", color = Color(0xFFF7B733), fontSize = 11.sp) }
+            }) { Text("RESET CLIP COUNTER", color = AmberSignal, fontSize = 11.sp) }
         }
     }
 }

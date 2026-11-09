@@ -1,6 +1,8 @@
 package com.ivanna.omega.ui
 
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -46,7 +48,9 @@ import com.ivanna.omega.audio.ActiveRoute
 import com.ivanna.omega.audio.IvannaEffectProfile
 import com.ivanna.omega.audio.OmegaMetrics
 import com.ivanna.omega.audio.PipelineState
+import com.ivanna.omega.audio.RealAcousticSensor
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.hardware.PermissionGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -112,14 +116,14 @@ fun IvannaControlPanel(
     initialAuxCoherence: Float = 1f,
     initialPunchAmount: Float = 0f,
     initialCrossfeed: Float = 0f,
-    // ORBE — Binaural Esférico de Campo Cercano (v2.5.363). amount 0 = apagado por defecto.
+    // ORBE — Binaural Esférico de Campo Cercano (v2.5.363). ACTIVO por defecto en v2.5.369 (amount 1.0).
     initialOrbeAmount: Float = 1.0f,
     initialOrbeDistanceM: Float = 0.35f,
     initialOrbeSpread: Float = 1.0f,
     initialOrbeProximityDb: Float = 3.0f,
     initialOrbeDiffuse: Float = 0.5f,
     initialOrbeHeadTracking: Boolean = true,
-    // HOLOS — Operador Único de Campo Acústico (v2.5.364). amount 0 = apagado por defecto.
+    // HOLOS — Operador Único de Campo Acústico (v2.5.364). ACTIVO por defecto en v2.5.369, retuneado (amount 0.5, harmonics 0.0).
     initialHolosAmount: Float = 0.5f,
     initialHolosDistanceM: Float = 0.35f,
     initialHolosSpread: Float = 1.0f,
@@ -251,6 +255,25 @@ fun IvannaControlPanel(
             if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeIsVolterraEnabled() }.getOrDefault(true) else true
         )
     }
+    // v2.5.369: ¿hay un kernel Volterra cargado de verdad? El toggle dice la
+    // intención del usuario; esto dice el estado real del motor. Se refresca
+    // en el bucle de telemetría de 500 ms junto a unity/punch/evoEq.
+    var volterraKernelLoaded by remember { mutableStateOf(false) }
+    // Sensor acústico en vivo (v2.5.369): alimenta Φ en MEDIDO. Se lee del
+    // sensor real (RealAcousticSensor), no se supone. sensorMicDenied marca
+    // que el permiso quedó denegado (el botón pasa a abrir Ajustes).
+    var sensorRunning by remember { mutableStateOf(false) }
+    var sensorFrameIndex by remember { mutableLongStateOf(-1L) }
+    var sensorSource by remember { mutableStateOf("none") }
+    var sensorMicDenied by remember { mutableStateOf(false) }
+    // Permiso de micrófono para el sensor acústico. Si ya está concedido,
+    // el sistema responde al instante sin mostrar diálogo.
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        sensorMicDenied = !granted
+        if (granted) runCatching { RealAcousticSensor.start(context) }
+    }
     // EQ evolutivo de 512 bandas en Ruta A (paridad con Ruta B). El interruptor es la eleccion PERSISTIDA del
     // usuario (ON por defecto). No se pinta con nativeIsEvolutionaryEqActive(): ese devuelve false mientras
     // la calibracion corre en su hilo (unos segundos tras arrancar) y mostraria "apagado" estando encendido.
@@ -274,7 +297,7 @@ fun IvannaControlPanel(
     var unityTelemetry by remember { mutableStateOf(FloatArray(0)) }
     var punchAmount by remember { mutableFloatStateOf(initialPunchAmount) }
     var crossfeed by remember { mutableFloatStateOf(initialCrossfeed) }
-    // ORBE — Binaural Esférico de Campo Cercano (v2.5.363), apagado por defecto.
+    // ORBE — Binaural Esférico de Campo Cercano (v2.5.363), ACTIVO por defecto en v2.5.369 (amount 1.0).
     var orbeAmount by remember { mutableFloatStateOf(initialOrbeAmount) }
     var orbeDistanceM by remember { mutableFloatStateOf(initialOrbeDistanceM) }
     var orbeSpread by remember { mutableFloatStateOf(initialOrbeSpread) }
@@ -319,9 +342,16 @@ fun IvannaControlPanel(
                 unityTelemetry = runCatching { IvannaNativeLib.nativeGetUnityTelemetry() }.getOrDefault(FloatArray(0))
                 punchTelemetry = runCatching { IvannaNativeLib.nativeGetPunchTelemetry() }.getOrDefault(FloatArray(0))
                 evoEqActive = runCatching { IvannaNativeLib.nativeIsEvolutionaryEqActive() }.getOrDefault(false)
+                volterraKernelLoaded = runCatching { IvannaNativeLib.nativeHasVolterraKernel() }.getOrDefault(false)
             } else {
                 evoEqActive = false
+                volterraKernelLoaded = false
             }
+            // Sensor acústico: se lee del objeto real, independiente de la
+            // biblioteca nativa (frameIndex() devuelve -1 sin .so).
+            sensorRunning = RealAcousticSensor.isRunning
+            sensorFrameIndex = RealAcousticSensor.frameIndex()
+            sensorSource = RealAcousticSensor.audioSourceUsed
             delay(500)
         }
     
@@ -620,7 +650,11 @@ fun IvannaControlPanel(
             spatialActive = spatialEnabled,
             autoMode = autoMode,
             omniLevel = omniLevel,
-            routeState = routeState
+            routeState = routeState,
+            orbeActive = orbeAmount > 0f,
+            holosActive = holosAmount > 0f,
+            hyperActive = hyperAmount > 0f,
+            volterraActive = volterraEnabled
         )
 
         EngineStatusCard(metrics = metrics)
@@ -668,17 +702,22 @@ fun IvannaControlPanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("ESTADO TINYML KERNEL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("ESTADO TINYML KERNEL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                // v2.5.369: el distintivo decía siempre "LOCK-FREE SPSC
+                // ACTIVE" aunque la biblioteca nativa no estuviera cargada.
+                // Ahora refleja el estado real: sin .so no hay kernel TinyML.
+                val tinymlLive = IvannaNativeLib.isLoaded
+                val tinymlAccent = if (tinymlLive) PhosphorGreen else CoralWarn
                 Surface(
-                    color = PhosphorGreen.copy(alpha = 0.18f),
+                    color = tinymlAccent.copy(alpha = 0.18f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, PhosphorGreen)
+                    border = BorderStroke(1.dp, tinymlAccent)
                 ) {
                     Text(
-                        "LOCK-FREE SPSC ACTIVE",
+                        if (tinymlLive) "LOCK-FREE SPSC ACTIVE" else "MOTOR NATIVO NO CARGADO",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = PhosphorGreen,
+                        color = tinymlAccent,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -752,6 +791,21 @@ fun IvannaControlPanel(
                     if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetAtiEnabled(en) }
                 }
             }
+            // v2.5.369: el toggle VOLTERRA H2 dice la intención; esta línea
+            // dice el estado real del motor (kernel PZ1D cargado o no).
+            // El único kernel que se carga al arrancar es el PZ1D refinado
+            // (PersistedStateRestorer + este toggle); el Genezi alternativo
+            // no tiene llamador en runtime, así que "cargado" = PZ1D.
+            Text(
+                text = when {
+                    !volterraEnabled -> "Volterra H2: apagado por el usuario · kernel PZ1D en espera"
+                    !IvannaNativeLib.isLoaded -> "Volterra H2: biblioteca nativa no disponible"
+                    volterraKernelLoaded -> "Volterra H2: kernel PZ1D refinado cargado · activo"
+                    else -> "Volterra H2: sin kernel cargado (bypass) · cargando…"
+                },
+                color = if (volterraEnabled && volterraKernelLoaded) PhosphorGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall
+            )
             Spacer(modifier = Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlagToggle("EQ EVOLUTIVO 512", evoEqEnabled, AuroraCyan, Modifier.weight(1f)) { en ->
@@ -1251,7 +1305,10 @@ fun IvannaControlPanel(
                 })
             }
             Text(
-                "Sin puerta auditiva (GREEN) no se enciende por defecto. A 384 kHz el governor térmico puede bajarlo a 12 bandas o apagarlo.",
+                // v2.5.369: ORBE está ACTIVO por defecto (amount 1.0, THD+N
+                // −139 dB). El texto viejo decía que la puerta GREEN lo
+                // mantenía apagado — eso ya no es verdad.
+                "Activo por defecto (amount 1.0 · THD+N −139 dB @1 kHz, limpio). A 384 kHz el governor térmico puede bajarlo a 12 bandas o apagarlo.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )
@@ -1373,7 +1430,11 @@ fun IvannaControlPanel(
                 onHolosEqChange(holosEqLow, holosEqMid, holosEqHigh, holosEqPresence, holosEqTiltDb, it)
             }
             Text(
-                "Sin puerta auditiva (GREEN) no se enciende por defecto. El governor térmico baja 24→12 bandas, apaga el difuso y puede apagar HOLOS en las dos rutas (Ruta A por ThermalGovernor, Ruta B en el daemon). El EQ de Γ es estático y plano por defecto.",
+                // v2.5.369: HOLOS está ACTIVO por defecto, RETUNEADO
+                // (amount 0.5, armónicos 0.0; THD+N −94 dB @1 kHz). El
+                // texto viejo decía que la puerta GREEN lo mantenía
+                // apagado — eso ya no es verdad.
+                "Activo por defecto, retuneado (amount 0.5 · armónicos 0.0 · THD+N −94 dB @1 kHz). El governor térmico baja 24→12 bandas, apaga el difuso y puede apagar HOLOS en las dos rutas (Ruta A por ThermalGovernor, Ruta B en el daemon). El EQ de Γ es estático y plano por defecto.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )
@@ -1387,6 +1448,70 @@ fun IvannaControlPanel(
             else
                 "Evolución de HOLOS al dominio temporal: el micrófono mide la sala real y el operador corrige hacia la curva Harman 2018. Apagado = audio intacto (bypass exacto)"
         ) {
+            // Sensor acústico en vivo (v2.5.369): Φ corre en MEDIDO solo si
+            // el micrófono alimenta frames; si no, cae a APROXIMADO. El
+            // estado se lee del sensor real cada 500 ms, no se supone.
+            // MEDIDO = capturando Y con frames nativos aterrizando
+            // (frameIndex >= 0); el número de frame es la evidencia viva.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val sensorMedido = sensorRunning && sensorFrameIndex >= 0L
+                Box(
+                    modifier = Modifier.size(8.dp).clip(CircleShape)
+                        .background(if (sensorMedido) PhosphorGreen else AmberSignal)
+                )
+                Text(
+                    when {
+                        sensorMedido -> "SENSOR · MEDIDO · mic $sensorSource · frame #$sensorFrameIndex"
+                        sensorRunning -> "SENSOR · APROXIMADO · mic activo sin frames nativos"
+                        else -> "SENSOR · APROXIMADO · micrófono sin arrancar (Φ corrige por aproximación)"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (sensorMedido) PhosphorGreen else AmberSignal,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (!sensorRunning) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            // Permiso ya concedido → arranca directo. Si no,
+                            // pide el permiso y arranca al concederlo; si
+                            // queda denegado, el texto pasa a abrir Ajustes.
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context, android.Manifest.permission.RECORD_AUDIO
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                runCatching { RealAcousticSensor.start(context) }
+                            } else {
+                                micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
+                    ) { Text("ACTIVAR SENSOR (MICRÓFONO)", fontSize = 10.sp) }
+                    if (sensorMicDenied) {
+                        OutlinedButton(
+                            onClick = { PermissionGate.openAppSettings(context) },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberSignal)
+                        ) { Text("ABRIR AJUSTES", fontSize = 10.sp) }
+                    }
+                }
+                if (sensorMicDenied) {
+                    Text(
+                        "Permiso de micrófono denegado: actívalo en Ajustes para que Φ mida la sala real.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AmberSignal
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
             AuroraSlider("CANTIDAD HYPER", hyperAmount, 0f..1f,
                 displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
                 hyperAmount = it
