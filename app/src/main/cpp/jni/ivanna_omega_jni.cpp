@@ -1672,12 +1672,38 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // Lee los atomics g_holos_*/g_orbe_* cada bloque; amount=0 es bypass bit-exacto de
     // coste cero. Activo añade 512 muestras de latencia (10.7 ms @48 kHz).
     // Bucle cerrado neuro-acústico (v2.5.365): 1x por bloque, ANTES de
+    // ORBE + HOLOS en serie (v2.5.369, directiva explícita): AMBOS activos.
+    // Antes era if/else (HOLOS ocupaba el lugar de ORBE); con ambos defaults
+    // > 0, ORBE quedaba muerto. ORBE primero, HOLOS después. Cada uno es
+    // bypass bit-exacto si su amount=0.
     // HOLOS/ORBE — NeuroBandEq + deltas acotados sobre hp/op. Apagado o
     // sin frames frescos -> identidad bit-exacta.
     const auto neuroAdjA = neuroLoopRouteAUpdate(
         g_ats.chL, g_ats.chR, n,
         static_cast<float>(std::max(g_params.sampleRate, 8000u)));
     {
+        // ORBE primero.
+        const float orbeAmount = g_orbe_amount.load(std::memory_order_relaxed);
+        if (orbeAmount > 0.0f) {
+            ivanna::OrbeParams op;
+            op.amount = orbeAmount;
+            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.bandCount = 24;
+            {   // Bucle cerrado: deltas locales sobre la base del usuario.
+                const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
+                op.distanceM = tgt.orbeDistanceM;
+                op.proximityDb = tgt.orbeProximityDb;
+                op.diffuse = tgt.holosDiffuse;
+            }
+            g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
+            g_orbeRouteA.setParams(op);
+            g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
+        }
+        // HOLOS después.
         const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
         if (holosAmount > 0.0f) {
             ivanna::HolosParams hp;
@@ -1712,24 +1738,6 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
             g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
-        } else {
-            ivanna::OrbeParams op;
-            op.amount = g_orbe_amount.load(std::memory_order_relaxed);
-            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
-            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
-            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
-            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
-            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
-            op.bandCount = 24;
-            {   // Bucle cerrado: deltas locales sobre la base del usuario.
-                const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
-                op.distanceM = tgt.orbeDistanceM;
-                op.proximityDb = tgt.orbeProximityDb;
-                op.diffuse = tgt.holosDiffuse;
-            }
-            g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
-            g_orbeRouteA.setParams(op);
-            g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
         }
     }
     // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la ganancia
@@ -2658,15 +2666,40 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // Misma etapa WFS que DSPBridge.nativeProcess: evita divergencia entre APIs JNI.
     processRouteAWfs(oL, oR, n);
 
-    // ── ORBE (Ruta A/C, v2.5.363): mismo bloque que nativeProcess, tras el WFS
-    // y antes de la RIR. Comparte g_orbeRouteA con nativeProcess (nunca corren
-    // a la vez: g_dspProcessMutex). HOLOS ocupa el lugar de ORBE cuando está
-    // activo (misma instancia compartida g_holosRouteA). amount=0 = bypass bit-exacto de coste cero.
+    // ── ORBE + HOLOS en serie (Ruta A/C, v2.5.363/364; v2.5.369: AMBOS activos
+    // por directiva explícita). Antes era if/else (HOLOS ocupaba el lugar de
+    // ORBE); con ambos defaults > 0, ORBE quedaba muerto. Ahora ORBE corre
+    // primero (render esférico de campo cercano) y HOLOS después (operador
+    // unificado, K=0 retuneado, limpio). Comparte g_orbeRouteA/g_holosRouteA
+    // con nativeProcess (nunca corren a la vez: g_dspProcessMutex). Cada uno
+    // es bypass bit-exacto de coste cero si su amount=0.
     // Bucle cerrado neuro-acústico (v2.5.365): 1x por bloque, ANTES de
-    // HOLOS/ORBE — NeuroBandEq + deltas acotados sobre hp/op.
+    // ORBE/HOLOS — NeuroBandEq + deltas acotados sobre hp/op.
     const auto neuroAdjA = neuroLoopRouteAUpdate(
         oL, oR, n, static_cast<float>(std::max(g_params.sampleRate, 8000u)));
     {
+        // ORBE primero.
+        const float orbeAmount = g_orbe_amount.load(std::memory_order_relaxed);
+        if (orbeAmount > 0.0f) {
+            ivanna::OrbeParams op;
+            op.amount = orbeAmount;
+            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.bandCount = 24;
+            {   // Bucle cerrado: deltas locales sobre la base del usuario.
+                const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
+                op.distanceM = tgt.orbeDistanceM;
+                op.proximityDb = tgt.orbeProximityDb;
+                op.diffuse = tgt.holosDiffuse;
+            }
+            g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
+            g_orbeRouteA.setParams(op);
+            g_orbeRouteA.process(oL, oR, n);
+        }
+        // HOLOS después.
         const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
         if (holosAmount > 0.0f) {
             ivanna::HolosParams hp;
@@ -2701,24 +2734,6 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
             g_holosRouteA.process(oL, oR, n);
-        } else {
-            ivanna::OrbeParams op;
-            op.amount = g_orbe_amount.load(std::memory_order_relaxed);
-            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
-            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
-            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
-            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
-            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
-            op.bandCount = 24;
-            {   // Bucle cerrado: deltas locales sobre la base del usuario.
-                const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
-                op.distanceM = tgt.orbeDistanceM;
-                op.proximityDb = tgt.orbeProximityDb;
-                op.diffuse = tgt.holosDiffuse;
-            }
-            g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
-            g_orbeRouteA.setParams(op);
-            g_orbeRouteA.process(oL, oR, n);
         }
     }
 

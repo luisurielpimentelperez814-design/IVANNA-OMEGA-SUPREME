@@ -451,9 +451,10 @@ class ParameterStore(context: Context) {
     fun getCrossfeedStrength(): Float = safeGetFloat(KEY_CROSSFEED, 0f)
     fun setCrossfeedStrength(s: Float) = prefs.edit().putFloat(KEY_CROSSFEED, if (s.isFinite()) s.coerceIn(0f, 1f) else 0f).apply()
 
-    // ── ORBE — Binaural Esférico de Campo Cercano (v2.5.363) ── apagado por defecto:
-    // amount 0 = bypass bit-exacto, el audio no cambia hasta activarlo.
-    fun getOrbeAmount(): Float = safeGetFloat(KEY_ORBE_AMOUNT, 0f)
+    // ── ORBE — Binaural Esférico de Campo Cercano (v2.5.363) ── ACTIVO por defecto
+    // (v2.5.369, directiva explícita: amount 1.0; THD+N −139.33 dB @1 kHz,
+    // 23× RT, limpio sin retuneo). amount 0 = bypass bit-exacto.
+    fun getOrbeAmount(): Float = safeGetFloat(KEY_ORBE_AMOUNT, 1.0f)
     fun getOrbeDistanceM(): Float = safeGetFloat(KEY_ORBE_DISTANCE_M, 0.35f)
     fun getOrbeSpread(): Float = safeGetFloat(KEY_ORBE_SPREAD, 1.0f)
     fun getOrbeProximityDb(): Float = safeGetFloat(KEY_ORBE_PROXIMITY_DB, 3.0f)
@@ -471,15 +472,19 @@ class ParameterStore(context: Context) {
         .putBoolean(KEY_ORBE_HEAD_TRACKING, headTracking)
         .apply()
 
-    // ── HOLOS — Operador Único de Campo Acústico (v2.5.364) ── apagado por defecto:
-    // amount 0 = bypass bit-exacto, el audio no cambia hasta activarlo. Los 13
-    // parámetros de FUSION.md §6; band_count 12 o 24 (24 = default).
-    fun getHolosAmount(): Float = safeGetFloat(KEY_HOLOS_AMOUNT, 0f)
+    // ── HOLOS — Operador Único de Campo Acústico (v2.5.364) ── ACTIVO por defecto
+    // (v2.5.369, directiva explícita, CON RETUNEO: amount 0.5, harmonics 0.0.
+    // Con defaults viejos (amount 1.0, harmonics 0.32) THD+N era −31.5 dB;
+    // el retuneo medido en host da THD+N −94.0 dB @1 kHz / −79.6 dB @100 Hz,
+    // IMD SMPTE −159.5 dB. El término K (harmonics) es el que distorsionaba;
+    // con K=0 el render espacial G y el campo Γ siguen activos y limpios.)
+    // Los 13 parámetros de FUSION.md §6; band_count 12 o 24 (24 = default).
+    fun getHolosAmount(): Float = safeGetFloat(KEY_HOLOS_AMOUNT, 0.5f)
     fun getHolosDistanceM(): Float = safeGetFloat(KEY_HOLOS_DISTANCE_M, 0.35f)
     fun getHolosSpread(): Float = safeGetFloat(KEY_HOLOS_SPREAD, 1.0f)
     fun getHolosProximityDb(): Float = safeGetFloat(KEY_HOLOS_PROXIMITY_DB, 3.0f)
     fun getHolosDiffuse(): Float = safeGetFloat(KEY_HOLOS_DIFFUSE, 0.5f)
-    fun getHolosHarmonics(): Float = safeGetFloat(KEY_HOLOS_HARMONICS, 0.32f)
+    fun getHolosHarmonics(): Float = safeGetFloat(KEY_HOLOS_HARMONICS, 0.0f)
     fun getHolosWarmth(): Float = safeGetFloat(KEY_HOLOS_WARMTH, 0.5f)
     fun getHolosDynamics(): Float = safeGetFloat(KEY_HOLOS_DYNAMICS, 1.0f)
     fun getHolosWidth(): Float = safeGetFloat(KEY_HOLOS_WIDTH, 1.0f)

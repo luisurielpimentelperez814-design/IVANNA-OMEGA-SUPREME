@@ -27,7 +27,7 @@
 
 | Rama / versión | Contenido | Estado |
 |:---|:---|:---|
-| `main` · **v2.5.369** (660) | **Hiper-Operador Φ + sensor acústico real + curvas élite + protección del producto** — operador muestra a muestra sin FFT, sensor por micrófono, target Harman 2018, cableado en Rutas A y B; Φ, sensor y Volterra (kernel PZ1D refinado, G85 + DAC + Genezi) ACTIVOS por defecto (ORBE/HOLOS siguen apagados hasta GREEN) | 🚧 Código completo y verificado en host (837/837 tests), commiteado, sin release todavía (ver §13) |
+| `main` · **v2.5.369** (660) | **Hiper-Operador Φ + sensor acústico real + curvas élite + protección del producto** — operador muestra a muestra sin FFT, sensor por micrófono, target Harman 2018, cableado en Rutas A y B; Φ, sensor y Volterra (kernel PZ1D refinado, G85 + DAC + Genezi) ACTIVOS por defecto; ORBE y HOLOS también ACTIVOS por defecto (directiva del propietario; HOLOS retuneado, ver §5) | 🚧 Código completo y verificado en host (839/839 tests), commiteado, sin release todavía (ver §13) |
 | `main` · **v2.5.368** (659) | **Pilares pendientes**: Volterra diagonal K=4096, DoP v1.1, pinna-EQ Blauert, estimador EMF Thiele-Small — como componentes con tests, sin cablear a la cadena de audio | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.368) — APK (200 MB) + zip Magisk (103 MB) + flyers + `SHA256SUMS.txt` |
 | `main` · **v2.5.367** (658) | **Fusión Homogénea Phi**: un solo coordinador (bucle neuro + ruta AUX + puerta Volterra) con un solo `update()` por bloque — como clase, sin cablear a la cadena de audio | ✅ Incluida en el release v2.5.368 |
 | `main` · **v2.5.366** (657) | **Ruta AUX Genezi / auto**: presets XTC + campo AUX coherente cableados en Rutas A y B; puerta Volterra solo con kernel medido | ✅ Incluida en el release v2.5.368 |
@@ -35,7 +35,7 @@
 | `main` · **v2.5.364** (655) | **HOLOS** — Operador Único de Campo Acústico, con UI en CONTROL, ABI v10 | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.364) |
 | `main` · **v2.5.363** (654) | **ORBE** — binaural esférico de campo cercano, con UI en CONTROL, ABI v9 | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.363) |
 
-> **Lee esto primero.** Desde v2.5.369, lo nuevo de esa versión (Φ, sensor acústico real, Volterra con kernel PZ1D refinado) arranca **ACTIVO por defecto** — suena desde la primera canción (directiva del propietario: ninguna función muerta). ORBE, HOLOS y el bucle neuro siguen **apagados por defecto** y no se encienden hasta que la **puerta auditiva** dé `GREEN` en el Moto G85 (el dispositivo de desarrollo/prueba; el producto es para cualquier Android 13 en adelante): escucha ciega con niveles igualados. Nada en este README promete un efecto audible que no haya pasado esa puerta. Los números que verás son mediciones de host, no de teléfono: **la CPU y la latencia en dispositivo siguen sin medirse**. Y dos precisiones que este README corrige respecto a versiones anteriores: la **Fusión Phi (367)** y los **pilares (368)** existen como componentes con tests que pasan, pero **no están cableados a la cadena de audio** — no suenan. El Hiper-Operador Φ (369) **sí** está cableado (ver §13). Lo que suena es la cadena de la §2.
+> **Lee esto primero.** Desde v2.5.369, lo nuevo de esa versión (Φ, sensor acústico real, Volterra con kernel PZ1D refinado, ORBE y HOLOS) arranca **ACTIVO por defecto** — suena desde la primera canción (directiva del propietario: ninguna función muerta; la puerta GREEN queda anulada para este release por decisión explícita del propietario). El bucle neuro sigue **apagado por defecto** (identidad sin frames de sensor real). HOLOS no se encendió a lo bruto: se retuneó por medición (ver §5) porque sus defaults distorsionaban −31.5 dB. Lo honesto: el combinado Φ + Volterra + ORBE + HOLOS todavía **no se ha escuchado en el teléfono** — falta la escucha en el Moto G85 y la medición de CPU/XRuns. Los números que verás son mediciones de host, no de teléfono: **la CPU y la latencia en dispositivo siguen sin medirse**. Y dos precisiones que este README corrige respecto a versiones anteriores: la **Fusión Phi (367)** y los **pilares (368)** existen como componentes con tests que pasan, pero **no están cableados a la cadena de audio** — no suenan. El Hiper-Operador Φ (369) **sí** está cableado (ver §13). Lo que suena es la cadena de la §2.
 
 **En esta página** · [Qué es](#1-qué-es-ivanna) · [Cadena](#2-la-cadena-de-señal) · [HOA + HRTF](#3-el-corazón-hoa--hrtf) · [ORBE](#4-orbe--binaural-esférico-de-campo-cercano-) · [HOLOS](#5-holos--operador-único-de-campo-acústico-) · [Bucle neuro](#6-bucle-cerrado-neural-v2515365) · [AUX Genezi](#7-ruta-aux-genezi--auto-v2515366) · [Phi](#8-fusión-homogénea-phi-v2515367) · [Pilares](#9-pilares-pendientes-v2515368) · [NPE](#10-npe--motor-neuromórfico) · [Rutas](#11-las-dos-rutas) · [PAL/ASRC](#12-pal--asrc-y-sonda--experimental) · [Hiper-Operador Φ](#13-hiper-operador-φ--v2515369) · [Controles](#14-controles-en-control) · [Mediciones](#15-mediciones-reales) · [Puerta auditiva](#16-la-puerta-auditiva-y-el-índice-visceral) · [Límites](#17-límites-honestos) · [Compilar](#18-compilar-y-probar) · [Verificación](#19-verificación-y-evidencia) · [Documentación](#20-documentación)
 
@@ -90,8 +90,8 @@ flowchart LR
 | 2 | **WFS** | Kirchhoff–Helmholtz: blend con 2 objetos L/R; dimensiones de sala inferidas por snapshot | ✅ Activa (gobernada por `g_wfs_enabled`) |
 | 3 | **RIR** | Convolución particionada, 200 salas medidas (RT60 T20 real) | ⏸️ Bypass (`wetDry = 0`) |
 | 4 | **Bucle cerrado neural** | `ClosedLoopController` + `NeuroBandEq` (8 biquads peaking Greenwood) antes de HOLOS/ORBE | ⏸️ Cableado, pero identidad sin frames de sensor real |
-| 5 | **HOLOS** | Un solo operador `G ⊛ [K·X] · Γ` por banda ERB | ⏸️ Off (`amount = 0`) hasta GREEN |
-| 6 | **ORBE** | Cabeza esférica en campo cercano, STFT por banda ERB | ⏸️ Off (`amount = 0`) hasta GREEN |
+| 5 | **HOLOS** | Un solo operador `G ⊛ [K·X] · Γ` por banda ERB | ✅ Activo (`amount = 0.5`, `harmonics = 0` retuneado; ver §5) |
+| 6 | **ORBE** | Cabeza esférica en campo cercano, STFT por banda ERB | ✅ Activo (`amount = 1.0`; ver §4) |
 | 7 | **Ruta AUX Genezi** | Presets XTC + campo AUX coherente (graves en fase, LR4) | ✅ Cableada; presets GeneziRoom/CarCabin |
 | 8 | **GoldenEar / HarmonicExciter** | Chebyshev T2+T3 con oversampling 2×; H2 **apagado** (solo corre el soft-knee) | ✅ Activa en Ruta A (H2 off) |
 | 9 | **Volterra H2** | Kernel con memoria (K=64), contenedor IVK1 con puerta de carga | ✅ Activo por defecto (kernel PZ1D refinado, G85 + DAC + Genezi; Genezi como alternativo; H2 disperso + H1 NEON) |
@@ -134,7 +134,7 @@ entrada estéreo → STFT (hop 128 / FFT 512, escalable con SR)
 
 | Parámetro (CONTROL · tarjeta "ORBE · CAMPO CERCANO") | Rango | Default |
 |:---|:---:|---:|
-| Cantidad ORBE | 0–1 | **0 (off)** |
+| Cantidad ORBE | 0–1 | **1.0 (activo)** |
 | Distancia | 0.15–2.0 m | 0.35 m |
 | Apertura | 0–1.5 | 1.0 |
 | Proximidad (graves) | 0–6 dB | 3 dB |
@@ -147,13 +147,13 @@ entrada estéreo → STFT (hop 128 / FFT 512, escalable con SR)
 
 **Limitación declarada:** no modela la magnitud de la pinna; solo parallax de rotación (yaw). La traslación y la pinna por transporte óptimo son fase 2.
 
-**Estado:** implementado, testeado, publicado — pero **apagado por defecto hasta que la puerta auditiva dé GREEN** en el Moto G85. Sin GREEN, ORBE es código que existe, no un efecto que suene.
+**Estado:** implementado, testeado, publicado — y **ACTIVO por defecto desde v2.5.369** (`amount = 1.0`, directiva del propietario; la puerta GREEN queda anulada para este release). ORBE y HOLOS ya no son excluyentes: corren en serie (ORBE primero, HOLOS después) en las tres rutas de proceso (`nativeProcess`, `nativeProcessBlock`, `IvannaFusionEngine::process`).
 
 ---
 
 ## 5. HOLOS · Operador Único de Campo Acústico ✅
 
-**Publicado en v2.5.364.** Implementado, testeado y cableado — pero **apagado por defecto hasta que la puerta auditiva dé GREEN** en el Moto G85. Sin GREEN, HOLOS es código que existe, no un efecto que suene.
+**Publicado en v2.5.364. ACTIVO por defecto desde v2.5.369** (`amount = 0.5`, `harmonics = 0` — retuneo medido, ver abajo; la puerta GREEN queda anulada para este release por decisión explícita del propietario). ORBE y HOLOS ya no son excluyentes: corren en serie (ORBE primero, HOLOS después) en las tres rutas de proceso.
 
 La tesis, en un párrafo: las doce funciones no son doce matemáticas distintas. Son **tres operadores** escritos doce veces con constantes distintas, en dominios distintos y en serie, peleándose entre ellos. El operador espacial es en todos los casos una evaluación de la **función de Green acústica** (HOA, WFS, RIR, HRTF, ORBE y crossfeed son la misma física). El operador no lineal es en todos los casos un **término de una serie de Volterra** (Chebyshev T2, `2x²`, Padé/tanh y la OHC coclear son el mismo monomio con o sin memoria). El operador de dinámica/EQ/ancho es en todos los casos un **campo de ganancia** por banda e instante. HOLOS evalúa los tres en un solo dominio (STFT hop 128 / FFT 512, 24 bandas ERB) a partir de un solo vector de estado por banda `s_b = (θ, r, coherencia, DRR, envolvente, nivel, transitorio)`, y cada módulo legacy es un caso degenerado suyo (ORBE *es* HOLOS con K = identidad y Γ = 1).
 
@@ -176,12 +176,12 @@ $$Y_b(t) = G_b(s_b) \;\circledast\; \big[\, K_b(s_b) \cdot X_b(t) \,\big] \cdot 
 
 | Parámetro (CONTROL · tarjeta "HOLOS · OPERADOR ÚNICO") | Rango | Default |
 |:---|:---:|---:|
-| Cantidad HOLOS | 0–1 | **0 (off)** |
+| Cantidad HOLOS | 0–1 | **0.5 (activo, retuneado)** |
 | Distancia | 0.15–2.0 m | 0.35 m |
 | Apertura | 0–1.5 | 1.0 |
 | Proximidad (graves) | 0–6 dB | 3 dB |
 | Difuso → sala | 0–1 | 0.5 |
-| Armónicos (K) | 0–1 | 0.32 |
+| Armónicos (K) | 0–1 | **0.0 (K apagado por retuneo)** |
 | Calidez (par/impar) | 0–1 | 0.5 |
 | Dinámica (Γ) | 0–1 | 1.0 |
 | Ancho (Γ) | 0–1.5 | 1.0 |
@@ -190,19 +190,22 @@ $$Y_b(t) = G_b(s_b) \;\circledast\; \big[\, K_b(s_b) \cdot X_b(t) \,\big] \cdot 
 | Seguimiento de cabeza | on/off | on si hay pose |
 | 12 bandas (ahorro CPU) | on/off | off (24 bandas) |
 
-13 parámetros, todos off por defecto (`holos_amount = 0`) hasta GREEN. El EQ estático de Γ (graves, medios, agudos, presencia, tilt dB y frecuencia del tilt, ±12 dB) tiene 6 controles en CONTROL, persiste en `ParameterStore`, se restaura al abrir y llega a las dos rutas (JNI `nativeSetHolosEq` en Ruta A; `holosEq*` en `SET_PERCEPTUAL_STATE` → snapshot ABI v10 en Ruta B); plano por defecto = no-op. Entra en `FusionCore` tras el blend WFS, antes del M/S; `amount = 0` es la cadena legacy bit-exacta, con crossfade de 15 ms y fail-closed por término. Shed térmico en 4 tiers (24→12 bandas → H3 off → difuso sin convolución → HOLOS off). Cero alloc en el callback.
+13 parámetros, ACTIVOS por defecto desde v2.5.369 (`holos_amount = 0.5`, `holos_harmonics = 0`). El EQ estático de Γ (graves, medios, agudos, presencia, tilt dB y frecuencia del tilt, ±12 dB) tiene 6 controles en CONTROL, persiste en `ParameterStore`, se restaura al abrir y llega a las dos rutas (JNI `nativeSetHolosEq` en Ruta A; `holosEq*` en `SET_PERCEPTUAL_STATE` → snapshot ABI v10 en Ruta B); plano por defecto = no-op. Entra en `FusionCore` tras el blend WFS, antes del M/S; `amount = 0` es la cadena legacy bit-exacta, con crossfade de 15 ms y fail-closed por término. Shed térmico en 4 tiers (24→12 bandas → H3 off → difuso sin convolución → HOLOS off). Cero alloc en el callback.
 
-**Mediciones en host (48 kHz) — con las banderas rojas incluidas:**
+**Mediciones en host (48 kHz) — con el retuneo de v2.5.369 incluido:**
 
-| Medida | HOLOS off | HOLOS on (defaults) |
-|:---|:---:|---:|
-| THD+N @1 kHz | **−153.5 dB** (bit-exacto) | **−31.5 dB** ⚠️ |
-| THD+N @1 kHz, sin término K | — | −87.9 dB |
-| IMD | — | −28.2 dB |
-| Latencia | — | 512 muestras = 10.7 ms |
-| Throughput host | cadena 136.7× RT | **3.5× RT** (HOLOS solo) |
+| Medida | HOLOS off | HOLOS on (defaults viejos) | HOLOS on (default retuneado v2.5.369) |
+|:---|:---:|---:|---:|
+| THD+N @1 kHz | **−153.5 dB** (bit-exacto) | **−31.5 dB** ⚠️ | **−94.0 dB** ✅ |
+| THD+N @100 Hz | — | −33.2 dB ⚠️ | **−79.6 dB** ✅ |
+| THD+N @1 kHz, sin término K | — | −87.9 dB | — |
+| IMD (SMPTE) | — | −28.2 dB ⚠️ | **−159.5 dB** ✅ |
+| Latencia | — | 512 muestras = 10.7 ms | 512 muestras = 10.7 ms |
+| Throughput host | cadena 136.7× RT | **3.5× RT** (HOLOS solo) | **3.5× RT** (sin cambio) |
 
-Las dos banderas rojas son honestas y están en el informe de diseño: **los defaults de HOLOS distorsionan mucho por diseño** (el término armónico K aporta ~56 dB de distorsión; hay que retunear antes de cualquier escucha) y **la viabilidad en el Moto G85 está en cuestión** hasta medir CPU/XRuns en dispositivo — 3.5× RT en host está muy por debajo de la estimación de diseño (15–25× RT). 38/38 tests HOLOS pasan (green 10, gain 6, volterra 9, operator 8, chain 5); los tests encontraron y corrigieron 2 bugs reales (escala Parseval del estimador, coherencia tipo Welch). Recortes ya decididos: Manifold B eliminado, difuso con una sola IR (sala estimada, no las 200), EvoEQ por magnitud por bin (se pierde fase lineal), sin interpolación OT de pinna en v1, sin kernel Volterra por banda sin kernel medido.
+**Retuneo v2.5.369 (medido, test `test_holos_retune_sweep.cpp`):** barrido en rejilla amount × harmonics (tono −3 dBFS, 3 s, ventana del segundo 2). El término armónico K domina la distorsión: cualquier harmonics > 0 incumple −70 dB (p. ej. amount 0.5 / harm 0.05 → −53.7 dB; amount 1.0 / harm 0.32 → −31.5 dB). Solo harmonics = 0 cumple en ambas frecuencias. **Default elegido: amount 0.5, harmonics 0.0 (K apagado).** Con K = 0 el render espacial G y el campo Γ siguen activos y limpios; el efecto espacial es medible (diferencia vs bypass, latencia compensada: −44.0 dB). Requisito THD+N ≤ −70 dB cumplido con margen; ideal ≤ −80 dB cumplido a 1 kHz (a 100 Hz queda a 0.4 dB, diferencia inaudible, dentro de tolerancia de medida).
+
+La bandera roja que queda es honesta y está en el informe de diseño: **la viabilidad en el Moto G85 está en cuestión** hasta medir CPU/XRuns en dispositivo — 3.5× RT en host está muy por debajo de la estimación de diseño (15–25× RT), y el retuneo no cambia el throughput (el operador hace el mismo trabajo a cualquier amount). La distorsión de los defaults viejos ya NO es un problema: el retuneo (K = 0) la resolvió por medición. 38/38 tests HOLOS pasan (green 10, gain 6, volterra 9, operator 8, chain 5) + 2 tests nuevos de retuneo; los tests encontraron y corrigieron 2 bugs reales (escala Parseval del estimador, coherencia tipo Welch). Recortes ya decididos: Manifold B eliminado, difuso con una sola IR (sala estimada, no las 200), EvoEQ por magnitud por bin (se pierde fase lineal), sin interpolación OT de pinna en v1, sin kernel Volterra por banda sin kernel medido.
 
 **Honestidad:** no hay física nueva en HOLOS. Lo inédito como producto es la unificación en un solo hilo RT fail-closed sobre estéreo arbitrario. La física nueva, si existe, está en la [sección 16](#16-la-puerta-auditiva-y-el-índice-visceral).
 
@@ -313,7 +316,7 @@ Nada de esto se activa en producción: el ASRC no corrige nada en el teléfono h
 
 ## 13. Hiper-Operador Φ · v2.5.369
 
-**Código completo, verificado en host y cableado — commiteado, release pendiente de CI.** El Hiper-Operador de Estado Φ es la evolución de HOLOS al dominio temporal: un solo operador muestra a muestra, **sin FFT por bloques ni STFT**, que fusiona tres vectores de estado en una sola ganancia unificada. Es la pieza que hace que lo nuevo suene en la Ruta A hoy, con el teléfono que ya tienes y sin comprar nada más. Para cualquier Android 13 en adelante (el Moto G85 es el dispositivo de desarrollo/prueba). **Desde v2.5.369 arranca ACTIVO por defecto (`amount = 0.5`, target Harman 2018):** el sensor acústico arranca con la app para correr en MEDIDO (sin permiso de micrófono cae a APROXIMADO, solo corte); ORBE y HOLOS siguen apagados hasta GREEN.
+**Código completo, verificado en host y cableado — commiteado, release pendiente de CI.** El Hiper-Operador de Estado Φ es la evolución de HOLOS al dominio temporal: un solo operador muestra a muestra, **sin FFT por bloques ni STFT**, que fusiona tres vectores de estado en una sola ganancia unificada. Es la pieza que hace que lo nuevo suene en la Ruta A hoy, con el teléfono que ya tienes y sin comprar nada más. Para cualquier Android 13 en adelante (el Moto G85 es el dispositivo de desarrollo/prueba). **Desde v2.5.369 arranca ACTIVO por defecto (`amount = 0.5`, target Harman 2018):** el sensor acústico arranca con la app para correr en MEDIDO (sin permiso de micrófono cae a APROXIMADO, solo corte); ORBE (`amount = 1.0`) y HOLOS (`amount = 0.5`, `harmonics = 0` retuneado) también arrancan ACTIVOS por defecto en la 369.
 
 ```
 Y(t) = x(t) + wet · [ Φ(s_neuro, s_emf, s_field) · x(t) − x(t) ]
@@ -380,7 +383,7 @@ Exclusiones honestas: el valor Harman a 20 kHz (−17.1 dB) es un artefacto y **
 | Φ, `amount = 0` | Identidad bit-exacta (verificado por test) |
 | Φ, guarda de pico | La salida nunca supera el pico de entrada (verificado por test) |
 
-**Pendiente en dispositivo (fuera de este entorno):** medir CPU/XRuns/temperatura del operador Φ en el teléfono y la puerta auditiva ABX con niveles igualados. Desde v2.5.369, Φ, el sensor y Volterra (kernel PZ1D refinado) se encienden por defecto; ORBE y HOLOS siguen apagados hasta GREEN replicado. El build de Android/Kotlin lo verifica la CI (aquí solo se verificaron los tests host C++).
+**Pendiente en dispositivo (fuera de este entorno):** medir CPU/XRuns/temperatura del operador Φ en el teléfono y la puerta auditiva ABX con niveles igualados. Desde v2.5.369, Φ, el sensor, Volterra (kernel PZ1D refinado), ORBE y HOLOS se encienden por defecto (directiva del propietario; la puerta GREEN queda anulada para este release). El build de Android/Kotlin lo verifica la CI (aquí solo se verificaron los tests host C++).
 
 ---
 
@@ -430,7 +433,7 @@ Regla de trabajo: si HOLOS mide < 2× RT en dispositivo es viable; entre 1–2×
 
 ## 16. La puerta auditiva y el Índice VISCERAL
 
-Ninguna función nueva se enciende por defecto sin `GREEN`. La puerta está implementada en [`scripts/ivanna_auditory_gate.py`](scripts/ivanna_auditory_gate.py): exige checks explícitos, rutas requeridas, evidencia del dispositivo y **escucha ciega con niveles igualados**. Ausencia de evidencia no pasa como éxito.
+Ninguna función nueva se enciende por defecto sin `GREEN`. La puerta está implementada en [`scripts/ivanna_auditory_gate.py`](scripts/ivanna_auditory_gate.py): exige checks explícitos, rutas requeridas, evidencia del dispositivo y **escucha ciega con niveles igualados**. Ausencia de evidencia no pasa como éxito. **Excepción registrada (v2.5.369):** el propietario anuló la puerta explícitamente para este release — ORBE y HOLOS arrancan ACTIVOS por defecto (HOLOS retuneado por medición). La puerta sigue vigente como regla para funciones futuras.
 
 El objetivo perceptual — eso visceral que se siente en el cuerpo, no solo se escucha — se define en cinco dimensiones medibles, resumidas en un **Índice VISCERAL** con regla anti-trampa (no sube si alguna dimensión baja más de 10 puntos):
 

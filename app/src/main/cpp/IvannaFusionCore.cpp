@@ -530,13 +530,41 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
     const ivanna::neuromorphic::NeuroAdjustments neuroAdj =
         updateNeuroLoop(buffer);
 
-    // ── HOLOS (Operador Único de Campo Acústico) — última etapa espacial ──
-    // Ocupa el LUGAR DE ORBE (tras el blend WFS, antes del M/S): cuando
-    // HOLOS está activo ORBE no corre (doble render con doble retardo de
-    // 512 muestras). Con amount=0 HOLOS es bypass bit-exacto de coste
-    // cero (fast-path interno) y ORBE corre como siempre (fallback
-    // legacy). Lee los atomics g_holos_* cada bloque.
+    // ── ORBE + HOLOS en serie (v2.5.369, directiva explícita): AMBOS activos.
+    // Antes era if/else (HOLOS ocupaba el lugar de ORBE); con ambos defaults
+    // > 0, ORBE quedaba muerto. ORBE primero (render esférico), HOLOS después
+    // (operador unificado, K=0 retuneado). NOTA: en serie el retardo se suma
+    // (ORBE + 512 muestras de HOLOS); es el costo de tener ambos activos y
+    // se valida por escucha en el G85. Cada uno es bypass bit-exacto si su
+    // amount=0. Lee los atomics g_orbe_*/g_holos_* cada bloque.
     {
+        // ORBE primero.
+        const float orbeAmount = g_orbe_amount.load(std::memory_order_relaxed);
+        if (orbeAmount > 0.0f) {
+            ivanna::OrbeParams op;
+            op.amount = orbeAmount;
+            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
+            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
+            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.bandCount = 24;
+            // Bucle cerrado: deltas locales sobre la base del usuario.
+            {
+                ivanna::neuromorphic::ClosedLoopTargets base{};
+                base.holosDiffuse = op.diffuse;
+                base.orbeDistanceM = op.distanceM;
+                base.orbeProximityDb = op.proximityDb;
+                const auto tgt = ivanna::neuromorphic::applyAdjustments(base, neuroAdj);
+                op.distanceM = tgt.orbeDistanceM;
+                op.proximityDb = tgt.orbeProximityDb;
+                op.diffuse = tgt.holosDiffuse;
+            }
+            m_orbe.setThermalShed(m_orbeShed_);
+            m_orbe.setParams(op);
+            m_orbe.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+        }
+        // HOLOS después.
         const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
         if (holosAmount > 0.0f) {
             ivanna::HolosParams hp;
@@ -580,30 +608,6 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             m_holos.setThermalTier(tier);
             m_holos.setParams(hp);
             m_holos.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
-        } else {
-            // ── ORBE (fallback legacy) ──
-            ivanna::OrbeParams op;
-            op.amount = g_orbe_amount.load(std::memory_order_relaxed);
-            op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
-            op.spread = g_orbe_spread.load(std::memory_order_relaxed);
-            op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
-            op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
-            op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
-            op.bandCount = 24;
-            // Bucle cerrado: deltas locales sobre la base del usuario.
-            {
-                ivanna::neuromorphic::ClosedLoopTargets base{};
-                base.holosDiffuse = op.diffuse;
-                base.orbeDistanceM = op.distanceM;
-                base.orbeProximityDb = op.proximityDb;
-                const auto tgt = ivanna::neuromorphic::applyAdjustments(base, neuroAdj);
-                op.distanceM = tgt.orbeDistanceM;
-                op.proximityDb = tgt.orbeProximityDb;
-                op.diffuse = tgt.holosDiffuse;
-            }
-            m_orbe.setThermalShed(m_orbeShed_);
-            m_orbe.setParams(op);
-            m_orbe.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
         }
     }
 

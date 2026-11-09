@@ -705,6 +705,24 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_holos_chain)
 
+# Barrido de retuneo HOLOS v2.5.369: THD+N en rejilla (amount × harmonics)
+# para elegir el default que cumpla THD+N ≤ −70 dB con efecto medible.
+add_executable(test_holos_retune_sweep
+  test_holos_retune_sweep.cpp
+  ../spatial/HolosOperator.cpp
+  ../spatial/HolosVolterraKernel.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/OrbeBinaural.cpp
+)
+target_link_libraries(test_holos_retune_sweep PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_holos_retune_sweep PRIVATE .. ../include host_stubs)
+target_compile_options(test_holos_retune_sweep PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_holos_retune_sweep PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_holos_retune_sweep PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_holos_retune_sweep)
+
 # Native 3D stem pose contract: the production NeuralUpmixer implementation is
 # compiled directly so these tests exercise the same atomic buffer publication
 # and validation used by JNI, rather than a parallel test-only implementation.
