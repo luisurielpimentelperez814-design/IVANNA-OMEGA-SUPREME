@@ -292,6 +292,16 @@ androidComponents {
         tasks.matching { it.name == "merge${capName}Assets" }.configureEach {
             dependsOn(genTask)
         }
+        // Las tareas de Lint leen el directorio de assets (incluido
+        // ivanna_so_hashes.txt) sin declarar dependencia: Gradle 8.9 lo
+        // rechaza con WorkValidationException (CI 42567801291). Mismo patrón
+        // perezoso: las tareas Lint pueden no existir aún en onVariants.
+        tasks.matching { it.name == "lintVitalAnalyze${capName}" }.configureEach {
+            dependsOn(genTask)
+        }
+        tasks.matching { it.name == "generate${capName}LintVitalReportModel" }.configureEach {
+            dependsOn(genTask)
+        }
     }
 }
 
