@@ -601,6 +601,14 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // FIX CINEMA / AMAZON PRIME VIDEO: Excluir UIDs de apps de video/cine instaladas dinámicamente.
             // Esas apps reciben procesamiento in-place de latencia cero vía IvannaGlobalEffectManager (AudioEffect)
             // o libomega_effect en AudioFlinger. Capturarlas por loopback duplicaría su audio con 25-40ms de desfase.
+            // FIX (Atlas/4D en 0% con música, 2026-11-09): NO excluir apps de MÚSICA del loopback.
+            // El keyword "youtube" capturaba YouTube Music (com.google.android.apps.youtube.music) y "amazon"
+            // capturaba Amazon Music (com.amazon.mp3). Al excluirlas, el AudioRecord leía silencio aunque
+            // sonara música: el DSP se veía "ACTIVO" (procesando silencio) pero el Atlas mostraba
+            // NEUTRAL/SILENCIO 0% y la 4D 0% siempre, porque el IME y la cadena 4D analizaban ceros.
+            // Las apps de música NO reciben procesamiento in-place de latencia cero (eso es solo para
+            // video), así que DEBEN capturarse por loopback.
+            val musicPackages = setOf("com.amazon.mp3") // Amazon Music no lleva "music" en el paquete
             val videoKeywords = listOf(
                 "amazon", "prime", "aiv", "avod", "firebat",
                 "netflix", "disney", "hbo", "wbd", "max",
@@ -616,6 +624,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 }
                 for (pi in installed) {
                     val pn = pi.packageName.lowercase(java.util.Locale.ROOT)
+                    if (pn.contains("music") || pn in musicPackages) continue
                     if (videoKeywords.any { pn.contains(it) }) {
                         pi.applicationInfo?.uid?.let { uid ->
                             captureBuilder.excludeUid(uid)
