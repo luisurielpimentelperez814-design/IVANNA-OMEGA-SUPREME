@@ -28,7 +28,7 @@ fun OemThermalScreen(state: OemState, onBack: () -> Unit) {
     val thermalColor = when (state.thermalLevel) {
         OemState.ThermalLevel.NORMAL   -> PhosphorGreen
         OemState.ThermalLevel.LIGHT    -> AmberSignal
-        OemState.ThermalLevel.MODERATE -> Color(0xFFFF8C00)
+        OemState.ThermalLevel.MODERATE -> AmberSignal
         OemState.ThermalLevel.SEVERE   -> CoralWarn
     }
 
@@ -73,7 +73,7 @@ fun OemThermalScreen(state: OemState, onBack: () -> Unit) {
                             val sweep = 240f
                             val start = 150f
                             val load  = state.thermalLoad.coerceIn(0f, 1f)
-                            drawArc(color = Color(0xFF1A2535), startAngle = start,
+                            drawArc(color = ObsidianRaised, startAngle = start,
                                 sweepAngle = sweep, useCenter = false,
                                 style = Stroke(10f, cap = StrokeCap.Round))
                             if (load > 0f)
@@ -138,7 +138,7 @@ fun OemThermalScreen(state: OemState, onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 PolicyRow("< 30%",  "Normal — pipeline completo",           PhosphorGreen)
                 PolicyRow("30–60%", "Excitador −40%",                       AmberSignal)
-                PolicyRow("60–80%", "Excitador −70%, espacial −25%, comp −15%", Color(0xFFFF8C00))
+                PolicyRow("60–80%", "Excitador −70%, espacial −25%, comp −15%", AmberSignal)
                 PolicyRow("> 80%",  "Excitador −100%, espacial −50%, comp −30%", CoralWarn)
                 Spacer(Modifier.height(6.dp))
                 Text(

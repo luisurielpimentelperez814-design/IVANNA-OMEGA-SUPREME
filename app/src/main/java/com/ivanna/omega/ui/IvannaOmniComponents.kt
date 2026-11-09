@@ -557,3 +557,51 @@ internal fun StatBlock(label: String, value: String, accent: Color, modifier: Mo
         Text(value, style = MaterialTheme.typography.titleSmall, color = accent, fontWeight = FontWeight.Bold)
     }
 }
+
+// ── Encabezado de sección + fila de tabs compartidos ────────────────────────
+// Antes cada pantalla (SONIDO / SISTEMA / CEREBRO) repetía el mismo bloque:
+// título 11sp ExtraBold con letterSpacing 3sp + ScrollableTabRow con los
+// mismos paddings. Un solo componente = una sola jerarquía visual en toda
+// la app; si el estilo cambia, cambia en todas partes a la vez.
+@Composable
+internal fun IvannaScreenHeader(title: String, accent: Color) {
+    Text(
+        title,
+        color = accent,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = 3.sp,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+    )
+}
+
+@Composable
+internal fun IvannaTabRow(
+    tabs: List<String>,
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    accent: Color
+) {
+    ScrollableTabRow(
+        selectedTabIndex = selectedTabIndex,
+        containerColor = Color.Transparent,
+        contentColor = accent,
+        edgePadding = 16.dp
+    ) {
+        tabs.forEachIndexed { i, title ->
+            Tab(
+                selected = selectedTabIndex == i,
+                onClick = { onTabSelected(i) },
+                text = {
+                    Text(
+                        title,
+                        fontSize = 11.sp,
+                        fontWeight = if (selectedTabIndex == i) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selectedTabIndex == i) accent else TextMuted
+                    )
+                }
+            )
+        }
+    }
+    HorizontalDivider(color = ObsidianEdge, thickness = 0.5.dp)
+}

@@ -138,7 +138,7 @@ fun AdaptiveDashboard(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("safety_margin", color = Color.White.copy(0.4f),
+                    Text("safety_margin", color = TextPrimary.copy(0.4f),
                          fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                     Text("${sm.format(1)} dB", color = if (sm < 3f) NeonMagenta else AuroraCyan,
                          fontFamily = FontFamily.Monospace, fontSize = 11.sp)
@@ -170,7 +170,7 @@ fun AdaptiveDashboard(
 
                 if (safeBands == null) {
                     Text("Sin señal de audio activa",
-                         color = Color.White.copy(0.3f),
+                         color = TextPrimary.copy(0.3f),
                          fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                 }
             }
@@ -188,10 +188,10 @@ fun AdaptiveDashboard(
                     MeterRow("Tonalidad",     tonality,   0f, 1f, AuroraCyan,   "${"%.0f".format(Locale.ROOT, tonality*100)}%")
                     Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)) {
                         androidx.compose.material3.Text("Centroide espectral: ${"%.0f".format(Locale.ROOT, centroid)} Hz",
-                            color = androidx.compose.ui.graphics.Color.White.copy(0.5f),
+                            color = androidx.compose.ui.graphics.TextPrimary.copy(0.5f),
                             fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                         androidx.compose.material3.Text("Spread: ${"%.0f".format(Locale.ROOT, spread)} Hz",
-                            color = androidx.compose.ui.graphics.Color.White.copy(0.5f),
+                            color = androidx.compose.ui.graphics.TextPrimary.copy(0.5f),
                             fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                     }
                 }
@@ -248,7 +248,7 @@ private fun MeterRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(label, color = Color.White.copy(0.45f), fontFamily = FontFamily.Monospace,
+        Text(label, color = TextPrimary.copy(0.45f), fontFamily = FontFamily.Monospace,
              fontSize = 10.sp, modifier = Modifier.width(52.dp))
         Box(
             modifier = Modifier
@@ -287,7 +287,7 @@ private fun DecisionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(label, color = Color.White.copy(0.40f), fontFamily = FontFamily.Monospace,
+        Text(label, color = TextPrimary.copy(0.40f), fontFamily = FontFamily.Monospace,
              fontSize = 10.sp, modifier = Modifier.width(110.dp))
         Box(
             modifier = Modifier

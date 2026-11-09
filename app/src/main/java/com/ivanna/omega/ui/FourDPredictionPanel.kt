@@ -19,6 +19,7 @@ import com.ivanna.omega.core.ParameterStore
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.util.Locale
+import com.ivanna.omega.ui.theme.*
 
 private data class FourDState(
     val enabled: Boolean = false,
@@ -65,12 +66,12 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
     var outLatencyMs by remember { mutableStateOf(store.get4dOutputLatencyMs()) }
     var dosCal by remember { mutableStateOf(store.get4dDosimeterCal()) }   // dBFS -> SPL; 94 = defecto nativo del dosímetro
 
-    val cyan = Color(0xFF00E5FF)
-    val magenta = Color(0xFFFF3D9A)
-    val emerald = Color(0xFF00E676)
-    val gold = Color(0xFFFFD54F)
-    val bgCard = Color(0xFF0B101B)
-    val bgSub = Color(0xFF131B2E)
+    val cyan = AuroraCyan
+    val magenta = NeonMagenta
+    val emerald = PhosphorGreen
+    val gold = AmberSignal
+    val bgCard = ObsidianRaised
+    val bgSub = ObsidianInset
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -122,7 +123,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     )
                     Text(
                         "El campo se abre 5–10 ms ANTES del golpe · háptica multibanda · dosímetro",
-                        color = Color(0xFF90A4AE), fontSize = 10.sp
+                        color = TextSecondary, fontSize = 10.sp
                     )
                 }
                 Switch(
@@ -143,7 +144,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
             ) {
                 Text(
                     if (st.armed) "ARMADO" else "ESCUCHANDO",
-                    color = if (st.armed) emerald else Color.LightGray,
+                    color = if (st.armed) emerald else TextMuted,
                     fontWeight = FontWeight.Bold, fontSize = 14.sp
                 )
                 Text(
@@ -152,7 +153,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                         "Anticip %.0f%% · Conf %.0f%% · Periodo %.0f ms · Lead %.1f ms",
                         st.anticipation * 100f, st.confidence * 100f, st.periodMs, st.leadMs
                     ),
-                    color = Color(0xFFB0BEC5), fontSize = 11.sp, fontFamily = FontFamily.Monospace
+                    color = TextPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace
                 )
             }
 
@@ -176,11 +177,11 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
             )
 
             Spacer(Modifier.height(10.dp))
-            HorizontalDivider(color = Color(0xFF1E2A44))
+            HorizontalDivider(color = ObsidianEdge)
             Spacer(Modifier.height(10.dp))
 
             // Anticipación (5–10 ms)
-            Text("Antelación de apertura del campo (lead)", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+            Text("Antelación de apertura del campo (lead)", color = TextPrimary, fontSize = 11.sp)
             Slider(
                 value = leadMs, valueRange = 5f..10f,
                 onValueChange = {
@@ -192,7 +193,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
             )
 
             // Profundidad
-            Text("Profundidad de modulación", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+            Text("Profundidad de modulación", color = TextPrimary, fontSize = 11.sp)
             Slider(
                 value = depth, valueRange = 0f..1f,
                 onValueChange = {
@@ -218,7 +219,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                 })
                 Spacer(Modifier.width(8.dp))
                 Column {
-                    Text("Arco narrativo (subida · hueco · impacto)", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                    Text("Arco narrativo (subida · hueco · impacto)", color = TextPrimary, fontSize = 12.sp)
                     Text(
                         String.format(
                             Locale.US,
@@ -230,7 +231,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     )
                 }
             }
-            Text("Profundidad del arco", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+            Text("Profundidad del arco", color = TextPrimary, fontSize = 11.sp)
             Slider(
                 value = arcDepth, valueRange = 0f..1f,
                 onValueChange = {
@@ -248,9 +249,9 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetHaptics(it)
                 })
                 Spacer(Modifier.width(8.dp))
-                Text("Háptica multibanda predictiva", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                Text("Háptica multibanda predictiva", color = TextPrimary, fontSize = 12.sp)
             }
-            Text("Escala háptica", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+            Text("Escala háptica", color = TextPrimary, fontSize = 11.sp)
             Slider(
                 value = hapticScale, valueRange = 0f..0.85f,
                 onValueChange = {
@@ -268,12 +269,12 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetCrosstalk(it && FourDRouteB.isExternalStereoRoute(appContext))
                 })
                 Spacer(Modifier.width(8.dp))
-                Text("Cancelación transaural (solo bocinas externas declaradas)", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                Text("Cancelación transaural (solo bocinas externas declaradas)", color = TextPrimary, fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Criterio dosímetro", color = Color(0xFFB0BEC5), fontSize = 11.sp)
+                Text("Criterio dosímetro", color = TextPrimary, fontSize = 11.sp)
                 Spacer(Modifier.width(10.dp))
                 listOf("WHO", "NIOSH", "OSHA").forEachIndexed { idx, label ->
                     TextButton(onClick = {
@@ -283,7 +284,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     }) {
                         Text(
                             label,
-                            color = if (dosMode == idx) gold else Color.Gray,
+                            color = if (dosMode == idx) gold else TextMuted,
                             fontWeight = if (dosMode == idx) FontWeight.Bold else FontWeight.Normal,
                             fontSize = 11.sp
                         )
@@ -296,7 +297,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
             // del campo llega tarde en cualquier telefono con latencia > 10 ms.
             Text(
                 "Latencia de salida del dispositivo: %.1f ms".format(outLatencyMs),
-                color = Color(0xFFB0BEC5), fontSize = 11.sp
+                color = TextPrimary, fontSize = 11.sp
             )
             Slider(
                 value = outLatencyMs, valueRange = 0f..40f,
@@ -306,7 +307,7 @@ fun FourDPredictionPanel(modifier: Modifier = Modifier) {
                     if (Ivanna4DNative.isAvailable) Ivanna4DNative.nativeFourDSetOutputLatencyMs(it)
                 }
             )
-            Text("Calibración dosímetro: %.0f dB SPL a fondo de escala".format(dosCal), color = Color(0xFFB0BEC5), fontSize = 11.sp)
+            Text("Calibración dosímetro: %.0f dB SPL a fondo de escala".format(dosCal), color = TextPrimary, fontSize = 11.sp)
             Slider(
                 value = dosCal, valueRange = 70f..145f,
                 onValueChange = {

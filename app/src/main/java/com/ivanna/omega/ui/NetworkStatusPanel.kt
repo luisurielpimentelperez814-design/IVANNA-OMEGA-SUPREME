@@ -551,7 +551,7 @@ private fun NetRow(
     ) {
         Text(
             label,
-            color      = Color.White.copy(alpha = 0.5f),
+            color      = TextPrimary.copy(alpha = 0.5f),
             fontFamily = FontFamily.Monospace,
             fontSize   = 11.sp,
             modifier   = Modifier.width(90.dp)

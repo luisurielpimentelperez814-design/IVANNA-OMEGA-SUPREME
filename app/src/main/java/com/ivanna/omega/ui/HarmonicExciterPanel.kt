@@ -7,7 +7,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -30,10 +29,10 @@ private fun ExciterSliderRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(label,
-                color = if (enabled) Color.White.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.3f),
+                color = if (enabled) TextPrimary.copy(alpha = 0.7f) else TextPrimary.copy(alpha = 0.3f),
                 fontSize = 12.sp)
             Text("${"%.2f".format(value)} $unit",
-                color = if (enabled) Color(0xFFFF8A3D) else Color(0xFFFF8A3D).copy(alpha = 0.3f),
+                color = if (enabled) ExciterOrange else ExciterOrange.copy(alpha = 0.3f),
                 fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         }
         Slider(
@@ -42,10 +41,10 @@ private fun ExciterSliderRow(
             valueRange = min..max,
             enabled = enabled,
             colors = SliderDefaults.colors(
-                thumbColor = Color(0xFFFF8A3D),
-                activeTrackColor = Color(0xFFFF8A3D),
-                disabledThumbColor = Color(0xFFFF8A3D).copy(alpha = 0.3f),
-                disabledActiveTrackColor = Color(0xFFFF8A3D).copy(alpha = 0.3f)
+                thumbColor = ExciterOrange,
+                activeTrackColor = ExciterOrange,
+                disabledThumbColor = ExciterOrange.copy(alpha = 0.3f),
+                disabledActiveTrackColor = ExciterOrange.copy(alpha = 0.3f)
             )
         )
     }
@@ -101,7 +100,7 @@ fun HarmonicExciterPanel(modifier: Modifier = Modifier) {
 
     GlassCard(
         title    = "EXCITADOR ARMÓNICO",
-        accent   = Color(0xFFFF8A3D),
+        accent   = ExciterOrange,
         subtitle = "Saturación tanh + 2ª/3ª armónica · HarmonicExciter.cpp"
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -113,7 +112,7 @@ fun HarmonicExciterPanel(modifier: Modifier = Modifier) {
             ) {
                 Text(
                     if (exciterEnabled) "EXCITADOR ACTIVO" else "BYPASS (sin armonicas)",
-                    color = if (exciterEnabled) Color(0xFFFF8A3D) else Color.White.copy(alpha = 0.4f),
+                    color = if (exciterEnabled) ExciterOrange else TextPrimary.copy(alpha = 0.4f),
                     fontSize = 12.sp, fontWeight = FontWeight.Bold
                 )
                 Switch(
@@ -138,7 +137,7 @@ fun HarmonicExciterPanel(modifier: Modifier = Modifier) {
                 "BYPASS desactiva completamente la saturacion armonica. " +
                 "Con excitador ON: 2ª y 3ª armonicas por tanh. " +
                 "antiDolby independiente del bypass.",
-                color = Color.White.copy(alpha = 0.4f),
+                color = TextPrimary.copy(alpha = 0.4f),
                 fontSize = 10.sp
             )
         }

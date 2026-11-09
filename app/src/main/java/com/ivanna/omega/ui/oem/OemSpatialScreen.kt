@@ -11,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
@@ -172,22 +171,22 @@ private fun DrawScope.drawSpatialMap(width: Float) {
     val cy = size.height / 2
     val r = size.minDimension / 2 - 4f
     // Outer ring
-    drawCircle(color = Color(0xFF223050), radius = r, style = Stroke(1.5f))
-    drawCircle(color = Color(0xFF152035), radius = r * 0.6f, style = Stroke(1f))
-    drawCircle(color = Color(0xFF0D1828), radius = r * 0.3f, style = Stroke(1f))
+    drawCircle(color = ObsidianEdge, radius = r, style = Stroke(1.5f))
+    drawCircle(color = ObsidianInset, radius = r * 0.6f, style = Stroke(1f))
+    drawCircle(color = ObsidianInset, radius = r * 0.3f, style = Stroke(1f))
     // Crosshairs
-    drawLine(Color(0xFF223050), start = androidx.compose.ui.geometry.Offset(cx, cy - r),
+    drawLine(ObsidianEdge, start = androidx.compose.ui.geometry.Offset(cx, cy - r),
         end = androidx.compose.ui.geometry.Offset(cx, cy + r), strokeWidth = 1f)
-    drawLine(Color(0xFF223050), start = androidx.compose.ui.geometry.Offset(cx - r, cy),
+    drawLine(ObsidianEdge, start = androidx.compose.ui.geometry.Offset(cx - r, cy),
         end = androidx.compose.ui.geometry.Offset(cx + r, cy), strokeWidth = 1f)
     // Spatial field ellipse — width > 1 = wider stereo field
     val fieldW = r * 0.7f * width.coerceIn(0.2f, 2f)
     val fieldH = r * 0.45f
-    drawOval(color = Color(0x336FF3FF), topLeft = androidx.compose.ui.geometry.Offset(cx - fieldW, cy - fieldH),
+    drawOval(color = AuroraCyan.copy(alpha = 0.2f), topLeft = androidx.compose.ui.geometry.Offset(cx - fieldW, cy - fieldH),
         size = androidx.compose.ui.geometry.Size(fieldW * 2, fieldH * 2))
-    drawOval(color = Color(0xFF6FF3FF), topLeft = androidx.compose.ui.geometry.Offset(cx - fieldW, cy - fieldH),
+    drawOval(color = AuroraCyan, topLeft = androidx.compose.ui.geometry.Offset(cx - fieldW, cy - fieldH),
         size = androidx.compose.ui.geometry.Size(fieldW * 2, fieldH * 2), style = Stroke(1.5f))
     // Listener dot
-    drawCircle(color = Color(0xFF23F09A), radius = 5f,
+    drawCircle(color = PhosphorGreen, radius = 5f,
         center = androidx.compose.ui.geometry.Offset(cx, cy))
 }

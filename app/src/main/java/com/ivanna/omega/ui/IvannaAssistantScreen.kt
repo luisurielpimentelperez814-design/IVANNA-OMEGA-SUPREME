@@ -133,7 +133,7 @@ fun IvannaAssistantScreen(
             trailingIcon = {
                 Text(
                     if (panelState.geminiAvailable) "● Lista" else "○ Requerida",
-                    color = if (panelState.geminiAvailable) Color(0xFF4ADE80) else Color(0xFFF87171),
+                    color = if (panelState.geminiAvailable) PhosphorGreen else CoralWarn,
                     style = MaterialTheme.typography.labelSmall
                 )
             }

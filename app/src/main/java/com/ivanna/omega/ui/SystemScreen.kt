@@ -42,35 +42,8 @@ fun SystemScreen(
     val tabs = listOf("MAGISK", "PERFILES", "TELEMETRÍA", "RED")
 
     Column(modifier = modifier.background(ObsidianDeep)) {
-        Text(
-            "SISTEMA",
-            color = PhosphorGreen,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 3.sp,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        )
-        ScrollableTabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = PhosphorGreen,
-            edgePadding = 16.dp
-        ) {
-            tabs.forEachIndexed { i, title ->
-                Tab(
-                    selected = selectedTab == i,
-                    onClick  = { selectedTab = i },
-                    text = {
-                        Text(
-                            title, fontSize = 11.sp,
-                            fontWeight = if (selectedTab == i) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selectedTab == i) PhosphorGreen else TextMuted
-                        )
-                    }
-                )
-            }
-        }
-        HorizontalDivider(color = ObsidianEdge, thickness = 0.5.dp)
+        IvannaScreenHeader("SISTEMA", PhosphorGreen)
+        IvannaTabRow(tabs, selectedTab, { selectedTab = it }, PhosphorGreen)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -105,12 +78,12 @@ private fun MagiskTab(onOpenMagisk: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(8.dp)
-                        .background(if (loaded) PhosphorGreen else Color.Red, androidx.compose.foundation.shape.CircleShape)
+                        .background(if (loaded) PhosphorGreen else CoralWarn, androidx.compose.foundation.shape.CircleShape)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (loaded) "Módulo cargado · JNI activo" else "Módulo no detectado",
-                    color = if (loaded) PhosphorGreen else Color.Red,
+                    color = if (loaded) PhosphorGreen else CoralWarn,
                     fontSize = 12.sp
                 )
             }
@@ -124,7 +97,7 @@ private fun MagiskTab(onOpenMagisk: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(name, color = TextSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    Text(if (ok) "OK" else "MISSING", color = if (ok) PhosphorGreen else Color.Red, fontSize = 11.sp)
+                    Text(if (ok) "OK" else "MISSING", color = if (ok) PhosphorGreen else CoralWarn, fontSize = 11.sp)
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -215,7 +188,7 @@ private fun ProfilesTab(onOpenProfiles: () -> Unit) {
                         if (isSelected) AuroraCyan else ObsidianEdge
                     ),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isSelected) AuroraCyan.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent,
+                        containerColor = if (isSelected) AuroraCyan.copy(alpha = 0.12f) else Color.Transparent,
                         contentColor = if (isSelected) AuroraCyan else TextSecondary
                     )
                 ) {
@@ -257,10 +230,10 @@ private fun TelemetryTab() {
             val load = com.ivanna.omega.audio.ThermalGovernor.currentThermalLoad
             thermalTier = when (tier) {
                 null -> "SIN DATO"
-                com.ivanna.omega.audio.ThermalTier.FULL -> "FULL ✅"
-                com.ivanna.omega.audio.ThermalTier.REDUCED -> "REDUCED ⚡"
-                com.ivanna.omega.audio.ThermalTier.LIMITED -> "LIMITED 🌡️"
-                com.ivanna.omega.audio.ThermalTier.PROTECTED -> "PROTECTED 🔥"
+                com.ivanna.omega.audio.ThermalTier.FULL -> "FULL"
+                com.ivanna.omega.audio.ThermalTier.REDUCED -> "REDUCED"
+                com.ivanna.omega.audio.ThermalTier.LIMITED -> "LIMITED"
+                com.ivanna.omega.audio.ThermalTier.PROTECTED -> "PROTECTED"
             }
             // Temperatura REAL medida (sensor de batería, único accesible sin root).
             thermalTempC = runCatching {
@@ -280,12 +253,12 @@ private fun TelemetryTab() {
 
     // ── Card térmica — estado real del SoC ───────────────────────────────────
     val tierColor = when (thermalTier) {
-        "FULL ✅"       -> PhosphorGreen
-        "REDUCED ⚡"   -> AuroraCyan
-        "LIMITED 🌡️"  -> AmberSignal
-        "PROTECTED 🔥" -> NeonMagenta
+        "FULL"       -> PhosphorGreen
+        "REDUCED"   -> AuroraCyan
+        "LIMITED"  -> AmberSignal
+        "PROTECTED" -> NeonMagenta
         "SIN DATO"     -> TextMuted
-        else            -> Color.Red
+        else            -> CoralWarn
     }
     GlassCard("ESTADO TÉRMICO DSP", tierColor, "ThermalGovernor v2.3.0 · polling 2s") {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -318,7 +291,7 @@ private fun TelemetryTab() {
     // ── Card de telemetría de audio ───────────────────────────────────────────
     GlassCard("TELEMETRÍA EN VIVO", PhosphorGreen, "Motor adaptativo · refresco 2 s") {
         val labels = listOf("RMS","Peak","GR dB","Ganancia objetivo","Compresión","Reducción excitador","Ancho espacial","Margen seguridad","Protección de voz","Ajustes aplicados")
-        val colors = listOf(AuroraCyan, Color.Red, NeonMagenta, PhosphorGreen,
+        val colors = listOf(AuroraCyan, CoralWarn, NeonMagenta, PhosphorGreen,
             AuroraCyan, NeonMagenta, AuroraCyan, PhosphorGreen, NeonMagenta, AuroraCyan)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             telemetry?.forEachIndexed { i, v ->

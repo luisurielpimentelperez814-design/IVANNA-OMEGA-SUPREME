@@ -11,7 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -150,7 +149,7 @@ fun Iso226CalibratorPanel(
         // ── Slider: listenPhon ─────────────────────────────────────────────────
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Nivel de escucha", color = Color.White, fontSize = 12.sp)
+                Text("Nivel de escucha", color = TextPrimary, fontSize = 12.sp)
                 Text(
                     "${listenPhon.toInt()} Phon",
                     color = AuroraCyan,
@@ -179,7 +178,7 @@ fun Iso226CalibratorPanel(
         // ── Slider: refPhon ────────────────────────────────────────────────────
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Nivel de referencia", color = Color.White, fontSize = 12.sp)
+                Text("Nivel de referencia", color = TextPrimary, fontSize = 12.sp)
                 Text(
                     "${refPhon.toInt()} Phon",
                     color = AuroraCyan.copy(alpha = 0.75f),
@@ -235,7 +234,7 @@ fun Iso226CalibratorPanel(
                     val barColor = if (g >= 0)
                         Brush.verticalGradient(listOf(AuroraCyan, AuroraCyan.copy(alpha = 0.4f)))
                     else
-                        Brush.verticalGradient(listOf(Color(0xFFFF6B6B), Color(0xFFFF6B6B).copy(alpha = 0.4f)))
+                        Brush.verticalGradient(listOf(CoralWarn, CoralWarn.copy(alpha = 0.4f)))
 
                     Column(
                         modifier = Modifier.weight(1f),
@@ -257,7 +256,7 @@ fun Iso226CalibratorPanel(
                         Text(
                             "%+.1f".format(g),
                             fontSize = 6.sp,
-                            color = if (g >= 0) AuroraCyan else Color(0xFFFF6B6B),
+                            color = if (g >= 0) AuroraCyan else CoralWarn,
                             fontFamily = FontFamily.Monospace
                         )
                     }
@@ -287,14 +286,14 @@ fun Iso226CalibratorPanel(
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AuroraCyan,
-                contentColor = Color.Black,
+                contentColor = ObsidianDeep,
                 disabledContainerColor = AuroraCyan.copy(alpha = 0.3f)
             )
         ) {
             if (applying) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
-                    color = Color.Black,
+                    color = ObsidianDeep,
                     strokeWidth = 2.dp
                 )
                 Spacer(Modifier.width(8.dp))

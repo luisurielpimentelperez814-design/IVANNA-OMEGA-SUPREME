@@ -13,32 +13,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.IvannaLabMonitor
+import com.ivanna.omega.ui.theme.*
 
 // Paleta realineada con IvannaTheme Aurora Obsidiana v3.0 (nombres intactos):
 // fondos gris plano → obsidiana azul; semáforo de alertas → tonos del tema
 // (PhosphorGreen/AmberSignal/CoralWarn) para coherencia con el resto de la app.
-private val LabBg = Color(0xFF010204)      // ObsidianVoid
-private val LabCard = Color(0xFF0A101C)    // ObsidianSoft
-private val LabBorder = Color(0xFF223050)  // ObsidianEdge
-private val LabCyan = Color(0xFF6FF3FF)    // AuroraCyan
-private val LabGreen = Color(0xFF23F09A)   // PhosphorGreen
-private val LabYellow = Color(0xFFF7B733)  // AmberSignal
-private val LabRed = Color(0xFFFF5C4D)     // CoralWarn
-private val LabMuted = Color(0xFF57708F)   // TextMuted (etiquetas)
-private val LabText = Color(0xFF93A8C6)    // TextSecondary (cuerpo)
 
 // Umbrales de alerta pedidos en el brief: THD>1% = rojo, SNR<60dB = amarillo.
 private fun thdColor(thd: Float) = when {
-    thd < 0f -> LabMuted
-    thd > 1f -> LabRed
-    thd > 0.3f -> LabYellow
-    else -> LabGreen
+    thd < 0f -> TextMuted
+    thd > 1f -> CoralWarn
+    thd > 0.3f -> AmberSignal
+    else -> PhosphorGreen
 }
 private fun snrColor(snr: Float) = when {
-    snr < 0f && snr != -1f -> LabGreen
-    snr == -1f -> LabMuted
-    snr < 60f -> LabYellow
-    else -> LabGreen
+    snr < 0f && snr != -1f -> PhosphorGreen
+    snr == -1f -> TextMuted
+    snr < 60f -> AmberSignal
+    else -> PhosphorGreen
 }
 
 @Composable
@@ -47,10 +39,10 @@ fun IvannaLabScreen(modifier: Modifier = Modifier) {
     val autoActive by IvannaLabMonitor.autoMeasureActive.collectAsState()
 
     Column(
-        modifier = modifier.fillMaxSize().background(LabBg).padding(16.dp)
+        modifier = modifier.fillMaxSize().background(ObsidianVoid).padding(16.dp)
     ) {
-        Text("IVANNA LAB", color = LabCyan, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-        Text("THD · IMD · LUFS · SNR · Peak · True Peak", color = LabMuted, fontSize = 11.sp)
+        Text("IVANNA LAB", color = AuroraCyan, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+        Text("THD · IMD · LUFS · SNR · Peak · True Peak", color = TextMuted, fontSize = 11.sp)
         Spacer(Modifier.height(16.dp))
 
         Row(
@@ -59,7 +51,7 @@ fun IvannaLabScreen(modifier: Modifier = Modifier) {
         ) {
             Button(
                 onClick = { IvannaLabMonitor.measureNow() },
-                colors = ButtonDefaults.buttonColors(containerColor = LabCyan, contentColor = Color.Black),
+                colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan, contentColor = ObsidianDeep),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.weight(1f)
             ) { Text("MEDIR AHORA", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
@@ -72,7 +64,7 @@ fun IvannaLabScreen(modifier: Modifier = Modifier) {
 
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Auto-medición cada 30s", color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("Auto-medición cada 30s", color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Switch(
                 checked = autoActive,
                 onCheckedChange = { on ->
@@ -85,26 +77,26 @@ fun IvannaLabScreen(modifier: Modifier = Modifier) {
 
         if (snapshot == null) {
             Text("Sin mediciones todavía — pulsa MEDIR AHORA o activa auto-medición.",
-                color = LabMuted, fontSize = 12.sp)
+                color = TextMuted, fontSize = 12.sp)
         } else {
             val s = snapshot!!
             LabMetricRow("THD", s.thd, "%", thdColor(s.thd))
-            LabMetricRow("IMD", s.imd, "%", Color.White)
-            LabMetricRow("LUFS Integrado", s.lufs, "LUFS", Color.White)
-            LabMetricRow("Rango Dinámico (LU)", s.luRange, "LU", Color.White)
+            LabMetricRow("IMD", s.imd, "%", TextPrimary)
+            LabMetricRow("LUFS Integrado", s.lufs, "LUFS", TextPrimary)
+            LabMetricRow("Rango Dinámico (LU)", s.luRange, "LU", TextPrimary)
             LabMetricRow("SNR", s.snr, "dB", snrColor(s.snr))
-            LabMetricRow("Peak", s.peak, "dBFS", Color.White)
-            LabMetricRow("True Peak", s.truepeak, "dBTP", Color.White)
+            LabMetricRow("Peak", s.peak, "dBFS", TextPrimary)
+            LabMetricRow("True Peak", s.truepeak, "dBTP", TextPrimary)
 
             Spacer(Modifier.height(16.dp))
             if (s.report.isNotBlank()) {
                 Column(
-                    Modifier.fillMaxWidth().border(1.dp, LabBorder, RoundedCornerShape(10.dp))
-                        .background(LabCard, RoundedCornerShape(10.dp)).padding(12.dp)
+                    Modifier.fillMaxWidth().border(1.dp, ObsidianEdge, RoundedCornerShape(10.dp))
+                        .background(ObsidianSoft, RoundedCornerShape(10.dp)).padding(12.dp)
                 ) {
-                    Text("REPORTE", color = LabCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("REPORTE", color = AuroraCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     Spacer(Modifier.height(6.dp))
-                    Text(s.report, color = LabText, fontSize = 11.sp, lineHeight = 15.sp)
+                    Text(s.report, color = TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
                 }
             }
         }
@@ -118,7 +110,7 @@ private fun LabMetricRow(label: String, value: Float, unit: String, color: Color
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = LabText, fontSize = 13.sp)
+        Text(label, color = TextSecondary, fontSize = 13.sp)
         Text(
             if (value == -1f) "—" else "%.2f %s".format(value, unit),
             color = color, fontSize = 14.sp, fontWeight = FontWeight.Bold

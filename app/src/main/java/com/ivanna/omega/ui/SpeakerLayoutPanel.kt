@@ -21,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,6 +30,7 @@ import com.ivanna.omega.fotoholo.SpeakerLayout
 import com.ivanna.omega.fotoholo.SpeakerLayoutPolicy
 import com.ivanna.omega.fotoholo.SpeakerMode
 import com.ivanna.omega.spatial.WfsCalibrationManager
+import com.ivanna.omega.ui.theme.*
 
 /**
  * Declaración del usuario: cuántas bocinas satélite tiene conectadas, en qué modo (estéreo o
@@ -65,12 +65,12 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
     val factor = SpeakerLayoutPolicy.widthFactor(layout)
 
     Column(
-        modifier.fillMaxWidth().background(Color(0x1A6FF3FF), RoundedCornerShape(14.dp)).padding(14.dp),
+        modifier.fillMaxWidth().background(AuroraCyan.copy(alpha = 0.1f), RoundedCornerShape(14.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
-        Text("DESTINO DEL DAC / AUXILIAR", color = Color.White, fontWeight = FontWeight.Bold)
+        Text("DESTINO DEL DAC / AUXILIAR", color = TextPrimary, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("DAC → Sony MHC-PZ1D / equipo estéreo", modifier = Modifier.weight(1f), color = Color.White)
+            Text("DAC → Sony MHC-PZ1D / equipo estéreo", modifier = Modifier.weight(1f), color = TextPrimary)
             Switch(checked = lineOut, onCheckedChange = { selected ->
                 lineOut = selected
                 SpatialAudioPrefs.save(context, SpatialAudioPrefs.load(context).copy(externalStereoLineOut = selected))
@@ -85,14 +85,14 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
             "SOUND FIELD selecciona 2CH STEREO o 2CH SURR; SUBWOOFER es un botón físico. " +
             "Si usas el mismo DAC con audífonos, apaga la declaración de línea estéreo: Android no puede distinguir esa carga analógica de un amplificador. " +
             "YouTube/Spotify requieren verificar la ruta global Magisk; la captura Android depende de los permisos de cada aplicación.",
-            color = Color(0xFFB5C2D4), fontSize = 12.sp)
-        Text(routeStatus, color = Color(0xFFB5C2D4), fontSize = 11.sp)
-        Text("BOCINAS DECLARADAS", color = Color(0xFF65E7F2), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+            color = TextSecondary, fontSize = 12.sp)
+        Text(routeStatus, color = TextSecondary, fontSize = 11.sp)
+        Text("BOCINAS DECLARADAS", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
         Text(
             (if (lineOut) "Auxiliar estéreo: no se publica una disposición WFS multicanal. El conteo solo matiza "
              else "Surround reutiliza las coordenadas WFS de referencia y las publica al motor. El conteo solo matiza ") +
             "el ancho perceptual (±15 % máx.); no crea canales físicos ni gestiona graves/LFE reales.",
-            color = Color(0xFF9AA4B2), fontSize = 11.sp
+            color = TextSecondary, fontSize = 11.sp
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModeButton("Estéreo (2.0)", mode == SpeakerMode.STEREO) { mode = SpeakerMode.STEREO; if (satellites < 2) satellites = 2 }
@@ -100,17 +100,17 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
         }
         if (mode == SpeakerMode.SURROUND) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Bocinas sin subwoofer: $satellites", color = Color.White, fontSize = 12.sp)
+                Text("Bocinas sin subwoofer: $satellites", color = TextPrimary, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = { satellites = (satellites - 1).coerceAtLeast(2) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF26323E))) { Text("−") }
+                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianRaised)) { Text("−") }
                     Button(onClick = { satellites = (satellites + 1).coerceAtMost(8) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF26323E))) { Text("+") }
+                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianRaised)) { Text("+") }
                 }
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Subwoofer activado en el equipo", color = Color.White, fontSize = 12.sp)
+            Text("Subwoofer activado en el equipo", color = TextPrimary, fontSize = 12.sp)
             Switch(checked = subwoofer, onCheckedChange = { subwoofer = it })
         }
         Text(
@@ -118,7 +118,7 @@ fun SpeakerLayoutPanel(modifier: Modifier = Modifier) {
                 factor,
                 if (factor == 1.0f) " (sin cambio: estéreo sin subwoofer)" else ""
             ),
-            color = Color(0xFF9AA4B2), fontSize = 11.sp
+            color = TextSecondary, fontSize = 11.sp
         )
     }
 }
@@ -128,7 +128,7 @@ private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) Color(0xFF1C6E78) else Color(0xFF1A2430)
+            containerColor = if (selected) AuroraCyan.copy(alpha = 0.25f) else ObsidianRaised
         )
     ) { Text(label, fontSize = 12.sp) }
 }

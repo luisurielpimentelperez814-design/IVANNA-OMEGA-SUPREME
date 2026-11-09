@@ -156,9 +156,9 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                             .clip(CircleShape)
                             .background(
                                 when {
-                                    !snapshot.dataAvailable -> Color.Gray
+                                    !snapshot.dataAvailable -> TextMuted
                                     snapshot.perceptionOnline -> PhosphorGreen
-                                    else -> Color.Red
+                                    else -> CoralWarn
                                 }
                             )
                     )
@@ -170,9 +170,9 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                             else -> "OFFLINE"
                         },
                         color = when {
-                            !snapshot.dataAvailable -> Color.Gray
+                            !snapshot.dataAvailable -> TextMuted
                             snapshot.perceptionOnline -> PhosphorGreen
-                            else -> Color.Red
+                            else -> CoralWarn
                         },
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
@@ -211,7 +211,7 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                 MetricProgressBlock(
                     label = "FATIGUE INDEX",
                     value = snapshot.fatigue,
-                    color = if (snapshot.fatigue > 0.4f) Color(0xFFFF5555) else PhosphorGreen,
+                    color = if (snapshot.fatigue > 0.4f) CoralWarn else PhosphorGreen,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
@@ -461,7 +461,7 @@ private fun MetricProgressBlock(
             Text(label, color = TextSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             Text(
                 if (dataAvailable) "%.0f%%".format(value * 100f) else "—",
-                color = if (dataAvailable) color else Color.Gray,
+                color = if (dataAvailable) color else TextMuted,
                 fontSize = 8.sp, fontWeight = FontWeight.ExtraBold
             )
         }
@@ -472,7 +472,7 @@ private fun MetricProgressBlock(
                 .fillMaxWidth()
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp)),
-            color = if (dataAvailable) color else Color.Gray,
+            color = if (dataAvailable) color else TextMuted,
             trackColor = ObsidianEdge
         )
     }

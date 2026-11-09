@@ -37,6 +37,7 @@ val NeonMagenta    = Color(0xFFFF3E86)
 val AmberSignal    = Color(0xFFF7B733)
 val PhosphorGreen  = Color(0xFF23F09A)
 val CoralWarn      = Color(0xFFFF5C4D)
+val ExciterOrange  = Color(0xFFFF8A3D)  // acento cálido del excitador armónico (no es AmberSignal)
 
 val TextPrimary    = Color(0xFFF1F8FF)
 val TextSecondary  = Color(0xFF93A8C6)

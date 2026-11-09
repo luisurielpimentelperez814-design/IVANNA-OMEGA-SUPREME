@@ -29,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -85,14 +84,14 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
     Column(
         modifier
             .fillMaxWidth()
-            .background(Color(0x1A6FF3FF), RoundedCornerShape(14.dp))
+            .background(AuroraCyan.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text("FOTOHOLOGRAFÍA · NANOTOMIX", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
         Text(
             "Escena 3D paramétrica de las 64 bandas Bark + modulación acotada del ancho estéreo. No es un holograma óptico.",
-            color = Color(0xFF9AA4B2), fontSize = 11.sp
+            color = TextSecondary, fontSize = 11.sp
         )
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -113,7 +112,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
                 Text(if (subEnvironmentOpen) "Cerrar subentorno" else "Abrir subentorno 3D", color = AuroraCyan)
             }
         }
-        Text("Vista paramétrica seleccionada: $selectedScene", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        Text("Vista paramétrica seleccionada: $selectedScene", color = TextSecondary, fontSize = 11.sp)
         TextButton(onClick = { context.startActivity(Intent(context, RoomArCaptureActivity::class.java)) }) {
             Text("ABRIR AR & ESCÁNER RP-88 · CÁMARA 6-DoF", color = AuroraCyan)
         }
@@ -132,7 +131,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             }) { Text(if (geminiBusy) "GEMINI…" else "SUGERIR CON GEMINI", color = AuroraCyan) }
             TextButton(onClick = { FotoHoloRouteB.refreshEvidence() }) { Text("VERIFICAR RUTA B", color = AuroraCyan) }
         }
-        if (geminiStatus.isNotEmpty()) Text(geminiStatus, color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        if (geminiStatus.isNotEmpty()) Text(geminiStatus, color = TextSecondary, fontSize = 11.sp)
 
         Canvas(Modifier.fillMaxWidth().height(if (subEnvironmentOpen) 340.dp else 170.dp).background(ObsidianDeep, RoundedCornerShape(10.dp))) {
             val cx = size.width / 2f
@@ -169,17 +168,17 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
         }
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Modular el ancho estéreo", color = Color.White, fontSize = 12.sp)
+            Text("Modular el ancho estéreo", color = TextPrimary, fontSize = 12.sp)
             Switch(checked = enabled, onCheckedChange = { enabled = it; FotoHoloEngine.setEnabled(context, it) })
         }
-        Text("Intensidad: ${(intensity * 100).toInt()} %  (±${(FotoHoloMath.MAX_OFFSET * intensity * 100).toInt()} % de ancho como máximo)", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        Text("Intensidad: ${(intensity * 100).toInt()} %  (±${(FotoHoloMath.MAX_OFFSET * intensity * 100).toInt()} % de ancho como máximo)", color = TextSecondary, fontSize = 11.sp)
         Slider(
             value = intensity,
             onValueChange = { intensity = it; FotoHoloEngine.setIntensity(context, it) },
             valueRange = 0f..1f
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Bypass A/B (oír sin modular)", color = Color.White, fontSize = 12.sp)
+            Text("Bypass A/B (oír sin modular)", color = TextPrimary, fontSize = 12.sp)
             Switch(checked = bypass, onCheckedChange = { bypass = it; FotoHoloEngine.setBypass(it) })
         }
 
@@ -196,16 +195,16 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             tel.readbackConfirmed -> "Modulando · agudos abren, graves cierran · read-back del motor actualizado."
             else -> "Modulando · esperando confirmación del motor (read-back)."
         }
-        Text(status, color = if (tel.nativeWriteError != null) Color(0xFFFF6B6B) else AuroraCyan, fontSize = 11.sp)
-        Text("Ruta activa: ${tel.activeRoute} · ${tel.safmusDecision}", color = Color(0xFF9AA4B2), fontSize = 11.sp)
-        Text("Ruta B (efecto global): ${tel.routeB}", color = if (tel.routeB.contains("aplicado por bloque DSP")) AuroraCyan else Color(0xFFFFC36B), fontSize = 11.sp)
+        Text(status, color = if (tel.nativeWriteError != null) CoralWarn else AuroraCyan, fontSize = 11.sp)
+        Text("Ruta activa: ${tel.activeRoute} · ${tel.safmusDecision}", color = TextSecondary, fontSize = 11.sp)
+        Text("Ruta B (efecto global): ${tel.routeB}", color = if (tel.routeB.contains("aplicado por bloque DSP")) AuroraCyan else AmberSignal, fontSize = 11.sp)
         Text(
             "Ancho tuyo %.2f → comando %.2f (Δ %+.3f) · motor %s · graves %d %% · agudos %d %%".format(
                 tel.baseWidth, tel.appliedWidth, tel.offset,
                 if (tel.dspWidth.isFinite()) "%.2f".format(tel.dspWidth) else "—",
                 (tel.features.lowShare * 100).toInt(), (tel.features.highShare * 100).toInt()
             ),
-            color = Color(0xFF9AA4B2), fontSize = 11.sp
+            color = TextSecondary, fontSize = 11.sp
         )
     }
 }

@@ -12,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -24,15 +23,10 @@ import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import coil.request.videoFrameMillis
 import java.io.File
+import com.ivanna.omega.ui.theme.*
 
 // Paleta realineada con IvannaTheme Aurora Obsidiana v3.0 (nombres intactos):
 // verde-cian plano → profundidad obsidiana azul del tema central.
-val BackgroundDark = Color(0xFF010204)   // ObsidianVoid
-val CyanAccent = Color(0xFF6FF3FF)       // AuroraCyan
-val CardBackground = Color(0xFF0A101C)   // ObsidianSoft
-val CardBorder = Color(0xFF223050)       // ObsidianEdge
-val ButtonBackground = Color(0xFF0D1524) // ObsidianGlass
-val TextGray = Color(0xFF93A8C6)         // TextSecondary
 
 /** Abre un vídeo con el reproductor del sistema. El motor DSP ya procesa el audio
  *  del sistema (captura activa), así que el vídeo suena a través de IVANNA. */
@@ -100,18 +94,18 @@ fun AuditoryExperienceScreen(
     }
 
     Column(
-        modifier = modifier.fillMaxSize().background(BackgroundDark).padding(16.dp),
+        modifier = modifier.fillMaxSize().background(ObsidianVoid).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(24.dp))
-        Text("EXPERIENCIA AUDITIVA", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+        Text("EXPERIENCIA AUDITIVA", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
         Spacer(modifier = Modifier.height(8.dp))
-        Text("Hard Rock 70s • DSP + HRTF + Neuromorphic", color = TextGray, fontSize = 11.sp)
+        Text("Hard Rock 70s • DSP + HRTF + Neuromorphic", color = TextSecondary, fontSize = 11.sp)
         Spacer(modifier = Modifier.height(32.dp))
 
         if (videoFiles.isEmpty()) {
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text("No se encontraron videos en:\n$videoFolderPath", color = TextGray, textAlign = TextAlign.Center)
+                Text("No se encontraron videos en:\n$videoFolderPath", color = TextSecondary, textAlign = TextAlign.Center)
             }
         } else {
             LazyVerticalGrid(
@@ -140,21 +134,21 @@ fun AuditoryExperienceScreen(
         }
 
         statusMsg?.let {
-            Text(it, color = CyanAccent, fontSize = 11.sp, textAlign = TextAlign.Center)
+            Text(it, color = AuroraCyan, fontSize = 11.sp, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(8.dp))
         }
         Button(
             onClick = { picker.launch(arrayOf("video/*")) },
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = ButtonBackground, contentColor = Color.White),
-            modifier = Modifier.fillMaxWidth().height(48.dp).border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+            colors = ButtonDefaults.buttonColors(containerColor = ObsidianGlass, contentColor = TextPrimary),
+            modifier = Modifier.fillMaxWidth().height(48.dp).border(1.dp, ObsidianEdge, RoundedCornerShape(12.dp))
         ) { Text("ELEGIR VIDEO", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
         Spacer(modifier = Modifier.height(10.dp))
         Button(
             onClick = onEnterMotorClick,
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = ButtonBackground, contentColor = Color.White),
-            modifier = Modifier.fillMaxWidth().height(60.dp).border(1.dp, CyanAccent, RoundedCornerShape(12.dp))
+            colors = ButtonDefaults.buttonColors(containerColor = ObsidianGlass, contentColor = TextPrimary),
+            modifier = Modifier.fillMaxWidth().height(60.dp).border(1.dp, AuroraCyan, RoundedCornerShape(12.dp))
         ) {
             Text("ENTRAR AL MOTOR", fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         }
@@ -177,8 +171,8 @@ fun VideoThumbnailCard(file: File, isSelected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .aspectRatio(1.4f)
-            .background(CardBackground, RoundedCornerShape(8.dp))
-            .border(1.dp, if (isSelected) CyanAccent else CardBorder, RoundedCornerShape(8.dp))
+            .background(ObsidianSoft, RoundedCornerShape(8.dp))
+            .border(1.dp, if (isSelected) AuroraCyan else ObsidianEdge, RoundedCornerShape(8.dp))
             .clickable { onClick() }
             .padding(2.dp),
         contentAlignment = Alignment.Center
@@ -190,11 +184,11 @@ fun VideoThumbnailCard(file: File, isSelected: Boolean, onClick: () -> Unit) {
             modifier = Modifier.fillMaxSize()
         )
         // Filtro oscuro encima de la miniatura para que el nombre se pueda leer
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)))
+        Box(modifier = Modifier.fillMaxSize().background(ObsidianVoid.copy(alpha = 0.6f)))
 
         Text(
             text = file.nameWithoutExtension,
-            color = Color.White,
+            color = TextPrimary,
             fontSize = 10.sp,
             textAlign = TextAlign.Center,
             lineHeight = 12.sp,

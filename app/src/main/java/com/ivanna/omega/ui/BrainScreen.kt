@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,36 +56,8 @@ fun BrainScreen(
     }
 
     Column(modifier = modifier.background(ObsidianDeep)) {
-        Text(
-            "CEREBRO",
-            color = NeonMagenta,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 3.sp,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        )
-        ScrollableTabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = NeonMagenta,
-            edgePadding = 16.dp
-        ) {
-            tabs.forEachIndexed { i, title ->
-                Tab(
-                    selected = selectedTab == i,
-                    onClick = { selectedTab = i },
-                    text = {
-                        Text(
-                            title,
-                            fontSize = 11.sp,
-                            fontWeight = if (selectedTab == i) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selectedTab == i) NeonMagenta else TextMuted
-                        )
-                    }
-                )
-            }
-        }
-        HorizontalDivider(color = ObsidianEdge, thickness = 0.5.dp)
+        IvannaScreenHeader("CEREBRO", NeonMagenta)
+        IvannaTabRow(tabs, selectedTab, { selectedTab = it }, NeonMagenta)
         Column(
             modifier = Modifier
                 .fillMaxSize()

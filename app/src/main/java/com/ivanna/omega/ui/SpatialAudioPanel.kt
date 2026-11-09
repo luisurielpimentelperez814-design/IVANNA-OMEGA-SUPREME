@@ -241,7 +241,7 @@ fun SpatialAudioPanel(
                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
-                setBackgroundColor(android.graphics.Color.rgb(6, 10, 18))
+                setBackgroundColor(android.graphics.Color.rgb(0x04, 0x05, 0x0A)) // ObsidianDeep
                 webViewClient = object : WebViewClient() {
                     override fun onRenderProcessGone(
                         view: WebView,
@@ -513,9 +513,9 @@ fun SpatialAudioPanel(
 
 @Composable
 private fun SpatialCard(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(color = Color(0xFF111318), shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) {
+    Surface(color = ObsidianRaised, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, color = Color(0xFFE2E8F0), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Text(subtitle, color = TextMuted, fontSize = 9.sp)
             content()
         }

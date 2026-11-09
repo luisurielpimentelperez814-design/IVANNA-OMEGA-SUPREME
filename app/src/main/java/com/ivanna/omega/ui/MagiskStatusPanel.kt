@@ -222,7 +222,7 @@ fun MagiskStatusPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("SOCKET", color = Color.White.copy(alpha = 0.5f),
+                Text("SOCKET", color = TextPrimary.copy(alpha = 0.5f),
                     fontFamily = FontFamily.Monospace, fontSize = 11.sp,
                     modifier = Modifier.width(82.dp))
                 Box(Modifier.size(8.dp).clip(CircleShape).background(TextMuted))
@@ -374,7 +374,7 @@ fun MagiskStatusPanel(
 private fun StatusRow(label: String, active: Boolean, activeText: String, inactiveText: String) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(label, color = Color.White.copy(alpha = 0.5f), fontFamily = FontFamily.Monospace,
+        Text(label, color = TextPrimary.copy(alpha = 0.5f), fontFamily = FontFamily.Monospace,
             fontSize = 11.sp, modifier = Modifier.width(82.dp))
         Box(Modifier.size(8.dp).clip(CircleShape)
             .background(if (active) PhosphorGreen else CoralWarn))
@@ -434,7 +434,7 @@ private fun InstallHelp() {
                     "2. Reinicia el dispositivo\n" +
                     "3. Verifica persist.ivanna.magisk_active=1\n" +
                     "   desde Termux: getprop persist.ivanna.magisk_active",
-            color = Color.White.copy(alpha = 0.8f), fontFamily = FontFamily.Monospace, fontSize = 10.sp
+            color = TextPrimary.copy(alpha = 0.8f), fontFamily = FontFamily.Monospace, fontSize = 10.sp
         )
         Text(
             "⚠ Sin el módulo el socket muestra N/A — esto es normal.\n" +

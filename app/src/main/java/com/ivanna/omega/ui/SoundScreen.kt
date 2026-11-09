@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,40 +81,8 @@ fun SoundScreen(modifier: Modifier = Modifier) {
 
     Column(modifier = modifier.background(ObsidianDeep)) {
 
-        // ── Header ──────────────────────────────────────────────────────────
-        Text(
-            "SONIDO",
-            color = AuroraCyan,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 3.sp,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-        )
-
-        // ── Tabs ────────────────────────────────────────────────────────────
-        ScrollableTabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = AuroraCyan,
-            edgePadding = 16.dp
-        ) {
-            tabs.forEachIndexed { i, title ->
-                Tab(
-                    selected = selectedTab == i,
-                    onClick = { selectedTab = i },
-                    text = {
-                        Text(
-                            title,
-                            fontSize = 11.sp,
-                            fontWeight = if (selectedTab == i) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selectedTab == i) AuroraCyan else TextMuted
-                        )
-                    }
-                )
-            }
-        }
-
-        HorizontalDivider(color = ObsidianEdge, thickness = 0.5.dp)
+        IvannaScreenHeader("SONIDO", AuroraCyan)
+        IvannaTabRow(tabs, selectedTab, { selectedTab = it }, AuroraCyan)
 
         // ── Contenido por tab ────────────────────────────────────────────────
         Column(

@@ -9,7 +9,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -63,9 +62,9 @@ fun BridgePlayerCard(
     }
     val stateColor = when (playerState) {
         IvannaBridgePlayer.State.PLAYING -> AuroraCyan
-        IvannaBridgePlayer.State.PAUSED  -> Color(0xFFF7B733)
-        IvannaBridgePlayer.State.ERROR   -> Color(0xFFFF5C4D)
-        else -> Color(0xFF93A8C6)
+        IvannaBridgePlayer.State.PAUSED  -> AmberSignal
+        IvannaBridgePlayer.State.ERROR   -> CoralWarn
+        else -> TextSecondary
     }
 
     Surface(
@@ -89,7 +88,7 @@ fun BridgePlayerCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0x33000000))
+                        .background(ObsidianVoid.copy(alpha = 0.2f))
                         .padding(horizontal = 8.dp, vertical = 2.dp)
                 ) {
                     Text(
@@ -104,14 +103,14 @@ fun BridgePlayerCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "Motor completo (NHO + Spatial + Kernel Evo) sonando con archivo real",
-                color = Color(0xFF57708F),
+                color = TextMuted,
                 fontSize = 10.sp
             )
 
             Spacer(Modifier.height(8.dp))
             Text(
                 text = currentUri?.lastPathSegment ?: "Ningún archivo seleccionado",
-                color = Color(0xFFF1F8FF),
+                color = TextPrimary,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp
             )
@@ -120,7 +119,7 @@ fun BridgePlayerCard(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "Pista ${(queueIndex + 1).coerceAtLeast(1)} de ${queue.size}",
-                    color = Color(0xFF57708F),
+                    color = TextMuted,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp
                 )
@@ -186,7 +185,7 @@ fun BridgePlayerCard(
                 ) {
                     Text(
                         text = formatMmSs(displayMs),
-                        color = Color(0xFF93A8C6),
+                        color = TextSecondary,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp
                     )
@@ -204,7 +203,7 @@ fun BridgePlayerCard(
                         colors = SliderDefaults.colors(
                             thumbColor = AuroraCyan,
                             activeTrackColor = AuroraCyan,
-                            inactiveTrackColor = Color(0x4493A8C6)
+                            inactiveTrackColor = TextSecondary.copy(alpha = 0.27f)
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -212,7 +211,7 @@ fun BridgePlayerCard(
                     )
                     Text(
                         text = formatMmSs(durationMs),
-                        color = Color(0xFF93A8C6),
+                        color = TextSecondary,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp
                     )

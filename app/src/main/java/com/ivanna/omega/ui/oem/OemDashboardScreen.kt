@@ -105,7 +105,7 @@ fun OemDashboardScreen(
                 when (state.thermalLevel) {
                     OemState.ThermalLevel.NORMAL   -> PhosphorGreen
                     OemState.ThermalLevel.LIGHT    -> AmberSignal
-                    OemState.ThermalLevel.MODERATE -> Color(0xFFFF8C00)
+                    OemState.ThermalLevel.MODERATE -> AmberSignal
                     OemState.ThermalLevel.SEVERE   -> CoralWarn
                 },
                 indicator = "${(state.thermalLoad * 100).toInt()}% carga",
@@ -155,7 +155,7 @@ private fun OemHeader(state: OemState, expertMode: Boolean, onToggleExpert: () -
 
     Box(
         Modifier.fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color(0xFF08101E), ObsidianVoid)))
+            .background(Brush.verticalGradient(listOf(ObsidianSoft, ObsidianVoid)))
             .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Column {

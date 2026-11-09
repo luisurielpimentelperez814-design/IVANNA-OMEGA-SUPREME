@@ -18,11 +18,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivanna.omega.ui.theme.*
 
 /** User-declared Genezy MHCPZ1 layout; declared impedances are not measured curves. */
 data class GenezySpeakerProfile(
@@ -92,36 +92,36 @@ fun GenezyMhcpz1ProfileCard(modifier: Modifier = Modifier) {
     val profile = GenezySpeakerProfile.GENEZY_MHCPZ1
 
     Column(
-        modifier.fillMaxWidth().background(Color(0x1A6FF3FF), RoundedCornerShape(14.dp)).padding(14.dp),
+        modifier.fillMaxWidth().background(AuroraCyan.copy(alpha = 0.1f), RoundedCornerShape(14.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
-        Text("PERFIL FÍSICO · GENEZY MHCPZ1", color = Color(0xFF65E7F2), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-        Text("Salida prevista: estéreo AUX hacia el Genezy. Su amplificador distribuye la señal a 2 frontales + 2 satélites + subwoofer; IVANNA no finge cinco canales PCM discretos.", color = Color(0xFF9AA4B2), fontSize = 11.sp)
+        Text("PERFIL FÍSICO · GENEZY MHCPZ1", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+        Text("Salida prevista: estéreo AUX hacia el Genezy. Su amplificador distribuye la señal a 2 frontales + 2 satélites + subwoofer; IVANNA no finge cinco canales PCM discretos.", color = TextSecondary, fontSize = 11.sp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Usar perfil como referencia espacial", color = Color.White, fontSize = 12.sp)
+            Text("Usar perfil como referencia espacial", color = TextPrimary, fontSize = 12.sp)
             Switch(checked = enabled, onCheckedChange = {
                 enabled = it
                 prefs.edit().putBoolean("enabled", it).apply()
             })
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Extensión lateral de satélites L/R", color = Color.White, fontSize = 12.sp)
+            Text("Extensión lateral de satélites L/R", color = TextPrimary, fontSize = 12.sp)
             Switch(checked = lateralExtension, onCheckedChange = {
                 lateralExtension = it
                 prefs.edit().putBoolean("lateral_extension", it).apply()
             })
         }
-        Text("Frontales: 2 bocinas + 2 tweeters por lado · 8 Ω declarados", color = Color(0xFFB7C1CE), fontSize = 11.sp)
-        Text("Satélites laterales L/R: 24 Ω declarados por lado", color = Color(0xFFB7C1CE), fontSize = 11.sp)
-        Text("Graves: 1×15″ + 2×4″ · 6 Ω declarados para el conjunto", color = Color(0xFFB7C1CE), fontSize = 11.sp)
+        Text("Frontales: 2 bocinas + 2 tweeters por lado · 8 Ω declarados", color = TextSecondary, fontSize = 11.sp)
+        Text("Satélites laterales L/R: 24 Ω declarados por lado", color = TextSecondary, fontSize = 11.sp)
+        Text("Graves: 1×15″ + 2×4″ · 6 Ω declarados para el conjunto", color = TextSecondary, fontSize = 11.sp)
         Text(
             if (enabled) "Perfil solicitado: NanoTomix aplica un ajuste de anchura de hasta +8 % solo cuando está activo, sin bypass y con una ruta DSP disponible. La separación física de los cinco grupos la realiza el Genezy."
             else "Perfil apagado: se conserva el ancho base. El crossover y la distribución interna del Genezy permanecen bajo control de su amplificador.",
-            color = if (enabled) Color(0xFF65E7F2) else Color(0xFF9AA4B2), fontSize = 11.sp
+            color = if (enabled) AuroraCyan else TextSecondary, fontSize = 11.sp
         )
         if (enabled) Text(
             "Topología física declarada: FL · FR · SL · SR · SUB. El estado de aplicación se verifica en la telemetría FotoHolo; el interruptor por sí solo no demuestra efecto audible.",
-            color = Color(0xFFB7C1CE), fontSize = 10.sp
+            color = TextSecondary, fontSize = 10.sp
         )
     }
 }

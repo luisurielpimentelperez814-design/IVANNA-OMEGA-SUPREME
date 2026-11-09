@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.MusicIntelligenceWorker
 import java.util.Locale
+import com.ivanna.omega.ui.theme.*
 
 @Composable
 fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
@@ -27,12 +28,12 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
     var autoApply by remember { mutableStateOf(MusicIntelligenceWorker.autoApply) }
     var showAdvancedLab by remember { mutableStateOf(true) }
 
-    val cyan = Color(0xFF00E5FF)
-    val emerald = Color(0xFF00E676)
-    val gold = Color(0xFFFFD54F)
-    val coral = Color(0xFFFF6E40)
-    val bgCard = Color(0xFF0B101B)
-    val bgSub = Color(0xFF131B2E)
+    val cyan = AuroraCyan
+    val emerald = PhosphorGreen
+    val gold = AmberSignal
+    val coral = CoralWarn
+    val bgCard = ObsidianRaised
+    val bgSub = ObsidianInset
 
     Card(
         modifier = modifier
@@ -57,7 +58,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                     )
                     Text(
                         "Inferencia Bayesiana 12 Estilos · Lebart/Habets · Woodworth ITD · Chebyshev T2/T3",
-                        color = Color(0xFF90A4AE),
+                        color = TextSecondary,
                         fontSize = 10.sp
                     )
                 }
@@ -90,7 +91,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = activeLabel,
-                            color = if (snap.gate > 0.05f) emerald else Color.LightGray,
+                            color = if (snap.gate > 0.05f) emerald else TextMuted,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
@@ -112,7 +113,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                             snap.lateRatio * 100f,
                             snap.qScore
                         ),
-                        color = Color(0xFFB0BEC5),
+                        color = TextPrimary,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -130,7 +131,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
             // ── Selector de los 12 Arquetipos del Atlas (Auto Bayesiano vs Fijación Manual) ──
             Text(
                 "ARQUETIPO DE ESCENA (AUTO BAYESIANO O SELECCIÓN DIRECTA)",
-                color = Color(0xFF90A4AE),
+                color = TextSecondary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -166,7 +167,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
             // ── Partición Espectral de 5 Bandas del Atlas + Características 12D ──
             Text(
                 "PARTICIÓN ESPECTRAL COMPLEMENTARIA DEL ATLAS (5 BANDAS + VECTOR 12D)",
-                color = Color(0xFF90A4AE),
+                color = TextSecondary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -175,8 +176,8 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                BandPill("SUB", snap.subBandRatio, Color(0xFF7C4DFF), Modifier.weight(1f))
-                BandPill("CUERPO", snap.bodyBandRatio, Color(0xFF00B0FF), Modifier.weight(1f))
+                BandPill("SUB", snap.subBandRatio, NeonMagenta, Modifier.weight(1f))
+                BandPill("CUERPO", snap.bodyBandRatio, AuroraCyan, Modifier.weight(1f))
                 BandPill("DEF", snap.defBandRatio, emerald, Modifier.weight(1f))
                 BandPill("PRES f6", snap.presenceRatio, gold, Modifier.weight(1f))
                 BandPill("AIRE f7", snap.airRatio, coral, Modifier.weight(1f))
@@ -194,7 +195,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                         snap.crestDb, snap.stereoWidth, snap.flatness1m,
                         snap.onsetRegularity, snap.lraProxy12, snap.sideMid
                     ),
-                    color = Color(0xFF90A4AE),
+                    color = TextSecondary,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -227,7 +228,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                     .clip(RoundedCornerShape(8.dp))
                     .border(
                         1.dp,
-                        if (snap.guardActive) coral else Color(0xFF1E293B),
+                        if (snap.guardActive) coral else ObsidianEdge,
                         RoundedCornerShape(8.dp)
                     )
                     .padding(8.dp),
@@ -317,7 +318,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                         else
                             String.format(Locale.US, "Balance Armónico Manual: %.0f%% Par T2 / %.0f%% Impar T3",
                                 snap.userWarmth * 100f, (1f - snap.userWarmth) * 100f),
-                        color = Color.White,
+                        color = TextPrimary,
                         fontSize = 11.sp
                     )
                     if (snap.userWarmth >= 0f) {
@@ -339,7 +340,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                 // Slider de Techo de Supresión de Cola Difusa (maxInvGain M4)
                 Text(
                     String.format(Locale.US, "Techo de Limpieza de Sala (maxInvGain): %.0f%%", snap.maxInvGain * 100f),
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = 11.sp
                 )
                 Slider(
@@ -354,7 +355,7 @@ fun MusicIntelligencePanel(modifier: Modifier = Modifier) {
                 // Slider de Techo de Proyección Espacial 3D (maxProjWet M4)
                 Text(
                     String.format(Locale.US, "Techo de Proyección de Sala 3D (maxProjWet): %.0f%%", snap.maxProjWet * 100f),
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = 11.sp
                 )
                 Slider(
@@ -381,10 +382,10 @@ private fun StyleChip(
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) accent.copy(alpha = 0.18f) else Color(0xFF131B2E))
+            .background(if (selected) accent.copy(alpha = 0.18f) else bgSub)
             .border(
                 width = if (selected) 1.5.dp else 1.dp,
-                color = if (selected) accent else Color(0xFF263238),
+                color = if (selected) accent else ObsidianRaised,
                 shape = RoundedCornerShape(8.dp)
             )
             .clickable(onClick = onClick)
@@ -393,13 +394,13 @@ private fun StyleChip(
     ) {
         Text(
             text = label,
-            color = if (selected) accent else Color.White,
+            color = if (selected) accent else TextPrimary,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             fontSize = 11.sp
         )
         Text(
             text = String.format(Locale.US, "%.0f%%", prob * 100f),
-            color = if (selected) accent else Color(0xFF90A4AE),
+            color = if (selected) accent else TextSecondary,
             fontSize = 9.sp,
             fontFamily = FontFamily.Monospace
         )
@@ -416,11 +417,11 @@ private fun BandPill(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF131B2E))
+            .background(bgSub)
             .padding(vertical = 5.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(name, color = Color(0xFF90A4AE), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+        Text(name, color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(2.dp))
         Text(
             String.format(Locale.US, "%.0f%%", (ratio * 100f).coerceIn(0f, 100f)),
@@ -435,7 +436,7 @@ private fun BandPill(
 @Composable
 private fun MetricCell(label: String, value: String, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = Color(0xFF90A4AE), fontSize = 9.sp)
+        Text(label, color = TextSecondary, fontSize = 9.sp)
         Text(
             value,
             color = color,
@@ -461,8 +462,8 @@ private fun EngineToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-            Text(title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, color = Color(0xFF90A4AE), fontSize = 9.sp)
+            Text(title, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = TextSecondary, fontSize = 9.sp)
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
