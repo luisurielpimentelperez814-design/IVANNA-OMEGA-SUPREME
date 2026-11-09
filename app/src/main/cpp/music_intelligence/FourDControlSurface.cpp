@@ -307,6 +307,14 @@ void publishAnticipatedScene() noexcept {
 // ── Estado ───────────────────────────────────────────────────────────────────
 ivanna::ime::FourDStatus status() noexcept {
     ivanna::ime::FourDStatus st = active() ? chain()->status() : ivanna::ime::FourDStatus{};
+    // FIX (4D toggle, 2026-11-09): reportar el flag guardado g_enabled aunque la
+    // cadena aún no esté activa (DSP sin inicializar). Antes, con active()==false
+    // el status devolvía FourDStatus{} con enabled=false, así que la UI leía
+    // enabled=false cada 400 ms y el switch se apagaba solo aunque el usuario
+    // lo hubiera encendido (setEnabled sí guarda g_enabled; reapplyControls lo
+    // aplica a la cadena cuando el DSP se inicializa). La telemetría (anticipación,
+    // confianza, etc.) sigue en 0 sin audio, que es lo correcto.
+    st.enabled = g_enabled.load(std::memory_order_relaxed);
     st.outputLatencyMs = appliedOutputLatencyMsRef().load(std::memory_order_relaxed);
     return st;
 }

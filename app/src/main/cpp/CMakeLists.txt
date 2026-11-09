@@ -514,7 +514,14 @@ target_link_options(omega_effect PRIVATE
 
 target_link_libraries(omega_effect PRIVATE
     ${log-lib}
-    ${android-lib}
+    # FIX (Ruta B, 2026-11-09): NO enlazar ${android-lib} (libandroid.so).
+    # El HAL corre en el namespace de linker vendor donde libandroid.so NO
+    # existe; dlopen de libomega_effect.so fallaba con "libandroid.so not
+    # found" y el efecto omega nunca se registraba (EffectFactoryHAL:
+    # "Error querying effect descriptor ... No such file or directory").
+    # omega_effect.cpp solo usa <android/log.h> (__android_log_print),
+    # que vive en liblog.so (ya enlazado); no usa ninguna otra API de
+    # libandroid.so.
     m
     dl
 )
