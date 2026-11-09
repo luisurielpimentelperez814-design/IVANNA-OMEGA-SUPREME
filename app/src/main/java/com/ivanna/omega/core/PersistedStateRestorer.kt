@@ -158,16 +158,18 @@ object PersistedStateRestorer {
                     paramStore.getHyperTargetKind(), paramStore.getHyperBassTrimDb()
                 )
             }
-            // Volterra Genezi (v2.5.369): kernel H1/H2 del Sony Genezi
-            // MHC-PZ1D, ACTIVO por defecto (directiva: todo lo nuevo suena
-            // desde la primera canción). Primero se aplica el on/off
-            // persistido (default ON) y luego se carga el .ivk1 del asset
-            // (idempotente, fail-closed: si el asset falta o la puerta lo
-            // rechaza, el motor queda en bypass bit-exacto, sin silenciar).
-            // El usuario puede apagarlo en CONTROL y persiste.
+            // Volterra PZ1D (v2.5.369): kernel H1/H2 REFINADO de la cadena
+            // Moto G85 5G + DAC USB-C + Sony Genezi MHC-PZ1D, ACTIVO por
+            // defecto (directiva: todo lo nuevo suena desde la primera
+            // canción). Primero se aplica el on/off persistido (default
+            // ON) y luego se carga el .ivk1 del asset (idempotente,
+            // fail-closed: si el asset falta o la puerta lo rechaza, el
+            // motor queda en bypass bit-exacto, sin silenciar). El
+            // usuario puede apagarlo en CONTROL y persiste. El kernel
+            // Genezi anterior queda como alternativo (no es el default).
             runCatching {
                 IvannaNativeLib.nativeSetVolterraEnabled(paramStore.isVolterraEnabled())
-                IvannaNativeLib.loadGeneziVolterraKernel(ctx)
+                IvannaNativeLib.loadMotoG85Pz1dVolterraKernel(ctx)
             }
             // Sensor acústico real (v2.5.369): arranca la captura del
             // micrófono por defecto para que Φ corra en MEDIDO (el operador

@@ -730,13 +730,14 @@ fun IvannaControlPanel(
                     // en el siguiente arranque; el restore lo reaplica.
                     runCatching { com.ivanna.omega.core.ParameterStore(context).setVolterraEnabled(en) }
                     if (IvannaNativeLib.isLoaded) runCatching {
-                        // Al encender se carga el kernel IVK1 del asset
-                        // (idempotente; si ya estaba cargado no recarga).
+                        // Al encender se carga el kernel IVK1 DEFAULT
+                        // (PZ1D refinado; idempotente; si ya estaba cargado
+                        // no recarga).
                         // Cargar != habilitar: el kernel solo suena tras
                         // nativeSetVolterraEnabled(true). Si la carga falla,
                         // el motor queda en bypass (fail-closed) y el toggle
                         // sigue controlando el interruptor.
-                        if (en) IvannaNativeLib.loadGeneziVolterraKernel(context)
+                        if (en) IvannaNativeLib.loadMotoG85Pz1dVolterraKernel(context)
                         IvannaNativeLib.nativeSetVolterraEnabled(en)
                     }
                 }

@@ -2270,22 +2270,27 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         LOGW("HRTF grid table NOT loaded: hybrid spatial renderer will use pan fallback");
                     }
                 }
-                // Kernel Volterra H1/H2 Genezi MHC-PZ1D (v2.5.369). Mismo
-                // patrón que el dataset HRTF: se busca el .ivk1 en rutas
-                // conocidas (el efecto no puede leer assets de la app; la
-                // app copia el asset a files/ivanna_omega/kernels/ al
-                // encender Volterra, y el módulo Magisk puede ponerlo en
-                // /data/adb/ivanna_omega/). Camino NO-RT (init del efecto).
+                // Kernel Volterra H1/H2 (v2.5.369). Mismo patrón que el
+                // dataset HRTF: se busca el .ivk1 en rutas conocidas (el
+                // efecto no puede leer assets de la app; la app copia el
+                // asset a files/ivanna_omega/kernels/ al arrancar, y el
+                // módulo Magisk puede ponerlo en /data/adb/ivanna_omega/).
+                // DEFAULT: el PZ1D refinado (G85 + DAC + Genezi); el
+                // Genezi anterior queda como respaldo si el PZ1D no está
+                // o la puerta lo rechaza. Camino NO-RT (init del efecto).
                 // Cargar != habilitar: el kernel queda en bypass hasta que
                 // volterraTargetEnabled (flag OMEGA_FLAG_VOLTERRA_ON) lo
                 // encienda vía setEnabled() en el callback de proceso.
                 if (ctx->volterraEngine && !ctx->volterraEngine->hasEffectiveKernel()) {
-                    static const char* kGeneziIvk1Candidates[] = {
+                    static const char* kPz1dIvk1Candidates[] = {
+                        "/data/adb/ivanna_omega/kernels/moto_g85_pz1d.ivk1",
+                        "/data/data/com.ivanna.omega/files/ivanna_omega/kernels/moto_g85_pz1d.ivk1",
+                        "/data/user/0/com.ivanna.omega/files/ivanna_omega/kernels/moto_g85_pz1d.ivk1",
                         "/data/adb/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1",
                         "/data/data/com.ivanna.omega/files/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1",
                         "/data/user/0/com.ivanna.omega/files/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1"
                     };
-                    for (const char* cand : kGeneziIvk1Candidates) {
+                    for (const char* cand : kPz1dIvk1Candidates) {
                         FILE* f = std::fopen(cand, "rb");
                         if (!f) continue;
                         std::fseek(f, 0, SEEK_END);
@@ -2302,12 +2307,11 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         const ivanna::dsp::VolterraLoadStatus st =
                             ctx->volterraEngine->loadKernelPackage(pkg.data(), pkg.size(), prod);
                         if (st == ivanna::dsp::VolterraLoadStatus::Ok) {
-                            LOGI("Genezi Volterra kernel loaded from %s (Ruta B READY, inactivo hasta VOLTERRA_ON)", cand);
-                        } else {
-                            LOGW("Genezi Volterra kernel RECHAZADO desde %s: %s (%d)",
-                                 cand, ivanna::dsp::volterraLoadStatusName(st), static_cast<int>(st));
+                            LOGI("Volterra kernel loaded from %s (Ruta B READY, inactivo hasta VOLTERRA_ON)", cand);
+                            break;  // solo el primer archivo que CARGA bien
                         }
-                        break;  // solo el primer archivo legible
+                        LOGW("Volterra kernel RECHAZADO desde %s: %s (%d); probando siguiente candidato",
+                             cand, ivanna::dsp::volterraLoadStatusName(st), static_cast<int>(st));
                     }
                 }
             }

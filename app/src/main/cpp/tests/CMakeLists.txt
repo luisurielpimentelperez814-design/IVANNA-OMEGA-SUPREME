@@ -97,6 +97,14 @@ ivanna_add_test(test_volterra_kernel_package)
 ivanna_add_test(test_volterra_genezy_mhc_pz1d)
 target_compile_definitions(test_volterra_genezy_mhc_pz1d PRIVATE
   IVANNA_GENEZY_IVK1_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/kernels/genezy_mhc_pz1d.ivk1")
+# Kernel Volterra H1/H2 REFINADO de la cadena Moto G85 5G + DAC USB-C +
+# Sony Genezi MHC-PZ1D (IVK1 GENEZY01, K=64, h1 normalizada por L1,
+# h2 solo diagonal, device MOTO_G85_PZ1D). El .ivk1 lo genera
+# tools/volterra_h2/build_moto_g85_pz1d_ivk1.py; es el kernel DEFAULT
+# de Volterra en v2.5.369 (el Genezi anterior queda como alternativo).
+ivanna_add_test(test_volterra_moto_g85_pz1d)
+target_compile_definitions(test_volterra_moto_g85_pz1d PRIVATE
+  IVANNA_PZ1D_IVK1_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/kernels/moto_g85_pz1d.ivk1")
 ivanna_add_test(test_hires_config)
 # Continuidad de ganancia del techo por etapa (tronidos al subir volumen).
 ivanna_add_test(test_stage_ceiling_continuity)

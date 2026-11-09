@@ -3,10 +3,12 @@
 **Versión:** v2.5.369 (commiteado; release pendiente de CI).
 **Estado:** kernel generado, puerta de producción aceptada (Python y C++),
 motor verificado en host, cableado de carga implementado (Ruta A y Ruta B).
-**Activo por defecto (v2.5.369).** El kernel se carga al arrancar la app
-(PersistedStateRestorer) y Volterra queda encendido salvo que el usuario
-lo apague en CONTROL (persistido en ParameterStore). Fail-closed ante
-cualquier error.
+**ALTERNATIVO desde la llegada del PZ1D refinado.** Este kernel era el
+default de Volterra en v2.5.369, pero el kernel refinado de la cadena
+completa (G85 + DAC + Genezi, `docs/MOTO_G85_PZ1D_KERNEL.md`) es ahora
+el **DEFAULT**; este Genezi queda como alternativo (el asset no se
+borra; Ruta B lo prueba si el PZ1D no está o la puerta lo rechaza).
+Volterra sigue ACTIVO por defecto, con el PZ1D.
 
 ---
 

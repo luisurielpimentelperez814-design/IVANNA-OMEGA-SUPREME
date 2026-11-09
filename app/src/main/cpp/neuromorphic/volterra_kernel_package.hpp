@@ -161,6 +161,11 @@ struct VolterraLoadPolicy {
     uint32_t expected_kernel_length  = 64;   // el motor lo sobrescribe con su K real
     // Dispositivo caracterizado que el paquete debe declarar (<=16 caracteres).
     char     expected_device_id[ivk1::kDeviceIdSize + 1] = "MOTO_G85_GENEZY";
+    // Segundo dispositivo autorizado EXPLÍCITO (misma familia de medición):
+    // la cadena refinada Moto G85 5G + DAC USB-C + Sony Genezi MHC-PZ1D
+    // (v2.5.369). No es un comodín: solo estos dos dispositivos pasan la
+    // puerta. Un alt vacío ("") no autoriza nada (ver validación).
+    char     expected_device_id_alt[ivk1::kDeviceIdSize + 1] = "MOTO_G85_PZ1D";
 
     // Mismos límites que kernel_loader.py (suelo común) + cota de H2.
     float    max_abs_coeff           = 8.0f;        // |h1[k]|, |h2[i]|
@@ -228,8 +233,15 @@ inline VolterraLoadStatus volterraValidatePackage(
 
     if (fs != pol.expected_sample_rate_hz) return S::SampleRateMismatch;
     if (K != pol.expected_kernel_length) return S::KernelLengthMismatch;
-    if (!detail::fieldEquals(data + ivk1::kOffDeviceId, ivk1::kDeviceIdSize, pol.expected_device_id))
-        return S::DeviceMismatch;
+    // Dispositivo: debe ser el principal o el alternativo EXPLÍCITO
+    // (MOTO_G85_GENEZY o MOTO_G85_PZ1D). Un alt vacío no autoriza nada.
+    const bool devOk =
+        detail::fieldEquals(data + ivk1::kOffDeviceId, ivk1::kDeviceIdSize,
+                            pol.expected_device_id) ||
+        (pol.expected_device_id_alt[0] != '\0' &&
+         detail::fieldEquals(data + ivk1::kOffDeviceId, ivk1::kDeviceIdSize,
+                             pol.expected_device_id_alt));
+    if (!devOk) return S::DeviceMismatch;
     if (K > pol.max_kernel_length) return S::H2TooLarge;
 
     const uint8_t* h1p = data + ivk1::kHeaderSize;

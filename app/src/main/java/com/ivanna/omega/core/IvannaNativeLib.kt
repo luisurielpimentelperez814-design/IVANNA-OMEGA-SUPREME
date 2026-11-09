@@ -24,6 +24,10 @@ object IvannaNativeLib {
 
     // v2.5.369 (Genezi MHC-PZ1D): asset del paquete IVK1 del kernel Volterra.
     private const val GENEZY_VOLTERRA_ASSET = "kernels/genezy_mhc_pz1d.ivk1"
+    // v2.5.369 (PZ1D, cadena refinada G85 + DAC + Genezi): asset del
+    // paquete IVK1 DEFAULT de Volterra. El Genezi anterior queda como
+    // alternativo (no se borra el asset).
+    private const val PZ1D_VOLTERRA_ASSET = "kernels/moto_g85_pz1d.ivk1"
     private const val TAG = "IvannaNativeLib"
 
     inline fun <T> guardedNative(fallback: T, block: () -> T): T {
@@ -357,8 +361,10 @@ object IvannaNativeLib {
     /**
      * Carga el kernel Volterra H1/H2 del Sony Genezi MHC-PZ1D (ESS Farina,
      * h1 normalizado por L1) en el motor de Ruta A, desde el asset
-     * `kernels/genezy_mhc_pz1d.ivk1`. Idempotente: si el motor ya tiene un
-     * kernel efectivo, no recarga (devuelve 0). También copia el .ivk1 a
+     * `kernels/genezy_mhc_pz1d.ivk1`. ALTERNATIVO en v2.5.369: el kernel
+     * DEFAULT es el PZ1D refinado (`loadMotoG85Pz1dVolterraKernel`).
+     * Idempotente: si el motor ya tiene un kernel efectivo, no recarga
+     * (devuelve 0). También copia el .ivk1 a
      * `files/ivanna_omega/kernels/` para que Ruta B (omega_effect, proceso
      * audioserver) pueda leerlo por ruta de archivo — mismo patrón que el
      * dataset HRTF (`files/ivanna_omega/hrtf/kemar.ihr1`).
@@ -387,6 +393,41 @@ object IvannaNativeLib {
             nativeLoadVolterraKernelPackage(bytes)
         } catch (t: Throwable) {
             Log.e(TAG, "loadGeneziVolterraKernel: error", t)
+            -1
+        }
+    }
+
+    /**
+     * Carga el kernel Volterra H1/H2 REFINADO de la cadena Moto G85 5G +
+     * DAC USB-C + Sony Genezi MHC-PZ1D (h1 normalizado por L1, h2 solo
+     * diagonal) en el motor de Ruta A, desde el asset
+     * `kernels/moto_g85_pz1d.ivk1`. Es el kernel DEFAULT de Volterra en
+     * v2.5.369 (el Genezi anterior queda como alternativo). Idempotente:
+     * si el motor ya tiene un kernel efectivo, no recarga (devuelve 0).
+     * También copia el .ivk1 a `files/ivanna_omega/kernels/` para Ruta B
+     * (omega_effect busca primero el PZ1D y luego el Genezi).
+     *
+     * Cargar NO habilita Volterra por sí solo: el kernel suena si
+     * Volterra está encendido (ON por defecto en v2.5.369). Fail-closed
+     * como `loadGeneziVolterraKernel`. Hilo de CONTROL, nunca el de audio.
+     */
+    fun loadMotoG85Pz1dVolterraKernel(context: Context): Int {
+        if (!isLoaded) return -1
+        return try {
+            if (nativeHasVolterraKernel()) return 0
+            val bytes = context.assets.open(PZ1D_VOLTERRA_ASSET).use { it.readBytes() }
+            // Copia para Ruta B (el efecto no puede leer assets de la app).
+            runCatching {
+                val out = java.io.File(
+                    context.filesDir,
+                    "ivanna_omega/kernels/moto_g85_pz1d.ivk1"
+                )
+                out.parentFile?.mkdirs()
+                out.writeBytes(bytes)
+            }.onFailure { Log.w(TAG, "loadMotoG85Pz1dVolterraKernel: no se pudo copiar a files/ (Ruta B sin kernel)", it) }
+            nativeLoadVolterraKernelPackage(bytes)
+        } catch (t: Throwable) {
+            Log.e(TAG, "loadMotoG85Pz1dVolterraKernel: error", t)
             -1
         }
     }

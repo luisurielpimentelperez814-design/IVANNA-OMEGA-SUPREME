@@ -173,11 +173,12 @@ inline AuxRouteParams auxPreset(AuxPresetKind kind) noexcept {
 
 // ── AuxVolterraGate: puerta de carga del kernel medido ────────────────────
 // Envuelve volterraValidatePackage con la política de PRODUCCIÓN fijada:
-// K=64 (el del motor), fs 48 kHz, dispositivo MOTO_G85_GENEZY, dataset
-// GENEZY01. Sintético solo con allowSynthetic=true (pruebas). El dataset
-// público DATASET0 se rechaza siempre (es de otro sistema). Sin kernel
-// medido, el motor Volterra queda en identidad: esta puerta no crea
-// kernels, solo acepta o rechaza paquetes.
+// K=64 (el del motor), fs 48 kHz, dispositivos MOTO_G85_GENEZY (kernel
+// Genezi del PDF) y MOTO_G85_PZ1D (cadena refinada G85 + DAC + Genezi,
+// v2.5.369), dataset GENEZY01. Sintético solo con allowSynthetic=true
+// (pruebas). El dataset público DATASET0 se rechaza siempre (es de otro
+// sistema). Sin kernel medido, el motor Volterra queda en identidad:
+// esta puerta no crea kernels, solo acepta o rechaza paquetes.
 class AuxVolterraGate {
 public:
     // Hilo de CONTROL, nunca el de audio. Devuelve el motivo del rechazo.
@@ -189,6 +190,8 @@ public:
         pol.expected_kernel_length = kAuxVolterraKernelLength;
         std::memcpy(pol.expected_device_id, "MOTO_G85_GENEZY",
                     sizeof("MOTO_G85_GENEZY"));
+        std::memcpy(pol.expected_device_id_alt, "MOTO_G85_PZ1D",
+                    sizeof("MOTO_G85_PZ1D"));
         pol.allow_synthetic = allowSynthetic;
         return ivanna::dsp::volterraValidatePackage(package, size, pol,
                                                     nullptr);

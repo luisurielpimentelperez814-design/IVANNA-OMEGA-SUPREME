@@ -31,6 +31,78 @@
 namespace ivanna {
 namespace dsp {
 
+// ── Producto punto H1 sobre la línea de retardo circular (v2.5.369) ────────
+// y = sum_{k=0}^{K-1} h1[k] * x[n-k], con x[n-k] = delay[(write_idx-k+K)%K].
+// La línea es circular: el historial se parte en dos segmentos contiguos
+// (sin módulo por tap):
+//   Segmento A: k = 0..write_idx      -> delay[write_idx .. 0] (descendente)
+//   Segmento B: k = write_idx+1..K-1  -> delay[K-1 .. write_idx+1] (desc.)
+// En ARM se vectoriza con NEON (bloques de 4, reducción horizontal); en
+// host x86 cae al escalar sin módulos. Misma matemática en ambos paths
+// (la prueba de paridad optimizado-vs-escalar lo verifica).
+#if defined(__arm64__) || defined(__aarch64__) || defined(__ARM_NEON)
+namespace {
+inline float32x4_t reverse4Neon(float32x4_t v) noexcept {
+    // v = {a,b,c,d} -> {d,c,b,a}: vrev64 invierte cada mitad de 64 bits
+    // ({b,a,d,c}); vext rota 2 carriles ({d,c,b,a}).
+    const float32x4_t r = vrev64q_f32(v);
+    return vextq_f32(r, r, 2);
+}
+}  // namespace
+
+inline float dotH1Neon(const float* h1, const float* delay, uint32_t K,
+                       uint32_t write_idx) noexcept {
+    const uint32_t w = write_idx;
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    // Segmento A: k = 0..w. Bloque de 4 taps en k0: h1[k0..k0+3] directo;
+    // delay[(w-k0) .. (w-k0-3)] descendente -> carga ascendente y revierte.
+    uint32_t k = 0;
+    for (; k + 3 <= w; k += 4) {
+        const uint32_t base = w - k;  // delay[base] = x[n-k]
+        float32x4_t v_x = vld1q_f32(&delay[base - 3]);
+        v_x = reverse4Neon(v_x);
+        const float32x4_t v_h = vld1q_f32(&h1[k]);
+        acc = vmlaq_f32(acc, v_h, v_x);
+    }
+    float y = vaddvq_f32(acc);
+    for (; k <= w; ++k) y += h1[k] * delay[w - k];
+    // Segmento B: k = w+1..K-1. delay[(w-k+K) .. (w-k-3+K)] descendente.
+    uint32_t k2 = w + 1;
+    float32x4_t acc2 = vdupq_n_f32(0.0f);
+    for (; k2 + 3 < K; k2 += 4) {
+        const uint32_t base = w - k2 + K;  // delay[base] = x[n-k2]
+        float32x4_t v_x = vld1q_f32(&delay[base - 3]);
+        v_x = reverse4Neon(v_x);
+        const float32x4_t v_h = vld1q_f32(&h1[k2]);
+        acc2 = vmlaq_f32(acc2, v_h, v_x);
+    }
+    y += vaddvq_f32(acc2);
+    for (; k2 < K; ++k2) y += h1[k2] * delay[w - k2 + K];
+    return y;
+}
+#endif  // NEON
+
+inline float dotH1Scalar(const float* h1, const float* delay, uint32_t K,
+                         uint32_t write_idx) noexcept {
+    // Dos segmentos contiguos, sin módulo por tap (v2.5.369).
+    float y = 0.0f;
+    const uint32_t w = write_idx;
+    uint32_t d = w;
+    for (uint32_t k = 0; k <= w; ++k) y += h1[k] * delay[d--];
+    d = K - 1;
+    for (uint32_t k = w + 1; k < K; ++k) y += h1[k] * delay[d--];
+    return y;
+}
+
+inline float dotProductH1(const float* h1, const float* delay, uint32_t K,
+                          uint32_t write_idx) noexcept {
+#if defined(__arm64__) || defined(__aarch64__) || defined(__ARM_NEON)
+    return dotH1Neon(h1, delay, K, write_idx);
+#else
+    return dotH1Scalar(h1, delay, K, write_idx);
+#endif
+}
+
 VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channels)
     : m_kernel_length(kernel_length), m_channels(channels) {
 
@@ -71,7 +143,9 @@ VolterraH2Symmetric::VolterraH2Symmetric(uint32_t kernel_length, uint32_t channe
 void VolterraH2Symmetric::releaseStorage() noexcept {
     if (m_delay_lines) for (uint32_t ch = 0; ch < m_channels; ++ch) free(m_delay_lines[ch]);
     free(m_delay_lines); free(m_delay_indices); free(m_h1); free(m_h2);
+    free(m_h2_sparse);
     m_delay_lines = nullptr; m_delay_indices = nullptr; m_h1 = nullptr; m_h2 = nullptr;
+    m_h2_sparse = nullptr; m_h2_sparse_count = 0;
 }
 
 VolterraH2Symmetric::~VolterraH2Symmetric() { releaseStorage(); }
@@ -136,6 +210,44 @@ VolterraLoadStatus VolterraH2Symmetric::applyKernels(
     } else if (m_h2) {
         free(m_h2);
         m_h2 = nullptr;
+    }
+    // Lista dispersa H2 (v2.5.369): solo los coeficientes no nulos del
+    // triangular superior. Se reconstruye en cada carga; el hot path
+    // itera únicamente esta lista. Coste de construcción O(K^2) en el
+    // hilo de CONTROL (nunca en audio); el hot path queda en O(N_nz).
+    free(m_h2_sparse);
+    m_h2_sparse = nullptr;
+    m_h2_sparse_count = 0;
+    if (h2_active && m_h2) {
+        uint32_t nz = 0;
+        for (size_t k = 0; k < h1_size; ++k) {
+            for (size_t l = k; l < h1_size; ++l) {
+                const size_t idx = k * h1_size + l - (k * (k + 1)) / 2;
+                if (m_h2[idx] != 0.0f) ++nz;
+            }
+        }
+        if (nz > 0) {
+            m_h2_sparse = static_cast<H2SparseEntry*>(
+                memalign(64, static_cast<size_t>(nz) * sizeof(H2SparseEntry)));
+            if (!m_h2_sparse) {
+                m_kernels_ready.store(true, std::memory_order_seq_cst);
+                return S::AllocFailed;
+            }
+            uint32_t w = 0;
+            for (size_t k = 0; k < h1_size; ++k) {
+                for (size_t l = k; l < h1_size; ++l) {
+                    const size_t idx = k * h1_size + l - (k * (k + 1)) / 2;
+                    const float v = m_h2[idx];
+                    if (v != 0.0f) {
+                        m_h2_sparse[w].k = static_cast<uint16_t>(k);
+                        m_h2_sparse[w].l = static_cast<uint16_t>(l);
+                        m_h2_sparse[w].v = v;
+                        ++w;
+                    }
+                }
+            }
+            m_h2_sparse_count = w;
+        }
     }
     m_h1_identity = h1_identity;
     m_h2_active = h2_active;
@@ -271,7 +383,6 @@ void VolterraH2Symmetric::processInterleaved(
     // CAPTURA LOCAL SEGURA: Blindaje contra Race Conditions que provocan el desbordamiento de búfer (SIGSEGV)
     const uint32_t K = m_kernel_length;
     if (K == 0) return;
-    const size_t h2_max_size = (K * (K + 1)) / 2;
 
     // 1. ESCUDO DE HARDWARE: Forzar modo Flush-to-Zero (FTZ) en la arquitectura ARM de Android
     // Evita que la CPU degrade su rendimiento procesando números infinitesimales (Elimina el desvanecimiento)
@@ -312,85 +423,32 @@ void VolterraH2Symmetric::processInterleaved(
             delay[write_idx] = x;
             d_idx = (write_idx + 1) % K;
 
-            // --- PROCESAMIENTO DEL NÚCLEO LINEAL H1 ---
-            // write_idx apunta a x[n] (k = 0); (write_idx + K - k) % K apunta a x[n - k].
+            // --- PROCESAMIENTO DEL NÚCLEO LINEAL H1 (v2.5.369) ---
+            // write_idx apunta a x[n] (k = 0). dotProductH1 usa los dos
+            // segmentos contiguos de la línea circular (sin módulo por
+            // tap); NEON en ARM, escalar en host. Misma matemática.
             float y_linear = x;
             if (!m_h1_identity) {
-                y_linear = 0.0f;
-                for (uint32_t k = 0; k < K; ++k) {
-                    const uint32_t delay_k = (write_idx + K - k) % K;
-                    y_linear += m_h1[k] * delay[delay_k];
-                }
+                y_linear = dotProductH1(m_h1, delay, K, write_idx);
             }
 
-            // --- PROCESAMIENTO DEL NÚCLEO CUADRÁTICO H2 (ARM NEON VECTORIZADO) ---
+            // --- PROCESAMIENTO DEL NÚCLEO CUADRÁTICO H2 DISPERSO (v2.5.369) ---
+            // Solo itera los coeficientes H2 no nulos (lista construida en
+            // applyKernels). Para el PZ1D son 16 MACs por muestra, no 2080.
+            // El salto por umbral (|x_k| < 1e-6, ~-120 dBFS) se conserva:
+            // omite términos despreciables, como hacía el bucle denso.
             float y_quad = 0.0f;
-
-            for (uint32_t k = 0; m_h2_active && k < K; ++k) {
-                uint32_t delay_k = (write_idx + K - k) % K;
-                float x_k = delay[delay_k];
-                
-                // Umbral psicoacústico inteligente (~-120 dBFS). Si la muestra es silencio, saltamos la fila completa
-                if (std::abs(x_k) < 1e-6f) continue; 
-
-                uint32_t l = k;
-
-#if defined(__arm64__) || defined(__aarch64__) || defined(__ARM_NEON)
-                // Ejecución SIMD de alto rendimiento: Procesamos bloques paralelos de 4 flotantes
-                for (; l + 3 < K; l += 4) {
-                    uint32_t h2_idx0 = k * K + l - (k * (k + 1)) / 2;
-                    
-                    // Doble validación de memoria estricta para mitigar caídas de punteros corruptos
-                    if (h2_idx0 + 3 >= h2_max_size) break;
-
-                    // Cargar coeficientes H2 simétricos desde memoria alineada
-                    float32x4_t v_h2 = vld1q_f32(&m_h2[h2_idx0]);
-
-                    // Resolver punteros del buffer circular para los próximos 4 elementos de retraso
-                    uint32_t delay_l0 = (write_idx + K - l) % K;
-                    uint32_t delay_l1 = (write_idx + K - (l + 1)) % K;
-                    uint32_t delay_l2 = (write_idx + K - (l + 2)) % K;
-                    uint32_t delay_l3 = (write_idx + K - (l + 3)) % K;
-
-                    alignas(16) float samples_l[4] = {
-                        delay[delay_l0],
-                        delay[delay_l1],
-                        delay[delay_l2],
-                        delay[delay_l3]
-                    };
-                    float32x4_t v_xl = vld1q_f32(samples_l);
-
-                    // Operación Fused Multiply: v_prod = v_h2 * x_k * v_xl
-                    float32x4_t v_xk = vmovq_n_f32(x_k);
-                    float32x4_t v_prod = vmulq_f32(v_h2, v_xk);
-                    v_prod = vmulq_f32(v_prod, v_xl);
-
-                    // Ajustar el factor escalar multiplicador (1.0f si k == l, de lo contrario 2.0f por simetría)
-                    alignas(16) float factors[4] = { (k == l) ? 1.0f : 2.0f, 2.0f, 2.0f, 2.0f };
-                    float32x4_t v_fac = vld1q_f32(factors);
-                    v_prod = vmulq_f32(v_prod, v_fac);
-
-                    // Acumulador escalar rápido desde los carriles NEON
-                    y_quad += vgetq_lane_f32(v_prod, 0);
-                    y_quad += vgetq_lane_f32(v_prod, 1);
-                    y_quad += vgetq_lane_f32(v_prod, 2);
-                    y_quad += vgetq_lane_f32(v_prod, 3);
-                }
-#endif
-
-                // Bucle de limpieza matemático para procesar muestras remanentes fuera del bloque de 4
-                for (; l < K; ++l) {
-                    uint32_t delay_l = (write_idx + K - l) % K;
-                    float x_l = delay[delay_l];
+            if (m_h2_active && m_h2_sparse) {
+                for (uint32_t s = 0; s < m_h2_sparse_count; ++s) {
+                    const uint32_t k = m_h2_sparse[s].k;
+                    const uint32_t l = m_h2_sparse[s].l;
+                    const float v = m_h2_sparse[s].v;
+                    const float x_k = delay[(write_idx + K - k) % K];
+                    if (std::abs(x_k) < 1e-6f) continue;
+                    const float x_l = delay[(write_idx + K - l) % K];
                     if (x_l == 0.0f) continue;
-
-                    uint32_t h2_idx = k * K + l - (k * (k + 1)) / 2;
-                    if (h2_idx >= h2_max_size) continue;
-
-                    float h2_val = m_h2[h2_idx];
-                    float multiplier = (k == l) ? 1.0f : 2.0f;
-                    
-                    y_quad += multiplier * h2_val * x_k * x_l;
+                    const float mult = (k == l) ? 1.0f : 2.0f;
+                    y_quad += mult * v * x_k * x_l;
                 }
             }
 

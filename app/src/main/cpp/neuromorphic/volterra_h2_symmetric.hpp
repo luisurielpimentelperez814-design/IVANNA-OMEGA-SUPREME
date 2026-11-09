@@ -163,6 +163,21 @@ private:
     // Tamaño: kernel_length * (kernel_length + 1) / 2
     float* m_h2 = nullptr;
 
+    // Lista DISPERSA de coeficientes H2 no nulos (triangular superior).
+    // Se construye en applyKernels() y el hot path SOLO itera estos
+    // (v2.5.369, optimización PZ1D): un kernel con N coeficientes no nulos
+    // cuesta N MACs H2 por muestra, no K(K+1)/2. Para el PZ1D (solo
+    // diagonal, 16 no nulos) son 16 MACs en vez de 2080. Un kernel denso
+    // lista todos sus coeficientes (correcto, pero sin vectorizar el
+    // bucle interno: el caso denso no es el objetivo de este motor).
+    struct H2SparseEntry {
+        uint16_t k;   // lag 1 (fila triangular, k <= l)
+        uint16_t l;   // lag 2
+        float v;      // h2[k,l] (valor del triangular superior)
+    };
+    H2SparseEntry* m_h2_sparse = nullptr;
+    uint32_t m_h2_sparse_count = 0;
+
     // Delay lines por canal (circular)
     float** m_delay_lines = nullptr;
     uint32_t* m_delay_indices = nullptr;
