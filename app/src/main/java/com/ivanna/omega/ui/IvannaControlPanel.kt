@@ -140,10 +140,10 @@ fun IvannaControlPanel(
     initialHolosEqPresence: Float = 0f,
     initialHolosEqTiltDb: Float = 0f,
     initialHolosEqFreq: Float = 1000f,
-    // Hiper-Operador de Estado Φ (v2.5.369). amount 0 = apagado por defecto.
+    // Hiper-Operador de Estado Φ (v2.5.369). amount 0.5 = ACTIVO por defecto.
     // preset 0 teléfono / 1 sala Genezi / 2 auto. target kind 0 Harman 2018
     // (default) / 1 élite-lean / 2 campo difuso H&M / 3 altavoces en sala.
-    initialHyperAmount: Float = 0f,
+    initialHyperAmount: Float = 0.5f,
     initialHyperPreset: Int = 0,
     initialHyperXtc: Boolean = true,
     initialHyperTargetKind: Int = 0,
@@ -725,13 +725,17 @@ fun IvannaControlPanel(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlagToggle("VOLTERRA H2", volterraEnabled, AuroraCyan, Modifier.weight(1f)) { en ->
                     volterraEnabled = en
+                    // v2.5.369 (Genezi MHC-PZ1D): la elección persiste
+                    // (ParameterStore, default ON): apagarlo aquí se respeta
+                    // en el siguiente arranque; el restore lo reaplica.
+                    runCatching { com.ivanna.omega.core.ParameterStore(context).setVolterraEnabled(en) }
                     if (IvannaNativeLib.isLoaded) runCatching {
-                        // v2.5.369 (Genezi MHC-PZ1D): al encender Volterra se
-                        // carga el kernel IVK1 del asset (idempotente; si ya
-                        // estaba cargado no recarga). Cargar != habilitar:
-                        // el kernel solo suena tras nativeSetVolterraEnabled(true).
-                        // Si la carga falla, el motor queda en bypass (fail-closed)
-                        // y el toggle sigue controlando el interruptor.
+                        // Al encender se carga el kernel IVK1 del asset
+                        // (idempotente; si ya estaba cargado no recarga).
+                        // Cargar != habilitar: el kernel solo suena tras
+                        // nativeSetVolterraEnabled(true). Si la carga falla,
+                        // el motor queda en bypass (fail-closed) y el toggle
+                        // sigue controlando el interruptor.
                         if (en) IvannaNativeLib.loadGeneziVolterraKernel(context)
                         IvannaNativeLib.nativeSetVolterraEnabled(en)
                     }

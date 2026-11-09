@@ -363,8 +363,9 @@ object IvannaNativeLib {
      * audioserver) pueda leerlo por ruta de archivo — mismo patrón que el
      * dataset HRTF (`files/ivanna_omega/hrtf/kemar.ihr1`).
      *
-     * Cargar NO habilita Volterra: el kernel queda en bypass hasta que el
-     * usuario encienda VOLTERRA H2 explícitamente. Fail-closed: cualquier
+     * Cargar NO habilita Volterra por sí solo: el kernel suena si
+     * Volterra está encendido (ON por defecto en v2.5.369; el usuario
+     * puede apagarlo en CONTROL y persiste). Fail-closed: cualquier
      * error de lectura/validación deja el motor en bypass y devuelve el
      * código de error (VolterraLoadStatus; -1 = librería no cargada o
      * error de E/S). Hilo de CONTROL, nunca el de audio.

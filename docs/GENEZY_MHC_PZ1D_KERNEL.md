@@ -1,10 +1,12 @@
 # Kernel Volterra H1/H2 del Sony Genezi MHC-PZ1D
 
-**Versión:** v2.5.369 (sin publicar; trabajo local sin commitear).
+**Versión:** v2.5.369 (commiteado; release pendiente de CI).
 **Estado:** kernel generado, puerta de producción aceptada (Python y C++),
 motor verificado en host, cableado de carga implementado (Ruta A y Ruta B).
-**No activo por defecto.** Requiere carga explícita + encendido explícito de
-Volterra. Fail-closed ante cualquier error.
+**Activo por defecto (v2.5.369).** El kernel se carga al arrancar la app
+(PersistedStateRestorer) y Volterra queda encendido salvo que el usuario
+lo apague en CONTROL (persistido en ParameterStore). Fail-closed ante
+cualquier error.
 
 ---
 
@@ -188,10 +190,11 @@ no maneja R).
     `g_volterra_engine.setEnabled(on)` — el interruptor gobierna el
     envelope del motor (espejo de Ruta B). Antes solo tocaba el flag
     global; un kernel cargado nunca se activaría.
-  - `g_volterra_enabled` ahora es **false por defecto** (antes true).
-    Sin kernel cargado, Volterra era un no-op aunque el flag dijera
-    "on"; el default false hace que la UI refleje el estado real
-    (apagado hasta encendido explícito).
+  - `g_volterra_enabled` ahora es **true por defecto** (v2.5.369:
+    directiva: todo lo nuevo suena desde la primera canción). Sin kernel
+    cargado el motor es passthrough bit-exacto, así que encendido-sin-
+    kernel no silencia ni distorsiona; al cargar el kernel, el motor se
+    activa. La UI lee el estado real vía `nativeIsVolterraEnabled()`.
 - **Kotlin** (`core/IvannaNativeLib.kt`):
   - `external fun nativeLoadVolterraKernelPackage(pkg: ByteArray): Int`
     y `external fun nativeHasVolterraKernel(): Boolean`.
@@ -201,11 +204,15 @@ no maneja R).
     `files/ivanna_omega/kernels/` para que Ruta B pueda leerlo por
     ruta de archivo (mismo patrón que el dataset HRTF). Devuelve el
     status (0 = Ok, -1 = librería no cargada o error de E/S).
-- **UI** (`ui/IvannaControlPanel.kt`): el toggle **VOLTERRA H2**, al
+- **UI** (`ui/IvannaControlPanel.kt`): el toggle **VOLTERRA H2** persiste
+  la elección (`ParameterStore.setVolterraEnabled`, default ON). Al
   encenderse, primero llama a `loadGeneziVolterraKernel(context)` y
   luego a `nativeSetVolterraEnabled(true)`. Al apagarse, solo
   `nativeSetVolterraEnabled(false)`. **Cargar != habilitar**: el kernel
-  solo suena tras el encendido explícito.
+  solo suena con Volterra encendido (ON por defecto en v2.5.369). Al
+  arrancar, `PersistedStateRestorer` aplica el on/off persistido y carga
+  el kernel, así que Volterra suena desde la primera canción salvo que
+  el usuario lo haya apagado.
 
 ### Ruta B (omega_effect, system-wide)
 
@@ -232,18 +239,20 @@ no maneja R).
   (salvo el `CMakeLists.txt` de tests para añadir el test nuevo, con el
   patrón existente).
 - No se copió el `processVolterraBlock` del PDF.
-- Sin push, sin tags, sin commits (el usuario hace el commit/push).
+- Sin push, sin tags (el usuario hace el push).
 - Sin tocar el stash del contador v2.
 
-## 9. Cómo habilitarlo (usuario)
+## 9. Cómo funciona por defecto (v2.5.369)
 
-1. Abrir IVANNA → panel CONTROL.
-2. Encender el toggle **VOLTERRA H2**. La app carga el kernel Genezi
-   desde el asset (si no estaba cargado) y luego enciende Volterra.
-   El kernel se activa con el envelope (ataque 8 ms, sin chasquido).
-3. Para apagarlo: apagar el toggle. El envelope funde a bypass
-   (release 18 ms). El kernel queda cargado pero inactivo; al volver a
-   encenderlo no se recarga.
+1. Al arrancar la app, `PersistedStateRestorer` carga el kernel Genezi
+   desde el asset y enciende Volterra (default ON, salvo que el usuario
+   lo haya apagado antes: persiste en `ParameterStore`).
+2. El kernel se activa con el envelope (ataque 8 ms, sin chasquido) y
+   suena desde la primera canción.
+3. Para apagarlo: apagar el toggle **VOLTERRA H2** en CONTROL. El
+   envelope funde a bypass (release 18 ms). El kernel queda cargado
+   pero inactivo; al volver a encenderlo no se recarga. La elección
+   persiste en el siguiente arranque.
 4. Ruta B: si el efecto system-wide está activo y el `.ivk1` está en
    una de las rutas candidatas, el efecto lo carga al inicializarse;
    se activa con el mismo toggle (flag `OMEGA_FLAG_VOLTERRA_ON`).

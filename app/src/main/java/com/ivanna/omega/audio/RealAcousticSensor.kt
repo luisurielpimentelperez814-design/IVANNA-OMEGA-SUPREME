@@ -39,10 +39,14 @@ import com.ivanna.omega.core.IvannaNativeLib
  * Permiso: RECORD_AUDIO (ya está en el manifest). start() devuelve false
  * si no está concedido; la UI debe pedirlo en runtime antes de llamar.
  *
- * El bucle cerrado se activa SOLO con [setRoomCorrectionEnabled(true)],
- * acción explícita del usuario (como el bucle neuro). Apagado por
- * defecto: el sensor puede medir sin corregir, y la corrección nunca se
- * aplica sin que el usuario la encienda.
+ * El bucle cerrado de corrección de sala en vivo se activa SOLO con
+ * [setRoomCorrectionEnabled(true)], acción explícita del usuario (como
+ * el bucle neuro). Apagado por defecto: el sensor puede medir sin
+ * corregir, y la corrección nunca se aplica sin que el usuario la
+ * encienda. La MEDICIÓN en sí (captura del micrófono) arranca por
+ * defecto al abrir la app (v2.5.369: PersistedStateRestorer) para que el
+ * Hiper-Operador Φ corra en MEDIDO; sin permiso RECORD_AUDIO o si el
+ * mic falla, Φ cae a APROXIMADO sin crash ni silencio.
  *
  * onFrame: listener opcional, invocado (hilo de captura) cada vez que el
  * sensor publica un frame nuevo. Es el gancho para el Hiper-Operador Φ:
@@ -80,10 +84,12 @@ object RealAcousticSensor {
     private var stopRequested: Boolean = false
 
     /**
-     * Arranca la captura del micrófono y el sensor nativo. Acción
-     * explícita del usuario. Devuelve false si no hay permiso
-     * RECORD_AUDIO, si no se pudo abrir el micrófono o si ya estaba
-     * corriendo (en ese caso no hace nada y devuelve true).
+     * Arranca la captura del micrófono y el sensor nativo. Desde v2.5.369
+     * se llama por defecto al arrancar la app (PersistedStateRestorer)
+     * para que Φ corra en MEDIDO; también puede llamarse desde la UI.
+     * Devuelve false si no hay permiso RECORD_AUDIO, si no se pudo abrir
+     * el micrófono o si ya estaba corriendo (en ese caso no hace nada y
+     * devuelve true).
      */
     fun start(context: Context): Boolean {
         if (isRunning) return true

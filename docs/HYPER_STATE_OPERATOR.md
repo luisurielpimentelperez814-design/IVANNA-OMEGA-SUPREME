@@ -223,7 +223,7 @@ ese transporte.
 - 20/20 tests del operador + 8/8 tests de curvas élite + 10/10 tests del
   sensor (ver `test_hyper_state_operator.cpp`,
   `test_elite_target_curves.cpp`, `test_real_acoustic_sensor.cpp`).
-  Suite completa CTest: 820/820.
+  Suite completa CTest: 827/827.
 - Throughput host (medido 2026-11-08, dos corridas): SensorFrame K=64
   identidad 41–42× RT; Volterra K=64 no identidad 33–34× RT. Siempre
   >> 1× RT. La varianza
@@ -231,8 +231,10 @@ ese transporte.
 - `amount=0` es identidad bit-exacta (verificado por test). El pico de
   salida nunca supera el pico de entrada (verificado por test).
 - Pendiente de medir en dispositivo: CPU/XRuns/temperatura en el teléfono
-  y puerta auditiva (ABX ciego, niveles igualados). Nada de esto se
-  enciende por defecto hasta GREEN replicado.
+  y puerta auditiva (ABX ciego, niveles igualados). Desde v2.5.369, Φ, el
+  sensor y Volterra Genezi arrancan ACTIVOS por defecto (directiva: todo
+  lo nuevo suena desde la primera canción); ORBE y HOLOS siguen apagados
+  hasta GREEN replicado.
 
 ## 9. Archivos
 

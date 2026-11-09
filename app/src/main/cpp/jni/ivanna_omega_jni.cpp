@@ -311,7 +311,13 @@ static std::atomic<int>  g_lab_auto_frame_count{0};
 // SUPREMACÍA ACÚSTICA: Volterra H2, FastRPC Hexagon cDSP & Active Transducer Inversion
 // Soporta tanto Root (AudioFlinger / Daemon) como Non-Root (In-Process Pipeline)
 // ═══════════════════════════════════════════════════════════════════════════
-static std::atomic<bool> g_volterra_enabled{false};
+// v2.5.369: Volterra Genezi ACTIVO por defecto (directiva: todo lo nuevo
+// suena desde la primera canción). El kernel se carga al arrancar
+// (PersistedStateRestorer) y el motor queda habilitado salvo que el
+// usuario lo apague (persistido en ParameterStore). Sin kernel cargado el
+// motor es passthrough bit-exacto (processInterleaved copia la entrada),
+// así que encendido-sin-kernel no silencia ni distorsiona.
+static std::atomic<bool> g_volterra_enabled{true};
 static std::atomic<bool> g_fastrpc_enabled{false};
 static std::atomic<bool> g_ati_enabled{true};
 static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
@@ -3065,7 +3071,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsVolterraEnabled(
 //   2. loadKernelPackage(...) == Ok (política de producción por defecto:
 //      fs 48000, K 64, device MOTO_G85_GENEZY, sum|h1| <= 1.000001)
 //   3. en éxito se restaura setEnabled(g_volterra_enabled) -> el kernel
-//      solo se activa si el usuario ya tenía Volterra encendido.
+//      suena si Volterra está encendido (ON por defecto en v2.5.369; el
+//      usuario puede apagarlo y persiste en ParameterStore).
 // Ante CUALQUIER error el motor queda en bypass (setEnabled(false)) y los
 // kernels previos quedan intactos. En éxito NO habilita el motor si
 // Volterra estaba apagado. Cargar != habilitar.

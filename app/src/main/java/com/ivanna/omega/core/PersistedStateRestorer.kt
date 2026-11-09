@@ -158,6 +158,25 @@ object PersistedStateRestorer {
                     paramStore.getHyperTargetKind(), paramStore.getHyperBassTrimDb()
                 )
             }
+            // Volterra Genezi (v2.5.369): kernel H1/H2 del Sony Genezi
+            // MHC-PZ1D, ACTIVO por defecto (directiva: todo lo nuevo suena
+            // desde la primera canción). Primero se aplica el on/off
+            // persistido (default ON) y luego se carga el .ivk1 del asset
+            // (idempotente, fail-closed: si el asset falta o la puerta lo
+            // rechaza, el motor queda en bypass bit-exacto, sin silenciar).
+            // El usuario puede apagarlo en CONTROL y persiste.
+            runCatching {
+                IvannaNativeLib.nativeSetVolterraEnabled(paramStore.isVolterraEnabled())
+                IvannaNativeLib.loadGeneziVolterraKernel(ctx)
+            }
+            // Sensor acústico real (v2.5.369): arranca la captura del
+            // micrófono por defecto para que Φ corra en MEDIDO (el operador
+            // lee el SensorFrame vivo nativamente en cada bloque). start()
+            // devuelve false sin permiso RECORD_AUDIO o si el mic falla; en
+            // ese caso Φ cae a APROXIMADO (fail-closed, sin crash, sin
+            // silencio). La corrección de sala en vivo (RoomCorrectionEq)
+            // sigue apagada por defecto y requiere acción explícita.
+            runCatching { com.ivanna.omega.audio.RealAcousticSensor.start(ctx) }
             // 4D temporal: restaura estado y profundidad (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetTemporalField(paramStore.isTemporalFieldEnabled(), paramStore.getTemporalFieldAmount(), paramStore.isTemporalFieldAdaptive()) }
             // Háptica de graves (4D): vive en Kotlin (ruta A), no depende de la librería nativa.

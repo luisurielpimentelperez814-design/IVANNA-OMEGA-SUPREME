@@ -27,7 +27,7 @@
 
 | Rama / versión | Contenido | Estado |
 |:---|:---|:---|
-| `main` · **v2.5.369** (660) | **Hiper-Operador Φ + sensor acústico real + curvas élite + protección del producto** — operador muestra a muestra sin FFT, sensor por micrófono, target Harman 2018, cableado en Rutas A y B; apagado por defecto hasta GREEN | 🚧 Código completo y verificado en host (820/820 tests), sin commitear, sin release todavía (ver §13) |
+| `main` · **v2.5.369** (660) | **Hiper-Operador Φ + sensor acústico real + curvas élite + protección del producto** — operador muestra a muestra sin FFT, sensor por micrófono, target Harman 2018, cableado en Rutas A y B; Φ, sensor y Volterra Genezi ACTIVOS por defecto (ORBE/HOLOS siguen apagados hasta GREEN) | 🚧 Código completo y verificado en host (827/827 tests), commiteado, sin release todavía (ver §13) |
 | `main` · **v2.5.368** (659) | **Pilares pendientes**: Volterra diagonal K=4096, DoP v1.1, pinna-EQ Blauert, estimador EMF Thiele-Small — como componentes con tests, sin cablear a la cadena de audio | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.368) — APK (200 MB) + zip Magisk (103 MB) + flyers + `SHA256SUMS.txt` |
 | `main` · **v2.5.367** (658) | **Fusión Homogénea Phi**: un solo coordinador (bucle neuro + ruta AUX + puerta Volterra) con un solo `update()` por bloque — como clase, sin cablear a la cadena de audio | ✅ Incluida en el release v2.5.368 |
 | `main` · **v2.5.366** (657) | **Ruta AUX Genezi / auto**: presets XTC + campo AUX coherente cableados en Rutas A y B; puerta Volterra solo con kernel medido | ✅ Incluida en el release v2.5.368 |
@@ -35,7 +35,7 @@
 | `main` · **v2.5.364** (655) | **HOLOS** — Operador Único de Campo Acústico, con UI en CONTROL, ABI v10 | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.364) |
 | `main` · **v2.5.363** (654) | **ORBE** — binaural esférico de campo cercano, con UI en CONTROL, ABI v9 | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.363) |
 
-> **Lee esto primero.** Todo lo nuevo (ORBE, HOLOS, bucle neuro, AUX Genezi, Φ, sensor) nace **apagado por defecto** y no se enciende hasta que la **puerta auditiva** dé `GREEN` en el Moto G85 (el dispositivo de desarrollo/prueba; el producto es para cualquier Android 13 en adelante): escucha ciega con niveles igualados. Nada en este README promete un efecto audible que no haya pasado esa puerta. Los números que verás son mediciones de host, no de teléfono: **la CPU y la latencia en dispositivo siguen sin medirse**. Y dos precisiones que este README corrige respecto a versiones anteriores: la **Fusión Phi (367)** y los **pilares (368)** existen como componentes con tests que pasan, pero **no están cableados a la cadena de audio** — no suenan. El Hiper-Operador Φ (369) **sí** está cableado (ver §13). Lo que suena es la cadena de la §2.
+> **Lee esto primero.** Desde v2.5.369, lo nuevo de esa versión (Φ, sensor acústico real, Volterra Genezi) arranca **ACTIVO por defecto** — suena desde la primera canción (directiva del propietario: ninguna función muerta). ORBE, HOLOS y el bucle neuro siguen **apagados por defecto** y no se encienden hasta que la **puerta auditiva** dé `GREEN` en el Moto G85 (el dispositivo de desarrollo/prueba; el producto es para cualquier Android 13 en adelante): escucha ciega con niveles igualados. Nada en este README promete un efecto audible que no haya pasado esa puerta. Los números que verás son mediciones de host, no de teléfono: **la CPU y la latencia en dispositivo siguen sin medirse**. Y dos precisiones que este README corrige respecto a versiones anteriores: la **Fusión Phi (367)** y los **pilares (368)** existen como componentes con tests que pasan, pero **no están cableados a la cadena de audio** — no suenan. El Hiper-Operador Φ (369) **sí** está cableado (ver §13). Lo que suena es la cadena de la §2.
 
 **En esta página** · [Qué es](#1-qué-es-ivanna) · [Cadena](#2-la-cadena-de-señal) · [HOA + HRTF](#3-el-corazón-hoa--hrtf) · [ORBE](#4-orbe--binaural-esférico-de-campo-cercano-) · [HOLOS](#5-holos--operador-único-de-campo-acústico-) · [Bucle neuro](#6-bucle-cerrado-neural-v2515365) · [AUX Genezi](#7-ruta-aux-genezi--auto-v2515366) · [Phi](#8-fusión-homogénea-phi-v2515367) · [Pilares](#9-pilares-pendientes-v2515368) · [NPE](#10-npe--motor-neuromórfico) · [Rutas](#11-las-dos-rutas) · [PAL/ASRC](#12-pal--asrc-y-sonda--experimental) · [Hiper-Operador Φ](#13-hiper-operador-φ--v2515369) · [Controles](#14-controles-en-control) · [Mediciones](#15-mediciones-reales) · [Puerta auditiva](#16-la-puerta-auditiva-y-el-índice-visceral) · [Límites](#17-límites-honestos) · [Compilar](#18-compilar-y-probar) · [Verificación](#19-verificación-y-evidencia) · [Documentación](#20-documentación)
 
@@ -102,7 +102,7 @@ flowchart LR
 | 14 | **NPE** | Banco coclear + LIF + inhibición lateral (`NpeStereoCore`) | ✅ Cableado; se habilita desde la app (sub-interruptores por defecto en on) |
 | — | **Fusión Phi (367)** | Un solo coordinador: neuro + AUX + Volterra, un solo `update()` por bloque | ⚠️ **Clase con tests, NO cableada a la cadena** |
 | — | **Pilares (368)** | Volterra diagonal K=4096, DoP v1.1, pinna-EQ Blauert, estimador EMF | ⚠️ **Componentes con tests, NO cableados a la cadena** |
-| — | **Hiper-Operador Φ (369)** | Un solo operador muestra a muestra, sin FFT: S_neuro + Z_emf + W_acústico en una sola ganancia unificada | ✅ Cableado en Rutas A y B; off (`amount = 0`) hasta GREEN; Ruta B en APROXIMADO |
+| — | **Hiper-Operador Φ (369)** | Un solo operador muestra a muestra, sin FFT: S_neuro + Z_emf + W_acústico en una sola ganancia unificada | ✅ Cableado en Rutas A y B; ACTIVO por defecto (`amount = 0.5`, Harman 2018); Ruta B en APROXIMADO |
 | — | **Sensor acústico real (369)** | Micrófono → FFT 8192 → 24 bandas ERB → `SensorFrame` (magnitud, error, coherencia) | ✅ Cableado en Ruta A; medición real, sin calibrar |
 | — | **Curvas objetivo élite (369)** | Harman 2018 (default) + élite-lean + difuso H&M + sala; graves ±3 dB | ✅ Target de corrección en Φ y sensor |
 
@@ -313,7 +313,7 @@ Nada de esto se activa en producción: el ASRC no corrige nada en el teléfono h
 
 ## 13. Hiper-Operador Φ · v2.5.369
 
-**Código completo, verificado en host y cableado — sin commitear y sin release todavía.** El Hiper-Operador de Estado Φ es la evolución de HOLOS al dominio temporal: un solo operador muestra a muestra, **sin FFT por bloques ni STFT**, que fusiona tres vectores de estado en una sola ganancia unificada. Es la pieza que hace que lo nuevo suene en la Ruta A hoy, con el teléfono que ya tienes y sin comprar nada más. Para cualquier Android 13 en adelante (el Moto G85 es el dispositivo de desarrollo/prueba).
+**Código completo, verificado en host y cableado — commiteado, release pendiente de CI.** El Hiper-Operador de Estado Φ es la evolución de HOLOS al dominio temporal: un solo operador muestra a muestra, **sin FFT por bloques ni STFT**, que fusiona tres vectores de estado en una sola ganancia unificada. Es la pieza que hace que lo nuevo suene en la Ruta A hoy, con el teléfono que ya tienes y sin comprar nada más. Para cualquier Android 13 en adelante (el Moto G85 es el dispositivo de desarrollo/prueba). **Desde v2.5.369 arranca ACTIVO por defecto (`amount = 0.5`, target Harman 2018):** el sensor acústico arranca con la app para correr en MEDIDO (sin permiso de micrófono cae a APROXIMADO, solo corte); ORBE y HOLOS siguen apagados hasta GREEN.
 
 ```
 Y(t) = x(t) + wet · [ Φ(s_neuro, s_emf, s_field) · x(t) − x(t) ]
@@ -380,7 +380,7 @@ Exclusiones honestas: el valor Harman a 20 kHz (−17.1 dB) es un artefacto y **
 | Φ, `amount = 0` | Identidad bit-exacta (verificado por test) |
 | Φ, guarda de pico | La salida nunca supera el pico de entrada (verificado por test) |
 
-**Pendiente en dispositivo (fuera de este entorno):** medir CPU/XRuns/temperatura del operador Φ en el teléfono y la puerta auditiva ABX con niveles igualados. Nada de esto se enciende por defecto hasta GREEN replicado. El build de Android/Kotlin lo verifica la CI (aquí solo se verificaron los tests host C++).
+**Pendiente en dispositivo (fuera de este entorno):** medir CPU/XRuns/temperatura del operador Φ en el teléfono y la puerta auditiva ABX con niveles igualados. Desde v2.5.369, Φ, el sensor y Volterra Genezi se encienden por defecto; ORBE y HOLOS siguen apagados hasta GREEN replicado. El build de Android/Kotlin lo verifica la CI (aquí solo se verificaron los tests host C++).
 
 ---
 
