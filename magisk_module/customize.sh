@@ -212,6 +212,18 @@ audio_registration_view() {
 # que la base OEM ya trajera, en vez de insertarlo. El registro
 # (librería + <effect>) SÍ se conserva: sin él, la app no puede crear
 # el efecto por UUID.
+# POLÍTICA (Ruta B, v2.5.374 — extirpación Dolby + music_helper): el XML
+# fusionado TAMPOCO debe contener <apply> de Dolby (dlb_*) ni de
+# music_helper (Mot Speaker Helper). Ambos son efectos INSERT que el
+# postprocess mete en TODA sesión de música; con ellos en la cadena,
+# EffectChain::addEffect_ll rechaza la inserción de omega con
+# INVALID_OPERATION (-38). En el teléfono se quitaron en caliente
+# (13:43 y 13:50 CST, 2026-11-09) y el dumpsys confirmó que desaparecen
+# de la cadena. Aquí se eliminan en el merge para que la extirpación
+# sobreviva a una reinstalación. Los REGISTROS de librería/efecto
+# (dap, dvl, gamedap, music_helper) se conservan: solo se quita la
+# inserción automática por stream. Nota: quitar music_helper desactiva
+# el tuning/protección de altavoz de Motorola en el stream music.
 # RAZÓN (Ruta B, 2026-11-07): la factoría de efectos puede leer una
 # configuración DISTINTA de la primera encontrada (SKU blair o /system/etc).
 # Si solo se fusiona la primera, el HAL no conoce el UUID omega y la app no
@@ -278,14 +290,20 @@ merge_omega_xml() {
         # Delete only the omega apply TAG (not the whole line): an OEM line
         # could share several <apply> tags, and the other OEM applies must
         # survive. Pattern is attribute-order/spacing tolerant.
-        sed 's#<apply[^>]*effect="omega_effect"[^>]*/>##g' "$PP_INPUT" > "$PP_TMP" || {
+        # v2.5.374: además se eliminan los applies de Dolby (dlb_*) y de
+        # music_helper (Mot Speaker Helper) — ver la cabecera de esta
+        # función. Los demás applies OEM (ring_helper, voice_helper,
+        # notification_helper, aec, ns) se conservan.
+        sed -e 's#<apply[^>]*effect="omega_effect"[^>]*/>##g' \
+            -e 's#<apply[^>]*effect="dlb_[^"]*"[^>]*/>##g' \
+            -e 's#<apply[^>]*effect="music_helper"[^>]*/>##g' "$PP_INPUT" > "$PP_TMP" || {
             rm -f "$PP_INPUT" "$PP_TMP"
             ui_print "  ! No se pudo depurar postprocess; se conserva XML OEM original"
             return 1
         }
         rm -f "$PP_INPUT"
-        # Validate: root element intact AND no omega apply remains anywhere.
-        if grep -q '<audio_effects_conf' "$PP_TMP" && ! grep -q '<apply[^>]*effect="omega_effect"' "$PP_TMP"; then
+        # Validate: root element intact AND no omega/dlb/music_helper apply remains anywhere.
+        if grep -q '<audio_effects_conf' "$PP_TMP" && ! grep -q '<apply[^>]*effect="omega_effect"' "$PP_TMP" && ! grep -q '<apply[^>]*effect="dlb_' "$PP_TMP" && ! grep -q '<apply[^>]*effect="music_helper"' "$PP_TMP"; then
             mv -f "$PP_TMP" "$MG_DST"
         else
             rm -f "$PP_TMP"
@@ -328,7 +346,7 @@ ui_print "  ✓ Base detectada: $ORIG_XML"
 ui_print "  ✓ Destino del merge alineado a la misma partición: $TARGET_XML"
 merge_omega_xml "$ORIG_XML" "$TARGET_XML" || abort "ERROR: no se pudo fusionar el XML OEM principal ($ORIG_XML); se cancela para proteger el HAL y conservar sus efectos propietarios."
 ui_print "  ✓ Registro de librería y UUID de IVANNA validados por separado"
-ui_print "  ✓ Sin apply global de omega en postprocess (activación por UUID por sesión); efectos OEM preservados"
+ui_print "  ✓ Sin apply global de omega en postprocess (activación por UUID por sesión); sin applies Dolby (dlb_*) ni music_helper; efectos OEM preservados"
 
 # ── Fusión adicional: SKU y /system/etc ──────────────────────────────────────
 # La factoría de efectos puede leer una configuración DISTINTA de la primera

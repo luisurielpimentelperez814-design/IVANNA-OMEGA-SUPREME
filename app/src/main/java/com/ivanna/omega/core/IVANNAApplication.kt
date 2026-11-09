@@ -204,17 +204,37 @@ class IVANNAApplication : Application() {
         }.onFailure { Log.w(TAG, "ISO 226 restore falló (no crítico): ${it.message}") }
 
         // FIX (controles Android 13+): registrar AudioSessionReceiver dinámicamente
-        // con RECEIVER_NOT_EXPORTED ademas del Manifest, ya que en API33+
+        // con RECEIVER_EXPORTED ademas del Manifest, ya que en API33+
         // el sistema puede no enviar broadcasts implícitos a receivers solo de Manifest.
+        // v2.5.374 — CAUSA RAÍZ (receiver "roto" 2026-11-09): el flag era
+        // RECEIVER_NOT_EXPORTED. Ese flag solo deja recibir broadcasts de la
+        // PROPIA app (mismo UID); OPEN_AUDIO_EFFECT_CONTROL_SESSION lo emite
+        // system_server (UID 1000), así que el receiver dinámico NUNCA podía
+        // disparar. Con RECEIVER_EXPORTED el sistema sí lo entrega mientras
+        // el proceso está vivo. El receiver de manifest (exported=true)
+        // sigue siendo el respaldo cuando el proceso está muerto.
         runCatching {
             val filter = IntentFilter().apply {
                 addAction(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
                 addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
             }
             val flags = if (android.os.Build.VERSION.SDK_INT >= 33)
-                android.content.Context.RECEIVER_NOT_EXPORTED else 0
+                android.content.Context.RECEIVER_EXPORTED else 0
             registerReceiver(AudioSessionReceiver(), filter, flags)
+            Log.i("IVANNAApp", "AudioSessionReceiver dinámico registrado (RECEIVER_EXPORTED)")
         }.onFailure { Log.w("IVANNAApp", "AudioSessionReceiver dyn reg failed: ${it.message}") }
+
+        // v2.5.374 — Escáner de sesiones activas: el broadcast solo avisa
+        // de sesiones creadas DESPUÉS de que la app empiece a escuchar.
+        // Si la sesión ya existía (música sonando antes de abrir IVANNA) o
+        // el broadcast se pierde (force-stop, reboot), el manager nunca se
+        // entera. El escáner sondea periódicamente las configuraciones de
+        // reproducción activas y abre las sesiones que aún no están
+        // rastreadas (ver IvannaGlobalEffectManager.scanActivePlaybackSessions
+        // para la limitación de anonimización de AOSP).
+        runCatching {
+            globalEffectManager.startSessionScanner()
+        }.onFailure { Log.w("IVANNAApp", "Session scanner no arrancó: ${it.message}") }
 
         // FIX: OmegaEngine se inicializa con el Context ANTES del scope IO
         OmegaEngine.init(this)

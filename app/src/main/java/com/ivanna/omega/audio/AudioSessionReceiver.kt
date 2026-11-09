@@ -35,6 +35,18 @@ import android.util.Log
  *     de Android — evita ir a buscarla como magic string).
  *   - Accion desconocida ya no cae al else silencioso: se registra a nivel
  *     verbose para no perder rastro si un OEM emite variantes propietarias.
+ *   - v2.5.374 — CAUSA RAÍZ DEL RECEIVER "ROTO" (Moto G85, 2026-11-09):
+ *     el registro DINÁMICO en IVANNAApplication usaba RECEIVER_NOT_EXPORTED
+ *     (API 33+). Ese flag solo deja recibir broadcasts de la propia app;
+ *     OPEN_AUDIO_EFFECT_CONTROL_SESSION lo emite system_server (otro UID),
+ *     así que el receiver dinámico NUNCA podía disparar. El receiver de
+ *     manifest (exported=true) es el único que lo recibe cuando el proceso
+ *     está vivo, y tras un force-stop/reboot la app solo vuelve a ver
+ *     sesiones creadas DESPUÉS de arrancar. Por eso el manager ahora
+ *     también sondea sesiones activas (ver IvannaGlobalEffectManager
+ *     .scanActivePlaybackSessions) y el registro dinámico usa
+ *     RECEIVER_EXPORTED. Además, un broadcast sin packageName ya no
+ *     descarta la sesión (fail-open): el sessionId es la pieza crítica.
  */
 class AudioSessionReceiver : BroadcastReceiver() {
 
@@ -49,6 +61,14 @@ class AudioSessionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val sessionId = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, 0)
         val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME)
+
+        // v2.5.374 — RASTRO DE ENTREGA: antes, un broadcast recibido pero
+        // descartado solo dejaba un Log.v/Log.w que el grep de diagnóstico
+        // ("Nueva sesion|...") no mostraba. Si el receiver deja de detectar
+        // sesiones, la primera pregunta es si el broadcast llega siquiera.
+        // Se registra TODA entrega a nivel INFO para que un logcat filtrado
+        // por el tag del receiver muestre si el sistema emite el broadcast.
+        Log.i(TAG, "Broadcast recibido: action=${intent.action} sessionId=$sessionId pkg=$packageName")
 
         // Descarta broadcasts vacios: algunos OEM emiten OPEN con sessionId=0
         // al inicializar el AudioService al arrancar el sistema, y otros
@@ -72,15 +92,21 @@ class AudioSessionReceiver : BroadcastReceiver() {
 
         // El reproductor propio de IVANNA ya ejecuta DSPBridge + su cadena espacial
         // antes de escribir en AudioTrack. No adjuntar omega_effect ni los efectos
-        // globales a esa misma sesión: produciría doble procesamiento. Si Android/OEM
-        // omite el paquete, no podemos demostrar que sea de terceros: fail-closed.
-        if (packageName.isNullOrBlank()) {
-            Log.w(TAG, "Sesión ignorada: el broadcast no incluye packageName (id=$sessionId)")
-            return
-        }
+        // globales a esa misma sesión: produciría doble procesamiento.
         if (packageName == context.packageName) {
             Log.v(TAG, "Sesión propia de IVANNA excluida del manager global: id=$sessionId")
             return
+        }
+        // v2.5.374 — FAIL-OPEN ante packageName ausente: el broadcast de
+        // AOSP incluye EXTRA_PACKAGE_NAME, pero algunos firmwares/OEM lo
+        // omiten. Antes, un broadcast sin paquete se descartaba y la sesión
+        // quedaba sin efectos para siempre (el receiver parecía "roto" sin
+        // dejar rastro útil). El sessionId es la pieza crítica; el paquete
+        // solo alimenta la clasificación video/música (isVideoStreamingPackage
+        // tolera null → no-video). Se abre la sesión con paquete desconocido
+        // y se deja constancia, en vez de perderla.
+        if (packageName.isNullOrBlank()) {
+            Log.w(TAG, "Sesión $sessionId sin packageName en el broadcast — se abre como origen desconocido (no-video)")
         }
 
         when (intent.action) {

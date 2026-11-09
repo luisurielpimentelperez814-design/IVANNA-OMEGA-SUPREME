@@ -116,24 +116,99 @@ enum effect_command_e {
 #define EFFECT_CMD_CONFIGURE    EFFECT_CMD_SET_CONFIG
 
 /* ── Flags de descriptor ─────────────────────────────────────────────────────
- * Bits 0-3: tipo de efecto.  Bits 4-6: posición de inserción.
- * Fuente: AOSP hardware/libhardware/include/hardware/audio_effect.h API 29. */
-#define EFFECT_FLAG_TYPE_MASK       0x0000000fU
-#define EFFECT_FLAG_TYPE_INSERT     0x00000000U   /* INSERT = 0 en API 29+   */
+ * Layout MODERNO (Android 10–15, AOSP system/audio_effect.h, confirmado
+ * contra android.hardware.audio.effect@4.0 — audio_effect-base.h generado
+ * por hidl-gen — y contra el dumpsys del Moto G85, donde el Equalizer
+ * stock reporta flags 0x48 = INSERT + INSERT_FIRST + VOLUME_CTRL solo con
+ * este layout).
+ *
+ * v2.5.374 — CORRECCIÓN: este header mezclaba el layout LEGACY (pre-API 29)
+ * con el moderno. Usaba INSERT_MASK 0x70 / EXCLUSIVE 0x30 (modernos) pero
+ * VOLUME_CTRL 0x400 / DEVICE_IND 0x800 / AUDIO_MODE_IND 0x80000 (legacy).
+ * En el layout moderno los campos están empaquetados de 3 en 3 bits:
+ *   tipo bits 0-2, inserción bits 3-5, volumen bits 6-8, dispositivo
+ *   bits 9-11, entrada bits 12-13, salida bits 14-15, HW_ACC bits 16-17,
+ *   modo bits 18-19, fuente bits 20-21, offload bit 22, no-process bit 23.
+ * Con los valores legacy, un efecto que pidiera VOLUME_CTRL (0x400) en
+ * realidad marcaba un bit del campo DEVICE (valor 2, reservado) y un
+ * INSERT_EXCLUSIVE legacy (0x40) se leía como VOLUME_CTRL moderno.
+ * Omega reporta flags=0 (INSERT_ANY, sin volumen ni offload), así que este
+ * bug NO causaba el -38 de Ruta B — es latente — pero cualquier efecto
+ * futuro que usara estas macros quedaba mal descrito ante AudioFlinger.
+ * Los static_assert de abajo fijan el layout para que no vuelva a derivar.
+ *
+ * Valores de referencia (hidl-gen, audio_effect-base.h):
+ *   TYPE:    shift 0, size 3 → mask 0x7
+ *   INSERT:  shift 3, size 3 → mask 0x38 (ANY 0, FIRST 0x08, LAST 0x10, EXCLUSIVE 0x18)
+ *   VOLUME:  shift 6, size 3 → mask 0x1C0 (CTRL 0x40, IND 0x80, MONITOR 0xC0)
+ *   DEVICE:  shift 9, size 3 → mask 0xE00 (IND 0x200)
+ *   INPUT:   shift 12, size 2 → mask 0x3000 (DIRECT 0x1000, PROVIDER 0x2000)
+ *   OUTPUT:  shift 14, size 2 → mask 0xC000 (DIRECT 0x4000, PROVIDER 0x8000)
+ *   HW_ACC:  shift 16, size 2 → mask 0x30000 (SIMPLE 0x10000, TUNNEL 0x20000)
+ *   A_MODE:  shift 18, size 2 → mask 0xC0000 (IND 0x40000)
+ *   A_SRC:   shift 20, size 2 → mask 0x300000 (IND 0x100000)
+ *   OFFLOAD: shift 22 → 0x400000
+ *   NO_PROC: shift 23 → 0x800000 */
+#define EFFECT_FLAG_TYPE_MASK       0x00000007U
+#define EFFECT_FLAG_TYPE_INSERT     0x00000000U   /* INSERT = 0 */
 #define EFFECT_FLAG_TYPE_AUXILIARY  0x00000001U
 #define EFFECT_FLAG_TYPE_REPLACE    0x00000002U
 #define EFFECT_FLAG_TYPE_PRE_PROC   0x00000003U
 #define EFFECT_FLAG_TYPE_POST_PROC  0x00000004U
 
-#define EFFECT_FLAG_INSERT_MASK     0x00000070U
+#define EFFECT_FLAG_INSERT_MASK     0x00000038U
 #define EFFECT_FLAG_INSERT_ANY      0x00000000U
-#define EFFECT_FLAG_INSERT_FIRST    0x00000010U
-#define EFFECT_FLAG_INSERT_LAST     0x00000020U
-#define EFFECT_FLAG_INSERT_EXCLUSIVE 0x00000030U
+#define EFFECT_FLAG_INSERT_FIRST    0x00000008U
+#define EFFECT_FLAG_INSERT_LAST     0x00000010U
+#define EFFECT_FLAG_INSERT_EXCLUSIVE 0x00000018U
 
-#define EFFECT_FLAG_VOLUME_CTRL     0x00000400U
-#define EFFECT_FLAG_DEVICE_IND      0x00000800U
-#define EFFECT_FLAG_AUDIO_MODE_IND  0x00080000U
+#define EFFECT_FLAG_VOLUME_MASK     0x000001C0U
+#define EFFECT_FLAG_VOLUME_NONE     0x00000000U
+#define EFFECT_FLAG_VOLUME_CTRL     0x00000040U
+#define EFFECT_FLAG_VOLUME_IND      0x00000080U
+#define EFFECT_FLAG_VOLUME_MONITOR  0x000000C0U
+
+#define EFFECT_FLAG_DEVICE_MASK     0x00000E00U
+#define EFFECT_FLAG_DEVICE_NONE     0x00000000U
+#define EFFECT_FLAG_DEVICE_IND      0x00000200U
+
+#define EFFECT_FLAG_INPUT_MASK      0x00003000U
+#define EFFECT_FLAG_INPUT_DIRECT    0x00001000U
+#define EFFECT_FLAG_INPUT_PROVIDER  0x00002000U
+#define EFFECT_FLAG_INPUT_BOTH      0x00003000U
+
+#define EFFECT_FLAG_OUTPUT_MASK     0x0000C000U
+#define EFFECT_FLAG_OUTPUT_DIRECT   0x00004000U
+#define EFFECT_FLAG_OUTPUT_PROVIDER 0x00008000U
+#define EFFECT_FLAG_OUTPUT_BOTH     0x0000C000U
+
+#define EFFECT_FLAG_HW_ACC_MASK     0x00030000U
+#define EFFECT_FLAG_HW_ACC_SIMPLE   0x00010000U
+#define EFFECT_FLAG_HW_ACC_TUNNEL   0x00020000U
+
+#define EFFECT_FLAG_AUDIO_MODE_MASK 0x000C0000U
+#define EFFECT_FLAG_AUDIO_MODE_NONE 0x00000000U
+#define EFFECT_FLAG_AUDIO_MODE_IND  0x00040000U
+
+#define EFFECT_FLAG_AUDIO_SOURCE_MASK 0x00300000U
+#define EFFECT_FLAG_AUDIO_SOURCE_NONE 0x00000000U
+#define EFFECT_FLAG_AUDIO_SOURCE_IND  0x00100000U
+
+#define EFFECT_FLAG_OFFLOAD_SUPPORTED 0x00400000U
+#define EFFECT_FLAG_NO_PROCESS      0x00800000U
+
+#ifdef __cplusplus
+/* El layout de flags es ABI: si alguien vuelve a poner los valores legacy,
+ * estos asserts revientan en compilación en vez de describir mal el efecto
+ * ante AudioFlinger. */
+static_assert(EFFECT_FLAG_TYPE_MASK == 0x7u, "TYPE_MASK moderno = 0x7");
+static_assert(EFFECT_FLAG_INSERT_MASK == 0x38u, "INSERT_MASK moderno = 0x38");
+static_assert(EFFECT_FLAG_INSERT_EXCLUSIVE == 0x18u, "INSERT_EXCLUSIVE moderno = 0x18");
+static_assert(EFFECT_FLAG_VOLUME_CTRL == 0x40u, "VOLUME_CTRL moderno = 0x40 (no 0x400 legacy)");
+static_assert(EFFECT_FLAG_DEVICE_IND == 0x200u, "DEVICE_IND moderno = 0x200 (no 0x800 legacy)");
+static_assert(EFFECT_FLAG_AUDIO_MODE_IND == 0x40000u, "AUDIO_MODE_IND moderno = 0x40000");
+static_assert(EFFECT_FLAG_OFFLOAD_SUPPORTED == 0x400000u, "OFFLOAD_SUPPORTED moderno = 0x400000");
+#endif
 
 /* ── Versiones de API ────────────────────────────────────────────────────────*/
 #define EFFECT_MAKE_API_VERSION(M, m) (((M) << 16) | ((m) & 0xFFFFu))

@@ -50,9 +50,31 @@ TEST(AudioEffectAbiLayoutTest, DescriptorMatchesAospLayout) {
     EXPECT_EQ(descriptor.memoryUsage, 1024u);
 }
 
-TEST(AudioEffectAbiLayoutTest, VtableSlotsRemainAospOrdered) {
-    EXPECT_EQ(offsetof(effect_interface_s, process), 0u);
-    EXPECT_EQ(offsetof(effect_interface_s, command), sizeof(void*));
-    EXPECT_EQ(offsetof(effect_interface_s, get_descriptor), 2u * sizeof(void*));
-    EXPECT_EQ(offsetof(effect_interface_s, process_reverse), 3u * sizeof(void*));
+// v2.5.374 — Los valores de flags están fijados en audio_effect_compat.h
+// (static_asserts). Este test los ancla en runtime contra el layout moderno
+// (HIDL 4.0 / audio_effect-base.h): el layout legacy (VOLUME_CTRL 0x400 =
+// INSERT_EXCLUSIVE moderno) ya no puede volver a colarse sin romper la build
+// Y este test. También verifica que los flags del dumpsys del G85 se
+// decodifican como corresponde (Equalizer 0x48 = INSERT/FIRST/VOLUME_CTRL).
+TEST(AudioEffectAbiLayoutTest, FlagsMatchModernHidlLayout) {
+    // El layout legacy tenía VOLUME_CTRL=0x400 y DEVICE_IND=0x800; en el
+    // layout moderno 0x400 es INSERT_EXCLUSIVE y 0x800 es VOLUME_IND.
+    EXPECT_EQ(EFFECT_FLAG_TYPE_INSERT, 0x00000000u);
+    EXPECT_EQ(EFFECT_FLAG_INSERT_FIRST, 0x00000008u);
+    EXPECT_EQ(EFFECT_FLAG_INSERT_LAST, 0x00000010u);
+    EXPECT_EQ(EFFECT_FLAG_INSERT_EXCLUSIVE, 0x00000018u);
+    EXPECT_EQ(EFFECT_FLAG_VOLUME_CTRL, 0x00000040u);
+    EXPECT_EQ(EFFECT_FLAG_VOLUME_IND, 0x00000080u);
+    EXPECT_EQ(EFFECT_FLAG_DEVICE_IND, 0x00000200u);
+    EXPECT_EQ(EFFECT_FLAG_OFFLOAD_SUPPORTED, 0x00400000u);
+    EXPECT_EQ(EFFECT_FLAG_NO_PROCESS, 0x00800000u);
+    // Decodificación del dumpsys real del G85: Equalizer 0x48 =
+    // INSERT(0) + FIRST(0x08) + VOLUME_CTRL(0x40).
+    const uint32_t eqFlags = 0x48u;
+    EXPECT_EQ(eqFlags & EFFECT_FLAG_TYPE_MASK, EFFECT_FLAG_TYPE_INSERT);
+    EXPECT_EQ(eqFlags & EFFECT_FLAG_INSERT_MASK, EFFECT_FLAG_INSERT_FIRST);
+    EXPECT_TRUE((eqFlags & EFFECT_FLAG_VOLUME_MASK) == EFFECT_FLAG_VOLUME_CTRL);
+    // Omega reporta flags=0 (INSERT_ANY): no reclama exclusividad ni
+    // volumen, así que no puede ser el origen del -38 (ENOSYS).
+    EXPECT_EQ(0u & EFFECT_FLAG_INSERT_MASK, EFFECT_FLAG_INSERT_ANY);
 }

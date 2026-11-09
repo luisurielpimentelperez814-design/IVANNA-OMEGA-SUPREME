@@ -77,7 +77,19 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // perdía muestras (micro-corte / tronido). Con 4 bloques (26.7 ms, igual que la
         // pista de salida) el jitter se absorbe y NO añade latencia en régimen: read()
         // devuelve en cuanto hay un bloque y el DSP (<1 ms) drena el atraso enseguida.
-        private const val REC_BUFFER_BLOCKS = 4
+        // v2.5.374 — 4 → 8 bloques (53.3 ms): el logcat del Moto G85 muestra
+        // "RecordThread: buffer overflow" persistente (14:05:15, 14:14:14,
+        // 14:14:23). El bucle hace NPE-analyze + DSP nativo (ORBE+HOLOS+Φ+
+        // Volterra, todos ACTIVOS) + etapa de salida + escritura a AudioTrack
+        // en el mismo hilo que lee; un bloque lento o un write() que bloquea
+        // retrasa la siguiente lectura y el RecordThread de AudioFlinger se
+        // desborda. 8 bloques absorben esos transitorios sin añadir latencia
+        // en régimen (read() bloqueante devuelve en cuanto hay un bloque).
+        // El fix estructural (desacoplar captura y escritura en hilos
+        // distintos con anillo intermedio) queda documentado para una
+        // versión posterior; 8 bloques + NPE decimado bajo carga (abajo)
+        // eliminan los desbordamientos por jitter sin tocar el DSP.
+        private const val REC_BUFFER_BLOCKS = 8
 
         /** Bytes del anillo de AudioRecord (PCM_FLOAT = 4 B/muestra). */
         internal fun recordBufferBytes(minRecBytes: Int): Int =
@@ -162,7 +174,24 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
             return START_NOT_STICKY
         }
-        runCatching { audioCallbackManager.requestAudioFocus(duck = true) }
+        // v2.5.374 — NO pedir duck en el modelo DELTA (LEGACY_HAAS_MIX=false):
+        // CAUSA RAÍZ de "al abrir IVANNA el volumen BAJA, al cerrarla SUBE"
+        // (Moto G85, 2026-11-09). AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK le pide
+        // a YouTube Music/TIDAL que baje su propio volumen (~-14 dB, el
+        // duck estándar del sistema). En la mezcla Haas LEGACY eso tenía
+        // sentido: el original bajaba y la copia procesada al 0.40 lo
+        // reemplazaba. Pero en el modelo DELTA actual el seco suena por su
+        // vía al 100% y solo se reinyecta g*(procesado-seco): si la fuente
+        // está ducked, lo capturado YA está bajo, el delta se calcula sobre
+        // lo bajo y el total queda bajo — el delta NO puede restaurar el
+        // nivel. Por eso YouTube Music (que sí hace duck) sonaba muy bajo
+        // y TIDAL (que apenas hace duck) sonaba fuerte. Sin duck, la fuente
+        // suena a volumen pleno y el delta solo añade la diferencia.
+        // Solo se pide duck en el modelo Haas legacy (si alguien lo
+        // reactiva), donde la copia procesada reemplaza al original.
+        if (CaptureEngine.LEGACY_HAAS_MIX) {
+            runCatching { audioCallbackManager.requestAudioFocus(duck = true) }
+        }
         startEngine(projection)
         return START_NOT_STICKY
     }
@@ -651,10 +680,19 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
                     .build())
-                .setBufferSizeInBytes(recordBufferBytes(minRec)) // >= 4 bloques: absorbe jitter sin overrun (ver REC_BUFFER_BLOCKS)
+                .setBufferSizeInBytes(recordBufferBytes(minRec)) // >= 8 bloques: absorbe jitter sin overrun (ver REC_BUFFER_BLOCKS)
                 .setAudioPlaybackCaptureConfig(captureConfig)
                 .build()
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                // v2.5.374 — Rastro del AudioRecord -22: cuando createRecord_l
+                // falla ("could not create record track", BAD_VALUE -22 por
+                // recurso del HAL ocupado o demasiados record tracks), el
+                // constructor deja el estado en UNINITIALIZED sin lanzar.
+                // Antes se retornaba false en silencio y el reintento con
+                // backoff (scheduleRestart) no dejaba ver la causa. Ahora
+                // queda registrado para distinguir un -22 transitorio de un
+                // fallo de configuración permanente.
+                Log.w(TAG, "AudioRecord no inicializado (posible -22 createRecord_l: HAL ocupado o demasiados record tracks) — reintento con backoff")
                 audioRecord?.release(); audioRecord = null; return false
             }
             val minTrack = AudioTrack.getMinBufferSize(
@@ -772,7 +810,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // árbitro de abajo), pero su clasificador de género/firma solo avanzaba al procesar:
                     // la UI mostraba "—" / "0 % confidence" para siempre. Se alimenta con la ENTRADA (antes
                     // del DSP) sin modificarla; el coste cuenta en el presupuesto del hilo de audio.
-                    if (nativeMasterActive && IvannaNpeEngine.isReady) {
+                    // v2.5.374 — Decimado bajo carga (mismo gobernador que los
+                    // análisis visuales): el analyze es solo clasificación /
+                    // telemetría, no audio, y corre en el hilo de captura. Con
+                    // carga normal corre en cada bloque (sin cambios); cuando
+                    // la vuelta se acerca al periodo del bloque, corre cada
+                    // 2º/4º bloque para no empujar al RecordThread al
+                    // desbordamiento ("RecordThread: buffer overflow"). La
+                    // clasificación sigue actualizándose cada ~13-27 ms, de
+                    // sobra para un clasificador de género/firma.
+                    if (nativeMasterActive && IvannaNpeEngine.isReady && loopLoad.runAnalysis(blockCounter)) {
                         budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.VIBRATORY_NPE) {
                             runCatching { IvannaNpeEngine.analyzeInterleavedStereo(buffer, frames) }
                         }
@@ -1071,6 +1118,20 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         Log.i(TAG, "Carga de la vuelta del bucle %.0f %% -> analisis visuales cada %d bloque(s)"
                             .format(loopLoad.load * 100f, lastLoopStride))
                     }
+                    // v2.5.374 — Aviso de sobrecarga: si la vuelta completa
+                    // supera el periodo del bloque (carga > 100%), el hilo
+                    // no lee a tiempo y AudioFlinger registra
+                    // "RecordThread: buffer overflow". Se avisa al cruzar el
+                    // umbral (no en cada bloque) para que la causa quede
+                    // visible en el log de la app, no solo en el de
+                    // AudioFlinger.
+                    if (loopLoad.load > 1.0f && !loopOverloaded) {
+                        loopOverloaded = true
+                        Log.w(TAG, "SOBRECARGA del bucle de captura: carga %.0f %% > 100 %% — la lectura se retrasa y el RecordThread puede desbordarse (ver REC_BUFFER_BLOCKS y NPE decimado)"
+                            .format(loopLoad.load * 100f))
+                    } else if (loopLoad.load <= 0.95f) {
+                        loopOverloaded = false
+                    }
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "Excepción fatal en loop de audio: ${t.message}", t)
@@ -1089,6 +1150,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var cushionReprimes = 0
         private val loopLoad = LoopLoadGovernor()
         private var lastLoopStride = 1
+        // v2.5.374 — true mientras la carga de la vuelta supera el 100%
+        // (para avisar de la sobrecarga una sola vez al cruzar el umbral).
+        private var loopOverloaded = false
 
         /** Escribe hasta [frames] de silencio SIN bloquear y los cuenta en la cola. Devuelve los frames aceptados. */
         private fun writeSilence(frames: Int): Int {
@@ -1303,7 +1367,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // cuerpo de una clase normal son ilegales en Kotlin.
             private const val MIX_GAIN_STEP = 1f / 48f
             // true = mezcla Haas antigua (seco 100% + procesado 40% retardado = peine). false = solo delta.
-            private const val LEGACY_HAAS_MIX = false
+            // internal (no private): PlaybackCaptureService.onStartCommand lo lee
+            // para decidir si pide audio-focus con duck (v2.5.374 — el duck solo
+            // tiene sentido en el modelo Haas legacy; en el modelo delta baja
+            // el volumen de la fuente y el delta no puede restaurarlo).
+            internal const val LEGACY_HAAS_MIX = false
             private const val DELTA_BLEND_SOLO = 0.6f        // (1-g)*seco + g*procesado en el oyente
             private const val DELTA_BLEND_WITH_MODULE = 0.45f
             // Latencia asumida hasta que AdaptiveLatencyController tenga una medicion (cola de salida tipica).

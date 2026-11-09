@@ -75,6 +75,52 @@ class RouteBRecoveryTest {
         assertTrue(msg.contains("efecto muerto"))
     }
 
+    // ── Clasificación del fallo de creación de Omega (-38) — v2.5.374 ───────
+    @Test fun classifyDetects38InvalidOperation() {
+        val t = RuntimeException("Cannot initialize effect engine for type: 00000000-0000-0000-0000-000000000000 Error: -38")
+        assertEquals(OmegaFailureKind.INVALID_OPERATION_38, classifyOmegaFailure(t))
+    }
+
+    @Test fun classifyDetects22BadValue() {
+        val t = RuntimeException("Cannot initialize effect engine for type: 00000000-0000-0000-0000-000000000000 Error: -22")
+        assertEquals(OmegaFailureKind.BAD_VALUE_22, classifyOmegaFailure(t))
+    }
+
+    @Test fun classifyDetects2NotFound() {
+        val t = RuntimeException("Cannot initialize effect engine for type: 00000000-0000-0000-0000-000000000000 Error: -2")
+        assertEquals(OmegaFailureKind.NOT_FOUND_2, classifyOmegaFailure(t))
+    }
+
+    @Test fun classifyDetects3GenericInit() {
+        // El -3 es el código genérico que ve la app en el Moto G85 mientras
+        // AudioFlinger registra el -38 real; se clasifica aparte.
+        val t = RuntimeException("Cannot initialize effect engine for type: 00000000-0000-0000-0000-000000000000 Error: -3")
+        assertEquals(OmegaFailureKind.GENERIC_INIT_3, classifyOmegaFailure(t))
+    }
+
+    @Test fun classifyUnknownWhenNoCode() {
+        val t = RuntimeException("algo salió mal sin código")
+        assertEquals(OmegaFailureKind.UNKNOWN, classifyOmegaFailure(t))
+    }
+
+    @Test fun classifyUnwrapsReflectionWrapper() {
+        // La causa real viene envuelta en InvocationTargetException.
+        val real = RuntimeException("Cannot initialize effect engine Error: -38")
+        val wrapped = java.lang.reflect.InvocationTargetException(real)
+        assertEquals(OmegaFailureKind.INVALID_OPERATION_38, classifyOmegaFailure(wrapped))
+    }
+
+    @Test fun failureHint38MentionsExclusiveConflict() {
+        val hint = omegaFailureHint(OmegaFailureKind.INVALID_OPERATION_38)
+        assertTrue("el hint del -38 debe mencionar el conflicto exclusivo: $hint", hint.contains("-38"))
+        assertTrue(hint.contains("INSERT_EXCLUSIVE"))
+    }
+
+    @Test fun failureHint3PointsToAudioFlingerLogcat() {
+        val hint = omegaFailureHint(OmegaFailureKind.GENERIC_INIT_3)
+        assertTrue("el hint del -3 debe apuntar al logcat de AudioFlinger: $hint", hint.contains("AudioFlinger"))
+    }
+
     // ── Confirmación de Ruta B (beacon) ─────────────────────────────────────
     @Test fun routeBConfirmedOnlyWhenEffectInsertedOrProcessing() {
         val sel = AudioBackendSelector

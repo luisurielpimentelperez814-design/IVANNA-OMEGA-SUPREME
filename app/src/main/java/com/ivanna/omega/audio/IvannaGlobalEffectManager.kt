@@ -41,6 +41,8 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.EnvironmentalReverb
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.os.Build
 import android.util.Log
 import java.util.UUID
@@ -282,6 +284,65 @@ internal fun omegaRootCauseMessage(t: Throwable): String {
     return if (root === t) "$name: $msg" else "${t.javaClass.simpleName} -> $name: $msg"
 }
 
+/**
+ * Clasificación del fallo al crear el efecto Omega (Ruta B), a partir del
+ * código de error que el constructor AudioEffect propaga en el mensaje
+ * ("Cannot initialize effect engine for type: ... Error: -N").
+ *
+ * v2.5.374 — MANEJO DEL -38 (INVALID_OPERATION / ENOSYS): AudioFlinger
+ * devuelve -38 cuando EffectChain::addEffect_ll rechaza la inserción
+ * (getInsertIndex = -1, típicamente por un efecto INSERT_EXCLUSIVE ya en
+ * la cadena, p. ej. Dolby DAP o music_helper). PERO el JNI de AudioEffect
+ * no siempre propaga ese status: en el Moto G85 la app ve "Error: -3"
+ * (código genérico de initCheck) mientras AudioFlinger registra el -38
+ * real en logcat ("AudioFlinger could not create effect ... status: -38").
+ * Por eso -3 se clasifica como GENERIC_INIT_3 con un aviso explícito de
+ * que la causa real está en el logcat de AudioFlinger, y -38 se clasifica
+ * aparte cuando el framework sí lo propaga. El reintento con backoff
+ * (OmegaAttachBackoff + watchdog) ya existe; la clasificación solo hace
+ * el fallo visible y accionable en el log en vez de un "-3" opaco.
+ * Pura para poder probarla en host.
+ */
+enum class OmegaFailureKind {
+    /** -38 INVALID_OPERATION/ENOSYS: inserción rechazada (conflicto exclusivo). */
+    INVALID_OPERATION_38,
+    /** -22 BAD_VALUE: duplicado o descriptor no encontrado por AudioFlinger. */
+    BAD_VALUE_22,
+    /** -2 ENOENT: la librería/descriptor no está registrado en el HAL. */
+    NOT_FOUND_2,
+    /** -3 genérico de initCheck: la causa real está en el logcat de AudioFlinger. */
+    GENERIC_INIT_3,
+    /** Sin código reconocible en el mensaje. */
+    UNKNOWN
+}
+
+internal fun classifyOmegaFailure(t: Throwable): OmegaFailureKind {
+    val msg = omegaRootCauseMessage(t)
+    val code = Regex("Error:\\s*(-?\\d+)").find(msg)
+        ?.groupValues?.getOrNull(1)?.toIntOrNull()
+    return when (code) {
+        -38 -> OmegaFailureKind.INVALID_OPERATION_38
+        -22 -> OmegaFailureKind.BAD_VALUE_22
+        -2 -> OmegaFailureKind.NOT_FOUND_2
+        -3 -> OmegaFailureKind.GENERIC_INIT_3
+        else -> OmegaFailureKind.UNKNOWN
+    }
+}
+
+/** Mensaje accionable por clase de fallo, para el log de createOmegaEffect. */
+internal fun omegaFailureHint(kind: OmegaFailureKind): String = when (kind) {
+    OmegaFailureKind.INVALID_OPERATION_38 ->
+        "INVALID_OPERATION (-38): AudioFlinger rechazó la inserción — hay un efecto INSERT_EXCLUSIVE en la cadena o el efecto ya existe. Verificar con dumpsys media.audio_flinger y logcat 'AudioFlinger could not create'."
+    OmegaFailureKind.BAD_VALUE_22 ->
+        "BAD_VALUE (-22): AudioFlinger no encontró el efecto o lo rechazó como duplicado — revisar que no haya <apply> global de omega en el XML y que el UUID esté registrado."
+    OmegaFailureKind.NOT_FOUND_2 ->
+        "NOT_FOUND (-2): el HAL no conoce el UUID — la librería no cargó (revisar vendor_file y que el módulo esté activo)."
+    OmegaFailureKind.GENERIC_INIT_3 ->
+        "Error -3 genérico de initCheck: la causa real está en el logcat de AudioFlinger ('AudioFlinger could not create effect ... status: -N'); en este dispositivo lo habitual es -38 (conflicto exclusivo)."
+    OmegaFailureKind.UNKNOWN ->
+        "Causa sin código reconocible; ver logcat de AudioFlinger."
+}
+
 class IvannaGlobalEffectManager(
     private val context: android.content.Context
 ) {
@@ -358,6 +419,18 @@ class IvannaGlobalEffectManager(
     // quedaba en efectos stock para siempre (bug sesión 409, 2026-11-07).
     private val omegaRetryAttempts = ConcurrentHashMap<Int, Int>()
     private val omegaLastAttemptMs = ConcurrentHashMap<Int, Long>()
+
+    // v2.5.374 — Última clase de fallo al crear omega (ver classifyOmegaFailure).
+    // Diagnóstico visible sin logcat: la UI/telemetría puede leerlo.
+    @Volatile var lastOmegaFailureKind: OmegaFailureKind = OmegaFailureKind.UNKNOWN
+        private set
+
+    // v2.5.374 — Escáner de sesiones activas (ver scanActivePlaybackSessions).
+    private val audioManager: AudioManager? by lazy {
+        runCatching {
+            context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
+        }.getOrNull()
+    }
 
     // Perfil activo (se aplica a todas las sesiones nuevas y actualiza las existentes)
     @Volatile var activeProfile: IvannaEffectProfile = validateProfileWithSafmus(
@@ -451,6 +524,12 @@ class IvannaGlobalEffectManager(
     }
 
     // ── Abre efectos para una nueva sesión de audio ───────────────────────────
+    // v2.5.374 — @Synchronized: openSession ahora también la invoca el
+    // escáner de sesiones activas (hilo watchdog) además del broadcast
+    // (hilo principal). Sin sincronización, dos llamadas concurrentes para
+    // el mismo sessionId podían crear dos juegos de efectos y el segundo
+    // put() en activeSessions perdía el primero (leak).
+    @Synchronized
     fun openSession(
         audioSession: Int,
         sourcePackage: String?
@@ -537,10 +616,88 @@ class IvannaGlobalEffectManager(
                     // una sesión abierta antes de que el módulo/HAL estuviera listo no
                     // debe quedarse en efectos stock para siempre (bug sesión 409).
                     runCatching { retryOmegaAttachForSessions() }.onFailure { Log.w(TAG, "watchdog omega-retry: ${it.message}") }
+                    // v2.5.374 — Sondeo de sesiones activas: abre las sesiones
+                    // que el broadcast no avisó (ver scanActivePlaybackSessions).
+                    runCatching { scanActivePlaybackSessions() }.onFailure { Log.w(TAG, "watchdog scan: ${it.message}") }
                 },
                 3, 3, java.util.concurrent.TimeUnit.SECONDS
             )
         }
+    }
+
+    /**
+     * Arranca el escáner periódico de sesiones activas (idempotente).
+     * Llamado desde IVANNAApplication.onCreate para que el sondeo corra
+     * siempre que el proceso de la app esté vivo, aunque ninguna sesión se
+     * haya abierto aún por broadcast (si no, el watchdog nunca arrancaría
+     * y el escáner tampoco — el huevo y la gallina del receiver roto).
+     */
+    fun startSessionScanner() {
+        ensureWatchdog()
+        Log.i(TAG, "Session scanner arrancado (sondeo de sesiones activas cada 3 s vía watchdog)")
+    }
+
+    /**
+     * Sondea las configuraciones de reproducción activas y abre las sesiones
+     * que aún no están rastreadas. Complemento del broadcast
+     * (AudioSessionReceiver): el broadcast solo avisa de sesiones creadas
+     * DESPUÉS de que la app empiece a escuchar, así que una sesión que ya
+     * existía (música sonando antes de abrir IVANNA) o un broadcast perdido
+     * (force-stop, reboot) dejaban la sesión sin efectos para siempre.
+     *
+     * LÍMITE HONESTO DE AOSP (PlaybackActivityMonitor, frameworks/base):
+     * getActivePlaybackConfigurations() solo devuelve las configuraciones
+     * REALES (con sessionId usable) al llamador privilegiado, que requiere
+     * el permiso MODIFY_AUDIO_ROUTING (signature|system, inalcanzable para
+     * una app normal). Sin él, el sistema devuelve copias ANONIMIZADAS
+     * (anonymizedCopy): solo las activas, con el sessionId puesto a
+     * AUDIO_SESSION_NONE (0) y sin UID/PID del cliente. Es decir, este
+     * sondeo NO puede descubrir el sessionId de YouTube Music ni de ninguna
+     * app de terceros — ese es el motivo por el que el broadcast es el
+     * mecanismo sancionado (Wavelet/Poweramp) y por el que el fix principal
+     * de la 374 es el receiver (RECEIVER_EXPORTED + fail-open). El sondeo
+     * sigue siendo útil: abre las sesiones propias que el sistema sí expone
+     * con id real, y deja constancia en log de cuántas configuraciones
+     * activas ve el sistema (diagnóstico: si el sistema reporta N jugadores
+     * activos pero 0 con sessionId usable, la anonimización está actuando
+     * y solo el broadcast puede descubrirlos).
+     *
+     * Solo AÑADE sesiones (nunca cierra): una sesión pausada no aparece en
+     * la lista de activas y cerrarla por ausencia rompería el DSP al
+     * reanudar. El cierre lo sigue haciendo el broadcast CLOSE y el
+     * watchdog de sesiones muertas.
+     *
+     * @return cuántas sesiones nuevas se abrieron en este pase.
+     */
+    @Synchronized
+    fun scanActivePlaybackSessions(): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return 0
+        val am = audioManager ?: return 0
+        val configs: List<AudioPlaybackConfiguration> =
+            runCatching { am.activePlaybackConfigurations }.getOrNull() ?: return 0
+        if (configs.isEmpty()) return 0
+        var usable = 0
+        var opened = 0
+        for (cfg in configs) {
+            val sid = runCatching { cfg.audioSessionId }.getOrNull() ?: 0
+            if (sid <= 0) continue
+            usable++
+            if (activeSessions.containsKey(sid)) continue
+            val pkg = resolvePackageForUid(runCatching { cfg.clientUid }.getOrNull() ?: 0)
+            if (pkg == context.packageName) continue
+            openSession(sid, pkg)
+            opened++
+        }
+        Log.d(TAG, "scanActivePlaybackSessions: ${configs.size} configs activas, $usable con sessionId usable, $opened sesiones nuevas")
+        return opened
+    }
+
+    /** Resuelve el paquete de un UID (best-effort; null si no se puede). */
+    private fun resolvePackageForUid(uid: Int): String? {
+        if (uid <= 0) return null
+        return runCatching {
+            context.packageManager.getPackagesForUid(uid)?.firstOrNull()
+        }.getOrNull()
     }
 
     private fun probeStatus(fx: SessionEffects): Int {
@@ -931,7 +1088,14 @@ class IvannaGlobalEffectManager(
         // La causa real viene envuelta en InvocationTargetException con mensaje
         // null; loguear solo it.message ocultaba el diagnóstico (el 07 solo
         // veía "null"). omegaRootCauseMessage desenrolla hasta la causa raíz.
-        Log.d(TAG, "Omega effect no disponible en sesión $session: ${omegaRootCauseMessage(it)} " +
+        // v2.5.374: se clasifica el fallo (ver classifyOmegaFailure) para
+        // que un -38 (inserción rechazada) o un -3 genérico queden visibles
+        // y accionables en vez de un "-3" opaco. El reintento con backoff lo
+        // hace el watchdog (retryOmegaAttachForSessions); aquí solo se
+        // registra la causa, sin crashear.
+        val kind = classifyOmegaFailure(it)
+        lastOmegaFailureKind = kind
+        Log.d(TAG, "Omega effect no disponible en sesión $session: ${omegaRootCauseMessage(it)} [$kind] ${omegaFailureHint(kind)} " +
             "(si el módulo está instalado, el HAL de efectos no conoce el UUID — ver docs/RUTA_B_DAEMON_FIX.md)")
     }.getOrNull()
 

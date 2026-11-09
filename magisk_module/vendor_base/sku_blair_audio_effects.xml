@@ -54,27 +54,36 @@
         <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>
 </effects>
     <postprocess>
+        <!-- v2.5.374 — Extirpación Dolby + music_helper (Ruta B, -38):
+             los <apply> de postprocess insertaban dlb_music_listener y
+             music_helper (Mot Speaker Helper) en TODA sesión de música.
+             Ambos son efectos INSERT que AudioFlinger ya tiene en la cadena
+             cuando la app intenta crear omega_effect por sesión, y el
+             -38 (INVALID_OPERATION) es el rechazo de inserción de
+             EffectChain::addEffect_ll. En el teléfono ya se quitaron en
+             caliente (13:43 y 13:50 CST, 2026-11-09) y el dumpsys confirmó
+             que desaparecen de la cadena; aquí quedan fuera de la base para
+             que la extirpación sobreviva a una reinstalación. Los registros
+             de librería/efecto (dap, dvl, gamedap, music_helper) SE
+             CONSERVAN: solo se quita la inserción automática por stream.
+             Nota: quitar music_helper desactiva el tuning/protección de
+             altavoz de Motorola en el stream music — es el precio de que
+             omega pueda insertarse; IVANNA aporta su propio SafetyLimiter. -->
         <stream type="music">
-            <apply effect="music_helper"/>
-            <apply effect="dlb_music_listener"/>
         </stream>
         <stream type="ring">
             <apply effect="ring_helper"/>
-            <apply effect="dlb_ring_listener"/>
         </stream>
         <stream type="alarm">
             <apply effect="ring_helper"/>
-            <apply effect="dlb_alarm_listener"/>
         </stream>
         <stream type="voice_call">
             <apply effect="voice_helper"/>
         </stream>
         <stream type="system">
-            <apply effect="dlb_system_listener"/>
         </stream>
         <stream type="notification">
             <apply effect="notification_helper"/>
-            <apply effect="dlb_notification_listener"/>
         </stream>
     </postprocess>
     <preprocess>
