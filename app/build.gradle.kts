@@ -285,7 +285,13 @@ androidComponents {
             )
         }
         // El asset debe existir antes de empaquetar los assets del APK.
-        tasks.named("merge${capName}Assets") { dependsOn(genTask) }
+        // matching+configureEach (perezoso): merge<Variant>Assets aún no existe
+        // cuando corre onVariants; tasks.named lo resolvería con error y
+        // rompería la configuración completa de Gradle (CI 42539043243).
+        // La regla se aplica cuando AGP crea la tarea.
+        tasks.matching { it.name == "merge${capName}Assets" }.configureEach {
+            dependsOn(genTask)
+        }
     }
 }
 
