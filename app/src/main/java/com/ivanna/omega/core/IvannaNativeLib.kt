@@ -1,5 +1,6 @@
 package com.ivanna.omega.core
 
+import android.content.Context
 import android.util.Log
 
 /**
@@ -20,6 +21,10 @@ object IvannaNativeLib {
     private val loaded = NativeLibraryLoader.ensureLoaded()
 
     val isLoaded: Boolean get() = loaded
+
+    // v2.5.369 (Genezi MHC-PZ1D): asset del paquete IVK1 del kernel Volterra.
+    private const val GENEZY_VOLTERRA_ASSET = "kernels/genezy_mhc_pz1d.ivk1"
+    private const val TAG = "IvannaNativeLib"
 
     inline fun <T> guardedNative(fallback: T, block: () -> T): T {
         return try {
@@ -342,6 +347,48 @@ object IvannaNativeLib {
     // ═══ Supremacía Acústica: Volterra H2, FastRPC Hexagon cDSP & ATI ═════
     external fun nativeSetVolterraEnabled(enabled: Boolean)
     external fun nativeIsVolterraEnabled(): Boolean
+    // v2.5.369 (Genezi MHC-PZ1D): carga un paquete IVK1 en el motor Volterra
+    // H2 de Ruta A. Devuelve VolterraLoadStatus como Int (0 = Ok). Cargar !=
+    // habilitar: el kernel solo suena si Volterra está encendido.
+    external fun nativeLoadVolterraKernelPackage(pkg: ByteArray): Int
+    // v2.5.369 (Genezi): ¿tiene el motor de Ruta A un kernel efectivo cargado?
+    external fun nativeHasVolterraKernel(): Boolean
+
+    /**
+     * Carga el kernel Volterra H1/H2 del Sony Genezi MHC-PZ1D (ESS Farina,
+     * h1 normalizado por L1) en el motor de Ruta A, desde el asset
+     * `kernels/genezy_mhc_pz1d.ivk1`. Idempotente: si el motor ya tiene un
+     * kernel efectivo, no recarga (devuelve 0). También copia el .ivk1 a
+     * `files/ivanna_omega/kernels/` para que Ruta B (omega_effect, proceso
+     * audioserver) pueda leerlo por ruta de archivo — mismo patrón que el
+     * dataset HRTF (`files/ivanna_omega/hrtf/kemar.ihr1`).
+     *
+     * Cargar NO habilita Volterra: el kernel queda en bypass hasta que el
+     * usuario encienda VOLTERRA H2 explícitamente. Fail-closed: cualquier
+     * error de lectura/validación deja el motor en bypass y devuelve el
+     * código de error (VolterraLoadStatus; -1 = librería no cargada o
+     * error de E/S). Hilo de CONTROL, nunca el de audio.
+     */
+    fun loadGeneziVolterraKernel(context: Context): Int {
+        if (!isLoaded) return -1
+        return try {
+            if (nativeHasVolterraKernel()) return 0
+            val bytes = context.assets.open(GENEZY_VOLTERRA_ASSET).use { it.readBytes() }
+            // Copia para Ruta B (el efecto no puede leer assets de la app).
+            runCatching {
+                val out = java.io.File(
+                    context.filesDir,
+                    "ivanna_omega/kernels/genezy_mhc_pz1d.ivk1"
+                )
+                out.parentFile?.mkdirs()
+                out.writeBytes(bytes)
+            }.onFailure { Log.w(TAG, "loadGeneziVolterraKernel: no se pudo copiar a files/ (Ruta B sin kernel)", it) }
+            nativeLoadVolterraKernelPackage(bytes)
+        } catch (t: Throwable) {
+            Log.e(TAG, "loadGeneziVolterraKernel: error", t)
+            -1
+        }
+    }
     external fun nativeSetFastRpcEnabled(enabled: Boolean)
     external fun nativeIsFastRpcEnabled(): Boolean
     external fun nativeSetAtiEnabled(enabled: Boolean)

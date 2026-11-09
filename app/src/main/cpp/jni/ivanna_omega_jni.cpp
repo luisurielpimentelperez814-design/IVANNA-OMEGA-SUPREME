@@ -36,6 +36,7 @@
 #include <unistd.h>
 #include <cstdio>
 #include <cstddef>
+#include <vector>  // nativeLoadVolterraKernelPackage (Genezi v2.5.369)
 #include "../include/dsp_types.h"
 #include "../include/ParametricEQ.h"
 #include "../include/Compressor.h"
@@ -310,7 +311,7 @@ static std::atomic<int>  g_lab_auto_frame_count{0};
 // SUPREMACÍA ACÚSTICA: Volterra H2, FastRPC Hexagon cDSP & Active Transducer Inversion
 // Soporta tanto Root (AudioFlinger / Daemon) como Non-Root (In-Process Pipeline)
 // ═══════════════════════════════════════════════════════════════════════════
-static std::atomic<bool> g_volterra_enabled{true};
+static std::atomic<bool> g_volterra_enabled{false};
 static std::atomic<bool> g_fastrpc_enabled{false};
 static std::atomic<bool> g_ati_enabled{true};
 static ivanna::dsp::VolterraH2Symmetric g_volterra_engine{64, 2};
@@ -3032,6 +3033,12 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetVolterraEnabled(
     JNIEnv*, jobject, jboolean enabled) {
     const bool on = (enabled == JNI_TRUE);
     g_volterra_enabled.store(on, std::memory_order_release);
+    // v2.5.369 (Genezi): el interruptor gobierna TAMBIÉN el envelope del
+    // motor. Sin esto, un kernel cargado (loadKernelPackage deja
+    // m_enabled==false) nunca se activaría al encender Volterra, y un
+    // kernel activo no fundearía al apagarlo. Espejo de Ruta B, donde
+    // volterraTargetEnabled hace setEnabled() en ctx->volterraEngine.
+    g_volterra_engine.setEnabled(on);
     auto& bus = ivanna::effectControlBus();
     ivanna::OmegaDspSnapshot snap;
     uint64_t seen = 0;
@@ -3049,6 +3056,72 @@ JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsVolterraEnabled(
     JNIEnv*, jobject) {
     return g_volterra_enabled.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
+}
+
+// v2.5.369 (Genezi MHC-PZ1D): carga un paquete IVK1 en el motor Volterra
+// H2 de Ruta A. Hilo de CONTROL, nunca el de audio (loadKernelPackage
+// puede llamar memalign/free). Contrato del motor:
+//   1. setEnabled(false) -> el envelope fundea a silencio
+//   2. loadKernelPackage(...) == Ok (política de producción por defecto:
+//      fs 48000, K 64, device MOTO_G85_GENEZY, sum|h1| <= 1.000001)
+//   3. en éxito se restaura setEnabled(g_volterra_enabled) -> el kernel
+//      solo se activa si el usuario ya tenía Volterra encendido.
+// Ante CUALQUIER error el motor queda en bypass (setEnabled(false)) y los
+// kernels previos quedan intactos. En éxito NO habilita el motor si
+// Volterra estaba apagado. Cargar != habilitar.
+// Devuelve el VolterraLoadStatus como int (0 = Ok). Ver
+// neuromorphic/volterra_kernel_package.hpp.
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeLoadVolterraKernelPackage(
+    JNIEnv* env, jobject, jbyteArray pkg) {
+    if (pkg == nullptr) {
+        LOGE("[IvannaNativeLib] nativeLoadVolterraKernelPackage: pkg null");
+        return static_cast<jint>(ivanna::dsp::VolterraLoadStatus::NullArgument);
+    }
+    const jsize len = env->GetArrayLength(pkg);
+    if (len <= 0) {
+        LOGE("[IvannaNativeLib] nativeLoadVolterraKernelPackage: pkg vacío");
+        return static_cast<jint>(ivanna::dsp::VolterraLoadStatus::Truncated);
+    }
+    jbyte* raw = env->GetByteArrayElements(pkg, nullptr);
+    if (raw == nullptr) {
+        LOGE("[IvannaNativeLib] nativeLoadVolterraKernelPackage: no se pudo leer el array");
+        return static_cast<jint>(ivanna::dsp::VolterraLoadStatus::NullArgument);
+    }
+    // Copia local: loadKernelPackage valida y aplica desde el buffer.
+    std::vector<std::uint8_t> bytes(
+        reinterpret_cast<const std::uint8_t*>(raw),
+        reinterpret_cast<const std::uint8_t*>(raw) + len);
+    env->ReleaseByteArrayElements(pkg, raw, JNI_ABORT);
+    // Contrato del motor: deshabilitar antes de cargar (si está habilitado
+    // devuelve EngineBusy sin tocar nada).
+    g_volterra_engine.setEnabled(false);
+    ivanna::dsp::VolterraLoadPolicy prod;  // producción (GENEZY01 / MOTO_G85_GENEZY)
+    const ivanna::dsp::VolterraLoadStatus st =
+        g_volterra_engine.loadKernelPackage(bytes.data(), bytes.size(), prod);
+    if (st == ivanna::dsp::VolterraLoadStatus::Ok) {
+        // Restaura el estado que el usuario tenía: el kernel solo suena si
+        // Volterra estaba encendido. Si estaba apagado, queda cargado pero
+        // en bypass hasta que el usuario lo encienda explícitamente.
+        g_volterra_engine.setEnabled(g_volterra_enabled.load(std::memory_order_acquire));
+        LOGI("[IvannaNativeLib] Volterra kernel package cargado (Genezi): "
+             "hasEffectiveKernel=%d enabled=%d",
+             g_volterra_engine.hasEffectiveKernel() ? 1 : 0,
+             g_volterra_engine.isEnabled() ? 1 : 0);
+    } else {
+        LOGE("[IvannaNativeLib] Volterra kernel package RECHAZADO: %s (%d)",
+             ivanna::dsp::volterraLoadStatusName(st), static_cast<int>(st));
+    }
+    return static_cast<jint>(st);
+}
+
+// v2.5.369 (Genezi): ¿tiene el motor de Ruta A un kernel efectivo cargado?
+// true = hay paquete aplicado (no implica que esté sonando: depende de
+// nativeIsVolterraEnabled()).
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeHasVolterraKernel(
+    JNIEnv*, jobject) {
+    return g_volterra_engine.hasEffectiveKernel() ? JNI_TRUE : JNI_FALSE;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,6 @@
 #include "IvannaAudioClassifier.hpp"
 #include <jni.h>
+#include <cstdio>  // fopen/fread (carga Genezi .ivk1, Ruta B, v2.5.369)
 #include <android/log.h>
 #include "thermal_governor.hpp"   // ThermalGovernor v2.3.0 — O(1) per RT block
 #include "IvannaFusionCore.cpp"
@@ -2267,6 +2268,46 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
                         LOGI("HRTF grid table loaded from measured dataset %s", tbl);
                     } else {
                         LOGW("HRTF grid table NOT loaded: hybrid spatial renderer will use pan fallback");
+                    }
+                }
+                // Kernel Volterra H1/H2 Genezi MHC-PZ1D (v2.5.369). Mismo
+                // patrón que el dataset HRTF: se busca el .ivk1 en rutas
+                // conocidas (el efecto no puede leer assets de la app; la
+                // app copia el asset a files/ivanna_omega/kernels/ al
+                // encender Volterra, y el módulo Magisk puede ponerlo en
+                // /data/adb/ivanna_omega/). Camino NO-RT (init del efecto).
+                // Cargar != habilitar: el kernel queda en bypass hasta que
+                // volterraTargetEnabled (flag OMEGA_FLAG_VOLTERRA_ON) lo
+                // encienda vía setEnabled() en el callback de proceso.
+                if (ctx->volterraEngine && !ctx->volterraEngine->hasEffectiveKernel()) {
+                    static const char* kGeneziIvk1Candidates[] = {
+                        "/data/adb/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1",
+                        "/data/data/com.ivanna.omega/files/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1",
+                        "/data/user/0/com.ivanna.omega/files/ivanna_omega/kernels/genezy_mhc_pz1d.ivk1"
+                    };
+                    for (const char* cand : kGeneziIvk1Candidates) {
+                        FILE* f = std::fopen(cand, "rb");
+                        if (!f) continue;
+                        std::fseek(f, 0, SEEK_END);
+                        const long sz = std::ftell(f);
+                        std::fseek(f, 0, SEEK_SET);
+                        if (sz <= 0 || sz > 65536) { std::fclose(f); continue; }
+                        std::vector<std::uint8_t> pkg(static_cast<size_t>(sz));
+                        const size_t got = std::fread(pkg.data(), 1, pkg.size(), f);
+                        std::fclose(f);
+                        if (got != pkg.size()) continue;
+                        // Contrato del motor: deshabilitar antes de cargar.
+                        ctx->volterraEngine->setEnabled(false);
+                        ivanna::dsp::VolterraLoadPolicy prod;  // producción
+                        const ivanna::dsp::VolterraLoadStatus st =
+                            ctx->volterraEngine->loadKernelPackage(pkg.data(), pkg.size(), prod);
+                        if (st == ivanna::dsp::VolterraLoadStatus::Ok) {
+                            LOGI("Genezi Volterra kernel loaded from %s (Ruta B READY, inactivo hasta VOLTERRA_ON)", cand);
+                        } else {
+                            LOGW("Genezi Volterra kernel RECHAZADO desde %s: %s (%d)",
+                                 cand, ivanna::dsp::volterraLoadStatusName(st), static_cast<int>(st));
+                        }
+                        break;  // solo el primer archivo legible
                     }
                 }
             }

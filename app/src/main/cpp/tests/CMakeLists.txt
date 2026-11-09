@@ -90,6 +90,13 @@ ivanna_add_test(test_phase_oracle_kalman)
 ivanna_add_test(dsp_core_stability)
 # Paquete IVH2 de kernels Volterra + carga segura (coeficientes SINTÉTICOS; no calibra el Genezy).
 ivanna_add_test(test_volterra_kernel_package)
+# Kernel Volterra H1/H2 del Sony Genezi MHC-PZ1D (IVK1 GENEZY01, K=64,
+# h1 normalizada por L1). El .ivk1 lo genera
+# tools/volterra_h2/build_genezy_mhc_pz1d_ivk1.py; la ruta llega por
+# definición para que el test lea el paquete generado (no embebido).
+ivanna_add_test(test_volterra_genezy_mhc_pz1d)
+target_compile_definitions(test_volterra_genezy_mhc_pz1d PRIVATE
+  IVANNA_GENEZY_IVK1_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/kernels/genezy_mhc_pz1d.ivk1")
 ivanna_add_test(test_hires_config)
 # Continuidad de ganancia del techo por etapa (tronidos al subir volumen).
 ivanna_add_test(test_stage_ceiling_continuity)

@@ -725,7 +725,16 @@ fun IvannaControlPanel(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlagToggle("VOLTERRA H2", volterraEnabled, AuroraCyan, Modifier.weight(1f)) { en ->
                     volterraEnabled = en
-                    if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetVolterraEnabled(en) }
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        // v2.5.369 (Genezi MHC-PZ1D): al encender Volterra se
+                        // carga el kernel IVK1 del asset (idempotente; si ya
+                        // estaba cargado no recarga). Cargar != habilitar:
+                        // el kernel solo suena tras nativeSetVolterraEnabled(true).
+                        // Si la carga falla, el motor queda en bypass (fail-closed)
+                        // y el toggle sigue controlando el interruptor.
+                        if (en) IvannaNativeLib.loadGeneziVolterraKernel(context)
+                        IvannaNativeLib.nativeSetVolterraEnabled(en)
+                    }
                 }
                 FlagToggle("FASTRPC cDSP", fastRpcEnabled, PhosphorGreen, Modifier.weight(1f)) { en ->
                     fastRpcEnabled = en
