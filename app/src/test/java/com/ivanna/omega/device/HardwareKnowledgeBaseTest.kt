@@ -49,7 +49,7 @@ class HardwareKnowledgeBaseTest {
 
     @Test fun lookupFamilyFallbackForUnknownSnapdragon8() {
         val profile = TestProfiles.g85Profile().copy(
-            cpu = TestProfiles.g85Profile().cpu.copy(socModel = "SM9999", hardware = "Qualcomm SM9999"),
+            cpu = TestProfiles.g85Profile().cpu.copy(socModel = "SM8750", hardware = "Qualcomm SM8750"),
             android = TestProfiles.g85Profile().android.copy(board = "unknown", hardware = "unknown"),
         )
         val match = HardwareKnowledgeBase.lookup(profile)

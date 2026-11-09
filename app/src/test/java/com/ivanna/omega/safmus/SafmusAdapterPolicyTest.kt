@@ -28,10 +28,26 @@ class SafmusAdapterPolicyTest {
     @Test fun microphoneRingAbsorbsMoreSchedulerJitterUnderPressure() {
         val min = 1024
         val block = 2048
-        assertEquals(8192, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.NORMAL))
-        assertEquals(12288, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.CONSERVATIVE))
-        assertEquals(16384, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.SAFE))
-        assertEquals(20_000, SafmusAdapterPolicy.captureBufferBytes(20_000, block, SafmusAdapterPolicy.Load.NORMAL))
+        // Nivel 1 (4 bloques) para aislar el escalado por carga: el nivel
+        // fija un minimo de bloques y en Nivel 6 (default, 8 bloques) el
+        // piso del nivel domina a NORMAL/CONSERVATIVE (ver
+        // levelSixFloorNeverShrinksBelowEightBlocks).
+        val level1 = SafmusUniversalKernel.PowerLevel.LEVEL_1
+        assertEquals(8192, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.NORMAL, level1))
+        assertEquals(12288, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.CONSERVATIVE, level1))
+        assertEquals(16384, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.SAFE, level1))
+        assertEquals(20_000, SafmusAdapterPolicy.captureBufferBytes(20_000, block, SafmusAdapterPolicy.Load.NORMAL, level1))
+    }
+
+    @Test fun levelSixFloorNeverShrinksBelowEightBlocks() {
+        val min = 1024
+        val block = 2048
+        val level6 = SafmusUniversalKernel.PowerLevel.LEVEL_6
+        // En Nivel 6 el piso es 8 bloques: la presion de recursos solo
+        // puede aumentarlo, nunca reducirlo por debajo del nivel.
+        assertEquals(16384, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.NORMAL, level6))
+        assertEquals(16384, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.CONSERVATIVE, level6))
+        assertEquals(16384, SafmusAdapterPolicy.captureBufferBytes(min, block, SafmusAdapterPolicy.Load.SAFE, level6))
     }
 
     @Test fun resourcePressureBoundsRouteEnhancementWithoutAddingGain() {

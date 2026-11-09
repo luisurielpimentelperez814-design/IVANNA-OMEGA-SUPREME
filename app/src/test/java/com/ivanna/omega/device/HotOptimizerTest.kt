@@ -44,7 +44,7 @@ class HotOptimizerTest {
     }
 
     @Test fun applySucceedsAndSecondApplyIsAlreadyOptimal() {
-        val actuator = HotOptimizer.MemoryActuator("256")
+        val actuator = HotOptimizer.MemoryActuator("512")
         val plan = HotOptimizer.Plan(
             listOf(HotOptimizer.Plan.Step(HotOptimizer.OptimizationKind.BUFFER_SIZE, "256", actuator)),
         )

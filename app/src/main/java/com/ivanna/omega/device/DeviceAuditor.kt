@@ -197,7 +197,7 @@ object DeviceAuditor {
         }
         val summary = listOf(
             "Dispositivo: ${profile.android.manufacturer} ${profile.android.model} · SoC ${match.entry.marketingName} (${match.entry.socModel}) — $known · fuente: ${match.entry.source} / config: ${match.entry.configSource}",
-            "Cuellos de botella: ${bottlenecks.size} (${bottlenecks.count { it.severity == Severity.CRITICAL }} críticos, ${bottlenecks.count { it.severity == Severity.WARNING }} advertencias) · Oportunidades: ${opportunities.size}",
+            "${bottlenecks.size} cuellos de botella (${bottlenecks.count { it.severity == Severity.CRITICAL }} críticos, ${bottlenecks.count { it.severity == Severity.WARNING }} advertencias) · Oportunidades: ${opportunities.size}",
             "Latencia esperada con la configuración recomendada: ${entry.config.expectedLatencyMs} ms (fuente: ${entry.configSource})",
         )
         return AuditReport(profile, match, bottlenecks, opportunities, summary)
