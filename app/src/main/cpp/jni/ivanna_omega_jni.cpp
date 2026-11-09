@@ -972,6 +972,15 @@ static inline bool copyJFloat(JNIEnv* env, jfloatArray src, float* dst, int n) {
 #define IVANNA_NATIVE_FLAGS "unknown"
 #endif
 extern "C" {
+// Forward declaration: hyperProcessRouteA se DEFINE más abajo en este mismo
+// bloque extern "C" (~línea 2495) pero se LLAMA en el procesado de Ruta A
+// (~línea 1749, antes de la definición). Sin esta declaración el NDK Clang
+// falla con "use of undeclared identifier 'hyperProcessRouteA'"
+// (CI run 42563522464). DEBE estar dentro de este bloque extern "C": la
+// definición vive aquí dentro (enlace C); una declaración fuera del bloque
+// (enlace C++) conflictúa con ella. El CTest host no detecta el error
+// porque no compila este TU completo; solo el build Gradle/CMake de Android.
+static void hyperProcessRouteA(float* oL, float* oR, int n, float sr) noexcept;
 // ═══════════════════════════════════════════════════════════════════════════════
 // DSPBridge (com.ivanna.omega.dsp.DSPBridge) — called at app startup
 // ═══════════════════════════════════════════════════════════════════════════════
