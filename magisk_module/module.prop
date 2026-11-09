@@ -1,7 +1,7 @@
 id=ivanna_omega_supreme
 name=IVANNA OMEGA SUPREME
-version=v2.5.372
-versionCode=663
+version=v2.5.373
+versionCode=664
 author=Luis Uriel Pimentel Pérez (Gore TNS)
-description=v2.5.372: SAFMUS Nivel 6 (máxima potencia computacional: voxel sin boxing, PCA con NEON, coordinador 2 s, anillo 8 bloques) + auto-auditoría y auto-optimización de dispositivo en primer arranque (22 SoCs, solo el G85 medido) + 30 conciertos de rock legendarios + intro de video LO PRIMERO tras instalar + charla offline con la biblioteca de miles de respuestas. v2.5.371: Autonomía (auto-reparación, auto-refinamiento, auto-evolución acotada, autoridad de decisión) + independencia de Gemini (el cerebro local responde sin nube) + miles de respuestas + huecos de conocimiento cerrados + parche 0001 SAF_GUARD en PhiSAFInfinity.
+description=v2.5.373: Ruta B — Error -3 resuelto: el XML fusionado ya no crea instancia global de omega en postprocess (el <apply> global bloqueaba la creación por sesión con BAD_VALUE -22); la activación es por UUID por sesión desde la app. + 4 fixes de Ruta B (demonio pre-crea archivos locales, sepolicy en cada boot, log de beacon, Ruta A solo cede ante procesamiento real) + vendor_file permanente. v2.5.372: SAFMUS Nivel 6 (máxima potencia computacional: voxel sin boxing, PCA con NEON, coordinador 2 s, anillo 8 bloques) + auto-auditoría y auto-optimización de dispositivo en primer arranque (22 SoCs, solo el G85 medido) + 30 conciertos de rock legendarios + intro de video LO PRIMERO tras instalar + charla offline con la biblioteca de miles de respuestas. v2.5.371: Autonomía (auto-reparación, auto-refinamiento, auto-evolución acotada, autoridad de decisión) + independencia de Gemini (el cerebro local responde sin nube) + miles de respuestas + huecos de conocimiento cerrados + parche 0001 SAF_GUARD en PhiSAFInfinity.
 updateJson=https://raw.githubusercontent.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/main/magisk_module/update.json
