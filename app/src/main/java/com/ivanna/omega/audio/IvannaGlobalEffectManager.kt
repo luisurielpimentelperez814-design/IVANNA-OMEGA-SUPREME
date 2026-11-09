@@ -343,6 +343,35 @@ internal fun omegaFailureHint(kind: OmegaFailureKind): String = when (kind) {
         "Causa sin código reconocible; ver logcat de AudioFlinger."
 }
 
+// ── v2.5.375 — Descubrimiento de sesiones por reflexión (Ruta B) ─────────────
+// CAUSA RAÍZ (verificada en fuente AOSP, no en teoría):
+// - AudioPlaybackConfiguration.getSessionId() es @SystemApi/@hide. El método
+//   NO se llama getAudioSessionId() (no existe: por eso el código de la 374
+//   con cfg.audioSessionId no compilaba en el SDK público).
+// - PlaybackActivityMonitor.getActivePlaybackConfigurations(isPrivileged)
+//   devuelve las configs REALES solo si el llamante tiene
+//   MODIFY_AUDIO_ROUTING; sin ese permiso aplica anonymizedCopy(), que pone
+//   sessionId = AudioSystem.AUDIO_SESSION_ALLOCATE (-1), clientUid = -1 y
+//   el player proxy en null. Una app normal NUNCA ve el sessionId real por
+//   este camino: el escáner de la 374 solo podía ser diagnóstico.
+// - El broadcast ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION tampoco llega en
+//   este ROM (receiver dinámico RECEIVER_EXPORTED + manifest exported=true
+//   verificados en código; ni 'Nueva sesion' ni el log de registro aparecen
+//   en logcat con TIDAL/YouTube Music). Por eso la Ruta B necesita una vía
+//   que NO dependa del broadcast: el sondeo por reflexión (best-effort, con
+//   el nombre correcto) + el attach global a la mezcla de salida (sesión 0)
+//   como fallback cuando el sondeo solo ve copias anonimizadas.
+// - La reflexión es runtime-only (sin APIs @hide en tiempo de compilación)
+//   y fail-closed: si la hidden-API blacklist bloquea getSessionId(), se
+//   registra y se cae al fallback. Si el ROM no anonimiza o la app llega a
+//   ser privilegiada (MODIFY_AUDIO_ROUTING), el sondeo devuelve IDs reales.
+/** Solo sessionId > 0 es utilizable: -1 es la copia anonimizada y 0 es AUDIO_SESSION_NONE. */
+internal fun isUsableSessionId(sessionId: Int): Boolean = sessionId > 0
+
+/** Extrae los sessionIds utilizables de pares (sessionId, clientUid) reflejados. */
+internal fun usableSessionIds(pairs: List<Pair<Int, Int>>): List<Int> =
+    pairs.map { it.first }.filter { isUsableSessionId(it) }.distinct()
+
 class IvannaGlobalEffectManager(
     private val context: android.content.Context
 ) {
@@ -540,6 +569,15 @@ class IvannaGlobalEffectManager(
         )
         if (audioSession <= 0) return
         if (activeSessions.containsKey(audioSession)) return
+        // v2.5.375: si el omega global (sesión 0) ya procesa la mezcla de
+        // salida, NO crear efectos por sesión (doble procesado: la sesión
+        // pasaría por omega dos veces, una por sesión y otra en el mix).
+        // La sesión queda cubierta por el global; si el global muere, el
+        // sondeo la abre por sesión en el siguiente ciclo del watchdog.
+        if (globalOmega != null) {
+            Log.d(TAG, "openSession $audioSession omitida: omega global (sesión 0) ya activo")
+            return
+        }
 
         val isVideo = isVideoStreamingPackage(sourcePackage)
         ContentProfileEngine.noteSource(sourcePackage, isVideo)
@@ -619,6 +657,10 @@ class IvannaGlobalEffectManager(
                     // v2.5.374 — Sondeo de sesiones activas: abre las sesiones
                     // que el broadcast no avisó (ver scanActivePlaybackSessions).
                     runCatching { scanActivePlaybackSessions() }.onFailure { Log.w(TAG, "watchdog scan: ${it.message}") }
+                    // v2.5.375 — Vida del omega global (sesión 0): si audioserver
+                    // murió, el objeto queda muerto y hay que liberarlo para que
+                    // el sondeo reintente (por sesión o global).
+                    runCatching { checkGlobalOmegaLiveness() }.onFailure { Log.w(TAG, "watchdog global-liveness: ${it.message}") }
                 },
                 3, 3, java.util.concurrent.TimeUnit.SECONDS
             )
@@ -637,48 +679,151 @@ class IvannaGlobalEffectManager(
         Log.i(TAG, "Session scanner arrancado (sondeo de sesiones activas cada 3 s vía watchdog)")
     }
 
+    // ── v2.5.375 — Omega global en la mezcla de salida (sesión 0) ───────────
+    // Fallback cuando el broadcast no llega Y el sondeo no puede descubrir
+    // sessionIds (copias anonimizadas). La documentación de AudioEffect
+    // desaconseja efectos insert en sesión 0 (deprecated/poco fiable: en
+    // algunos dispositivos falla en silencio), pero en este ROM es la única
+    // vía que NO necesita conocer el sessionId de TIDAL/YouTube Music; si
+    // AudioFlinger lo rechaza, createOmegaEffect devuelve null, se clasifica
+    // la causa y se reintenta con backoff de 30 s, sin crashear. Mientras el
+    // omega global esté activo, openSession no crea efectos por sesión.
+    private var globalOmega: android.media.audiofx.AudioEffect? = null
+    private var globalOmegaLastAttemptMs: Long = 0L
+    private val globalOmegaRetryMs = 30_000L
+    // La reflexión @hide puede estar bloqueada por la hidden-API blacklist;
+    // si lo está, se registra UNA sola vez (no una línea por config cada 3 s).
+    private val reflectionBlockLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** true si algún omega está acoplado (por sesión o global). */
+    private fun hasAnyOmegaAttached(): Boolean =
+        globalOmega != null || activeSessions.values.any { it.omega != null }
+
     /**
-     * Sondea las configuraciones de reproducción activas (SOLO diagnóstico:
-     * cuenta cuántos jugadores ve el sistema). Complemento del broadcast
-     * (AudioSessionReceiver): el broadcast solo avisa de sesiones creadas
-     * DESPUÉS de que la app empiece a escuchar, así que una sesión que ya
-     * existía (música sonando antes de abrir IVANNA) o un broadcast perdido
-     * (force-stop, reboot) dejaban la sesión sin efectos para siempre.
+     * Intenta acoplar omega a la mezcla de salida (sesión 0). Best-effort:
+     * devuelve true si quedó activo (o ya lo estaba), false si AudioFlinger
+     * lo rechazó (la causa queda en lastOmegaFailureKind). Con backoff de
+     * 30 s entre intentos para no spamear el log cada 3 s del watchdog.
+     */
+    @Synchronized
+    internal fun ensureGlobalOmega(): Boolean {
+        if (globalOmega != null) return true
+        val now = System.currentTimeMillis()
+        if (now - globalOmegaLastAttemptMs < globalOmegaRetryMs) return false
+        globalOmegaLastAttemptMs = now
+        val omega = createOmegaEffect(0) ?: run {
+            Log.w(TAG, "Omega global (sesión 0) no disponible [${lastOmegaFailureKind}] — " +
+                "Ruta B sigue sin procesar; próximo reintento en ${globalOmegaRetryMs / 1000} s")
+            return false
+        }
+        globalOmega = omega
+        Log.i(TAG, "Ruta B GLOBAL activa: omega acoplado a la mezcla de salida (sesión 0, fallback 375) — " +
+            "todas las apps suenan por IVANNA sin descubrir sessionIds")
+        AudioBackendSelector.notifyOmegaAttached()
+        return true
+    }
+
+    /** Libera el omega global (al morir audioserver o al cerrar la app). */
+    @Synchronized
+    internal fun releaseGlobalOmega() {
+        globalOmega?.let { runCatching { it.release() } }
+        globalOmega = null
+        Log.i(TAG, "Omega global (sesión 0) liberado")
+    }
+
+    /** Sondea la vida del omega global; si audioserver murió, lo libera para que el sondeo reintente. */
+    @Synchronized
+    internal fun checkGlobalOmegaLiveness() {
+        val omega = globalOmega ?: return
+        val status = runCatching { omega.setEnabled(true) }.getOrDefault(EffectLiveness.DEAD)
+        if (!EffectLiveness.isAlive(status)) {
+            Log.w(TAG, "Omega global (sesión 0) muerto tras reinicio de audioserver (status=$status) — liberando para reintento")
+            releaseGlobalOmega()
+        }
+    }
+
+    /**
+     * Refleja AudioPlaybackConfiguration.getSessionId() (@SystemApi/@hide).
+     * Devuelve el sessionId real si el ROM lo expone, -1 si la copia está
+     * anonimizada (lo habitual sin MODIFY_AUDIO_ROUTING) o si la reflexión
+     * está bloqueada por la hidden-API blacklist. Nunca lanza.
+     */
+    private fun reflectSessionId(config: AudioPlaybackConfiguration): Int = runCatching {
+        val m = config.javaClass.getMethod("getSessionId")
+        (m.invoke(config) as? Int) ?: -1
+    }.onFailure {
+        if (reflectionBlockLogged.compareAndSet(false, true)) {
+            Log.w(TAG, "reflectSessionId bloqueado/no disponible (una sola vez): ${it.message}")
+        }
+    }.getOrDefault(-1)
+
+    /** Refleja AudioPlaybackConfiguration.getClientUid() (@SystemApi/@hide). -1 si anonimizado o bloqueado. */
+    private fun reflectClientUid(config: AudioPlaybackConfiguration): Int = runCatching {
+        val m = config.javaClass.getMethod("getClientUid")
+        (m.invoke(config) as? Int) ?: -1
+    }.onFailure {
+        if (reflectionBlockLogged.compareAndSet(false, true)) {
+            Log.w(TAG, "reflectClientUid bloqueado/no disponible (una sola vez): ${it.message}")
+        }
+    }.getOrDefault(-1)
+
+    /** Resuelve el paquete de un UID (best-effort, null si no se puede). */
+    private fun resolvePackageForUid(uid: Int): String? {
+        if (uid <= 0) return null
+        return runCatching {
+            context.packageManager.getPackagesForUid(uid)?.firstOrNull()
+        }.getOrNull()
+    }
+
+    /**
+     * Sondea las configuraciones de reproducción activas. Llamado cada 3 s
+     * por el watchdog. v2.5.375: ya NO es solo diagnóstico — refleja
+     * getSessionId() (nombre correcto AOSP; getAudioSessionId() no existe)
+     * sobre cada config y abre las sesiones con ID utilizable. Si todas
+     * llegan anonimizadas (-1/0, lo habitual sin MODIFY_AUDIO_ROUTING) y
+     * ningún omega está acoplado, cae al attach global a la mezcla de
+     * salida (sesión 0). El log deja constancia del valor real observado
+     * en el dispositivo, para verificar si este ROM anonimiza o no.
      *
      * LÍMITE HONESTO DE AOSP (PlaybackActivityMonitor, frameworks/base):
      * getActivePlaybackConfigurations() solo devuelve las configuraciones
-     * REALES (con sessionId usable) al llamador privilegiado, que requiere
-     * el permiso MODIFY_AUDIO_ROUTING (signature|system, inalcanzable para
-     * una app normal). Sin él, el sistema devuelve copias ANONIMIZADAS
-     * (anonymizedCopy): solo las activas, con el sessionId puesto a
-     * AUDIO_SESSION_NONE (0) y sin UID/PID del cliente. Es decir, este
-     * sondeo NO puede descubrir el sessionId de YouTube Music ni de ninguna
-     * app de terceros — ese es el motivo por el que el broadcast es el
-     * mecanismo sancionado (Wavelet/Poweramp) y por el que el fix principal
-     * de la 374 es el receiver (RECEIVER_EXPORTED + fail-open).
+     * REALES al llamador privilegiado (MODIFY_AUDIO_ROUTING,
+     * signature|privileged). Sin él, el sistema devuelve copias
+     * ANONIMIZADAS (anonymizedCopy) con el sessionId puesto a
+     * AUDIO_SESSION_ALLOCATE (-1). Por eso el sondeo es best-effort y el
+     * fallback global (sesión 0) existe: es la vía que no necesita el ID.
      *
-     * Además, el SDK público NO expone audioSessionId ni clientUid en
-     * AudioPlaybackConfiguration (son APIs ocultas @hide de AOSP): el
-     * intento de leerlos no compila contra android.jar. Por eso el sondeo
-     * es solo diagnóstico (conteo) y nunca abre sesiones; el broadcast
-     * sigue siendo el único mecanismo que descubre sesiones.
-     *
-     * @return siempre 0 (diagnóstico; no abre sesiones).
+     * @return cuántas sesiones abrió el sondeo en este pase.
      */
     @Synchronized
-    fun scanActivePlaybackSessions(): Int {
+    internal fun scanActivePlaybackSessions(): Int {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return 0
         val am = audioManager ?: return 0
         val configs: List<AudioPlaybackConfiguration> =
             runCatching { am.activePlaybackConfigurations }.getOrNull() ?: return 0
-        // Solo diagnóstico: el SDK público NO expone audioSessionId ni
-        // clientUid en AudioPlaybackConfiguration (son APIs ocultas @hide
-        // de AOSP), así que el sondeo no puede abrir sesiones. El broadcast
-        // (RECEIVER_EXPORTED + fail-open) sigue siendo el mecanismo que
-        // descubre sesiones. Este conteo solo deja constancia de cuántos
-        // jugadores activos ve el sistema.
-        Log.d(TAG, "scanActivePlaybackSessions: ${configs.size} configs activas (diagnóstico; sin sessionId por API pública)")
-        return 0
+        if (configs.isEmpty()) return 0
+        var opened = 0
+        var reflected = 0
+        var anonymized = 0
+        for (config in configs) {
+            val sessionId = reflectSessionId(config)
+            if (!isUsableSessionId(sessionId)) { anonymized++; continue }
+            reflected++
+            val uid = reflectClientUid(config)
+            val pkg = resolvePackageForUid(uid)
+            if (!activeSessions.containsKey(sessionId)) {
+                openSession(sessionId, pkg)
+                opened++
+            }
+        }
+        Log.i(TAG, "scanActivePlaybackSessions: ${configs.size} configs, $reflected con sessionId real, " +
+            "$anonymized anonimizadas (-1/0), $opened sesiones abiertas por sondeo")
+        // Fallback: hay reproducción activa pero ningún sessionId utilizable
+        // (copias anonimizadas) y ningún omega acoplado — attach global.
+        if (opened == 0 && reflected == 0 && anonymized > 0 && !hasAnyOmegaAttached()) {
+            ensureGlobalOmega()
+        }
+        return opened
     }
 
     private fun probeStatus(fx: SessionEffects): Int {
@@ -937,6 +1082,7 @@ class IvannaGlobalEffectManager(
         activeSessions.clear()
         omegaRetryAttempts.clear()
         omegaLastAttemptMs.clear()
+        releaseGlobalOmega()   // v2.5.375: liberar también el omega global (sesión 0)
         ContentProfileEngine.noteSource(null, false)
 
         Log.i(

@@ -13,6 +13,15 @@
     <!-- Audio permissions -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- v2.5.375 (Ruta B): MODIFY_AUDIO_ROUTING (signature|privileged) — sin
+         ella, AudioManager.getActivePlaybackConfigurations() devuelve copias
+         anonimizadas (sessionId=-1) y el sondeo por reflexión no puede
+         descubrir sesiones de terceros. Declararla NO la concede a una app
+         normal; es el requisito para que el sondeo devuelva IDs reales si
+         IVANNA se instala como app privilegiada (/system/priv-app) vía el
+         módulo Magisk. Sin privilegio, el fallback es el omega global
+         (sesión 0), que no necesita el sessionId. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>

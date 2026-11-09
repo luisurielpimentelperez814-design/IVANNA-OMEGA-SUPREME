@@ -228,10 +228,11 @@ class IVANNAApplication : Application() {
         // de sesiones creadas DESPUÉS de que la app empiece a escuchar.
         // Si la sesión ya existía (música sonando antes de abrir IVANNA) o
         // el broadcast se pierde (force-stop, reboot), el manager nunca se
-        // entera. El escáner sondea periódicamente las configuraciones de
-        // reproducción activas y abre las sesiones que aún no están
-        // rastreadas (ver IvannaGlobalEffectManager.scanActivePlaybackSessions
-        // para la limitación de anonimización de AOSP).
+        // entera. v2.5.375: el escáner ya NO es solo diagnóstico — refleja
+        // getSessionId() y abre las sesiones con ID real, y si todas llegan
+        // anonimizadas cae al omega global (sesión 0). Ver
+        // IvannaGlobalEffectManager.scanActivePlaybackSessions para la
+        // limitación de anonimización de AOSP.
         runCatching {
             globalEffectManager.startSessionScanner()
         }.onFailure { Log.w("IVANNAApp", "Session scanner no arrancó: ${it.message}") }
