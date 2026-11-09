@@ -51,11 +51,32 @@ object AudioBackendSelector {
      * observabilidad: no cambia que backend se elige, porque no esta verificado en dispositivo que
      * reactivar el fallback con efecto ausente no duplique el procesado (eco/desface).
      * UNAVAILABLE = beacon ilegible (DAC/SELinux) -> no se afirma nada.
+     *
+     * ACTUALIZADO (Ruta B perfecta, v2.5.369): el beacon SÍ cambia el backend ahora.
+     * ROOT_DAEMON exige efecto confirmado (ENABLED_IDLE o PROCESSING); sin
+     * confirmación el modo es ROOT_NO_DAEMON y el fallback local SIGUE
+     * procesando, para que el audio nunca quede sin IVANNA. El riesgo de
+     * doble procesado no existe mientras el efecto no está insertado: no hay
+     * nada que duplicar, porque Ruta B no está procesando nada.
      */
     private val _effectState = MutableStateFlow(DSPBridge.EffectState.UNAVAILABLE)
     val effectState: StateFlow<DSPBridge.EffectState> = _effectState.asStateFlow()
 
+    /**
+     * Ruta B confirmada: el efecto omega_effect está insertado/procesando
+     * (beacon ENABLED_IDLE/PROCESSING). Es la señal que autoriza detener el
+     * fallback local. "Daemon vivo" por sí solo NO la confirma.
+     */
+    private val _routeBConfirmed = MutableStateFlow(false)
+    val routeBConfirmed: StateFlow<Boolean> = _routeBConfirmed.asStateFlow()
+
+    /** Daemon respondiendo por socket (última evaluación). */
+    private val _daemonAlive = MutableStateFlow(false)
+    val daemonAlive: StateFlow<Boolean> = _daemonAlive.asStateFlow()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile private var appContext: Context? = null
 
     @Volatile private var noRoot: NoRootAudioProcessor? = null
     @Volatile private var started = false
@@ -67,6 +88,7 @@ object AudioBackendSelector {
         if (started) return
         started = true
         val app = context.applicationContext
+        appContext = app
         scope.launch {
             evaluate(app)
             // Re-evaluacion periodica: el daemon del modulo puede subir tarde
@@ -78,6 +100,50 @@ object AudioBackendSelector {
                 evaluate(app)
             }
         }
+    }
+
+    /**
+     * La app creó el efecto Omega en una sesión (IvannaGlobalEffectManager).
+     * Re-evalúa el backend DE INMEDIATO (sin esperar al ciclo de 10 s) para
+     * que, si el beacon ya confirma el efecto, el fallback se detenga pronto
+     * y no haya doble procesado. Si el beacon aún no lo confirma, el modo se
+     * queda en ROOT_NO_DAEMON y el fallback sigue (fail-closed).
+     */
+    fun notifyOmegaAttached() {
+        val app = appContext ?: return
+        scope.launch { evaluate(app) }
+    }
+
+    /** Decisión pura (probable en host): ¿Ruta B está confirmada? */
+    internal fun isRouteBConfirmed(effect: DSPBridge.EffectState): Boolean =
+        effect == DSPBridge.EffectState.ENABLED_IDLE || effect == DSPBridge.EffectState.PROCESSING
+
+    /**
+     * Decisión pura del modo (probable en host). ROOT_DAEMON exige las tres:
+     * root + daemon vivo + Ruta B confirmada (efecto insertado/procesando).
+     * Con daemon vivo pero Ruta B sin confirmar, el modo es ROOT_NO_DAEMON
+     * y el fallback local SIGUE procesando (fail-closed).
+     */
+    internal fun decideMode(root: Boolean, daemon: Boolean, routeBConfirmed: Boolean): Mode = when {
+        root && daemon && routeBConfirmed -> Mode.ROOT_DAEMON
+        root && daemon -> Mode.ROOT_NO_DAEMON
+        root -> Mode.ROOT_NO_DAEMON
+        else -> Mode.NO_ROOT
+    }
+
+    /**
+     * Resumen legible del estado de Ruta B para diagnóstico (UI/logcat).
+     * Sin I/O: solo refleja los StateFlow actuales. Para el detalle del
+     * daemon (consumer, dsp_frames, generaciones) usar
+     * OmegaEngineBridge.requestTelemetry().
+     */
+    fun routeBStatusLine(): String {
+        val m = _mode.value
+        val d = _daemonAlive.value
+        val e = _effectState.value
+        val c = _routeBConfirmed.value
+        return "RutaB modo=$m daemon=${if (d) "vivo" else "caído"} efecto=$e confirmada=${if (c) "sí" else "no"}" +
+            if (m == Mode.ROOT_NO_DAEMON && d) " (daemon responde pero efecto no creado/procesando — ver docs/RUTA_B_DAEMON_FIX.md)" else ""
     }
 
     private fun refreshEffectState(daemon: Boolean) {
@@ -94,15 +160,22 @@ object AudioBackendSelector {
 
     private fun evaluate(app: Context) {
         val daemon = runCatching { MagiskBridge.isDaemonRunning }.getOrDefault(false)
+        _daemonAlive.value = daemon
         refreshEffectState(daemon)
         val root = if (daemon) true else RootAccess.probeSu()
-        val next = when {
-            root && daemon -> Mode.ROOT_DAEMON
-            root -> Mode.ROOT_NO_DAEMON
-            else -> Mode.NO_ROOT
-        }
+        // Ruta B confirmada solo si el efecto está insertado/procesando
+        // (beacon). "Daemon vivo" NO basta: sin consumidor el daemon acepta
+        // comandos pero no procesa nada (applied:false, dsp_frames:0). Sin
+        // confirmación el modo es ROOT_NO_DAEMON y el fallback local SIGUE
+        // procesando (Ruta A) para que el audio nunca quede sin IVANNA.
+        // Solo con Ruta B confirmada se detiene el fallback (evita doble
+        // procesado). Si el beacon es ilegible (UNAVAILABLE) no se afirma
+        // nada: se conserva el fallback (fail-closed).
+        val confirmed = isRouteBConfirmed(_effectState.value)
+        _routeBConfirmed.value = confirmed
+        val next = decideMode(root, daemon, confirmed)
         if (next == _mode.value) return
-        Log.i(TAG, "modo de audio: ${_mode.value} -> $next (root=$root daemon=$daemon)")
+        Log.i(TAG, "modo de audio: ${_mode.value} -> $next (root=$root daemon=$daemon routeB=$confirmed effect=${_effectState.value})")
         _mode.value = next
         applyMode(app, next)
     }
@@ -116,10 +189,11 @@ object AudioBackendSelector {
                            else "NoRootAudioProcessor no disponible en este dispositivo")
             }
             Mode.ROOT_DAEMON -> {
-                // El daemon procesa system-wide: el fallback local solo
-                // duplicaria compresion/EQ sobre el mismo audio.
+                // Solo se llega aquí con Ruta B confirmada (efecto insertado/
+                // procesando, ver evaluate()): el daemon procesa system-wide
+                // y el fallback local solo duplicaria compresion/EQ.
                 runCatching { noRoot?.stop() }
-                Log.i(TAG, "daemon system-wide activo — fallback local detenido")
+                Log.i(TAG, "Ruta B confirmada (efecto procesando) — fallback local detenido")
             }
             Mode.UNKNOWN -> Unit
         }
@@ -129,6 +203,10 @@ object AudioBackendSelector {
         runCatching { noRoot?.stop() }
         noRoot = null
         started = false
+        appContext = null
+        _routeBConfirmed.value = false
+        _daemonAlive.value = false
+        _effectState.value = DSPBridge.EffectState.UNAVAILABLE
         _mode.value = Mode.UNKNOWN
     }
 }

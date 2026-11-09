@@ -242,6 +242,46 @@ data class IvannaEffectProfile(
     }
 }
 
+/**
+ * Backoff para reintentar la creación del efecto Omega en una sesión que
+ * quedó sin él (Ruta B). Puro y determinista para poder probarlo en host.
+ *
+ * La creación del efecto falla cuando el módulo/HAL aún no está listo
+ * (p. ej. sesión abierta antes de que el HAL lazy arrancara, o módulo
+ * instalado después de abrir la app). Sin reintento, esa sesión quedaba en
+ * efectos stock para siempre — el bug de la sesión 409 de YouTube Music
+ * (DIAGNOSTICO_RUTA_B_2026-11-07). El backoff es exponencial con techo:
+ * reintenta agresivo al principio (el HAL suele tardar segundos) y luego
+ * cada 30 s de forma indefinida mientras la sesión siga viva, por si el
+ * módulo/HAL se vuelve disponible más tarde. Nunca se rinde.
+ */
+internal object OmegaAttachBackoff {
+    /** Delays en ms por número de intento fallido consecutivo (índice = intento). */
+    private val DELAYS_MS = longArrayOf(2_000L, 5_000L, 10_000L, 20_000L, 30_000L)
+    fun delayMs(attempt: Int): Long =
+        DELAYS_MS[attempt.coerceIn(0, DELAYS_MS.lastIndex)]
+}
+
+/**
+ * Desenrolla la cadena de causas de una excepción hasta la causa raíz y
+ * devuelve un mensaje legible. El constructor AudioEffect por reflection
+ * envuelve el error real en InvocationTargetException con mensaje null, así
+ * que loguear solo `it.message` ocultaba la causa (el diagnóstico del 07
+ * solo veía "null"). Puro para poder probarlo en host.
+ */
+internal fun omegaRootCauseMessage(t: Throwable): String {
+    var cur: Throwable? = t
+    var depth = 0
+    while (cur?.cause != null && cur.cause !== cur && depth < 10) {
+        cur = cur.cause
+        depth++
+    }
+    val root = cur ?: t
+    val name = root.javaClass.simpleName
+    val msg = root.message?.takeIf { it.isNotBlank() } ?: "(sin mensaje)"
+    return if (root === t) "$name: $msg" else "${t.javaClass.simpleName} -> $name: $msg"
+}
+
 class IvannaGlobalEffectManager(
     private val context: android.content.Context
 ) {
@@ -309,6 +349,15 @@ class IvannaGlobalEffectManager(
 
     // Mapa sessionId → lista de efectos activos en esa sesión
     private val activeSessions = ConcurrentHashMap<Int, SessionEffects>()
+
+    // ── Reintento de attach Omega (Ruta B) ────────────────────────────────────
+    // Sesiones vivas sin efecto omega: intentos fallidos consecutivos y
+    // momento del último intento (ms). El watchdog reintenta crear el efecto
+    // con backoff (OmegaAttachBackoff) mientras la sesión siga viva.
+    // Sin esto, una sesión abierta antes de que el módulo/HAL estuviera listo
+    // quedaba en efectos stock para siempre (bug sesión 409, 2026-11-07).
+    private val omegaRetryAttempts = ConcurrentHashMap<Int, Int>()
+    private val omegaLastAttemptMs = ConcurrentHashMap<Int, Long>()
 
     // Perfil activo (se aplica a todas las sesiones nuevas y actualiza las existentes)
     @Volatile var activeProfile: IvannaEffectProfile = validateProfileWithSafmus(
@@ -482,7 +531,13 @@ class IvannaGlobalEffectManager(
     private fun ensureWatchdog() {
         if (watchdogStarted.compareAndSet(false, true)) {
             watchdog.scheduleWithFixedDelay(
-                { runCatching { recoverDeadSessions() }.onFailure { Log.w(TAG, "watchdog: ${it.message}") } },
+                {
+                    runCatching { recoverDeadSessions() }.onFailure { Log.w(TAG, "watchdog: ${it.message}") }
+                    // Reintento de attach Omega para sesiones vivas sin efecto (Ruta B):
+                    // una sesión abierta antes de que el módulo/HAL estuviera listo no
+                    // debe quedarse en efectos stock para siempre (bug sesión 409).
+                    runCatching { retryOmegaAttachForSessions() }.onFailure { Log.w(TAG, "watchdog omega-retry: ${it.message}") }
+                },
                 3, 3, java.util.concurrent.TimeUnit.SECONDS
             )
         }
@@ -512,9 +567,76 @@ class IvannaGlobalEffectManager(
         return recovered
     }
 
+    // ── Reintento de attach Omega (Ruta B) ────────────────────────────────────
+    /**
+     * Intenta crear el efecto Omega en una sesión YA ABIERTA que quedó sin él
+     * (efectos stock). Si tiene éxito, libera los efectos stock (para no
+     * duplicar procesado: en una sesión con omega los stock van en bypass por
+     * diseño, ver openSession) y deja la sesión acoplada al efecto nativo.
+     * Si falla, registra la causa real y deja la sesión como estaba (stock),
+     * para que el watchdog lo reintente con backoff.
+     *
+     * @return true si el efecto quedó acoplado (o ya lo estaba), false si no
+     *         se pudo crear.
+     */
+    @Synchronized
+    fun tryAttachOmega(sessionId: Int): Boolean {
+        val fx = activeSessions[sessionId] ?: return false
+        if (fx.omega != null) {
+            omegaRetryAttempts.remove(sessionId)
+            omegaLastAttemptMs.remove(sessionId)
+            return true
+        }
+        val omega = createOmegaEffect(sessionId) ?: run {
+            val attempts = (omegaRetryAttempts[sessionId] ?: 0) + 1
+            omegaRetryAttempts[sessionId] = attempts
+            omegaLastAttemptMs[sessionId] = System.currentTimeMillis()
+            Log.d(TAG, "Omega no disponible en sesión $sessionId (intento $attempts, " +
+                "próximo reintento en ${OmegaAttachBackoff.delayMs(attempts)} ms)")
+            return false
+        }
+        // Éxito: liberar los stock (el diseño es omega-solo por sesión) y
+        // acoplar el efecto nativo.
+        releaseEffects(fx)
+        activeSessions[sessionId] = fx.copy(
+            equalizer = null, bassBoost = null, virtualizer = null,
+            loudness = null, dynamics = null, reverb = null, omega = omega
+        )
+        omegaRetryAttempts.remove(sessionId)
+        omegaLastAttemptMs.remove(sessionId)
+        applyProfileToSession(sessionId, activeProfile)
+        republishOmegaEq()
+        Log.i(TAG, "Sesión $sessionId acoplada a libomega_effect nativo por reintento " +
+            "(efectos stock liberados para no duplicar procesado)")
+        // Ruta B confirmada: avisar al selector para que re-evalúe el backend
+        // y detenga el fallback local sin esperar al ciclo de 10 s.
+        AudioBackendSelector.notifyOmegaAttached()
+        return true
+    }
+
+    /**
+     * Pase del watchdog: reintenta crear Omega en cada sesión viva sin efecto,
+     * respetando el backoff por sesión. Devuelve cuántas sesiones se acoplaron.
+     */
+    @Synchronized
+    internal fun retryOmegaAttachForSessions(): Int {
+        val now = System.currentTimeMillis()
+        var attached = 0
+        for ((sid, fx) in activeSessions.entries.toList()) {
+            if (fx.omega != null) continue
+            val attempts = omegaRetryAttempts[sid] ?: 0
+            val last = omegaLastAttemptMs[sid] ?: 0L
+            if (now - last < OmegaAttachBackoff.delayMs(attempts)) continue
+            if (tryAttachOmega(sid)) attached++
+        }
+        return attached
+    }
+
     // ── Cierra y libera efectos de una sesión ─────────────────────────────────
     fun closeSession(audioSession: Int) {
         activeSessions.remove(audioSession)?.let { releaseEffects(it) }
+        omegaRetryAttempts.remove(audioSession)
+        omegaLastAttemptMs.remove(audioSession)
         // El origen (video/streaming) del perfil por contenido debe seguir a las
         // sesiones vivas: al cerrar la última de video ya no se debe seguir en MOVIE.
         if (!isVideoStreamingActive) ContentProfileEngine.noteSource(null, false)
@@ -675,6 +797,8 @@ class IvannaGlobalEffectManager(
         }
 
         activeSessions.clear()
+        omegaRetryAttempts.clear()
+        omegaLastAttemptMs.clear()
         ContentProfileEngine.noteSource(null, false)
 
         Log.i(
@@ -804,7 +928,11 @@ class IvannaGlobalEffectManager(
             session
         ).also { it.enabled = true }
     }.onFailure {
-        Log.d(TAG, "Omega effect no disponible en sesión $session (módulo no instalado): ${it.message}")
+        // La causa real viene envuelta en InvocationTargetException con mensaje
+        // null; loguear solo it.message ocultaba el diagnóstico (el 07 solo
+        // veía "null"). omegaRootCauseMessage desenrolla hasta la causa raíz.
+        Log.d(TAG, "Omega effect no disponible en sesión $session: ${omegaRootCauseMessage(it)} " +
+            "(si el módulo está instalado, el HAL de efectos no conoce el UUID — ver docs/RUTA_B_DAEMON_FIX.md)")
     }.getOrNull()
 
     private fun createEqualizer(session: Int): Equalizer? = runCatching {

@@ -22,7 +22,8 @@ import com.ivanna.omega.audio.RouteCapabilities
 @Composable
 fun RouteModeBanner(modifier: Modifier = Modifier) {
     val mode by AudioBackendSelector.mode.collectAsState()
-    val limits = RouteCapabilities.limitsFor(mode) ?: return
+    val daemonAlive by AudioBackendSelector.daemonAlive.collectAsState()
+    val limits = RouteCapabilities.limitsFor(mode, daemonAlive) ?: return
     Column(
         modifier = modifier
             .fillMaxWidth()

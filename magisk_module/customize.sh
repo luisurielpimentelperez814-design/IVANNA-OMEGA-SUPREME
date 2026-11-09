@@ -194,86 +194,73 @@ audio_registration_view() {
         print xml
     }' "$1"
 }
-ui_print "- Configurando audio_effects.xml..."
-ORIG_XML=""
-for P in /system/vendor/etc/audio_effects.xml /vendor/etc/audio_effects.xml /system/etc/audio_effects.xml; do
-    if [ -f "$P" ]; then
-        ORIG_XML="$P"
-        break
-    fi
-done
-
-if [ -n "$ORIG_XML" ] && grep -q "<audio_effects_conf" "$ORIG_XML" 2>/dev/null; then
-    # TARGET_XML espeja la partición REAL detectada (ORIG_XML), no una fija.
-    # Normalización: este módulo, igual que el resto de sus archivos (ver
-    # system/vendor/lib64/soundfx/, system/vendor/etc/ estático), representa
-    # /vendor/... como $MODPATH/system/vendor/... — NO $MODPATH/vendor/...
-    # directo. Es el mapeo que Magisk espera en layouts system-as-root
-    # (Android 10+, incluye el Moto G85). Si ORIG_XML venía de /vendor/ a
-    # secas, se traduce antes de prependear $MODPATH; /system/... y
-    # /system/vendor/... ya son 1:1.
-    case "$ORIG_XML" in
-        /vendor/*) MIRRORED_PATH="/system$ORIG_XML" ;;
-        *)         MIRRORED_PATH="$ORIG_XML" ;;
-    esac
-    TARGET_XML="$MODPATH$MIRRORED_PATH"
-    mkdir -p "$(dirname "$TARGET_XML")"
-    ui_print "  ✓ Base detectada: $ORIG_XML"
-    ui_print "  ✓ Destino del merge alineado a la misma partición: $TARGET_XML"
-    cp -f "$ORIG_XML" "$TARGET_XML" || abort "ERROR: no se pudo copiar XML OEM"
-    REG_XML=$(audio_registration_view "$TARGET_XML") || abort "ERROR: comentarios XML OEM incompletos"
+# merge_omega_xml <src_oem_xml> <dst_merged_xml>
+# Copia el XML OEM a <dst> y fusiona el registro de librería/efecto omega +
+# los <apply> de postprocess (music/movie/game), validando cada paso.
+# Devuelve 0 si el merge quedó validado, 1 si no (sin abortar: el llamador
+# decide si es fatal). Ante un fallo, el destino queda con la copia OEM sin
+# fusionar — nunca se destruye el OEM ni se instala un XML a medias.
+# RAZÓN (Ruta B, 2026-11-07): la factoría de efectos puede leer una
+# configuración DISTINTA de la primera encontrada (SKU blair o /system/etc).
+# Si solo se fusiona la primera, el HAL no conoce el UUID omega y la app no
+# puede crear el efecto. Por eso el instalador llama a esta función para
+# TODAS las candidatas que existan (ver el bucle de fusión adicional).
+# Sin `local` (el script no lo usa): MG_SRC/MG_DST son los parámetros; el
+# resto son las mismas variables transitorias del merge original.
+merge_omega_xml() {
+    MG_SRC="$1"
+    MG_DST="$2"
+    [ -n "$MG_SRC" ] && [ -f "$MG_SRC" ] || return 1
+    grep -q "<audio_effects_conf" "$MG_SRC" 2>/dev/null || return 1
+    mkdir -p "$(dirname "$MG_DST")" || return 1
+    cp -f "$MG_SRC" "$MG_DST" || return 1
+    REG_XML=$(audio_registration_view "$MG_DST") || return 1
     # Registration is checked independently: an OEM file may contain the
     # UUID/effect but lack the library declaration (or vice versa).
     if printf '%s\n' "$REG_XML" | grep -Eq '<library[[:space:]]([^>]*[[:space:]])?name="omega_effect"'; then
         if printf '%s\n' "$REG_XML" | grep -E '<library[[:space:]]([^>]*[[:space:]])?name="omega_effect"' | grep -qv '[[:space:]]path="libomega_effect[.]so"'; then
-            abort "ERROR: omega_effect ya existe con una ruta de librería distinta; se rechaza el merge ambiguo"
+            ui_print "  ! omega_effect ya existe con una ruta de librería distinta; se rechaza el merge ambiguo"
+            return 1
         fi
     else
-        grep -q '<libraries>' "$TARGET_XML" || abort "ERROR: XML OEM sin sección <libraries>; no se puede registrar IVANNA con seguridad"
-        sed -i '/<libraries>/a \        <library name="omega_effect" path="libomega_effect.so"/>' "$TARGET_XML" || abort "ERROR: no se pudo registrar la librería IVANNA"
+        grep -q '<libraries>' "$MG_DST" || { ui_print "  ! XML OEM sin sección <libraries>; no se puede registrar IVANNA con seguridad"; return 1; }
+        sed -i '/<libraries>/a \        <library name="omega_effect" path="libomega_effect.so"/>' "$MG_DST" || return 1
     fi
     if printf '%s\n' "$REG_XML" | grep -Eq '<effect[[:space:]]([^>]*[[:space:]])?name="omega_effect"'; then
         if printf '%s\n' "$REG_XML" | grep -E '<effect[[:space:]]([^>]*[[:space:]])?name="omega_effect"' | grep -qv '[[:space:]]uuid="4956414e-4e41-4f4d-4547-415355505245"'; then
-            abort "ERROR: existe omega_effect con UUID distinto; se rechaza el merge ambiguo"
+            ui_print "  ! existe omega_effect con UUID distinto; se rechaza el merge ambiguo"
+            return 1
         fi
     else
-        grep -q '<effects>' "$TARGET_XML" || abort "ERROR: XML OEM sin sección <effects>; no se puede registrar IVANNA con seguridad"
-        sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$TARGET_XML" || abort "ERROR: no se pudo registrar el efecto IVANNA"
+        grep -q '<effects>' "$MG_DST" || { ui_print "  ! XML OEM sin sección <effects>; no se puede registrar IVANNA con seguridad"; return 1; }
+        sed -i '/<effects>/a \        <effect name="omega_effect" library="omega_effect" uuid="4956414e-4e41-4f4d-4547-415355505245"/>' "$MG_DST" || return 1
     fi
-    REG_XML=$(audio_registration_view "$TARGET_XML") || abort "ERROR: comentarios XML OEM incompletos"
-    printf '%s\n' "$REG_XML" | grep -E '<library[[:space:]]([^>]*[[:space:]])?name="omega_effect"' | grep -q '[[:space:]]path="libomega_effect[.]so"' || abort "ERROR: falta registro de librería IVANNA validado"
+    REG_XML=$(audio_registration_view "$MG_DST") || return 1
+    printf '%s\n' "$REG_XML" | grep -E '<library[[:space:]]([^>]*[[:space:]])?name="omega_effect"' | grep -q '[[:space:]]path="libomega_effect[.]so"' || return 1
     # Portable separate checks: attributes may appear in either order and on
     # different lines. Do not rely on non-POSIX basic-regex \| alternation.
-    REG_EFFECT=$(printf '%s\n' "$REG_XML" | grep -E '<effect[[:space:]]([^>]*[[:space:]])?name="omega_effect"') || abort "ERROR: falta registro UUID de IVANNA validado"
+    REG_EFFECT=$(printf '%s\n' "$REG_XML" | grep -E '<effect[[:space:]]([^>]*[[:space:]])?name="omega_effect"') || return 1
     if printf '%s\n' "$REG_EFFECT" | grep -qv '[[:space:]]library="omega_effect"' ||
        printf '%s\n' "$REG_EFFECT" | grep -qv '[[:space:]]uuid="4956414e-4e41-4f4d-4547-415355505245"'; then
-        abort "ERROR: falta registro UUID de IVANNA validado"
+        return 1
     fi
-    ui_print "  ✓ Registro de librería y UUID de IVANNA validados por separado"
-else
-    # Fail closed: never overlay a vendor audio_effects.xml fallback over an
-    # unreadable/unsupported OEM configuration. That could silently remove
-    # proprietary Dolby/Dirac/Qualcomm registrations while pretending success.
-    abort "ERROR: no se pudo leer una configuración OEM audio_effects.xml válida; se cancela para proteger el HAL y conservar sus efectos propietarios. No se sustituirá por el XML estático."
-fi
-
-# Ensure IVANNA is attached to the real postprocess chain in the detected OEM XML.
-# This runs after the OEM file is copied, so it preserves the device's other effects.
-if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
-    PP_TMP="$TARGET_XML.ivanna.${PPID:-0}"
-    PP_INPUT="$TARGET_XML.input.${PPID:-0}"
-    # OEM XML may place <stream>...</stream> on one line. Normalize those
-    # tags onto separate lines first so AWK inserts <apply> INSIDE the stream,
-    # never before the whole one-line stream element.
-    sed 's#<stream[[:space:]][^>]*>#&\
+    # Postprocess: asegurar <apply effect="omega_effect"/> en music/movie/game.
+    # Se corre tras copiar el OEM, así se preservan los demás efectos.
+    if [ -s "$MG_DST" ]; then
+        PP_TMP="$MG_DST.ivanna.${PPID:-0}"
+        PP_INPUT="$MG_DST.input.${PPID:-0}"
+        # OEM XML may place <stream>...</stream> on one line. Normalize those
+        # tags onto separate lines first so AWK inserts <apply> INSIDE the stream,
+        # never before the whole one-line stream element.
+        sed 's#<stream[[:space:]][^>]*>#&\
 #g; s#</stream>#\
 </stream>\
-#g' "$TARGET_XML" > "$PP_INPUT" || {
-        rm -f "$PP_INPUT" "$PP_TMP"
-        ui_print "  ! No se pudo normalizar XML OEM; se conserva la base"
-        exit 1
-    }
-    awk '
+#g' "$MG_DST" > "$PP_INPUT" || {
+            rm -f "$PP_INPUT" "$PP_TMP"
+            ui_print "  ! No se pudo normalizar XML OEM; se conserva la base"
+            return 1
+        }
+        awk '
     function supported(t) { return t=="music" || t=="movie" || t=="game" }
     {
         line[NR]=$0
@@ -317,15 +304,15 @@ if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
             print line[i]
         }
     }' "$PP_INPUT" > "$PP_TMP" || {
-        rm -f "$PP_INPUT" "$PP_TMP"
-        ui_print "  ! No se pudo fusionar postprocess; se conserva XML OEM original"
-        exit 1
-    }
-    rm -f "$PP_INPUT"
-    # Do not accept a single matching apply as proof for all target streams.
-    PP_VALID=1
-    for PP_STREAM in music movie game; do
-        if ! awk -v want="$PP_STREAM" '
+            rm -f "$PP_INPUT" "$PP_TMP"
+            ui_print "  ! No se pudo fusionar postprocess; se conserva XML OEM original"
+            return 1
+        }
+        rm -f "$PP_INPUT"
+        # Do not accept a single matching apply as proof for all target streams.
+        PP_VALID=1
+        for PP_STREAM in music movie game; do
+            if ! awk -v want="$PP_STREAM" '
             /<stream[[:space:]]+type="/ {
                 t=$0; sub(/^.*type="/,"",t); sub(/".*$/,"",t)
                 active=(t==want); has_apply=0
@@ -337,19 +324,82 @@ if [ -n "$ORIG_XML" ] && [ -s "$TARGET_XML" ]; then
             }
             END { if (!found) exit 1 }
         ' "$PP_TMP"; then
-            PP_VALID=0
-            ui_print "  ! Postprocess incompleto: falta apply dentro del stream $PP_STREAM"
+                PP_VALID=0
+                ui_print "  ! Postprocess incompleto: falta apply dentro del stream $PP_STREAM"
+            fi
+        done
+        if grep -q '<audio_effects_conf' "$PP_TMP" && [ "$PP_VALID" -eq 1 ]; then
+            mv -f "$PP_TMP" "$MG_DST"
+        else
+            rm -f "$PP_TMP"
+            ui_print "  ! Merge de postprocess no validado; se conserva XML OEM original"
+            return 1
         fi
-    done
-    if grep -q '<audio_effects_conf' "$PP_TMP" && [ "$PP_VALID" -eq 1 ]; then
-        mv -f "$PP_TMP" "$TARGET_XML"
-        ui_print "  ✓ Registro y apply de music/movie/game validados; efectos OEM preservados"
-    else
-        rm -f "$PP_TMP"
-        ui_print "  ! Merge de postprocess no validado; se conserva XML OEM original"
-        exit 1
     fi
+    return 0
+}
+ui_print "- Configurando audio_effects.xml..."
+ORIG_XML=""
+for P in /system/vendor/etc/audio_effects.xml /vendor/etc/audio_effects.xml /system/etc/audio_effects.xml; do
+    if [ -f "$P" ]; then
+        ORIG_XML="$P"
+        break
+    fi
+done
+
+if [ -z "$ORIG_XML" ]; then
+    # Fail closed: never overlay a vendor audio_effects.xml fallback over an
+    # unreadable/unsupported OEM configuration. That could silently remove
+    # proprietary Dolby/Dirac/Qualcomm registrations while pretending success.
+    abort "ERROR: no se pudo leer una configuración OEM audio_effects.xml válida; se cancela para proteger el HAL y conservar sus efectos propietarios. No se sustituirá por el XML estático."
 fi
+
+# TARGET_XML espeja la partición REAL detectada (ORIG_XML), no una fija.
+# Normalización: este módulo, igual que el resto de sus archivos (ver
+# system/vendor/lib64/soundfx/, system/vendor/etc/ estático), representa
+# /vendor/... como $MODPATH/system/vendor/... — NO $MODPATH/vendor/...
+# directo. Es el mapeo que Magisk espera en layouts system-as-root
+# (Android 10+, incluye el Moto G85). Si ORIG_XML venía de /vendor/ a
+# secas, se traduce antes de prependear $MODPATH; /system/... y
+# /system/vendor/... ya son 1:1.
+case "$ORIG_XML" in
+    /vendor/*) MIRRORED_PATH="/system$ORIG_XML" ;;
+    *)         MIRRORED_PATH="$ORIG_XML" ;;
+esac
+TARGET_XML="$MODPATH$MIRRORED_PATH"
+ui_print "  ✓ Base detectada: $ORIG_XML"
+ui_print "  ✓ Destino del merge alineado a la misma partición: $TARGET_XML"
+merge_omega_xml "$ORIG_XML" "$TARGET_XML" || abort "ERROR: no se pudo fusionar el XML OEM principal ($ORIG_XML); se cancela para proteger el HAL y conservar sus efectos propietarios."
+ui_print "  ✓ Registro de librería y UUID de IVANNA validados por separado"
+ui_print "  ✓ Registro y apply de music/movie/game validados; efectos OEM preservados"
+
+# ── Fusión adicional: SKU y /system/etc ──────────────────────────────────────
+# La factoría de efectos puede leer una configuración DISTINTA de la primera
+# encontrada (p. ej. la SKU blair: /vendor/etc/audio/sku_blair/audio_effects.xml,
+# o /system/etc/audio_effects.xml). En el Moto G85 el XML genérico de vendor
+# ya tenía omega fusionado pero el HAL nunca registró el UUID — consistente
+# con que la factoría leyó la SKU (0 menciones de omega). Si solo se fusiona
+# la primera, el efecto no existe para el HAL y la app no puede crearlo
+# (DIAGNOSTICO_RUTA_B_2026-11-07). Se fusiona en TODAS las candidatas que
+# existan, cada una con su propio contenido OEM (nunca se copia el merge de
+# una sobre otra: cada SKU tiene sus efectos propietarios). Un fallo aquí NO
+# aborta la instalación (el merge principal ya quedó validado); solo se
+# avisa y se conserva la base OEM de esa candidata.
+for EXTRA_XML in /vendor/etc/audio/sku_*/audio_effects.xml /system/etc/audio_effects.xml; do
+    [ -f "$EXTRA_XML" ] || continue
+    [ "$EXTRA_XML" = "$ORIG_XML" ] && continue
+    case "$EXTRA_XML" in
+        /vendor/*) EXTRA_MIRRORED="/system$EXTRA_XML" ;;
+        *)         EXTRA_MIRRORED="$EXTRA_XML" ;;
+    esac
+    EXTRA_TARGET="$MODPATH$EXTRA_MIRRORED"
+    if merge_omega_xml "$EXTRA_XML" "$EXTRA_TARGET"; then
+        ui_print "  ✓ Fusionado también en: $EXTRA_XML"
+    else
+        ui_print "  ! No se pudo fusionar $EXTRA_XML (se conserva la base OEM; el merge principal sigue válido)"
+        rm -f "$EXTRA_TARGET"
+    fi
+done
 
 ui_print "- Setting permissions on DSP libraries..."
 set_perm_recursive "$MODPATH/system" root root 0755 0644
