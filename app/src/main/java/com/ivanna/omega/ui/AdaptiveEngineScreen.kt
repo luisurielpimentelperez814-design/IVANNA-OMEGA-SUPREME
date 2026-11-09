@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ivanna.omega.assistant.IvannaPreferenceLearner
 import com.ivanna.omega.audio.AdaptiveBackend
 import com.ivanna.omega.audio.AdaptiveMode
 import com.ivanna.omega.audio.AudioStateManager
@@ -39,6 +40,9 @@ internal fun AdaptiveEngineScreen(
 ) {
     val context = LocalContext.current
     val backend = backend ?: remember { AdaptiveBackend(context) }
+    // Auto-refinamiento: los ajustes manuales de estos sliders alimentan el
+    // aprendizaje de preferencias (un gesto de arrastre = un registro).
+    val preferenceLearner = remember { IvannaPreferenceLearner(context) }
     val telemetry by backend.telemetry.collectAsState()
     val audioState by AudioStateManager.state.collectAsState()
     var manualModeEnabled by remember { mutableStateOf(audioState.manualModeEnabled) }
@@ -381,6 +385,7 @@ internal fun AdaptiveEngineScreen(
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(exciterAmount = v) }
                         backend.applyManualState(AudioStateManager.audioState.value)
+                        preferenceLearner.recordManualAdjustment(IvannaPreferenceLearner.EXCITER_AMOUNT, v)
                     }
                 )
                 AuroraSlider(
@@ -391,6 +396,7 @@ internal fun AdaptiveEngineScreen(
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(spatialWidth = v) }
                         backend.applyManualState(audioState.copy(spatialWidth = v))
+                        preferenceLearner.recordManualAdjustment(IvannaPreferenceLearner.SPATIAL_WIDTH, v)
                     }
                 )
                 AuroraSlider(
@@ -401,6 +407,7 @@ internal fun AdaptiveEngineScreen(
                     onValueChange = { v ->
                         AudioStateManager.updateState { it.copy(masterGain = v) }
                         backend.applyManualState(audioState.copy(masterGain = v))
+                        preferenceLearner.recordManualAdjustment(IvannaPreferenceLearner.MASTER_GAIN, v)
                     }
                 )
             } else {

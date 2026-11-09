@@ -19,7 +19,37 @@ import org.json.JSONObject
  * (graves/agudos), nunca audio. La escena devuelta se valida contra la lista local.
  */
 object FotoHoloGemini {
-    data class Suggestion(val scene: String, val intensity: Float)
+    // source: "gemini" (nube) o "local" (regla determinista, sin nube).
+    // El botón "Sugerir" funciona con o sin Gemini: la nube refina, lo
+    // local resuelve. IVANNA no depende de Gemini para nada esencial.
+    data class Suggestion(val scene: String, val intensity: Float, val source: String = "gemini")
+
+    /**
+     * Sugerencia local determinista desde el espectro (sin nube).
+     * Regla de ingeniero de mezcla, no adivinanza:
+     *  - graves dominantes (lowShare alto) → recintos grandes que sostienen
+     *    la energía grave (estadio / recinto masivo / concierto);
+     *  - agudos dominantes (highShare alto) → espacios de detalle y mezcla
+     *    (estudio / sala de mezcla / cabina DJ);
+     *  - espectro equilibrado → sala de cine / teatro.
+     * La intensidad sigue el desbalance espectral: cuanto más extremo el
+     * espectro, más intensa la escena. Solo elige escenas de la lista dada.
+     */
+    fun suggestLocal(low: Float, high: Float, scenes: List<String>): Suggestion {
+        fun pick(vararg names: String): String =
+            names.firstOrNull { n -> scenes.any { it.equals(n, ignoreCase = true) } }
+                ?: scenes.firstOrNull() ?: "Sala de cine"
+        val scene = when {
+            low > 0.55f -> pick("Estadio", "Recinto masivo", "Escenario de concierto", "Sala de cine")
+            high > 0.55f -> pick("Estudio de grabación", "Sala de mezcla élite", "Cabina DJ", "Sala de cine")
+            low > 0.42f && high < 0.30f -> pick("Escenario de concierto", "Recinto masivo", "Sala de cine")
+            high > 0.42f && low < 0.30f -> pick("Sala de mezcla élite", "Estudio de grabación", "Sala de cine")
+            else -> pick("Sala de cine", "Teatro", "Auditorio", "Escenario de concierto")
+        }
+        val imbalance = kotlin.math.abs(low - high).coerceIn(0f, 1f)
+        val intensity = (0.45f + 0.55f * imbalance).coerceIn(0f, 1f)
+        return Suggestion(scene, intensity, "local")
+    }
 
     suspend fun suggest(context: Context, low: Float, high: Float, scenes: List<String>): Result<Suggestion> =
         withContext(Dispatchers.IO) {
@@ -55,7 +85,14 @@ object FotoHoloGemini {
                     viaRest.getOrNull()?.let { return@runCatching it }
                     failures += "API key: ${viaRest.exceptionOrNull()?.message}"
                 }
-                error(failures.joinToString(" · "))
+                // 3. Fallback LOCAL (independencia de Gemini): si la nube no
+                // está disponible (sin key, sin red, error de API), el cerebro
+                // local resuelve con la regla determinista. El botón "Sugerir"
+                // funciona siempre; Gemini solo refina cuando está presente.
+                // El fallo de nube se registra en log, no se le muestra al
+                // usuario como error — la sugerencia local ES la respuesta.
+                android.util.Log.i("FotoHoloGemini", "Gemini no disponible (${failures.joinToString(" · ")}); sugerencia local")
+                return@runCatching suggestLocal(low, high, scenes)
             }
         }
 

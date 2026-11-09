@@ -1,0 +1,86 @@
+{
+  "generated_by": "tools/evolution/evolution_engine.py --scan",
+  "repo_state": {
+    "head": [
+      "408dc11e fix(voice): el router lexico en espanol por fin tiene caller",
+      "6d65160d fix(build): generateSoHashes no declara la .so strippeada como input",
+      "4897a362 fix(security): IntegrityGate ya no bloquea falsamente instalaciones release",
+      "9a7e49c6 fix(capture): YouTube Music y Amazon Music ya no se excluyen del loopback",
+      "e5ca8b2d fix(app): IvannaControlLoop arranca en Application.onCreate (loop detenido)"
+    ],
+    "dirty": [
+      "M app/src/main/cpp/saf_phi_infinity.cpp",
+      " M app/src/main/cpp/tests/CMakeLists.txt",
+      " A app/src/main/cpp/tests/test_saf_phi_infinity.cpp",
+      " M app/src/main/java/com/ivanna/omega/agent/SelfHealingAgent.kt",
+      " M app/src/main/java/com/ivanna/omega/ai/gemini/IvannaGeminiAgent.kt",
+      " M app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt",
+      "?? app/src/main/java/com/ivanna/omega/agent/BehaviorEvolution.kt",
+      "?? app/src/main/java/com/ivanna/omega/agent/IvannaDecisionAuthority.kt",
+      "?? app/src/main/java/com/ivanna/omega/assistant/IvannaPreferenceLearner.kt",
+      "?? app/src/test/java/com/ivanna/omega/agent/BehaviorEvolutionTest.kt",
+      "?? app/src/test/java/com/ivanna/omega/assistant/IvannaPreferenceLearnerTest.kt",
+      "?? tools/evolution/"
+    ],
+    "ctest_targets": 32
+  },
+  "reference_pattern": {
+    "name": "SAF_GUARD (2026-09-17)",
+    "where": "app/src/main/cpp/include/saf_runtime.h :: SAFUpdate",
+    "rules": [
+      "guardar entradas no-finitas con std::isfinite (fail-closed)",
+      "denominador degenerado (<=0 o no finito) -> paso cero seguro",
+      "sanitizar parámetros ANTES de usarlos en el cálculo"
+    ]
+  },
+  "detectors": {
+    "saf_without_guards": [
+      {
+        "file": "app/src/main/cpp/jni/saf_stimulus_jni.cpp",
+        "functions": [],
+        "has_isfinite_guard": false
+      },
+      {
+        "file": "app/src/main/cpp/saf_latent_bridge.cpp",
+        "functions": [
+          "ivanna_saf_apply_latent",
+          "ivanna_saf_apply_latent"
+        ],
+        "has_isfinite_guard": false
+      },
+      {
+        "file": "app/src/main/cpp/saf_runtime.cpp",
+        "functions": [],
+        "has_isfinite_guard": false
+      }
+    ],
+    "dead_functions": [
+      {
+        "function": "SAF_LoadModel",
+        "file": "app/src/main/cpp/saf_runtime.cpp"
+      },
+      {
+        "function": "SAF_IsModelLoaded",
+        "file": "app/src/main/cpp/saf_runtime.cpp"
+      }
+    ],
+    "untested_top_level_modules": [
+      "app/src/main/cpp/SaFJniBridge.cpp",
+      "app/src/main/cpp/audio_orchestrator.cpp",
+      "app/src/main/cpp/holos_controls_bridge.cpp",
+      "app/src/main/cpp/holos_globals_effect.cpp",
+      "app/src/main/cpp/hrtf_globals_effect.cpp",
+      "app/src/main/cpp/hyper_controls_bridge.cpp",
+      "app/src/main/cpp/hyper_globals_effect.cpp",
+      "app/src/main/cpp/ivanna_benchmark_jni.cpp",
+      "app/src/main/cpp/omega_daemon_bridge.cpp",
+      "app/src/main/cpp/omega_effect.cpp",
+      "app/src/main/cpp/orbe_controls_bridge.cpp",
+      "app/src/main/cpp/orbe_globals_effect.cpp",
+      "app/src/main/cpp/pi_lstm_bridge_jni.cpp",
+      "app/src/main/cpp/upmixing_controls_bridge.cpp",
+      "app/src/main/cpp/usb_audio_pro_manager.cpp",
+      "app/src/main/cpp/wfs_globals_effect.cpp"
+    ]
+  }
+}

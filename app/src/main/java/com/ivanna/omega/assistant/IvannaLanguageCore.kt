@@ -37,6 +37,7 @@ object IvannaLanguageCore {
         HOW_ARE_YOU,          // "cómo estás tú", "qué tal te encuentras"
         COMPLIMENT,           // "qué bien", "eres increíble", "gracias ivanna"
         GENERAL_CHAT,         // charla general fuera del dominio de audio
+        TECHNICAL_QUESTION,   // "qué es HRTF", "cómo funciona el compresor" — responde IvannaAudioKnowledgeBase, sin nube
         // Claridad
         VOICE_CLARITY,        // "mejora las voces", "claridad vocal"
         DIALOG_ENHANCEMENT,   // "no entiendo los diálogos", "actores se escuchan mal"
@@ -72,7 +73,13 @@ object IvannaLanguageCore {
     fun parse(rawText: String, scene: String = "UNKNOWN"): ParsedIntent {
         val t = rawText.lowercase().trim()
         val (intent, conf) = classify(t, scene)
-        val kb = if (intent != AcousticIntent.UNKNOWN)
+        // Pregunta técnica: la respuesta completa vive en el KB local
+        // (answerTechnical) — no es un snippet de enriquecimiento, ES la
+        // respuesta. Sin esto, el KB tenía cero callers y la pregunta caía
+        // a GENERAL_CHAT / "eso aún no lo sé hacer" aunque IVANNA sí sabía.
+        val kb = if (intent == AcousticIntent.TECHNICAL_QUESTION)
+            IvannaAudioKnowledgeBase.answerTechnical(rawText) ?: ""
+        else if (intent != AcousticIntent.UNKNOWN)
             IvannaAudioKnowledgeBase.snippetFor(intent) else ""
 
         val parsed = ParsedIntent(
@@ -118,6 +125,10 @@ object IvannaLanguageCore {
         AcousticIntent.HOW_ARE_YOU        -> "none"
         AcousticIntent.COMPLIMENT         -> "none"
         AcousticIntent.GENERAL_CHAT       -> "none"
+        // Pregunta técnica: no es un comando DSP. IvannaCognitiveCore
+        // devuelve execute=false para esta intención, así que el flujo de
+        // IvannaAssistant usa spokenResponse() directamente sin ejecutar nada.
+        AcousticIntent.TECHNICAL_QUESTION -> "none"
         AcousticIntent.UNKNOWN            -> "none"
     }
 
@@ -324,6 +335,16 @@ object IvannaLanguageCore {
             return last to 0.72f  // baja confianza — inferido por contexto
         }
 
+        // ── Pregunta técnica: el KB local SÍ sabe la respuesta ─────────────
+        // answerTechnical() existía pero tenía cero callers: una pregunta
+        // como "qué es HRTF" caía a GENERAL_CHAT y, sin Gemini, a una
+        // respuesta estática pobre aunque IVANNA sí sabía. Solo se devuelve
+        // TECHNICAL_QUESTION si el KB tiene respuesta real para este texto;
+        // si no, el flujo sigue a GENERAL_CHAT como antes.
+        if (IvannaAudioKnowledgeBase.answerTechnical(t) != null) {
+            return AcousticIntent.TECHNICAL_QUESTION to 0.90f
+        }
+
         // El clasificador local está especializado en audio y no puede
         // conocer de antemano todos los temas generales. En vez de marcar una
         // pregunta válida como UNKNOWN y caer en una respuesta estática pobre,
@@ -364,6 +385,9 @@ object IvannaLanguageCore {
         AcousticIntent.OPTIMIZE            -> "Voy a revisar el sistema y optimizar el consumo."
         AcousticIntent.GREETING            -> "¡Hola! Soy IVANNA OMEGA SUPREME, tu arquitecta de audio. Estoy aquí para llevar tu música al siguiente nivel. ¿Qué te gustaría escuchar hoy?"
         AcousticIntent.TELL_JOKE           -> IvannaJokeBank.random()
+        // Pregunta técnica: la respuesta real viene en knowledgeSnippet
+        // (answerTechnical). Esta es solo la introducción hablada.
+        AcousticIntent.TECHNICAL_QUESTION  -> "Te lo explico:"
 
         AcousticIntent.UNKNOWN             -> "Eso aún no lo sé hacer. Puedo mejorar las voces, dar más espacio, crear perfiles musicales como 'épico' o 'Abbey Road', o ajustar el volumen."
         else -> "Entendido. Estoy aquí para ayudarte con el audio."

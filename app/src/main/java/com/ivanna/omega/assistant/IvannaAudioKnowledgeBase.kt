@@ -65,6 +65,27 @@ object IvannaAudioKnowledgeBase {
                 "IVANNA usa TinyML INT8 para la clasificación de contenido en 4 clases (voz, música, bajos, silencio) directamente en el SoC sin enviar audio a ningún servidor."
             q.contains("fatiga") ->
                 "La fatiga auditiva temporal ocurre por exposición prolongada a niveles altos, especialmente en la banda de 2–5 kHz donde el oído tiene mayor sensibilidad. IVANNA registra el número de veces que reportas fatiga y sugiere el modo gentle proactivamente."
+            // ── Conceptos propios de IVANNA (Knowledge Core) ───────────────
+            q.contains("volterra") ->
+                "Volterra es la pre-distorsión no lineal de IVANNA: un kernel H1/H2 medido del Sony Genezi MHC-PZ1D que corrige la distorsión armónica del altavoz antes de que ocurra. El kernel por defecto es el refinado para el Moto G85 con DAC USB."
+            q.contains("holos") ->
+                "HOLOS es el operador único de campo acústico de IVANNA: fusiona bucle cerrado neural, campos de onda y pre-distorsión Volterra en un solo vector de estado por banda, en STFT de hop 128. Retuneado a amount 0.5 con armónicos en cero para mantener THD+N en menos 94 dB."
+            q.contains("phi") || q.contains("hiper-operador") || q.contains("hiperoperador") ->
+                "Phi es el hiper-operador de estado de IVANNA: un único operador matricial que fusiona lo neuro, lo electromecánico y lo acústico, muestra a muestra y sin FFT por bloques, en 24 bandas ERB, con la curva Harman 2018 como objetivo."
+            q.contains("orbe") ->
+                "ORBE es el operador binaural esférico de campo cercano: cada banda ERB tiene su propio azimut y distancia continuos entre 0.15 y 2 metros, con modelo de cabeza esférica y parallax por head-tracking. THD+N de menos 139 dB."
+            q.contains("asrc") || q.contains("deriva") || q.contains("reloj") ->
+                "ASRC es el resampleo asíncrono de IVANNA: corrige la deriva del reloj del DAC (medida en menos 6.25 ppm en el Moto G85) ajustando la velocidad de reproducción muestra a muestra, sin saltos ni clics."
+            q.contains("harman") ->
+                "La curva Harman 2018 es la respuesta objetivo de IVANNA: la preferencia promedio de oyentes entrenados, con un realce de graves controlado. IVANNA la aplica al 50 por ciento y el ecualizador evolutivo aporta el otro 50 por ciento."
+            q.contains("erb") ->
+                "ERB es la escala de bandas de frecuencia que sigue la resolución real del oído humano: 24 bandas de 20 Hz a 16 kHz. IVANNA procesa en bandas ERB porque es como el cerebro escucha."
+            q.contains("back-emf") || q.contains("backemf") || q.contains("fuerza contraelectromotriz") ->
+                "Back-EMF es la tensión que el altavoz genera al moverse: IVANNA la sensa para estimar la impedancia real del altavoz en cada instante y corregir su respuesta electromecánica."
+            q.contains("evolutivo") || q.contains("evolutionary") ->
+                "El ecualizador evolutivo de IVANNA calibra su curva FIR de 256 taps con un algoritmo genético determinista en 39 milisegundos, convergiendo a menos de 1 dB de la curva Harman 2018."
+            q.contains("npe") ->
+                "NPE es el procesador neuro-perceptual de IVANNA: estima la respuesta del tronco cerebral a la señal y ajusta el procesado para acoplarse a tu firma biológica única, no a un estándar industrial."
             else -> null
         }
     }

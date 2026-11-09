@@ -85,6 +85,7 @@ class IvannaGeminiAgent(
         )
     }
 
+    private val appContext = context.applicationContext
     private val adaptiveEngine = AdaptiveResponseEngine()
     private val secureConfig = SecureConfigurationManager
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -362,6 +363,39 @@ class IvannaGeminiAgent(
             appendLine("=== CONTEXTO DEL DISPOSITIVO ===")
             appendLine(deviceContext)
             appendLine()
+            // ── Perfil del oyente (persistente) + salud del sistema ─────────
+            // El prompt ya traía dispositivo, sesión, turnos y memoria; le
+            // faltaba QUIÉN es el oyente a largo plazo (modo preferido
+            // aprendido por frecuencia, comandos frecuentes, fatiga
+            // acumulada, defaults aprendidos por el learner) y QUÉ le ha
+            // pasado al sistema (reparaciones, decisiones autónomas,
+            // evolución de parámetros). Sin esto, Gemini decidía a ciegas
+            // sobre gustos y salud que el sistema ya conocía.
+            runCatching {
+                val profile = com.ivanna.omega.assistant.IvannaListenerProfile(appContext)
+                val learner = com.ivanna.omega.assistant.IvannaPreferenceLearner(appContext)
+                appendLine("=== PERFIL DEL OYENTE (PERSISTENTE) ===")
+                appendLine("Modo preferido: ${profile.labelOf(profile.preferredMode)}.")
+                val top = profile.topCommands()
+                if (top.isNotEmpty()) appendLine("Comandos frecuentes: ${top.joinToString(", ") { profile.labelOf(it) }}.")
+                appendLine("Reportes de fatiga auditiva: ${profile.fatigueReports}${if (profile.shouldSuggestGentle) " — sugerir modo suave proactivamente." else "."}")
+                appendLine("Ancho estéreo preferido: ${"%.2f".format(profile.preferredSpatialWidth)} | Graves preferidos: ${"%.1f".format(profile.preferredBassGain)} dB.")
+                appendLine("Defaults aprendidos: ${learner.promotionReport()}")
+                appendLine()
+            }
+            runCatching {
+                val healLog = com.ivanna.omega.agent.SelfHealingAgent.log.value.takeLast(3)
+                val decisions = com.ivanna.omega.agent.IvannaDecisionAuthority.report()
+                val evolution = com.ivanna.omega.agent.BehaviorEvolution.report()
+                appendLine("=== SALUD DEL SISTEMA (AUTO-REPARACIÓN Y DECISIONES) ===")
+                if (healLog.isEmpty()) appendLine("Sin reparaciones registradas.")
+                else healLog.forEach { r ->
+                    appendLine("- ${r.fault} → ${r.action} [${if (r.success) "OK" else "FALLO"}]: ${r.detail}")
+                }
+                appendLine("Decisiones autónomas recientes: $decisions")
+                appendLine("Evolución de comportamiento: $evolution")
+                appendLine()
+            }
             if (sessionContext.isNotBlank()) {
                 appendLine("=== RESUMEN DE LA SESIÓN ACTUAL ===")
                 appendLine(sessionContext)

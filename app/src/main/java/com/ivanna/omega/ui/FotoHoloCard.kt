@@ -123,11 +123,12 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
                     r.onSuccess { sug ->
                         chooseScene(sug.scene)
                         intensity = sug.intensity; FotoHoloEngine.setIntensity(context, sug.intensity)
-                        geminiStatus = "Gemini: ${sug.scene} · intensidad ${(sug.intensity * 100).toInt()} %"
-                    }.onFailure { geminiStatus = "Gemini: ${it.message}" }
+                        val origin = if (sug.source == "local") "Local (sin nube)" else "Gemini"
+                        geminiStatus = "$origin: ${sug.scene} · intensidad ${(sug.intensity * 100).toInt()} %"
+                    }.onFailure { geminiStatus = "Sugerencia no disponible: ${it.message}" }
                     geminiBusy = false
                 }
-            }) { Text(if (geminiBusy) "GEMINI…" else "SUGERIR CON GEMINI", color = AuroraCyan) }
+            }) { Text(if (geminiBusy) "ANALIZANDO…" else "SUGERIR ESCENA", color = AuroraCyan) }
             TextButton(onClick = { FotoHoloRouteB.refreshEvidence() }) { Text("VERIFICAR RUTA B", color = AuroraCyan) }
         }
         if (geminiStatus.isNotEmpty()) Text(geminiStatus, color = TextSecondary, fontSize = 11.sp)

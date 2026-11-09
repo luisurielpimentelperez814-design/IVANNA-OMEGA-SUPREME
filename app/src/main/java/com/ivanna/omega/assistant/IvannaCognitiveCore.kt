@@ -155,6 +155,15 @@ object IvannaCognitiveCore {
                 reason = "Intención no reconocida."
             )
 
+            // Pregunta técnica (2026-11-09, independencia de Gemini): no es
+            // una orden de audio. execute=false para que IvannaAssistant use
+            // spokenResponse() directamente (intro + respuesta del KB local)
+            // sin ejecutar ningún comando DSP ni reportar "no pude aplicar".
+            IvannaLanguageCore.AcousticIntent.TECHNICAL_QUESTION -> CognitiveDecision(
+                execute = false,
+                reason = "Pregunta técnica — respuesta desde la base de conocimiento local."
+            )
+
             else -> CognitiveDecision(
                 execute = true,
                 reason = "Intención acústica válida en el contexto actual."
@@ -176,6 +185,15 @@ object IvannaCognitiveCore {
                 append(" · Térmico: ${"%.0f".format(s.health.thermalLoad * 100)}%")
         }
     }
+
+    /**
+     * Respuesta de la biblioteca de miles de respuestas (v2.5.371).
+     * [category] es el nombre de la categoría ("decision", "accion",
+     * "aplicacion", "imaginacion", "conocimiento", "charla"); si no se
+     * reconoce, devuelve una respuesta aleatoria de cualquier categoría.
+     * Sin red, sin Gemini: la biblioteca es solo datos locales.
+     */
+    fun libraryResponse(category: String): String = IvannaResponseLibrary.respondByName(category)
 
     /**
      * Limpia el estado cognitivo de la sesión actual (FASE 13).

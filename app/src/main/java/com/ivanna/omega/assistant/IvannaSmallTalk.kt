@@ -36,9 +36,21 @@ object IvannaSmallTalk {
         "Aprecio mucho eso. Seguiré aprendiendo tus preferencias para hacerlo cada vez mejor.",
     ).random()
 
-    fun generalChatResponse(): String = listOf(
-        "Esa pregunta va un poco más allá de mi especialidad en audio, pero si quieres que te diga algo interesante: el sonido viaja a trescientos cuarenta y tres metros por segundo al nivel del mar.",
-        "Mi conocimiento está centrado en lo acústico y lo conversacional. Fuera de eso puedo ser honesta: mejor consulta a alguien más especializado. Pero si tienes algo de música o audio en mente, soy toda tuya.",
-        "Interesante pregunta. No soy un oráculo general, pero sí soy muy buena escuchando, procesando y encontrando la mejor versión del sonido. ¿Hay algo en ese terreno en lo que pueda ayudarte?",
-    ).random()
+    // Charla general SIN nube: en vez de desviar con "eso no es mi tema",
+    // responde con conocimiento real de audio del Knowledge Core. IVANNA es
+    // la especialista total de audio — su charla general también debe
+    // demostrarlo. Cada respuesta es un dato verdadero y verificable.
+    //
+    // v2.5.371: la charla general ahora elige de IvannaResponseLibrary
+    // (7640 respuestas distintas en 6 categorías: decisiones, acciones,
+    // aplicaciones, imaginación, conocimiento y charla). La categoría
+    // KNOWLEDGE conserva el contenido de las 6 respuestas originales
+    // (ITD, ERB, Harman, Volterra, fatiga 2-5 kHz, invitación a preguntar).
+    fun generalChatResponse(): String = IvannaResponseLibrary.randomResponse()
+
+    /** Respuesta de la biblioteca por categoría ("decision", "accion", "imaginacion"...). */
+    fun libraryResponse(category: String): String = IvannaResponseLibrary.respondByName(category)
+
+    /** Resumen de conteo de la biblioteca, para logs y telemetría. */
+    fun libraryCountSummary(): String = IvannaResponseLibrary.countSummary()
 }

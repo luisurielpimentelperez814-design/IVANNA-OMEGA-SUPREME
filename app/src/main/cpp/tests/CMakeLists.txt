@@ -587,6 +587,24 @@ if(IVANNA_SAN_FLAGS)
 endif()
 add_test(NAME test_evolutionary_eq COMMAND test_evolutionary_eq)
 
+# ── Auto-evolución 0001 (2026-11-09): PhiSAFInfinity con SAF_GUARD ──
+# El motor de evolución detectó que esta ruta SAF no tenía las guardas
+# NaN/denominador degenerado que su hermana SAFUpdate sí tiene
+# (saf_runtime.h, 2026-09-17): una entrada no-finita o G degenerada
+# clavaba el gain en 2.0. Enlaza contra el saf_phi_infinity.cpp REAL.
+add_executable(test_saf_phi_infinity
+  test_saf_phi_infinity.cpp
+  ../saf_phi_infinity.cpp
+)
+target_link_libraries(test_saf_phi_infinity PRIVATE GTest::gtest_main)
+target_include_directories(test_saf_phi_infinity PRIVATE .. ../include)
+target_compile_options(test_saf_phi_infinity PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_saf_phi_infinity PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_saf_phi_infinity PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+add_test(NAME test_saf_phi_infinity COMMAND test_saf_phi_infinity)
+
 
 # FIX (build rojo, 2026-09-15): HoaBinauralDecoder e IntelligentUpmixer usan
 # ivanna::HRTFConvolver cuyas definiciones viven en spatial/hrtf_convolver.cpp.

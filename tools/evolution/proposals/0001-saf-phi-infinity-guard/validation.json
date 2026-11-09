@@ -1,0 +1,29 @@
+{
+  "proposal": "0001-saf-phi-infinity-guard",
+  "patch": "0001-saf-phi-infinity-guard.patch",
+  "files": [
+    "app/src/main/cpp/saf_phi_infinity.cpp",
+    "app/src/main/cpp/tests/CMakeLists.txt",
+    "app/src/main/cpp/tests/test_saf_phi_infinity.cpp"
+  ],
+  "applied": true,
+  "built": [
+    {
+      "target": "test_saf_phi_infinity",
+      "ok": true,
+      "tail": "[  0%] Built target gtest\n[100%] Built target gtest_main\n[100%] Building CXX object CMakeFiles/test_saf_phi_infinity.dir/home/hatch/workspace/ivanna/app/src/main/cpp/saf_phi_infinity.cpp.o\n[100%] Building CXX object CMakeFiles/test_saf_phi_infinity.dir/test_saf_phi_infinity.cpp.o\n[100%] Linking CXX executable test_saf_phi_infinity\n[100%] Built target test_saf_phi_infinity\n"
+    }
+  ],
+  "new_tests": {
+    "test_saf_phi_infinity": {
+      "passed": true,
+      "tail": "lClosed\n[       OK ] SafPhiInfinity.NonFiniteInputsFailClosed (0 ms)\n[ RUN      ] SafPhiInfinity.DegenerateDenominatorReturnsCurrent\n[       OK ] SafPhiInfinity.DegenerateDenominatorReturnsCurrent (0 ms)\n[ RUN      ] SafPhiInfinity.GainStaysClampedToZeroTwo\n[       OK ] SafPhiInfinity.GainStaysClampedToZeroTwo (0 ms)\n[----------] 6 tests from SafPhiInfinity (0 ms total)\n\n[----------] Global test environment tear-down\n[==========] 6 tests from 1 test suite ran. (0 ms total)\n[  PASSED  ] 6 tests.\n"
+    }
+  },
+  "full_suite": {
+    "passed": true,
+    "tail": "st_rt_no_alloc\n845/848 Test #845: test_rt_no_alloc ....................................................................................   Passed    7.99 sec\n        Start 846: test_wfs_adaptive_protection\n846/848 Test #846: test_wfs_adaptive_protection ........................................................................   Passed    0.08 sec\n        Start 847: test_music_intelligence\n847/848 Test #847: test_music_intelligence .............................................................................   Passed    0.01 sec\n        Start 848: test_processor_evidence\n848/848 Test #848: test_processor_evidence .............................................................................   Passed    0.47 sec\n\n100% tests passed, 0 tests failed out of 848\n\nTotal Test time (real) = 128.57 sec\n"
+  },
+  "reverted": true,
+  "revert_leftover": ""
+}
