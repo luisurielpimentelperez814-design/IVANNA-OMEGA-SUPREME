@@ -16,6 +16,13 @@ buildscript {
     configurations.classpath {
         resolutionStrategy {
             force("com.android.tools:r8:9.1.56")
+            // NOTA 2026-11-10 (fix CI 386): el compilador Kotlin que resolvía
+            // Gradle era 2.0.0 (metadata esperada 2.0.0) y rechazaba las
+            // librerías con metadata 2.2/2.3/2.4 (coroutines, serialization,
+            // stdlib 2.4.21) en :app:compileReleaseKotlin. Forzar el compilador
+            // embebido a 2.4.21, igual que el plugin declarado abajo.
+            force("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.4.21")
+            force("org.jetbrains.kotlin:kotlin-stdlib:2.4.21")
         }
     }
 }
