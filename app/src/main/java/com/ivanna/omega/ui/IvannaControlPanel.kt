@@ -1647,6 +1647,8 @@ fun IvannaControlPanel(
             )
         }
 
+        NeuroLoopPanel()
+
         GlassCard(
             title = "WAVE FIELD SYNTHESIS",
             accent = AuroraCyan,
