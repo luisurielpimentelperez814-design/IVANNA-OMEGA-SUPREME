@@ -1,3 +1,7 @@
+# v2.5.390 (681) - 2026-11-10
+
+- **FIX LINK 389 (la 389 tampoco publicó).** La CI 389 falló en `buildCMakeRelWithDebInfo`: `ld.lld: error: undefined symbol: g_orbe_head_radius_m`. Causa: en la 388 definí el atomic solo en `orbe_controls_bridge.cpp` (target `ivanna_omega`, proceso app) y me faltó el stub de `orbe_globals_effect.cpp` (target `omega_effect`, proceso audioserver, que incluye `IvannaFusionCore.cpp` por unity-build y lo referencia con `extern`). Mismo patrón que los demás `g_orbe_*`. Sin cambios de sonido ni tests nuevos (CTest sigue 954/954 en local).
+
 # v2.5.389 (680) - 2026-11-10
 
 - **MEDIR MI CABEZA POR FOTO — la antropometría ya tiene pantalla.** La app NO tenía función de foto (solo el permiso declarado para SAFMUS). Ahora: `HeadMeasureScreen` (CONTROL → ORBE → "MEDIR MI CABEZA (FOTO)"): foto frontal con una tarjeta de crédito/débito pegada vertical en la frente (es la regla: 8.56 cm) + líneas arrastrables en la foto (verdes = bordes de la cabeza, ámbar = bordes de la tarjeta) o ancho a mano con cinta (de oreja a oreja, 10–25 cm). Calcula el radio y lo aplica a ORBE (JNI `nativeSetOrbeHeadRadiusM` + `ParameterStore` + restauración al arrancar). **La foto no se guarda ni se sube a ningún lado: vive solo en la pantalla y se descarta al salir.** Sin medición, KEMAR exacto (sin cambio de sonido).

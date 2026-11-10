@@ -25,3 +25,8 @@ std::atomic<float> g_orbe_spread{1.0f};
 std::atomic<float> g_orbe_proximity_db{3.0f};
 std::atomic<float> g_orbe_diffuse{0.5f};
 std::atomic<bool>  g_orbe_head_tracking{true};
+// Ψ (v2.5.388): radio de cabeza personalizado (m). KEMAR 0.0875 — la Ruta B
+// queda en KEMAR hasta el bump de ABI del snapshot (v9 no lleva el radio);
+// la Ruta A lo recibe por JNI (nativeSetOrbeHeadRadiusM). Sin este stub,
+// libomega_effect.so no enlazaba (undefined symbol, CI 389).
+std::atomic<float> g_orbe_head_radius_m{0.0875f};
