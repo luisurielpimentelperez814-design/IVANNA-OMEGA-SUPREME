@@ -1088,7 +1088,7 @@ inline void logPassthroughThrottled(PassthroughReason reason, const char* msg) {
     struct timespec ts {};
     clock_gettime(CLOCK_MONOTONIC, &ts);
     const int64_t nowMs = (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-    const int64_t prev = s_lastMs[idx].load(std::memory_order_relaxed);
+    int64_t prev = s_lastMs[idx].load(std::memory_order_relaxed);
     if (nowMs - prev < 5000) return;
     if (!s_lastMs[idx].compare_exchange_strong(prev, nowMs,
                                                std::memory_order_relaxed)) {
