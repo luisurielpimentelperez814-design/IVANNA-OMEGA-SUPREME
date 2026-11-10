@@ -19,7 +19,7 @@
 #endif
 
 /*
- * Observation-only LD_PRELOAD probe for pal_stream_write().
+ * Observation-only LD_PRELOAD probe for pal_stream_write() (v2).
  *
  * It forwards every call UNCHANGED (same stream handle, same buffer pointer,
  * same return value) and only counts: calls, bytes, min/max/last write size,
@@ -29,6 +29,12 @@
  * a snapshot every few seconds. Layout assumption (verified in the HAL
  * disassembly of StreamOutPrimary::write): struct pal_buffer { uint8_t
  * *buffer; size_t size; ... } — only `size` is read.
+ *
+ * v2: the real function is resolved via RTLD_NEXT first, then by dlopening
+ * libar-pal.so (or libpalclient.so) directly. RTLD_NEXT alone is NOT enough
+ * on the Moto G85: libar-pal.so is RTLD_LOCAL there, so RTLD_NEXT cannot see
+ * it and v1 returned -ENOSYS on every write (silence). dlopen on an
+ * already-loaded library returns the existing handle, so this is safe.
  */
 #ifndef IVANNA_OUT_PATH
 #define IVANNA_OUT_PATH "/data/vendor/ivanna_audio/pal_write_counter.txt"
@@ -80,11 +86,32 @@ static struct slot *find_slot(uintptr_t h) {
     return NULL;
 }
 
+static ssize_t (*resolve_real(void))(void *, void *) {
+    /* 1) RTLD_NEXT: funciona cuando libar-pal esta en el ambito global. */
+    void *r = dlsym(RTLD_NEXT, "pal_stream_write");
+    if (r) return (ssize_t (*)(void *, void *))r;
+    /* 2) En el Moto G85 libar-pal.so es RTLD_LOCAL, asi que RTLD_NEXT no
+     * la ve. Abrirla directamente y buscar el simbolo sobre el handle
+     * (funciona sin importar el ambito). dlopen sobre una libreria ya
+     * cargada solo devuelve el handle existente. */
+    static const char *const libs[] = {
+        "libar-pal.so", "/vendor/lib64/libar-pal.so",
+        "libpalclient.so", "/vendor/lib64/libpalclient.so",
+    };
+    for (unsigned i = 0; i < sizeof(libs) / sizeof(libs[0]); ++i) {
+        void *h = dlopen(libs[i], RTLD_NOW | RTLD_LOCAL);
+        if (!h) continue;
+        r = dlsym(h, "pal_stream_write");
+        if (r) return (ssize_t (*)(void *, void *))r;
+    }
+    return NULL;
+}
+
 __attribute__((visibility("default"))) ssize_t pal_stream_write(void *stream, void *buf) {
     ssize_t (*real)(void *, void *) = atomic_load_explicit(&g_real, memory_order_acquire);
     if (!real) {
-        real = (ssize_t (*)(void *, void *))dlsym(RTLD_NEXT, "pal_stream_write");
-        if (!real) { errno = ENOSYS; return -ENOSYS; }
+        real = resolve_real();
+        if (!real) { LOGI("no real pal_stream_write found"); errno = ENOSYS; return -ENOSYS; }
         atomic_store_explicit(&g_real, real, memory_order_release);
     }
     size_t size = 0;
@@ -120,7 +147,7 @@ __attribute__((visibility("default"))) ssize_t pal_stream_write(void *stream, vo
 
 static void dump_once(void) {
     char b[4096];
-    int n = snprintf(b, sizeof(b), "IVANNA PAL WRITE COUNTER v1 pid=%d enabled=%d total_calls=%llu table_full=%llu bad_buf=%llu\n",
+    int n = snprintf(b, sizeof(b), "IVANNA PAL WRITE COUNTER v2 pid=%d enabled=%d total_calls=%llu table_full=%llu bad_buf=%llu\n",
                      (int)getpid(), atomic_load(&g_enabled), atomic_load(&g_total_calls),
                      atomic_load(&g_table_full), atomic_load(&g_bad_buf));
     for (int i = 0; i < SLOTS && n > 0 && n < (int)sizeof(b) - 300; ++i) {

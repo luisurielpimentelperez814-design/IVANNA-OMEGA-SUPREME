@@ -449,7 +449,7 @@ Todas en host a 48 kHz salvo indicación; la fila de deriva ASRC es medición en
 | ASRC v5, deriva en dispositivo (Moto G85) | −6.250 ppm, sat=0, kalman_drift=−6.250 | dump `pal_asrc_stage.txt`, 2026-11-10 00:40 CST |
 | CPU / XRuns en Moto G85 | **Sin medir** | pendiente |
 
-**Tests host (v2.5.383): 901/901 pasan (100%, 0 fallos)** en local (g++-14, CMake 3.30.3, CTest, 362 s, verificado 2026-11-10). En la 369 eran 820 de 820 (verificado 2026-11-08); desde entonces se sumaron la fusión OmniField, la Ruta B (daemon discovery, attach), los tests de la ASRC y la 5D Fase 0 (15 tests) + el test del retuneo de producción HOLOS. La run CI "Tests host (CTest)" concluye en `failure` por el paso preexistente de herramientas (`cppcheck` + `gitleaks`), no por los tests: el paso CTest en sí pasa, igual que el de ASan+UBSan.
+**Tests host (v2.5.384): 913/913 pasan (100%, 0 fallos)** en local (g++-14, CMake 4.4.4, CTest, 130 s, verificado 2026-11-10). En la 383 eran 901 de 901 (verificado 2026-11-10); desde entonces se sumaron 11 tests del relevo de telemetría del write-stage ASRC (`WriteStageAsrcTelemetryTest`) + 1 `test_omega_pcm_format`. La run CI "Tests host (CTest)" concluye en `failure` por el paso preexistente de herramientas (`cppcheck` + `gitleaks`), no por los tests: el paso CTest en sí pasa, igual que el de ASan+UBSan.
 
 Regla de trabajo: si HOLOS mide < 2× RT en dispositivo es viable; entre 1–2×, viable con shed; < 1×, no viable y se recorta. La estimación host (15–25× RT) ya quedó desmentida por la medición (3.5× RT): la estimación no es un dato.
 
@@ -523,7 +523,7 @@ La instalación Magisk requiere root y una ruta compatible. Consulta [la guía s
 bash scripts/run_ctest.sh
 ```
 
-Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (901 tests en total en v2.5.383, 100% en verde en local).
+Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (913 tests en total en v2.5.384, 100% en verde en local).
 
 ### Dashboard web
 
