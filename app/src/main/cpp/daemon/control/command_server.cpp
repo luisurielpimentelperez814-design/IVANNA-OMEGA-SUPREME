@@ -243,6 +243,11 @@ static uint64_t publishCurrentState(const OmegaDspState& s, bool updateSharedSta
     }
     // v2.5.16: bits de usuario (antes el daemon los borraba al armar `flags` desde cero).
     snap.flags = ivanna::omega_user_flags_merge(snap.flags, s.user_flags_mask, s.user_flags_value);
+    // v2.5.379 (ABI v11): sesión de música descubierta por el daemon root
+    // (dumpsys). La app la lee del snapshot/GET_STATUS y acopla el efecto
+    // omega a esa sesión real en lugar de a la sesión 0 (que falla en silencio).
+    snap.discovered_session_id = s.discovered_session_id;
+    snap.discovered_session_gen = s.discovered_session_gen;
     if (!ivanna::controlBus().publish(snap)) return 0;
     return ivanna::controlBus().lastPublishedGeneration();
 }
@@ -1059,7 +1064,7 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
              (dspEvidence == ivanna::EffectBeaconState::EnabledIdle ? "effect_enabled_idle" :
               (dspEvidence == ivanna::EffectBeaconState::NoEffect ? "no_active_effect" : "effect_evidence_unavailable")));
         n = snprintf(reply,reply_sz,
-            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"effect_state\":%d,\"dsp_applied_generation\":%llu,\"dsp_frames\":%llu,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"upmixing_enabled\":%.3f,\"upmixing_immersivity\":%.3f,\"wfs_enabled\":%.3f,\"wfs_spread\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u,\"aux_field\":%s,\"aux_xover_hz\":%.0f,\"aux_coherence\":%.3f,\"temporal_field\":%s,\"temporal_amount\":%.3f,\"temporal_auto\":%s,\"room_corr\":%s}",
+            "{\"ok\":true,\"command\":\"GET_STATUS\",\"applied\":%s,\"status\":\"%s\",\"generation\":%llu,\"route\":\"SYSTEM_WIDE\",\"consumer\":%s,\"effect_state\":%d,\"dsp_applied_generation\":%llu,\"dsp_frames\":%llu,\"error\":null,\"intensity\":%.3f,\"eq_calibrated\":%s,\"listen_phon\":%.1f,\"ref_phon\":%.1f,\"compressor\":%.3f,\"spatial_width\":%.3f,\"upmixing_enabled\":%.3f,\"upmixing_immersivity\":%.3f,\"wfs_enabled\":%.3f,\"wfs_spread\":%.3f,\"harmonic_gain\":%.3f,\"anti_dolby\":%.3f,\"cochlear_enabled\":%s,\"cochlear_intensity\":%.3f,\"spsc_ring_factor\":%.2f,\"supreme_lattice_enabled\":%s,\"supreme_cvnn_enabled\":%s,\"supreme_snn_hoa_enabled\":%s,\"supreme_pinna_enabled\":%s,\"supreme_farrow_mso_enabled\":%s,\"supreme_ebpf_bypass_active\":%s,\"uptime_ms\":%llu,\"self_heal_restarts\":%u,\"clients_served\":%u,\"aux_field\":%s,\"aux_xover_hz\":%.0f,\"aux_coherence\":%.3f,\"temporal_field\":%s,\"temporal_amount\":%.3f,\"temporal_auto\":%s,\"room_corr\":%s,\"discovered_session_id\":%d,\"discovered_session_gen\":%llu}",
             dspApplied?"true":"false", dspStatus, (unsigned long long)gen,
             (dspEvidence == ivanna::EffectBeaconState::Processing || dspEvidence == ivanna::EffectBeaconState::EnabledIdle)?"\"omega_effect\"":"null",
             static_cast<int>(dspEvidence), (unsigned long long)dspAppliedGeneration, (unsigned long long)dspFrames,
@@ -1079,7 +1084,8 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
             m_state.aux_field_enabled?"true":"false", (double)m_state.aux_field_xover_hz, (double)m_state.aux_field_coherence,
             m_state.temporal_field_enabled?"true":"false", (double)m_state.temporal_field_amount,
             m_state.temporal_field_auto?"true":"false",
-            [&]{ for (int i=0;i<10;i++) if (std::fabs(m_state.room_corr_db[i])>0.05f) return "true"; return "false"; }());
+            [&]{ for (int i=0;i<10;i++) if (std::fabs(m_state.room_corr_db[i])>0.05f) return "true"; return "false"; }(),
+            (int)m_state.discovered_session_id, (unsigned long long)m_state.discovered_session_gen);
 
     } else if (strcmp(action,"GET_TELEMETRY")==0) {
         uint64_t gen = ivanna::controlBus().lastPublishedGeneration();
@@ -1131,6 +1137,27 @@ void CommandServer::resetState() {
     m_state.last_update = _nowMs();
     m_audio_feature_generation = 0u;
     m_audio_feature_evidence_seq = 0u;
+    pthread_mutex_unlock(&m_mutex);
+}
+
+// ── Sesión de música descubierta por el daemon root (Ruta B, v2.5.379) ──────
+// La sesión 0 es un callejón sin salida en este G85 (el efecto se crea pero
+// nunca recibe frames) y el sondeo por reflexión de la app no ve sessionIds
+// reales (anonimizados sin MODIFY_AUDIO_ROUTING). El hilo de descubrimiento
+// de ivanna_daemon.cpp ejecuta dumpsys cada ~3 s y llama aquí con el
+// sessionId real de música. Solo republica el snapshot si la sesión CAMBIÓ
+// (gen incrementa): si es la misma, no se toca nada para no spamear la
+// generation. sessionId <= 0 = sin música (la app vuelve al fallback de
+// sesión 0). Nunca se inventa un ID: el llamador solo pasa valores que el
+// parser de dumpsys extrajo de "Global session refs".
+void CommandServer::reportDiscoveredSession(int32_t sessionId) noexcept {
+    if (sessionId < 0) sessionId = 0;
+    pthread_mutex_lock(&m_mutex);
+    if (m_state.discovered_session_id != sessionId) {
+        m_state.discovered_session_id = sessionId;
+        ++m_state.discovered_session_gen;
+        publishCurrentState(m_state);
+    }
     pthread_mutex_unlock(&m_mutex);
 }
 bool CommandServer::start(const std::string& socket_path) {

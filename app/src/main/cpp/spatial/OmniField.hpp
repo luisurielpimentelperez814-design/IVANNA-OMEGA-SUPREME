@@ -26,6 +26,7 @@
 // llamarse antes de process() (lo hace nativeInit/nativeInitDSP); sin prepare,
 // process() es bypass silencioso (fail-closed).
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 
@@ -81,6 +82,9 @@ public:
     }
 
     void reset() noexcept {
+        processCalls_.store(0, std::memory_order_relaxed);
+        blocksRendered_.store(0, std::memory_order_relaxed);
+        framesRendered_.store(0, std::memory_order_relaxed);
         separator_.reset();
         scene_.reset();
         personalizer_.reset();
@@ -144,6 +148,7 @@ public:
         if (!prepared_ || l == nullptr || r == nullptr || n <= 0) return;
         if (fault_) return;  // bypass hasta reset() o setAmount(0)
         hasProcessed_ = true;
+        processCalls_.fetch_add(1, std::memory_order_relaxed);
         for (int off = 0; off < n; off += kChunk) {
             const int m = std::min(kChunk, n - off);
             processChunk(l + off, r + off, m);
@@ -151,6 +156,34 @@ public:
         }
     }
 
+    // ── Telemetría Ruta A (v2.5.380): evidencia de que el operador procesa
+    // de verdad en el teléfono. Contadores atómicos lock-free (relaxed):
+    // el hilo de audio solo hace fetch_add (sin locks, sin log, sin alloc)
+    // y el hilo de control los lee para el log con límite de frecuencia
+    // (ivanna_omega_jni.cpp: logOmniTelemetryThrottled, max 1 línea / 5 s).
+    //   processCalls_   = llamadas a process() que entraron al operador
+    //                     (preparado, punteros válidos, n>0, sin fault
+    //                     latcheado). Incluye llamadas con amount=0.
+    //   blocksRendered_ = chunks completados con mezcla wet/dry (paso 9);
+    //                     con amount≈0 o fault el chunk retorna antes y NO
+    //                     cuenta. Es el contador que demuestra procesado real.
+    //   framesRendered_ = muestras de esos chunks (m por chunk).
+    // Se ponen a cero en reset() (prepare() lo llama). El static_assert
+    // guarda el invariante "sin locks en el hilo de audio" en ARM64/x86_64.
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+                  "OmniField: se necesitan atomicos de 64 bits lock-free");
+    std::atomic<std::uint64_t> processCalls_{0};
+    std::atomic<std::uint64_t> blocksRendered_{0};
+    std::atomic<std::uint64_t> framesRendered_{0};
+    std::uint64_t processCalls() const noexcept {
+        return processCalls_.load(std::memory_order_relaxed);
+    }
+    std::uint64_t blocksRendered() const noexcept {
+        return blocksRendered_.load(std::memory_order_relaxed);
+    }
+    std::uint64_t framesRendered() const noexcept {
+        return framesRendered_.load(std::memory_order_relaxed);
+    }
     bool isActive() const noexcept { return appliedAmount_ > 0.001f && !fault_; }
     bool faulted() const noexcept { return fault_; }
     float appliedAmount() const noexcept { return appliedAmount_; }
@@ -401,6 +434,10 @@ private:
             l[i] = (1.0f - a) * l[i] + a * outL_[i] * g;
             r[i] = (1.0f - a) * r[i] + a * outR_[i] * g;
         }
+        // Chunk renderizado de verdad: cuenta para la telemetría Ruta A.
+        blocksRendered_.fetch_add(1, std::memory_order_relaxed);
+        framesRendered_.fetch_add(static_cast<std::uint64_t>(m),
+                                 std::memory_order_relaxed);
     }
 
     float sampleRate_ = 48000.0f;

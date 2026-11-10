@@ -469,8 +469,8 @@ TEST(TemporalFieldChannel, EncodeDecodeRoundTripAndDaemonPublishes) {
 }
 
 TEST(RoomCorrectionChannel, DaemonPublishesMeasuredCorrectionAndItSurvivesOtherCommands) {
-    EXPECT_EQ(OMEGA_CTRL_VERSION, 10u);                          // snapshot v10: head pose + npe_* + room_corr_db[10] + orbe_* + holos_*
-    EXPECT_LE(sizeof(OmegaDspSnapshot), 640u);  // v10: HOLOS sube el snapshot a 616 B
+    EXPECT_EQ(OMEGA_CTRL_VERSION, 11u);                          // snapshot v11: head pose + npe_* + room_corr_db[10] + orbe_* + holos_* + discovered_session_*
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 640u);  // v11: sesión descubierta sube el snapshot a 632 B
     Harness h;
     CommandServer cs;
     char reply[4096];
@@ -809,5 +809,5 @@ TEST(FotoHoloDaemon, RouteBControlReachesSnapshotWithoutChangingAbi) {
     omega_fotoholo_decode(snap.temporal_field, enabled, intensity);
     EXPECT_FALSE(enabled);
     EXPECT_NEAR(intensity, 0.75f, 1.0f / 511.0f);
-    EXPECT_EQ(OMEGA_CTRL_VERSION, 10u);  // v10: campos HOLOS
+    EXPECT_EQ(OMEGA_CTRL_VERSION, 11u);  // v11: campos discovered_session_id/gen
 }

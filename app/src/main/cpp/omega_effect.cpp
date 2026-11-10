@@ -1274,6 +1274,11 @@ static int32_t omega_process(effect_handle_t self,
     // configuran antes del loop; dentro del loop solo corre process(L, R, chunk).
     if (ctx->fusionCore) ctx->fusionCore->setNpeShed(ctx->thermalSkipVolterra);   // NPE: mismo recorte térmico/CPU
     if (ctx->fusionCore) ctx->fusionCore->setOrbeThermalShed(ctx->thermalSkipVolterra);  // ORBE: idem (12 bandas -> off)
+    // IVANNA (v2.5.380): shed térmico — la fusión es de lo primero que se
+    // apaga (LIMITED+ o cpuShed, mismo nivel que Volterra/RIR/ORBE), antes
+    // de que HOLOS degrade por tiers. Con amount=0 por defecto hoy es no-op
+    // hasta medir CPU en el G85; cuando se active, este es su guarda.
+    if (ctx->fusionCore) ctx->fusionCore->setOmniThermalShed(ctx->thermalSkipVolterra);
     // HOLOS: shed por TIERS (FUSION.md §7.3), no por booleano. El bool
     // setHolosThermalShed(true) forzaría Bypass en FusionCore y saltaría los
     // tiers Warm/Limited, así que aquí se usa setHolosThermalTier. Mapa
@@ -1944,6 +1949,22 @@ if (ctx->adaptive && ctx->adaptiveEnabled) {
                     ev.hrtfAzimuthDeg = h.azimuthDeg; ev.hrtfSafBiasDeg = h.safBiasDeg;
                     ev.hrtfCurvature = h.curvature;
                     ev.hrtfDatasetLoaded = h.datasetLoaded ? 1u : 0u;
+                }
+            }
+            // IVANNA (v2.5.380): evidencia de la fusión en Ruta B (mismo
+            // patrón que HRTF; cada 32 callbacks, RT-safe). Con amount=0
+            // publica ceros: la evidencia de "apagada por defecto".
+            if (ctx->fusionCore) {
+                IvannaFusionEngine::OmniEvidenceOut oe;
+                if (ctx->fusionCore->omniEvidence(oe)) {
+                    ev.omniProcessCalls = oe.processCalls;
+                    ev.omniBlocksRendered = oe.blocksRendered;
+                    ev.omniFramesRendered = oe.framesRendered;
+                    ev.omniAppliedAmount = oe.appliedAmount;
+                    ev.omniConvergenceR = oe.convergenceR;
+                    ev.omniSceneAzimuthDeg = oe.sceneAzimuthDeg;
+                    ev.omniDiffuseness = oe.diffuseness;
+                    ev.omniFault = oe.fault ? 1u : 0u;
                 }
             }
             if (ctx->rirConvolver) {

@@ -37,6 +37,10 @@ extern std::atomic<float> g_orbe_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<bool>  g_orbe_head_tracking;
 extern std::atomic<float> g_holos_amount;          // HOLOS: 0 = bypass bit-exacto (default)
+extern std::atomic<float> g_omni_amount;           // IVANNA: 0 = bypass bit-exacto (default en Ruta B hasta medir CPU en el G85)
+extern std::atomic<float> g_omni_scene_pull;
+extern std::atomic<float> g_omni_distance_m;
+extern std::atomic<bool>  g_omni_head_tracking;
 extern std::atomic<float> g_hyper_amount;          // Φ: 0 = bypass bit-exacto (default)
 extern std::atomic<int> g_hyper_preset;            // Φ: 0 teléfono, 1 sala, 2 auto
 extern std::atomic<bool> g_hyper_xtc;              // Φ: XTC on/off
@@ -191,6 +195,9 @@ void IvannaFusionEngine::updateHeadPose(float yaw, float pitch, float roll) noex
     m_orbe.setHeadPose(yaw);
     // HOLOS: mismo parallax de rotación (misma pose, mismo hilo).
     m_holos.setHeadPose(yaw);
+    // IVANNA: mismo parallax de rotación (la pose llega por snapshot
+    // head_yaw_rad → omega_apply_snapshot → updateHeadPose; sin pose, yaw=0).
+    m_omni.setHeadPose(yaw);
 }
 
 void IvannaFusionEngine::setGoldenEarMode(bool enable) {
@@ -287,6 +294,19 @@ void IvannaFusionEngine::setHolosEq(float low, float mid, float high, float pres
     if (std::isfinite(presence)) g_holos_eq_presence.store(presence, std::memory_order_relaxed);
     if (std::isfinite(tiltDb)) g_holos_eq_tilt_db.store(tiltDb, std::memory_order_relaxed);
     if (std::isfinite(freq)) g_holos_eq_freq.store(freq, std::memory_order_relaxed);
+}
+void IvannaFusionEngine::setOmniEnabled(bool enable) noexcept {
+    g_omni_amount.store(enable ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+bool IvannaFusionEngine::isOmniEnabled() const noexcept {
+    return g_omni_amount.load(std::memory_order_relaxed) > 0.0f;
+}
+void IvannaFusionEngine::setOmniParams(float amount, float scenePull, float distanceM,
+                                       bool headTracking) noexcept {
+    if (std::isfinite(amount)) g_omni_amount.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(scenePull)) g_omni_scene_pull.store(std::clamp(scenePull, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(distanceM)) g_omni_distance_m.store(std::clamp(distanceM, 0.5f, 2.0f), std::memory_order_relaxed);
+    g_omni_head_tracking.store(headTracking, std::memory_order_relaxed);
 }
 void IvannaFusionEngine::setHyperEnabled(bool enable) noexcept {
     g_hyper_amount.store(enable ? 1.0f : 0.0f, std::memory_order_relaxed);
@@ -611,6 +631,31 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         }
     }
 
+    // ── IVANNA (v2.5.375, Ruta B — v2.5.380): tras HOLOS, antes de Φ ──────
+    // Misma posición relativa que en Ruta A (ORBE → HOLOS → IVANNA → Φ;
+    // aquí Φ corre más abajo, tras m_room). Lee los atomics g_omni_* cada
+    // bloque, como ORBE/HOLOS. amount=0 por defecto (omni_globals_effect.cpp)
+    // HASTA MEDIR CPU EN EL G85: la fusión NO se activa en Ruta B sin esa
+    // medida (directiva 2026-11-09). El shed térmico (LIMITED+ o cpuShed,
+    // vía setOmniThermalShed desde omega_process) la apaga antes que
+    // ORBE/HOLOS por tiers. Sin campos omni_* en el snapshot (ABI v10) no
+    // hay control plane aún: setOmniParams() es la API lista para el bump
+    // de ABI (snapshot + daemon + Kotlin). La pose llega por updateHeadPose.
+    // Y SOLO tiene sentido cuando Ruta B procese de verdad (effect_frames
+    // creciendo): con 0 frames este bloque no corre nunca.
+    {
+        const float omniAmount = g_omni_amount.load(std::memory_order_relaxed);
+        if (omniAmount > 0.0f && !m_omniShed_) {
+            ivanna::omnifield::OmniParams op;
+            op.amount = omniAmount;
+            op.scenePull = g_omni_scene_pull.load(std::memory_order_relaxed);
+            op.distanceM = g_omni_distance_m.load(std::memory_order_relaxed);
+            op.headTracking = g_omni_head_tracking.load(std::memory_order_relaxed);
+            m_omni.setParams(op);
+            m_omni.process(buffer->left, buffer->right, Ivanna::BLOCK_SIZE);
+        }
+    }
+
     // ── Matriz Mid/Side con Slew-Limiter por muestra (arbitrada con HOA/WFS) ──
     {
         static constexpr float kWidthSlew = 1.0f / 4096.0f;
@@ -620,7 +665,12 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
         // claves ITD/ILD.
         const bool orbeActive = g_orbe_amount.load(std::memory_order_relaxed) > 0.0f;
         const bool holosActive = g_holos_amount.load(std::memory_order_relaxed) > 0.0f;
-        const float targetW = (upmixingActive || wantWfs || orbeActive || holosActive) ? 1.0f : rawTargetW;
+        // IVANNA: si la fusión renderizó, la escena ya es binaural 3D y el
+        // ensanchamiento M/S redundante debe neutralizarse igual que con
+        // ORBE/HOLOS (preserva las claves ITD/ILD). Con shed, no renderizó.
+        const bool omniActive =
+            g_omni_amount.load(std::memory_order_relaxed) > 0.0f && !m_omniShed_;
+        const float targetW = (upmixingActive || wantWfs || orbeActive || holosActive || omniActive) ? 1.0f : rawTargetW;
         if (std::fabs(m_spatialWidthSmoothed_ - 1.0f) > 1.0e-4f || std::fabs(targetW - 1.0f) > 1.0e-4f) {
             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                 if (m_spatialWidthSmoothed_ < targetW)
@@ -829,6 +879,21 @@ bool IvannaFusionEngine::hrtfEvidence(HrtfEvidenceOut& o) const noexcept {
     o.inEnergy = e.inEnergy; o.outEnergy = e.outEnergy;
     o.azimuthDeg = e.azimuthDeg; o.safBiasDeg = e.safBiasDeg; o.curvature = e.curvature;
     o.datasetLoaded = e.datasetLoaded;
+    return true;
+}
+
+// IVANNA (v2.5.380): contadores del operador m_omni. Siempre disponible
+// (m_omni es miembro por valor, no puntero): con amount=0 devuelve ceros,
+// que es justo la evidencia de "apagada". Sin allocations, solo loads.
+bool IvannaFusionEngine::omniEvidence(OmniEvidenceOut& o) const noexcept {
+    o.processCalls = m_omni.processCalls();
+    o.blocksRendered = m_omni.blocksRendered();
+    o.framesRendered = m_omni.framesRendered();
+    o.appliedAmount = m_omni.appliedAmount();
+    o.convergenceR = m_omni.convergenceR();
+    o.sceneAzimuthDeg = m_omni.sceneAzimuthDeg();
+    o.diffuseness = m_omni.sceneDiffuseness();
+    o.fault = m_omni.faulted();
     return true;
 }
 

@@ -36,6 +36,14 @@ struct alignas(8) EffectEvidence {
     uint32_t hrtfEnabled;
     uint32_t adaptiveEnabled;
     uint64_t adaptiveApplyBlocks; // increments only when Route-B AdaptiveEngineV2 processes a real chunk
+    // IVANNA (v2.5.380): evidencia de la fusión en Ruta B (contadores del
+    // operador m_omni de IvannaFusionCore). Añadidos AL FINAL, sin tocar el
+    // orden ni los offsets de los campos anteriores, y la versión sigue 3:
+    // lectores v3 (daemon, script viejo) los ignoran; el script actualizado
+    // los lee. NO reordenar ni insertar campos antes de estos.
+    uint64_t omniProcessCalls, omniBlocksRendered, omniFramesRendered;
+    float    omniAppliedAmount, omniConvergenceR, omniSceneAzimuthDeg, omniDiffuseness;
+    uint32_t omniFault;  // 1 = fault latcheado (bypass), 0 = ok
 };
 static_assert(sizeof(EffectEvidence) <= 256, "EffectEvidence excede 256 B");
 

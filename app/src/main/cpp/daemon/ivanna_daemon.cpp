@@ -1,5 +1,6 @@
 #include "../ivanna_hires_config.hpp"
 #include "control/command_server.h"
+#include "session_discovery.hpp"         // Descubrimiento de sesión real por el daemon root (Ruta B, v2.5.379)
 #include "hal_clock_producer.hpp"
 #include "../include/audio_hardware_clock_bridge.hpp"
 #include "../include/asrc_state_bridge.hpp"
@@ -519,6 +520,39 @@ int main(int argc, char* argv[]) {
     } else {
         log_message("Master Control Bus: OmegaControlBus writer opened successfully.");
     }
+
+    // ── Descubrimiento de la sesión REAL de música (Ruta B, v2.5.379) ───────
+    // La sesión 0 es un callejón sin salida en este Moto G85: el efecto se
+    // crea pero NUNCA recibe frames (effect_frames=0 medido 2026-11-09). Y el
+    // sondeo por reflexión de la app no ve sessionIds reales (las configs
+    // llegan anonimizadas -1/0 sin MODIFY_AUDIO_ROUTING). El daemon corre
+    // como root, así que ejecuta `dumpsys media.audio_flinger` cada 3 s,
+    // parsea "Global session refs" y publica el sessionId de música en el
+    // snapshot (ABI v11) + GET_STATUS. La app acopla el efecto omega a ESA
+    // sesión en lugar de a la sesión 0. Hilo propio best-effort: dumpsys
+    // puede tardar ~100-500 ms y jamás debe bloquear el loop principal ni
+    // el callback de audio. Fail-closed: si dumpsys falla, se conserva el
+    // valor anterior (un fallo transitorio no es "sin música"); si dumpsys
+    // funciona pero no hay música, se publica 0 y la app vuelve a sesión 0.
+    // Los sessionIds son DINÁMICOS (YTM era 297 y luego 14177): por eso se
+    // re-descubre cada 3 s y reportDiscoveredSession solo republica al cambiar.
+    std::thread([&commandServer](){
+        setCurrentThreadBestEffort("session-discovery");
+        while (!g_shutdown_requested.load(std::memory_order_acquire)) {
+            const auto outcome = ivanna::daemon::discoverMusicSession();
+            if (outcome.status == ivanna::daemon::SessionDiscoveryStatus::kError) {
+                log_message("SESSION-DISCOVERY: dumpsys falló (transitorio) — se conserva la sesión anterior");
+            } else {
+                const int32_t sid = (outcome.status == ivanna::daemon::SessionDiscoveryStatus::kFound)
+                    ? outcome.sessionId : 0;
+                commandServer.reportDiscoveredSession(sid);
+            }
+            // Dormir 3 s en tramos de 100 ms para apagar rápido.
+            for (int i = 0; i < 30 && !g_shutdown_requested.load(std::memory_order_acquire); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }).detach();
+    log_message("SESSION-DISCOVERY: hilo activo (dumpsys cada 3 s, publica en snapshot ABI v11 + GET_STATUS)");
 
     // El listener TCP de loopback no ofrece SO_PEERCRED ni token de autenticación.
     // Se deshabilita incluso si se pasa --tcp-port; el control soportado usa UNIX

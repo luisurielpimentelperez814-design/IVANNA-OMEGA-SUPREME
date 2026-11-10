@@ -11,7 +11,9 @@
 //   4. Archivo con magic invalido => Unavailable (el llamador conserva su comportamiento).
 // Compila en host sin NDK ni root.
 #include "include/omega_effect_beacon.h"
+#include "include/omega_effect_evidence.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -99,6 +101,51 @@ int main() {
         if (f) { const uint32_t bad = 0xDEADBEEFu; std::fwrite(&bad, sizeof(bad), 1, f); std::fclose(f); }
     }
     CHECK(readEffectBeacon(2000, path.c_str()) == EffectBeaconState::Unavailable, "magic invalido -> Unavailable");
+
+    // 6. Evidencia IVANNA (v2.5.380): campos omni_* añadidos AL FINAL, sin
+    // mover offsets existentes y sin cambiar la versión (sigue 3): un lector
+    // v3 (daemon, script viejo) los ignora. Barrera de regresión del
+    // contrato append-only + round-trip publish/read con campos omni.
+    static_assert(offsetof(EffectEvidence, magic) == 0, "ABI evidencia: magic se movio");
+    static_assert(offsetof(EffectEvidence, version) == 4, "ABI evidencia: version se movio");
+    static_assert(offsetof(EffectEvidence, seq) == 8, "ABI evidencia: seq se movio");
+    static_assert(offsetof(EffectEvidence, hrtfCpuBlocks) == 16, "ABI evidencia: hrtfCpuBlocks se movio");
+    static_assert(offsetof(EffectEvidence, rirLoads) == 48, "ABI evidencia: rirLoads se movio");
+    static_assert(offsetof(EffectEvidence, controlGeneration) == 144, "ABI evidencia: controlGeneration se movio");
+    static_assert(offsetof(EffectEvidence, adaptiveApplyBlocks) == 160, "ABI evidencia: adaptiveApplyBlocks se movio");
+    static_assert(offsetof(EffectEvidence, omniProcessCalls) == 168, "ABI evidencia: omniProcessCalls no esta al final esperado");
+    static_assert(offsetof(EffectEvidence, omniBlocksRendered) == 176, "ABI evidencia: omniBlocksRendered no esta al final esperado");
+    static_assert(offsetof(EffectEvidence, omniFramesRendered) == 184, "ABI evidencia: omniFramesRendered no esta al final esperado");
+    static_assert(offsetof(EffectEvidence, omniAppliedAmount) == 192, "ABI evidencia: omniAppliedAmount no esta al final esperado");
+    static_assert(offsetof(EffectEvidence, omniFault) == 208, "ABI evidencia: omniFault no esta al final esperado");
+    static_assert(sizeof(EffectEvidence) <= 256, "EffectEvidence excede 256 B");
+    static_assert(OMEGA_EFFECT_EVIDENCE_VERSION == 3u, "la extension omni_* no debe subir la version (append-only)");
+    {
+        const std::string epath = path + ".evidence";
+        ::unlink(epath.c_str());
+        EvidencePublisher pub;
+        CHECK(pub.open(epath.c_str()), "evidence: publisher.open crea y mapea el archivo");
+        EffectEvidence ev{};
+        ev.controlGeneration = 42u;
+        ev.omniProcessCalls = 375u;
+        ev.omniBlocksRendered = 375u;
+        ev.omniFramesRendered = 48000u;
+        ev.omniAppliedAmount = 1.0f;
+        ev.omniConvergenceR = 0.964f;
+        ev.omniSceneAzimuthDeg = 0.0f;
+        ev.omniDiffuseness = 0.0f;
+        ev.omniFault = 0u;
+        pub.publish(ev);
+        EffectEvidence back{};
+        CHECK(readEffectEvidence(back, epath.c_str()), "evidence: round-trip publish/read con seqlock estable");
+        CHECK(back.version == 3u, "evidence: version sigue 3 (lectores v3 no se rompen)");
+        CHECK(back.controlGeneration == 42u, "evidence: campo viejo intacto tras la extension");
+        CHECK(back.omniProcessCalls == 375u && back.omniBlocksRendered == 375u && back.omniFramesRendered == 48000u,
+              "evidence: contadores omni sobreviven al round-trip");
+        CHECK(back.omniAppliedAmount == 1.0f && back.omniConvergenceR == 0.964f && back.omniFault == 0u,
+              "evidence: wet/r/fault omni sobreviven al round-trip");
+        ::unlink(epath.c_str());
+    }
 
     ::unlink(path.c_str());
     std::printf(failures ? "RESULT: %d FAILED\n" : "RESULT: all passed\n", failures);

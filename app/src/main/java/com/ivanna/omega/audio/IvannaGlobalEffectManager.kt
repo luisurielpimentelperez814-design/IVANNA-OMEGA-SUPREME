@@ -368,6 +368,30 @@ internal fun omegaFailureHint(kind: OmegaFailureKind): String = when (kind) {
 /** Solo sessionId > 0 es utilizable: -1 es la copia anonimizada y 0 es AUDIO_SESSION_NONE. */
 internal fun isUsableSessionId(sessionId: Int): Boolean = sessionId > 0
 
+/**
+ * Decisión pura: ¿hay que (re)acoplar omega a la sesión descubierta por el daemon root?
+ *
+ * v2.5.379 — Ruta B: la sesión 0 es un callejón sin salida (el efecto se crea
+ * pero nunca recibe frames) y el sondeo por reflexión no ve sessionIds reales.
+ * El daemon (root) descubre el sessionId real por dumpsys y lo publica en el
+ * snapshot (ABI v11) + GET_STATUS. La app acopla omega a ESA sesión.
+ *
+ *   - discoveredId <= 0: no (sin descubrimiento; fail-closed, sigue sesión 0).
+ *   - ya acoplado a discoveredId con omega vivo: no (nada que hacer).
+ *   - en cualquier otro caso con discoveredId válido: sí (primera vez o la
+ *     sesión descubierta cambió — los IDs son dinámicos: YTM era 297 y luego
+ *     14177 — así que hay que re-acoplar al cambiar).
+ */
+internal fun shouldAttachDiscoveredSession(
+    discoveredId: Int,
+    attachedDiscoveredId: Int,
+    omegaAttachedToDiscovered: Boolean
+): Boolean {
+    if (!isUsableSessionId(discoveredId)) return false
+    if (attachedDiscoveredId == discoveredId && omegaAttachedToDiscovered) return false
+    return true
+}
+
 /** Extrae los sessionIds utilizables de pares (sessionId, clientUid) reflejados. */
 internal fun usableSessionIds(pairs: List<Pair<Int, Int>>): List<Int> =
     pairs.map { it.first }.filter { isUsableSessionId(it) }.distinct()
@@ -448,6 +472,14 @@ class IvannaGlobalEffectManager(
     // quedaba en efectos stock para siempre (bug sesión 409, 2026-11-07).
     private val omegaRetryAttempts = ConcurrentHashMap<Int, Int>()
     private val omegaLastAttemptMs = ConcurrentHashMap<Int, Long>()
+
+    // v2.5.379 — Sesión real descubierta por el daemon root (dumpsys).
+    // discoveredAttachedSessionId = sesión a la que acoplamos omega por
+    // descubrimiento (0 = ninguna); lastDiscoveredGen = gen que actuamos.
+    // Los sessionIds son dinámicos (YTM era 297 y luego 14177): al cambiar
+    // la sesión descubierta hay que liberar la anterior y re-acoplar.
+    @Volatile private var discoveredAttachedSessionId: Int = 0
+    @Volatile private var lastDiscoveredGen: Long = 0
 
     // v2.5.374 — Última clase de fallo al crear omega (ver classifyOmegaFailure).
     // Diagnóstico visible sin logcat: la UI/telemetría puede leerlo.
@@ -561,7 +593,13 @@ class IvannaGlobalEffectManager(
     @Synchronized
     fun openSession(
         audioSession: Int,
-        sourcePackage: String?
+        sourcePackage: String?,
+        // K1 (auditoría 379): bypassGlobalGuard=true permite acoplar una
+        // sesión descubierta ANTES de liberar el global, para no dejar a la
+        // app sin ningún omega si el acople falla. Solo lo usa
+        // tryAttachDiscoveredSession; el resto de llamadores mantienen el
+        // guard anti-doble-procesado.
+        bypassGlobalGuard: Boolean = false
     ) {
 
         writeToLogFile(
@@ -574,7 +612,7 @@ class IvannaGlobalEffectManager(
         // pasaría por omega dos veces, una por sesión y otra en el mix).
         // La sesión queda cubierta por el global; si el global muere, el
         // sondeo la abre por sesión en el siguiente ciclo del watchdog.
-        if (globalOmega != null) {
+        if (globalOmega != null && !bypassGlobalGuard) {
             Log.d(TAG, "openSession $audioSession omitida: omega global (sesión 0) ya activo")
             return
         }
@@ -654,6 +692,10 @@ class IvannaGlobalEffectManager(
                     // una sesión abierta antes de que el módulo/HAL estuviera listo no
                     // debe quedarse en efectos stock para siempre (bug sesión 409).
                     runCatching { retryOmegaAttachForSessions() }.onFailure { Log.w(TAG, "watchdog omega-retry: ${it.message}") }
+                    // v2.5.379 — Sesión REAL descubierta por el daemon root:
+                    // tiene prioridad sobre el sondeo por reflexión y sobre el
+                    // fallback de sesión 0 (que no procesa en este G85).
+                    runCatching { tryAttachDiscoveredSession() }.onFailure { Log.w(TAG, "watchdog discovered-session: ${it.message}") }
                     // v2.5.374 — Sondeo de sesiones activas: abre las sesiones
                     // que el broadcast no avisó (ver scanActivePlaybackSessions).
                     runCatching { scanActivePlaybackSessions() }.onFailure { Log.w(TAG, "watchdog scan: ${it.message}") }
@@ -795,6 +837,104 @@ class IvannaGlobalEffectManager(
      *
      * @return cuántas sesiones abrió el sondeo en este pase.
      */
+    // ── Sesión REAL descubierta por el daemon root (Ruta B, v2.5.379) ───────
+    // La sesión 0 es un callejón sin salida en este Moto G85: el efecto se
+    // crea pero NUNCA recibe frames (effect_frames=0 medido 2026-11-09). Y el
+    // sondeo por reflexión no ve sessionIds reales (anonimizados -1/0 sin
+    // MODIFY_AUDIO_ROUTING). El daemon (root) ejecuta `dumpsys
+    // media.audio_flinger` cada ~3 s y publica el sessionId de música en el
+    // snapshot (ABI v11) + GET_STATUS. Este método lee esa evidencia y acopla
+    // omega a la sesión REAL en lugar de a la sesión 0. Corre en el watchdog
+    // ANTES de scanActivePlaybackSessions para que el fallback de sesión 0 no
+    // se dispare cuando ya hay una sesión real disponible.
+    //
+    // La carrera que mató el hot fix por broadcast (2026-11-09 22:14-22:16):
+    // el omega global (sesión 0) se recrea en milisegundos al arrancar la app
+    // y bloquea openSession. Por eso aquí se LIBERA el global ANTES de
+    // acoplar a la sesión real, en el mismo ciclo del watchdog.
+    //
+    //   - Sin sesión descubierta (0): no hace nada; el sondeo por reflexión y
+    //     el fallback de sesión 0 siguen vigentes.
+    //   - Con sesión descubierta válida: libera el omega global (sesión 0, no
+    //     procesa) y la sesión anterior si cambió, y acopla omega a la nueva.
+    //   - sourcePackage=null: con omega, los efectos stock van en bypass de
+    //     todos modos, así que isVideo apenas importa.
+    //   - Fail-closed: si el daemon no responde o el JSON no trae la sesión,
+    //     no se toca nada.
+    @Synchronized
+    internal fun tryAttachDiscoveredSession(): Boolean {
+        val evidence = runCatching {
+            com.ivanna.omega.magisk.OmegaEngineBridge.requestControlPlaneEvidence()
+        }.getOrNull() ?: return false
+        val discoveredId = evidence.discoveredSessionId
+        val discoveredGen = evidence.discoveredSessionGen
+        val omegaAlive = discoveredId > 0 && activeSessions[discoveredId]?.omega != null
+        if (!shouldAttachDiscoveredSession(discoveredId, discoveredAttachedSessionId, omegaAlive)) {
+            if (discoveredId > 0) {
+                lastDiscoveredGen = discoveredGen
+            } else if (discoveredAttachedSessionId != 0) {
+                // K4 (auditoría 379): la música paró (discoveredId=0) pero
+                // quedó un omega acoplado a una sesión muerta. Cerrarlo y
+                // limpiar el estado para que el fallback global pueda volver.
+                Log.i(TAG, "Música parada (sin sesión descubierta): cerrando omega de la sesión descubierta anterior $discoveredAttachedSessionId")
+                closeSession(discoveredAttachedSessionId)
+                discoveredAttachedSessionId = 0
+            }
+            return false
+        }
+        // Backoff (auditoría 379): si un intento anterior falló, no reintentar
+        // hasta que pase el delay. Evita churn en AudioFlinger cada 3 s.
+        val lastAttempt = omegaLastAttemptMs[discoveredId] ?: 0L
+        if (lastAttempt > 0L) {
+            val attempts = omegaRetryAttempts[discoveredId] ?: 0
+            if (System.currentTimeMillis() - lastAttempt < OmegaAttachBackoff.delayMs(attempts)) {
+                return false
+            }
+        }
+        Log.i(TAG, "Sesión real descubierta por el daemon: $discoveredId (gen=$discoveredGen) — acoplando omega a la sesión real")
+        // La sesión descubierta cambió: liberar la anterior.
+        if (discoveredAttachedSessionId != 0 && discoveredAttachedSessionId != discoveredId) {
+            Log.i(TAG, "Sesión descubierta cambió: $discoveredAttachedSessionId -> $discoveredId — liberando la anterior")
+            closeSession(discoveredAttachedSessionId)
+            discoveredAttachedSessionId = 0
+        }
+        // K1-rev (diagnóstico en vivo 23:01 CST): el omega global (sesión 0)
+        // YA está en el hilo de salida (AudioOut_15, "1 effects for session
+        // 0") y AudioFlinger rechaza crear otro omega en la sesión real con
+        // -38 INVALID_OPERATION (exclusividad por salida: un solo omega por
+        // hilo). Acoplar PRIMERO nunca funciona mientras el global ocupe el
+        // hilo. Por eso se libera el global ANTES de acoplar. Si el acople
+        // falla, el watchdog recrea el global en el siguiente ciclo
+        // (ensureGlobalOmega) — la sesión 0 no procesa nada de todos modos,
+        // así que no se pierde audio real.
+        if (globalOmega != null) {
+            Log.i(TAG, "Liberando omega global (sesión 0) ANTES de acoplar a la sesión real $discoveredId (ocupa el hilo, -38)")
+            releaseGlobalOmega()
+        }
+        val wasOpen = activeSessions.containsKey(discoveredId)
+        val attached = if (wasOpen) {
+            tryAttachOmega(discoveredId)
+        } else {
+            openSession(discoveredId, null, bypassGlobalGuard = true)
+            activeSessions[discoveredId]?.omega != null
+        }
+        if (attached) {
+            discoveredAttachedSessionId = discoveredId
+            lastDiscoveredGen = discoveredGen
+            Log.i(TAG, "Ruta B acoplada a sesión real descubierta: $discoveredId (gen=$discoveredGen) — la sesión 0 queda como fallback solo sin descubrimiento")
+        } else {
+            // Registrar el intento fallido (solo vía openSession; tryAttachOmega
+            // ya registra el suyo) para que el próximo ciclo respete el backoff.
+            if (!wasOpen) {
+                val attempts = (omegaRetryAttempts[discoveredId] ?: 0) + 1
+                omegaRetryAttempts[discoveredId] = attempts
+                omegaLastAttemptMs[discoveredId] = System.currentTimeMillis()
+            }
+            Log.w(TAG, "No se pudo acoplar omega a la sesión descubierta $discoveredId (el global ya se liberó antes del intento; el watchdog lo recreará; se reintentará con backoff)")
+        }
+        return attached
+    }
+
     @Synchronized
     internal fun scanActivePlaybackSessions(): Int {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return 0

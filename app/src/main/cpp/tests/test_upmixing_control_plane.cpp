@@ -23,15 +23,15 @@ const char* kTestPath2 = "./omega_upmixing_ctrl_test_2";
 TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
     // Barrera ABI: el snapshot debe seguir siendo POD y caber en el limite.
     EXPECT_TRUE(std::is_trivially_copyable<OmegaDspSnapshot>::value);
-    EXPECT_LE(sizeof(OmegaDspSnapshot), 640u);  // v10: HOLOS sube el snapshot a 616 B
-    EXPECT_EQ(sizeof(OmegaDspSnapshot), 616u);   // tamaño exacto v10 (76 B de campos holos_* + 4 B de padding a 8 B)
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 640u);  // v11: sesión descubierta (discovered_session_id/gen) sube el snapshot a 632 B
+    EXPECT_EQ(sizeof(OmegaDspSnapshot), 632u);   // tamaño exacto v11 (16 B de campos discovered_* + padding a 8 B)
     OmegaDspSnapshot d = OmegaDspSnapshot::makeDefault();
     EXPECT_TRUE(d.isMagicValid());
     EXPECT_TRUE(d.isVersionValid());
     EXPECT_TRUE(d.isCrcValid());
     EXPECT_EQ(d.upmixing_enabled, 0u);          // default OFF (cero degradacion)
     EXPECT_FLOAT_EQ(d.upmixing_immersivity, 1.0f);
-    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 10u);  // v10: campos HOLOS
+    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 11u);  // v11: campos discovered_session_id/gen (sesión real por daemon root)
     EXPECT_FLOAT_EQ(d.head_yaw_rad, 0.f);
     EXPECT_FLOAT_EQ(d.head_pitch_rad, 0.f);
     // ORBE (ABI v9): apagado por defecto — amount 0 = bypass bit-exacto.

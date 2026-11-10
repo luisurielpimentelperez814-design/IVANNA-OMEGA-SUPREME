@@ -1905,3 +1905,11 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_magistral_room_xtc PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_magistral_room_xtc)
+
+# ── test_session_discovery: daemon root descubre sessionId real (Ruta B, v2.5.379) ──
+# La sesión 0 es un callejón sin salida (el efecto se crea pero nunca recibe
+# frames) y el sondeo por reflexión no ve sessionIds reales. El daemon (root)
+# ejecuta `dumpsys media.audio_flinger` y parsea "Global session refs".
+# Header-only (session_discovery.hpp); cubre parseo moderno/antiguo, selección
+# de sesión de música y ABI v11 del snapshot (offsets viejos sin cambio).
+ivanna_add_test(test_session_discovery)

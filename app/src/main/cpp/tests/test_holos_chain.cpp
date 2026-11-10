@@ -500,6 +500,70 @@ TEST(OmniField, AmountZeroIsBitExact) {
     EXPECT_FALSE(omni.faulted());
 }
 
+// Telemetría Ruta A (v2.5.380): los contadores atómicos distinguen
+// "llamadas que entraron" de "chunks renderizados de verdad" (paso 9).
+// amount=0 cuenta llamadas pero 0 bloques/frames; NaN cuenta 1 llamada,
+// 0 bloques/frames y fault; reset() los pone a cero.
+TEST(OmniField, CountersTrackRealProcessing) {
+    using namespace ivanna::omnifield;
+    // Señal COHERENTE (mono en ambos canales): con ruido incorrelado el
+    // fail-closed apaga el operador y los contadores medirían bypass.
+    auto t = tone(440.0, 0.5, 1.0);  // 48000 muestras = 375 bloques de 128
+    std::vector<float> l = t, r = t;
+    OmniField omni;
+    omni.prepare(48000.0f);
+    OmniParams p;
+    p.amount = 1.0f;
+    omni.setParams(p);
+    runOmni(omni, l, r);
+    EXPECT_FALSE(omni.faulted());
+    EXPECT_TRUE(omni.isActive());
+    EXPECT_EQ(omni.processCalls(), 375u);
+    EXPECT_EQ(omni.blocksRendered(), 375u);
+    EXPECT_EQ(omni.framesRendered(), 48000u);
+    EXPECT_GT(omni.designCount(), 0u);
+    // Acumulan en una segunda pasada (24000 muestras = 188 bloques).
+    auto t2 = tone(440.0, 0.5, 0.5);
+    std::vector<float> l2 = t2, r2 = t2;
+    runOmni(omni, l2, r2);
+    EXPECT_EQ(omni.processCalls(), 563u);
+    EXPECT_EQ(omni.blocksRendered(), 563u);
+    EXPECT_EQ(omni.framesRendered(), 72000u);
+    // reset() los pone a cero (prepare() lo llama; aquí directo).
+    omni.reset();
+    EXPECT_EQ(omni.processCalls(), 0u);
+    EXPECT_EQ(omni.blocksRendered(), 0u);
+    EXPECT_EQ(omni.framesRendered(), 0u);
+    // amount=0: entran las llamadas, no se renderiza nada.
+    OmniField off;
+    off.prepare(48000.0f);
+    OmniParams p0;
+    p0.amount = 0.0f;
+    off.setParams(p0);
+    std::vector<float> l0 = t, r0 = t;
+    runOmni(off, l0, r0);
+    EXPECT_EQ(off.processCalls(), 375u);
+    EXPECT_EQ(off.blocksRendered(), 0u);
+    EXPECT_EQ(off.framesRendered(), 0u);
+    EXPECT_FALSE(off.faulted());
+    // NaN: 1 llamada, 0 renderizado, fault latcheado.
+    std::vector<float> tn(512);
+    for (int i = 0; i < 512; ++i)
+        tn[i] = (float)(0.5 * std::sin(2.0 * kPi * 440.0 * i / 48000.0));
+    tn[10] = std::numeric_limits<float>::quiet_NaN();
+    OmniField bad;
+    bad.prepare(48000.0f);
+    OmniParams pb;
+    pb.amount = 1.0f;
+    bad.setParams(pb);
+    std::vector<float> lb = tn, rb = tn;
+    bad.process(lb.data(), rb.data(), 512);
+    EXPECT_TRUE(bad.faulted());
+    EXPECT_EQ(bad.processCalls(), 1u);
+    EXPECT_EQ(bad.blocksRendered(), 0u);
+    EXPECT_EQ(bad.framesRendered(), 0u);
+}
+
 TEST(OmniField, NanInputIsFailClosed) {
     using namespace ivanna::omnifield;
     // NaN en el primer chunk (512 muestras): passthrough del buffer

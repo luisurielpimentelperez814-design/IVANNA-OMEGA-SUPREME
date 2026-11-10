@@ -414,6 +414,12 @@ add_library(omega_effect SHARED
     # NO añadir a ivanna_omega: ODR violation.
     hyper_globals_effect.cpp
 
+    # IVANNA: stub de g_omni_* para el proceso audioserver (mismo patrón que
+    # ORBE/HOLOS; amount=0 por defecto hasta medir CPU en el G85 — directiva
+    # 2026-11-09; sin campos omni_* en el snapshot ABI v10).
+    # NO añadir a ivanna_omega: ODR violation con omni_controls_bridge.cpp.
+    omni_globals_effect.cpp
+
     HrtfManager.cpp
     EvolutionaryEQ.cpp
     Psychoacoustics.cpp

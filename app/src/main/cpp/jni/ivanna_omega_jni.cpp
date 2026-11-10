@@ -155,6 +155,15 @@ static ivanna::HolosOperator g_holosRouteA;
 // ORBE y HOLOS siguen activos (directiva 2026-11-08); IVANNA re-espacializa
 // el campo ya mejorado por ellos. amount=0 = bypass bit-exacto.
 static ivanna::omnifield::OmniField g_omniRouteA;
+// IVANNA — telemetría de CPU Ruta A (v2.5.380): muestreo 1/64 bloques del
+// tiempo de g_omniRouteA.process() (µs, CLOCK_MONOTONIC vía
+// monotonicNowUs(), vDSO). Solo fetch_add en el hilo de audio: sin locks,
+// sin log, sin allocations. La media vive en nativeGetOmniState() y en el
+// log con límite de frecuencia del hilo de control. g_omniSampleTick
+// cuenta TODAS las llamadas (el muestreo es (tick & 63) == 0).
+static std::atomic<uint64_t> g_omniSampleTick{0};
+static std::atomic<uint64_t> g_omniSampleUs{0};  // suma de µs muestreados
+static std::atomic<uint64_t> g_omniSampleCount{0};
 // Bucle cerrado neuro-acústico (v2.5.365), Ruta A: instancia propia del
 // proceso app (paridad con IvannaFusionEngine::m_neuroLoop_ en Ruta B).
 // Apagado por defecto (g_neuroLoopEnabledA=false). Sin frames reales
@@ -215,6 +224,45 @@ extern std::atomic<float> g_holos_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<float> g_orbe_distance_m;
 extern std::atomic<float> g_orbe_proximity_db;
+
+// IVANNA (v2.5.375): tras HOLOS, antes de Φ. amount=0 = bypass bit-exacto
+// (el operador también lo garantiza). Lee los atomics g_omni_* cada bloque.
+// ORBE y HOLOS siguen activos. ÚNICO punto de llamada en Ruta A: los dos
+// caminos de proceso (nativeProcess y nativeProcessBlock) pasan por aquí,
+// así que la instrumentación (contadores + muestreo de CPU 1/64) cubre
+// ambos sin duplicar código. Semántica idéntica al bloque inline anterior:
+// amount<=0 o punteros/n inválidos ⇒ retorno sin tocar los buffers.
+// Hilo de audio: sin log, sin allocations; el cronómetro es vDSO
+// (monotonicNowUs) y solo corre 1 de cada 64 bloques.
+static void omniProcessRouteA(float* l, float* r, int n) noexcept {
+    const float omniAmount = g_omni_amount.load(std::memory_order_relaxed);
+    if (omniAmount <= 0.0f || l == nullptr || r == nullptr || n <= 0) return;
+    ivanna::omnifield::OmniParams op;
+    op.amount = omniAmount;
+    op.scenePull = g_omni_scene_pull.load(std::memory_order_relaxed);
+    op.distanceM = g_omni_distance_m.load(std::memory_order_relaxed);
+    op.headTracking = g_omni_head_tracking.load(std::memory_order_relaxed);
+    g_omniRouteA.setParams(op);
+    g_omniRouteA.setHeadPose(g_omni_yaw_rad.load(std::memory_order_relaxed));
+    if (g_omni_audiogram_dirty.exchange(false, std::memory_order_relaxed)) {
+        float lossL[6], lossR[6];
+        for (int i = 0; i < 6; ++i) {
+            lossL[i] = g_omni_audio_loss_l[i].load(std::memory_order_relaxed);
+            lossR[i] = g_omni_audio_loss_r[i].load(std::memory_order_relaxed);
+        }
+        g_omniRouteA.setAudiogram(lossL, lossR);
+    }
+    const bool sample =
+        (g_omniSampleTick.fetch_add(1, std::memory_order_relaxed) & 63u) == 0u;
+    const uint64_t t0 =
+        sample ? ivanna::neuromorphic::monotonicNowUs() : 0u;
+    g_omniRouteA.process(l, r, n);
+    if (sample) {
+        const uint64_t dt = ivanna::neuromorphic::monotonicNowUs() - t0;
+        g_omniSampleUs.fetch_add(dt, std::memory_order_relaxed);
+        g_omniSampleCount.fetch_add(1, std::memory_order_relaxed);
+    }
+}
 
 // 1× por bloque de audio, ANTES de HOLOS/ORBE. Aplica la ganancia por
 // banda (NeuroBandEq) y devuelve los ajustes para modular hp/op.
@@ -766,6 +814,48 @@ static std::thread        g_snapshotThread;
 static std::atomic<bool>  g_bridgeRunning{false};
 static std::thread        g_bridgeThread;
 
+// ── Telemetría IVANNA (OmniField, Ruta A) — log con límite de frecuencia ──
+// Hilo de control (adaptiveSnapshotLoop, 20 ms), NUNCA el hilo de audio:
+// max 1 línea / 5 s y solo si hubo bloques renderizados nuevos o cambió
+// fault. Sin allocations: solo lecturas atómicas + LOGI. Es la evidencia en
+// logcat (tag IVANNA-JNI) de que OmniField procesa de verdad en el teléfono.
+// El primer log con actividad sale inmediato (no espera 5 s). La media de
+// µs/bloque viene del muestreo 1/64 de omniProcessRouteA; la EMA del DSP
+// total y los bloques en shed ya los publica logDspShedStateThrottled().
+static void logOmniTelemetryThrottled() noexcept {
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point lastLog{};
+    static uint64_t lastBlocks = 0, lastFrames = 0;
+    static bool lastFault = false;
+    static bool firstLog = true;
+    const uint64_t blocks = g_omniRouteA.blocksRendered();
+    const uint64_t frames = g_omniRouteA.framesRendered();
+    const bool fault = g_omniRouteA.faulted();
+    if (blocks == lastBlocks && frames == lastFrames && fault == lastFault) return;
+    const auto now = Clock::now();
+    if (!firstLog && now - lastLog < std::chrono::seconds(5)) return;
+    firstLog = false;
+    lastLog = now;
+    const uint64_t dBlocks = blocks - lastBlocks;
+    const uint64_t dFrames = frames - lastFrames;
+    lastBlocks = blocks;
+    lastFrames = frames;
+    lastFault = fault;
+    const uint64_t sN = g_omniSampleCount.load(std::memory_order_relaxed);
+    const uint64_t sUs = g_omniSampleUs.load(std::memory_order_relaxed);
+    const double meanUs = (sN > 0) ? (double)sUs / (double)sN : 0.0;
+    LOGI("IVANNA OmniField Ruta A: +%llu bloques/+%llu frames desde ultimo log (total %llu/%llu), wet %.2f, r %.3f, fault %d, omni %.0f us/bloque (muestreo 1/64, n=%llu)",
+         static_cast<unsigned long long>(dBlocks),
+         static_cast<unsigned long long>(dFrames),
+         static_cast<unsigned long long>(blocks),
+         static_cast<unsigned long long>(frames),
+         (double)g_omniRouteA.appliedAmount(),
+         (double)g_omniRouteA.convergenceR(),
+         fault ? 1 : 0,
+         meanUs,
+         static_cast<unsigned long long>(sN));
+}
+
 static void adaptiveSnapshotLoop() {
     uint64_t seq = 0;
     while (g_snapshotRunning.load(std::memory_order_relaxed)) {
@@ -791,6 +881,8 @@ static void adaptiveSnapshotLoop() {
             g_lastAdaptiveMsWidenerScale.store(st.ms_widener_scale,      std::memory_order_release);
             g_lastAdaptiveEqTiltDb      .store(st.eq_tilt_db,            std::memory_order_release);
         }
+        // Telemetría IVANNA (hilo de control): log con límite de frecuencia.
+        logOmniTelemetryThrottled();
         std::this_thread::sleep_for(
             std::chrono::milliseconds(20));
     }
@@ -1838,30 +1930,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
         }
     }
-    // IVANNA (v2.5.375): tras HOLOS, antes de Φ. amount=0 = bypass
-    // bit-exacto (el operador también lo garantiza). Lee los atomics
-    // g_omni_* cada bloque. ORBE y HOLOS siguen activos.
-    {
-        const float omniAmount = g_omni_amount.load(std::memory_order_relaxed);
-        if (omniAmount > 0.0f) {
-            ivanna::omnifield::OmniParams op;
-            op.amount = omniAmount;
-            op.scenePull = g_omni_scene_pull.load(std::memory_order_relaxed);
-            op.distanceM = g_omni_distance_m.load(std::memory_order_relaxed);
-            op.headTracking = g_omni_head_tracking.load(std::memory_order_relaxed);
-            g_omniRouteA.setParams(op);
-            g_omniRouteA.setHeadPose(g_omni_yaw_rad.load(std::memory_order_relaxed));
-            if (g_omni_audiogram_dirty.exchange(false, std::memory_order_relaxed)) {
-                float lossL[6], lossR[6];
-                for (int i = 0; i < 6; ++i) {
-                    lossL[i] = g_omni_audio_loss_l[i].load(std::memory_order_relaxed);
-                    lossR[i] = g_omni_audio_loss_r[i].load(std::memory_order_relaxed);
-                }
-                g_omniRouteA.setAudiogram(lossL, lossR);
-            }
-            g_omniRouteA.process(g_ats.chL, g_ats.chR, n);
-        }
-    }
+    // IVANNA (v2.5.375): tras HOLOS, antes de Φ (ver omniProcessRouteA).
+    omniProcessRouteA(g_ats.chL, g_ats.chR, n);
     // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la ganancia
     // de salida y del limiter. amount=0 = no-op.
     hyperProcessRouteA(g_ats.chL, g_ats.chR, n,
@@ -2869,30 +2939,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         }
     }
 
-    // IVANNA (v2.5.375): tras HOLOS, antes de Φ. amount=0 = bypass
-    // bit-exacto (el operador también lo garantiza). Lee los atomics
-    // g_omni_* cada bloque. ORBE y HOLOS siguen activos.
-    {
-        const float omniAmount = g_omni_amount.load(std::memory_order_relaxed);
-        if (omniAmount > 0.0f) {
-            ivanna::omnifield::OmniParams op;
-            op.amount = omniAmount;
-            op.scenePull = g_omni_scene_pull.load(std::memory_order_relaxed);
-            op.distanceM = g_omni_distance_m.load(std::memory_order_relaxed);
-            op.headTracking = g_omni_head_tracking.load(std::memory_order_relaxed);
-            g_omniRouteA.setParams(op);
-            g_omniRouteA.setHeadPose(g_omni_yaw_rad.load(std::memory_order_relaxed));
-            if (g_omni_audiogram_dirty.exchange(false, std::memory_order_relaxed)) {
-                float lossL[6], lossR[6];
-                for (int i = 0; i < 6; ++i) {
-                    lossL[i] = g_omni_audio_loss_l[i].load(std::memory_order_relaxed);
-                    lossR[i] = g_omni_audio_loss_r[i].load(std::memory_order_relaxed);
-                }
-                g_omniRouteA.setAudiogram(lossL, lossR);
-            }
-            g_omniRouteA.process(oL, oR, n);
-        }
-    }
+    // IVANNA (v2.5.375): tras HOLOS, antes de Φ (ver omniProcessRouteA).
+    omniProcessRouteA(oL, oR, n);
 
     // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la RIR y del
     // limiter. Es la etapa que el usuario ESCUCHA en Ruta A cuando
@@ -3802,6 +3850,47 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeHyperStatus(
     jfloatArray out = env->NewFloatArray(6);
     if (!out) return nullptr;
     env->SetFloatArrayRegion(out, 0, 6, v);
+    return out;
+}
+
+// IVANNA OmniField Ruta A — telemetría (hilo JNI, no audio). Contadores:
+// [0] processCalls [1] blocksRendered [2] framesRendered [3] designCount
+// [4] fault (0/1) [5] timedSamples (muestreo CPU 1/64) [6] timedTotalUs.
+// Kotlin: `external fun nativeGetOmniTelemetry(): LongArray` en IvannaNativeLib.
+// [0] wet efectivo (appliedAmount) [1] convergenceR [2] sceneAzimuthDeg
+// [3] diffuseness [4] media µs/bloque de OmniField (0 si no hay muestras).
+// Kotlin: `external fun nativeGetOmniState(): FloatArray` en IvannaNativeLib.
+JNIEXPORT jlongArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetOmniTelemetry(JNIEnv* env, jobject) {
+    jlong v[7] = {
+        static_cast<jlong>(g_omniRouteA.processCalls()),
+        static_cast<jlong>(g_omniRouteA.blocksRendered()),
+        static_cast<jlong>(g_omniRouteA.framesRendered()),
+        static_cast<jlong>(g_omniRouteA.designCount()),
+        g_omniRouteA.faulted() ? 1 : 0,
+        static_cast<jlong>(g_omniSampleCount.load(std::memory_order_relaxed)),
+        static_cast<jlong>(g_omniSampleUs.load(std::memory_order_relaxed)),
+    };
+    jlongArray out = env->NewLongArray(7);
+    if (!out) return nullptr;
+    env->SetLongArrayRegion(out, 0, 7, v);
+    return out;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetOmniState(JNIEnv* env, jobject) {
+    const uint64_t sN = g_omniSampleCount.load(std::memory_order_relaxed);
+    const uint64_t sUs = g_omniSampleUs.load(std::memory_order_relaxed);
+    jfloat v[5] = {
+        g_omniRouteA.appliedAmount(),
+        g_omniRouteA.convergenceR(),
+        g_omniRouteA.sceneAzimuthDeg(),
+        g_omniRouteA.sceneDiffuseness(),
+        (sN > 0) ? static_cast<jfloat>((double)sUs / (double)sN) : 0.0f,
+    };
+    jfloatArray out = env->NewFloatArray(5);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, 5, v);
     return out;
 }
 

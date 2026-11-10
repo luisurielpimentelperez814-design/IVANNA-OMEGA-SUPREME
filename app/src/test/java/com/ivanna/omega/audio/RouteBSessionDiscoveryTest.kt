@@ -67,4 +67,36 @@ class RouteBSessionDiscoveryTest {
         val pairs = listOf(36081 to 10123, 36081 to 10123, 36081 to 10999)
         assertEquals(listOf(36081), usableSessionIds(pairs))
     }
+
+    // ── shouldAttachDiscoveredSession (v2.5.379) ─────────────────────────────
+    // Decisión pura: ¿hay que (re)acoplar omega a la sesión descubierta por el
+    // daemon root? La sesión 0 es un callejón sin salida (el efecto se crea
+    // pero nunca recibe frames) y el sondeo por reflexión no ve sessionIds
+    // reales, así que el daemon (root) descubre el ID real por dumpsys.
+
+    @Test fun noDiscoveredSessionMeansNoAttach() {
+        // discoveredId 0 = sin música (fail-closed): no se toca nada, sigue sesión 0.
+        assertFalse(shouldAttachDiscoveredSession(0, 0, false))
+        assertFalse(shouldAttachDiscoveredSession(-1, 0, false))
+    }
+
+    @Test fun firstDiscoveredSessionAttaches() {
+        assertTrue(shouldAttachDiscoveredSession(14177, 0, false))
+    }
+
+    @Test fun alreadyAttachedToSameSessionDoesNothing() {
+        assertFalse(shouldAttachDiscoveredSession(14177, 14177, true))
+    }
+
+    @Test fun discoveredSessionChangedReattaches() {
+        // Los IDs son dinámicos (YTM era 297 y luego 14177): al cambiar hay
+        // que liberar la anterior y re-acoplar a la nueva.
+        assertTrue(shouldAttachDiscoveredSession(14177, 297, true))
+        assertTrue(shouldAttachDiscoveredSession(14177, 297, false))
+    }
+
+    @Test fun attachedIdButOmegaDeadReattaches() {
+        // Estamos "acoplados" a 14177 pero el omega murió: reintentar.
+        assertTrue(shouldAttachDiscoveredSession(14177, 14177, false))
+    }
 }

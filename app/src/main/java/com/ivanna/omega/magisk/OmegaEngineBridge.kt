@@ -404,7 +404,12 @@ object OmegaEngineBridge {
         val upmixingEnabled: Boolean,
         val upmixingImmersivity: Float,
         val wfsEnabled: Boolean,
-        val wfsSpread: Float
+        val wfsSpread: Float,
+        // v2.5.379 — sesión de música descubierta por el daemon root (dumpsys).
+        // 0 = sin sesión descubierta (sin música: fail-closed). gen = contador
+        // que incrementa solo cuando la sesión descubierta cambia.
+        val discoveredSessionId: Int = 0,
+        val discoveredSessionGen: Long = 0L
     ) {
         /** Spatial priority used by omega_apply_snapshot: WFS, then HOA, then M/S. */
         val spatialOwner: String?
@@ -422,6 +427,16 @@ object OmegaEngineBridge {
     fun requestControlPlaneEvidence(): ControlPlaneEvidence? {
         val raw = queryDaemonEphemeral(JSONObject().apply { put("action", "GET_STATUS") }) ?: return null
         val json = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        return parseControlPlaneEvidence(json)
+    }
+
+    /**
+     * Parseo puro de la respuesta GET_STATUS a ControlPlaneEvidence (sin I/O).
+     * Extraído de requestControlPlaneEvidence para poder probarlo en host con
+     * JSON de ejemplo. Devuelve null si "ok" es false. Un daemon viejo (sin
+     * discovered_session_id en el JSON) da 0 = sin sesión descubierta.
+     */
+    internal fun parseControlPlaneEvidence(json: JSONObject): ControlPlaneEvidence? {
         if (!json.optBoolean("ok", false)) return null
         return ControlPlaneEvidence(
             daemonReachable = true,
@@ -440,7 +455,9 @@ object OmegaEngineBridge {
             upmixingEnabled = json.optDouble("upmixing_enabled", 0.0) >= 0.5,
             upmixingImmersivity = json.optDouble("upmixing_immersivity", Double.NaN).toFloat(),
             wfsEnabled = json.optDouble("wfs_enabled", 0.0) >= 0.5,
-            wfsSpread = json.optDouble("wfs_spread", Double.NaN).toFloat()
+            wfsSpread = json.optDouble("wfs_spread", Double.NaN).toFloat(),
+            discoveredSessionId = json.optInt("discovered_session_id", 0),
+            discoveredSessionGen = json.optLong("discovered_session_gen", 0L)
         )
     }
 

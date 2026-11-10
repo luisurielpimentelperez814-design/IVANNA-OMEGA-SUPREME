@@ -9,6 +9,7 @@
 #include "spatial/HoaBinauralDecoder.hpp"
 #include "spatial/HolosOperator.hpp"
 #include "spatial/HyperStateOperator.hpp"
+#include "spatial/OmniField.hpp"
 #include "spatial/OrbeBinaural.hpp"
 #include "spatial/WfsRenderer.hpp"
 #include "spatial/WfsSpreadGovernor.hpp"
@@ -67,6 +68,7 @@ public:
         m_hoaDecoder.prepare(sampleRate, 8);
         m_orbe.prepare(sampleRate);
         m_holos.prepare(sampleRate);
+        m_omni.prepare(sampleRate);
         m_hyper.prepare(sampleRate);
         m_neuroLoop_.prepare(sampleRate, static_cast<int>(Ivanna::BLOCK_SIZE));
         m_neuroBandEq_.prepare(sampleRate);
@@ -128,6 +130,17 @@ public:
     void setHolosEq(float low, float mid, float high, float presence,
                     float tiltDb, float freq) noexcept;
     bool isHolosEnabled() const noexcept;
+    // IVANNA — Operador Unificado de Campo Espacial (v2.5.375). Escriben los
+    // mismos atomics g_omni_* que process() lee cada bloque (definidos en
+    // omni_controls_bridge.cpp / omni_globals_effect.cpp — mismo patrón que
+    // g_orbe_*/g_holos_*). Apagado por defecto en Ruta B (amount=0) hasta
+    // medir CPU en el G85; el shed térmico (setOmniThermalShed, LIMITED+)
+    // lo apaga antes que ORBE/HOLOS por tiers.
+    void setOmniEnabled(bool enable) noexcept;
+    void setOmniParams(float amount, float scenePull, float distanceM,
+                       bool headTracking) noexcept;
+    bool isOmniEnabled() const noexcept;
+    void setOmniThermalShed(bool shed) noexcept { m_omniShed_ = shed; }
     // Hiper-Operador de Estado Φ (v2.5.369). Entra tras la corrección de
     // sala (m_room) y antes del XTC (m_xtc), es decir, antes del
     // compresor/limitador y después de HOLOS/ORBE/AUX/NPE: una sola
@@ -182,6 +195,15 @@ public:
         bool datasetLoaded=false;
     };
     bool hrtfEvidence(HrtfEvidenceOut& out) const noexcept;
+    // Evidencia medida de IVANNA (contadores del operador m_omni en el
+    // camino de audio real de Ruta B). Se publica por omega_process() en el
+    // canal EffectEvidence cada 32 callbacks (mismo patrón que hrtfEvidence).
+    struct OmniEvidenceOut {
+        uint64_t processCalls=0, blocksRendered=0, framesRendered=0;
+        float appliedAmount=0, convergenceR=0, sceneAzimuthDeg=0, diffuseness=0;
+        bool fault=false;
+    };
+    bool omniEvidence(OmniEvidenceOut& out) const noexcept;
 
     // Pose de la escena (Ruta B): azimut/elevación en rad y distancia relativa (0.5..2). Devuelve true si el motor HRTF la aplicó.
     bool setSceneDistance(float distanceScale) noexcept;
@@ -219,6 +241,7 @@ public:
         m_hoaDecoder.prepare(sr, 8);
         m_orbe.prepare(sr);
         m_holos.prepare(sr);
+        m_omni.prepare(sr);
         m_hyper.prepare(sr);
         m_neuroLoop_.prepare(sr, static_cast<int>(Ivanna::BLOCK_SIZE));
         m_neuroBandEq_.prepare(sr);
@@ -487,6 +510,12 @@ private:
     // HOLOS — Operador Único de Campo Acústico. Ocupa el lugar de ORBE
     // cuando está activo (ver process()); ORBE queda como fallback legacy.
     ivanna::HolosOperator m_holos;
+    // IVANNA — Operador Unificado de Campo Espacial (v2.5.375). Tras HOLOS
+    // y antes de Φ (ver process()). amount=0 por defecto en Ruta B hasta
+    // medir CPU en el G85 (directiva 2026-11-09); sin campos omni_* en el
+    // snapshot (ABI v10) los parámetros viven en los atomics g_omni_* del
+    // stub omni_globals_effect.cpp (mismo patrón que g_orbe_*/g_holos_*).
+    ivanna::omnifield::OmniField m_omni;
     // Hiper-Operador de Estado Φ (v2.5.369): muestra a muestra, sin FFT.
     // Tras m_room, antes de m_xtc (ver process()).
     ivanna::spatial::HyperStateOperator m_hyper;
@@ -509,7 +538,7 @@ private:
     ivanna::neuromorphic::ClosedLoopController m_neuroLoop_;
     ivanna::neuromorphic::NeuroBandEq m_neuroBandEq_;
     bool m_neuroLoopEnabled_ = false;
-    bool  m_npeOn_ = false, m_npeShed_ = false, m_orbeShed_ = false, m_holosShed_ = false;
+    bool  m_npeOn_ = false, m_npeShed_ = false, m_orbeShed_ = false, m_holosShed_ = false, m_omniShed_ = false;
     int   m_holosTier_ = 0;  // HolosThermalTier (0 Normal … 3 Bypass)
     float m_npeHarm_ = 0.2f, m_npeLat_ = 0.2f, m_npeOhc_ = 0.3f, m_npeMasterDb_ = 0.0f;
     ivanna::dsp::RoomCorrectionEq m_userEq;           // EQ de 10 bandas del usuario (antes solo se aplicaba su media como trim)

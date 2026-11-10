@@ -5,10 +5,11 @@ No usa indicadores de UI: solo contadores y energias medidos en el camino de aud
 Uso (root, en el telefono):  python3 read_processor_evidence.py [--interval 3] [--path ...]"""
 import argparse, struct, sys, time
 
-FMT = "<IIQ QQQQ QQQ dd dd ffff ffff II QII Q"
+FMT = "<IIQ QQQQ QQQ dd dd ffff ffff II QII Q QQQ ffff I"
 SIZE = struct.calcsize(FMT)
 NAMES = ("magic version seq hrtfCpu hrtfDsp hrtfSafRefresh hrtfPose rirLoads rirRelinks rirActive "
-         "hrtfIn hrtfOut rirIn rirOut hrtfAz hrtfBias hrtfCurv rirWet rirEarly rirDecor rirRt60 rirWetScale sr dataset controlGeneration hrtfEnabled adaptiveEnabled adaptiveApplyBlocks").split()
+         "hrtfIn hrtfOut rirIn rirOut hrtfAz hrtfBias hrtfCurv rirWet rirEarly rirDecor rirRt60 rirWetScale sr dataset controlGeneration hrtfEnabled adaptiveEnabled adaptiveApplyBlocks "
+         "omniCalls omniBlocks omniFrames omniWet omniR omniAz omniDiff omniFault").split()
 
 def read(path):
     for _ in range(50):
@@ -42,6 +43,17 @@ def verdict(a, b):
         ("APLICA" if b["adaptiveEnabled"] and b["adaptiveApplyBlocks"] > a["adaptiveApplyBlocks"] else "SIN BLOQUES APLICADOS")
         + " | blocks=%d enabled=%d" % (b["adaptiveApplyBlocks"], b["adaptiveEnabled"])
     )
+    # IVANNA (v2.5.380): la fusión aplica solo si crecen los bloques renderizados.
+    # Con amount=0 por defecto en Ruta B, lo esperado hoy es "APAGADA (amount 0)".
+    if b["omniBlocks"] > a["omniBlocks"]:
+        out["IVANNA"] = ("APLICA, wet=%.2f r=%.3f az=%.1f deg diff=%.2f fault=%d" %
+                         (b["omniWet"], b["omniR"], b["omniAz"], b["omniDiff"], b["omniFault"])
+                         if not b["omniFault"] else
+                         "FAULT LATACHEADO (bypass): blocks=%d fault=%d" % (b["omniBlocks"], b["omniFault"]))
+    else:
+        out["IVANNA"] = ("APAGADA (amount 0, sin bloques: calls=%d fault=%d)" % (b["omniCalls"], b["omniFault"])
+                         if b["omniCalls"] == a["omniCalls"] else
+                         "LLAMADAS SIN RENDER (calls=%d, blocks=0: amount~0 o bypass)" % b["omniCalls"])
     out["RUTA B"] = "generation=%d HRTF=%d datasetMedido=%d CPU=%d DSP=%d" % (b["controlGeneration"], b["hrtfEnabled"], b["dataset"], b["hrtfCpu"], b["hrtfDsp"])
     saf = []
     if b["hrtfSafRefresh"] > a["hrtfSafRefresh"] or b["hrtfBias"] != a["hrtfBias"]: saf.append("HRTF re-sintetizado por SAF")

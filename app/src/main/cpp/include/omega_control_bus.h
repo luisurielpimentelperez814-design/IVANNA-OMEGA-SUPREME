@@ -188,7 +188,17 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // invalida snapshots viejos; el reader cae a defaults (HOLOS off) hasta que
 // el daemon publique con la ABI nueva. App y daemon se distribuyen juntos
 // en el mismo release (APK + módulo Magisk v2.5.364).
-constexpr uint16_t OMEGA_CTRL_VERSION = 10u;  // v10: HOLOS (campo unificado) para la Ruta B.
+// ABI v11 (2026-11-09): añadidos discovered_session_id (int32) +
+// discovered_session_gen (uint64) — el daemon root publica aquí el sessionId
+// REAL de la app que reproduce música (descubierto por dumpsys
+// media.audio_flinger). La sesión 0 es un callejón sin salida en este G85
+// (el efecto se crea pero nunca recibe frames) y el sondeo por reflexión de
+// la app no ve sessionIds reales (anonimizados sin MODIFY_AUDIO_ROUTING).
+// Los campos van AL FINAL (antes de crc32) para no desplazar ningún offset
+// existente (effect_frames sigue en 440, raw_rms en 412): sizeof 616 -> 632,
+// dentro del static_assert <= 640. 0 = sin sesión descubierta; gen = contador
+// que incrementa solo cuando la sesión descubierta CAMBIA (0->N, N->M, N->0).
+constexpr uint16_t OMEGA_CTRL_VERSION = 11u;  // v11: sesión descubierta por el daemon root (Ruta B).
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
@@ -563,8 +573,22 @@ struct OmegaDspSnapshot {
     float    holos_eq_tilt_db;
     float    holos_eq_freq;
 
+    // ── Sesión real descubierta por el daemon root (ABI v11) ────────────────
+    // El daemon (root) ejecuta `dumpsys media.audio_flinger` cada ~3 s y
+    // publica aquí el sessionId REAL de la app que reproduce música. La app
+    // (IvannaGlobalEffectManager) acopla el efecto omega a ESTA sesión en
+    // lugar de a la sesión 0 (global), que en este Moto G85 falla en silencio
+    // (el efecto se crea pero nunca recibe frames). 0 = sin sesión descubierta
+    // (sin música o dumpsys fallido: fail-closed, la app sigue con su
+    // comportamiento actual). gen = contador que incrementa SOLO cuando la
+    // sesión descubierta cambia (0->N, N->M, N->0); la app lo usa para
+    // detectar el cambio de sesión y re-acoplar. Al FINAL (antes de crc32)
+    // para no desplazar ningún offset existente (effect_frames sigue en 440).
+    int32_t  discovered_session_id;
+    uint64_t discovered_session_gen;
+
     // ── Integridad ────────────────────────────────────────────────────────────
-    uint32_t crc32;            // CRC32 de bytes [magic .. effect_frames] inclusive
+    uint32_t crc32;            // CRC32 de bytes [magic .. crc32) (todo el struct salvo crc32)
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -659,6 +683,9 @@ struct OmegaDspSnapshot {
         for (int i = 0; i < OMEGA_CTRL_SAF_Q; ++i) s.saf_q[i] = kGoldenSafQ[i];
         s.saf_q_valid     = 1u;
         s.consumer_generation = 0;
+        // ABI v11: sin sesión descubierta por defecto (fail-closed).
+        s.discovered_session_id = 0;
+        s.discovered_session_gen = 0;
         s.flags = OMEGA_FLAG_EQ_CALIBRATED
                 | OMEGA_FLAG_PERCEPTUAL_ON
                 | OMEGA_FLAG_ANTI_DOLBY_ON
@@ -714,6 +741,18 @@ static_assert(sizeof(OmegaDspSnapshot) <= 640,
     "OmegaDspSnapshot supera 640 bytes — revisar campos o padding");
 static_assert(std::is_trivially_copyable<OmegaDspSnapshot>::value,
     "OmegaDspSnapshot debe ser trivialmente copiable (POD) para seqlock + mmap");
+
+// ABI v11 (auditoría 379): fijar el tamaño exacto y los offsets que el
+// teléfono lee con `od` (effect_frames byte 448, raw_rms/raw_peak byte 420).
+// Si alguien mueve un campo, esto rompe en compilación en vez de en silencio.
+static_assert(sizeof(OmegaDspSnapshot) == 632, "ABI v11: sizeof debe ser 632");
+static_assert(offsetof(OmegaDspSnapshot, effect_frames) == 440, "ABI: effect_frames se movió");
+static_assert(offsetof(OmegaDspSnapshot, raw_rms) == 412, "ABI: raw_rms se movió");
+static_assert(offsetof(OmegaDspSnapshot, raw_peak) == 416, "ABI: raw_peak se movió");
+static_assert(offsetof(OmegaDspSnapshot, consumer_generation) == 32, "ABI: consumer_generation se movió");
+static_assert(offsetof(OmegaDspSnapshot, discovered_session_id) == 608, "ABI v11: discovered_session_id");
+static_assert(offsetof(OmegaDspSnapshot, discovered_session_gen) == 616, "ABI v11: discovered_session_gen");
+static_assert(offsetof(OmegaDspSnapshot, crc32) == 624, "ABI v11: crc32");
 
 
 // ══════════════════════════════════════════════════════════════════════════════

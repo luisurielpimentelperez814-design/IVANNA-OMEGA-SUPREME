@@ -187,6 +187,15 @@ struct OmegaDspState {
     float holos_eq_presence = 0.f;
     float holos_eq_tilt_db = 0.f;
     float holos_eq_freq = 1000.f;
+
+    // v2.5.379 — sesión de música descubierta por el daemon root (dumpsys
+    // media.audio_flinger -> session_discovery.hpp). Al FINAL del struct
+    // (kDefaultState inicializa por posición). 0 = sin sesión descubierta
+    // (sin música o dumpsys fallido: fail-closed). _gen = contador que
+    // incrementa SOLO cuando la sesión descubierta cambia (0->N, N->M, N->0);
+    // la app lo usa para detectar el cambio de sesión y re-acoplar el efecto.
+    int32_t  discovered_session_id = 0;
+    uint64_t discovered_session_gen = 0;
 };
 
 class CommandServer {
@@ -212,6 +221,12 @@ public:
         ++m_state.clients_served;
         pthread_mutex_unlock(&m_mutex);
     }
+
+    /** Publica la sesión de música descubierta por el daemon root (dumpsys).
+     *  Solo republica el snapshot si la sesión CAMBIÓ (gen incrementa); si es
+     *  la misma, no hace nada (evita spamear generation cada ciclo de
+     *  descubrimiento). Thread-safe. Ver session_discovery.hpp. */
+    void reportDiscoveredSession(int32_t sessionId) noexcept;
 
 private:
     static uint64_t _nowMs();
