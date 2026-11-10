@@ -1,3 +1,8 @@
+# v2.5.378 (669) - 2026-11-09
+
+- **Ruta B — causa raíz del Error -38, fix de una línea.** El APM tiene un presupuesto TOTAL para todos los efectos de 512 KB (`MAX_EFFECTS_MEMORY`) y omega declaraba `memoryUsage=1024 KB` en su descriptor, así que el registro fallaba SIEMPRE con `INVALID_OPERATION` (-38) en cualquier sesión (297 de YouTube Music y 0, ambas). No era un conflicto exclusivo. Fix: `memoryUsage` 1024 → 128 KB en `omega_effect.cpp` (es solo una pista de presupuesto para el APM, no una asignación real). El descubrimiento por sondeo ya funcionaba (la app encontró la sesión 297 real).
+- **Verificado:** el test de ABI no se rompe (usa un descriptor local, no `OMEGA_DESCRIPTOR`). **Prueba en dispositivo:** si el -38 desaparece y omega aparece con 1 Client y `dsp_frames > 0`, la causa queda confirmada.
+
 # v2.5.377 (668) - 2026-11-09
 
 - **Operador unificado IVANNA — la nueva física/efecto.** Fusión matemática homogénea de 5 fuentes en UN SOLO operador: separación por fuentes estilo OmniSpatial (4 stems por crossover + transitorios, el residual reproduce el mid) + HRTF personalizada con gradiente escalado por MAA (30–52% menos cómputo) + escena espacial auto-supervisada estilo AudioSphere (azimut dominante + difusividad de la propia señal) + campo neural INAF como renderer continuo por muestra (SIREN N1+N3, FIR de fase mínima + retardo fraccional, sin STFT) + convergencia Omega–SAFMUS (Kuramoto K=40 rad/s, r=0.9636, 4º tono emergente 884 Hz). ACTIVO por defecto (amount 1.0); ORBE y HOLOS siguen activos; cadena Ruta A: ORBE → HOLOS → OMNI-FIELD → Φ. Fail-closed absoluto.

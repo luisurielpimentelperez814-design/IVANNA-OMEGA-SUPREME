@@ -181,7 +181,7 @@ static const effect_descriptor_t OMEGA_DESCRIPTOR = {
     EFFECT_CONTROL_API_VERSION,
     EFFECT_FLAG_TYPE_INSERT | EFFECT_FLAG_INSERT_ANY,
     static_cast<uint16_t>(100),          /* cpuLoad: AOSP uint16_t */
-    static_cast<uint16_t>(1024),         /* memoryUsage KB: AOSP uint16_t */
+    static_cast<uint16_t>(128),          /* memoryUsage KB: AOSP uint16_t — DEBE ser <= 512 KB total del APM (MAX_EFFECTS_MEMORY); 1024 KB hacía fallar SIEMPRE el registro con -38 (INVALID_OPERATION). 128 KB cabe con holgura. Es solo una pista de presupuesto, no una asignación real. */
     "IVANNA Omega Effect",
     "IVANNA OMEGA SUPREME"
 };
