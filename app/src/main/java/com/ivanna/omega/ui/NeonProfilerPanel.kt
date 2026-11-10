@@ -20,6 +20,7 @@ import com.ivanna.omega.audio.AudioTrackRouteReadback
 import com.ivanna.omega.audio.AsrcSoftwareState
 import com.ivanna.omega.audio.AsrcSoftwareTelemetry
 import com.ivanna.omega.audio.OmegaMetrics
+import com.ivanna.omega.audio.WriteStageAsrcTelemetry
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,7 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
     var javaHeap    by remember { mutableLongStateOf(0L) }
     var effectClockTelemetry by remember { mutableStateOf(AudioClockTelemetry()) }
     var asrcTelemetry by remember { mutableStateOf(AsrcSoftwareTelemetry()) }
+    var writeStageTelemetry by remember { mutableStateOf(WriteStageAsrcTelemetry()) }
     var routeSnapshot by remember { mutableStateOf(AudioTrackRouteReadback.current()) }
 
     // Todo lo de abajo es medición real: nada de cifras fijas ni modelos estimados.
@@ -69,6 +71,9 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             }
             asrcTelemetry = withContext(Dispatchers.IO) {
                 AudioEngine.getAsrcStateStatic()
+            }
+            writeStageTelemetry = withContext(Dispatchers.IO) {
+                AudioEngine.getWriteStageAsrcStatic()
             }
             routeSnapshot = AudioTrackRouteReadback.current()
             val cpu = android.os.Process.getElapsedCpuTime()
@@ -222,6 +227,35 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
                 LiveRow(
                     "Corrección aplicada",
                     if (asrcTelemetry.valid) "%+.1f ppm (ratio %.6f)".format(asrcTelemetry.targetPpm, asrcTelemetry.appliedRatio) else "—"
+                )
+            }
+        }
+
+        GlassCard(
+            "WRITE-STAGE ASRC PAL (v5)", PhosphorGreen,
+            "Actuador real en la ruta viva: .so interpuesta en pal_stream_write del HAL (audio.service_64). El daemon releva su dump cada refresco; sin dump fresco y válido, 'no disponible'"
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiveRow(
+                    "Estado",
+                    if (!writeStageTelemetry.valid) "no disponible · módulo principal sin write-stage, dump viejo o daemon parado"
+                    else if (!writeStageTelemetry.enabled) "apagado (kill-switch pal_asrc.off presente)"
+                    else if (writeStageTelemetry.saturated) "saturado en el clamp (±1000 ppm)"
+                    else "corrigiendo en la ruta viva (HAL pid ${writeStageTelemetry.pid})"
+                )
+                LiveRow(
+                    "Ratio / deriva",
+                    if (writeStageTelemetry.valid) "%.9f · %+.1f ppm (Kalman %+.1f ppm)".format(
+                        writeStageTelemetry.ratio, writeStageTelemetry.driftPpm, writeStageTelemetry.kalmanDriftPpm
+                    ) else "—"
+                )
+                LiveRow(
+                    "Reloj / streams",
+                    if (writeStageTelemetry.valid) "%s · opens %d / ok %d · FIR %d taps · NEON %s · dump hace %d ms".format(
+                        writeStageTelemetry.clock, writeStageTelemetry.opens, writeStageTelemetry.ok,
+                        writeStageTelemetry.firTaps, if (writeStageTelemetry.neon) "sí" else "no",
+                        writeStageTelemetry.ageMs
+                    ) else "—"
                 )
             }
         }

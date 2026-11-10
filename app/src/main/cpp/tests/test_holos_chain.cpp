@@ -166,24 +166,27 @@ TEST(HolosChain, ThdnOnAndImd) {
 }
 
 TEST(HolosChain, ThdnProductionRetune) {
-    // Retune de producción (directiva 2026-11-08, aplicado por
+    // Retune de producción (refinamiento élite v2.5.384, aplicado por
     // ParameterStore/PersistedStateRestorer, NO por los defaults del
-    // struct): amount 0.5, harmonics 0.0; el resto, defaults. Es la
-    // configuración que realmente suena en el teléfono: medirla aquí
-    // en vez de solo los defaults del struct (harmonics 0.32).
+    // struct): amount 0.75, harmonics 0.0, width 1.25, diffuse 0.65;
+    // el resto, defaults. Es la configuración que realmente suena en
+    // el teléfono: medirla aquí en vez de solo los defaults del struct
+    // (harmonics 0.32).
     HolosParams p;
-    p.amount = 0.5f;
+    p.amount = 0.75f;
     p.harmonics = 0.0f;
+    p.width = 1.25f;
+    p.diffuse = 0.65f;
     const double thdn1k = measureHolosThdn(p, 1000.0);
     const double thdn100 = measureHolosThdn(p, 100.0);
     std::printf("[holos-chain] THD+N retune prod @1 kHz: %.1f dB, @100 Hz: %.1f dB\n",
                 thdn1k, thdn100);
     EXPECT_TRUE(std::isfinite(thdn1k));
     EXPECT_TRUE(std::isfinite(thdn100));
-    // Cotas endurecidas sobre lo medido en host: −94.0 dB @1 kHz,
-    // −79.6 dB @100 Hz (coincide con el retune documentado). Margen ~14 dB.
-    EXPECT_LT(thdn1k, -80.0);
-    EXPECT_LT(thdn100, -65.0);
+    // Cotas endurecidas sobre lo medido en host: −90.5 dB @1 kHz,
+    // −75.7 dB @100 Hz (refinamiento élite). Margen ~5 dB @1 kHz.
+    EXPECT_LT(thdn1k, -85.0);
+    EXPECT_LT(thdn100, -70.0);
 }
 
 TEST(HolosChain, LatencyIsFftSize) {

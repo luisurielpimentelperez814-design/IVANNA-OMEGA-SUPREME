@@ -471,3 +471,46 @@ allow untrusted_app_33 vendor_data_file dir { search getattr }
 allow untrusted_app_34 vendor_data_file dir { search getattr }
 allow untrusted_app_35 vendor_data_file dir { search getattr }
 allow audioserver vendor_data_file dir { search getattr }
+
+# ═══════════════════════════════════════════════════════════════════════
+# v3.6 — ASRC v5 write-stage por LD_PRELOAD en vendor.audio-hal
+#
+# Verificado en vivo en el Moto G85 (2026-11-10): el write-stage
+# libivanna_asrc_write_stage.so se inyecta en el HAL con el overlay
+# overlay.d/ivanna_audio.rc + esta sección. Tres piezas:
+#
+#  1. noatsecure: sin esta regla init ejecuta el HAL con AT_SECURE=1 y
+#     bionic descarta LD_PRELOAD (Fase 1, 2026-11-06; README §12). Forma
+#     válida para magiskpolicy: "allow <src> <tgt> <class> <perm>".
+#     La forma "allow init hal_audio_default:process ..." (tgt:class)
+#     NO la acepta magiskpolicy: devuelve exit 0 aunque falle. Esta
+#     regla se aplica en instalación (customize.sh) y en cada boot
+#     (service.sh), con fallback línea por línea si --apply aborta.
+allow init hal_audio_default process noatsecure
+#
+#  2. Carga de la librería: el linker del HAL (dominio hal_audio_default)
+#     mapea /vendor/lib64/libivanna_asrc_write_stage.so. La librería se
+#     etiqueta vendor_file en customize.sh; la policy viva ya trae
+#     execute sobre vendor_file para este dominio (Fase 1, tabla §2.1),
+#     pero se declara aquí igual que la sección v3.3 lo hace para
+#     audioserver, para no depender del stock de la ROM.
+allow hal_audio_default vendor_file file { read open getattr map execute execute_no_trans }
+allow hal_audio_default vendor_file dir { search getattr open read }
+#
+#  3. Escritura del dump y lectura del kill switch: la .so (dominio
+#     hal_audio_default) escribe /data/vendor/ivanna_audio/pal_asrc_stage.txt
+#     y consulta /data/vendor/ivanna_audio/pal_asrc.off. La .so abre el
+#     dump con O_WRONLY|O_CREAT|O_TRUNC (permiso write, no append) y el
+#     kill switch con access(F_OK) (permiso getattr); el permiso append
+#     se incluye porque README §12 lo documenta como parte del mecanismo
+#     que funcionó con la sonda. El directorio lo crea y etiqueta
+#     asrc_link.sh con el tipo ivanna_data_file (sección 0); el fallback
+#     adb_data_file cubre el caso en que el contexto revierte en cada
+#     reboot (README §12, pendiente conocido: sin estas reglas el HAL no
+#     puede escribir el dump). vendor_data_file es solo travesía de
+#     /data/vendor hacia ese directorio.
+allow hal_audio_default vendor_data_file dir { search getattr }
+allow hal_audio_default ivanna_data_file dir { search getattr open read add_name }
+allow hal_audio_default ivanna_data_file file { create open read getattr write append }
+allow hal_audio_default adb_data_file dir { search getattr add_name }
+allow hal_audio_default adb_data_file file { create open read getattr write append }

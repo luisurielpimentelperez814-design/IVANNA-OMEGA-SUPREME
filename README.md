@@ -6,7 +6,7 @@
 
 **Audio espacial Android · un solo motor, dos rutas, evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.383-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.384-c8a96b?style=flat-square)](version.properties)
 [![HOLOS](https://img.shields.io/badge/HOLOS-publicado%20v2.5.364-9fb7d0?style=flat-square)](#5-holos--operador-único-de-campo-acústico-)
 [![Φ](https://img.shields.io/badge/Φ-Hiper--Operador%20v2.5.369-9fb7d0?style=flat-square)](#13-hiper-operador-φ--v2515369)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
@@ -27,6 +27,7 @@
 
 | Rama / versión | Contenido | Estado |
 |:---|:---|:---|
+| `main` · **v2.5.384** (675) | **ASRC v5 productivizado — write-stage en el módulo principal (HWS-02)** — punto de inserción PAL identificado (`pal_stream_write` en el HAL `android.hardware.audio.service_64`, deriva medida +58.055 ppm en vivo); la CI compila `libivanna_asrc_write_stage.so` desde fuente (`build_asrc_stage.sh`, receta `-nostdlib`, sin `dlinfo`), la empaqueta en `system/vendor/lib64/` y verifica hash idéntico en el zip + `BUILD_INFO` (fail-closed si las fuentes v5 no están commiteadas); host_test_asrc 103/103. Inyección LD_PRELOAD (`overlay.d`/`ivanna_audio.rc`) pendiente del agente del módulo. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (write-stage cargado en el HAL + deriva ~0 + menos underruns/overruns) |
 | `main` · **v2.5.383** (674) | **Auditoría integral (2 externas, AMBER) + 5D Fase 0 + seguridad + honestidad** — 5D Fase 0 en host (`BioControl5D` + EEG sintético, 15 tests nuevos, total 901); SELinux dedicado `ivanna_data_file` (adiós al `typeattribute` amplio); parser SAF con límites; comentarios ORBE/HOLOS en serie; CTest y licencias reconciliados; PR #39 NO incorporado; HWS-02 sigue NOT_APPROVED (punto de inserción PAL sin identificar; vía: LD_PRELOAD v5). | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (beacon creciendo + logcat `auto-enable` + verificación SELinux) |
 | `main` · **v2.5.382** (673) | **Ruta B — FIX DEFINITIVO del beacon 0** — auto-enable en `omega_process()` (ENABLE jamás llega del HAL) + init del DSP en creación con defaults 48 kHz/estéreo/PCM16 (SET_CONFIG tampoco llega). El efecto procesa aunque el HAL no envíe ENABLE ni SET_CONFIG. Confirmado en Tidal (609) igual que YTM (249): el acople funciona, el problema era `omega_process()`. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (beacon creciendo + logcat `auto-enable`) |
 | `main` · **v2.5.381** (672) | **Ruta B — diagnóstico del beacon 0** — el efecto está creado y habilitado en la sesión real de YTM (249) pero `omega_process()` nunca llega a `onBlock()`; las 5 salidas tempranas hacían passthrough en silencio. La 381 hace que cada salida loguee su motivo (throttle 5 s, tag `IvannaOmegaEffect`). La 380 confirmó en teléfono que YTM ya no se calla. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (logcat `IvannaOmegaEffect` → motivo del passthrough + beacon creciendo) |

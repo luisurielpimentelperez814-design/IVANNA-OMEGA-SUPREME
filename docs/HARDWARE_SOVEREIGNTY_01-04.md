@@ -37,15 +37,92 @@ Known limits:
 
 ## HWS-02 — Clock Master
 
-**Status: NOT APPROVED — production ASRC path is not closed.** The HAL clock
-snapshot reader/tracker in `omega_effect.cpp` currently feeds clock diagnostics;
-`VariableAsrc::setTargetRatio()` has no production call site. The daemon's
-`HalClockProducer` deliberately has no owner-side source (`ensureSource()`
-returns `kNoSource` unless a test source is injected). Therefore there is no
-verified PAL-owned correlated frame/timestamp publisher and no demonstrated
-ASRC actuator in the live audio route. Keep ASRC ratio at unity/bypass until
-that owner-side callback and the complete consumer path are implemented and
-probed. No device-clock or Bluetooth/PCM timing capability is claimed here.
+**Status: NOT_APPROVED — punto de inserción IDENTIFICADO en vivo; la
+integración productiva (módulo principal) aún no está verificada en
+dispositivo.** Ver la actualización 2026-11-10 04:40 CST abajo. El HAL
+clock snapshot reader/tracker en `omega_effect.cpp` actualmente alimenta
+diagnósticos de reloj; `VariableAsrc::setTargetRatio()` no tiene punto de
+llamada en producción. El `HalClockProducer` del daemon deliberadamente no
+tiene fuente del lado del propietario (`ensureSource()` devuelve `kNoSource`
+salvo que se inyecte una fuente de test). Por tanto no existe un publicador
+propietario validado de frames/timestamps pareados del PAL ni un actuador
+ASRC demostrado en la ruta de audio viva del código del repo anterior a
+esta actualización. Mantener el ratio ASRC en unidad/bypass hasta que el
+callback del lado del propietario y el camino completo del consumidor se
+implementen y se prueben. No se reclama aquí ninguna capacidad de reloj de
+dispositivo ni de timing Bluetooth/PCM.
+
+## Actualización HWS-02 — 2026-11-10 04:40 CST (punto de inserción identificado)
+
+- **Punto de inserción IDENTIFICADO y verificado en vivo en el Moto G85:**
+  `pal_stream_write` dentro de `/vendor/bin/hw/android.hardware.audio.service_64`
+  (servicio init `vendor.audio-hal`, PID 9123; `libar-pal.so` cargada en ese
+  proceso). El probe ASRC v5 lo intercepta EN VIVO: logcat `IVANNA_ASRC`
+  `opens=8 ok=8, ratio=1.000058055, drift +58.055 ppm, clock=write-timing`.
+  Esto cierra la pregunta abierta del plan de cierre de la auditoría L1
+  ("¿dónde se escribe la música?"): se escribe por `pal_stream_write` en
+  el proceso del HAL, y la interposición LD_PRELOAD v2 (RTLD_NEXT + dlopen
+  sobre libar-pal.so, porque libar-pal.so es RTLD_LOCAL) funciona ahí.
+- **Actuador:** sigue sin existir actuador de ratio variable en el PAL
+  propietario para música (card 1 Blair: 196 controles, cero de
+  reloj/ratio; verificado 2026-11-07). El actuador ES el ASRC de IVANNA en
+  el write-stage vía LD_PRELOAD. La ASRC v5 "Élite" está verificada en
+  dispositivo: FIR polifásico 287 taps, dither TPDF 2º orden, NEON, servo
+  Kalman; deriva −6.250 ppm (frío, 2026-11-10 00:40 CST) / +58.055 ppm
+  (2026-11-10 04:40 CST); `sat=0`; dump en
+  `/data/vendor/ivanna_audio/pal_asrc_stage.txt` (se reescribe cada 5 s);
+  kill switch `touch /data/vendor/ivanna_audio/pal_asrc.off`.
+- **Vía productiva (en el working tree, sin commitear — otro agente):**
+  la .so v5 se pliega en el módulo principal `ivanna_omega_supreme`:
+  `magisk_module/overlay.d/ivanna_audio.rc` (setenv LD_PRELOAD
+  `/vendor/lib64/libivanna_asrc_write_stage.so` en el servicio
+  `vendor.audio-hal`), `.so` en `magisk_module/system/vendor/lib64/`
+  (1,252,048 B, SHA-256 `ac1ef787…` — idéntico al artefacto verificado en
+  vivo; `PROVENANCE.txt` con origen y build), regla `noatsecure` en
+  `sepolicy.rule` (§v3.6), etiquetado `vendor_file` + desactivación del
+  módulo legacy en `customize.sh`, y chequeo de arranque en `service.sh`
+  (`ivanna_asrc_preload_status`, solo lectura). El módulo separado
+  `ivanna_audio_probe` queda como legacy. **Estado real:** el plegado
+  existe en el working tree sin commitear (no en HEAD `8da2e232`); la
+  `.so` está en `.gitignore` y el CI debe copiarla desde
+  `hal_integration/moto_g85/pal_preload_probe/out/` al empaquetar el zip
+  y verificar el SHA. Falta: commit, CI/release 384 y verificación en el
+  teléfono DEL MÓDULO PRINCIPAL (no del probe legacy). Riesgo conocido
+  del propio `.rc`: `override` sustituye la stanza del fabricante — antes
+  de instalar, capturar la stanza exacta del teléfono
+  (`cat /vendor/etc/init/android.hardware.audio.service_64.rc`) y
+  completarla si trae más opciones.
+- **Visibilidad (este cambio, working tree sin commitear):** el dump del
+  write-stage ya es consultable desde la app: el daemon (root) lo lee con
+  `include/write_stage_asrc_telemetry.hpp` (solo lectura, fail-closed,
+  frescura ≤30 s) y lo releva en `GET_CLOCK_TELEMETRY` (campos
+  `writeStage*`); la app lo muestra en el panel Profiler
+  (`AudioEngine.getWriteStageAsrcStatic()` + tarjeta "WRITE-STAGE ASRC
+  PAL (v5)" en NeonProfilerPanel). Test host nuevo
+  `test_write_stage_asrc_telemetry` 11/11. Falta verificación en
+  dispositivo con el módulo principal (ver
+  `analysis-ivanna/PLAN_VERIFICACION_ASRC_384.md`).
+- **Por qué HWS-02 sigue NOT_APPROVED:** el gate exige las 4 fases
+  APPROVED con evidencia bajo `evidence/hws-02/` y el manifiesto sigue
+  con `evidence: []`. La evidencia en vivo es del probe legacy
+  experimental, no del módulo principal plegado, que existe solo en el
+  working tree sin commitear y aún no se ha verificado en el teléfono.
+  El cierre requiere: (1) el plegado commiteado + CI/release 384, (2)
+  verificación en teléfono de la 384 con el módulo principal (dump con
+  opens>0, ratio en [0.9990, 1.0010], sat=0, Kalman converge, sonido
+  preservado, kill switch), (3) esa evidencia commiteada bajo
+  `evidence/hws-02/`. Hasta entonces, no aprobar.
+- **Duplicación shim v5 vs camino PR #25/#26:** sigue abierta. El shim v5
+  es C standalone y NO reutiliza `PalAsrcBridge`/`VariableAsrc`/
+  `HalClockProducer`. La decisión documentada en el manifiesto sigue
+  vigente: o el shim es LA ruta ASRC de producción y el camino PR #25
+  queda superseded/no usado, o se porta el Kalman+FIR v5 a
+  `PalAsrcBridge`. No afirmar que ambas son la ruta de producción.
+  (`PalAsrcWriteStage` del repo sigue sin instanciación productiva;
+  `VariableAsrc::setTargetRatio()` sigue sin llamador en producción;
+  `HalClockProducer` sigue sin fuente propietaria; el servo
+  `AsrcClockController`/`appliedRatio` sigue siendo solo telemetría en
+  pantalla.)
 
 ## HWS-03 — Adaptive SoC Control
 

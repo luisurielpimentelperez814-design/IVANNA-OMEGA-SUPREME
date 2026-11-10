@@ -67,12 +67,13 @@ bool SafModelLoader::load(const std::string& path)
     file.seekg(0, std::ios::beg);
     if (fileSize < 0 || fileSize > kMaxModelFileBytes) return false;
 
-    json model;
-    try {
-        file >> model;
-    } catch (...) {
-        return false;
-    }
+    // Parsear sin excepciones: el build NDK usa -fno-exceptions, asi que
+    // `try/catch` no compila. json::parse(..., allow_exceptions=false)
+    // devuelve un valor descartado en vez de lanzar.
+    std::string content((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+    json model = json::parse(content, nullptr, false);
+    if (model.is_discarded()) return false;
     if (!model.is_object()) return false;
 
     // Validar dimensiones ANTES de materializar vectores desde el JSON.

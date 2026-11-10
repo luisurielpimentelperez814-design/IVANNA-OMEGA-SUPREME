@@ -9,6 +9,7 @@
 #include "../../include/omega_effect_beacon.h"
 #include "../../include/omega_effect_evidence.h"   // GET_PROCESSOR_EVIDENCE: HRTF/RIR/SAF medidos en el camino de audio
 #include "../../include/asrc_state_bridge.hpp"   // GET_CLOCK_TELEMETRY: el daemon (root) lee el canal ASRC que la app no puede abrir
+#include "../../include/write_stage_asrc_telemetry.hpp" // GET_CLOCK_TELEMETRY: relevo del dump del write-stage ASRC PAL (v5), solo lectura
 #include "../../include/omega_user_flags.hpp"   // v2.5.16: SET_USER_FLAGS (tabla blanca de bits)
 #include "../../spatial/SafmusLatentGuard.hpp" // valida el vector SAFMUS antes de publicarlo
 #include "../../ivanna_hires_config.hpp"
@@ -538,15 +539,34 @@ int CommandServer::handleJsonCommand(const char* json, char* reply, int reply_sz
         ivanna::audio::AsrcStateReader asrcReader;
         ivanna::audio::AsrcStateSample asrc{};
         const bool asrcOk = asrcReader.open() && asrcReader.read(asrc);
+        // Write-stage ASRC PAL (v5): el dump lo escribe la .so interpuesta en
+        // el HAL (/data/vendor/ivanna_audio/pal_asrc_stage.txt, 0644, cada
+        // 5 s). La app no puede abrir ese directorio; el daemon (root) lo
+        // lee y lo releva aquí, igual que el estado ASRC software. Solo
+        // lectura y fail-closed: sin dump fresco y válido, writeStageValid
+        // es false y la app muestra "no disponible", nunca un valor simulado.
+        ivanna::audio::WriteStageAsrcSample ws{};
+        const bool wsOk = ivanna::audio::readWriteStageAsrc(ws);
         n = snprintf(reply, reply_sz,
             "{\"ok\":true,\"action\":\"GET_CLOCK_TELEMETRY\","
             "\"callbackValid\":%s,\"callbackRateHz\":%.3f,\"callbackDriftPpm\":%d,"
             "\"hardwareValid\":%s,\"hardwareRateHz\":%.3f,\"hardwareDriftPpm\":%d,"
-            "\"asrcValid\":%s,\"asrcState\":%d,\"asrcDriftPpm\":%.3f,\"asrcTargetPpm\":%.3f,\"asrcRatio\":%.9f}",
+            "\"asrcValid\":%s,\"asrcState\":%d,\"asrcDriftPpm\":%.3f,\"asrcTargetPpm\":%.3f,\"asrcRatio\":%.9f,"
+            "\"writeStageValid\":%s,\"writeStagePid\":%d,\"writeStageEnabled\":%s,"
+            "\"writeStageRatio\":%.9f,\"writeStageDriftPpm\":%.3f,\"writeStageKalmanDriftPpm\":%.3f,"
+            "\"writeStageClock\":\"%s\",\"writeStageOpens\":%llu,\"writeStageOk\":%llu,"
+            "\"writeStageSat\":%d,\"writeStageFirTaps\":%d,\"writeStageNeon\":%d,\"writeStageAgeMs\":%llu}",
             cbOk ? "true" : "false", cbOk ? cb.observedSampleRateHz : 0.0, cbOk ? (int)cb.driftPpm : 0,
             hwOk ? "true" : "false", hwOk ? hw.measuredSampleRateHz : 0.0, hwOk ? (int)hw.driftPpm : 0,
             asrcOk ? "true" : "false", asrcOk ? (int)asrc.state : 0,
-            asrcOk ? asrc.driftPpm : 0.0, asrcOk ? asrc.targetPpm : 0.0, asrcOk ? asrc.appliedRatio : 1.0);
+            asrcOk ? asrc.driftPpm : 0.0, asrcOk ? asrc.targetPpm : 0.0, asrcOk ? asrc.appliedRatio : 1.0,
+            wsOk ? "true" : "false", wsOk ? ws.pid : 0, wsOk && ws.enabled ? "true" : "false",
+            wsOk ? ws.ratio : 1.0, wsOk ? ws.driftPpm : 0.0, wsOk ? ws.kalmanDriftPpm : 0.0,
+            wsOk ? ws.clock : "unknown",
+            wsOk ? (unsigned long long)ws.opens : 0ULL,
+            wsOk ? (unsigned long long)ws.ok : 0ULL,
+            wsOk ? ws.sat : 0, wsOk ? ws.firTaps : 0, wsOk ? ws.neon : 0,
+            wsOk ? (unsigned long long)ws.ageMs : 0ULL);
 
     } else if (strcmp(action,"SET_SCENE_POSE")==0) {
         // Pose de la escena en Ruta B = azimut/elevación (yaw/pitch del bus v8, MISMO camino y ack que SET_HEAD_POSE)

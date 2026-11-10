@@ -38,6 +38,32 @@ data class AsrcSoftwareTelemetry(
 )
 
 /**
+ * Write-stage ASRC PAL (v5): el actuador real en la ruta de audio viva.
+ * La .so interpuesta en el HAL (/vendor/bin/hw/android.hardware.audio.service_64)
+ * reescribe /data/vendor/ivanna_audio/pal_asrc_stage.txt cada 5 s; el daemon
+ * (root) lo lee y lo releva en GET_CLOCK_TELEMETRY (ver
+ * include/write_stage_asrc_telemetry.hpp). valid=false = dump ausente,
+ * viejo o inválido: el panel muestra "no disponible", nunca un valor simulado.
+ * Distinto del "core ASRC software" de arriba, que es solo telemetría del
+ * servo sin consumidor en ninguna ruta de audio.
+ */
+data class WriteStageAsrcTelemetry(
+    val valid: Boolean = false,
+    val pid: Int = 0,
+    val enabled: Boolean = false,
+    val ratio: Float = 1f,
+    val driftPpm: Float = 0f,
+    val kalmanDriftPpm: Float = 0f,
+    val clock: String = "unknown",
+    val opens: Long = 0L,
+    val ok: Long = 0L,
+    val saturated: Boolean = false,
+    val firTaps: Int = 0,
+    val neon: Boolean = false,
+    val ageMs: Long = 0L
+)
+
+/**
  * AudioEngine v1.5 — Motor de audio DSP.
  */
 class AudioEngine {
@@ -160,6 +186,32 @@ class AudioEngine {
                 driftPpm = d.optDouble("asrcDriftPpm", 0.0).toFloat(),
                 targetPpm = d.optDouble("asrcTargetPpm", 0.0).toFloat(),
                 appliedRatio = d.optDouble("asrcRatio", 1.0).toFloat()
+            )
+        }
+
+        /**
+         * Write-stage ASRC PAL (v5) relevado por el daemon en
+         * GET_CLOCK_TELEMETRY (campos writeStage*). valid=false si el daemon
+         * no lo ve (dump ausente/viejo/inválido o módulo principal sin el
+         * write-stage): se reporta "no disponible", nunca un valor simulado.
+         */
+        fun getWriteStageAsrcStatic(): WriteStageAsrcTelemetry {
+            val d = DaemonClockRelay.fetch() ?: return WriteStageAsrcTelemetry()
+            if (!d.optBoolean("writeStageValid", false)) return WriteStageAsrcTelemetry()
+            return WriteStageAsrcTelemetry(
+                valid = true,
+                pid = d.optInt("writeStagePid", 0),
+                enabled = d.optBoolean("writeStageEnabled", false),
+                ratio = d.optDouble("writeStageRatio", 1.0).toFloat(),
+                driftPpm = d.optDouble("writeStageDriftPpm", 0.0).toFloat(),
+                kalmanDriftPpm = d.optDouble("writeStageKalmanDriftPpm", 0.0).toFloat(),
+                clock = d.optString("writeStageClock", "unknown"),
+                opens = d.optLong("writeStageOpens", 0L),
+                ok = d.optLong("writeStageOk", 0L),
+                saturated = d.optInt("writeStageSat", 0) != 0,
+                firTaps = d.optInt("writeStageFirTaps", 0),
+                neon = d.optInt("writeStageNeon", 0) != 0,
+                ageMs = d.optLong("writeStageAgeMs", 0L)
             )
         }
 

@@ -94,11 +94,11 @@ struct HolosParams {
     float distanceM = 0.35f;   // 0.15..2.0 m, distancia base ("íntimo")
     float spread = 1.0f;       // 0..1.5, escala del azimut estimado
     float proximityDb = 3.0f;  // 0..6 dB, techo del realce de proximidad
-    float diffuse = 0.5f;      // 0..1, cuánto campo difuso va a la cola compartida
+    float diffuse = 0.65f;      // 0..1, cuánto campo difuso va a la cola compartida
     float harmonics = 0.32f;   // 0..1, mezcla del término K
     float warmth = 0.5f;       // 0..1, balance par/impar de K
     float dynamics = 1.0f;     // 0..1, cantidad de Γ_dinámico (1 = compresor como hoy)
-    float width = 1.0f;        // 0..1.5, escala de Γ_ancho
+    float width = 1.25f;        // 0..1.5, escala de Γ_ancho
     float gamma = 1.0f;        // 0.5..1.0, exponente de divergencia (1 esférico, ½ WFS)
     float roomRt60 = 0.34f;    // 0.18..1.8 s, RT60 del término difuso (próximo prepare)
     bool headTracking = true;  // parallax por setHeadPose()

@@ -204,6 +204,25 @@ if [ -f "$ASRC_LINK" ]; then
     fi
 fi
 
+# Verificación ASRC v5 en arranque (SOLO LECTURA: ivanna_asrc_preload_status
+# lee /proc/<pid>/maps y /proc/<pid>/environ del HAL y el directorio del
+# canal; no cambia el entorno de ningún proceso, no reinicia el HAL ni
+# escribe archivos — lo prohíben tests/test_preload_link.py). El HAL
+# arranca antes que este script, así que si el overlay.d inyectó la .so
+# ya debe verse mapeada. Un veredicto distinto de LOADED solo se registra
+# como WARNING: el audio y el arranque del daemon no dependen de este
+# chequeo, y el kill switch (pal_asrc.off) es bypass intencional, no fallo.
+if command -v ivanna_asrc_preload_status >/dev/null 2>&1; then
+    ASRC_CHECK=$(ivanna_asrc_preload_status 2>&1)
+    echo "$ASRC_CHECK" >> "$LOG"
+    case "$ASRC_CHECK" in
+        *asrc_verdict=LOADED*)
+            echo "$(date) ASRC-CHECK: write-stage v5 mapeado en el HAL" >> "$LOG" ;;
+        *)
+            echo "$(date) ASRC-CHECK: WARNING write-stage v5 no confirmado en el HAL (ver líneas ASRC arriba; el audio sigue sin depender de esto)" >> "$LOG" ;;
+    esac
+fi
+
 # Control autenticado solo por socket UNIX abstracto. El daemon rechaza TCP
 # deliberadamente; no pasar un flag de fallback que la app no debe usar.
 #

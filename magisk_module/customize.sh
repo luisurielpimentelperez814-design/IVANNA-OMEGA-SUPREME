@@ -388,6 +388,39 @@ if [ -f "$PRELOAD_PROBE" ]; then
         || ui_print "  ⚠ no se pudo etiquetar la sonda LD_PRELOAD (diagnostico opcional; el resto del modulo no se ve afectado)"
 fi
 
+# ── ASRC v5 write-stage: etiqueta + desactivación del módulo legacy ─────
+# La .so del write-stage ASRC v5 vive en system/vendor/lib64/ (procedencia
+# en libivanna_asrc_write_stage.so.PROVENANCE.txt). Como la sonda de
+# presencia, debe verse como vendor_file para que el linker del HAL
+# (hal_audio_default) pueda mapearla: con system_file o adb_data_file el
+# cargador falla aunque AT_SECURE esté resuelto (Fase 1, 2026-11-06).
+# Un fallo de etiqueta no debe impedir instalar el módulo (la verificación
+# de arranque en service.sh lo registrará como WARNING).
+ASRC_STAGE_SO="$MODPATH/system/vendor/lib64/libivanna_asrc_write_stage.so"
+if [ -f "$ASRC_STAGE_SO" ]; then
+    set_perm "$ASRC_STAGE_SO" root root 0644 u:object_r:vendor_file:s0 \
+        || ui_print "  ⚠ no se pudo etiquetar libivanna_asrc_write_stage.so como vendor_file (el HAL podría no mapearla; revisar con el chequeo de arranque)"
+else
+    ui_print "  ⚠ este zip no incluye el write-stage ASRC v5 (zip anterior a v2.5.384)"
+fi
+
+# El módulo legacy ivanna_audio_probe trae su propio overlay.d con
+# LD_PRELOAD apuntando a libaudio_probe.so. Si sigue activo en el próximo
+# arranque, habría DOS inyecciones en conflicto (dos valores en juego y
+# dos pal_stream_write). Se desactiva para el próximo arranque con la
+# marca disable de Magisk: no se borra nada y audio_unify.sh rollback lo
+# puede revertir. Tolerante: si el módulo legacy no existe, no pasa nada
+# y la instalación sigue. Nada se reinicia aquí: aplica en el próximo reboot.
+if [ -d /data/adb/modules/ivanna_audio_probe ]; then
+    if touch /data/adb/modules/ivanna_audio_probe/disable 2>/dev/null; then
+        ui_print "  ✓ ivanna_audio_probe legacy desactivado para el próximo arranque (solo el overlay del módulo principal aplicará la inyección)"
+    else
+        ui_print "  ⚠ no se pudo desactivar ivanna_audio_probe legacy (hacerlo a mano: touch /data/adb/modules/ivanna_audio_probe/disable)"
+    fi
+else
+    ui_print "  ℹ ivanna_audio_probe legacy no instalado; nada que desactivar"
+fi
+
 # libomega_effect.so (Ruta B): etiqueta vendor_file para que audioserver/HAL
 # pueda cargarla desde /vendor. Sin esto el .so aterriza como system_file y
 # AudioFlinger lo salta ("XML effect configuration partially loaded, skipped

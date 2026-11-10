@@ -574,6 +574,70 @@ jobs:
           echo "OK: sonda LD_PRELOAD AArch64, inerte, sin libc++_shared, LOAD p_align >= 0x4000"
           sha256sum "$OUT"
 
+      # ── WRITE-STAGE ASRC v5 (LD_PRELOAD, HWS-02) → módulo Magisk ───────
+      # Compila hal_integration/moto_g85/pal_preload_probe/ivanna_asrc_write_stage.c
+      # (+ fir_v5_coeffs.h, 287 taps) con la receta EXACTA de build_asrc_stage.sh
+      # (aarch64-linux-gnu-gcc, -nostdlib, sin dlinfo) y la empaqueta en el
+      # módulo principal como system/vendor/lib64/libivanna_asrc_write_stage.so.
+      # A DIFERENCIA de la sonda de presencia (inerte), esta .so SÍ define
+      # pal_stream_open/close/write: es el interposer del write-stage que
+      # resamplea el PCM de música antes de libar-pal.so (deriva medida en
+      # vivo +58.055 ppm, 2026-11-10; ratio ~1.0; host test 103/103). El módulo
+      # NO la inyecta todavía por sí solo: la activación (LD_PRELOAD vía
+      # overlay.d + ivanna_audio.rc) la pone el agente del módulo; aquí solo
+      # se compila desde fuente, se empaqueta y se verifica el hash en el zip.
+      # FAIL-CLOSED: si las fuentes v5 no están commiteadas, el job muere
+      # aquí con un mensaje explícito (no se empaqueta ningún binario viejo:
+      # el purge inicial ya borró todos los *.so del árbol).
+      - name: Compile + stage ASRC v5 write-stage into Magisk module
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROBE_DIR=hal_integration/moto_g85/pal_preload_probe
+          for f in "$PROBE_DIR/ivanna_asrc_write_stage.c" "$PROBE_DIR/fir_v5_coeffs.h" "$PROBE_DIR/build_asrc_stage.sh" "$PROBE_DIR/build_stub/empty.c" "$PROBE_DIR/build_stub/android/log.h"; do
+            test -f "$f" || { echo "ERROR: fuente ASRC v5 ausente en el checkout: $f — commitea ivanna_asrc_write_stage.c + fir_v5_coeffs.h + build_asrc_stage.sh + build_stub/ antes de publicar la 384"; exit 1; }
+          done
+          # La receta local usa aarch64-linux-gnu-gcc (no NDK): instalarlo.
+          if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          fi
+          command -v aarch64-linux-gnu-gcc >/dev/null 2>&1 || { echo "ERROR: aarch64-linux-gnu-gcc no disponible tras apt install"; exit 1; }
+          # build_asrc_stage.sh ya aplica sus propios gates: AArch64, NEEDED
+          # libdl+liblog, __android_log_print, .init_array, dlinfo PROHIBIDO,
+          # sin imports pal_*, sin símbolos glibc/fortify/libm, y escribe
+          # out/sha256.txt + out/dynsyms.txt. Aquí solo se exige su PASS.
+          sh "$PROBE_DIR/build_asrc_stage.sh"
+          OUT="$PROBE_DIR/out/libivanna_asrc_write_stage.so"
+          test -s "$OUT" || { echo "ERROR: build_asrc_stage.sh no produjo la .so"; exit 1; }
+          STAGED=magisk_module/system/vendor/lib64/libivanna_asrc_write_stage.so
+          mkdir -p "$(dirname "$STAGED")"
+          rm -f "$STAGED"
+          cp "$OUT" "$STAGED"
+          chmod 644 "$STAGED"
+          # Validación estricta (mismo nivel que daemon/efecto/sonda).
+          TC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          HDR="$("$TC/llvm-readelf" -h "$STAGED")"
+          echo "$HDR" | grep -q "AArch64" || { echo "ERROR: write-stage ASRC no es AArch64"; exit 1; }
+          DYN="$("$TC/llvm-readelf" -dW "$STAGED")"
+          echo "$DYN"
+          echo "$DYN" | grep -qi "libc++_shared" && { echo "ERROR: write-stage depende de libc++_shared.so — el HAL no la puede resolver"; exit 1; }
+          # ABI 16 KB (Android 15+): mismo criterio que verify-release.
+          BAD=0
+          while read -r al; do
+            [ $((al)) -ge 16384 ] || BAD=$((BAD+1))
+          done < <("$TC/llvm-readelf" -lW "$STAGED" | awk '/^ *LOAD/{print $NF}')
+          [ "$BAD" = "0" ] || { echo "ERROR ABI: write-stage ASRC tiene $BAD segmento(s) LOAD con p_align < 0x4000"; exit 1; }
+          # Interposer REAL: debe exportar los 3 símbolos pal_stream_* y NO
+          # debe requerir dlinfo (ausente en el namespace vendor del HAL).
+          DEF="$("$TC/llvm-nm" -D --defined-only "$STAGED" || true)"
+          echo "$DEF" | grep -q " T pal_stream_open"  || { echo "ERROR: write-stage no exporta pal_stream_open"; exit 1; }
+          echo "$DEF" | grep -q " T pal_stream_close" || { echo "ERROR: write-stage no exporta pal_stream_close"; exit 1; }
+          echo "$DEF" | grep -q " T pal_stream_write" || { echo "ERROR: write-stage no exporta pal_stream_write"; exit 1; }
+          UND="$("$TC/llvm-nm" -D --undefined-only "$STAGED" || true)"
+          echo "$UND" | grep -q "dlinfo" && { echo "ERROR: write-stage requiere dlinfo — el HAL entra en crash-loop (2026-11-09)"; exit 1; }
+          echo "OK: write-stage ASRC v5 AArch64, pal_stream_{open,close,write} exportados, sin dlinfo, sin libc++_shared, LOAD p_align >= 0x4000"
+          sha256sum "$STAGED" | tee asrc_write_stage_sha256.txt
+
       # ── MANIFIESTO DE ARTEFACTOS ───────────────────────────────────────
       - name: Generate BUILD_INFO manifest
         run: |
@@ -588,6 +652,7 @@ jobs:
             echo "daemon_file=$(file ivanna_daemon)"
             echo "effect_sha256=$(sha256sum libomega_effect_arm64.so | awk '{print $1}')"
             echo "preload_probe_sha256=$(sha256sum magisk_module/system/vendor/lib64/libivanna_pal_presence_probe.so | awk '{print $1}')"
+            echo "asrc_write_stage_sha256=$(sha256sum magisk_module/system/vendor/lib64/libivanna_asrc_write_stage.so | awk '{print $1}')"
             echo "ndk=${ANDROID_NDK_VERSION}"
           } > magisk_module/BUILD_INFO
           cp magisk_module/BUILD_INFO ./BUILD_INFO
@@ -692,6 +757,7 @@ jobs:
           unzip -l "$ZIPNAME" | grep -q "system/bin/ivanna_daemon"                  || { echo "ERROR: zip sin daemon"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "system/vendor/lib64/soundfx/libomega_effect.so" || { echo "ERROR: zip sin effect lib"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "system/vendor/lib64/libivanna_pal_presence_probe.so" || { echo "ERROR: zip sin sonda LD_PRELOAD PAL"; exit 1; }
+          unzip -l "$ZIPNAME" | grep -q "system/vendor/lib64/libivanna_asrc_write_stage.so" || { echo "ERROR: zip sin write-stage ASRC v5"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "sepolicy.rule"                             || { echo "ERROR: zip sin sepolicy.rule"; exit 1; }
           unzip -l "$ZIPNAME" | grep -q "BUILD_INFO"                                || { echo "ERROR: zip sin BUILD_INFO"; exit 1; }
           # Datasets (v2.5.31): el zip debe contener EXACTAMENTE lo que hay en el árbol del módulo.
@@ -737,6 +803,24 @@ jobs:
           H_PROBE_SRC=$(sha256sum magisk_module/system/vendor/lib64/libivanna_pal_presence_probe.so | awk '{print $1}')
           [ "$H_PROBE_ZIP" = "$H_PROBE_SRC" ] || { echo "ERROR FATAL: hash sonda zip != hash sonda compilada"; exit 1; }
           echo "INTEGRITY OK — sonda LD_PRELOAD: compilación → zip: hash idéntico ($H_PROBE_ZIP)"
+          rm -f extracted_asrc.so
+          unzip -p "$ZIPNAME" system/vendor/lib64/libivanna_asrc_write_stage.so > extracted_asrc.so
+          H_ASRC_ZIP=$(sha256sum extracted_asrc.so | awk '{print $1}')
+          H_ASRC_SRC=$(sha256sum magisk_module/system/vendor/lib64/libivanna_asrc_write_stage.so | awk '{print $1}')
+          [ "$H_ASRC_ZIP" = "$H_ASRC_SRC" ] || { echo "ERROR FATAL: hash write-stage ASRC zip != hash write-stage compilado"; exit 1; }
+          echo "INTEGRITY OK — write-stage ASRC v5: compilación → zip: hash idéntico ($H_ASRC_ZIP)"
+          # overlay.d / ivanna_audio.rc (inyección LD_PRELOAD): los pone el
+          # agente del módulo. Si existen en el árbol, DEBEN estar en el zip;
+          # si no existen, se deja constancia y NO se bloquea (la .so viaja
+          # igual; la activación queda pendiente).
+          RC_PATH=$(find magisk_module/overlay.d -name "ivanna_audio.rc" -type f 2>/dev/null | head -1 || true)
+          if [ -n "$RC_PATH" ]; then
+            RC_REL="${RC_PATH#magisk_module/}"
+            unzip -l "$ZIPNAME" | grep -qF "$RC_REL" || { echo "ERROR: zip sin $RC_REL pese a existir en el árbol"; exit 1; }
+            echo "overlay.d presente en el zip: $RC_REL"
+          else
+            echo "::notice title=ASRC sin overlay.d::ivanna_audio.rc no existe en magisk_module/overlay.d — la .so v5 viaja en el zip pero la inyección LD_PRELOAD queda pendiente (ver agente del módulo)"
+          fi
           ls -lh "$ZIPNAME"
 
       # ── VERIFICACIÓN + EMPAQUETADO DEL APK ─────────────────────────────
@@ -949,6 +1033,10 @@ jobs:
           readelf -h extracted_probe.so | grep -q "AArch64" || { echo "ERROR: libivanna_pal_presence_probe.so no es AArch64"; exit 1; }
           elf_align_gate extracted_probe.so libivanna_pal_presence_probe.so
           H_PROBE=$(sha256sum extracted_probe.so | awk '{print $1}')
+          unzip -p "$ZIPNAME" system/vendor/lib64/libivanna_asrc_write_stage.so > extracted_asrc.so
+          readelf -h extracted_asrc.so | grep -q "AArch64" || { echo "ERROR: libivanna_asrc_write_stage.so no es AArch64"; exit 1; }
+          elf_align_gate extracted_asrc.so libivanna_asrc_write_stage.so
+          H_ASRC=$(sha256sum extracted_asrc.so | awk '{print $1}')
           unzip -p "$APK_NAME" lib/arm64-v8a/libivanna_omega.so > extracted_jni.so
           readelf -h extracted_jni.so | grep -q "AArch64" || { echo "ERROR: libivanna_omega.so no es AArch64"; exit 1; }
           elf_align_gate extracted_jni.so libivanna_omega.so
@@ -976,6 +1064,7 @@ jobs:
           grep -q "commit=$GITHUB_SHA" build_info_check.txt || { echo "ERROR: BUILD_INFO commit mismatch"; exit 1; }
           grep -q "$H_EXTRACT" build_info_check.txt         || { echo "ERROR: BUILD_INFO hash mismatch"; exit 1; }
           grep -q "preload_probe_sha256=$H_PROBE" build_info_check.txt || { echo "ERROR: BUILD_INFO hash de la sonda LD_PRELOAD no coincide con la del zip"; exit 1; }
+          grep -q "asrc_write_stage_sha256=$H_ASRC" build_info_check.txt || { echo "ERROR: BUILD_INFO hash del write-stage ASRC no coincide con el del zip"; exit 1; }
 
           echo "════════════════════════════════════════════════════════"
           echo " VERIFY-RELEASE OK"

@@ -1,0 +1,17 @@
+# IVANNA OMEGA SUPREME — ASRC v5 write-stage (Moto G85 5G)
+# Adaptación del overlay.d/ivanna_audio.rc del módulo ivanna_audio_probe
+# (~/workspace/preload-evidence/20261107/overlay.d_ivanna_audio.rc, 510 B):
+# stanza COMPLETA del servicio vendor.audio-hal replicada del fabricante
+# (incl. class/user/group/capabilities/ioprio/writepid/onrestart) + override
+# + setenv con la librería v5. Único cambio respecto al original: la ruta
+# de la librería. Magisk overlay.d imports this after init.rc.
+service vendor.audio-hal /vendor/bin/hw/android.hardware.audio.service_64
+    override
+    setenv LD_PRELOAD /vendor/lib64/libivanna_asrc_write_stage.so
+    class hal
+    user audioserver
+    group audio camera drmrpc inet media mediadrm net_bt net_bt_admin oem_2901 wakelock
+    capabilities BLOCK_SUSPEND SYS_NICE
+    ioprio rt 4
+    writepid /dev/cpuset/foreground/tasks /dev/stune/foreground/tasks
+    onrestart restart audioserver

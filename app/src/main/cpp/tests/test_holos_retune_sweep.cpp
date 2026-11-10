@@ -88,12 +88,18 @@ TEST(HolosRetuneSweep, GridThdnAndAudibility) {
 }
 
 TEST(HolosRetuneSweep, ChosenDefaultIsCleanAndMeasurable) {
-    // Default elegido v2.5.369: amount=0.5, harmonics=0.0 (K off).
-    // Medido en el barrido: THD+N @1 kHz −94.0 dB, @100 Hz −79.6 dB.
-    // Requisito: THD+N ≤ −70 dB en ambas frecuencias.
+    // Default elegido v2.5.384 (refinamiento élite): amount=0.75,
+    // harmonics=0.0 (K off), width=1.25, diffuse=0.65.
+    // Medido en host: THD+N @1 kHz −90.5 dB, @100 Hz −75.7 dB,
+    // IMD SMPTE −155.5 dB. El amount 0.75 sube la presencia del campo
+    // HOLOS vs 0.5 (−94.0/−79.6 dB) con un costo de fidelidad pequeño;
+    // width y diffuse son espaciales puros (no cambian THD+N/IMD).
+    // Requisito élite: THD+N ≤ −85 dB @1 kHz y ≤ −70 dB @100 Hz.
     HolosParams p;
-    p.amount = 0.5f;
+    p.amount = 0.75f;
     p.harmonics = 0.0f;
+    p.width = 1.25f;
+    p.diffuse = 0.65f;
     auto measureThdn = [&](double f0) {
         HolosOperator op;
         op.prepare(48000.0f);
@@ -105,9 +111,9 @@ TEST(HolosRetuneSweep, ChosenDefaultIsCleanAndMeasurable) {
     };
     const double thdn1k = measureThdn(1000.0);
     const double thdn100 = measureThdn(100.0);
-    std::printf("[holos-retune] default (0.5, K=0): THD+N @1k %.1f dB, @100 %.1f dB\n",
+    std::printf("[holos-retune] default refinado (0.75, K=0, w=1.25, d=0.65): THD+N @1k %.1f dB, @100 %.1f dB\n",
                 thdn1k, thdn100);
-    EXPECT_LE(thdn1k, -70.0);
+    EXPECT_LE(thdn1k, -85.0);
     EXPECT_LE(thdn100, -70.0);
 
     // IMD SMPTE 60 + 7000 Hz (4:1) en el default.
@@ -123,7 +129,7 @@ TEST(HolosRetuneSweep, ChosenDefaultIsCleanAndMeasurable) {
         }
         runHolos(op, l, r);
         const double imd = imdSmpteDb(l.data() + 96000, 48000, kFs, 60.0, 7000.0);
-        std::printf("[holos-retune] default (0.5, K=0): IMD SMPTE %.1f dB\n", imd);
+        std::printf("[holos-retune] default refinado (0.75, K=0, w=1.25, d=0.65): IMD SMPTE %.1f dB\n", imd);
         EXPECT_LE(imd, -60.0);
     }
 
@@ -145,7 +151,7 @@ TEST(HolosRetuneSweep, ChosenDefaultIsCleanAndMeasurable) {
             den += (double)t[i - lat] * (double)t[i - lat];
         }
         const double diffDb = 10.0 * std::log10((num + 1e-30) / (den + 1e-30));
-        std::printf("[holos-retune] default (0.5, K=0): diff vs bypass (lat-comp) %.1f dB\n",
+        std::printf("[holos-retune] default refinado (0.75, K=0, w=1.25, d=0.65): diff vs bypass (lat-comp) %.1f dB\n",
                     diffDb);
         // Medible = muy por encima del piso de float (~−150 dB). Un
         // bypass bit-exacto daría ~−150 dB; −44 dB es el render espacial

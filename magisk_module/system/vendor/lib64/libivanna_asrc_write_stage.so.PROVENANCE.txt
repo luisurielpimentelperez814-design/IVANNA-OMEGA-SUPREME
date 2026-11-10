@@ -1,0 +1,39 @@
+IVANNA OMEGA SUPREME — ASRC v5 write-stage: procedencia del binario
+========================================================================
+
+Archivo:  libivanna_asrc_write_stage.so
+Versión:  ASRC v5 "Élite" (write-stage PAL, interposición por LD_PRELOAD)
+SHA-256:  ac1ef787942b6c86fd45ff4f6c0c28f0920c60ae0cd7f17b351bf5b96b13384a
+Tamaño:   1,252,048 bytes
+ELF:      64-bit LSB shared object, AArch64 (verificado con readelf)
+Origen:   hal_integration/moto_g85/pal_preload_probe/out/libivanna_asrc_write_stage.so
+Fuente:   hal_integration/moto_g85/pal_preload_probe/ivanna_asrc_write_stage.c
+Build:    hal_integration/moto_g85/pal_preload_probe/build_asrc_stage.sh
+          (aarch64-linux-gnu-gcc, -nostdlib, sin dlinfo — PROHIBIDO, el HAL
+          entra en crash-loop; DT_NEEDED libdl.so + liblog.so)
+Fecha:    2026-11-10 (artefacto verificado en vivo en el Moto G85 04:40 CST:
+          opens=8, drift +58.055 ppm; dump 2026-11-10 00:40 CST: ratio
+          0.999993750, drift_ppm -6.250, clock=write-timing, sat=0)
+
+Qué hace: interpone pal_stream_write en el HAL de audio
+(/vendor/bin/hw/android.hardware.audio.service_64) y corrige la deriva
+de reloj con un resampler FIR polifásico de 287 taps + servo Kalman.
+Resuelve la función real con dlopen+dlsym sobre libar-pal.so (RTLD_NEXT
+solo NO basta: libar-pal.so es RTLD_LOCAL en este teléfono).
+
+NO cargar junto con la contadora (ivanna_pal_write_counter) ni con la
+sonda de atributos (ivanna_pal_attr_probe): las tres definen
+pal_stream_write y solo la primera en LD_PRELOAD interpone.
+
+Kill switch (lógica de la .so, no tocar): si existe el archivo
+/data/vendor/ivanna_audio/pal_asrc.off, el ASRC queda en bypass
+(pass-through) sin descargar la librería. El dump de estado es
+/data/vendor/ivanna_audio/pal_asrc_stage.txt (reescrito cada 5 s).
+
+Este binario NO se recompila en este módulo: se copia tal cual desde
+out/ y se verifica por SHA-256. Si el SHA no coincide, NO copiar.
+NOTA DE EMPAQUETADO: *.so está en .gitignore (igual que
+libivanna_pal_presence_probe.so y libomega_effect.so); este archivo
+NO llega al repo por git. El CI debe copiarlo desde
+hal_integration/moto_g85/pal_preload_probe/out/ al empaquetar el zip,
+igual que hace con la sonda de presencia, y verificar este SHA.

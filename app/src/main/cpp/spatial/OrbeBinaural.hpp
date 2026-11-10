@@ -49,7 +49,7 @@ namespace ivanna {
 struct OrbeParams {
     float amount = 0.0f;       // 0..1 wet/dry vs legacy; 0 = bit-exacto
     float distanceM = 0.35f;   // 0.15..2.0 m, distancia base ("íntimo")
-    float spread = 1.0f;       // 0..1.5, escala del azimut estimado
+    float spread = 1.2f;       // 0..1.5, escala del azimut estimado
     float proximityDb = 3.0f;  // 0..6 dB, techo del realce de proximidad
     float diffuse = 0.5f;      // 0..1, cuánto side pasa al render directo
     bool headTracking = true;  // parallax por setHeadPose()

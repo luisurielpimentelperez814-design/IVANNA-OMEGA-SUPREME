@@ -240,6 +240,18 @@ target_compile_options(test_effect_beacon PRIVATE -Wall -Wextra)
 target_link_libraries(test_effect_beacon PRIVATE Threads::Threads)
 add_test(NAME test_effect_beacon COMMAND test_effect_beacon)
 
+# -- test_omega_pcm_format: regresion v2.5.382 (sin audio + tronidos) ---------
+# La 382 puso el default de creación del efecto en PCM_16_BIT, pero
+# AudioFlinger entrega el buffer en FLOAT (el mixer mezcla en float). Con
+# PCM16 por defecto, frameBytes era 4 en vez de 8 y el deinterleave leía
+# float como int16 → sin audio + tronidos. Este test fija el default en
+# PCM_FLOAT y el round-trip por formato (include/omega_pcm_format.h).
+add_executable(test_omega_pcm_format test_omega_pcm_format.cpp)
+target_include_directories(test_omega_pcm_format PRIVATE .. ../include)
+target_compile_options(test_omega_pcm_format PRIVATE -Wall -Wextra)
+target_link_libraries(test_omega_pcm_format PRIVATE Threads::Threads)
+add_test(NAME test_omega_pcm_format COMMAND test_omega_pcm_format)
+
 # ── test_effect_local_files: pre-creación 0666 de archivos locales de Ruta B ──
 # Regresión del FIX Moto G85 2026-11-09 (daemon/effect_local_files.h): el efecto
 # (UID no-root) no puede crear /data/local/tmp/omega_effect_ctrl_local ni
@@ -1799,6 +1811,16 @@ target_link_libraries(test_asrc_state_bridge PRIVATE GTest::gtest_main)
 target_include_directories(test_asrc_state_bridge PRIVATE ../include ../dsp)
 target_compile_options(test_asrc_state_bridge PRIVATE -Wall -Wextra)
 gtest_discover_tests(test_asrc_state_bridge)
+
+# Relevo del dump del write-stage ASRC PAL v5 (2026-11-10): el daemon lee
+# /data/vendor/ivanna_audio/pal_asrc_stage.txt y lo releva en
+# GET_CLOCK_TELEMETRY. Solo parser + frescura; el HAL vivo se verifica en
+# el teléfono (analysis-ivanna/PLAN_VERIFICACION_ASRC_384.md).
+add_executable(test_write_stage_asrc_telemetry test_write_stage_asrc_telemetry.cpp)
+target_link_libraries(test_write_stage_asrc_telemetry PRIVATE GTest::gtest_main)
+target_include_directories(test_write_stage_asrc_telemetry PRIVATE ../include)
+target_compile_options(test_write_stage_asrc_telemetry PRIVATE -Wall -Wextra)
+gtest_discover_tests(test_write_stage_asrc_telemetry)
 
 # Regression: signed stereo 4x true-peak interpolation must preserve phase and
 # cannot report a lower peak than sample peak when both observe the same stream.
