@@ -3,6 +3,7 @@
 #include "session_discovery.hpp"         // Descubrimiento de sesión real por el daemon root (Ruta B, v2.5.379)
 #include "hal_clock_producer.hpp"
 #include "../include/audio_hardware_clock_bridge.hpp"
+#include "../include/poller_sched.hpp"  // P0-b: decisión de planificación del poller
 #include "../include/asrc_state_bridge.hpp"
 #include "control/peer_auth.hpp"
 #include "core/effect_integrity.h"
@@ -78,6 +79,28 @@ static void setCurrentThreadBestEffort(const char* role) noexcept {
                             "SCHED-WORKER: %s could not confirm SCHED_OTHER rc=%d errno=%d policy=%d",
                             role, rc, err, policy);
     }
+}
+
+// P0-b: el poller del reloj HAL es sensible al tiempo (muestrea el reloj
+// para el servo ASRC). Intenta SCHED_FIFO rtprio 2 primero (ver
+// include/poller_sched.hpp: 2 ≤ rlimit `rtprio 10 10` del HAL, nunca
+// compite con el HAL ni con el callback PCM) y cae a best-effort si el
+// syscall falla (sin permiso o sin rlimit). Nunca fatal: el poller
+// funciona en SCHED_OTHER, solo con menos precisión temporal.
+// SOLO el poller usa esto: control/watchdog/session-discovery siguen en
+// SCHED_OTHER vía setCurrentThreadBestEffort.
+static void applyPollerSched(const char* role) noexcept {
+    const auto d = ivanna::decidePollerSched(true);
+    struct sched_param p{};
+    p.sched_priority = d.priority;
+    errno = 0;
+    if (sched_setscheduler(0, d.policy, &p) == 0 && sched_getscheduler(0) == SCHED_FIFO) {
+        __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+                            "SCHED-POLLER: %s SCHED_FIFO rtprio %d",
+                            role, d.priority);
+        return;
+    }
+    setCurrentThreadBestEffort(role);
 }
 
 static std::atomic<bool> g_shutdown_requested{false};
@@ -399,7 +422,7 @@ int main(int argc, char* argv[]) {
     std::thread hal_clock_thread;
     if (hal_clock_enabled) {
         hal_clock_thread = std::thread([hal_clock_enabled](){
-            setCurrentThreadBestEffort("hal-clock-asrc-poller");
+            applyPollerSched("hal-clock-asrc-poller");
             ivanna::audio::halclock::HalClockProducer::Config c;
             ivanna::audio::halclock::HalClockProducer producer(c);
             producer.setEnabled(true);

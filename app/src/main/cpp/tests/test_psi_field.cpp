@@ -20,6 +20,7 @@
 #include "../spatial/BioControl5D.hpp"
 #include "../spatial/NearFieldHeadModel.hpp"
 #include "../spatial/PsiField.hpp"
+#include "../spatial/PsiFieldRuntime.hpp"
 
 using ivanna::psi::CipicAnthropometry;
 
@@ -102,10 +103,10 @@ TEST(PsiField, PersonalizationFactorReferenceIsOne) {
 TEST(PsiField, PersonalizationFactorHeadWidthSensitivity) {
     CipicAnthropometry ref;
     CipicAnthropometry big;
-    big.x1_headWidthCm = 19.8f;  // +11.2% vs referencia 17.8
-    // l=1: 1 + 0.5 · (0.5 · 0.112) = 1.028
+    big.x1_headWidthCm = 19.8f;  // +13.1% vs referencia 17.5
+    // l=1: 1 + 0.5 · (0.5 · 0.1314) = 1.0329
     const float f1 = ivanna::psi::personalizationFactor(1, 0, big, ref);
-    EXPECT_NEAR(f1, 1.028f, 0.005f);
+    EXPECT_NEAR(f1, 1.033f, 0.005f);
     EXPECT_GT(f1, 1.0f);
     // Cabeza más chica → factor < 1.
     CipicAnthropometry small;
@@ -140,7 +141,8 @@ TEST(PsiField, PersonalizationFactorClamped) {
 
 TEST(PsiField, HeadRadiusFromAnthropometry) {
     CipicAnthropometry ref;
-    EXPECT_NEAR(ivanna::psi::headRadiusFromAnthropometry(ref), 0.089f, 1e-6f);
+    // x1 = 17.5 cm (KEMAR) → radio 8.75 cm, exacto al modelo existente.
+    EXPECT_NEAR(ivanna::psi::headRadiusFromAnthropometry(ref), 0.0875f, 1e-6f);
     CipicAnthropometry big;
     big.x1_headWidthCm = 20.0f;
     EXPECT_NEAR(ivanna::psi::headRadiusFromAnthropometry(big), 0.10f, 1e-6f);
@@ -193,6 +195,57 @@ TEST(PsiField, BioControlLossClampsAndNeverEscapes) {
     EXPECT_TRUE(std::isfinite(c.eta()));
     EXPECT_GE(c.eta(), 0.0);
     EXPECT_LE(c.eta(), 1.0);
+}
+
+// ── PsiFieldRuntime: el campo Ψ como objeto (nueva creación) ─────────────────
+TEST(PsiFieldRuntime, DefaultMatchesGeometricModel) {
+    // Sin antropometría (KEMAR): el runtime coincide con el modelo
+    // existente — la personalización es opt-in, no un cambio de sonido.
+    ivanna::psi::PsiFieldRuntime rt;
+    EXPECT_NEAR(rt.headRadiusM(), 0.0875f, 1e-6f);
+    const float rs[] = {0.15f, 0.30f, 0.50f, 1.0f, 2.0f};
+    const float thetas[] = {-1.5708f, -0.7854f, 0.0f, 0.7854f, 1.5708f};
+    const float freqs[] = {100.0f, 500.0f, 1000.0f, 4000.0f};
+    for (float r : rs) {
+        for (float th : thetas) {
+            for (float f : freqs) {
+                EXPECT_NEAR(rt.ildDb(r, th, f),
+                            ivanna::nearfield::ildDb(th, r, f), 0.01)
+                    << "r=" << r << " th=" << th << " f=" << f;
+            }
+        }
+    }
+}
+
+TEST(PsiFieldRuntime, PersonalizedAnthropometryMovesIld) {
+    ivanna::psi::PsiFieldRuntime rt;
+    CipicAnthropometry big;
+    big.x1_headWidthCm = 20.0f;  // cabeza más grande → más ILD
+    rt.setAnthropometry(big);
+    EXPECT_NEAR(rt.headRadiusM(), 0.10f, 1e-6f);
+    const float th = 1.5707963f;
+    EXPECT_GT(rt.ildDb(0.30f, th, 1000.0f),
+              ivanna::nearfield::ildDb(th, 0.30f, 1000.0f));
+    // El factor de personalización del runtime es el del operador.
+    EXPECT_NEAR(rt.personalizationFactor(1, 0),
+                ivanna::psi::personalizationFactor(1, 0, big), 1e-6f);
+}
+
+TEST(PsiFieldRuntime, GammaIsOneWithoutSensor) {
+    ivanna::psi::PsiFieldRuntime rt;
+    EXPECT_FLOAT_EQ(rt.gamma(), 1.0f);
+    EXPECT_DOUBLE_EQ(rt.orbeRadius(0.35, 0.5, 0.01), 0.35);
+    EXPECT_DOUBLE_EQ(rt.eta(), 0.5);
+}
+
+TEST(PsiFieldRuntime, EtaTracksWithSensorAndLoss) {
+    ivanna::psi::PsiFieldRuntime rt;
+    rt.setSensorPresent(true);
+    for (int i = 0; i < 2000; ++i) rt.update(0.01, 0.9, 1.0, 0.1);
+    // Equilibrio 0.9 − 0.1·1·2 = 0.7 (misma EDO que BioControl5D).
+    EXPECT_NEAR(rt.eta(), 0.7, 0.02);
+    // η por encima de la basal → Γ > 1.
+    EXPECT_GT(rt.gamma(), 1.0f);
 }
 
 }  // namespace

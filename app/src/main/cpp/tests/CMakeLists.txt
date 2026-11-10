@@ -1951,3 +1951,8 @@ ivanna_add_test(test_5d_phase0)
 # contra el modelo geométrico), Ec. 3 (operador de personalización CIPIC),
 # Ec. 4 (factor Γ y EDO con pérdida en BioControl5D). Header-only.
 ivanna_add_test(test_psi_field)
+
+# ── P0-b (2026-11-10): planificación del hal-clock-asrc-poller ──────────────
+# include/poller_sched.hpp: decisión pura (FIFO rtprio 2 si se permite,
+# SCHED_OTHER si no). El daemon intenta FIFO primero y cae a best-effort.
+ivanna_add_test(test_poller_sched)

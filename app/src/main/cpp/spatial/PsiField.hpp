@@ -100,7 +100,10 @@ inline float ildDb(float r, float thetaRad, float freqHz, float headRadiusM = kH
 // sobre CIPIC queda pendiente y debe reemplazar estos valores.
 struct CipicAnthropometry {
     // Valores de referencia (KEMAR-equivalente, ver comentario arriba).
-    float x1_headWidthCm = 17.8f;
+    // x1 = 17.5 cm es el diámetro de cabeza KEMAR: radio 8.75 cm, EXACTO
+    // al kHeadRadiusM de NearFieldHeadModel — sin antropometría, el campo
+    // Ψ coincide con el modelo existente (ver test PsiFieldRuntime).
+    float x1_headWidthCm = 17.5f;
     float x2_headHeightCm = 24.0f;
     float x3_headDepthCm = 19.0f;
     float x4_pinnaOffsetDownCm = 0.0f;
@@ -114,7 +117,7 @@ struct CipicAnthropometry {
     float x12_torsoBottomHeightCm = 20.0f;
     float x13_shoulderWidthCm = 44.0f;
     float x14_shoulderDepthCm = 22.0f;
-    float x15_headWidthEarCm = 17.8f;
+    float x15_headWidthEarCm = 17.5f;
     float x16_pinnaHeightMm = 62.0f;
     float x17_pinnaWidthMm = 35.0f;
 
