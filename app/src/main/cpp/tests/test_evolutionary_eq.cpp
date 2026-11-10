@@ -304,10 +304,16 @@ TEST(EvolutionaryEQ, FastFitnessMatchesAppliedFilter) {
     EXPECT_NEAR(eq.currentFitness(), -err, 0.5f);
 }
 
-// 13. La calibración es rápida (<500 ms en host). Antes ~967 ms (el fitness
+// 13. La calibración es rápida en host. Antes ~967 ms (el fitness
 //     re-diseñaba el FIR con cos por candidato) y bloqueaba initSpatial de
-//     Ruta B ~1 s. Ahora ~40 ms. El bound es generoso (12× margen) para no
-//     ser flaky en CI lenta, pero caza una regresión al camino lento.
+//     Ruta B ~1 s. Ahora ~55 ms a -O2. El bound es 750 ms, NO 500: el build
+//     de tests es Debug (-O0) y en esta VM calibrate() tarda ~520 ms
+//     (medido 500–550 ms en 6 corridas; a -O2 son ~55 ms). Un bound de
+//     500 ms cae justo en el medio del rango medido y el test es una
+//     moneda al aire (500.72 ms en la suite completa). 750 ms deja 44 %
+//     de margen sobre lo medido y sigue cazando el camino lento de 967 ms.
+//     La calibración corre UNA vez al arrancar (no está en el camino de
+//     audio), así que 750 ms no afecta al tiempo real.
 TEST(EvolutionaryEQ, CalibrationIsFast) {
     EvolutionaryEQ eq;
     const auto t0 = std::chrono::steady_clock::now();
@@ -315,7 +321,7 @@ TEST(EvolutionaryEQ, CalibrationIsFast) {
     const auto t1 = std::chrono::steady_clock::now();
     const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
     ASSERT_TRUE(eq.isReady());
-    EXPECT_LT(ms, 500.0) << "calibrate() tardo " << ms << " ms";
+    EXPECT_LT(ms, 750.0) << "calibrate() tardo " << ms << " ms";
 }
 
 // 14. resetHistory() vacía el historial: tras procesar señal y resetear,

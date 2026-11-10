@@ -359,11 +359,13 @@ internal fun omegaFailureHint(kind: OmegaFailureKind): String = when (kind) {
 //   verificados en código; ni 'Nueva sesion' ni el log de registro aparecen
 //   en logcat con TIDAL/YouTube Music). Por eso la Ruta B necesita una vía
 //   que NO dependa del broadcast: el sondeo por reflexión (best-effort, con
-//   el nombre correcto) + el attach global a la mezcla de salida (sesión 0)
-//   como fallback cuando el sondeo solo ve copias anonimizadas.
+//   el nombre correcto) + el descubrimiento por daemon root (sesión real).
+//   v2.5.380: el attach global a la mezcla de salida (sesión 0) como
+//   fallback se ELIMINÓ — nunca procesaba frames y su creación callaba a YTM.
 // - La reflexión es runtime-only (sin APIs @hide en tiempo de compilación)
 //   y fail-closed: si la hidden-API blacklist bloquea getSessionId(), se
-//   registra y se cae al fallback. Si el ROM no anonimiza o la app llega a
+//   registra y el sondeo no abre nada (la vía es el descubrimiento por
+//   daemon). Si el ROM no anonimiza o la app llega a
 //   ser privilegiada (MODIFY_AUDIO_ROUTING), el sondeo devuelve IDs reales.
 /** Solo sessionId > 0 es utilizable: -1 es la copia anonimizada y 0 es AUDIO_SESSION_NONE. */
 internal fun isUsableSessionId(sessionId: Int): Boolean = sessionId > 0
@@ -480,6 +482,17 @@ class IvannaGlobalEffectManager(
     // la sesión descubierta hay que liberar la anterior y re-acoplar.
     @Volatile private var discoveredAttachedSessionId: Int = 0
     @Volatile private var lastDiscoveredGen: Long = 0
+    // v2.5.380 — throttle 1/30 s para los logs de diagnóstico de acople
+    // (tryAttachDiscoveredSession corre cada 3 s desde el watchdog; sin
+    // throttle el logcat se llenaría de la misma línea).
+    private val attachLogLastMs = mutableMapOf<String, Long>()
+    private fun logAttachThrottled(key: String, log: () -> Unit) {
+        val now = System.currentTimeMillis()
+        val last = attachLogLastMs[key] ?: 0L
+        if (now - last < 30_000L) return
+        attachLogLastMs[key] = now
+        log()
+    }
 
     // v2.5.374 — Última clase de fallo al crear omega (ver classifyOmegaFailure).
     // Diagnóstico visible sin logcat: la UI/telemetría puede leerlo.
@@ -693,8 +706,9 @@ class IvannaGlobalEffectManager(
                     // debe quedarse en efectos stock para siempre (bug sesión 409).
                     runCatching { retryOmegaAttachForSessions() }.onFailure { Log.w(TAG, "watchdog omega-retry: ${it.message}") }
                     // v2.5.379 — Sesión REAL descubierta por el daemon root:
-                    // tiene prioridad sobre el sondeo por reflexión y sobre el
-                    // fallback de sesión 0 (que no procesa en este G85).
+                    // tiene prioridad sobre el sondeo por reflexión (el
+                    // fallback de sesión 0 se eliminó en v2.5.380: no
+                    // procesaba en este G85 y callaba a YTM).
                     runCatching { tryAttachDiscoveredSession() }.onFailure { Log.w(TAG, "watchdog discovered-session: ${it.message}") }
                     // v2.5.374 — Sondeo de sesiones activas: abre las sesiones
                     // que el broadcast no avisó (ver scanActivePlaybackSessions).
@@ -722,14 +736,14 @@ class IvannaGlobalEffectManager(
     }
 
     // ── v2.5.375 — Omega global en la mezcla de salida (sesión 0) ───────────
-    // Fallback cuando el broadcast no llega Y el sondeo no puede descubrir
-    // sessionIds (copias anonimizadas). La documentación de AudioEffect
-    // desaconseja efectos insert en sesión 0 (deprecated/poco fiable: en
-    // algunos dispositivos falla en silencio), pero en este ROM es la única
-    // vía que NO necesita conocer el sessionId de TIDAL/YouTube Music; si
-    // AudioFlinger lo rechaza, createOmegaEffect devuelve null, se clasifica
-    // la causa y se reintenta con backoff de 30 s, sin crashear. Mientras el
-    // omega global esté activo, openSession no crea efectos por sesión.
+    // v2.5.380 — FALLBACK ELIMINADO: el omega global se creaba cuando el
+    // sondeo solo veía configs anonimizadas, pero NUNCA procesa frames en
+    // este G85 (beacon 0) y su creación dejaba a YTM sin audio (el
+    // early-return !enabled && isSilent() de omega_process() salía sin
+    // copiar input→output). Ya no se crea ningún omega en sesión 0; la vía
+    // es el descubrimiento por daemon (tryAttachDiscoveredSession). Esta
+    // función y sus campos quedan sin llamadores (solo releaseGlobalOmega
+    // sigue usándose para liberar un global preexistente al acoplar).
     private var globalOmega: android.media.audiofx.AudioEffect? = null
     private var globalOmegaLastAttemptMs: Long = 0L
     private val globalOmegaRetryMs = 30_000L
@@ -742,10 +756,10 @@ class IvannaGlobalEffectManager(
         globalOmega != null || activeSessions.values.any { it.omega != null }
 
     /**
-     * Intenta acoplar omega a la mezcla de salida (sesión 0). Best-effort:
-     * devuelve true si quedó activo (o ya lo estaba), false si AudioFlinger
-     * lo rechazó (la causa queda en lastOmegaFailureKind). Con backoff de
-     * 30 s entre intentos para no spamear el log cada 3 s del watchdog.
+     * v2.5.380 — SIN LLAMADORES (fallback eliminado): intentaba acoplar
+     * omega a la mezcla de salida (sesión 0). Se conserva por si un global
+     * preexistente debe liberarse (releaseGlobalOmega); NO volver a llamarla
+     * para crear el global: su creación calla a YTM y nunca procesa frames.
      */
     @Synchronized
     internal fun ensureGlobalOmega(): Boolean {
@@ -832,8 +846,10 @@ class IvannaGlobalEffectManager(
      * REALES al llamador privilegiado (MODIFY_AUDIO_ROUTING,
      * signature|privileged). Sin él, el sistema devuelve copias
      * ANONIMIZADAS (anonymizedCopy) con el sessionId puesto a
-     * AUDIO_SESSION_ALLOCATE (-1). Por eso el sondeo es best-effort y el
-     * fallback global (sesión 0) existe: es la vía que no necesita el ID.
+     * AUDIO_SESSION_ALLOCATE (-1). Por eso el sondeo es best-effort y la
+     * vía que no necesita el ID es el descubrimiento por daemon root
+     * (v2.5.380: el fallback global de sesión 0 se eliminó — callaba a YTM
+     * y nunca procesaba frames).
      *
      * @return cuántas sesiones abrió el sondeo en este pase.
      */
@@ -845,16 +861,15 @@ class IvannaGlobalEffectManager(
     // media.audio_flinger` cada ~3 s y publica el sessionId de música en el
     // snapshot (ABI v11) + GET_STATUS. Este método lee esa evidencia y acopla
     // omega a la sesión REAL en lugar de a la sesión 0. Corre en el watchdog
-    // ANTES de scanActivePlaybackSessions para que el fallback de sesión 0 no
-    // se dispare cuando ya hay una sesión real disponible.
+    // ANTES de scanActivePlaybackSessions.
     //
     // La carrera que mató el hot fix por broadcast (2026-11-09 22:14-22:16):
-    // el omega global (sesión 0) se recrea en milisegundos al arrancar la app
-    // y bloquea openSession. Por eso aquí se LIBERA el global ANTES de
-    // acoplar a la sesión real, en el mismo ciclo del watchdog.
+    // un omega global (sesión 0) preexistente bloqueaba openSession. Por eso
+    // aquí se LIBERA el global ANTES de acoplar a la sesión real, en el mismo
+    // ciclo del watchdog (defensivo: en v2.5.380 ya no se crea ningún global).
     //
-    //   - Sin sesión descubierta (0): no hace nada; el sondeo por reflexión y
-    //     el fallback de sesión 0 siguen vigentes.
+    //   - Sin sesión descubierta (0): no hace nada; el sondeo por reflexión
+    //     sigue como best-effort y no se crea ningún efecto (fail-closed).
     //   - Con sesión descubierta válida: libera el omega global (sesión 0, no
     //     procesa) y la sesión anterior si cambió, y acopla omega a la nueva.
     //   - sourcePackage=null: con omega, los efectos stock van en bypass de
@@ -865,17 +880,35 @@ class IvannaGlobalEffectManager(
     internal fun tryAttachDiscoveredSession(): Boolean {
         val evidence = runCatching {
             com.ivanna.omega.magisk.OmegaEngineBridge.requestControlPlaneEvidence()
-        }.getOrNull() ?: return false
+        }.getOrNull()
+        if (evidence == null) {
+            // v2.5.380 — el fallo era SILENCIOSO (return false sin log) y por
+            // eso el diagnóstico de la 379 fue a ciegas. Throttle 1/30 s.
+            logAttachThrottled("no-evidence") {
+                Log.w(TAG, "tryAttachDiscoveredSession: GET_STATUS sin respuesta/JSON inválido")
+            }
+            return false
+        }
         val discoveredId = evidence.discoveredSessionId
         val discoveredGen = evidence.discoveredSessionGen
+        // NOTA v2.5.380: NO hay fallback a leer el archivo snapshot
+        // (/data/adb/ivanna_omega es solo-root; la app no puede leerlo).
+        // La única vía es GET_STATUS.
         val omegaAlive = discoveredId > 0 && activeSessions[discoveredId]?.omega != null
         if (!shouldAttachDiscoveredSession(discoveredId, discoveredAttachedSessionId, omegaAlive)) {
             if (discoveredId > 0) {
                 lastDiscoveredGen = discoveredGen
+                // v2.5.380 — log visible (throttle 1/30 s): antes este caso
+                // era silencioso y no se sabía si el descubrimiento llegaba
+                // pero se ignoraba.
+                logAttachThrottled("ignored") {
+                    Log.i(TAG, "tryAttachDiscoveredSession: sesión descubierta $discoveredId (gen=$discoveredGen) pero shouldAttach=false (ya acoplado=$omegaAlive, attached=$discoveredAttachedSessionId) — nada que hacer")
+                }
             } else if (discoveredAttachedSessionId != 0) {
                 // K4 (auditoría 379): la música paró (discoveredId=0) pero
                 // quedó un omega acoplado a una sesión muerta. Cerrarlo y
-                // limpiar el estado para que el fallback global pueda volver.
+                // limpiar el estado. v2.5.380: ya no hay fallback global que
+                // recrear (se eliminó porque callaba a YTM y nunca procesaba).
                 Log.i(TAG, "Música parada (sin sesión descubierta): cerrando omega de la sesión descubierta anterior $discoveredAttachedSessionId")
                 closeSession(discoveredAttachedSessionId)
                 discoveredAttachedSessionId = 0
@@ -888,6 +921,11 @@ class IvannaGlobalEffectManager(
         if (lastAttempt > 0L) {
             val attempts = omegaRetryAttempts[discoveredId] ?: 0
             if (System.currentTimeMillis() - lastAttempt < OmegaAttachBackoff.delayMs(attempts)) {
+                // v2.5.380 — log visible (throttle 1/30 s): el backoff
+                // también era un retorno silencioso.
+                logAttachThrottled("backoff") {
+                    Log.d(TAG, "tryAttachDiscoveredSession: backoff activo para $discoveredId (intento $attempts) — se reintentará después")
+                }
                 return false
             }
         }
@@ -903,10 +941,11 @@ class IvannaGlobalEffectManager(
         // 0") y AudioFlinger rechaza crear otro omega en la sesión real con
         // -38 INVALID_OPERATION (exclusividad por salida: un solo omega por
         // hilo). Acoplar PRIMERO nunca funciona mientras el global ocupe el
-        // hilo. Por eso se libera el global ANTES de acoplar. Si el acople
-        // falla, el watchdog recrea el global en el siguiente ciclo
-        // (ensureGlobalOmega) — la sesión 0 no procesa nada de todos modos,
-        // así que no se pierde audio real.
+        // hilo. Por eso se libera el global ANTES de acoplar. v2.5.380: si
+        // el acople falla, el global NO se recrea — el fallback a sesión 0
+        // se eliminó porque el global nunca procesa frames en este G85 y su
+        // creación dejaba a YTM sin audio. Si el acople falla, se reintenta
+        // con backoff y YTM sigue sonando sin DSP (fail-closed).
         if (globalOmega != null) {
             Log.i(TAG, "Liberando omega global (sesión 0) ANTES de acoplar a la sesión real $discoveredId (ocupa el hilo, -38)")
             releaseGlobalOmega()
@@ -921,7 +960,7 @@ class IvannaGlobalEffectManager(
         if (attached) {
             discoveredAttachedSessionId = discoveredId
             lastDiscoveredGen = discoveredGen
-            Log.i(TAG, "Ruta B acoplada a sesión real descubierta: $discoveredId (gen=$discoveredGen) — la sesión 0 queda como fallback solo sin descubrimiento")
+            Log.i(TAG, "Ruta B acoplada a sesión real descubierta: $discoveredId (gen=$discoveredGen)")
         } else {
             // Registrar el intento fallido (solo vía openSession; tryAttachOmega
             // ya registra el suyo) para que el próximo ciclo respete el backoff.
@@ -930,7 +969,7 @@ class IvannaGlobalEffectManager(
                 omegaRetryAttempts[discoveredId] = attempts
                 omegaLastAttemptMs[discoveredId] = System.currentTimeMillis()
             }
-            Log.w(TAG, "No se pudo acoplar omega a la sesión descubierta $discoveredId (el global ya se liberó antes del intento; el watchdog lo recreará; se reintentará con backoff)")
+            Log.w(TAG, "No se pudo acoplar omega a la sesión descubierta $discoveredId (se reintentará con backoff; sin sesión descubierta no se crea efecto)")
         }
         return attached
     }
@@ -958,11 +997,19 @@ class IvannaGlobalEffectManager(
         }
         Log.i(TAG, "scanActivePlaybackSessions: ${configs.size} configs, $reflected con sessionId real, " +
             "$anonymized anonimizadas (-1/0), $opened sesiones abiertas por sondeo")
-        // Fallback: hay reproducción activa pero ningún sessionId utilizable
-        // (copias anonimizadas) y ningún omega acoplado — attach global.
-        if (opened == 0 && reflected == 0 && anonymized > 0 && !hasAnyOmegaAttached()) {
-            ensureGlobalOmega()
-        }
+        // v2.5.380 — ELIMINADO el fallback a omega global (sesión 0).
+        // CAUSA RAÍZ del muteo de YTM (2026-11-10 00:08 CST, reproducible):
+        // cuando el sondeo no ve sessionIds reales (anonimizados) y ningún
+        // omega está acoplado, el fallback creaba el omega global en la
+        // sesión 0 (AudioOut_15, donde suena YTM). Ese efecto NUNCA procesa
+        // frames en este G85 (beacon frames=0, magic vacío) y su creación
+        // deja a YTM sin audio (sigue "reproduciendo" sin sonido) aunque el
+        // efecto ni siquiera se acople a la sesión real. La sesión 0 no
+        // procesa nada de todos modos, así que el global no aporta nada y
+        // solo rompe el audio. La vía correcta es el descubrimiento por
+        // daemon (tryAttachDiscoveredSession); si no hay sesión descubierta,
+        // NO se crea ningún efecto (fail-closed: YTM sigue sonando sin DSP
+        // en vez de quedarse mudo).
         return opened
     }
 

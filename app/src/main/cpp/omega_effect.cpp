@@ -1085,12 +1085,23 @@ static int32_t omega_process(effect_handle_t self,
     // el audio saltaba de procesado a seco de golpe. Ahora solo se sale cuando la envolvente ya llego a
     // cero; mientras tanto el bloque sigue por la ruta normal y mixSample() funde a seco (release 18 ms).
     if (!ctx || !inBuf || !outBuf) return 0;
-    if (!ctx->enabled && ctx->masterBypassEnv.isSilent()) return 0;
     if (!inBuf->raw || !outBuf->raw || inBuf->frameCount == 0) return 0;
 
     const int frames = (int)inBuf->frameCount;
     const uint8_t inFmt  = ctx->config.inputCfg.format;
     const uint8_t outFmt = (ctx->config.outputCfg.format != 0u) ? ctx->config.outputCfg.format : inFmt;
+    // v2.5.380 — passthrough garantizado: este retorno temprano NO copiaba
+    // input→output y callaba el hilo de salida; un efecto que no procesa
+    // jamás debe silenciar el audio.
+    if (!ctx->enabled && ctx->masterBypassEnv.isSilent()) {
+        if (outBuf->raw != inBuf->raw) {
+            const uint32_t m = ctx->config.inputCfg.channels & 0x3FFFFu;
+            const int ch = m ? __builtin_popcount(m) : 2;
+            memmove(outBuf->raw, inBuf->raw, (size_t)inBuf->frameCount *
+                    omega_bytes_per_sample(ctx->config.inputCfg.format) * (size_t)ch);
+        }
+        return 0;
+    }
     // FIX (voces robotizadas / audio embrollado en Amazon Prime y streams
     // multicanal): todo el DSP asume ESTEREO intercalado. Si AudioFlinger
     // entrega mono o 5.1/7.1 (video con Dolby), se leian canales mezclados

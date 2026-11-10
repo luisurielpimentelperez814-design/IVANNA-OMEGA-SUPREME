@@ -21,6 +21,16 @@ object OmegaEngineBridge {
     // publica el binario que está corriendo AHORA. Vacía hasta el primer HELLO.
     @Volatile var liveModuleVersion: String = ""; private set
     @Volatile private var lastLatencyMs = 0f
+    // v2.5.380 — throttle 1/30 s para los logs de fallo del socket
+    // (exchange() se llama cada 3 s desde el watchdog; sin throttle el
+    // logcat se llenaría de la misma línea).
+    @Volatile private var lastExchangeFailLogMs = 0L
+    private fun logExchangeFailureThrottled(msg: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastExchangeFailLogMs < 30_000L) return
+        lastExchangeFailLogMs = now
+        Log.w(TAG, msg)
+    }
     private val reconnecting = AtomicBoolean(false)
 
     // ── Keepalive: probe suave cada 5 s ──────────────────────────────────
@@ -502,6 +512,10 @@ object OmegaEngineBridge {
             sock.connect(LocalSocketAddress(SOCKET_PRIMARY, LocalSocketAddress.Namespace.ABSTRACT))
             sock.soTimeout = 3000
             UnixChannel(sock)
+        }.onFailure { e ->
+            // v2.5.380 — log visible (throttle 1/30 s): el connect fallido
+            // era un retorno silencioso (Exchange(false, null) sin motivo).
+            logExchangeFailureThrottled("exchange: connect falló: ${e.message}")
         }.getOrNull() ?: return Exchange(false, null)
         try {
             channel.output.write(payload.toString().toByteArray(Charsets.UTF_8))
@@ -534,7 +548,8 @@ object OmegaEngineBridge {
             lastLatencyMs = (System.nanoTime() - t0) / 1_000_000f
             return Exchange(true, if (raw.isNotEmpty()) raw else null)
         } catch (e: Exception) {
-            Log.w(TAG, "exchange error: ${e.message}")
+            // v2.5.380 — throttle 1/30 s (antes logueaba en cada fallo).
+            logExchangeFailureThrottled("exchange error: ${e.message}")
             return Exchange(false, null)
         } finally {
             runCatching { channel.close() }

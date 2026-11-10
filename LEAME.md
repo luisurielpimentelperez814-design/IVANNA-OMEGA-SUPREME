@@ -90,7 +90,7 @@ El mapa muestra las relaciones generales del código. El bloque HAL/PAL represen
 | Medición de sala | Hay flujo de tonos, captura, comparación y lógica de restauración. | Mediciones repetidas con equipo, salas y salidas diferentes. |
 | Captura AR | Hay actividad de captura y exportación basada en ARCore. | Confirmar cámara, seguimiento, ciclo de vida y exportación en cada equipo objetivo. |
 | Renderizador geométrico | Dibuja una geometría configurada y admite imágenes de hasta 3840 × 2160 píxeles. | Verificar rendimiento y recordar que no es un escaneo automático ni una simulación acústica validada. |
-| SAFMUS / ACSR / HAL-PAL | Existen componentes y contratos de integración en el repositorio. | Demostrar la conexión con el proveedor y el hardware, con lectura de retorno y prueba real. |
+| SAFMUS / ACSR / HAL-PAL | El write-stage ASRC v5 está verificado en el dispositivo (deriva −6.25 ppm, sin saturación; ver README §12). | Falta el veredicto de escucha vs v4 y el fix permanente del contexto SELinux; sigue siendo experimental (LD_PRELOAD, no parte del APK). |
 | Wi-Fi / CSI | Hay políticas conservadoras para tratar observaciones de radio como indicios. | Hardware/proveedor compatible y adquisición real; Wi-Fi común no equivale a CSI. |
 
 ## ¿Necesita una API key de Google?
