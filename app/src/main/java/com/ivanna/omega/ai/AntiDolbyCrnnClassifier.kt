@@ -49,13 +49,24 @@ class AntiDolbyCrnnClassifier(context: Context) {
         // Umbral de silencio: −60 dBFS ≈ 0.001 de amplitud
         private const val SILENCE_RMS_THRESHOLD = 0.001f
 
-        // Umbral de onset para detección de transientes
-        // Empíricamente: un onset normalizado > 0.15 corresponde a un ataque
-        // percutido (bombo, snare, palmada, efecto de sonido)
-        private const val ONSET_TRANSIENT_THRESHOLD = 0.15f
+        // Umbral de onset para detección de transientes.
+        // FIX (2026-11-09, música clasificada como transitorio): 0.15 se
+        // dispara con cualquier swell energético (el onset suma deltas
+        // log-mel positivos / 400; +1.5 por banda en promedio ya es 0.15),
+        // así que con rock percusivo casi cada ventana era "transitorio".
+        // 0.30 exige un ataque agudo de verdad (media +3.0 por banda).
+        // Umbral afinado: confirmar de oído en el teléfono.
+        private const val ONSET_TRANSIENT_THRESHOLD = 0.30f
 
         // EMA temporal: τ = 200ms ≈ coef 0.85 para ventanas de ~3 frames/s
         private const val EMA_ALPHA = 0.85f
+
+        /**
+         * Decisión pura de transitorio (probable en JVM): un onset solo es
+         * transitorio si supera el umbral Y hay señal suficiente (no ruido).
+         */
+        internal fun isTransientOnset(onset: Float, rms: Float): Boolean =
+            onset > ONSET_TRANSIENT_THRESHOLD && rms > SILENCE_RMS_THRESHOLD * 5
     }
 
     data class ClassificationResult(
@@ -113,12 +124,21 @@ class AntiDolbyCrnnClassifier(context: Context) {
         val lastMelFrame = logMelFull[TIME_FRAMES - 1]
         val onset = computeOnset(lastMelFrame)
 
-        if (onset > ONSET_TRANSIENT_THRESHOLD && rms > SILENCE_RMS_THRESHOLD * 5) {
+        if (isTransientOnset(onset, rms)) {
             // Transitorio detectado — IDX_BASS se usa como "Transitorio" en el
             // contexto del clasificador (el CRNN no tiene clase transitorio).
             // El JNI mapea IDX_BASS → acción de transitorio en el control adaptativo.
-            val transientProbs = floatArrayOf(0.05f, 0.10f, 0.75f, 0.10f)
-            return applyEma(transientProbs, isValid = true)
+            // FIX (2026-11-09, música clasificada como transitorio): un
+            // transitorio es un subevento de 10-50 ms y se reporta en este
+            // frame, pero NO entra en la EMA lenta (alpha 0.85, ~7 s a
+            // ~1 frame/s): antes cada golpe arrastraba music hacia 0.10 y
+            // bass hacia 0.75 durante segundos, y con rock percusivo la
+            // música quedaba clasificada como transitorio de forma permanente.
+            // emaProbs no se toca: el siguiente frame del CRNN retoma la media.
+            return ClassificationResult(
+                speech = 0.05f, music = 0.10f, bass = 0.75f, silence = 0.10f,
+                isValid = true, dominantClass = "Bajos"
+            )
         }
 
         // ── 3. Inferencia CRNN ────────────────────────────────────────────
@@ -192,32 +212,12 @@ class AntiDolbyCrnnClassifier(context: Context) {
     }
 
     // ── Clasificador heurístico (sin modelo TFLite) ───────────────────────────
+    // Solo se usa cuando el .tflite no cargó (isValid=false); los callers ya
+    // lo tratan como no-válido para el perfil automático, pero el daemon sí
+    // recibe sus scores vía pushYamnetScores.
     private fun heuristicClassify(logMel: Array<FloatArray>): ClassificationResult {
         // Usar el último frame como representativo
-        val frame = logMel[TIME_FRAMES - 1]
-
-        var eBass = 0f; var eMid = 0f; var ePresence = 0f; var eAir = 0f
-        for (m in 0 until 8)  eBass     += frame[m]
-        for (m in 8 until 20) eMid      += frame[m]
-        for (m in 20 until 32) ePresence += frame[m]
-        for (m in 32 until N_MELS) eAir  += frame[m]
-        eBass /= 8f; eMid /= 12f; ePresence /= 12f; eAir /= 8f
-
-        val harmonicity = eMid - eAir
-        val logits = floatArrayOf(
-            2.0f * harmonicity + 0.5f * eMid,        // Voice
-            1.2f * eBass + 0.8f * ePresence,          // Music
-            0.0f,                                      // Transient (ya detectado arriba)
-            -1.0f                                      // Noise
-        )
-
-        // Softmax
-        val maxL = logits.max()
-        val exps = FloatArray(NUM_CLASSES) { exp((logits[it] - maxL).toDouble()).toFloat() }
-        val sum = exps.sum()
-        val probs = FloatArray(NUM_CLASSES) { exps[it] / sum }
-
-        return applyEma(probs, isValid = false)
+        return applyEma(CrnnFallbackHeuristic.probs(logMel[TIME_FRAMES - 1]), isValid = false)
     }
 
     // ── Feature extraction ────────────────────────────────────────────────────
@@ -314,5 +314,51 @@ class AntiDolbyCrnnClassifier(context: Context) {
         val fd = context.assets.openFd(MODEL_PATH)
         return FileInputStream(fd.fileDescriptor).channel
             .map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.declaredLength)
+    }
+}
+
+/**
+ * Heurística de respaldo del CRNN (sin modelo TFLite). Lógica pura (sin
+ * Android) para poder probarla en JVM.
+ *
+ * FIX (2026-11-09, music = 0.00 en vivo): la versión anterior formaba los
+ * logits con log-energías ABSOLUTAS (siempre negativas, típ. -3..-12): el
+ * logit de música (1.2*eBass + 0.8*ePresence ≈ -8) quedaba ~10 puntos por
+ * debajo del de voz (una diferencia de bandas ≈ 0..+2), así que el softmax
+ * daba music ≈ 0.00 para CUALQUIER entrada — música, voz o silencio
+ * (verificado por simulación en host). La música era indetectable por
+ * construcción. Ahora los logits usan solo CONTRASTES relativos a la media
+ * del frame (independientes del nivel): voz = medios dominantes sin graves
+ * ni aire; música = extensión grave + presencia + aire. Verificado en host:
+ * rock con canto → music 0.56, electrónica → 0.95, voz hablada → 1.00,
+ * idéntico a -2 dB y a -8 dB (independiente de nivel).
+ */
+internal object CrnnFallbackHeuristic {
+    fun probs(frame: FloatArray): FloatArray {
+        val nMels = AntiDolbyCrnnClassifier.N_MELS
+        val numClasses = AntiDolbyCrnnClassifier.NUM_CLASSES
+        var eBass = 0f; var eMid = 0f; var ePresence = 0f; var eAir = 0f
+        for (m in 0 until 8)  eBass     += frame[m]
+        for (m in 8 until 20) eMid      += frame[m]
+        for (m in 20 until 32) ePresence += frame[m]
+        for (m in 32 until nMels) eAir  += frame[m]
+        eBass /= 8f; eMid /= 12f; ePresence /= 12f; eAir /= 8f
+
+        // Contrastes relativos (nivel-independientes): la media del frame se
+        // resta antes de formar los logits, así que un cambio de volumen no
+        // cambia la clasificación.
+        val mean = (eBass * 8f + eMid * 12f + ePresence * 12f + eAir * 8f) / nMels
+        val rb = eBass - mean; val rm = eMid - mean
+        val rp = ePresence - mean; val ra = eAir - mean
+        val logits = floatArrayOf(
+            2.0f * rm - 0.5f * rb - 0.5f * ra,              // Voz
+            1.5f * rb + 1.0f * rp + 0.5f * ra - 1.0f * rm, // Música
+            0.0f,                                           // Bajos (ya detectado arriba)
+            -1.0f                                           // Ruido
+        )
+        val maxL = logits.max()
+        val exps = FloatArray(numClasses) { exp((logits[it] - maxL).toDouble()).toFloat() }
+        val sum = exps.sum()
+        return FloatArray(numClasses) { exps[it] / sum }
     }
 }

@@ -21,6 +21,11 @@ object SafmusRouteSupervisor {
         routeAHasValidSignal: Boolean,
         enabled: Boolean,
         bypass: Boolean,
+        /**
+         * Evidencia de que Ruta B procesa de verdad (ver RouteEvidence).
+         * Sin ella, un efecto global registrado pero mudo no bloquea Ruta A.
+         */
+        routeBProcessingConfirmed: Boolean = false,
     ): Decision {
         val d = SafmusUniversalKernel.decideRoute(
             SafmusUniversalKernel.RouteEvidence(
@@ -28,7 +33,8 @@ object SafmusRouteSupervisor {
                 routeASignalValid = routeAHasValidSignal,
                 routeAFrameFresh = routeAHasValidSignal,
                 enabled = enabled,
-                bypass = bypass
+                bypass = bypass,
+                routeBProcessingConfirmed = routeBProcessingConfirmed
             )
         )
         return Decision(

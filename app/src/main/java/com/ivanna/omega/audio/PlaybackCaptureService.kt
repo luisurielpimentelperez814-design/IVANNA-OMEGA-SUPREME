@@ -34,6 +34,7 @@ import com.ivanna.omega.audio.engine.LoopLoadGovernor
 import com.ivanna.omega.audio.engine.OutputCushionPolicy
 import com.ivanna.omega.audio.engine.ProfessionalAntiPopEngine
 import com.ivanna.omega.audio.engine.AudioThreadBudgetGuard
+import com.ivanna.omega.audio.engine.CaptureBlockRing
 import com.ivanna.omega.audio.engine.PredictiveLoadGovernor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -403,6 +404,20 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var workerHandler: Handler?       = null
         @Volatile private var active = false
 
+        // DESACOPLE LECTOR/DSP (v2.5.375, sysreport 2026-11-09 17:25 CST:
+        // 173 SOBRECARGAs, load avg ~7-8/8, TIDAL+YTM a la vez): el hilo
+        // lector (CaptureReader, URGENT_AUDIO) SOLO lee de AudioRecord y
+        // publica en el anillo; el hilo DSP (CaptureWorker) consume del
+        // anillo. Un DSP lento o una escritura bloqueante ya no retrasan
+        // la siguiente lectura ni desbordan el RecordThread. 16 bloques
+        // = ~107 ms de colchon, que se suman a los 53 ms del anillo de
+        // AudioRecord. Sin el desacople, bajo saturacion del sistema el
+        // shed por si solo no bastaba: el lector seguia atado al ritmo
+        // del DSP. Ver CaptureBlockRing (logica pura, test JVM).
+        private var readerThread:  HandlerThread? = null
+        private var readerHandler: Handler?       = null
+        private val blockRing = CaptureBlockRing(slots = 16, blockSamples = BLOCK_SAMPLES)
+
         private val vibratoryProcessor = OmegaVibratoryProcessor(1.2f, 0.92f)
         private val spatialEngine      = SpatialAudioEngineV2()
         private var voiceProtection:   VoiceProtectionController? = null
@@ -558,6 +573,12 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             workerThread?.start()
             workerHandler = Handler(workerThread!!.looper)
             active = true
+            // Anillo lector->DSP limpio en cada (re)arranque; el lector
+            // arranca antes de postear el bucle DSP para que haya datos.
+            blockRing.reset()
+            readerThread = HandlerThread("CaptureReader", Process.THREAD_PRIORITY_URGENT_AUDIO)
+            readerThread?.start()
+            readerHandler = Handler(readerThread!!.looper)
             // Rampa limpia en cada (re)arranque del motor: el procesado entra
             // desde 0 hasta el nivel de fusión Haas en ~0.5 s.
             resetMixRamp()
@@ -579,10 +600,12 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             budgetGuard.reset()
             predictiveGovernor.reset()
             workerHandler?.post(processingLoop)
+            readerHandler?.post(readerLoop)
         }
 
         fun stop() {
             active = false
+            Log.i(TAG, "Anillo captura->DSP: ofrecidos=${blockRing.offeredBlocks} descartados=${blockRing.droppedBlocks} consumidos=${blockRing.polledBlocks} pendientes=${blockRing.pending()}")
             masterTiming.reset()
             antiPopEngine.reset()
             val sysCap: SystemAudioCapture = SystemAudioCapture.getInstance(context)
@@ -590,6 +613,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             IvannaVisualizerBridge.reset()
             IvannaVisualizerBridgeV2.reset()
             IvannaVisualizerBark64Bridge.reset()
+            readerHandler?.removeCallbacksAndMessages(null)
+            readerThread?.quitSafely()
+            readerHandler = null
+            readerThread  = null
             workerHandler?.removeCallbacksAndMessages(null)
             workerThread?.quitSafely()
             workerHandler = null
@@ -764,6 +791,34 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             return true
         }
 
+        // HILO LECTOR (v2.5.375): SOLO lee de AudioRecord y publica en el
+        // anillo. Nunca espera al DSP, nunca escribe a AudioTrack, nunca
+        // toca telemetria: bajo saturacion del sistema (load avg ~7-8/8)
+        // es el unico hilo que debe mantener el ritmo de 6.67 ms por
+        // bloque, y lo hace porque su trabajo por bloque es un read() +
+        // una copia de 640 floats. Si el anillo esta lleno (DSP muy por
+        // detras), el bloque se descarta CONTADO en offer(): perder un
+        // delta de 6.7 ms es preferible a desbordar el RecordThread (que
+        // pierde la captura de origen). Con el gobernador de shed activo
+        // los drops deben ser ~0; `stop()` registra el conteo.
+        private val readerLoop = Runnable {
+            try {
+                val scratch = FloatArray(BLOCK_SAMPLES)
+                while (active && !Thread.currentThread().isInterrupted) {
+                    val rec = audioRecord ?: break
+                    val read = rec.read(scratch, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING)
+                    if (read < 0) { Log.w(TAG, "AudioRecord error $read — saliendo"); break }
+                    if (read == 0) continue
+                    blockRing.offer(scratch, read / CHANNEL_COUNT)
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Excepción fatal en loop de lectura: ${t.message}", t)
+            } finally {
+                // Siempre corre: loop normal (active=false→no-op) o loop muerto (active=true→reinicio)
+                if (active) onError("Loop de lectura terminado inesperadamente")
+            }
+        }
+
         private val processingLoop = Runnable {
             // try/finally garantiza que onError() se llame incluso si una excepción
             // no capturada salta desde cualquier paso del loop — sin esto la JVM
@@ -784,10 +839,23 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 val mono   = FloatArray(BLOCK_FRAMES + 4)
                 var blockCounter = 0
                 while (active && !Thread.currentThread().isInterrupted) {
-                    val rec  = audioRecord ?: break
-                    val read = rec.read(buffer, 0, BLOCK_SAMPLES, AudioRecord.READ_BLOCKING)
-                    if (read < 0) { Log.w(TAG, "AudioRecord error $read — saliendo"); break }
-                    if (read == 0) continue
+                    // DESACOPLE (v2.5.375): este hilo ya NO lee de AudioRecord.
+                    // Consume del anillo que alimenta CaptureReader: un DSP
+                    // lento o una escritura bloqueante a AudioTrack ya no
+                    // retrasan la siguiente lectura ni desbordan el
+                    // RecordThread. Anillo vacio (arranque): esperar 1 ms
+                    // sin quemar CPU. La copia slot->buffer es el unico
+                    // coste anadido (~2.5 KB por bloque) y deja el resto
+                    // del cuerpo del bucle intacto.
+                    val slot = blockRing.beginRead()
+                    if (slot == null) {
+                        try { Thread.sleep(1) } catch (_: InterruptedException) { break }
+                        continue
+                    }
+                    val read = slot.frames * CHANNEL_COUNT
+                    slot.data.copyInto(buffer, 0, 0, read)
+                    blockRing.endRead()
+                    if (read <= 0) continue
                     val iterStartNs = System.nanoTime()
                     val frames = read / CHANNEL_COUNT
                     System.arraycopy(buffer, 0, dryRef, 0, read)
@@ -826,9 +894,27 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     }
 
                     // ETAPA 1: DSP BRIDGE (EQ / Compresor / Exciter / Coclear / 5 Ejes + SafetyLimiter)
-                    // Nunca omitir bloques alternos de filtros IIR con estado al cambiar de ventana
-                    budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE) {
-                        DSPBridge.process(buffer, frames)
+                    // Shed de vuelta completa (v2.5.375): si la vuelta ANTERIOR supero el
+                    // periodo del bloque (loopOverloaded: carga > 100 %, se libera a <= 95 %),
+                    // el DSP no corre en ESTE bloque y `buffer` queda seco (passthrough).
+                    // Es el mismo passthrough que ya hace el nativo cuando el mutex esta
+                    // tomado: se salta la llamada COMPLETA, nunca media cadena, asi que
+                    // ningun IIR/STFT/convolver queda avanzado a medias (el comentario
+                    // original —no omitir bloques alternos— se refiere a omitir DENTRO
+                    // de la cadena al cambiar de ventana, no a este bypass entero).
+                    // Con el buffer seco, dryRef == buffer y la reinyeccion diferencial
+                    // aporta ~0: el original sigue sonando por su via, sin silencio y
+                    // sin perder muestras; solo se degrada el procesado un bloque para
+                    // que la siguiente lectura no se retrase y el RecordThread no se
+                    // desborde. El gobernador nativo (DspLoadShedGovernor) hace lo mismo
+                    // dentro de DSPBridge.process para la carga del propio DSP; este es
+                    // la red de seguridad de la vuelta COMPLETA (cubre tambien la
+                    // escritura bloqueante a AudioTrack y la telemetria, que el nativo
+                    // no ve). Sin hilos ni buffers nuevos: reutiliza `loopOverloaded`.
+                    if (!loopOverloaded) {
+                        budgetGuard.measureStage(AudioThreadBudgetGuard.BudgetStage.DSP_BRIDGE) {
+                            DSPBridge.process(buffer, frames)
+                        }
                     }
 
                     // Árbitro de Ruta Única: si DSPBridge nativo está activo, ya ejecutó

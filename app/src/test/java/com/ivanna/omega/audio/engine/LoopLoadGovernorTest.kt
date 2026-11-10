@@ -60,4 +60,20 @@ class LoopLoadGovernorTest {
         val g = LoopLoadGovernor(); feed(g, 0.95, 100); g.reset()
         assertEquals(1, g.stride); assertEquals(0f, g.load, 0f)
     }
+
+    // Shed de vuelta completa (v2.5.375): PlaybackCaptureService salta
+    // DSPBridge.process cuando la carga de la vuelta supera el 100% y lo
+    // retoma cuando baja a <= 95% (bandera loopOverloaded). Estos tests
+    // fijan los umbrales exactos de los que depende ese cableado.
+    @Test fun `sobrecarga sostenida supera el 100 por cien`() {
+        val g = LoopLoadGovernor(); feed(g, 1.05, 200)
+        assertTrue(g.load > 1.0f)
+    }
+
+    @Test fun `al bajar a 95 por cien o menos se libera la sobrecarga`() {
+        val g = LoopLoadGovernor(); feed(g, 1.05, 200)
+        assertTrue(g.load > 1.0f)
+        feed(g, 0.30, 200)
+        assertTrue(g.load <= 0.95f)
+    }
 }

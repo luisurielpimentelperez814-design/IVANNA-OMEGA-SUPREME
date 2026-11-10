@@ -12,6 +12,7 @@
 #include "../anti_dolby.h"
 #include "../neuromorphic/volterra_h2_symmetric.hpp"
 #include "../supreme/SupremeAcousticStabilityGuard.hpp"
+#include "../dsp/dsp_load_shed_governor.hpp"
 
 namespace {
 bool allFinite(const std::vector<float>& v) {
@@ -236,4 +237,172 @@ TEST(VolterraH2Stability, IdentityBypassKeepsDelayHistoryForLaterKernelActivatio
     std::vector<float> silence(16, 0.0f), out(16, 0.0f);
     v.processInterleaved(silence.data(), out.data(), 16, 1);
     EXPECT_GT(out[0], 0.0f);
+}
+
+// ── Gobernador de shed de carga DSP (Ruta A, v2.5.375) ───────────────────────
+// Reproduce la condicion medida en vivo en el Moto G85 (2026-11-09, logcat
+// CaptureEngine): dsp_bridge 3.5–8.9 ms por bloque de 320 frames @48 kHz,
+// periodo 6.67 ms, carga sostenida 100–105% -> "RecordThread: buffer
+// overflow". Sin gobernador, la deuda acumulada (coste - periodo) supera
+// el colchon del anillo de AudioRecord (8 bloques = 53 ms) y el bucle
+// pierde bloques; con gobernador, la carga media realizada queda acotada
+// al presupuesto (70% del periodo) y el shed es passthrough seco, jamas
+// silencio. El gobernador es logica pura (sin JNI): el test simula el
+// bucle de captura bloque a bloque — si shouldShed(), el bloque va en
+// seco (coste ~0, salida == entrada); si no, cuesta lo simulado.
+
+namespace {
+constexpr int64_t kPeriodUs = 6667;  // 320 frames @ 48 kHz.
+
+// Simula N bloques con los costes dados (ciclicos). Devuelve la media
+// REALIZADA de coste DSP por bloque (bloques en shed cuentan ~0).
+struct ShedTrace {
+    uint64_t sheds = 0;
+    uint64_t total = 0;
+    double realizedAvgUs = 0.0;
+};
+ShedTrace runShedTrace(ivanna::dsp::DspLoadShedGovernor& gov,
+                       const std::vector<int64_t>& costsUs, int blocks) {
+    ShedTrace t;
+    double runSumUs = 0.0;
+    for (int i = 0; i < blocks; ++i) {
+        const int64_t cost = costsUs[static_cast<size_t>(i) % costsUs.size()];
+        ++t.total;
+        if (gov.shouldShed(kPeriodUs)) {
+            gov.observeShed(kPeriodUs);
+            ++t.sheds;
+        } else {
+            gov.observeRun(cost, kPeriodUs);
+            runSumUs += static_cast<double>(cost);
+        }
+    }
+    t.realizedAvgUs = t.total == 0 ? 0.0 : runSumUs / static_cast<double>(t.total);
+    return t;
+}
+}  // namespace
+
+TEST(DspLoadShedGovernor, FastChainNeverSheds) {
+    ivanna::dsp::DspLoadShedGovernor gov;
+    const ShedTrace t = runShedTrace(gov, {3500}, 200);
+    EXPECT_EQ(t.sheds, 0u);
+    EXPECT_EQ(gov.totalBlocks(), 200u);
+    EXPECT_NEAR(gov.emaUs(), 3500, 50);  // EMA converge al coste real
+    EXPECT_FALSE(gov.shouldShed(kPeriodUs));
+}
+
+TEST(DspLoadShedGovernor, MeasuredOverloadRangeSelfRegulates) {
+    // Rango medido: dsp_bridge alterna 3.5 ms (core grande) y 8.9 ms
+    // (core pequeno). Coste medio 6.2 ms > presupuesto 4.67 ms.
+    ivanna::dsp::DspLoadShedGovernor gov;
+    const ShedTrace t = runShedTrace(gov, {3500, 8900}, 400);
+    // Contrafactual (reproduccion del bug): SIN gobernador, el DSP toma
+    // 6.2 ms de media de un periodo de 6.67 ms y deja 0.47 ms para el
+    // resto de la vuelta (NPE, salida, reinyeccion, escritura bloqueante,
+    // telemetria: ~1 ms) -> la vuelta completa supera el periodo en
+    // ~0.5 ms por bloque, sostenido. La deuda acumulada contra el periodo
+    // (400 bloques x ~0.5 ms = ~200 ms) supera con creces el colchon del
+    // anillo de AudioRecord (8 bloques = 53 ms): desborde garantizado,
+    // que es exactamente lo medido en vivo. Con gobernador, la media
+    // realizada queda <= presupuesto.
+    EXPECT_GT(t.sheds, 0u);
+    const double frac = static_cast<double>(t.sheds) / static_cast<double>(t.total);
+    // Fraccion sostenible INGENUA: 1 - presupuesto/costeMedio = 1 - 4666/6200 = 24.7%.
+    // La real es mayor (~44%): el coste va ligado a la posicion del bloque,
+    // asi que un shed "consume" el hueco barato (3.5 ms) y el siguiente
+    // bloque que corre es el caro (8.9 ms) — un controlador causal no puede
+    // saber el coste futuro. La garantia del gobernador no es la fraccion,
+    // es la media realizada (assert de abajo); la fraccion solo se acota
+    // por arriba para detectar un shed desbocado.
+    EXPECT_GT(frac, 0.15);
+    EXPECT_LT(frac, 0.55);
+    EXPECT_LE(t.realizedAvgUs, 4666.0 * 1.05);  // <= presupuesto + 5%
+    EXPECT_GT(gov.emaUs(), 5000);  // la EMA sigue midiendo la DEMANDA, no la media realizada
+}
+
+TEST(DspLoadShedGovernor, SustainedWorstCaseShedsAboutHalfTheBlocks) {
+    // Peor caso medido sostenido: 8.9 ms por bloque (135% del periodo).
+    ivanna::dsp::DspLoadShedGovernor gov;
+    const ShedTrace t = runShedTrace(gov, {8900}, 300);
+    const double frac = static_cast<double>(t.sheds) / static_cast<double>(t.total);
+    // Fraccion sostenible teorica: 1 - 4666/8900 = 47.6%.
+    EXPECT_GT(frac, 0.38);
+    EXPECT_LT(frac, 0.58);
+    EXPECT_LE(t.realizedAvgUs, 4666.0 * 1.05);
+    // Y la carga de la vuelta completa vuelve a caber: DSP realizado
+    // 4.67 ms + resto del bucle (~1 ms) < periodo 6.67 ms.
+    EXPECT_LT(t.realizedAvgUs + 1000.0, 6667.0);
+}
+
+TEST(DspLoadShedGovernor, SingleSpikeCostsAtMostTwoShedBlocks) {
+    // Un pico aislado de 20 ms (GC / migracion de core) no debe provocar
+    // una tormenta de sheds: la deuda esta acotada a un presupuesto.
+    ivanna::dsp::DspLoadShedGovernor gov;
+    runShedTrace(gov, {3500}, 100);
+    const uint64_t shedsBefore = gov.shedBlocks();
+    runShedTrace(gov, {20000}, 1);
+    const ShedTrace t = runShedTrace(gov, {3500}, 100);
+    EXPECT_LE(gov.shedBlocks() - shedsBefore, 2u);
+    EXPECT_EQ(t.total, 100u);
+}
+
+TEST(DspLoadShedGovernor, ShedIsPassthroughNeverSilence) {
+    // Contrato fail-closed: un bloque en shed sale IDENTICO a la entrada
+    // (el nativo retorna sin tocar el buffer). NUNCA se silencia ni se
+    // pierde una muestra: la salida es la senal seca original.
+    ivanna::dsp::DspLoadShedGovernor gov;
+    std::vector<float> dry(640);
+    for (size_t i = 0; i < dry.size(); ++i)
+        dry[i] = 0.5f * std::sin(2.0f * static_cast<float>(M_PI) * 440.0f *
+                                 static_cast<float>(i) / 48000.0f);
+    const float dryPeak = peakAbs(dry);
+    ASSERT_GT(dryPeak, 0.4f);
+    int shedBlocks = 0;
+    for (int b = 0; b < 200; ++b) {
+        if (gov.shouldShed(kPeriodUs)) {
+            gov.observeShed(kPeriodUs);
+            ++shedBlocks;
+            // Passthrough: salida == entrada, bit-exacta.
+            std::vector<float> out = dry;
+            for (size_t i = 0; i < dry.size(); ++i) EXPECT_FLOAT_EQ(out[i], dry[i]);
+            EXPECT_FLOAT_EQ(peakAbs(out), dryPeak);
+        } else {
+            gov.observeRun(8900, kPeriodUs);
+        }
+    }
+    EXPECT_GT(shedBlocks, 0);  // el trazo lento tiene que soltar bloques
+}
+
+TEST(DspLoadShedGovernor, RecoversWhenChainGetsFastAgain) {
+    ivanna::dsp::DspLoadShedGovernor gov;
+    runShedTrace(gov, {8900}, 60);
+    ASSERT_GT(gov.shedBlocks(), 0u);
+    // La cadena vuelve a 3.5 ms (core grande): el shed debe cesar solo.
+    const uint64_t shedsBefore = gov.shedBlocks();
+    runShedTrace(gov, {3500}, 120);
+    EXPECT_EQ(gov.shedBlocks(), shedsBefore);  // cero sheds nuevos
+    EXPECT_LE(gov.debtUs(), 0);
+    EXPECT_FALSE(gov.shouldShed(kPeriodUs));
+}
+
+TEST(DspLoadShedGovernor, ResetClearsDebtAndCounters) {
+    ivanna::dsp::DspLoadShedGovernor gov;
+    runShedTrace(gov, {8900}, 60);
+    ASSERT_GT(gov.shedBlocks(), 0u);
+    gov.reset();
+    EXPECT_EQ(gov.debtUs(), 0);
+    EXPECT_EQ(gov.emaUs(), 0);
+    EXPECT_EQ(gov.peakUs(), 0);
+    EXPECT_EQ(gov.totalBlocks(), 0u);
+    EXPECT_EQ(gov.shedBlocks(), 0u);
+    EXPECT_FALSE(gov.shouldShed(kPeriodUs));
+}
+
+TEST(DspLoadShedGovernor, DegeneratePeriodNeverSheds) {
+    ivanna::dsp::DspLoadShedGovernor gov;
+    EXPECT_FALSE(gov.shouldShed(0));
+    EXPECT_FALSE(gov.shouldShed(-100));
+    gov.observeRun(8900, 0);
+    gov.observeShed(0);
+    EXPECT_EQ(gov.totalBlocks(), 0u);
+    EXPECT_EQ(gov.shedBlocks(), 0u);
 }

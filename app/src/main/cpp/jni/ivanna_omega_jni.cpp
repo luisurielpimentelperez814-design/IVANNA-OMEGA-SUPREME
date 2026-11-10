@@ -58,6 +58,7 @@
 #include "../neuromorphic/NpeStereoCore.hpp"
 #include "../neuromorphic/neuro_acoustic_closed_loop.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
+#include "../dsp/dsp_load_shed_governor.hpp"              // shed de carga DSP por deuda (sobrecarga Ruta A, v2.5.375)
 #include "../include/BlockPeakGuard.h"
 #include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
 #include "../include/punch_engine.hpp"                // impacto predictivo por bandas (v2.5.41)
@@ -1459,6 +1460,48 @@ struct NonBlockingDspProcessGuard {
     }
 };
 
+// ── Gobernador de shed de carga DSP (Ruta A, v2.5.375) ────────────────────
+// Medido en vivo (Moto G85, 2026-11-09): dsp_bridge 3.5–8.9 ms por bloque
+// de 320 frames @48 kHz frente a un periodo de 6.67 ms — carga sostenida
+// 100–105% que drena el anillo de AudioRecord y desborda el RecordThread.
+// Solo se toca bajo g_dspProcessMutex, en el hilo de audio de Ruta A
+// (un solo llamador de nativeProcess); ver dsp/dsp_load_shed_governor.hpp.
+static ivanna::dsp::DspLoadShedGovernor g_dspShedGovernor;
+
+// Log throttled del shed (max 1 vez / 5 s mientras hay shed activo, y una
+// vez al terminar): visible en logcat para verificar en el telefono sin
+// inundar el log — un LOGI por bloque seria ~150 lineas/s.
+static void logDspShedStateThrottled() noexcept {
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point lastLog{};
+    static uint64_t lastLoggedSheds = 0;
+    static bool lastLoggedShedding = false;
+    const uint64_t sheds = g_dspShedGovernor.shedBlocks();
+    const bool shedding = g_dspShedGovernor.debtUs() > 0;
+    if (sheds == lastLoggedSheds && shedding == lastLoggedShedding) return;
+    const auto now = Clock::now();
+    // Mientras sigue en shed, max 1 linea / 5 s; la recuperacion se
+    // anuncia siempre (es el dato que confirma que el bucle respira).
+    if (shedding && lastLoggedSheds != 0 && now - lastLog < std::chrono::seconds(5)) return;
+    lastLog = now;
+    lastLoggedSheds = sheds;
+    lastLoggedShedding = shedding;
+    if (shedding) {
+        LOGI("DSP shed Ruta A ACTIVO: %llu/%llu bloques en passthrough (%.1f %%), EMA DSP %lld us, pico %lld us — el DSP no alcanza el periodo; se degrada con gracia (seco en vivo, sin silencio)",
+             static_cast<unsigned long long>(sheds),
+             static_cast<unsigned long long>(g_dspShedGovernor.totalBlocks()),
+             g_dspShedGovernor.shedFraction() * 100.0,
+             static_cast<long long>(g_dspShedGovernor.emaUs()),
+             static_cast<long long>(g_dspShedGovernor.peakUs()));
+    } else {
+        LOGI("DSP shed Ruta A terminado: %llu/%llu bloques en passthrough (%.1f %%), EMA DSP %lld us — el bucle vuelve a procesar todos los bloques",
+             static_cast<unsigned long long>(sheds),
+             static_cast<unsigned long long>(g_dspShedGovernor.totalBlocks()),
+             g_dspShedGovernor.shedFraction() * 100.0,
+             static_cast<long long>(g_dspShedGovernor.emaUs()));
+    }
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     JNIEnv* env, jobject, jfloatArray buf, jint nFrames) {
@@ -1504,6 +1547,22 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // más corto que nFrames provocaba lectura/escritura fuera de rango del heap.
     const int n = std::min({(int)nFrames, 2048, (int)(env->GetArrayLength(buf) / 2)});
     if (n <= 0) return;
+    // ── Shed de carga DSP (v2.5.375) ──────────────────────────────────────
+    // Si la cadena viene debiendo tiempo (coste medio > 70% del periodo),
+    // este bloque va en SECO: se retorna SIN tocar `buf` — exactamente el
+    // mismo passthrough que ya ocurre cuando el mutex esta tomado o el DSP
+    // no esta inicializado. Ningun estado interno avanza a medias, la
+    // senal original sigue sonando y la reinyeccion diferencial aporta ~0.
+    // Se decide ANTES de GetFloatArrayElements para no pagar ni la copia JNI.
+    const int64_t periodUs = (g_params.sampleRate > 0)
+        ? static_cast<int64_t>(n) * 1000000LL / static_cast<int64_t>(g_params.sampleRate)
+        : 0;
+    if (g_dspShedGovernor.shouldShed(periodUs)) {
+        g_dspShedGovernor.observeShed(periodUs);
+        logDspShedStateThrottled();
+        return;
+    }
+    const auto dspT0 = std::chrono::steady_clock::now();
     jfloat* data = env->GetFloatArrayElements(buf, nullptr);
     if (!data) return;
     // Alimentar MusicIntelligenceEngine (IME) con el bloque estéreo intercalado seco
@@ -2338,6 +2397,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         data[2 * i + 1] = r;
     }
     env->ReleaseFloatArrayElements(buf, data, 0);
+    // Cierre del gobernador de shed: alimenta la deuda/EMA con el coste
+    // REAL de la cadena (incluye preemption del hilo: si el planificador
+    // nos quito el core a mitad de cadena, eso tambien es lateness).
+    g_dspShedGovernor.observeRun(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - dspT0).count(),
+        periodUs);
+    logDspShedStateThrottled();
 }
 // Senal REAL de que omega_effect.so procesa audio en audioserver (Ruta B).
 // -1 = no disponible (sin archivo / DAC o SELinux lo bloquea): el llamador debe CONSERVAR su
@@ -2351,6 +2418,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeEffectBeaconState(JNIEnv*, jobject, ji
 
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
+    g_dspShedGovernor.reset();
     g_pd.stop_evo_thread();
     g_eq.reset(); g_comp.reset(); g_exciter.reset();
     g_widener.reset(); g_gain.reset();

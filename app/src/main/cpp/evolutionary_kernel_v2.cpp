@@ -353,11 +353,25 @@ void evo_evolve_generation() {
 
     // Generar descendencia via crossover + mutación adaptativa
     // Tasa de mutación: más alta cuando la población ha convergido (varianza baja)
-    float popVar = 0.0f;
+    //
+    // FIX (2026-11-09, "SIN AVANCE · gen. 1" / fitness estancado ~0.79 en vivo):
+    // popVar era la SUMA (no la media) de (fitness - best) sobre hasta 128
+    // individuos: siempre <= 0 con magnitud ~10-30, asi que exp(-popVar) era
+    // e^10..e^30 y adaptiveMutation >> 1 -> CADA gen se re-aleatorizaba en
+    // cada generacion (probabilidad de mutacion ~1.0). Sin herencia no hay
+    // evolucion: el mejor fitness era solo el mejor de 128 aleatorios por
+    // generacion y se saturaba ~0.84 por estadistica de extremos (medido en
+    // host: best0=0.779 -> best40=best200=0.842). Ahora la diversidad es la
+    // MEDIA (best - fitness, >= 0) y la tasa queda acotada a [0.001, 0.5]:
+    // ~1x la base con poblacion diversa, hasta 6x cuando converge.
+    float diversity = 0.0f;
     for (int i = 0; i < gen; ++i)
-        popVar += g_population.individuals[i].fitness - g_population.bestFitness;
-    const float adaptiveMutation =
-        g_mutationRate.load(std::memory_order_relaxed) * (1.0f + 5.0f * std::exp(-popVar));
+        diversity += g_population.bestFitness - g_population.individuals[i].fitness;
+    diversity /= static_cast<float>(gen);
+    const float adaptiveMutation = std::clamp(
+        g_mutationRate.load(std::memory_order_relaxed) *
+            (1.0f + 5.0f * std::exp(-10.0f * diversity)),
+        0.001f, 0.5f);
 
     for (int i = elites; i < gen; ++i) {
         // Selección por torneo de 3 padres

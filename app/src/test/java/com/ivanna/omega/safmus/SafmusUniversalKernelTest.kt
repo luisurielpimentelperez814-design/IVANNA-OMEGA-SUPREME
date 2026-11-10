@@ -1,5 +1,6 @@
 package com.ivanna.omega.safmus
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -168,8 +169,11 @@ class SafmusUniversalKernelTest {
     }
 
     @Test fun globalRouteExcludesParallelRouteA() {
+        // La exclusividad exige evidencia de procesamiento (fix 2026-11-09):
+        // sin ella, un efecto registrado pero mudo no bloquea Ruta A.
         val d = SafmusUniversalKernel.decideRoute(
-            SafmusUniversalKernel.RouteEvidence(true, true, true, true, false)
+            SafmusUniversalKernel.RouteEvidence(true, true, true, true, false,
+                routeBProcessingConfirmed = true)
         )
         assertTrue(d.route == SafmusUniversalKernel.Route.ROUTE_B)
         assertFalse(d.allowSpectralAdaptation)
@@ -244,5 +248,68 @@ class SafmusUniversalKernelTest {
         assertFalse(SafmusUniversalKernel.mayAcceptEvolutionProposal(route, true, 0.8f, true, false, true))
         assertFalse(SafmusUniversalKernel.mayAcceptEvolutionProposal(route, true, 0.8f, true, true, false))
         assertFalse(SafmusUniversalKernel.mayAcceptEvolutionProposal(SafmusUniversalKernel.Route.ROUTE_B, true, 0.8f, true, true, true))
+    }
+
+    // FIX (2026-11-09, cero procesamiento en ambas rutas): decideRoute solo
+    // concede la exclusividad a Ruta B con evidencia de procesamiento real.
+    @Test fun decideRouteDoesNotBlockRouteAWhenRouteBProcessingIsUnconfirmed() {
+        val d = SafmusUniversalKernel.decideRoute(
+            SafmusUniversalKernel.RouteEvidence(
+                systemWideEffectActive = true,
+                routeASignalValid = true,
+                routeAFrameFresh = true,
+                enabled = true,
+                bypass = false,
+                routeBProcessingConfirmed = false
+            )
+        )
+        assertEquals(SafmusUniversalKernel.Route.ROUTE_A, d.route)
+        assertTrue(d.allowSpectralAdaptation)
+    }
+
+    @Test fun decideRouteGrantsRouteBExclusivityOnlyWithProcessingEvidence() {
+        val d = SafmusUniversalKernel.decideRoute(
+            SafmusUniversalKernel.RouteEvidence(
+                systemWideEffectActive = true,
+                routeASignalValid = true,
+                routeAFrameFresh = true,
+                enabled = true,
+                bypass = false,
+                routeBProcessingConfirmed = true
+            )
+        )
+        assertEquals(SafmusUniversalKernel.Route.ROUTE_B, d.route)
+        assertFalse(d.allowSpectralAdaptation)
+    }
+
+    @Test fun decideRouteAbstainsWhenNeitherRouteHasEvidence() {
+        // B activa pero sin confirmar + A sin señal válida: no hay ruta.
+        val d = SafmusUniversalKernel.decideRoute(
+            SafmusUniversalKernel.RouteEvidence(
+                systemWideEffectActive = true,
+                routeASignalValid = false,
+                routeAFrameFresh = false,
+                enabled = true,
+                bypass = false,
+                routeBProcessingConfirmed = false
+            )
+        )
+        assertEquals(SafmusUniversalKernel.Route.NONE, d.route)
+        assertFalse(d.allowSpectralAdaptation)
+    }
+
+    @Test fun decideRouteDefaultEvidenceIsFailClosedTowardRouteA() {
+        // RouteEvidence sin el campo nuevo (default false): B no recibe la
+        // exclusividad por mero registro.
+        val d = SafmusUniversalKernel.decideRoute(
+            SafmusUniversalKernel.RouteEvidence(
+                systemWideEffectActive = true,
+                routeASignalValid = true,
+                routeAFrameFresh = true,
+                enabled = true,
+                bypass = false
+            )
+        )
+        assertEquals(SafmusUniversalKernel.Route.ROUTE_A, d.route)
     }
 }

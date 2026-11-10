@@ -172,6 +172,32 @@ TEST(SAFMUSEvolutionGate, RequiresFiniteBoundedCandidateAndHeadroom) {
     EXPECT_FALSE(mayApplyEvolutionCandidate({0.75f, true, true, true, true, false}));
 }
 
+TEST(EvolutionaryKernelV2, EvolveImprovesBeyondRandomSearchCeiling) {
+    // Regresión 2026-11-09 ("SIN AVANCE · gen. 1", fitness ~0.79 en vivo):
+    // la tasa de mutación adaptativa era exp(-SUMA de desviaciones) ~ e^10..e^30,
+    // asi que cada gen se re-aleatorizaba en cada generación (mutación ~1.0).
+    // Sin herencia el mejor fitness era solo el mejor de 128 aleatorios y se
+    // saturaba ~0.84 por estadística de extremos (medido: best0=0.779 ->
+    // best40=best200=0.842). Con herencia real el fitness sigue mejorando
+    // mucho más allá de ese techo (medido tras el fix: best200=0.925).
+    evo_update_audio_cues_v2(0.45f, 0.20f, 0.30f, 3200.0f, 0.65f, 0.55f);
+    evo_set_max_generations(0);
+    evo_set_population_size(128);
+    evo_set_mutation_rate(0.01f);
+    evo_initialize_population();
+    const float best0 = evo_best_fitness();
+    for (int i = 0; i < 40; ++i) evo_evolve_generation();
+    const float best40 = evo_best_fitness();
+    for (int i = 0; i < 160; ++i) evo_evolve_generation();
+    const float best200 = evo_best_fitness();
+    EXPECT_GT(best40, best0) << "el mejor fitness debe mejorar con las generaciones";
+    EXPECT_GT(best200, 0.87f)
+        << "con herencia real el fitness supera el techo de búsqueda aleatoria (~0.84)";
+    EXPECT_GT(best200, best40 + 0.01f)
+        << "la mejora no debe estancarse en la generación 40 (búsqueda aleatoria: 0.000)";
+    evo_set_mutation_rate(0.01f);
+}
+
 TEST(EvolutionaryKernelV2, NonFiniteAudioCuesAreRejectedWithoutPoisoningFitness) {
     evo_update_audio_cues_v2(0.5f, 0.2f, 0.3f, 4000.0f, 0.7f, 0.6f);
     evo_update_audio_cues_v2(NAN, 0.2f, 0.3f, 4000.0f, 0.7f, 0.6f);

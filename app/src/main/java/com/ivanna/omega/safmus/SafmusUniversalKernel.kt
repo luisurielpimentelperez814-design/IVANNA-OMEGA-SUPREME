@@ -114,7 +114,15 @@ object SafmusUniversalKernel {
         val routeASignalValid: Boolean,
         val routeAFrameFresh: Boolean,
         val enabled: Boolean,
-        val bypass: Boolean
+        val bypass: Boolean,
+        /**
+         * Evidencia de que Ruta B PROCESA de verdad (beacon ENABLED_IDLE/
+         * PROCESSING, dsp_frames > 0 / consumer != null). Sin ella, un efecto
+         * global registrado pero mudo no recibe la exclusividad: la decisión
+         * cae a las ramas de Ruta A. Default false = fail-closed hacia que
+         * el audio siga procesándose en algún lado.
+         */
+        val routeBProcessingConfirmed: Boolean = false
     )
 
     data class RouteDecision(
@@ -305,9 +313,15 @@ object SafmusUniversalKernel {
     }
 
     fun decideRoute(e: RouteEvidence): RouteDecision = when {
-        e.systemWideEffectActive -> RouteDecision(
+        // FIX (2026-11-09, cero procesamiento en ambas rutas): la exclusividad
+        // de Ruta B exige EVIDENCIA de que B procesa de verdad (beacon
+        // ENABLED_IDLE/PROCESSING, dsp_frames > 0 / consumer != null), no solo
+        // que el efecto esté registrado. Un efecto global registrado pero mudo
+        // (0 frames, sin consumidor) ya no bloquea Ruta A: la decisión cae a
+        // las ramas de Ruta A de abajo y el audio sigue procesándose.
+        e.systemWideEffectActive && e.routeBProcessingConfirmed -> RouteDecision(
             Route.ROUTE_B, false,
-            "La ruta global posee el DSP; SAFMUS bloquea procesamiento paralelo en Ruta A"
+            "La ruta global posee el DSP y procesa; SAFMUS bloquea procesamiento paralelo en Ruta A"
         )
         e.routeASignalValid && e.routeAFrameFresh && e.enabled && !e.bypass -> RouteDecision(
             Route.ROUTE_A, true,

@@ -218,8 +218,18 @@ object FotoHoloEngine {
                     // AudioEffect.queryEffects hace Binder IPC: sondear en hilo de control,
                     // con caché de 1 s; nunca desde el callback de audio ni cada tick de 50 ms.
                     if (nowMs >= nextRouteProbeMs) {
-                        // UNKNOWN must not authorize Route A beside a possibly active global effect.
-                        systemWideRouteActive = RouteArbiter.systemWideEffectPresence() ?: true
+                        // FIX (2026-11-09, cero procesamiento en ambas rutas):
+                        // presencia (AudioEffect.queryEffects) NO es
+                        // procesamiento. Un efecto registrado pero mudo (sin
+                        // beacon, 0 frames) no debe bloquear Ruta A: se exige
+                        // evidencia real de procesamiento (beacon
+                        // ENABLED_IDLE/PROCESSING, misma política que
+                        // RouteArbiter.systemWideEffectProcessing()). El
+                        // sondeo es periódico (1 s), así que una Ruta B que
+                        // arranque tarde recupera la exclusividad en el
+                        // siguiente tick. CAMBIO AUDIBLE: con B muda, Ruta A
+                        // vuelve a procesar en vez de quedarse en silencio.
+                        systemWideRouteActive = RouteArbiter.systemWideEffectProcessing()
                         nextRouteProbeMs = nowMs + 1_000L
                     }
                     val wantsModulation = enabled && !bypass
@@ -292,7 +302,11 @@ object FotoHoloEngine {
                         systemWideEffectActive = systemWideRouteActive,
                         routeAHasValidSignal = features.valid,
                         enabled = enabled,
-                        bypass = bypass
+                        bypass = bypass,
+                        // systemWideRouteActive ya es evidencia de procesamiento
+                        // real (RouteArbiter.systemWideEffectProcessing), no
+                        // mero registro: solo con ella B recibe la exclusividad.
+                        routeBProcessingConfirmed = systemWideRouteActive
                     )
                     val shouldModulate = routeDecision.allowSpectralAdaptation && features.valid && !routeARestorePending
                     var displayedCommand = if (lastCommanded.isFinite()) lastCommanded else base

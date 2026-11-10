@@ -20,6 +20,17 @@ import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/**
+ * Techo del Fatigue Index manual. El slider es una preferencia de usuario,
+ * no una medición: por encima de 0.5 (highCut < 17 750 Hz, alpha < 0.70)
+ * el LPF ya es audible como pérdida de aire, y en 1.0 (highCut 16 kHz,
+ * alpha 0.50) opaca los agudos. Valores persistidos fuera de [0, 0.5]
+ * (p. ej. el 1.0 atascado en ivanna_tinyml_prefs.xml, 2026-11-09) se
+ * reparan al default seguro en vez de aplicarse.
+ */
+private const val FATIGUE_MAX = 0.5f
+private const val FATIGUE_DEFAULT = 0.15f
+
 @Composable
 internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
     val yamnet = AudioPipeline.sharedYamnetResult.collectAsState().value
@@ -40,18 +51,38 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
         ctx.getSharedPreferences("harmonic_exciter_prefs", android.content.Context.MODE_PRIVATE)
     }
 
-    var fatigueIndex by remember { mutableFloatStateOf(prefs.getFloat("fatigueIndex", 0.15f)) }
+    // FIX (2026-11-09, Fatigue Index 100% atascado en vivo): el valor persistido
+    // en ivanna_tinyml_prefs.xml era 1.0 (alpha 0.50, highCut 16 kHz) y se
+    // cargaba sin validar, asi que opacaba los agudos para siempre. Un valor
+    // fuera de [0, FATIGUE_MAX] no es una medición: se repara al default
+    // seguro 0.15 (highCut 18 975 Hz, alpha 0.84, prácticamente transparente)
+    // y se reescribe la preferencia para que no vuelva. El slider ya no
+    // permite más de 0.5. CAMBIO AUDIBLE DE PREFERENCIA: el highCut efectivo
+    // pasa de 16 kHz a ~19 kHz hasta que el usuario lo mueva.
+    val storedFatigue = prefs.getFloat("fatigueIndex", FATIGUE_DEFAULT)
+    val initialFatigue = if (storedFatigue.isFinite() && storedFatigue in 0f..FATIGUE_MAX)
+        storedFatigue else FATIGUE_DEFAULT
+    LaunchedEffect(Unit) {
+        if (storedFatigue != initialFatigue)
+            prefs.edit().putFloat("fatigueIndex", initialFatigue).apply()
+    }
+    var fatigueIndex by remember { mutableFloatStateOf(initialFatigue) }
     var lastFatigueSendMs by remember { mutableLongStateOf(0L) }
     val iirAlpha  = (0.9f - fatigueIndex * 0.4f).coerceIn(0.5f, 0.95f)
     val highCutHz = (19500f - fatigueIndex * 3500f).coerceIn(16000f, 19500f)
 
+    // FIX (2026-11-09, mapeo): estas 4 barras NO son Speech/Music/Transient/
+    // Ambient. El CRNN solo produce 4 clases (Voz/Música/Bajos/Silencio):
+    // yamnet.bass es BAJOS (la salida transitoria del CRNN también cae ahí)
+    // y el "Ambient" era solo el residuo 1-speech-music-bass. Se etiquetan
+    // con las clases reales para no mentir sobre lo que mide el modelo.
     val speech    = yamnet.speech.coerceIn(0f, 1f)
     val music     = yamnet.music.coerceIn(0f, 1f)
-    val transient = yamnet.bass.coerceIn(0f, 1f)
-    val ambient   = (1f - speech - music - transient).coerceIn(0f, 1f)
-    val dominant  = when { speech >= music && speech >= transient -> "SPEECH / VOCAL"
-                           music >= transient -> "MUSIC"; transient >= ambient -> "TRANSIENT"
-                           else -> "AMBIENT" }
+    val bass      = yamnet.bass.coerceIn(0f, 1f)
+    val silence   = (1f - speech - music - bass).coerceIn(0f, 1f)
+    val dominant  = when { speech >= music && speech >= bass -> "VOZ"
+                           music >= bass -> "MÚSICA"; bass >= silence -> "BAJOS"
+                           else -> "SILENCIO" }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         GlassCard("CLASIFICADOR DE ESCENA", NeonMagenta,
@@ -75,10 +106,10 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                 }
             }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SoftBar("Speech / Vocal Dialogue",      speech,    AuroraCyan)
-                SoftBar("Music / Polyphonic Harmonics", music,     NeonMagenta)
-                SoftBar("Transient / Impact Peaks",     transient, AmberSignal)
-                SoftBar("Ambient / Noise Floor",        ambient,   PhosphorGreen)
+                SoftBar("Voz / Diálogo",             speech,    AuroraCyan)
+                SoftBar("Música / Armónicos",        music,     NeonMagenta)
+                SoftBar("Bajos / Impacto grave",     bass,      AmberSignal)
+                SoftBar("Silencio / Residual",       silence,   PhosphorGreen)
             }
         }
 
@@ -136,7 +167,7 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                                 }
                             }
                         },
-                        valueRange = 0f..1f,
+                        valueRange = 0f..FATIGUE_MAX,
                         colors = SliderDefaults.colors(thumbColor = AmberSignal,
                             activeTrackColor = AmberSignal, inactiveTrackColor = ObsidianEdge))
                 }
@@ -154,7 +185,7 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                     scope.launch(Dispatchers.IO) {
                         runCatching {
                             OmegaEngineBridge.pushYamnetScores(speech, music, 0,
-                                maxOf(speech, music, transient))
+                                maxOf(speech, music, bass))
                         }
                     }
                 }, modifier = Modifier.fillMaxWidth().height(40.dp),
