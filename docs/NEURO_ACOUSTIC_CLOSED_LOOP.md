@@ -192,3 +192,19 @@ frames inválidos y de kind no real; decaimiento a identidad al quedar
 obsoleto; slew limitado; LIF monótono; targets HOLOS/ORBE acotados;
 NeuroBandEq bypass bit-exacto, +6/−6 dB en su banda, clamp, y bucle
 completo hasta el EQ (audio real con ganancia aprendida).
+
+## v2.5.376 — Driver UDP real y tarjeta de UI
+
+Cierra dos pendientes de la v2: el **driver de sensor real** y la **UI** (el transporte a Ruta B sigue pendiente).
+
+- `neuromorphic/NeuroUdpDriver.kt`: implementa `NeuroSensorGateway.Driver`; escucha **solo** en `127.0.0.1:9871` y reenvía al gateway.
+  No genera datos: sin emisor no llega nada y el bucle nativo sigue fail-closed.
+- `neuromorphic/NeuroFrameCodec.kt`: datagrama `IVNF` v1, little-endian, **82 bytes exactos**:
+  `"IVNF"`, versión 1, kind (2 EEG, 3 ABR, 4 fNIRS), quality f32, abrWaveVLatencyMs f32, fnirsHbO f32, response[8] f32, coherence[8] f32
+  (mismo contrato que `NeuroFrame`; valores fuera de [0..1], NaN o kind desconocido se rechazan). El timestamp lo pone el receptor al llegar
+  (reloj del gateway), no el emisor.
+- `ui/NeuroLoopPanel.kt`: tarjeta «NEURO-ACÚSTICA · BUCLE CERRADO» en CONTROL. El interruptor es la acción explícita que `enable()` exige.
+- Quién produce los frames: un procesador externo del sensor real (placa EEG/ABR/fNIRS) que ya calcule respuesta y coherencia por banda
+  Greenwood. Esa conversión no está en este repo y no se inventa aquí.
+- Riesgo: otra app local puede inyectar frames; el daño queda acotado por los límites duros del bucle (±6 dB, slew, wet).
+- Estado: códec y driver probados en JVM (5/5, UDP loopback real); tarjeta de UI validada por CI (Compose); **pendiente de prueba física con sensor**.
