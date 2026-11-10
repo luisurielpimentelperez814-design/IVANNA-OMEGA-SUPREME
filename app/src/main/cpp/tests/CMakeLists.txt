@@ -1945,3 +1945,9 @@ ivanna_add_test(test_session_discovery)
 # y tras perderlo, tono 884 Hz modulado por η (3.7). Host-only, sin cableado
 # al DSP real ni al hilo RT. Sin sensor EEG real no hay Fases 1–3.
 ivanna_add_test(test_5d_phase0)
+
+# ── FORMULACIÓN MAGISTRAL Ψ (2026-11-10): campo unificado acústico-neural ──
+# spatial/PsiField.hpp: Ec. 2 (ley de distancia campo cercano, corregida
+# contra el modelo geométrico), Ec. 3 (operador de personalización CIPIC),
+# Ec. 4 (factor Γ y EDO con pérdida en BioControl5D). Header-only.
+ivanna_add_test(test_psi_field)

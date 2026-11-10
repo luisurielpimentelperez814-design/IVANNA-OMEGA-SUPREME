@@ -119,7 +119,16 @@ class BioControl5D {
     // Sin sensor: η se queda en η₀ (4D). En desvanecimiento: η → η₀
     // con paso exponencial exacto, ignorando etaStar (congelado).
     // Sin allocations; determinista.
-    void update(double dt, double etaStar) {
+    //
+    // FORMULACIÓN Ψ, Ec. 4 (2026-11-10): el overload con pérdida añade el
+    // término −λ·L a la EDO: dη/dt = (η*−η)/τ − λ·L, donde L es la
+    // pérdida de HRTF (LSD+ILD+NDL, HRTFformer ec. 8): si la HRTF es mala,
+    // L es grande y η cae — el cerebro se desengancha. Con loss=0 o
+    // lambda=0 el comportamiento es idéntico al original (los tests
+    // existentes no cambian). λ se clampa a [0, 1]; L se clampa a [0, 10].
+    void update(double dt, double etaStar) { update(dt, etaStar, 0.0, 0.0); }
+
+    void update(double dt, double etaStar, double loss, double lambda) {
         if (!(dt > 0.0)) return;
         if (!state_.sensorPresent && !state_.fading) {
             state_.eta = state_.eta0;
@@ -139,9 +148,10 @@ class BioControl5D {
         state_.etaStar = std::clamp(etaStar, 0.0, 1.0);
         const double tau = state_.tauEta;
         const double h = std::min(dt, tau);  // estabilidad RK2, sin overshoot
-        const double k1 = (state_.etaStar - state_.eta) / tau;
+        const double lossTerm = std::clamp(lambda, 0.0, 1.0) * std::clamp(loss, 0.0, 10.0);
+        const double k1 = (state_.etaStar - state_.eta) / tau - lossTerm;
         const double etaMid = state_.eta + k1 * (h * 0.5);
-        const double k2 = (state_.etaStar - etaMid) / tau;
+        const double k2 = (state_.etaStar - etaMid) / tau - lossTerm;
         state_.eta = std::clamp(state_.eta + k2 * h, 0.0, 1.0);
     }
 
