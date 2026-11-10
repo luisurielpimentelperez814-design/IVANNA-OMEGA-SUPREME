@@ -210,7 +210,7 @@ class StereoAudioResamplerHiresTest {
     @Test
     fun selectReinjectRate_dacDoesNotAnnounceAbove48k_fallsBackTo48k() {
         assertEquals(48_000,
-            HiResAudioManager.selectReinjectRate(intArrayOf(44_100, 48_000, 96_000), true))
+            HiResAudioManager.selectReinjectRate(intArrayOf(44_100, 48_000), true))
     }
 
     @Test
