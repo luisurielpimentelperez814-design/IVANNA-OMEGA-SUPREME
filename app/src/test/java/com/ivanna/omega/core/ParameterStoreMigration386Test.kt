@@ -25,41 +25,41 @@ class ParameterStoreMigration386Test {
 
     private fun env(
         holosAmount: Float, holosWidth: Float, holosDiffuse: Float, orbeSpread: Float
-    ) = ParameterStore.Envelope380(holosAmount, holosWidth, holosDiffuse, orbeSpread)
+    ) = Envelope380(holosAmount, holosWidth, holosDiffuse, orbeSpread)
 
     @Test fun values384AreClampedTo380Envelope() {
-        val out = ParameterStore.clampTo380Envelope(env(0.75f, 1.25f, 0.65f, 1.2f))
-        assertEquals(ParameterStore.Envelope380(0.5f, 1.0f, 0.5f, 1.0f), out)
+        val out = clampTo380Envelope(env(0.75f, 1.25f, 0.65f, 1.2f))
+        assertEquals(Envelope380(0.5f, 1.0f, 0.5f, 1.0f), out)
     }
 
     @Test fun values380PassThroughUnchanged() {
-        val out = ParameterStore.clampTo380Envelope(env(0.5f, 1.0f, 0.5f, 1.0f))
-        assertEquals(ParameterStore.Envelope380(0.5f, 1.0f, 0.5f, 1.0f), out)
+        val out = clampTo380Envelope(env(0.5f, 1.0f, 0.5f, 1.0f))
+        assertEquals(Envelope380(0.5f, 1.0f, 0.5f, 1.0f), out)
     }
 
     @Test fun belowEnvelopeValuesPassThroughUnchanged() {
-        val out = ParameterStore.clampTo380Envelope(env(0.3f, 0.8f, 0.2f, 0.7f))
-        assertEquals(ParameterStore.Envelope380(0.3f, 0.8f, 0.2f, 0.7f), out)
+        val out = clampTo380Envelope(env(0.3f, 0.8f, 0.2f, 0.7f))
+        assertEquals(Envelope380(0.3f, 0.8f, 0.2f, 0.7f), out)
     }
 
     @Test fun zeroStaysZero() {
         // amount 0 = bypass: la migración no debe encender nada.
-        val out = ParameterStore.clampTo380Envelope(env(0f, 0f, 0f, 0f))
-        assertEquals(ParameterStore.Envelope380(0f, 0f, 0f, 0f), out)
+        val out = clampTo380Envelope(env(0f, 0f, 0f, 0f))
+        assertEquals(Envelope380(0f, 0f, 0f, 0f), out)
     }
 
     @Test fun negativeValuesClampToZero() {
-        val out = ParameterStore.clampTo380Envelope(env(-0.5f, -1f, -0.2f, -0.1f))
-        assertEquals(ParameterStore.Envelope380(0f, 0f, 0f, 0f), out)
+        val out = clampTo380Envelope(env(-0.5f, -1f, -0.2f, -0.1f))
+        assertEquals(Envelope380(0f, 0f, 0f, 0f), out)
     }
 
     @Test fun nanFallsBackTo380Defaults() {
-        val out = ParameterStore.clampTo380Envelope(env(Float.NaN, Float.NaN, Float.NaN, Float.NaN))
-        assertEquals(ParameterStore.Envelope380(0.5f, 1.0f, 0.5f, 1.0f), out)
+        val out = clampTo380Envelope(env(Float.NaN, Float.NaN, Float.NaN, Float.NaN))
+        assertEquals(Envelope380(0.5f, 1.0f, 0.5f, 1.0f), out)
     }
 
     @Test fun mixedValuesClampOnlyTheOffenders() {
-        val out = ParameterStore.clampTo380Envelope(env(0.5f, 1.5f, 0.4f, 1.0f))
-        assertEquals(ParameterStore.Envelope380(0.5f, 1.0f, 0.4f, 1.0f), out)
+        val out = clampTo380Envelope(env(0.5f, 1.5f, 0.4f, 1.0f))
+        assertEquals(Envelope380(0.5f, 1.0f, 0.4f, 1.0f), out)
     }
 }

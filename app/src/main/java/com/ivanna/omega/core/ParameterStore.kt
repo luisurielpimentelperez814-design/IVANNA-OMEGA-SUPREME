@@ -205,36 +205,6 @@ class ParameterStore(context: Context) {
         // 384 al daemon en cada arranque. Esta migración los clampa al sobre
         // 380 (los valores que sonaban bien) y marca la migración como hecha.
         private const val KEY_MIGRATION_386_ENVELOPE_DONE = "migration_386_envelope_done"
-
-        // Sobre 380 — techos que sonaban bien en la v2.5.380. NO subir.
-        internal const val ENVELOPE_380_HOLOS_AMOUNT = 0.5f
-        internal const val ENVELOPE_380_HOLOS_WIDTH = 1.0f
-        internal const val ENVELOPE_380_HOLOS_DIFFUSE = 0.5f
-        internal const val ENVELOPE_380_ORBE_SPREAD = 1.0f
-
-        /** Los cuatro valores persistidos que la migración 386 clampa. */
-        // NOTA 2026-11-10: NO `internal` — los tests unitarios
-        // (ParameterStoreMigration386Test) no resolvían el símbolo desde
-        // compileReleaseUnitTestKotlin ("Unresolved reference 'Envelope380'").
-        // Es una data class pura; pública no cambia el comportamiento.
-        data class Envelope380(
-            val holosAmount: Float,
-            val holosWidth: Float,
-            val holosDiffuse: Float,
-            val orbeSpread: Float
-        )
-
-        /** Pura y testeable: clampa valores persistidos al sobre 380. */
-        fun clampTo380Envelope(e: Envelope380): Envelope380 {
-            fun clamp(v: Float, max: Float, def: Float): Float =
-                if (v.isFinite()) v.coerceIn(0f, max) else def
-            return Envelope380(
-                holosAmount = clamp(e.holosAmount, ENVELOPE_380_HOLOS_AMOUNT, ENVELOPE_380_HOLOS_AMOUNT),
-                holosWidth = clamp(e.holosWidth, ENVELOPE_380_HOLOS_WIDTH, ENVELOPE_380_HOLOS_WIDTH),
-                holosDiffuse = clamp(e.holosDiffuse, ENVELOPE_380_HOLOS_DIFFUSE, ENVELOPE_380_HOLOS_DIFFUSE),
-                orbeSpread = clamp(e.orbeSpread, ENVELOPE_380_ORBE_SPREAD, ENVELOPE_380_ORBE_SPREAD)
-            )
-        }
     }
 
     fun getExciter(): Float = safeGetFloat(KEY_EXCITER, 0.55f) // CALIBRACIÓN MAGISTRAL: armónicos 2ª/3ª ricos y controlados (LPF 14.5kHz sin aliasing)
@@ -741,4 +711,41 @@ class ParameterStore(context: Context) {
             .putFloat(KEY_HAPTIC_TRIM, trimMs.coerceIn(-100f, 200f))
             .putFloat(KEY_HAPTIC_STRENGTH, strength.coerceIn(0f, 1f))
             .putFloat(KEY_HAPTIC_RUMBLE, rumble.coerceIn(0f, 1f)).apply()
+}
+
+// ===========================================================================
+// SOBRE 380 — v2.5.386 (top-level, NO en companion).
+// Los cuatro valores persistidos que la migración 386 clampa al sobre 380
+// (los que sonaban bien en la v2.5.380). Techos: NO subir.
+// NOTA 2026-11-10: estaban dentro del companion object y
+// compileReleaseUnitTestKotlin no los resolvía desde el test
+// ("Unresolved reference 'Envelope380'") ni como `internal` ni como públicos.
+// Movidos a top-level: el test los usa sin calificador (mismo paquete) y
+// migrateTo386Envelope() los sigue resolviendo (mismo archivo/paquete).
+// ===========================================================================
+
+/** Techos del sobre 380 — NO subir. */
+const val ENVELOPE_380_HOLOS_AMOUNT = 0.5f
+const val ENVELOPE_380_HOLOS_WIDTH = 1.0f
+const val ENVELOPE_380_HOLOS_DIFFUSE = 0.5f
+const val ENVELOPE_380_ORBE_SPREAD = 1.0f
+
+/** Los cuatro valores persistidos que la migración 386 clampa. */
+data class Envelope380(
+    val holosAmount: Float,
+    val holosWidth: Float,
+    val holosDiffuse: Float,
+    val orbeSpread: Float
+)
+
+/** Pura y testeable: clampa valores persistidos al sobre 380. */
+fun clampTo380Envelope(e: Envelope380): Envelope380 {
+    fun clamp(v: Float, max: Float, def: Float): Float =
+        if (v.isFinite()) v.coerceIn(0f, max) else def
+    return Envelope380(
+        holosAmount = clamp(e.holosAmount, ENVELOPE_380_HOLOS_AMOUNT, ENVELOPE_380_HOLOS_AMOUNT),
+        holosWidth = clamp(e.holosWidth, ENVELOPE_380_HOLOS_WIDTH, ENVELOPE_380_HOLOS_WIDTH),
+        holosDiffuse = clamp(e.holosDiffuse, ENVELOPE_380_HOLOS_DIFFUSE, ENVELOPE_380_HOLOS_DIFFUSE),
+        orbeSpread = clamp(e.orbeSpread, ENVELOPE_380_ORBE_SPREAD, ENVELOPE_380_ORBE_SPREAD)
+    )
 }
