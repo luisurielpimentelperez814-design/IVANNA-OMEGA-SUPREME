@@ -120,7 +120,14 @@ def main() -> int:
             "ctx->adaptiveDecisionCompAmount",
             "ctx->adaptiveDecisionExciterReduction",
             "const float requestedRatio = 1.0f + 7.0f * std::clamp(",
-            "const float effectiveRatio = std::max(v2Ratio, std::max(requestedRatio, adeRatio));",
+            # 386: el max() de los tres ratios sigue llegando al compresor,
+            # pero ahora pasa por el tope 4:1 (capCompressorRatio) y el slew
+            # por bloque antes de setCompressorParams. El nombre viejo
+            # effectiveRatio ya no existe; la aguja verifica el cableado
+            # nuevo, no el nombre de la variable.
+            "const float rawRatio = std::max(v2Ratio, std::max(requestedRatio, adeRatio));",
+            "ivanna::rt::capCompressorRatio(rawRatio)",
+            "fc->setCompressorParams(effThreshold, effRatio);",
             "const float effectiveThreshold =",
             "ctx->pendingSnap.compressor",
             "const float requestedGain = std::clamp(",
