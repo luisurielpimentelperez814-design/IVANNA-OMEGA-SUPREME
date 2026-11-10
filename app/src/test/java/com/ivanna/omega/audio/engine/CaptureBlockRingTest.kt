@@ -21,7 +21,8 @@ class CaptureBlockRingTest {
         for (i in 1..10) assertTrue(ring.offer(block(i.toFloat()), 320))
         assertEquals(10, ring.pending())
         for (i in 1..10) {
-            val slot = assertNotNull(ring.beginRead())
+            val slot = ring.beginRead()
+            assertNotNull(slot)
             assertEquals(320, slot!!.frames)
             assertEquals(i.toFloat(), slot.data[0], 0f)
             assertEquals(i.toFloat(), slot.data[639], 0f)
@@ -40,7 +41,8 @@ class CaptureBlockRingTest {
         assertFalse(ring.offer(block(5f), 320)) // lleno: drop, no bloqueo
         assertEquals(1L, ring.droppedBlocks)
         assertEquals(4, ring.pending())
-        val slot = assertNotNull(ring.beginRead())
+        val slot = ring.beginRead()
+        assertNotNull(slot)
         assertEquals(1f, slot!!.data[0], 0f)
         ring.endRead()
         assertTrue(ring.offer(block(5f), 320)) // al liberar un slot vuelve a entrar
@@ -52,7 +54,8 @@ class CaptureBlockRingTest {
         var next = 1
         repeat(250) {
             assertTrue(ring.offer(block(next.toFloat()), 320))
-            val slot = assertNotNull(ring.beginRead())
+            val slot = ring.beginRead()
+            assertNotNull(slot)
             assertEquals(next.toFloat(), slot!!.data[0], 0f)
             ring.endRead()
             next++
@@ -69,7 +72,8 @@ class CaptureBlockRingTest {
         assertFalse(ring.offer(block(1f), 321)) // 642 muestras > 640
         assertEquals(0, ring.pending())
         assertTrue(ring.offer(block(7f), 320))
-        val slot = assertNotNull(ring.beginRead())
+        val slot = ring.beginRead()
+        assertNotNull(slot)
         assertEquals(7f, slot!!.data[0], 0f)
         ring.endRead()
     }
