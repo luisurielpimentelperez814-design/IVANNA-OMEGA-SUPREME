@@ -896,6 +896,21 @@ class IvannaGlobalEffectManager(
         }
     }.getOrDefault(-1)
 
+    /**
+     * v2.5.386 — ¿está sonando AHORA? Refleja AudioPlaybackConfiguration.getPlayerState().
+     * getPlayerState()/PLAYER_STATE_STARTED no resuelven en compilación (API oculta en
+     * este SDK), así que se accede por reflexión como getSessionId/getClientUid.
+     * PLAYER_STATE_STARTED = 2 (AudioPlaybackConfiguration, API 26+). false si bloqueado.
+     */
+    private fun reflectIsPlaying(config: AudioPlaybackConfiguration): Boolean = runCatching {
+        val m = config.javaClass.getMethod("getPlayerState")
+        (m.invoke(config) as? Int) == 2
+    }.onFailure {
+        if (reflectionBlockLogged.compareAndSet(false, true)) {
+            Log.w(TAG, "reflectIsPlaying bloqueado/no disponible (una sola vez): ${it.message}")
+        }
+    }.getOrDefault(false)
+
     /** Resuelve el paquete de un UID (best-effort, null si no se puede). */
     private fun resolvePackageForUid(uid: Int): String? {
         if (uid <= 0) return null
@@ -1126,16 +1141,15 @@ class IvannaGlobalEffectManager(
         var opened = 0
         var reflected = 0
         var anonymized = 0
-        // v2.5.386 — sesiones con playerState STARTED (sonando AHORA), para
-        // el bucle de huérfano: un beacon congelado solo es orfandad si la
+        // v2.5.386 — sesiones sonando AHORA (playerState STARTED por reflexión),
+        // para el bucle de huérfano: un beacon congelado solo es orfandad si la
         // sesión sigue sonando; en pausa los frames congelados son lo esperado.
-        // AudioPlaybackConfiguration NO tiene isActive: se usa playerState.
         val playing = mutableSetOf<Int>()
         for (config in configs) {
             val sessionId = reflectSessionId(config)
             if (!isUsableSessionId(sessionId)) { anonymized++; continue }
             reflected++
-            if (runCatching { config.playerState == AudioPlaybackConfiguration.PLAYER_STATE_STARTED }.getOrDefault(false)) playing.add(sessionId)
+            if (reflectIsPlaying(config)) playing.add(sessionId)
             val uid = reflectClientUid(config)
             val pkg = resolvePackageForUid(uid)
             if (!activeSessions.containsKey(sessionId)) {
