@@ -1,3 +1,4 @@
+#define _GNU_SOURCE /* RTLD_NEXT en <dlfcn.h> (sin esto, el cross-gcc de Ubuntu no lo declara) */
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>

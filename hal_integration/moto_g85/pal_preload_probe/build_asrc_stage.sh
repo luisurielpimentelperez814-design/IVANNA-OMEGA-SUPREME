@@ -24,7 +24,7 @@ mkdir -p "$OUT" "$H/build_stub/lib"
 "$CC" -shared -fPIC -o "$H/build_stub/lib/liblog.so" "$H/build_stub/empty.c"
 
 "$CC" -std=gnu11 -O2 -fPIC -fvisibility=hidden -Wall -Wextra -Werror \
-    -nostdlib -march=armv8-a+lse -D_FORTIFY_SOURCE=0 -D__ANDROID__ \
+    -nostdlib -march=armv8-a+lse -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -D__ANDROID__ \
     -I "$H/build_stub" \
     "$H/ivanna_asrc_write_stage.c" -shared \
     -o "$OUT/libivanna_asrc_write_stage.so" \
