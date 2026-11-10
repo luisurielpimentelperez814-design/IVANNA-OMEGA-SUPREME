@@ -1,3 +1,8 @@
+# v2.5.377 (668) - 2026-11-09
+
+- **Operador unificado IVANNA — la nueva física/efecto.** Fusión matemática homogénea de 5 fuentes en UN SOLO operador: separación por fuentes estilo OmniSpatial (4 stems por crossover + transitorios, el residual reproduce el mid) + HRTF personalizada con gradiente escalado por MAA (30–52% menos cómputo) + escena espacial auto-supervisada estilo AudioSphere (azimut dominante + difusividad de la propia señal) + campo neural INAF como renderer continuo por muestra (SIREN N1+N3, FIR de fase mínima + retardo fraccional, sin STFT) + convergencia Omega–SAFMUS (Kuramoto K=40 rad/s, r=0.9636, 4º tono emergente 884 Hz). ACTIVO por defecto (amount 1.0); ORBE y HOLOS siguen activos; cadena Ruta A: ORBE → HOLOS → OMNI-FIELD → Φ. Fail-closed absoluto.
+- **Verificado:** CTest host 870/870 (incluye 17 tests del operador: separación preserva el mix, personalización MAA, renderer continuo y estable, amount 0 bit-exacto, NaN fail-closed, Kuramoto sincroniza con r=0.964 y tono 884 Hz, throughput 7.9× RT en host). **No hecho:** escucha en el Moto G85 con el Genezi (la confirmación real), costo CPU en el dispositivo.
+
 # v2.5.376 (667) - 2026-11-09
 
 - **Neuro-acústica: driver de sensor real y UI sobre la v2 de la 2.5.365.** `NeuroUdpDriver` (loopback 127.0.0.1:9871) + `NeuroFrameCodec` (datagrama `IVNF` v1 de 82 bytes, validación estricta) entregan frames reales a `NeuroSensorGateway`; tarjeta «NEURO-ACÚSTICA · BUCLE CERRADO» en CONTROL con interruptor explícito de activación y estado honesto. Sin emisor no llega nada y el bucle nativo permanece fail-closed. Sin datos simulados.

@@ -587,6 +587,20 @@ object IvannaNativeLib {
     )
     /** Atajo: enabled=true pone amount=1, false pone amount=0 (conserva el resto de params). */
     external fun nativeSetOrbeEnabled(enabled: Boolean)
+    /** IVANNA — Operador Unificado de Campo Espacial (v2.5.375). Fusión de
+     *  separación por fuentes + HRTF personalizada por MAA + escena auto-supervisada
+     *  + campo neural INAF. amount 0..1 (0 = apagado, bypass bit-exacto;
+     *  **1.0 = ACTIVO por defecto**), scenePull 0..1, distancia 0.5..2.0 m,
+     *  head-tracking on/off. Escriben los atomics g_omni_* (Ruta A). */
+    external fun nativeSetOmniParams(
+        amount: Float, scenePull: Float, distanceM: Float, headTracking: Boolean
+    )
+    /** Atajo: enabled=true pone amount=1, false pone amount=0. */
+    external fun nativeSetOmniEnabled(enabled: Boolean)
+    /** Yaw de cabeza en radianes (positivo = giro a la derecha). Sin llamador aún. */
+    external fun nativeSetOmniHeadPose(yawRad: Float)
+    /** Audiograma: pérdidas dB a 250/500/1k/2k/4k/8k Hz por oído (FloatArray de 6). */
+    external fun nativeSetOmniAudiogram(lossL: FloatArray, lossR: FloatArray)
     /** HOLOS — Operador Único de Campo Acústico (v2.5.364). Los 13 parámetros
      *  de FUSION.md §6: amount 0..1 (0 = apagado, bypass bit-exacto, por
      *  defecto), distancia 0.15..2.0 m, spread 0..1.5, proximidad 0..6 dB,

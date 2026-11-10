@@ -223,6 +223,11 @@ add_library(ivanna_omega SHARED
     holos_controls_bridge.cpp
     # Φ: atomics g_hyper_* del proceso app (mismo patrón que HOLOS).
     hyper_controls_bridge.cpp
+    # IVANNA (v2.5.375): atomics g_omni_* del proceso app (mismo patrón).
+    # Solo en este target (Ruta A); la Ruta B es pendiente — NO duplicar en
+    # omega_effect (ODR). El operador es header-only (spatial/OmniField.hpp),
+    # así que no hay .cpp que listar.
+    omni_controls_bridge.cpp
     # Ruta A reutiliza el renderer WFS real compartido con AudioFlinger.
     spatial/RouteAWfsEngine.cpp
     spatial/WfsRenderer.cpp

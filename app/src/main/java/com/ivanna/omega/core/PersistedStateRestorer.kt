@@ -143,6 +143,20 @@ object PersistedStateRestorer {
                     """{"action":"SET_PERCEPTUAL_STATE","holosAmount":${paramStore.getHolosAmount()},"holosDistanceM":${paramStore.getHolosDistanceM()},"holosSpread":${paramStore.getHolosSpread()},"holosProximityDb":${paramStore.getHolosProximityDb()},"holosDiffuse":${paramStore.getHolosDiffuse()},"holosHarmonics":${paramStore.getHolosHarmonics()},"holosWarmth":${paramStore.getHolosWarmth()},"holosDynamics":${paramStore.getHolosDynamics()},"holosWidth":${paramStore.getHolosWidth()},"holosGamma":${paramStore.getHolosGamma()},"holosRoomRt60":${paramStore.getHolosRoomRt60()},"holosHeadTracking":${if (paramStore.isHolosHeadTrackingEnabled()) 1.0f else 0.0f},"holosBandCount":${paramStore.getHolosBandCount()},"holosEqLow":${paramStore.getHolosEqLow()},"holosEqMid":${paramStore.getHolosEqMid()},"holosEqHigh":${paramStore.getHolosEqHigh()},"holosEqPresence":${paramStore.getHolosEqPresence()},"holosEqTiltDb":${paramStore.getHolosEqTiltDb()},"holosEqFreq":${paramStore.getHolosEqFreq()}}"""
                 )
             }
+            // IVANNA (v2.5.375): restaura amount/scenePull/distanceM/
+            // headTracking en la Ruta A por JNI. ACTIVO por defecto
+            // (amount 1.0). Sin Ruta B todavía (sin snapshot ABI). El
+            // audiograma se restaura plano (0 dB); la integración con el
+            // audiograma medido queda pendiente.
+            runCatching {
+                IvannaNativeLib.nativeSetOmniParams(
+                    paramStore.getOmniAmount(), paramStore.getOmniScenePull(),
+                    paramStore.getOmniDistanceM(), paramStore.isOmniHeadTrackingEnabled()
+                )
+                IvannaNativeLib.nativeSetOmniAudiogram(
+                    FloatArray(6), FloatArray(6)
+                )
+            }
             // Hiper-Operador de Estado Φ (v2.5.369): restaura amount/preset/
             // XTC y la curva objetivo élite (Harman 2018 por defecto) en la
             // Ruta A por JNI. La parte daemon (Ruta B) queda pendiente: el

@@ -45,6 +45,7 @@
 #include "../dsp/HeadphoneCrossfeed.hpp"
 #include "../spatial/HolosOperator.hpp"
 #include "../spatial/OrbeBinaural.hpp"
+#include "../spatial/OmniField.hpp"  // IVANNA (v2.5.375): operador unificado de campo espacial
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
@@ -148,6 +149,12 @@ static ivanna::OrbeBinaural g_orbeRouteA;
 // cuando HOLOS está activo ORBE no corre. La Ruta B usa su propia
 // instancia (IvannaFusionEngine::m_holos) en el proceso audioserver.
 static ivanna::HolosOperator g_holosRouteA;
+// IVANNA (Operador Unificado de Campo Espacial, v2.5.375), Ruta A:
+// instancia propia del proceso app. Activo por defecto (g_omni_amount=1.0).
+// Corre en serie tras HOLOS y antes de Φ: ORBE → HOLOS → IVANNA → Φ.
+// ORBE y HOLOS siguen activos (directiva 2026-11-08); IVANNA re-espacializa
+// el campo ya mejorado por ellos. amount=0 = bypass bit-exacto.
+static ivanna::omnifield::OmniField g_omniRouteA;
 // Bucle cerrado neuro-acústico (v2.5.365), Ruta A: instancia propia del
 // proceso app (paridad con IvannaFusionEngine::m_neuroLoop_ en Ruta B).
 // Apagado por defecto (g_neuroLoopEnabledA=false). Sin frames reales
@@ -189,6 +196,15 @@ static std::atomic<bool> g_hyperMeasuredA{false};
 // bridge.cpp; las declaraciones completas están más abajo en este TU,
 // pero los helpers del bucle cerrado viven aquí arriba).
 extern std::atomic<float> g_holos_gamma;
+// IVANNA: definidos en omni_controls_bridge.cpp (este target).
+extern std::atomic<float> g_omni_amount;
+extern std::atomic<float> g_omni_scene_pull;
+extern std::atomic<float> g_omni_distance_m;
+extern std::atomic<bool> g_omni_head_tracking;
+extern std::atomic<float> g_omni_yaw_rad;
+extern std::atomic<float> g_omni_audio_loss_l[6];
+extern std::atomic<float> g_omni_audio_loss_r[6];
+extern std::atomic<bool> g_omni_audiogram_dirty;
 extern std::atomic<float> g_hyper_amount;
 extern std::atomic<int> g_hyper_preset;
 extern std::atomic<bool> g_hyper_xtc;
@@ -280,6 +296,15 @@ extern std::atomic<float> g_holos_warmth;
 extern std::atomic<float> g_holos_dynamics;
 extern std::atomic<float> g_holos_width;
 extern std::atomic<float> g_holos_gamma;
+// IVANNA: definidos en omni_controls_bridge.cpp (este target).
+extern std::atomic<float> g_omni_amount;
+extern std::atomic<float> g_omni_scene_pull;
+extern std::atomic<float> g_omni_distance_m;
+extern std::atomic<bool> g_omni_head_tracking;
+extern std::atomic<float> g_omni_yaw_rad;
+extern std::atomic<float> g_omni_audio_loss_l[6];
+extern std::atomic<float> g_omni_audio_loss_r[6];
+extern std::atomic<bool> g_omni_audiogram_dirty;
 extern std::atomic<float> g_hyper_amount;
 extern std::atomic<int> g_hyper_preset;
 extern std::atomic<bool> g_hyper_xtc;
@@ -1075,6 +1100,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_omniRouteA.prepare((float)sr);
     g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
     g_neuroBandEqRouteA.prepare((float)sr);
@@ -1812,6 +1838,30 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
         }
     }
+    // IVANNA (v2.5.375): tras HOLOS, antes de Φ. amount=0 = bypass
+    // bit-exacto (el operador también lo garantiza). Lee los atomics
+    // g_omni_* cada bloque. ORBE y HOLOS siguen activos.
+    {
+        const float omniAmount = g_omni_amount.load(std::memory_order_relaxed);
+        if (omniAmount > 0.0f) {
+            ivanna::omnifield::OmniParams op;
+            op.amount = omniAmount;
+            op.scenePull = g_omni_scene_pull.load(std::memory_order_relaxed);
+            op.distanceM = g_omni_distance_m.load(std::memory_order_relaxed);
+            op.headTracking = g_omni_head_tracking.load(std::memory_order_relaxed);
+            g_omniRouteA.setParams(op);
+            g_omniRouteA.setHeadPose(g_omni_yaw_rad.load(std::memory_order_relaxed));
+            if (g_omni_audiogram_dirty.exchange(false, std::memory_order_relaxed)) {
+                float lossL[6], lossR[6];
+                for (int i = 0; i < 6; ++i) {
+                    lossL[i] = g_omni_audio_loss_l[i].load(std::memory_order_relaxed);
+                    lossR[i] = g_omni_audio_loss_r[i].load(std::memory_order_relaxed);
+                }
+                g_omniRouteA.setAudiogram(lossL, lossR);
+            }
+            g_omniRouteA.process(g_ats.chL, g_ats.chR, n);
+        }
+    }
     // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la ganancia
     // de salida y del limiter. amount=0 = no-op.
     hyperProcessRouteA(g_ats.chL, g_ats.chR, n,
@@ -2466,6 +2516,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_omniRouteA.prepare((float)sr);
     g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
     g_neuroBandEqRouteA.prepare((float)sr);
@@ -2815,6 +2866,31 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
             g_holosRouteA.process(oL, oR, n);
+        }
+    }
+
+    // IVANNA (v2.5.375): tras HOLOS, antes de Φ. amount=0 = bypass
+    // bit-exacto (el operador también lo garantiza). Lee los atomics
+    // g_omni_* cada bloque. ORBE y HOLOS siguen activos.
+    {
+        const float omniAmount = g_omni_amount.load(std::memory_order_relaxed);
+        if (omniAmount > 0.0f) {
+            ivanna::omnifield::OmniParams op;
+            op.amount = omniAmount;
+            op.scenePull = g_omni_scene_pull.load(std::memory_order_relaxed);
+            op.distanceM = g_omni_distance_m.load(std::memory_order_relaxed);
+            op.headTracking = g_omni_head_tracking.load(std::memory_order_relaxed);
+            g_omniRouteA.setParams(op);
+            g_omniRouteA.setHeadPose(g_omni_yaw_rad.load(std::memory_order_relaxed));
+            if (g_omni_audiogram_dirty.exchange(false, std::memory_order_relaxed)) {
+                float lossL[6], lossR[6];
+                for (int i = 0; i < 6; ++i) {
+                    lossL[i] = g_omni_audio_loss_l[i].load(std::memory_order_relaxed);
+                    lossR[i] = g_omni_audio_loss_r[i].load(std::memory_order_relaxed);
+                }
+                g_omniRouteA.setAudiogram(lossL, lossR);
+            }
+            g_omniRouteA.process(oL, oR, n);
         }
     }
 
@@ -3362,6 +3438,56 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeParams(JNIEnv*, jobject,
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeEnabled(JNIEnv*, jobject, jboolean enabled) {
     g_orbe_amount.store(enabled == JNI_TRUE ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+
+// IVANNA (v2.5.375): mismo patrón que nativeSetOrbeParams/Enabled.
+// amount 0..1 (0 = apagado, bypass bit-exacto; default 1.0 = activo),
+// scenePull 0..1, distancia 0.5..2.0 m, head-tracking on/off.
+// Escriben los atomics g_omni_* que lee la Ruta A (g_omniRouteA).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOmniParams(JNIEnv*, jobject,
+        jfloat amount, jfloat scenePull, jfloat distanceM, jboolean headTracking) {
+    if (std::isfinite(amount)) g_omni_amount.store(std::clamp(amount, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(scenePull)) g_omni_scene_pull.store(std::clamp(scenePull, 0.0f, 1.0f), std::memory_order_relaxed);
+    if (std::isfinite(distanceM)) g_omni_distance_m.store(std::clamp(distanceM, 0.5f, 2.0f), std::memory_order_relaxed);
+    g_omni_head_tracking.store(headTracking == JNI_TRUE, std::memory_order_relaxed);
+    LOGI("IVANNA: amount=%.2f scenePull=%.2f distanceM=%.2f headTracking=%d",
+         (double)g_omni_amount.load(std::memory_order_relaxed),
+         (double)g_omni_scene_pull.load(std::memory_order_relaxed),
+         (double)g_omni_distance_m.load(std::memory_order_relaxed),
+         (int)g_omni_head_tracking.load(std::memory_order_relaxed));
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOmniEnabled(JNIEnv*, jobject, jboolean enabled) {
+    g_omni_amount.store(enabled == JNI_TRUE ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+
+// Yaw de cabeza en radianes (positivo = giro a la derecha). Lo alimenta el
+// head-tracker de la app; 0 = sin rotación. Sin llamador Kotlin aún: el
+// operador usa 0 hasta que la app lo alimente (ver docs/IVANNA.md).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOmniHeadPose(JNIEnv*, jobject, jfloat yawRad) {
+    if (std::isfinite(yawRad)) g_omni_yaw_rad.store(std::clamp(yawRad, -3.14159265f, 3.14159265f), std::memory_order_relaxed);
+}
+
+// Audiograma: pérdidas dB a 250/500/1k/2k/4k/8k Hz por oído (jfloatArray de 6).
+// Valores no finitos o fuera de [0,120] se clampan; arrays nulos o cortos no hacen nada.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOmniAudiogram(JNIEnv* env, jobject,
+        jfloatArray lossL, jfloatArray lossR) {
+    if (lossL == nullptr || lossR == nullptr) return;
+    if (env->GetArrayLength(lossL) < 6 || env->GetArrayLength(lossR) < 6) return;
+    jfloat bufL[6], bufR[6];
+    env->GetFloatArrayRegion(lossL, 0, 6, bufL);
+    env->GetFloatArrayRegion(lossR, 0, 6, bufR);
+    for (int i = 0; i < 6; ++i) {
+        const float l = std::isfinite(bufL[i]) ? std::clamp(bufL[i], 0.0f, 120.0f) : 0.0f;
+        const float r = std::isfinite(bufR[i]) ? std::clamp(bufR[i], 0.0f, 120.0f) : 0.0f;
+        g_omni_audio_loss_l[i].store(l, std::memory_order_relaxed);
+        g_omni_audio_loss_r[i].store(r, std::memory_order_relaxed);
+    }
+    g_omni_audiogram_dirty.store(true, std::memory_order_relaxed);
 }
 
 // HOLOS (v2.5.364): mismo patrón que nativeSetOrbeParams/nativeSetOrbeEnabled.

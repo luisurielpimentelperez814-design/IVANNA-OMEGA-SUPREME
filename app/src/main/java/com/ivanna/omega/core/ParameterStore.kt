@@ -154,6 +154,12 @@ class ParameterStore(context: Context) {
         private const val KEY_HOLOS_EQ_PRESENCE  = "holos_eq_presence"
         private const val KEY_HOLOS_EQ_TILT_DB   = "holos_eq_tilt_db"
         private const val KEY_HOLOS_EQ_FREQ      = "holos_eq_freq"
+        // IVANNA (v2.5.375). amount 1.0 = ACTIVO por defecto (directiva:
+        // implementado y activo totalmente). scenePull 0..1, distancia 0.5..2.0 m.
+        private const val KEY_OMNI_AMOUNT        = "omni_amount"
+        private const val KEY_OMNI_SCENE_PULL    = "omni_scene_pull"
+        private const val KEY_OMNI_DISTANCE_M    = "omni_distance_m"
+        private const val KEY_OMNI_HEAD_TRACKING = "omni_head_tracking"
         // Hiper-Operador de Estado Φ (v2.5.369). amount 0.5 = ACTIVO por
         // defecto (directiva: todo lo nuevo suena desde la primera canción).
         private const val KEY_HYPER_AMOUNT       = "hyper_amount"
@@ -534,6 +540,23 @@ class ParameterStore(context: Context) {
         .putFloat(KEY_HOLOS_ROOM_RT60, if (roomRt60.isFinite()) roomRt60.coerceIn(0.18f, 1.8f) else 0.34f)
         .putBoolean(KEY_HOLOS_HEAD_TRACKING, headTracking)
         .putInt(KEY_HOLOS_BAND_COUNT, if (bandCount == 12) 12 else 24)
+        .apply()
+
+    // ── IVANNA — Operador Unificado de Campo Espacial (v2.5.375) ── ACTIVO
+    // por defecto (amount 1.0, directiva explícita: implementado y activo
+    // totalmente). amount 0 = bypass bit-exacto. scenePull 0..1 (atracción
+    // de los stems hacia el centroide de escena), distancia 0.5..2.0 m.
+    fun getOmniAmount(): Float = safeGetFloat(KEY_OMNI_AMOUNT, 1.0f)
+    fun getOmniScenePull(): Float = safeGetFloat(KEY_OMNI_SCENE_PULL, 0.3f)
+    fun getOmniDistanceM(): Float = safeGetFloat(KEY_OMNI_DISTANCE_M, 1.2f)
+    fun isOmniHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_OMNI_HEAD_TRACKING, true)
+    fun setOmniParams(
+        amount: Float, scenePull: Float, distanceM: Float, headTracking: Boolean
+    ) = prefs.edit()
+        .putFloat(KEY_OMNI_AMOUNT, if (amount.isFinite()) amount.coerceIn(0f, 1f) else 1.0f)
+        .putFloat(KEY_OMNI_SCENE_PULL, if (scenePull.isFinite()) scenePull.coerceIn(0f, 1f) else 0.3f)
+        .putFloat(KEY_OMNI_DISTANCE_M, if (distanceM.isFinite()) distanceM.coerceIn(0.5f, 2.0f) else 1.2f)
+        .putBoolean(KEY_OMNI_HEAD_TRACKING, headTracking)
         .apply()
 
     // ── Hiper-Operador de Estado Φ (v2.5.369) ── ACTIVO por defecto
