@@ -1066,6 +1066,38 @@ static inline void omega_write_output_frame(void* rawOut, uint8_t fmt,
 }
 
 /* ── Funciones de instancia (vtable) ─────────────────────────────────────── */
+
+// ── Diagnóstico v2.5.381: las salidas tempranas de omega_process() eran
+// SILENCIOSAS (passthrough sin log) y por eso el beacon 0 de la Ruta B fue
+// a ciegas: el efecto estaba creado y habilitado en la sesión real de YTM
+// (249) pero nunca llegaba a onBlock(). Cada salida loguea su motivo con
+// throttle de 5 s por motivo (el efecto procesa ~375 bloques/s; sin
+// throttle el logcat se inunda). Tag: IvannaOmegaEffect.
+namespace {
+enum class PassthroughReason : int {
+    kNotEnabledSilent = 0,
+    kNotStereo,
+    kIntegrityFail,
+    kAntitamperLockdown,
+    kFusionCoreNull,
+    kCount,
+};
+inline void logPassthroughThrottled(PassthroughReason reason, const char* msg) {
+    static std::atomic<int64_t> s_lastMs[(int)PassthroughReason::kCount]{};
+    const int idx = (int)reason;
+    struct timespec ts {};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    const int64_t nowMs = (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    const int64_t prev = s_lastMs[idx].load(std::memory_order_relaxed);
+    if (nowMs - prev < 5000) return;
+    if (!s_lastMs[idx].compare_exchange_strong(prev, nowMs,
+                                               std::memory_order_relaxed)) {
+        return;
+    }
+    LOGW("omega_process passthrough: %s", msg);
+}
+}  // namespace
+
 static int32_t omega_process(effect_handle_t self,
                              audio_buffer_t *inBuf, audio_buffer_t *outBuf) {
 #if defined(__aarch64__)
@@ -1094,6 +1126,8 @@ static int32_t omega_process(effect_handle_t self,
     // input→output y callaba el hilo de salida; un efecto que no procesa
     // jamás debe silenciar el audio.
     if (!ctx->enabled && ctx->masterBypassEnv.isSilent()) {
+        logPassthroughThrottled(PassthroughReason::kNotEnabledSilent,
+                                "!enabled && bypass silencioso (efecto no habilitado a nivel nativo)");
         if (outBuf->raw != inBuf->raw) {
             const uint32_t m = ctx->config.inputCfg.channels & 0x3FFFFu;
             const int ch = m ? __builtin_popcount(m) : 2;
@@ -1111,6 +1145,8 @@ static int32_t omega_process(effect_handle_t self,
         const uint32_t chMask = ctx->config.inputCfg.channels & 0x3FFFFu;
         const int chCount = __builtin_popcount(chMask);
         if (chMask != 0u && chCount != 2) {
+            logPassthroughThrottled(PassthroughReason::kNotStereo,
+                                    "canales != 2 (no estereo)");
             if (outBuf->raw != inBuf->raw) {
                 memmove(outBuf->raw, inBuf->raw,
                         (size_t)frames * omega_bytes_per_sample(inFmt) * (size_t)chCount);
@@ -1128,6 +1164,8 @@ static int32_t omega_process(effect_handle_t self,
     // fluyendo; solo se desactiva el DSP. La verificación completa (pin de
     // certificado + vinculación) la hace IntegrityGate.kt en el proceso app.
     if (!ivanna::security::integrity_self_check()) {
+        logPassthroughThrottled(PassthroughReason::kIntegrityFail,
+                                "integrity_self_check FALLO (ruta de .so no legitima)");
         if (outBuf->raw != inBuf->raw) {
             memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
         }
@@ -1141,6 +1179,8 @@ static int32_t omega_process(effect_handle_t self,
     // bloque es un atomic load. Root por sí solo NO dispara (el producto
     // está diseñado para dispositivos rooteados; el daemon corre como root).
     if (ivanna::security::antitamper_should_lockdown()) {
+        logPassthroughThrottled(PassthroughReason::kAntitamperLockdown,
+                                "antitamper LOCKDOWN (debugger/hook/emulador en audioserver)");
         if (outBuf->raw != inBuf->raw) {
             memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
         }
@@ -1151,6 +1191,8 @@ static int32_t omega_process(effect_handle_t self,
     // nunca el global g_fusionCore. Motor aún no configurado: passthrough.
     IvannaFusionEngine* fc = ctx->fusionCore;
     if (!fc) {
+        logPassthroughThrottled(PassthroughReason::kFusionCoreNull,
+                                "fusionCore NULO (motor no inicializado)");
         if (outBuf->raw != inBuf->raw) {
             memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
         }
