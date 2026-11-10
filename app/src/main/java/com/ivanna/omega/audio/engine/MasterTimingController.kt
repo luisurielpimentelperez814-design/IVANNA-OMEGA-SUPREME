@@ -29,7 +29,7 @@ import kotlin.math.sin
  * Cero asignaciones en el hot path. Buffers estáticos preasignados.
  */
 class MasterTimingController(
-    private val sampleRate: Int = 48000
+    private var sampleRate: Int = 48000
 ) {
     companion object {
         private const val TAG = "MasterTimingCtrl"
@@ -39,6 +39,20 @@ class MasterTimingController(
         const val CATASTROPHIC_DRIFT_MS = 250f  // Salto grande que requiere resync protegido
 
         private const val FADE_FRAMES = 128
+    }
+
+    // HI-RES 192 kHz (v2.5.376): tolerancia de slip en frames de PISTA.
+    // SLIP_TOLERANCE_FRAMES es un TIEMPO (~10 ms = 480 frames a 48 kHz);
+    // a 192 kHz son 1920 frames. Sin escalarla, la tolerancia efectiva
+    // seria 2.5 ms y el slip se dispararia 4x mas a menudo. `catastrophicFrames`
+    // y `driftMs` ya escalan solos porque usan `sampleRate`.
+    private var slipToleranceFrames: Long = SLIP_TOLERANCE_FRAMES
+
+    /** Fija la tasa de la pista (192 kHz en hi-res) y reescala la tolerancia de slip. */
+    fun setSampleRate(rate: Int) {
+        if (rate <= 0) return
+        sampleRate = rate
+        slipToleranceFrames = (SLIP_TOLERANCE_FRAMES * rate.toLong() / 48000L).coerceAtLeast(1L)
     }
 
     // Buffer de trabajo preasignado para micro-slip/micro-extension (hasta 2048 frames estéreo)
@@ -113,7 +127,7 @@ class MasterTimingController(
 
         // 2. Deriva positiva sostenida: la cola excede el target + 2x tolerancia.
         // Throttled a máximo 1 vez cada 32 bloques (~4.5 Hz) para evitar modulación a 150 Hz.
-        if (driftFrames > SLIP_TOLERANCE_FRAMES * 2 && inFrames > 16) {
+        if (driftFrames > slipToleranceFrames * 2 && inFrames > 16) {
             if (++slipCooldownBlocks >= 32) {
                 slipCooldownBlocks = 0
                 totalSlipsApplied++
@@ -216,6 +230,10 @@ class MasterTimingController(
         }
 
         // Escribe el bloque con fade-out a la pista
+        // HI-RES 192 kHz (v2.5.376): este write usa el buffer a 48 kHz
+        // (tasa de DSP) aunque la pista esté a 192 kHz, y NO requiere cambio:
+        // el flush() inmediato descarta lo escrito (fade de 1.67 ms en vez
+        // de 6.67 ms). El resync es un reinicio de cola, no flujo de audio.
         try {
             track.write(buffer, 0, samples, AudioTrack.WRITE_BLOCKING)
             track.pause()

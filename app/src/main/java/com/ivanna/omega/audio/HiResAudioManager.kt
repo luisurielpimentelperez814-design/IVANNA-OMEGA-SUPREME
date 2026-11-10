@@ -38,6 +38,65 @@ object HiResAudioManager {
     private val main = Handler(Looper.getMainLooper())
     private fun prefs(ctx: Context): SharedPreferences = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    // ------------------------------------------------------------------
+    // Reinyección 192 kHz en Ruta A (v2.5.376, HIRES_192K §4.1).
+    //
+    // Ajuste default OFF. Cuando está ON y hay un DAC USB conectado que
+    // anuncia una tasa > 48 kHz, la reinyección de Ruta A (PlaybackCapture-
+    // Service) crea su AudioTrack a esa tasa (máx. 192 kHz) y el delta ya
+    // procesado (DSP a 48 kHz) se remuestrea 48k -> tasa de pista con
+    // StereoAudioResampler. Cuando está OFF, la reinyección corre a 48 kHz
+    // bit a bit igual que hoy (cero regresión).
+    //
+    // HONESTIDAD: el upsampler 48k -> 192k NO crea información nueva (la
+    // fuente de streaming llega a 48 kHz); el beneficio real es con fuente
+    // hi-res real. Tampoco mejora la deriva de reloj (eso es el ASRC).
+    // Este ajuste NO toca hires.conf ni el daemon: es solo de la app.
+    // ------------------------------------------------------------------
+    private const val KEY_REINJECT_192K = "hires_reinject_192k"
+
+    /** Máxima tasa de reinyección (la del DAC, filtrada a <= 192 kHz). */
+    const val HIRES_REINJECT_MAX_RATE = 192000
+
+    /** Tasa de reinyección cuando el ajuste está OFF o no hay DAC hi-res. */
+    const val HIRES_REINJECT_FALLBACK_RATE = 48000
+
+    @Volatile var reinject192k: Boolean = false
+        private set
+
+    /** Lee el ajuste directo de prefs (robusto aunque loadPersisted() no haya corrido aún). */
+    fun isReinject192kEnabled(context: Context): Boolean =
+        runCatching { prefs(context).getBoolean(KEY_REINJECT_192K, false) }
+            .getOrDefault(reinject192k)
+
+    /**
+     * Selección de tasa de reinyección (pura, testeable sin framework).
+     *
+     * - Ajuste OFF -> 48 kHz (comportamiento actual).
+     * - Ajuste ON -> la mayor tasa anunciada por el DAC en [48k, 192k];
+     *   si el DAC no anuncia ninguna tasa válida, fallback 48 kHz.
+     * Las tasas > 192 kHz se descartan (el upsampler y el AudioTrack de
+     * reinyección se diseñaron para un máximo de 192 kHz).
+     */
+    fun selectReinjectRate(advertisedRates: IntArray, hiresEnabled: Boolean): Int {
+        if (!hiresEnabled) return HIRES_REINJECT_FALLBACK_RATE
+        return advertisedRates
+            .filter { it in 48000..HIRES_REINJECT_MAX_RATE }
+            .maxOrNull()
+            ?: HIRES_REINJECT_FALLBACK_RATE
+    }
+
+    /** Activa/desactiva la reinyección 192 kHz y persiste el ajuste. */
+    fun setReinject192k(context: Context, enabled: Boolean) {
+        reinject192k = enabled
+        try {
+            prefs(context).edit().putBoolean(KEY_REINJECT_192K, enabled).apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo persistir hires_reinject_192k: ${e.message}")
+        }
+        Log.i(TAG, "Reinyección Hi-Res 192 kHz: ${if (enabled) "ON" else "OFF"} (aplica al (re)arrancar el motor de captura)")
+    }
+
     /** Carga lo persistido en currentRate/currentDepth SIN tocar daemon ni archivos:
      *  para que la pantalla muestre la eleccion real tras reiniciar el proceso. */
     fun loadPersisted(context: Context) {
@@ -53,6 +112,7 @@ object HiResAudioManager {
             val d = p.getInt(KEY_DEPTH, nativeDepth)
             if (r in VALID_RATES) currentRate = r
             if (d in VALID_DEPTHS) currentDepth = d
+            reinject192k = p.getBoolean(KEY_REINJECT_192K, false)
         }
     }
 

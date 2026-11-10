@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -654,6 +656,34 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private fun cleanupHardwareOnly() {
             audioTrack?.release();  audioTrack  = null
             audioRecord?.release(); audioRecord = null
+            // HI-RES 192 kHz: soltar el resampleador y volver a 48 kHz; setupHardware()
+            // decide de nuevo la tasa de pista en el próximo arranque del motor.
+            hiresResampler = null
+            trackSampleRate = SAMPLE_RATE
+            trackBlockFrames = BLOCK_FRAMES
+        }
+
+        /**
+         * Decide la tasa de la pista de reinyección (HI-RES 192 kHz, v2.5.376).
+         * Default OFF: 48 kHz (comportamiento actual, cero regresión).
+         * ON + DAC USB: la mayor tasa anunciada por el DAC en [48k, 192k];
+         * fallback 48 kHz si no hay DAC USB o no anuncia > 48 kHz.
+         * Devuelve (tasa, dispositivo USB o null).
+         */
+        private fun selectReinjectTrack(): Pair<Int, AudioDeviceInfo?> {
+            if (!HiResAudioManager.isReinject192kEnabled(context)) {
+                return SAMPLE_RATE to null
+            }
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            val outputs = runCatching { am?.getDevices(AudioManager.GET_DEVICES_OUTPUTS) }
+                .getOrNull().orEmpty()
+            val usb = outputs.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+            } ?: return SAMPLE_RATE to null
+            val rate = HiResAudioManager.selectReinjectRate(usb.sampleRates, true)
+            return rate to usb
         }
 
         private fun setupHardware(): Boolean {
@@ -722,9 +752,20 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 Log.w(TAG, "AudioRecord no inicializado (posible -22 createRecord_l: HAL ocupado o demasiados record tracks) — reintento con backoff")
                 audioRecord?.release(); audioRecord = null; return false
             }
+            // HI-RES 192 kHz (v2.5.376): decidir la tasa de la pista ANTES de
+            // crear el AudioTrack. La CAPTURA y el DSP siguen a 48 kHz; solo
+            // la pista de reinyección sube de tasa. El resampleador se crea
+            // una vez por sesión (input 48 kHz) y se aplica en writeAllToTrack().
+            val (reinjRate, usbDac) = selectReinjectTrack()
+            trackSampleRate = reinjRate
+            trackBlockFrames = (BLOCK_FRAMES.toLong() * trackSampleRate.toLong() / SAMPLE_RATE.toLong()).toInt()
+            hiresResampler = if (trackSampleRate != SAMPLE_RATE) {
+                StereoAudioResampler(trackSampleRate).also { it.setInputSampleRate(SAMPLE_RATE) }
+            } else null
+            Log.i(TAG, "Reinyección Hi-Res: trackRate=${trackSampleRate} Hz (DSP 48 kHz), resampler=${if (hiresResampler != null) "48k->${trackSampleRate}" else "off"}, dac=${usbDac?.productName ?: "ninguno"}")
             val minTrack = AudioTrack.getMinBufferSize(
-                SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
-            ).coerceAtLeast(BLOCK_SAMPLES * 4)
+                trackSampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT
+            ).coerceAtLeast(trackBlockFrames * CHANNEL_COUNT * Float.SIZE_BYTES)
             // LATENCIA Y SINCRONIZACIÓN AUDIO/VIDEO (PRIME VIDEO / STREAMING):
             // El buffer 6x con PERFORMANCE_MODE_NONE agregaba entre 180ms y 256ms de retardo,
             // separando audiblemente el diálogo del video.
@@ -734,14 +775,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // PERFORMANCE_MODE_LOW_LATENCY habilita FastMixer en AudioFlinger (~5ms).
             // Un buffer de minTrack * 2 (doble buffering HAL) o 4 bloques PCM_FLOAT
             // garantiza estabilidad acústica sin underruns y elimina el desfase A/V (<25ms).
-            val targetTrackBuf = maxOf(minTrack * 2, BLOCK_SAMPLES * 4 * Float.SIZE_BYTES)
+            // HI-RES: el segundo término es 4 bloques DE PISTA en bytes
+            // (a 48 kHz = 10240 B, igual que antes; a 192 kHz = 40960 B).
+            val targetTrackBuf = maxOf(minTrack * 2, trackBlockFrames * 4 * CHANNEL_COUNT * Float.SIZE_BYTES)
             audioTrack = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build())
                 .setAudioFormat(AudioFormat.Builder()
-                    .setSampleRate(SAMPLE_RATE)
+                    .setSampleRate(trackSampleRate)
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .build())
@@ -754,11 +797,29 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 audioRecord?.release(); audioRecord = null
                 return false
             }
+            // HI-RES: anclar la pista al DAC USB.
+            // setPreferredDevice es best-effort (AudioPolicy puede rechazarlo).
+            // La salida DIRECTA (sin mezcla/remuestreo del mixer) la consigue
+            // AudioFlinger solo: la pista ya está a 192 kHz (tasa que el DAC
+            // anuncia) y anclada al DAC, así que crea un hilo de salida directo
+            // con ese formato. NOTA: `AudioMixerAttributes` (BIT_PERFECT) NO
+            // se usa: `AudioTrack.setAudioMixerAttributes` no es API pública
+            // (ausente del SDK; el diff de API 34 no añade métodos a AudioTrack),
+            // así que llamarlo rompería la compilación.
+            usbDac?.let { dac ->
+                val track = audioTrack
+                if (track != null && !track.setPreferredDevice(dac)) {
+                    Log.w(TAG, "Android rechazó la ruta preferida ${dac.productName}; se conserva la ruta elegida por AudioPolicy")
+                }
+            }
             // This shared fallback processes captured app audio at SAMPLE_RATE (48 kHz).
             // Keep its time-domain spatial delays on the same clock; BridgePlayer has an isolated engine.
             com.ivanna.omega.spatial.IvannaSpatialEngine.shared.configureSampleRate(SAMPLE_RATE)
             com.ivanna.omega.spatial.IvannaSpatialEngine.shared.reset()
-            adaptiveLatency.configure(SAMPLE_RATE, targetTrackBuf)
+            // HI-RES: los controladores de latencia/timing contabilizan en
+            // frames DE PISTA (192 kHz cuando hi-res). A 48 kHz es idéntico a antes.
+            adaptiveLatency.configure(trackSampleRate, targetTrackBuf)
+            masterTiming.setSampleRate(trackSampleRate)
             // COLCHON DE SALIDA: pista nueva => contador a 0 (antes arrastraba el de la sesion anterior y
             // medía una latencia falsa enorme). Se pre-llena con silencio (señal neutra en la via diferencial)
             // hasta el headroom objetivo, para que un retraso del hilo > 1 bloque no vacie la cola (underrun).
@@ -766,10 +827,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             lastSeenUnderruns = 0
             loopLoad.reset(); lastLoopStride = 1
             cushionFramesTarget = OutputCushionPolicy.cushionFrames(
-                adaptiveLatency.targetHeadroomFrames, audioTrack?.bufferSizeInFrames ?: 0, BLOCK_FRAMES)
+                adaptiveLatency.targetHeadroomFrames, audioTrack?.bufferSizeInFrames ?: 0, trackBlockFrames)
             val primed = writeSilence(cushionFramesTarget)
-            Log.i(TAG, "Colchon de salida: objetivo=%d frames (%.1f ms), escrito=%d, pista=%d frames".format(
-                cushionFramesTarget, cushionFramesTarget * 1000f / SAMPLE_RATE, primed, audioTrack?.bufferSizeInFrames ?: 0))
+            Log.i(TAG, "Colchon de salida: objetivo=%d frames (%.1f ms), escrito=%d, pista=%d frames, trackRate=%d Hz".format(
+                cushionFramesTarget, cushionFramesTarget * 1000f / trackSampleRate, primed, audioTrack?.bufferSizeInFrames ?: 0, trackSampleRate))
             audioRecord?.startRecording()
             audioTrack?.play()
             // MISION HAAS (2026-09-18): punto de medicion "antes" — latencia
@@ -777,10 +838,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             // reales (PCM_FLOAT estereo = 8 B por frame; SAMPLE_RATE Hz).
             // Es el dato base contra el que se compara cualquier tuning
             // posterior de BLOCK_FRAMES o buffers, en dispositivo, via logcat.
-            Log.i(TAG, "HaasLatency init: recBuf=%.1f ms, trackBuf=%.1f ms, bloque=%.2f ms".format(
+            Log.i(TAG, "HaasLatency init: recBuf=%.1f ms, trackBuf=%.1f ms, bloque=%.2f ms, trackRate=%d Hz".format(
                 recordBufferBytes(minRec) / 8f / (SAMPLE_RATE / 1000f),
-                minTrack / 8f / (SAMPLE_RATE / 1000f),
-                BLOCK_FRAMES * 1000f / SAMPLE_RATE))
+                minTrack / 8f / (trackSampleRate / 1000f),
+                BLOCK_FRAMES * 1000f / SAMPLE_RATE,
+                trackSampleRate))
             audioSessionId = audioTrack?.audioSessionId ?: 0
             // NO abrir IvannaGlobalEffectManager sobre nuestro propio AudioTrack:
             // PlaybackCaptureService ya ejecuta el pipeline DSP nativo completo
@@ -1044,7 +1106,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // OBJETIVOS 1 & 2: SINCRONIZACIÓN A/V Y REGULACIÓN DE DERIVA
                     // Usar la medición cacheada de adaptiveLatency (sin cruzar Binder en cada bloque)
                     val targetHeadroom = adaptiveLatency.targetHeadroomFrames
-                    val currentQueued = (adaptiveLatency.measuredLatencyMs * SAMPLE_RATE / 1000f).toLong().coerceAtLeast(0L)
+                    // HI-RES: la cola medida está en frames DE PISTA (192 kHz en hi-res).
+                    val currentQueued = (adaptiveLatency.measuredLatencyMs * trackSampleRate / 1000f).toLong().coerceAtLeast(0L)
 
                     val effectiveFrames = masterTiming.processAndCompensate(
                         inOutBuffer = outBuf,
@@ -1132,7 +1195,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                             track = audioTrack,
                             framesWrittenToTrack = framesWrittenToTrack,
                             dspLoadRatio = budgetGuard.dspLoadPercent / 100f,
-                            predictiveExtraMarginFrames = predictiveGovernor.suggestedHeadroomMarginFrames
+                            // HI-RES: el margen predictivo viene en frames de DSP (48 kHz);
+                            // escalarlo a frames de pista (x4 a 192 kHz, x1 a 48 kHz).
+                            predictiveExtraMarginFrames = predictiveGovernor.suggestedHeadroomMarginFrames * trackSampleRate.toLong() / SAMPLE_RATE.toLong()
                         )
                         // Si el HAL se quedó sin datos, repone el colchón (una vez por cooldown, solo lo que falta).
                         val ur = adaptiveLatency.underrunCount
@@ -1140,7 +1205,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         lastSeenUnderruns = ur
                         if (newUr > 0 && cushionFramesTarget > 0) {
                             val nowR = android.os.SystemClock.elapsedRealtime()
-                            val queuedR = (adaptiveLatency.measuredLatencyMs * SAMPLE_RATE / 1000f).toLong()
+                            val queuedR = (adaptiveLatency.measuredLatencyMs * trackSampleRate / 1000f).toLong()
                             val n = OutputCushionPolicy.reprimeFrames(newUr, queuedR, cushionFramesTarget, nowR - lastRepriming)
                             if (n > 0) {
                                 lastRepriming = nowR
@@ -1228,8 +1293,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         }
 
         // Silencio inmutable (nunca se escribe en él): colchon, relleno durante el mute y reposición tras underrun.
-        // 4800 frames = 100 ms (> MAX_HEADROOM_MS).
-        private val silenceBuf = FloatArray(4800 * CHANNEL_COUNT)
+        // HI-RES 192 kHz (v2.5.376): 19200 frames = 100 ms a 192 kHz (4800 a 48 kHz),
+        // para cubrir el colchón máximo (MAX_HEADROOM_MS = 95 ms) a cualquier tasa de pista.
+        private val silenceBuf = FloatArray(19200 * CHANNEL_COUNT)
         private var cushionFramesTarget = 0
         private var lastSeenUnderruns = 0
         private var lastRepriming = 0L
@@ -1253,13 +1319,31 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         private fun writeAllToTrack(data: FloatArray, totalSamples: Int) {
             val track = audioTrack ?: return
+            // HI-RES 192 kHz (v2.5.376): si hay resampleador, convertir el
+            // delta ya procesado (48 kHz) a la tasa de pista ANTES de escribir.
+            // El DSP sigue a 48 kHz; solo la salida sube de tasa.
+            // process() devuelve un array nuevo por bloque (~10 KB a 192 kHz):
+            // asignación aceptada por ahora (ver informe; sin variante sin
+            // alocación en esta entrega). El silencio de mute TAMBIÉN pasa por
+            // el resampleador (mantiene su estado continuo entre bloques).
+            val resampler = hiresResampler
+            val writeData: FloatArray
+            val writeSamples: Int
+            if (resampler != null && totalSamples > 0) {
+                writeData = resampler.process(data.copyOf(totalSamples))
+                writeSamples = writeData.size
+            } else {
+                writeData = data
+                writeSamples = totalSamples
+            }
             var written = 0
-            while (written < totalSamples && active) {
-                val result = track.write(data, written, totalSamples - written, AudioTrack.WRITE_BLOCKING)
+            while (written < writeSamples && active) {
+                val result = track.write(writeData, written, writeSamples - written, AudioTrack.WRITE_BLOCKING)
                 if (result < 0) { Log.e(TAG, "AudioTrack write error: $result"); break }
                 written += result
             }
             // MISION HAAS (2026-09-18): contar los frames REALMENTE escritos.
+            // HI-RES: son frames DE PISTA (a trackSampleRate), no de DSP.
             framesWrittenToTrack += written / CHANNEL_COUNT
             tickLatencyProbe()
             // Telemetria REAL a la UI: latencia instantanea de cola +
@@ -1370,6 +1454,21 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // del track (frames escritos - frames reproducidos) + el bloque en
         // vuelo. getTimestamp() da la posicion real de reproduccion.
         private var framesWrittenToTrack = 0L
+
+        // HI-RES 192 kHz (v2.5.376, HIRES_192K §4.1): tasa de la pista de
+        // reinyección. 48000 = comportamiento actual (sin upsampling).
+        // Cuando el ajuste hires_reinject_192k está ON y hay DAC USB que
+        // anuncia >48 kHz, la pista se crea a esa tasa (máx. 192 kHz) y el
+        // delta ya procesado (DSP a 48 kHz) se remuestrea 48k -> tasa de
+        // pista con `hiresResampler`. El DSP sigue a 48 kHz; solo la
+        // salida sube de tasa. `framesWrittenToTrack` SIEMPRE cuenta frames
+        // DE PISTA (a `trackSampleRate`), no frames de DSP.
+        private var trackSampleRate: Int = SAMPLE_RATE
+        private var hiresResampler: StereoAudioResampler? = null
+        // Frames de pista por bloque de captura (320 a 48k -> 1280 a 192k).
+        // Se usa para el colchón y los buffers (todo en frames de PISTA).
+        private var trackBlockFrames: Int = BLOCK_FRAMES
+
         private var lastLatencyLogNs     = 0L
         private var lastRouteCheckNs     = 0L
         private var btRouteActive        = false
@@ -1433,7 +1532,8 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             try {
                 if (track.getTimestamp(audioTs)) {
                     val queued  = framesWrittenToTrack - audioTs.framePosition
-                    val queueMs = queued * 1000.0 / SAMPLE_RATE
+                    // HI-RES: la cola está en frames DE PISTA (192 kHz en hi-res).
+                    val queueMs = queued * 1000.0 / trackSampleRate
                     val blockMs = BLOCK_FRAMES * 1000.0 / SAMPLE_RATE
                     Log.i(TAG, "HaasLatency: cola_salida=%.1f ms (bloque=%.1f ms)".format(queueMs, blockMs))
                 }

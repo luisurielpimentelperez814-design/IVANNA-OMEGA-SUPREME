@@ -377,8 +377,12 @@ configurations.all {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        // R8 8.8.34 (AGP 8.5.2) no lee metadata Kotlin 2.4 -> warning "error parsing kotlin metadata".
-        // Se emite metadata 2.1.0 (solo la version escrita; no cambia lenguaje ni bytecode).
-        freeCompilerArgs.add("-Xmetadata-version=2.1.0")
+        // NOTA 2026-11-09 (fix CI 375): se ELIMINÓ "-Xmetadata-version=2.1.0".
+        // Ese flag obligaba al compilador a esperar metadata 2.0.0 y rechazaba
+        // las librerías (kotlin-stdlib 2.4.0, coroutines 2.2.0, serialization
+        // 2.3.0) en :app:compileReleaseUnitTestKotlin -> BUILD FAILED.
+        // El workaround ya no hace falta: el root build.gradle.kts fuerza
+        // R8 9.1.56, que sí lee metadata Kotlin 2.4. El compilador 2.4.21
+        // emite metadata 2.4.0 nativa, compatible con todas las dependencias.
     }
 }

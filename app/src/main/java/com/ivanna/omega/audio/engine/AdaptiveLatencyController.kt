@@ -27,7 +27,7 @@ import kotlin.math.min
  * Cero asignaciones en el hilo de audio. Lock-free.
  */
 class AdaptiveLatencyController(
-    val sampleRate: Int = 48000
+    var sampleRate: Int = 48000
 ) {
     enum class OutputRouteType {
         SPEAKER,
@@ -250,6 +250,16 @@ class AdaptiveLatencyController(
 
     fun configure(rate: Int = sampleRate, targetTrackBuf: Int = 0) {
         val effRate = if (rate > 0) rate else sampleRate
+        // HI-RES 192 kHz (v2.5.376): `rate` es la tasa de la PISTA de
+        // reinyección, no la de captura/DSP (48 kHz). Todas las conversiones
+        // frames <-> ms de este controlador (cola, jitter, headroom) se
+        // calculan a la tasa de pista: a 192 kHz el mismo headroom en ms
+        // son 4x frames. Se recalcula targetHeadroomFrames aquí (antes del
+        // primer tick) porque setupHardware() lo usa para el colchón.
+        if (effRate != sampleRate) {
+            sampleRate = effRate
+            targetHeadroomFrames = (targetHeadroomMs * sampleRate / 1000f).toLong()
+        }
         // PCM_FLOAT estéreo = 8 bytes por frame
         configuredTrackBufferMs = if (targetTrackBuf > 0 && effRate > 0) {
             ((targetTrackBuf / 8f) * 1000f / effRate).coerceIn(0f, 65f)
