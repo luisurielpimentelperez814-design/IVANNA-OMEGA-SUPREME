@@ -6,7 +6,7 @@
 
 **Audio espacial Android · un solo motor, dos rutas, evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.381-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.382-c8a96b?style=flat-square)](version.properties)
 [![HOLOS](https://img.shields.io/badge/HOLOS-publicado%20v2.5.364-9fb7d0?style=flat-square)](#5-holos--operador-único-de-campo-acústico-)
 [![Φ](https://img.shields.io/badge/Φ-Hiper--Operador%20v2.5.369-9fb7d0?style=flat-square)](#13-hiper-operador-φ--v2515369)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
@@ -27,6 +27,7 @@
 
 | Rama / versión | Contenido | Estado |
 |:---|:---|:---|
+| `main` · **v2.5.382** (673) | **Ruta B — FIX DEFINITIVO del beacon 0** — auto-enable en `omega_process()` (ENABLE jamás llega del HAL) + init del DSP en creación con defaults 48 kHz/estéreo/PCM16 (SET_CONFIG tampoco llega). El efecto procesa aunque el HAL no envíe ENABLE ni SET_CONFIG. Confirmado en Tidal (609) igual que YTM (249): el acople funciona, el problema era `omega_process()`. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (beacon creciendo + logcat `auto-enable`) |
 | `main` · **v2.5.381** (672) | **Ruta B — diagnóstico del beacon 0** — el efecto está creado y habilitado en la sesión real de YTM (249) pero `omega_process()` nunca llega a `onBlock()`; las 5 salidas tempranas hacían passthrough en silencio. La 381 hace que cada salida loguee su motivo (throttle 5 s, tag `IvannaOmegaEffect`). La 380 confirmó en teléfono que YTM ya no se calla. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (logcat `IvannaOmegaEffect` → motivo del passthrough + beacon creciendo) |
 | `main` · **v2.5.380** (671) | **Ruta B — sin fallback global + passthrough garantizado + diagnóstico de acople** — se elimina el omega global en sesión 0, que callaba a YTM a los ~3 s de abrir la app; `omega_process` hace passthrough con memmove aunque el efecto no esté habilitado (un efecto que no procesa jamás silencia); logs visibles en los 3 retornos silenciosos de `tryAttachDiscoveredSession` + en `exchange()` (throttle 1/30 s). T0 en el teléfono confirmó que el descriptor NO necesita bajarse (APM 128 KB, máx 129 KB; sin "memory limit exceeded"). **ASRC v5 "Élite" verificada en dispositivo** (ver §12) | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (YTM sin callarse + beacon creciendo + escucha con Genezi) |
 | `main` · **v2.5.379** (670) | **Ruta B — descubrimiento de sesión real por daemon** — el daemon (root) lee `dumpsys media.audio_flinger` cada 3 s y publica el sessionId real en el snapshot (ABI v11) + GET_STATUS; la app libera el global antes de acoplar (K1-rev); fusión OmniField dormida en Ruta B | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.379) — instalada; PERO con regresión: abrir IVANNA callaba a YTM y la app no acoplaba (beacon 0). Corregido en la 380 |
@@ -443,7 +444,7 @@ Todas en host a 48 kHz salvo indicación; la fila de deriva ASRC es medición en
 | ASRC v5, deriva en dispositivo (Moto G85) | −6.250 ppm, sat=0, kalman_drift=−6.250 | dump `pal_asrc_stage.txt`, 2026-11-10 00:40 CST |
 | CPU / XRuns en Moto G85 | **Sin medir** | pendiente |
 
-**Tests host (v2.5.381): 885/885 pasan (100%, 0 fallos)** en local (g++-14, CMake 3.30.3, CTest). En la 369 eran 820/820 (verificado 2026-11-08); desde entonces se sumaron la fusión OmniField, la Ruta B (daemon discovery, attach) y los tests de la ASRC. La run CI "Tests host (CTest)" concluye en `failure` por el paso preexistente de herramientas (`cppcheck` + `gitleaks`), no por los tests: el paso CTest en sí pasa, igual que el de ASan+UBSan.
+**Tests host (v2.5.382): 885/885 pasan (100%, 0 fallos)** en local (g++-14, CMake 3.30.3, CTest). En la 369 eran 820/820 (verificado 2026-11-08); desde entonces se sumaron la fusión OmniField, la Ruta B (daemon discovery, attach) y los tests de la ASRC. La run CI "Tests host (CTest)" concluye en `failure` por el paso preexistente de herramientas (`cppcheck` + `gitleaks`), no por los tests: el paso CTest en sí pasa, igual que el de ASan+UBSan.
 
 Regla de trabajo: si HOLOS mide < 2× RT en dispositivo es viable; entre 1–2×, viable con shed; < 1×, no viable y se recorta. La estimación host (15–25× RT) ya quedó desmentida por la medición (3.5× RT): la estimación no es un dato.
 
@@ -517,7 +518,7 @@ La instalación Magisk requiere root y una ruta compatible. Consulta [la guía s
 bash scripts/run_ctest.sh
 ```
 
-Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (885 tests en total en v2.5.381, 100% en verde en local).
+Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (885 tests en total en v2.5.382, 100% en verde en local).
 
 ### Dashboard web
 

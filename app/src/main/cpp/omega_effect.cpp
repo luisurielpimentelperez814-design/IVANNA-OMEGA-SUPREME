@@ -215,6 +215,14 @@ struct omega_effect_context_t {
     const struct effect_interface_s *itfe;
     effect_config_t config;
     bool enabled;
+    // v2.5.382 — FIX DEFINITIVO Ruta B: EFFECT_CMD_ENABLE jamás llega al
+    // efecto nativo en este HAL (Qualcomm), aunque la app hace setEnabled(true).
+    // Sin ENABLE, ctx->enabled=false y omega_process() cae en passthrough
+    // silencioso para siempre (beacon 0). Para distinguir "nunca habilitado"
+    // de "deshabilitado explícitamente", se rastrea aquí: DISABLE lo pone en
+    // true, ENABLE lo pone en false. omega_process() auto-habilita solo si
+    // nunca se deshabilitó explícitamente (respeta un DISABLE real).
+    bool explicitlyDisabled = false;
     IvannaFusionEngine* fusionCore; // AUDIT FIX: DSP per-instance (era global)
                                     // AUDIT FIX (type mismatch): la clase base
                                     // IvannaFusionCore solo expone processBlock/
@@ -1080,6 +1088,8 @@ enum class PassthroughReason : int {
     kIntegrityFail,
     kAntitamperLockdown,
     kFusionCoreNull,
+    kBypassBeginBlockFail,
+    kRtBuffersNull,
     kCount,
 };
 inline void logPassthroughThrottled(PassthroughReason reason, const char* msg) {
@@ -1118,6 +1128,21 @@ static int32_t omega_process(effect_handle_t self,
     // cero; mientras tanto el bloque sigue por la ruta normal y mixSample() funde a seco (release 18 ms).
     if (!ctx || !inBuf || !outBuf) return 0;
     if (!inBuf->raw || !outBuf->raw || inBuf->frameCount == 0) return 0;
+
+    // v2.5.382 — FIX DEFINITIVO Ruta B (auto-enable): en este HAL (Qualcomm)
+    // EFFECT_CMD_ENABLE jamás llega al efecto nativo aunque la app haga
+    // setEnabled(true) (el beacon nunca tiene magic ni enabled_count). Sin
+    // ENABLE, ctx->enabled=false y el efecto cae en passthrough silencioso
+    // para siempre. Si el efecto nunca fue deshabilitado explícitamente
+    // (EFFECT_CMD_DISABLE), auto-habilitar en el primer bloque real: la app
+    // siempre crea el efecto queriendo que procese. Esto actualiza el beacon
+    // (onEnable) y deja ctx->enabled=true para el resto del callback.
+    // Un DISABLE explícito posterior se respeta (explicitlyDisabled=true).
+    if (!ctx->enabled && !ctx->explicitlyDisabled) {
+        ivanna::effectBeacon().onEnable();
+        ctx->enabled = true;
+        LOGI("omega_process: auto-enable (EFFECT_CMD_ENABLE no llego del HAL; beacon onEnable)");
+    }
 
     const int frames = (int)inBuf->frameCount;
     const uint8_t inFmt  = ctx->config.inputCfg.format;
@@ -1271,6 +1296,10 @@ static int32_t omega_process(effect_handle_t self,
 
     if (!wantMasterActive) ctx->fotoHoloDelta = 0.0f;
     if (!ctx->masterBypassEnv.beginBlock(wantMasterActive ? 1.0f : 0.0f, masterProfile)) {
+        // v2.5.382: esta salida NO tenía logging en la 381 (solo las 5
+        // primeras). Si beginBlock() falla, el bloque pasa en seco.
+        logPassthroughThrottled(PassthroughReason::kBypassBeginBlockFail,
+                                "masterBypassEnv.beginBlock() FALLO");
         if (ctx->rtL && ctx->rtR && ctx->rtCapacity > 0) {
             const int tailFrames = std::min(frames, std::min(ctx->rtCapacity, 64));
             const int startFrame = frames - tailFrames;
@@ -1299,6 +1328,12 @@ static int32_t omega_process(effect_handle_t self,
     // (SET_CONFIG). Si vinieran sin reservar (calloc falló en SET_CONFIG)
     // se cae a passthrough — jamás asignar en el hilo de audio.
     if (!ctx->rtL || !ctx->rtR || !ctx->rtDryL || !ctx->rtDryR || !ctx->rtVolterraScratch || ctx->rtCapacity <= 0) {
+        // v2.5.382: esta salida NO tenía logging en la 381. Los buffers RT
+        // solo se reservan en EFFECT_CMD_SET_CONFIG; si SET_CONFIG jamás
+        // llega del HAL, caen aquí. La 382 los crea en omega_create_effect()
+        // (ver abajo), así que este log solo debería aparecer si calloc falló.
+        logPassthroughThrottled(PassthroughReason::kRtBuffersNull,
+                                "buffers RT nulos o rtCapacity<=0 (SET_CONFIG no llego o calloc fallo)");
         if (outBuf->raw != inBuf->raw) {
             memmove(outBuf->raw, inBuf->raw, (size_t)frames * frameBytes);
         }
@@ -2450,11 +2485,21 @@ static int32_t omega_command(effect_handle_t self, uint32_t cmdCode,
             // Beacon: cuenta solo la transicion deshabilitado->habilitado (ENABLE repetido
             // no debe inflar el contador). Camino NO-RT: open()/mmap permitido aqui.
             if (ctx && !ctx->enabled) ivanna::effectBeacon().onEnable();
-            if (ctx) ctx->enabled = true;
+            if (ctx) {
+                ctx->enabled = true;
+                // v2.5.382: un ENABLE explícito cancela cualquier auto-enable
+                // previo y marca que el efecto NO está deshabilitado.
+                ctx->explicitlyDisabled = false;
+            }
             break;
         case EFFECT_CMD_DISABLE:
             if (ctx && ctx->enabled) ivanna::effectBeacon().onDisable();
-            if (ctx) ctx->enabled = false;
+            if (ctx) {
+                ctx->enabled = false;
+                // v2.5.382: DISABLE explícito — omega_process() debe respetar
+                // la desactivación y NO auto-habilitar.
+                ctx->explicitlyDisabled = true;
+            }
             break;
         case EFFECT_CMD_SET_PARAM:
         case EFFECT_CMD_SET_PARAM_COMMIT: {
@@ -2758,6 +2803,74 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
         // worker solo entrega IR a ctx registrados (anti-UAF).
         std::lock_guard<std::mutex> lk(g_rirBMtx);
         g_rirBLive.push_back(ctx);
+    }
+    // ── v2.5.382 — FIX DEFINITIVO Ruta B (init en creación, no en SET_CONFIG) ──
+    // En este HAL (Qualcomm) EFFECT_CMD_SET_CONFIG jamás llega al efecto
+    // nativo (igual que EFFECT_CMD_ENABLE): fusionCore y los buffers RT
+    // quedaban en null y omega_process() caía en passthrough silencioso para
+    // siempre (beacon 0). El efecto NO debe depender de SET_CONFIG para
+    // existir: se inicializa aquí, en creación (hilo de control, NO-RT),
+    // con defaults 48 kHz / estéreo / PCM16 (lo que YTM entrega en este
+    // teléfono, verificado por la sonda PAL). Si SET_CONFIG llega después,
+    // sus guards (`if (!ctx->fusionCore)`, `if (!ctx->rtL)`...) evitan
+    // doble asignación y su lógica de srChanged re-inicializa con el SR
+    // real. Sin SET_CONFIG, el efecto procesa con estos defaults.
+    {
+        constexpr float kDefaultSr = 48000.0f;
+        constexpr uint32_t kDefaultSrU = 48000u;
+        if (!ctx->fusionCore) {
+            ctx->fusionCore = new (std::nothrow) IvannaFusionEngine(kDefaultSr);
+            if (ctx->fusionCore) ctx->fusionCore->initSpatial(kDefaultSr, 4096);
+        }
+        if (!ctx->antiDolby) {
+            ctx->antiDolby = new (std::nothrow) AntiDolbyState();
+        }
+        if (!ctx->rtL) {
+            ctx->rtL = reinterpret_cast<float*>(calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+        }
+        if (!ctx->rtR) {
+            ctx->rtR = reinterpret_cast<float*>(calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+        }
+        if (!ctx->rtDryL) {
+            ctx->rtDryL = reinterpret_cast<float*>(calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+        }
+        if (!ctx->rtDryR) {
+            ctx->rtDryR = reinterpret_cast<float*>(calloc((size_t)OMEGA_RT_MAX_FRAMES, sizeof(float)));
+        }
+        if (!ctx->rtVolterraScratch) {
+            ctx->rtVolterraScratch = reinterpret_cast<float*>(
+                calloc((size_t)OMEGA_RT_MAX_FRAMES * 2u, sizeof(float)));
+        }
+        ctx->rtCapacity =
+            (ctx->rtL && ctx->rtR && ctx->rtDryL && ctx->rtDryR && ctx->rtVolterraScratch)
+                ? OMEGA_RT_MAX_FRAMES : 0;
+        if (!ctx->safetyLimiter) {
+            ctx->safetyLimiter = new (std::nothrow) ivanna::SafetyLimiter();
+            if (ctx->safetyLimiter) {
+                ctx->safetyLimiter->setParams(0.891251f, 0.98855f);
+                ctx->safetyLimiter->setSampleRate(kDefaultSr);
+            }
+        }
+        // Config por defecto (48 kHz / estéreo / PCM16): sin SET_CONFIG la
+        // config queda en ceros (calloc) y el DSP interpretaría el formato
+        // como float (bytes_per_sample(0)=4) aunque YTM entrega PCM16 —
+        // el passthrough copiaría el doble de bytes y el deinterleave leería
+        // int16 como float. Con estos defaults, formato y canales son
+        // correctos aunque SET_CONFIG jamás llegue.
+        ctx->config.inputCfg.samplingRate = kDefaultSrU;
+        ctx->config.inputCfg.channels = AUDIO_CHANNEL_OUT_STEREO;
+        ctx->config.inputCfg.format = static_cast<uint8_t>(AUDIO_FORMAT_PCM_16_BIT);
+        ctx->config.outputCfg.samplingRate = kDefaultSrU;
+        ctx->config.outputCfg.channels = AUDIO_CHANNEL_OUT_STEREO;
+        ctx->config.outputCfg.format = static_cast<uint8_t>(AUDIO_FORMAT_PCM_16_BIT);
+        ctx->lastConfiguredSr = kDefaultSrU;
+        if (!ctx->fusionCore || !ctx->rtL || !ctx->rtR || ctx->rtCapacity <= 0) {
+            LOGE("omega_create_effect: init DSP por defecto INCOMPLETO "
+                 "(fusionCore=%p rtL=%p rtR=%p rtCapacity=%d) — el efecto "
+                 "caera a passthrough hasta SET_CONFIG",
+                 (const void*)ctx->fusionCore, (const void*)ctx->rtL,
+                 (const void*)ctx->rtR, ctx->rtCapacity);
+        }
     }
     *pHandle = reinterpret_cast<effect_handle_t>(ctx);
     return 0;
