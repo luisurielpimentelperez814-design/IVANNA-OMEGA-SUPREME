@@ -1,3 +1,10 @@
+# v2.5.389 (680) - 2026-11-10
+
+- **MEDIR MI CABEZA POR FOTO — la antropometría ya tiene pantalla.** La app NO tenía función de foto (solo el permiso declarado para SAFMUS). Ahora: `HeadMeasureScreen` (CONTROL → ORBE → "MEDIR MI CABEZA (FOTO)"): foto frontal con una tarjeta de crédito/débito pegada vertical en la frente (es la regla: 8.56 cm) + líneas arrastrables en la foto (verdes = bordes de la cabeza, ámbar = bordes de la tarjeta) o ancho a mano con cinta (de oreja a oreja, 10–25 cm). Calcula el radio y lo aplica a ORBE (JNI `nativeSetOrbeHeadRadiusM` + `ParameterStore` + restauración al arrancar). **La foto no se guarda ni se sube a ningún lado: vive solo en la pantalla y se descarta al salir.** Sin medición, KEMAR exacto (sin cambio de sonido).
+- **OPERADOR DE TRANSDUCCIÓN (núcleo usable de MANT Ec. 1).** `spatial/TransducerOperator.hpp`: compensación por banda por mínimos cuadrados + regularización de Tikhonov elegida por bisección para cumplir un límite de ganancia de ruido (WNG del EQ). **Límite honesto:** sin una respuesta MEDIDA del transductor devuelve no-op — la medición del Genezi y de las bocinas del G85 (Fase VII) es el insumo pendiente. La "misma espacialidad exactamente" de MANT es falsa: la Ec. 7 (crosstalk) demuestra que el ILD se reduce por bocinas.
+- **FIX 388:** la 388 NO publicó porque `magisk_module/module.prop` quedó en `versionCode=678` (se me pasó la línea al hacer el bump; el validador `validateUnifiedVersion` exige versionCode igual que `version.properties`). Corregido aquí (680). **Lección en AGENTS.md: el bump toca `version=` Y `versionCode=` en module.prop.**
+- **Verificado:** CTest host **954/954 (100%, 0 fallos)** en local (949 + 5 del operador). La CI de la 388 falló solo por el versionCode; sus jobs CTest de "Tests host" fallaron por entorno (el runner no tenía `clang++-18`), no por el código.
+
 # v2.5.388 (679) - 2026-11-10
 
 - **REFORMULACIÓN Ψ POR VÍA — el campo conoce la vía de reproducción.** La misma ley (SPREAD + SHADOW) se percibe distinto por audífonos, AUX, bocinas del celular, estéreo, 5.1, 7.1 y cine: cada vía mezcla los canales (crosstalk) y reparte las fuentes entre bocinas discretas.

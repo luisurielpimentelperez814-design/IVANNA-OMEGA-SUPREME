@@ -117,6 +117,11 @@ object PersistedStateRestorer {
                     paramStore.getOrbeDiffuse(), paramStore.isOrbeHeadTrackingEnabled()
                 )
             }
+            // Ψ (v2.5.388): radio de cabeza personalizado medido en
+            // HeadMeasureScreen (KEMAR 0.0875 si nunca se midió).
+            runCatching {
+                IvannaNativeLib.nativeSetOrbeHeadRadiusM(paramStore.getOrbeHeadRadiusM())
+            }
             runCatching {
                 com.ivanna.omega.magisk.MagiskBridge.sendCommand(
                     """{"action":"SET_PERCEPTUAL_STATE","orbeAmount":${paramStore.getOrbeAmount()},"orbeDistanceM":${paramStore.getOrbeDistanceM()},"orbeSpread":${paramStore.getOrbeSpread()},"orbeProximityDb":${paramStore.getOrbeProximityDb()},"orbeDiffuse":${paramStore.getOrbeDiffuse()},"orbeHeadTracking":${if (paramStore.isOrbeHeadTrackingEnabled()) 1.0f else 0.0f}}"""

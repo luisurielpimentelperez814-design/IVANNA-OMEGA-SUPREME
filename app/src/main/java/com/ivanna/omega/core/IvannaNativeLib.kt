@@ -589,6 +589,11 @@ object IvannaNativeLib {
     )
     /** Atajo: enabled=true pone amount=1, false pone amount=0 (conserva el resto de params). */
     external fun nativeSetOrbeEnabled(enabled: Boolean)
+    /** Ψ (v2.5.388): radio de cabeza personalizado en metros (0.05..0.15,
+     *  KEMAR 0.0875 por defecto) para ORBE — Ec. 2 del campo con la
+     *  antropometría del oyente (HeadMeasureScreen). Escribe el atomic
+     *  g_orbe_head_radius_m (Ruta A + FusionCore). Sin llamarla, KEMAR. */
+    external fun nativeSetOrbeHeadRadiusM(radiusM: Float)
     /** IVANNA — Operador Unificado de Campo Espacial (v2.5.375). Fusión de
      *  separación por fuentes + HRTF personalizada por MAA + escena auto-supervisada
      *  + campo neural INAF. amount 0..1 (0 = apagado, bypass bit-exacto;

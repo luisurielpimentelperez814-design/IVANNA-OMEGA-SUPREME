@@ -380,6 +380,8 @@ fun OmegaApp() {
                 ) { com.ivanna.omega.ui.MusicIntelligencePanel(); com.ivanna.omega.ui.FourDPredictionPanel() }
             }
             composable("hires") { com.ivanna.omega.ui.HiResAudioScreen(onBack = { nav.popBackStack() }) }
+            // Ψ (v2.5.389): medir la cabeza por foto + tarjeta (HeadMeasureScreen).
+            composable(IvannaRoute.HEAD_MEASURE) { com.ivanna.omega.ui.HeadMeasureScreen(onBack = { nav.popBackStack() }) }
             // Colección de los 30 mejores conciertos de rock (v2.5.372).
             composable(IvannaRoute.ROCK_CONCERTS) { com.ivanna.omega.ui.RockConcertsScreen(onBack = { nav.popBackStack() }) }
             composable("dashboard") {

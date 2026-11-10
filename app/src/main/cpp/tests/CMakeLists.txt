@@ -1961,3 +1961,8 @@ ivanna_add_test(test_poller_sched)
 # (audífonos/AUX/celular/estéreo/5.1/7.1/cine): ILD percibido por crosstalk,
 # bocinas por ley dipolar, radio de cabeza personalizado cableado a ORBE.
 ivanna_add_test(test_psi_field_routes)
+
+# ── Operador de transducción universal (MANT Ec. 1, núcleo usable) ───────────
+# Compensación por banda con límite WNG (mínimos cuadrados + Tikhonov por
+# bisección). Sin medida del transductor devuelve no-op (no inventa).
+ivanna_add_test(test_transducer_operator)

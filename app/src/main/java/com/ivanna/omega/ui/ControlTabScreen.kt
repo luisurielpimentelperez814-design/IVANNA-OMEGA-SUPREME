@@ -524,6 +524,7 @@ fun ControlTabScreen(
         onOpenAdaptiveEngineManual = { outerNav.navigate("adaptive") },
         onOpenOpe                  = { outerNav.navigate(IvannaRoute.SOUND) { launchSingleTop = true } },
         onOpenBinaural             = { outerNav.navigate("spatial_audio") },
+        onOpenHeadMeasure          = { outerNav.navigate(IvannaRoute.HEAD_MEASURE) },
         onOpenTelemetry            = { outerNav.navigate(IvannaRoute.SYSTEM) { launchSingleTop = true } },
         onOpenAdaptiveProfiles     = { outerNav.navigate("adaptive_profiles") },
         onOpenProfiles             = { outerNav.navigate("profiles") },

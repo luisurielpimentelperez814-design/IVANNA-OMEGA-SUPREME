@@ -134,6 +134,10 @@ class ParameterStore(context: Context) {
         private const val KEY_ORBE_PROXIMITY_DB = "orbe_proximity_db"
         private const val KEY_ORBE_DIFFUSE      = "orbe_diffuse"
         private const val KEY_ORBE_HEAD_TRACKING = "orbe_head_tracking"
+        // Ψ (v2.5.388): radio de cabeza personalizado (m) medido en
+        // HeadMeasureScreen (foto + tarjeta de referencia). KEMAR 0.0875
+        // por defecto: sin medición, el sonido no cambia.
+        private const val KEY_ORBE_HEAD_RADIUS_M = "orbe_head_radius_m"
         // HOLOS — Operador Único de Campo Acústico (v2.5.364). amount 0 = apagado; por defecto ACTIVO 0.5, harmonics 0 (retuneo medido).
         private const val KEY_HOLOS_AMOUNT       = "holos_amount"
         private const val KEY_HOLOS_DISTANCE_M   = "holos_distance_m"
@@ -480,6 +484,12 @@ class ParameterStore(context: Context) {
     fun getOrbeProximityDb(): Float = safeGetFloat(KEY_ORBE_PROXIMITY_DB, 3.0f)
     fun getOrbeDiffuse(): Float = safeGetFloat(KEY_ORBE_DIFFUSE, 0.5f)
     fun isOrbeHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_ORBE_HEAD_TRACKING, true)
+    // Ψ (v2.5.388): radio de cabeza personalizado (m). KEMAR 0.0875 si
+    // nunca se midió. Se clampa a [0.05, 0.15] m, igual que el nativo.
+    fun getOrbeHeadRadiusM(): Float = safeGetFloat(KEY_ORBE_HEAD_RADIUS_M, 0.0875f)
+    fun setOrbeHeadRadiusM(radiusM: Float) =
+        prefs.edit().putFloat(KEY_ORBE_HEAD_RADIUS_M,
+            if (radiusM.isFinite()) radiusM.coerceIn(0.05f, 0.15f) else 0.0875f).apply()
     fun setOrbeParams(
         amount: Float, distanceM: Float, spread: Float,
         proximityDb: Float, diffuse: Float, headTracking: Boolean

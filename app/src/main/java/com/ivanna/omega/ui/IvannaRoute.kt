@@ -50,6 +50,10 @@ object IvannaRoute {
     // IVANNA Conversational Acoustic Intelligence (FASE 12–19)
     const val IVANNA_ASSISTANT = "ivanna_assistant"
 
+    // Ψ (v2.5.389): medición de cabeza por foto + tarjeta de referencia
+    // (HeadMeasureScreen). Alimenta el radio personalizado de ORBE.
+    const val HEAD_MEASURE = "head_measure"
+
     // Panel de conectividad WiFi / datos / Gemini Agent
     const val NETWORK = "network_status"
 

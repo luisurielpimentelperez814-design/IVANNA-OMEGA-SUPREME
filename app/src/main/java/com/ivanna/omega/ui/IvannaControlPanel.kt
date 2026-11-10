@@ -198,6 +198,7 @@ fun IvannaControlPanel(
     onOpenAdaptiveEngineManual: () -> Unit = {},
     onOpenOpe: () -> Unit = {},
     onOpenBinaural: () -> Unit = {},
+    onOpenHeadMeasure: () -> Unit = {},
     onOpenTelemetry: () -> Unit = {},
     onOpenAdaptiveProfiles: () -> Unit = {},
     onOpenProfiles: () -> Unit = {},
@@ -1376,6 +1377,11 @@ fun IvannaControlPanel(
                 style = MaterialTheme.typography.labelSmall,
                 color = TextMuted
             )
+            // Ψ (v2.5.389): medir la cabeza por foto + tarjeta para que el
+            // ILD/ITD se calculen con tu cabeza y no con el estándar KEMAR.
+            OutlinedButton(onClick = onOpenHeadMeasure) {
+                Text("MEDIR MI CABEZA (FOTO)")
+            }
         }
 
         GlassCard(
