@@ -36,6 +36,24 @@ android {
         }
     }
 
+    // ── RIESGO DE FIRMA (auditoría 2026-11-10; NO cambiar sin decisión de Esse) ──
+    // La config `release` de abajo hace `initWith(debug)`: si NO existe una
+    // llave de distribución (env/property KEYSTORE_FILE), el build release se
+    // firma con la llave de DEPURACIÓN: genera `~/.android/debug.keystore`
+    // (contraseña "android", alias "androiddebugkey") si no existe y firma con
+    // ella. Consecuencias: (1) esa llave es pública/de conocimiento común —
+    // cualquiera puede firmar un APK con la misma identidad y Android lo
+    // aceptaría como actualización de un APK debug-firmado; (2) el pin de
+    // certificado de IntegrityGate (`generateSecurityPins`) se genera de ESA
+    // misma llave, así que un build debug-firmado pasa el gate como si fuera
+    // legítimo; (3) un APK release firmado así NO puede actualizar una
+    // instalación firmada con llave de distribución (README §11 ya lo advierte
+    // para la CI sin ANDROID_KEYSTORE_B64). MITIGACIÓN: para distribuir,
+    // definir KEYSTORE_FILE + KEYSTORE_PASSWORD + KEY_ALIAS + KEY_PASSWORD con
+    // una llave de distribución privada y verificar el pin; la vía debug solo
+    // es aceptable para builds locales de desarrollo/prueba. Decisión de
+    // cambiar el fallback (p. ej. fallar el build si no hay llave) pendiente
+    // del propietario.
     signingConfigs {
         create("release") {
             initWith(getByName("debug"))

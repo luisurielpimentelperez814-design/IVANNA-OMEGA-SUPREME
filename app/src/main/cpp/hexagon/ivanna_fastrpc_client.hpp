@@ -53,7 +53,16 @@ public:
     IvannaFastRpcClient() noexcept;
     ~IvannaFastRpcClient();
 
-    // Inicializa conexión con el DSP (cDSP para audio de baja latencia)
+    // Inicializa conexión con el DSP (cDSP para audio de baja latencia).
+    // HONESTIDAD (auditoría 2026-11-10): el offload real NO existe hoy.
+    // No hay skel QAIC en el repo ni librería que exporte ivanna_dsp_*:
+    // ivanna_dsp.cpp hace dlsym de esos símbolos sobre libcdsprpc.so /
+    // libadsprpc.so (que no los exportan) y el stub ivanna_dsp.h retorna
+    // -1 siempre. En el teléfono, initialize() devuelve false, isDSPReady()
+    // queda en false y HrtfManager cae al convolver CPU (m_evDsp = 0).
+    // El cliente y el loader son cableado real con fallback limpio, no
+    // ejecución en el Hexagon: para offload real hace falta generar el
+    // skel con qaic desde ivanna_dsp.idl (ver ivanna_dsp.h).
     bool initialize(const HrtfConvolutionConfig& config) noexcept;
 
     // Libera recursos del DSP
@@ -63,7 +72,9 @@ public:
     // input_left/right: buffers de entrada interleaved o planar
     // output_left/right: buffers de salida
     // position: posición espacial del objeto sonoro
-    // Retorna true si el DSP procesó el bloque exitosamente
+    // Retorna true si el DSP procesó el bloque exitosamente. Hoy retorna
+    // false siempre en el teléfono (ver initialize(): sin skel QAIC no
+    // hay handle DSP) y el llamador (HrtfManager) usa el convolver CPU.
     bool delegateBinauralConvolution(
         const float* input_left,
         const float* input_right,

@@ -25,12 +25,11 @@
 // amount = 0 es bit-exacto con la entrada. Latencia total = fftSize
 // muestras (512 @48 kHz = 10.7 ms).
 //
-// Entra en FusionCore EN EL LUGAR DE ORBE (tras el blend WFS, antes del
-// M/S), por el mismo motivo que ORBE está ahí. Cuando HOLOS está activo,
-// ORBE no corre (sería doble render con doble retardo de 512); cuando
-// HOLOS está en 0, la cadena legacy queda intacta (sin borrar código
-// legacy todavía — FUSION §10 paso 5: cableado conmutado, no borrado en
-// caliente; la eliminación de módulos es fase 3, post-GREEN).
+// Entra en FusionCore EN SERIE tras ORBE (ORBE → HOLOS → OMNI → Φ,
+// directiva explícita 2026-11-08; el texto anterior "EN EL LUGAR DE
+// ORBE / cuando HOLOS está activo ORBE no corre" quedó obsoleto cuando
+// se pasó a serie). El retardo algorítmico se suma: 512 muestras de
+// ORBE + 512 de HOLOS ≈ 21.3 ms @48 kHz (más 31 de OMNI).
 //
 // Tiempo real: cero malloc, cero locks, cero I/O en process(); todo se
 // preasigna en prepare(). Estado por instancia, nunca global.
@@ -65,7 +64,14 @@
 // es identidad); DRR_b es un proxy desde coherencia (su uso como
 // modulador queda para fase 2); la equivalencia de fase entre el FIR 256
 // taps del EvoEQ y la magnitud por bin de Γ no está medida (§5.5).
-// Todo off por defecto (amount=0) hasta que la puerta auditiva dé GREEN.
+// Defaults del struct: amount=0 (bypass) hasta que la app restaure
+// estado (ParameterStore: amount 0.5, harmonics 0.0, directiva
+// 2026-11-08) o llegue un snapshot en Ruta B. La puerta GREEN ya NO
+// existe: la directiva la anuló; "hasta GREEN" quedó obsoleto.
+// Head-tracking: el parallax por setHeadPose() solo actúa si alguien
+// alimenta la pose. En Ruta A nadie llama a setHeadPose() sobre la
+// instancia de esta clase (el yaw queda en 0); en Ruta B llega por
+// snapshot (daemon SET_HEAD_POSE) vía updateHeadPose().
 #include <atomic>
 #include <cmath>
 #include <cstddef>

@@ -39,7 +39,9 @@ de ruta, AUX activo, EMF disponible = siempre false).
 
 - **No es un tensor continuo sin discretizar.** La señal sigue siendo
   PCM en bloques de 128 muestras y HOLOS trabaja en STFT (hop 128 /
-  FFT 512, 10.7 ms @48 kHz). No hay procesamiento "sin Fourier por
+  FFT 512, 10.7 ms @48 kHz de latencia algorítmica — la total en
+  dispositivo (buffers + AudioFlinger + USB + DAC) es mayor y está sin
+  medir). No hay procesamiento "sin Fourier por
   bloques" ni "sin PCM": AudioFlinger y USB Audio Class son PCM, y el
   Aux 3.5 mm es analógico después del DAC.
 - **No hay "inversa matemática exacta" del ambiente.** La
@@ -54,7 +56,8 @@ de ruta, AUX activo, EMF disponible = siempre false).
 - **S_neuro(t) — REAL cuando hay driver.** Frames EEG/ABR/fNIRS por
   `ingestNeuro()`; sin driver no llegan frames y N es identidad.
   Latencia real del bucle: frame de sensor (~10 ms) + STFT HOLOS
-  (10.7 ms). No microsegundos.
+  (10.7 ms algorítmicos; la total en dispositivo está sin medir).
+  No microsegundos.
 - **Z_emf(t) — NO DISPONIBLE.** Back-EMF por Aux es imposible
   (`docs/AUX_GENEZI_ROUTE.md` §2): salida analógica de solo salida,
   sin camino de retorno, DAC sin sensado de carga. `EmfVector` existe

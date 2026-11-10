@@ -441,7 +441,8 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
 
     // ORBE — Binaural Esférico de Campo Cercano (ABI v9): los parámetros llegan
     // por el snapshot desde la app (CONTROL / PersistedStateRestorer) y se
-    // aplican al FusionCore de esta instancia. amount 0 = apagado (default).
+    // aplican al FusionCore de esta instancia. amount 0 = apagado (el snapshot
+    // trae 1.0 desde la app por defecto; 0 solo si el usuario lo apaga).
     // Se clampean defensivamente: un snapshot corrupto no debe mover el motor.
     if (std::isfinite(s.orbe_amount) && std::isfinite(s.orbe_distance_m) &&
         std::isfinite(s.orbe_spread) && std::isfinite(s.orbe_proximity_db) &&
@@ -457,7 +458,7 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
     // HOLOS — Operador Único de Campo Acústico (ABI v10): los parámetros
     // llegan por el snapshot desde la app (CONTROL / PersistedStateRestorer)
     // y se aplican al FusionCore de esta instancia. amount 0 = apagado
-    // (default). Se clampean defensivamente: un snapshot corrupto no debe
+    // (el snapshot trae 0.5, harmonics 0 desde la app por defecto). Se clampean defensivamente: un snapshot corrupto no debe
     // mover el motor. El EQ estático de Γ va plano por defecto (no-op).
     if (std::isfinite(s.holos_amount) && std::isfinite(s.holos_distance_m) &&
         std::isfinite(s.holos_spread) && std::isfinite(s.holos_proximity_db) &&

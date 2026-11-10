@@ -5,11 +5,14 @@
 // IvannaFusionCore::process() lo lee cada bloque. El lado audioserver
 // (libomega_effect.so) tiene su propio stub en holos_globals_effect.cpp;
 // NO duplicar en un mismo target (ODR).
-// Apagado por defecto (amount=0 = bypass bit-exacto) hasta que la puerta
-// auditiva dé GREEN. Los parámetros de la Ruta B no pueden llegar hoy por
-// snapshot (OmegaDspSnapshot ABI v9 no tiene campos holos_*); hasta un
-// futuro bump de ABI a v10, el proceso audioserver usa estos defaults (off)
-// — mismo precedente que ORBE dejó documentado para ABI v8.
+// Apagado solo como valor inicial del atomic (amount=0 = bypass
+// bit-exacto): la app lo pone a 0.5 (harmonics 0.0 retuneado) al restaurar
+// estado (ParameterStore, directiva explícita 2026-11-08, puerta GREEN
+// anulada). Los parámetros de la Ruta B llegan por snapshot
+// (OmegaDspSnapshot ABI v10 ya tiene campos holos_*; omega_apply_snapshot
+// los reenvía vía setHolosParams()). El stub del audioserver
+// (holos_globals_effect.cpp) arranca en el mismo 0 inicial hasta que llega
+// el primer snapshot. Corre EN SERIE tras ORBE (ORBE → HOLOS → IVANNA → Φ).
 // ─────────────────────────────────────────────────────────────────────────────
 #include <atomic>
 

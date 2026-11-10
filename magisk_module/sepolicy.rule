@@ -1,5 +1,57 @@
-# IVANNA OMEGA SUPREME — SELinux policy rules v2.0
+# IVANNA OMEGA SUPREME — SELinux policy rules v2.1
 #
+# v2.1 (2026-11-10, auditoría línea 3): el MLS-bypass ya NO se aplica a
+# adb_data_file entero (ver v3.4, eliminado). En su lugar se define un tipo
+# DEDICADO ivanna_data_file, solo para /data/adb/ivanna_omega/ y
+# /data/vendor/ivanna_audio/, y SOLO ese tipo es mlstrustedobject.
+# service.sh etiqueta esos dos directorios con chcon tras aplicar esta
+# policy; los archivos nuevos heredan el tipo del directorio padre.
+# Magisk documenta `type <nombre> <attrs>` como statement válido en
+# sepolicy.rule y magiskpolicy --live lo soporta (ver tools de Magisk:
+# "type type_name ^(attribute)"). La definición va PRIMERA en este
+# archivo: magiskpolicy --apply aborta en el primer tipo inexistente,
+# así que ninguna regla que mencione ivanna_data_file puede ir antes.
+
+# ═══════════════════════════════════════════════════════════════════════
+#  0. TIPO DEDICADO ivanna_data_file (MLS-trusted SOLO para IVANNA)
+# ═══════════════════════════════════════════════════════════════════════
+type ivanna_data_file file_type, data_file_type
+typeattribute ivanna_data_file mlstrustedobject
+
+# App (base + variantes por targetSdk 25..35): leer/escribir el SHM y el
+# snapshot. Es el mismo permiso que v3.1 daba sobre adb_data_file, pero
+# acotado a los archivos que service.sh etiqueta como ivanna_data_file.
+allow untrusted_app ivanna_data_file file { read write open getattr map }
+allow untrusted_app ivanna_data_file dir { search getattr open read }
+allow untrusted_app_25 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_25 ivanna_data_file dir { search getattr open read }
+allow untrusted_app_27 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_27 ivanna_data_file dir { search getattr open read }
+allow untrusted_app_29 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_29 ivanna_data_file dir { search getattr open read }
+allow untrusted_app_30 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_30 ivanna_data_file dir { search getattr open read }
+allow untrusted_app_32 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_32 ivanna_data_file dir { search getattr open read }
+allow untrusted_app_33 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_33 ivanna_data_file dir { search getattr open read }
+allow untrusted_app_34 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_34 ivanna_data_file dir { search getattr open read }
+allow untrusted_app_35 ivanna_data_file file { read write open getattr map }
+allow untrusted_app_35 ivanna_data_file dir { search getattr open read }
+
+# audioserver (HAL/efecto): solo lectura del snapshot/SHM.
+allow audioserver ivanna_data_file file { read open getattr map }
+allow audioserver ivanna_data_file dir { search getattr open read }
+
+# Daemon (su/magisk) y shell (health_check.sh): lectura/escritura y lectura.
+allow su ivanna_data_file file { read write open getattr map }
+allow su ivanna_data_file dir { search getattr open read write }
+allow magisk ivanna_data_file file { read write open getattr map }
+allow magisk ivanna_data_file dir { search getattr open read write }
+allow shell ivanna_data_file file { read open getattr }
+allow shell ivanna_data_file dir { search getattr open read }
+
 # Objetivo: garantizar que untrusted_app (la app) pueda hacer connect()
 # sobre @omega_daemon_socket / @omega_command_socket sin denials silenciosos
 # en Android 8..16, sea cual sea el dominio SELinux del daemon en la ROM
@@ -389,7 +441,7 @@ allow audioserver same_process_hal_file file { read open getattr map execute exe
 allow audioserver same_process_hal_file dir { search getattr open read }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# v3.4 — MLS: untrusted_app puede ESCRIBIR omega_shm (adb_data_file)
+# v3.4 — MLS: ELIMINADO (auditoria linea 3, 2026-11-10). El bypass MLS ahora es solo para ivanna_data_file (seccion 0).
 #
 # Las reglas allow de v3.1 son necesarias pero NO suficientes: la app corre con
 # categorias MLS (s0:c146,c257,...) distintas a las del archivo (s0) y SELinux
@@ -397,12 +449,14 @@ allow audioserver same_process_hal_file dir { search getattr open read }
 # denegado en bucle. Verificado en campo: con este atributo los denials de
 # "denied { write } ... omega_shm" pasan de >100 por 10 s a 0.
 # ═══════════════════════════════════════════════════════════════════════════════
-typeattribute adb_data_file mlstrustedobject
+# (linea eliminada: typeattribute adb_data_file mlstrustedobject — eximia de MLS a TODO /data/adb/; NO reanadir. Si el reetiquetado falla, ver service.sh SELINUX-BOOT.)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # v3.5 — Canal ASRC/reloj HAL en /data/vendor/ivanna_audio
 #
-# service.sh crea el directorio y lo etiqueta adb_data_file (ya cubierto arriba
+# service.sh crea el directorio y lo etiqueta ivanna_data_file (seccion 0;
+# las reglas adb_data_file de la seccion 6 quedan como fallback por si el
+# reetiquetado falla en alguna ROM).
 # para archivos). Para llegar a el, la app debe poder TRAVESAR /data/vendor
 # (vendor_data_file); sin 'search' el lector JNI de asrc_state falla con EACCES.
 # Solo traversal, sin lectura de otros archivos de vendor_data_file.

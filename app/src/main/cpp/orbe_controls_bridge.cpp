@@ -5,10 +5,13 @@
 // IvannaFusionCore::process() lo lee cada bloque. El lado audioserver
 // (libomega_effect.so) tiene su propio stub en orbe_globals_effect.cpp;
 // NO duplicar en un mismo target (ODR).
-// Apagado por defecto (amount=0 = bypass bit-exacto) hasta que la puerta
-// auditiva dé GREEN. Los parámetros de la Ruta B no pueden llegar hoy por
-// snapshot (OmegaDspSnapshot ABI v8 no tiene campos orbe_*); hasta un
-// futuro bump de ABI, el proceso audioserver usa estos defaults (off).
+// Apagado solo como valor inicial del atomic (amount=0 = bypass
+// bit-exacto): la app lo pone a 1.0 al restaurar estado (ParameterStore,
+// default 1.0; directiva explícita 2026-11-08, puerta GREEN anulada).
+// Los parámetros de la Ruta B llegan por snapshot (OmegaDspSnapshot ABI v9
+// ya tiene campos orbe_*; omega_apply_snapshot los reenvía vía
+// setOrbeParams()). El stub del audioserver (orbe_globals_effect.cpp)
+// arranca en el mismo 0 inicial hasta que llega el primer snapshot.
 // ─────────────────────────────────────────────────────────────────────────────
 #include <atomic>
 

@@ -30,18 +30,18 @@ extern std::atomic<bool>  g_hrtf_flush_req;
 extern std::atomic<bool>  g_wfs_enabled;
 extern std::atomic<float> g_wfs_spread;
 extern std::atomic<float> g_wfs_applied_spread;   // read-back: spread REALMENTE aplicado
-extern std::atomic<float> g_orbe_amount;           // ORBE: 0 = bypass bit-exacto (default)
+extern std::atomic<float> g_orbe_amount;           // ORBE: 0 = bypass bit-exacto (valor inicial del atomic; la app lo pone a 1.0 al restaurar estado — ParameterStore, default 1.0, directiva 2026-11-08)
 extern std::atomic<float> g_orbe_distance_m;
 extern std::atomic<float> g_orbe_spread;
 extern std::atomic<float> g_orbe_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<bool>  g_orbe_head_tracking;
-extern std::atomic<float> g_holos_amount;          // HOLOS: 0 = bypass bit-exacto (default)
+extern std::atomic<float> g_holos_amount;          // HOLOS: 0 = bypass bit-exacto (valor inicial del atomic; la app lo pone a 0.5, harmonics 0.0, al restaurar estado — ParameterStore, directiva 2026-11-08)
 extern std::atomic<float> g_omni_amount;           // IVANNA: 0 = bypass bit-exacto (default en Ruta B hasta medir CPU en el G85)
 extern std::atomic<float> g_omni_scene_pull;
 extern std::atomic<float> g_omni_distance_m;
 extern std::atomic<bool>  g_omni_head_tracking;
-extern std::atomic<float> g_hyper_amount;          // Φ: 0 = bypass bit-exacto (default)
+extern std::atomic<float> g_hyper_amount;          // Φ: 0 = bypass bit-exacto (valor inicial del atomic; la app lo pone a 0.5 al restaurar estado — ParameterStore, directiva 2026-11-08)
 extern std::atomic<int> g_hyper_preset;            // Φ: 0 teléfono, 1 sala, 2 auto
 extern std::atomic<bool> g_hyper_xtc;              // Φ: XTC on/off
 extern std::atomic<float> g_holos_distance_m;

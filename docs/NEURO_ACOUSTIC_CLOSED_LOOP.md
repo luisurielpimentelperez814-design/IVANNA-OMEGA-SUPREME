@@ -147,7 +147,9 @@ distancia ORBE `±0.20 m`, proximidad `±3 dB`. Rangos = `HolosParams` /
 
 La adaptación **no** es "en microsegundos" a nivel cortical. La
 latencia del bucle la dominan el sensor, el frame (~10 ms) y la STFT
-de HOLOS/ORBE (512 muestras = 10.7 ms @48 kHz). Lo sub-microsegundo
+de HOLOS/ORBE (512 muestras = 10.7 ms @48 kHz, latencia algorítmica; la
+total en dispositivo —buffers + AudioFlinger + USB + DAC— está sin medir).
+Lo sub-microsegundo
 es la alineación de fase del motor coclear (`CochlearActiveInverseModel`),
 no la respuesta del cerebro. v2 no afirma "cero distorsión
 perceptiva individual": afirma ganancia/fase acotadas que mueven la

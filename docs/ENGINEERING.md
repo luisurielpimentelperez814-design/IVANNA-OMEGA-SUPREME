@@ -10,13 +10,13 @@ Un motor de audio en tiempo real para Android (C++26 + Kotlin/Compose + módulo 
 ## Cifras (medidas del repo, no estimadas) / Numbers (measured from the repo)
 | Dato | Valor |
 |---|---|
-| C++ (motor DSP, JNI) | ~122 000 líneas |
-| Kotlin (UI Compose, servicios) | ~54 000 líneas |
-| Pruebas nativas en host (CTest) | 245 / 245 pasan (`telemetry/ctest_summary.json`) |
+| C++ (motor DSP, JNI) | ~115 000 líneas (sin tests ni `third_party`; contado 2026-11-10) |
+| Kotlin (UI Compose, servicios) | ~80 000 líneas (sin tests; contado 2026-11-10) |
+| Pruebas nativas en host (CTest) | 885 / 885 pasan (`telemetry/ctest_summary.json`) |
 | Sanitizers en CI | ASan + UBSan en cada push |
-| Puertas estáticas | 6 (ver abajo) |
-| Versiones publicadas | 28 releases |
-| Historial | 1 600+ commits desde 2026-08-17 |
+| Puertas estáticas | 10 scripts `check_*.py` + cppcheck en la Fase 0 de la CI (ver abajo) |
+| Versiones publicadas | 57 releases (61 entradas en GitHub Releases incl. 4 pre-releases de validación; verificado 2026-11-10) |
+| Historial | ~3 700 commits (verificado 2026-11-10 vía API de GitHub) |
 
 ## Decisiones de diseño que importan / Design decisions that matter
 1. **Hilo de audio sin bloqueos ni asignaciones.** Un script (`scripts/check_rt_safety.py`) falla el CI si aparece `malloc`/mutex en la ruta de tiempo real. La clasificación con TFLite corre en un hilo aparte y publica resultados; el hilo de audio nunca espera.
@@ -27,15 +27,15 @@ Un motor de audio en tiempo real para Android (C++26 + Kotlin/Compose + módulo 
 
 ## Cómo verificarlo / How to verify
 ```bash
-bash scripts/run_ctest.sh                 # 245 pruebas en host
-for s in scripts/check_*.py; do python3 $s; done   # 6 puertas estáticas
+bash scripts/run_ctest.sh                 # 885 pruebas en host
+for s in scripts/check_*.py; do python3 $s; done   # 10 puertas estáticas (+ cppcheck en CI)
 ```
 La CI (`.github/workflows`) corre lo mismo más ASan/UBSan, valida los datasets HRTF y construye el APK.
 
 ## Límites actuales (honestos) / Current limits
 - La validación **en dispositivos reales** es limitada: por eso se buscan probadores (issue #62). Las pruebas automáticas corren en host (x86_64), no en el teléfono.
 - Parte del código es de rutas experimentales; el trabajo de auditoría para cablear o retirar lo que no cumple sigue en curso.
-- Datasets/modelos de terceros: inventario de licencias pendiente (#59).
+- Datasets/modelos de terceros: licencias de CIPIC, KEMAR (MIT) y TU Berlin KEMAR verificadas en `THIRD_PARTY_NOTICES.md` (TU Berlin es CC BY-NC-SA 3.0: decisión pendiente); origen/licencia de las 200 RIR sigue pendiente (#59).
 
 ## Autor / Author
 **Luis Uriel Pimentel Pérez (GORE TNS)** — ingeniería de audio DSP, sistemas de bajo nivel y seguridad en Android. Proyecto individual, desarrollado desde cero.

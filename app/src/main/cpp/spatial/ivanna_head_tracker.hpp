@@ -9,11 +9,21 @@
 // del dispositivo en una matriz de rotación 3D que se aplica a los coeficientes
 // HRTF en cada frame de audio.
 //
-// Esto permite que el sonido "se quede fijo en el espacio" cuando el usuario
-// gira la cabeza — la experiencia holográfica que Dolby Atmos NO ofrece en
-// dispositivos genéricos (solo en auriculares propietarios como AirPods Pro).
+// El sensor entrega ~100 Hz (una muestra cada ~10 ms); getPoseForAudioFrame()
+// devuelve la última pose coherente, SIN predicción al instante del frame
+// (la predicción vive en HeadTrackerFusion, que hoy no recibe datos de
+// ningún sensor: updateGyro/updateAccel/updateMagnetometer no tienen
+// llamador). No hay medición de latencia IMU→HRTF en el teléfono, así que
+// no se afirma ningún "<5 ms": la latencia real es sensor (~10 ms) +
+// JNI + bloque de audio.
 //
-// Latencia objetivo: <5ms desde sample IMU hasta aplicación HRTF.
+// Dónde llega de verdad: IvannaHeadTracker (Kotlin) alimenta este
+// rastreador y el ObjectRenderer lo consume en renderBlock() — pero solo
+// en la ruta de reserva de PlaybackCaptureService (cuando el master
+// nativo NO está activo). Con el master nativo activo (cadena
+// ORBE→HOLOS→OMNI→Φ), ORBE/HOLOS no reciben pose y Omni lee un yaw sin
+// llamador Kotlin: el head tracking no mueve el campo en la cadena
+// principal.
 // ============================================================================
 #pragma once
 #include <algorithm>

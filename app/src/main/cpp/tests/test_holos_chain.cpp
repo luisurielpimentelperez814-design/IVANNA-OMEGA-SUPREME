@@ -73,6 +73,19 @@ HolosParams linearParams() {
     return p;
 }
 
+// THD+N de un tono de 3 s por HOLOS con los params dados, medido en el
+// segundo 3 (régimen permanente). Ámbito de namespace para que lo usen
+// tanto ThdnOnAndImd (defaults del struct) como ThdnProductionRetune.
+double measureHolosThdn(HolosParams p, double f0) {
+    HolosOperator op;
+    op.prepare(48000.0f);
+    op.setParams(p);
+    auto t = tone(f0, std::pow(10.0, -3.0 / 20.0), 3.0);
+    std::vector<float> l = t, r = t;
+    runHolos(op, l, r);
+    return thdn(l.data() + 96000, 48000, kFs, f0).thdnDb;
+}
+
 // ITD (s) e ILD (dB) de salida por correlación cruzada en [from, to).
 // Devuelve {itdSeconds, ildDb}; itd>0 = L llega antes (fuente a la izq.).
 std::pair<double, double> itdIld(const std::vector<float>& l, const std::vector<float>& r,
@@ -113,33 +126,26 @@ TEST(HolosChain, ThdnOffIsBitExact) {
 
 TEST(HolosChain, ThdnOnAndImd) {
     // THD+N e IMD con HOLOS on (defaults: harmonics 0.32, dynamics 1,
-    // diffuse 0.5). Se reportan los números reales; el test solo exige
-    // que el procesado no degenere (THD+N mejor que −20 dB, IMD mejor
-    // que −20 dB) y que sin armónicos (K off) el THD+N mejore >10 dB.
-    auto measure = [](HolosParams p, double f0) {
-        HolosOperator op;
-        op.prepare(48000.0f);
-        op.setParams(p);
-        auto t = tone(f0, std::pow(10.0, -3.0 / 20.0), 3.0);
-        std::vector<float> l = t, r = t;
-        runHolos(op, l, r);
-        return thdn(l.data() + 96000, 48000, kFs, f0).thdnDb;
-    };
+    // diffuse 0.5). Cotas endurecidas (auditoría 2026-11-10) sobre los
+    // valores medidos en host: THD+N −31.5 dB @1 kHz, −33.2 dB @100 Hz;
+    // IMD −28.2 dB; sin K −87.9 dB (mejora 56.4 dB). Las cotas dejan
+    // 3–5 dB de margen y siguen sin probar nada sobre "calidad
+    // percibida": solo acotan distorsión añadida en host x86-64.
     HolosParams p;
     p.amount = 1.0f;
-    const double thdn1k = measure(p, 1000.0);
-    const double thdn100 = measure(p, 100.0);
+    const double thdn1k = measureHolosThdn(p, 1000.0);
+    const double thdn100 = measureHolosThdn(p, 100.0);
     std::printf("[holos-chain] THD+N on @1 kHz: %.1f dB, @100 Hz: %.1f dB\n",
                 thdn1k, thdn100);
     EXPECT_GT(thdn1k, -60.0);
-    EXPECT_LT(thdn1k, -20.0);
+    EXPECT_LT(thdn1k, -28.0);
     EXPECT_GT(thdn100, -60.0);
-    EXPECT_LT(thdn100, -20.0);
+    EXPECT_LT(thdn100, -28.0);
     HolosParams pNoK = p;
     pNoK.harmonics = 0.0f;
-    const double thdn1kNoK = measure(pNoK, 1000.0);
+    const double thdn1kNoK = measureHolosThdn(pNoK, 1000.0);
     std::printf("[holos-chain] THD+N on sin K @1 kHz: %.1f dB\n", thdn1kNoK);
-    EXPECT_LT(thdn1kNoK, thdn1k - 10.0) << "sin K el THD+N debe mejorar >10 dB";
+    EXPECT_LT(thdn1kNoK, thdn1k - 20.0) << "sin K el THD+N debe mejorar >20 dB";
 
     // IMD SMPTE 60 + 7000 Hz (4:1), HOLOS on con defaults.
     {
@@ -155,8 +161,29 @@ TEST(HolosChain, ThdnOnAndImd) {
         runHolos(op, l, r);
         const double imd = imdSmpteDb(l.data() + 96000, 48000, kFs, 60.0, 7000.0);
         std::printf("[holos-chain] IMD SMPTE on: %.1f dB\n", imd);
-        EXPECT_LT(imd, -20.0);
+        EXPECT_LT(imd, -25.0);  // medido −28.2 dB en host
     }
+}
+
+TEST(HolosChain, ThdnProductionRetune) {
+    // Retune de producción (directiva 2026-11-08, aplicado por
+    // ParameterStore/PersistedStateRestorer, NO por los defaults del
+    // struct): amount 0.5, harmonics 0.0; el resto, defaults. Es la
+    // configuración que realmente suena en el teléfono: medirla aquí
+    // en vez de solo los defaults del struct (harmonics 0.32).
+    HolosParams p;
+    p.amount = 0.5f;
+    p.harmonics = 0.0f;
+    const double thdn1k = measureHolosThdn(p, 1000.0);
+    const double thdn100 = measureHolosThdn(p, 100.0);
+    std::printf("[holos-chain] THD+N retune prod @1 kHz: %.1f dB, @100 Hz: %.1f dB\n",
+                thdn1k, thdn100);
+    EXPECT_TRUE(std::isfinite(thdn1k));
+    EXPECT_TRUE(std::isfinite(thdn100));
+    // Cotas endurecidas sobre lo medido en host: −94.0 dB @1 kHz,
+    // −79.6 dB @100 Hz (coincide con el retune documentado). Margen ~14 dB.
+    EXPECT_LT(thdn1k, -80.0);
+    EXPECT_LT(thdn100, -65.0);
 }
 
 TEST(HolosChain, LatencyIsFftSize) {
@@ -206,6 +233,10 @@ TEST(HolosChain, ThroughputRt) {
     const double dt = nowSec() - t0;
     const double rt = 10.0 / dt;
     std::printf("[holos-chain] throughput host: %.1f× RT (10 s en %.2f s)\n", rt, dt);
+    // NO endurecido (auditoría 2026-11-10): medido 1.3× RT en host, el
+    // margen hasta 1.0× es demasiado fino para una cota honesta y el
+    // host x86-64 no predice el G85. Un verde aquí no es "corre en el
+    // teléfono": HOLOS en el G85 sigue sin medición de CPU/XRuns.
     EXPECT_GT(rt, 1.0) << "debe correr más rápido que tiempo real en host";
 }
 

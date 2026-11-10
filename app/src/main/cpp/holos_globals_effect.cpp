@@ -3,9 +3,12 @@
 // audioserver (libomega_effect.so). Mismo patrón que
 // orbe_globals_effect.cpp: la definición real está en
 // holos_controls_bridge.cpp (target ivanna_omega). NO añadir a ivanna_omega:
-// ODR violation. Defaults: HOLOS off (amount=0 = bypass bit-exacto) hasta
-// que la puerta auditiva dé GREEN y el snapshot ABI bumpee a v10 con
-// campos holos_* (mismo precedente que ORBE para ABI v8).
+// ODR violation. Valores iniciales: amount=0 (valor inicial del atomic;
+// la app lo pone a 0.5, harmonics 0.0, al restaurar estado y la Ruta B lo
+// recibe por snapshot ABI v10, campos holos_* — omega_apply_snapshot lo
+// aplica vía setHolosParams()). Hasta que llega el primer snapshot, el
+// proceso audioserver usa este 0 inicial (bypass bit-exacto). Corre EN
+// SERIE tras ORBE (ORBE → HOLOS → IVANNA → Φ).
 // ─────────────────────────────────────────────────────────────────────────────
 #include <atomic>
 

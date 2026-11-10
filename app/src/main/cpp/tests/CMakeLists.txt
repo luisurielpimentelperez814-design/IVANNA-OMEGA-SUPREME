@@ -1913,3 +1913,10 @@ gtest_discover_tests(test_magistral_room_xtc)
 # Header-only (session_discovery.hpp); cubre parseo moderno/antiguo, selección
 # de sesión de música y ABI v11 del snapshot (offsets viejos sin cambio).
 ivanna_add_test(test_session_discovery)
+
+# ── 5D FASE 0 (PROPUESTA_5D.md §5, v2.5.383): BioControl5D + EEG sintético ──
+# Header-only (spatial/BioControl5D.hpp): dinámica neural (3.2), lazo de
+# control Γ_b/r_ORBE/K con clamps y slew-rates (3.3), fail-closed sin sensor
+# y tras perderlo, tono 884 Hz modulado por η (3.7). Host-only, sin cableado
+# al DSP real ni al hilo RT. Sin sensor EEG real no hay Fases 1–3.
+ivanna_add_test(test_5d_phase0)

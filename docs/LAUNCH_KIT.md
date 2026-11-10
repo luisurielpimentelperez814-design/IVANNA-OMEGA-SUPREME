@@ -31,7 +31,7 @@ para que el primer contacto sea honesto y verificable. Sin cuentas falsas, sin i
 | Afirmación | Evidencia |
 |---|---|
 | Coordina los módulos DSP midiendo el resultado real (original vs. salida) | `include/acoustic_unity_engine.hpp`, `test_unity_closed_loop` |
-| 245 pruebas de host en verde, ASan/UBSan, 7 puertas estáticas en CI | `telemetry/ctest_summary.json`, pestaña *Actions* |
+| 885 pruebas de host en verde, ASan/UBSan, 10 puertas estáticas en CI | `telemetry/ctest_summary.json`, pestaña *Actions* |
 | Verificación de tiempo real (sin `malloc`/locks en el hilo de audio) | `scripts/check_rt_safety.py` |
 | Dos rutas: sin root (en la app) y con root (Magisk + daemon) | `README.md` §2 |
 | Los controles de usuario llegan de la UI al audio del sistema (Ruta B) | `test_user_flags_channel` (CommandServer real) |
@@ -68,7 +68,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 > and decides how much each stage — widener, room convolution, exciter, compressor — is allowed to apply, so one
 > stage doesn't destroy what another built. Every actuator keeps a fidelity floor and recovers when there's headroom.
 >
-> What is verified: 245 host tests (including ASan/UBSan runs), static gates for real-time safety and for "dead" code
+> What is verified: 885 host tests (including ASan/UBSan runs), static gates for real-time safety and for "dead" code
 > (everything must be wired UI → JNI → native → DSP), and an end-to-end test of the control plane. What is *not*
 > verified yet: listening tests on real devices — the measurements use synthetic signals. That's why I'm looking
 > for people willing to try it and file a device report.
@@ -86,7 +86,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 > real-time DSP, binaural HRTF, measured room impulse responses and a coordinator that measures the output to keep
 > stages from fighting each other.
 >
-> I have 245 host tests and CI gates, but **no on-device listening data yet**, so I'm asking for testers: model,
+> I have 885 host tests and CI gates, but **no on-device listening data yet**, so I'm asking for testers: model,
 > Android version, route (A/B), audio output, and what you heard — "no difference" is a useful report too.
 > Report form: https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/issues/new/choose
 > Repo: https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME
@@ -95,7 +95,7 @@ falta validación en dispositivos reales — por eso busco probadores.* Esa fran
 ### 4.3 Redes cortas (X / Bluesky / Mastodon / LinkedIn) — español
 
 > Construí un motor de audio para Android que **mide su propia salida** antes de decidir cuánto aplica cada módulo
-> (ensanche, salas, excitador, compresor). 245 pruebas, ASan/UBSan, producto propietario. Sin root o con Magisk.
+> (ensanche, salas, excitador, compresor). 885 pruebas, ASan/UBSan, producto propietario. Sin root o con Magisk.
 > Busco probadores de dispositivos reales 👇 github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME
 > (adjunta `ivanna_promo_flyer.png`)
 
@@ -125,7 +125,7 @@ Los puntos 3 y 4 son el contenido que más comparte la comunidad técnica: error
 | 0–8 | Onda + logo | «La mayoría de los efectos de audio se aplican en cadena y nadie comprueba el resultado.» |
 | 8–25 | Pantalla de la app con DSP **activo** | «IVANNA compara el audio original con la salida real y decide cuánto aplica cada módulo.» |
 | 25–45 | Panel de telemetría «UNITY MEDIDO» | «Mide expansión, fase, cresta y agudos; si algo se pasa, ese módulo cede.» |
-| 45–60 | Terminal con `run_ctest.sh` y *Actions* en verde | «245 pruebas, ASan/UBSan y puertas de calidad en cada cambio.» |
+| 45–60 | Terminal con `run_ctest.sh` y *Actions* en verde | «885 pruebas, ASan/UBSan y puertas de calidad en cada cambio.» |
 | 60–75 | Flyer + enlace | «Falta lo más importante: probarlo en teléfonos reales. Si quieres ayudar, el enlace está abajo.» |
 
 **Descripción:** resumen de 3 líneas + enlace al repositorio + enlace al formulario de reporte + «Soy el autor».

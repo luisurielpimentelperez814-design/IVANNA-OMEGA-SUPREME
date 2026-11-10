@@ -7,9 +7,13 @@
 // pendiente (miembro m_omni en IvannaFusionCore + ABI del bus de control);
 // NO duplicar en omega_effect (ODR).
 //
-// A diferencia de ORBE/HOLOS/Φ (atomics en 0 = apagado hasta GREEN),
-// IVANNA arranca ACTIVO por defecto (g_omni_amount{1.0f}): directiva
+// A diferencia de los demás operadores, IVANNA arranca ACTIVO por defecto
+// también como valor inicial del atomic (g_omni_amount{1.0f}): directiva
 // explícita de Esse 2026-11-09 ("implementado y activo totalmente").
+// ORBE/HOLOS/Φ también arrancan activos por defecto en la app (amount
+// 1.0 / 0.5 / 0.5 vía ParameterStore al restaurar estado; directiva
+// 2026-11-08, puerta GREEN anulada) — sus atomics solo parten en 0 como
+// valor inicial pre-restauración, no como default de producto.
 // El audiograma (12 pérdidas dB) viaja por atomics + flag dirty: el JNI
 // escribe los valores y luego pone dirty=true; el bloque de proceso los
 // lee y limpia dirty. Una lectura rasgada es inofensiva (es un ajuste de

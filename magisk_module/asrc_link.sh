@@ -19,16 +19,33 @@
 
 CLOCK_DIR="${IVANNA_CLOCK_DIR:-/data/vendor/ivanna_audio}"
 CLOCK_FILES="asrc_state clock_snapshot.v2 clock_snapshot"
-# adb_data_file: tipo que ya cubren las reglas de sepolicy.rule (app, audioserver,
-# su/magisk) y que ya es mlstrustedobject (v3.4).
-CLOCK_CTX="u:object_r:adb_data_file:s0"
+# CLOCK_CTX: tipo dedicado ivanna_data_file (auditoria linea 3, 2026-11-10).
+# Antes era adb_data_file + mlstrustedobject global (sepolicy.rule v3.4,
+# eliminado). Si el tipo dedicado no existe en la policy viva (p. ej.
+# magiskpolicy --live rechazo la linea `type`), ivanna_asrc_chcon()
+# vuelve a adb_data_file como fallback y lo deja registrado: el canal
+# sigue funcionando salvo el bypass MLS de escritura.
+CLOCK_CTX="u:object_r:ivanna_data_file:s0"
+CLOCK_CTX_FALLBACK="u:object_r:adb_data_file:s0"
+
+# Etiqueta una ruta con el tipo dedicado; fallback a adb_data_file si el
+# tipo no existe. Devuelve 0 si quedo con ivanna_data_file, 1 si fallback.
+ivanna_asrc_chcon() {
+    local _path="$1"
+    [ -e "$_path" ] || return 1
+    command -v chcon >/dev/null 2>&1 || return 1
+    chcon "$CLOCK_CTX" "$_path" 2>/dev/null
+    if ls -Zd "$_path" 2>/dev/null | grep -q ivanna_data_file; then
+        return 0
+    fi
+    chcon "$CLOCK_CTX_FALLBACK" "$_path" 2>/dev/null
+    return 1
+}
 
 ivanna_asrc_link_prepare() {
     mkdir -p "$CLOCK_DIR" 2>/dev/null || return 1
     chmod 0775 "$CLOCK_DIR" 2>/dev/null
-    if command -v chcon >/dev/null 2>&1; then
-        chcon "$CLOCK_CTX" "$CLOCK_DIR" 2>/dev/null
-    fi
+    ivanna_asrc_chcon "$CLOCK_DIR" 2>/dev/null
     [ -d "$CLOCK_DIR" ]
 }
 
@@ -38,9 +55,7 @@ ivanna_asrc_link_fixperms() {
     for _f in $CLOCK_FILES; do
         [ -f "$CLOCK_DIR/$_f" ] || continue
         chmod 0664 "$CLOCK_DIR/$_f" 2>/dev/null
-        if command -v chcon >/dev/null 2>&1; then
-            chcon "$CLOCK_CTX" "$CLOCK_DIR/$_f" 2>/dev/null
-        fi
+        ivanna_asrc_chcon "$CLOCK_DIR/$_f" 2>/dev/null
         _n=$((_n + 1))
     done
     echo "$_n"

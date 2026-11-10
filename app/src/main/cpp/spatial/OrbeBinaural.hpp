@@ -7,7 +7,11 @@
 // azimut y una distancia continuos (0.15–2.0 m) con el modelo de cabeza
 // esférica en campo cercano (NearFieldHeadModel), estima la escena de la
 // propia grabación por banda (ILD, IPD→ITD, coherencia — familia
-// DirAC/BCC, sin metadata) y aplica parallax por head-tracking.
+// DirAC/BCC, sin metadata) y aplica parallax por head-tracking CUANDO
+// alguien alimenta la pose con setHeadPose(). En Ruta A nadie llama a
+// setHeadPose() sobre la instancia de Ruta A (el yaw queda en 0 y el
+// flag headTracking no tiene efecto audible); en Ruta B la pose llega
+// por snapshot (daemon SET_HEAD_POSE) vía updateHeadPose().
 //
 // Flujo: STFT hop 128 / FFT 512 escalable con SR → estimación por banda
 // (suavizado 20 ms) → render por bin (retardo = rotación de fase exacta,

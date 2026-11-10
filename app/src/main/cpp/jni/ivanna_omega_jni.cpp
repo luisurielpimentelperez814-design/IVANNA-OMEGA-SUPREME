@@ -139,15 +139,20 @@ static StereoWidener  g_widener;
 // Crossfeed de graves con ITD (audifonos/DAC), Ruta A. strength 0 = apagado = bypass bit-exacto (default).
 static ivanna::HeadphoneCrossfeed g_crossfeed;
 // ORBE (Binaural Esférico de Campo Cercano), Ruta A: instancia propia del proceso app.
-// amount=0 = bypass bit-exacto (default). Se prepara en nativeInit/nativeInitDSP
-// y se procesa en nativeProcess tras el crossfeed. La Ruta B usa su propia
-// instancia (IvannaFusionEngine::m_orbe) en el proceso audioserver.
+// amount=0 = bypass bit-exacto. ACTIVO por defecto (amount=1.0, directiva
+// explícita 2026-11-08; la puerta GREEN quedó anulada). Se prepara en
+// nativeInit/nativeInitDSP y se procesa en nativeProcess tras el crossfeed,
+// EN SERIE antes de HOLOS (ORBE → HOLOS → IVANNA → Φ). La Ruta B usa su
+// propia instancia (IvannaFusionEngine::m_orbe) en el proceso audioserver.
 static ivanna::OrbeBinaural g_orbeRouteA;
 // HOLOS (Operador Único de Campo Acústico), Ruta A: instancia propia del proceso app.
-// amount=0 = bypass bit-exacto (default). Se prepara en nativeInit/nativeInitDSP
-// y se procesa en nativeProcess tras el crossfeed, EN EL LUGAR DE ORBE:
-// cuando HOLOS está activo ORBE no corre. La Ruta B usa su propia
-// instancia (IvannaFusionEngine::m_holos) en el proceso audioserver.
+// amount=0 = bypass bit-exacto. ACTIVO por defecto (amount=0.5, harmonics=0.0
+// retuneado, directiva explícita 2026-11-08; la puerta GREEN quedó anulada).
+// Se prepara en nativeInit/nativeInitDSP y se procesa en nativeProcess tras
+// ORBE, EN SERIE (ORBE → HOLOS → IVANNA → Φ): con ambos activos ORBE
+// TAMBIÉN corre — el if/else que hacía a HOLOS sustituto de ORBE se eliminó
+// en v2.5.369. La Ruta B usa su propia instancia (IvannaFusionEngine::m_holos)
+// en el proceso audioserver.
 static ivanna::HolosOperator g_holosRouteA;
 // IVANNA (Operador Unificado de Campo Espacial, v2.5.375), Ruta A:
 // instancia propia del proceso app. Activo por defecto (g_omni_amount=1.0).
@@ -189,7 +194,8 @@ static std::atomic<bool> g_sensorRoomCorrEnabledA{false};
 static std::atomic<float> g_sensorRoomCorrAmountA{0.0f};
 // Hiper-Operador de Estado Φ (v2.5.369), Ruta A: instancia propia del
 // proceso app (paridad con IvannaFusionEngine::m_hyper en Ruta B).
-// Apagado por defecto (g_hyper_amount=0 → identidad bit-exacta).
+// ACTIVO por defecto (amount=0.5, directiva explícita 2026-11-08;
+// amount=0 → identidad bit-exacta).
 // Se alimenta del SensorFrame vivo del micrófono (g_acousticSensorA):
 // en modo MEDIDO corrige hacia el target élite (Harman 2018 por defecto,
 // mismo target que el sensor); sin frames frescos cae a APROXIMADO
@@ -1858,9 +1864,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_crossfeed.process(g_ats.chL, g_ats.chR, n);   // despues del widener y antes de la ganancia de salida/limiter
     // ORBE (Ruta A): etapa de campo cercano tras el crossfeed, antes de la ganancia
     // de salida. Sin HOA en proceso en esta ruta, ORBE aplica aquí directamente.
-    // HOLOS ocupa el lugar de ORBE: cuando HOLOS está activo ORBE no corre.
-    // Lee los atomics g_holos_*/g_orbe_* cada bloque; amount=0 es bypass bit-exacto de
-    // coste cero. Activo añade 512 muestras de latencia (10.7 ms @48 kHz).
+    // ORBE + HOLOS EN SERIE (v2.5.369, directiva explícita): AMBOS activos —
+    // ORBE primero, HOLOS después (ver bloque abajo). Lee los atomics
+    // g_holos_*/g_orbe_* cada bloque; amount=0 es bypass bit-exacto de
+    // coste cero. En serie el retardo algorítmico se suma: 512 muestras de
+    // ORBE + 512 de HOLOS ≈ 21.3 ms @48 kHz (más 31 de IVANNA).
     // Bucle cerrado neuro-acústico (v2.5.365): 1x por bloque, ANTES de
     // ORBE + HOLOS en serie (v2.5.369, directiva explícita): AMBOS activos.
     // Antes era if/else (HOLOS ocupaba el lugar de ORBE); con ambos defaults
@@ -3465,12 +3473,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetCrossfeed(JNIEnv*, jobject, 
 }
 
 // ORBE (Binaural Esférico de Campo Cercano), rama feature/orbe-nearfield-binaural.
-// amount 0..1 (0 = apagado, bypass bit-exacto, default), distancia 0.15..2.0 m,
+// amount 0..1 (0 = apagado, bypass bit-exacto; 1.0 = ACTIVO por defecto,
+// directiva explícita 2026-11-08, puerta GREEN anulada), distancia 0.15..2.0 m,
 // spread 0..1.5, proximidad 0..6 dB, difuso 0..1, head-tracking on/off.
 // Escriben los atomics g_orbe_* que leen la Ruta A (aquí, g_orbeRouteA) y la
 // Ruta B (IvannaFusionEngine::m_orbe). La Ruta B además recibe los parámetros
 // por el snapshot ABI v9 (orbe_*): la app los publica al daemon por
 // SET_PERCEPTUAL_STATE y omega_apply_snapshot los reenvía vía setOrbeParams().
+// En ambas rutas ORBE corre EN SERIE antes de HOLOS (ORBE → HOLOS → IVANNA → Φ).
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeParams(JNIEnv*, jobject,
         jfloat amount, jfloat distanceM, jfloat spread, jfloat proximityDb,
@@ -3541,7 +3551,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOmniAudiogram(JNIEnv* env, j
 // HOLOS (v2.5.364): mismo patrón que nativeSetOrbeParams/nativeSetOrbeEnabled.
 // Cableado a la UI Kotlin (IvannaNativeLib.kt) y al daemon por
 // SET_PERCEPTUAL_STATE (Ruta B, snapshot ABI v10). amount=0 = bypass
-// bit-exacto (default) hasta GREEN.
+// bit-exacto; 0.5 = ACTIVO por defecto (harmonics 0.0 retuneado, directiva
+// explícita 2026-11-08, puerta GREEN anulada). Corre EN SERIE tras ORBE
+// (ORBE → HOLOS → IVANNA → Φ), no en su lugar.
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetHolosParams(JNIEnv*, jobject,
         jfloat amount, jfloat distanceM, jfloat spread, jfloat proximityDb,
@@ -3800,7 +3812,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSensorRoomCorrectionStatus(
 
 // ── Hiper-Operador de Estado Φ (v2.5.369), Ruta A ─────────────────────────
 // nativeSetHyperAmount(amount 0..1, preset 0..2, xtcEnabled): amount=0 es
-// identidad bit-exacta (default). preset: 0 altavoz del teléfono,
+// identidad bit-exacta; 0.5 = ACTIVO por defecto (directiva explícita
+// 2026-11-08, puerta GREEN anulada). preset: 0 altavoz del teléfono,
 // 1 sala Genezi (Aux), 2 cabina de auto (Aux).
 // nativeSetHyperTarget(kind, bassTrimDb): curva objetivo élite por preset
 // (0 Harman 2018, 1 élite-lean, 2 campo difuso H&M, 3 altavoces en sala)

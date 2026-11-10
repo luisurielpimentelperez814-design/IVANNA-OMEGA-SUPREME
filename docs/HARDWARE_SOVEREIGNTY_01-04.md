@@ -77,6 +77,49 @@ inference stage. INT8 inference, deterministic execution, NEON equivalence,
 preallocation, callback-budget and audio-thread isolation require measured
 functional evidence before approval.
 
+## Auditoría L1 — 2026-11-10 (HEAD `fc988a49`, v2.5.382)
+
+Auditoría de certificación, línea 1. No cambia ningún estado: las cuatro
+fases quedan como estaban. Registra lo verificado en esta fecha y el plan
+de cierre de HWS-02. El manifiesto
+`docs/hardware_sovereignty_release_approval.json` lleva el detalle
+fuente por fuente; su `evidence` sigue vacío en las cuatro fases porque
+no existe ningún `evidence/hws-NN/` en el repo y el gate exige la
+evidencia como archivos bajo ese prefijo.
+
+- **HWS-01 (IN_PROGRESS):** la puerta ELF AELI existe y corre en CI
+  (`scripts/check_aeli_elf.py`, workflow `build.yml`). En dispositivo,
+  `libomega_effect.so` está cargada en el HAL (PID 1483), no en
+  audioserver (PID 1555), y el efecto nunca ha procesado frames
+  (beacon 0). La v2.5.382 (auto-enable + init DSP en creación) aún no
+  está verificada en el teléfono.
+- **HWS-02 (NOT_APPROVED):** el hallazgo de la auditoría externa queda
+  CONFIRMADO en código: `HalClockProducer::ensureSource()` devuelve
+  `kNoSource` sin fuente inyectada (el daemon no inyecta ninguna);
+  `VariableAsrc::setTargetRatio()` solo se llama desde tests; el camino
+  PR #25 / PR #26 (`PalAsrcBridge`, `PalAsrcOutputPath`,
+  `PalAsrcWriteStage`) tiene cero instanciaciones productivas; no hay
+  actuador de ratio variable en el PAL propietario para música. La ASRC
+  v5 "Élite" SÍ está verificada en el Moto G85 (2026-11-10 00:40 CST:
+  cabecera "v5", `fir_taps=287`, `dither=1`, `neon=1`,
+  `kalman_drift=−6.250 ppm`, `sat=0`, 2 streams procesando), pero es
+  un shim C standalone experimental vía el módulo `ivanna_audio_probe`
+  (LD_PRELOAD / reemplazo de `libaudio_probe.so`), no reutiliza el
+  camino PR #25 y no está integrado al módulo principal ni tiene
+  persistencia verificada tras reboot. El plan de cierre está en el
+  manifiesto (`phases.HWS-02.notes.closure_plan`): productivizar el
+  write-stage con pin SHA256 + rollback + kill-switch, autenticar la
+  fuente de reloj (mmap `0x2ec180` sigue siendo hipótesis hasta ver
+  `probe OK` en logcat), medir deriva/sat/processed/under-overruns
+  contra la línea base, y resolver la duplicación entre el shim v5 y
+  el camino PR #25. No se inventa ningún actuador que no existe.
+- **HWS-03 (PARTIAL):** sin evidencia nueva en esta ventana; faltan
+  validación de sensores térmicos en el G85, presupuesto de callback y
+  throttling de larga duración.
+- **HWS-04 (PARTIAL):** sin evidencia nueva en esta ventana; faltan
+  build NDK, TSan/stress concurrente, presupuesto de callback en el
+  G85 y auditoría de cada instancia/caller Pi-LSTM.
+
 ## Release policy
 
 Production publication is fail-closed by `scripts/check_hws_release_approval.py`.

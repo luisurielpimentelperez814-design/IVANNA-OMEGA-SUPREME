@@ -46,10 +46,47 @@ bool SafModelLoader::load(const std::string& path)
         return true;
     }
 
+    // Limites de cordura (auditoria linea 3, 2026-11-10): mismo vector de
+    // OOM que HRTFBinLoader ya cierra con kMaxPositions/kMaxTaps. Este
+    // loader hacia `file >> model` sin tope de tamano y sin validar las
+    // dimensiones de p0/V/G0/M antes de get<vector<float>>(): un
+    // SAF_model.json corrupto o plantado (p. ej. p0 con millones de
+    // entradas) reservaba memoria sin limite en el proceso que carga el
+    // modelo, y un JSON malformado lanzaba nlohmann::parse_error sin
+    // capturar (crash del llamador). Legitimo hoy: SAF_model.json 623 KB,
+    // p0=200, V=200x7 o 7x200, G0/M=7x7. Los topes (4 MiB / 8192 / 256)
+    // dejan 6x de margen sobre lo legitimo. Fail-closed: false = el
+    // llamador (SAF_LoadModel, SafHRTFBridge) degrada sin modelo, igual
+    // que con archivo ausente.
+    constexpr std::streamoff kMaxModelFileBytes = 4 * 1024 * 1024;
+    constexpr size_t kMaxVectorLen = 8192;
+    constexpr size_t kMaxMatrixDim = 256;
+
+    file.seekg(0, std::ios::end);
+    const std::streamoff fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    if (fileSize < 0 || fileSize > kMaxModelFileBytes) return false;
+
     json model;
+    try {
+        file >> model;
+    } catch (...) {
+        return false;
+    }
+    if (!model.is_object()) return false;
 
-    file >> model;
-
+    // Validar dimensiones ANTES de materializar vectores desde el JSON.
+    auto dimsOk = [](const json& arr, size_t maxRows, size_t maxCols) {
+        if (!arr.is_array() || arr.size() > maxRows) return false;
+        for (const auto& row : arr) {
+            if (row.is_array() && row.size() > maxCols) return false;
+        }
+        return true;
+    };
+    if (model.contains("p0") && !dimsOk(model["p0"], kMaxVectorLen, kMaxVectorLen)) return false;
+    if (model.contains("V") && !dimsOk(model["V"], kMaxVectorLen, kMaxVectorLen)) return false;
+    if (model.contains("G0") && !dimsOk(model["G0"], kMaxMatrixDim, kMaxMatrixDim)) return false;
+    if (model.contains("M") && !dimsOk(model["M"], kMaxMatrixDim, kMaxMatrixDim)) return false;
 
     m_model.lambda =
         model.value("lambda", 0.01f);

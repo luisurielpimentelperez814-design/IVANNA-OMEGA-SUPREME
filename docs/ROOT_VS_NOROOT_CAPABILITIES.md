@@ -106,8 +106,8 @@ después), cada uno guardado por su propio `if (amount > 0)`.
   capturado (ver cadena arriba).
 
 ### ORBE / HOLOS activos por defecto (v2.5.369)
-- ORBE amount 1.0 (limpio: THD+N −139.33 dB @1 kHz, 23× RT).
-- HOLOS amount 0.5, harmonics 0.0 (retuneo medido: K=0 es lo único que
+- ORBE amount 1.0 (limpio: THD+N −139.37 dB @1 kHz, 23× RT — mediciones en host).
+- HOLOS amount 0.5, harmonics 0.0 (retuneo medido en host: K=0 es lo único que
   cumple THD+N ≤ −70 dB; a 0.5/0.0: THD+N −94.0 dB @1 kHz, −79.6 dB
   @100 Hz, IMD −159.5 dB; throughput 3.5× RT — riesgo a medir CPU/XRuns
   en el G85). Ver README §5 (HOLOS) y el test

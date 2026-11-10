@@ -111,17 +111,23 @@ public:
     // ORBE — Binaural Esférico de Campo Cercano. Escriben los mismos
     // atomics g_orbe_* que process() lee cada bloque (definidos en
     // orbe_controls_bridge.cpp / orbe_globals_effect.cpp — mismo patrón
-    // que g_wfs_*). Apagado por defecto (amount=0 = bypass bit-exacto)
-    // hasta que la puerta auditiva dé GREEN.
+    // que g_wfs_*). ACTIVO por defecto (amount=1.0, directiva explícita
+    // de Esse 2026-11-08; la puerta GREEN quedó anulada para este
+    // release). amount=0 = bypass bit-exacto. Corre EN SERIE antes de
+    // HOLOS (ORBE → HOLOS → IVANNA → Φ), no en su lugar.
     void setOrbeEnabled(bool enable) noexcept;
     void setOrbeParams(float amount, float distanceM, float spread, float proximityDb,
                        float diffuse, bool headTracking) noexcept;
     bool isOrbeEnabled() const noexcept;
-    // HOLOS — Operador Único de Campo Acústico (FUSION.md). Entra EN EL
-    // LUGAR DE ORBE (tras el blend WFS, antes del M/S): cuando HOLOS está
-    // activo ORBE no corre (doble render con doble retardo de 512). Mismo
-    // patrón de atomics g_holos_* que ORBE (holos_controls_bridge.cpp).
-    // Apagado por defecto (amount=0 = bypass bit-exacto) hasta GREEN.
+    // HOLOS — Operador Único de Campo Acústico (FUSION.md). Corre EN
+    // SERIE tras ORBE (ORBE → HOLOS → IVANNA → Φ): cuando HOLOS está
+    // activo ORBE TAMBIÉN corre (el if/else que lo sustituía se eliminó
+    // en v2.5.369; en serie el retardo algorítmico se suma: 512 muestras
+    // de ORBE + 512 de HOLOS ≈ 21.3 ms @48 kHz). Mismo patrón de atomics
+    // g_holos_* que ORBE (holos_controls_bridge.cpp). ACTIVO por defecto
+    // (amount=0.5, harmonics=0.0 retuneado, directiva explícita de Esse
+    // 2026-11-08; la puerta GREEN quedó anulada para este release).
+    // amount=0 = bypass bit-exacto.
     void setHolosEnabled(bool enable) noexcept;
     void setHolosParams(float amount, float distanceM, float spread, float proximityDb,
                         float diffuse, float harmonics, float warmth, float dynamics,
@@ -144,8 +150,10 @@ public:
     // Hiper-Operador de Estado Φ (v2.5.369). Entra tras la corrección de
     // sala (m_room) y antes del XTC (m_xtc), es decir, antes del
     // compresor/limitador y después de HOLOS/ORBE/AUX/NPE: una sola
-    // ganancia unificada al final de la cadena. Apagado por defecto
-    // (amount=0 = bypass bit-exacto). Los parámetros viven en los atomics
+    // ganancia unificada al final de la cadena. ACTIVO por defecto
+    // (amount=0.5, target Harman 2018, directiva explícita de Esse
+    // 2026-11-08; la puerta GREEN quedó anulada para este release).
+    // amount=0 = bypass bit-exacto. Los parámetros viven en los atomics
     // g_hyper_* (hyper_controls_bridge.cpp / hyper_globals_effect.cpp).
     // En Ruta B hoy NO llegan frames de sensor (el snapshot del daemon
     // no transporta SensorFrame/NeuroFrame): el operador corre en modo
@@ -504,11 +512,13 @@ private:
 
     IntelligentUpmixer m_upmixer;
     HoaBinauralDecoder m_hoaDecoder;
-    // ORBE — Binaural Esférico de Campo Cercano (última etapa espacial de
-    // process(): tras upmixer/HRTF y tras el blend WFS, antes del M/S).
+    // ORBE — Binaural Esférico de Campo Cercano (primera etapa espacial
+    // en serie de process(): tras upmixer/HRTF y tras el blend WFS, antes
+    // de HOLOS, IVANNA, Φ y del M/S — ORBE → HOLOS → IVANNA → Φ).
     ivanna::OrbeBinaural m_orbe;
-    // HOLOS — Operador Único de Campo Acústico. Ocupa el lugar de ORBE
-    // cuando está activo (ver process()); ORBE queda como fallback legacy.
+    // HOLOS — Operador Único de Campo Acústico. Corre EN SERIE tras ORBE
+    // (ver process()): ambos activos a la vez por directiva 2026-11-08;
+    // ORBE ya no es un fallback legacy sino la etapa previa de HOLOS.
     ivanna::HolosOperator m_holos;
     // IVANNA — Operador Unificado de Campo Espacial (v2.5.375). Tras HOLOS
     // y antes de Φ (ver process()). amount=0 por defecto en Ruta B hasta

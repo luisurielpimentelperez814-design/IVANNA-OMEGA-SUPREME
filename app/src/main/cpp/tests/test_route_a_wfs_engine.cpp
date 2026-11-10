@@ -46,6 +46,8 @@ int main() {
         }
         engine.setEnabled(true);
         bool changed = false;
+        double diffEnergy = 0.0;
+        int diffSamples = 0;
         for (int block = 0; block < 8; ++block) {
             for (int i = 0; i < 512; ++i) {
                 left[i] = dryL[i];
@@ -57,9 +59,20 @@ int main() {
                 CHECK(std::isfinite(right[i]));
                 changed = changed || std::fabs(left[i] - dryL[i]) > 1.0e-5f ||
                                      std::fabs(right[i] - dryR[i]) > 1.0e-5f;
+                if (block == 7) {
+                    diffEnergy += (double)(left[i] - dryL[i]) * (left[i] - dryL[i]) +
+                                  (double)(right[i] - dryR[i]) * (right[i] - dryR[i]);
+                    ++diffSamples;
+                }
             }
         }
         CHECK(changed);
+        // Cuantitativo, no solo "alguna muestra cambió": el render WFS
+        // debe mover la señal de forma medible (medido 0.0886 RMS en
+        // el último bloque). Un "changed" booleano lo pasaba un LSB.
+        CHECK(std::sqrt(diffEnergy / (2.0 * diffSamples)) > 0.05);
+        std::printf("[wfs-route-a] enabled: rms(out-dry) ultimo bloque %.4f\n",
+                    std::sqrt(diffEnergy / (2.0 * diffSamples)));
     }
 
     // A long bypass must keep the renderer's delay history current. After
@@ -140,7 +153,10 @@ int main() {
             }
         }
         const double rms = std::sqrt(energy / 512.0);
-        CHECK(rms > 0.10); // full-band dry treble must not be discarded
+        std::printf("[wfs-route-a] treble 8 kHz: rms salida %.4f (entrada 0.1414)\n", rms);
+        // Medido 0.1393 (entrada 0.1414): el dry conserva casi todo el
+        // agudo. La cota anterior (>0.10) toleraba perder un 30%.
+        CHECK(rms > 0.12); // full-band dry treble must not be discarded
     }
 
     // A malformed PCM sample must not poison RouteAWfsEngine's recursive
@@ -219,10 +235,17 @@ int main() {
         for (int i = 0; i < 256; ++i) source[i] = 0.1f * std::sin(0.03f * i);
         inputs[0] = source;
         renderer.process(inputs, 1, outL, outR, 256);
+        double e384 = 0.0;
         for (int i = 0; i < 256; ++i) {
             CHECK(std::isfinite(outL[i]));
             CHECK(std::isfinite(outR[i]));
+            e384 += (double)outL[i] * outL[i] + (double)outR[i] * outR[i];
         }
+        std::printf("[wfs-route-a] 384 kHz: rms salida %.4f (entrada 0.0707)\n",
+                    std::sqrt(e384 / 512.0));
+        // Antes solo se exigía finitud: un renderer mudo pasaba. La
+        // salida a 384 kHz es débil (medido 0.0045 RMS) pero no silencio.
+        CHECK(std::sqrt(e384 / 512.0) > 1.0e-3);
     }
 
     return 0;

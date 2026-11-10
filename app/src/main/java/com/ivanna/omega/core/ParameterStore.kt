@@ -127,14 +127,14 @@ class ParameterStore(context: Context) {
         private const val KEY_AUX_COH     = "aux_field_coherence"
         private const val KEY_PUNCH       = "punch_amount"
         private const val KEY_CROSSFEED   = "crossfeed_strength"
-        // ORBE — Binaural Esférico de Campo Cercano (v2.5.363). amount 0 = apagado por defecto.
+        // ORBE — Binaural Esférico de Campo Cercano (v2.5.363). amount 0 = apagado; por defecto ACTIVO 1.0 (directiva 2026-11-08).
         private const val KEY_ORBE_AMOUNT       = "orbe_amount"
         private const val KEY_ORBE_DISTANCE_M   = "orbe_distance_m"
         private const val KEY_ORBE_SPREAD       = "orbe_spread"
         private const val KEY_ORBE_PROXIMITY_DB = "orbe_proximity_db"
         private const val KEY_ORBE_DIFFUSE      = "orbe_diffuse"
         private const val KEY_ORBE_HEAD_TRACKING = "orbe_head_tracking"
-        // HOLOS — Operador Único de Campo Acústico (v2.5.364). amount 0 = apagado por defecto.
+        // HOLOS — Operador Único de Campo Acústico (v2.5.364). amount 0 = apagado; por defecto ACTIVO 0.5, harmonics 0 (retuneo medido).
         private const val KEY_HOLOS_AMOUNT       = "holos_amount"
         private const val KEY_HOLOS_DISTANCE_M   = "holos_distance_m"
         private const val KEY_HOLOS_SPREAD       = "holos_spread"

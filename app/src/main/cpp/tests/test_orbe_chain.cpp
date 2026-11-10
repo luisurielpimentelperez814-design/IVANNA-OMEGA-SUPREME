@@ -4,8 +4,10 @@
 // estéreo a través de ORBE solo, latencia en muestras y throughput ×RT.
 // Con amount=0 la salida es bit-exacta con la entrada, así que su THD+N
 // es el del propio tono (piso de float); con amount=1 se reportan las
-// cifras reales y solo se afirma finitud y cotas amplias — no hay una
-// línea base previa de ORBE contra la que comparar.
+// cifras reales y se exigen cotas endurecidas sobre lo medido en host
+// (THD+N < −120 dB, IMD < −120 dB, throughput > 6× RT — auditoría
+// 2026-11-10). Un verde NO es "sonido superior" ni prueba nada en el
+// teléfono: solo acota distorsión añadida en host x86-64.
 // La cadena completa con FusionCore no se puede enlazar en host
 // (IvannaFusionCore.cpp está fuera de ivanna_dsp_under_test), así que
 // este test mide la etapa ORBE sola, que es lo que el cableado inserta.
@@ -76,7 +78,7 @@ TEST(OrbeChain, AmountZeroLeavesToneUntouched) {
     std::printf("[orbe-chain] amount=0 THD+N @1kHz -3dBFS: %.2f dB (amp %.4f)\n",
                 m.thdnDb, m.amp);
     EXPECT_TRUE(std::isfinite(m.thdnDb));
-    EXPECT_LT(m.thdnDb, -100.0) << "piso de float, sin distorsión añadida";
+    EXPECT_LT(m.thdnDb, -140.0) << "piso de float, sin distorsión añadida (medido −153.45 dB)";
 }
 
 TEST(OrbeChain, AmountOneMeasuresThdnImdLatencyThroughput) {
@@ -93,9 +95,14 @@ TEST(OrbeChain, AmountOneMeasuresThdnImdLatencyThroughput) {
                     f0, m.thdnDb, m.amp, tp);
         EXPECT_TRUE(std::isfinite(m.thdnDb));
         EXPECT_TRUE(std::isfinite(tp));
-        EXPECT_LT(m.thdnDb, 0.0) << "THD+N finito y por debajo de 0 dB";
+        // Cotas endurecidas (auditoría 2026-11-10) sobre lo medido en
+        // host: THD+N −139.37 dB @1 kHz, −138.66 dB @100 Hz; IMD
+        // −157.60 dB; true-peak 0.7079. La cota anterior (< 0 dB) la
+        // pasaba cualquier señal que no explotara. Sigue sin probar
+        // "sonido superior": solo acota distorsión añadida en host.
+        EXPECT_LT(m.thdnDb, -120.0) << "THD+N con ORBE activo, f0=" << f0;
         EXPECT_GT(m.thdnDb, -140.0) << "THD+N por encima del piso de float";
-        EXPECT_LT(tp, 4.0) << "sin explosión de pico";
+        EXPECT_LT(tp, 1.5) << "sin explosión de pico";
     }
     // --- IMD SMPTE 60 Hz + 7 kHz (4:1), −3 dBFS de pico ---
     {
@@ -110,7 +117,7 @@ TEST(OrbeChain, AmountOneMeasuresThdnImdLatencyThroughput) {
         const double imd = imdSmpteDb(r.outL.data() + 48000, 48000, kFs, 60.0, 7000.0);
         std::printf("[orbe-chain] amount=1 IMD SMPTE 60+7000Hz: %.2f dB\n", imd);
         EXPECT_TRUE(std::isfinite(imd));
-        EXPECT_LT(imd, 0.0);
+        EXPECT_LT(imd, -120.0);  // medido −157.60 dB en host
     }
     // --- Latencia y throughput ---
     ivanna::OrbeBinaural o;
@@ -128,5 +135,7 @@ TEST(OrbeChain, AmountOneMeasuresThdnImdLatencyThroughput) {
     std::printf("[orbe-chain] amount=1 throughput host: %.1f x RT "
                 "(10 s en %.3f s, 48 kHz, FFT 512)\n",
                 rt, wall);
-    EXPECT_GT(rt, 5.0) << "ORBE debe correr holgado en host para ser viable en RT";
+    // Medido 8.6× RT en host (antes cota >5×). No es garantía de teléfono:
+    // el G85 es ARM y más lento; el ×RT host solo acota holgura en host.
+    EXPECT_GT(rt, 6.0) << "ORBE debe correr holgado en host para ser viable en RT";
 }

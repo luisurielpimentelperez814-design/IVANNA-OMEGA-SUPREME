@@ -12,11 +12,11 @@
 // mismos valores iniciales, definido solo para ESTE target.
 // NO añadir a ivanna_omega: generaría ODR violation con orbe_controls_bridge.cpp.
 //
-// Valores iniciales idénticos a orbe_controls_bridge.cpp: amount=0 (ORBE
-// apagado hasta que la puerta auditiva dé GREEN). La Ruta B no recibe hoy
-// parámetros ORBE por snapshot (OmegaDspSnapshot ABI v8 no tiene campos
-// orbe_* — ver IMPLEMENTACION_ORBE.md); hasta un futuro bump de ABI, el
-// proceso audioserver usa estos defaults.
+// Valores iniciales idénticos a orbe_controls_bridge.cpp: amount=0 (valor
+// inicial del atomic; la app lo pone a 1.0 al restaurar estado y la Ruta B
+// lo recibe por snapshot ABI v9, campos orbe_* — omega_apply_snapshot lo
+// aplica vía setOrbeParams()). Hasta que llega el primer snapshot, el
+// proceso audioserver usa este 0 inicial (bypass bit-exacto).
 #include <atomic>
 
 std::atomic<float> g_orbe_amount{0.0f};

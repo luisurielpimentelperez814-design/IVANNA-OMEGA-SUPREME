@@ -578,8 +578,10 @@ object IvannaNativeLib {
     /** Crossfeed de graves con ITD para audifonos/DAC (Ruta A). 0 = apagado (bypass exacto). */
     external fun nativeSetCrossfeed(strength: Float)
     /** ORBE — Binaural Esférico de Campo Cercano (v2.5.363). amount 0..1 (0 = apagado,
-     *  bypass bit-exacto, por defecto), distancia 0.15..2.0 m, spread 0..1.5,
-     *  proximidad 0..6 dB, difuso 0..1, head-tracking on/off. Escriben los
+     *  bypass bit-exacto; **1.0 = ACTIVO por defecto**, directiva explícita 2026-11-08,
+     *  puerta GREEN anulada), distancia 0.15..2.0 m, spread 0..1.5,
+     *  proximidad 0..6 dB, difuso 0..1, head-tracking on/off. Corre EN SERIE antes
+     *  de HOLOS (ORBE → HOLOS → IVANNA → Φ), no como alternativa. Escriben los
      *  atomics g_orbe_* (Ruta A) y viajan al daemon por SET_PERCEPTUAL_STATE (Ruta B). */
     external fun nativeSetOrbeParams(
         amount: Float, distanceM: Float, spread: Float,
@@ -602,11 +604,13 @@ object IvannaNativeLib {
     /** Audiograma: pérdidas dB a 250/500/1k/2k/4k/8k Hz por oído (FloatArray de 6). */
     external fun nativeSetOmniAudiogram(lossL: FloatArray, lossR: FloatArray)
     /** HOLOS — Operador Único de Campo Acústico (v2.5.364). Los 13 parámetros
-     *  de FUSION.md §6: amount 0..1 (0 = apagado, bypass bit-exacto, por
-     *  defecto), distancia 0.15..2.0 m, spread 0..1.5, proximidad 0..6 dB,
-     *  difuso 0..1, armónicos 0..1, calidez 0..1, dinámica 0..1, ancho 0..1.5,
-     *  gamma 0.5..1.0, sala RT60 0.18..1.8 s, head-tracking on/off y bandas
-     *  ERB 12/24 (24 = default; el tier térmico puede forzar 12). Escriben
+     *  de FUSION.md §6: amount 0..1 (0 = apagado, bypass bit-exacto;
+     *  **0.5 = ACTIVO por defecto**, harmonics 0.0 retuneado, directiva explícita
+     *  2026-11-08, puerta GREEN anulada), distancia 0.15..2.0 m, spread 0..1.5,
+     *  proximidad 0..6 dB, difuso 0..1, armónicos 0..1, calidez 0..1, dinámica 0..1,
+     *  ancho 0..1.5, gamma 0.5..1.0, sala RT60 0.18..1.8 s, head-tracking on/off y bandas
+     *  ERB 12/24 (24 = default; el tier térmico puede forzar 12). Corre EN SERIE tras
+     *  ORBE (ORBE → HOLOS → IVANNA → Φ), no en su lugar. Escriben
      *  los atomics g_holos_* (Ruta A) y viajan al daemon por
      *  SET_PERCEPTUAL_STATE (Ruta B, snapshot ABI v10). */
     external fun nativeSetHolosParams(

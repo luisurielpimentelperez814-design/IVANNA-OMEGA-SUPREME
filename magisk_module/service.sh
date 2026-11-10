@@ -25,15 +25,19 @@ fi
 # no bastaban: aplicadas en vivo con rc=0 los denials seguian, porque el bloqueo
 # es una restriccion MLS (categorias distintas entre app y archivo s0), que es
 # independiente de las reglas allow. Verificado en Moto G85 (Android 15,
-# Magisk 30.7): marcar adb_data_file como mlstrustedobject llevo los denials a 0.
-# Se reaplica en cada arranque, antes de levantar el daemon.
-if command -v magiskpolicy >/dev/null 2>&1; then
-    if magiskpolicy --live "typeattribute adb_data_file mlstrustedobject" >/dev/null 2>&1; then
-        echo "$(date) SELINUX-BOOT: adb_data_file mlstrustedobject OK" >> "$LOG"
-    else
-        echo "$(date) SELINUX-BOOT: FALLO typeattribute adb_data_file mlstrustedobject" >> "$LOG"
-    fi
-fi
+# Magisk 30.7): marcar el tipo como mlstrustedobject llevo los denials a 0.
+#
+# CAMBIO (auditoria linea 3, 2026-11-10): el bypass MLS ya NO se aplica a
+# adb_data_file entero (eso eximia de MLS a TODO /data/adb/, de todos los
+# modulos). Ahora el bypass vive solo en el tipo dedicado ivanna_data_file
+# (sepolicy.rule seccion 0) y service.sh reetiqueta /data/adb/ivanna_omega
+# y /data/vendor/ivanna_audio a ese tipo justo despues de aplicar la
+# policy (bloque SELINUX-RELABEL, mas abajo). Los archivos nuevos heredan
+# el tipo del directorio padre, asi que omega_shm y el snapshot nacen ya
+# como ivanna_data_file. Si el reetiquetado falla, queda registrado en
+# daemon.log (SELINUX-BOOT) y el control por socket sigue funcionando;
+# NO se reanade el typeattribute amplio como fallback silencioso.
+# (Antes aqui: magiskpolicy --live "typeattribute adb_data_file mlstrustedobject" — eliminado.)
 
 # FIX (Ruta B, Moto G85 2026-11-09): Magisk 31.1 NO carga sepolicy.rule en boot,
 # así que las reglas live de customize.sh no sobreviven al reinicio. Sin ellas,
@@ -56,6 +60,28 @@ if command -v magiskpolicy >/dev/null 2>&1 && [ -f "$MODDIR/sepolicy.rule" ]; th
     fi
 else
     echo "$(date) SELINUX-BOOT: magiskpolicy o sepolicy.rule no disponible — policy no reaplicada en boot" >> "$LOG"
+fi
+
+# SELINUX-RELABEL (auditoria linea 3, 2026-11-10): alcance minimo del
+# bypass MLS. Solo /data/adb/ivanna_omega (estado, SHM, snapshot) y
+# /data/vendor/ivanna_audio (canal ASRC, via asrc_link.sh) se etiquetan
+# como ivanna_data_file, el unico tipo mlstrustedobject. Debe correr
+# DESPUES de aplicar sepolicy.rule (el tipo tiene que existir en la
+# policy viva antes de chcon) y ANTES de levantar el daemon (los
+# archivos que el daemon crea heredan el tipo del directorio padre).
+# Verificacion: ls -Zd debe mostrar ivanna_data_file. Si falla, se
+# registra y se sigue: el socket de control funciona igual; solo la
+# escritura del SHM por la app puede volver a dar denials MLS.
+if command -v chcon >/dev/null 2>&1; then
+    IVANNA_CTX="u:object_r:ivanna_data_file:s0"
+    chcon -R "$IVANNA_CTX" "$STATE" 2>/dev/null
+    if ls -Zd "$STATE" 2>/dev/null | grep -q ivanna_data_file; then
+        echo "$(date) SELINUX-BOOT: reetiquetado ivanna_data_file OK ($STATE)" >> "$LOG"
+    else
+        echo "$(date) SELINUX-BOOT: FALLO reetiquetado ivanna_data_file ($STATE sigue sin ese tipo; revisar sepolicy.rule seccion 0 y magiskpolicy --live 'type ivanna_data_file')" >> "$LOG"
+    fi
+else
+    echo "$(date) SELINUX-BOOT: chcon no disponible — sin reetiquetado ivanna_data_file" >> "$LOG"
 fi
 
 # Load the decision engine if present; keep boot compatible with older packages.
