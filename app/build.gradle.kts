@@ -402,5 +402,12 @@ kotlin {
         // El workaround ya no hace falta: el root build.gradle.kts fuerza
         // R8 9.1.56, que sí lee metadata Kotlin 2.4. El compilador 2.4.21
         // emite metadata 2.4.0 nativa, compatible con todas las dependencias.
+        // NOTA 2026-11-10 (fix CI 386): en :app:compileReleaseKotlin el
+        // compilador volvía a esperar metadata 2.0.0 aunque el flag 2.1.0 ya
+        // no existe (el flag se eliminó pero el valor por defecto que resolvía
+        // Gradle seguía siendo 2.0.0). Se fija explícito 2.4.0, que es la
+        // metadata real de todas las dependencias (stdlib 2.4.21, coroutines
+        // 1.11.0 -> 2.2.0, serialization 1.11.0 -> 2.3.0, firebase-auth 2.4.0).
+        freeCompilerArgs.add("-Xmetadata-version=2.4.0")
     }
 }
