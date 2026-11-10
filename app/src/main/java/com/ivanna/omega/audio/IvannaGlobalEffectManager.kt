@@ -540,7 +540,7 @@ class IvannaGlobalEffectManager(
     // lastDiscoveredSessionId = última sesión descubierta que publicó el
     // daemon (0 = ninguna; se actualiza en cada GET_STATUS aunque el attach
     // se ignore por shouldAttach=false). activePlayingSessionIds = sesiones
-    // con isActive() en el sondeo por reflexión (vacío cuando el ROM
+    // con playerState STARTED en el sondeo por reflexión (vacío cuando el ROM
     // anonimiza las configs: entonces se confía en isMusicActive()).
     // orphanBeaconState = línea base del contador de frames del beacon.
     // lastOrphanRecreateMs = última recreación por huérfano (anti-churn:
@@ -1126,15 +1126,16 @@ class IvannaGlobalEffectManager(
         var opened = 0
         var reflected = 0
         var anonymized = 0
-        // v2.5.386 — sesiones con isActive() (sonando AHORA), para el bucle
-        // de huérfano: un beacon congelado solo es orfandad si la sesión
-        // sigue sonando; en pausa los frames congelados son lo esperado.
+        // v2.5.386 — sesiones con playerState STARTED (sonando AHORA), para
+        // el bucle de huérfano: un beacon congelado solo es orfandad si la
+        // sesión sigue sonando; en pausa los frames congelados son lo esperado.
+        // AudioPlaybackConfiguration NO tiene isActive: se usa playerState.
         val playing = mutableSetOf<Int>()
         for (config in configs) {
             val sessionId = reflectSessionId(config)
             if (!isUsableSessionId(sessionId)) { anonymized++; continue }
             reflected++
-            if (runCatching { config.isActive }.getOrDefault(false)) playing.add(sessionId)
+            if (runCatching { config.playerState == AudioPlaybackConfiguration.PLAYER_STATE_STARTED }.getOrDefault(false)) playing.add(sessionId)
             val uid = reflectClientUid(config)
             val pkg = resolvePackageForUid(uid)
             if (!activeSessions.containsKey(sessionId)) {
