@@ -213,7 +213,11 @@ class ParameterStore(context: Context) {
         internal const val ENVELOPE_380_ORBE_SPREAD = 1.0f
 
         /** Los cuatro valores persistidos que la migración 386 clampa. */
-        internal data class Envelope380(
+        // NOTA 2026-11-10: NO `internal` — los tests unitarios
+        // (ParameterStoreMigration386Test) no resolvían el símbolo desde
+        // compileReleaseUnitTestKotlin ("Unresolved reference 'Envelope380'").
+        // Es una data class pura; pública no cambia el comportamiento.
+        data class Envelope380(
             val holosAmount: Float,
             val holosWidth: Float,
             val holosDiffuse: Float,
@@ -221,7 +225,7 @@ class ParameterStore(context: Context) {
         )
 
         /** Pura y testeable: clampa valores persistidos al sobre 380. */
-        internal fun clampTo380Envelope(e: Envelope380): Envelope380 {
+        fun clampTo380Envelope(e: Envelope380): Envelope380 {
             fun clamp(v: Float, max: Float, def: Float): Float =
                 if (v.isFinite()) v.coerceIn(0f, max) else def
             return Envelope380(
