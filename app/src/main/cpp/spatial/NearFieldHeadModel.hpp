@@ -43,9 +43,13 @@ inline constexpr float kPi = 3.14159265358979323846f;
 // El camino es el mínimo entre el rayo directo (si no atraviesa la
 // esfera) y los dos caminos de borde (tangente + arco). El primero en
 // llegar es el camino más corto (Fermat).
-inline float pathLengthToEar(float thetaRad, float r, float earSign) noexcept {
+// headRadiusM: radio de cabeza personalizado (PsiFieldRuntime / ORBE);
+// por defecto KEMAR 8.75 cm — sin él, bit-idéntico al modelo original.
+inline float pathLengthToEar(float thetaRad, float r, float earSign,
+                             float headRadiusM = kHeadRadiusM) noexcept {
     if (!std::isfinite(thetaRad) || !std::isfinite(r)) return 1.0f;
-    const float a = kHeadRadiusM;
+    const float a = std::clamp(std::isfinite(headRadiusM) ? headRadiusM : kHeadRadiusM,
+                               0.05f, 0.15f);
     const float rr = std::clamp(r, a + 0.01f, 100.0f);
     const float th = std::clamp(thetaRad, -kPi, kPi);
     const float sx = rr * std::sin(th);
@@ -90,10 +94,11 @@ inline float pathLengthToEar(float thetaRad, float r, float earSign) noexcept {
 
 // ITD esférico (segundos): retardo del oído izquierdo menos el derecho.
 // θ > 0 (fuente a la derecha) → ITD > 0. En r → ∞ coincide con Woodworth.
-inline float itdSeconds(float thetaRad, float r) noexcept {
+inline float itdSeconds(float thetaRad, float r,
+                        float headRadiusM = kHeadRadiusM) noexcept {
     if (!std::isfinite(thetaRad) || !std::isfinite(r)) return 0.0f;
-    const float pathL = pathLengthToEar(thetaRad, r, -1.0f);
-    const float pathR = pathLengthToEar(thetaRad, r, +1.0f);
+    const float pathL = pathLengthToEar(thetaRad, r, -1.0f, headRadiusM);
+    const float pathR = pathLengthToEar(thetaRad, r, +1.0f, headRadiusM);
     return (pathL - pathR) / kSoundSpeedMps;
 }
 
@@ -109,9 +114,11 @@ inline float itdWoodworthFarField(float thetaRad) noexcept {
 // ILD esférico (dB, derecho menos izquierdo): > 0 si la fuente está a la
 // derecha. Suma divergencia esférica (1/d, distancia directa fuente→oído)
 // y sombra cefálica dependiente de la frecuencia (ka = 2πfa/c).
-inline float ildDb(float thetaRad, float r, float freqHz) noexcept {
+inline float ildDb(float thetaRad, float r, float freqHz,
+                   float headRadiusM = kHeadRadiusM) noexcept {
     if (!std::isfinite(thetaRad) || !std::isfinite(r) || !std::isfinite(freqHz)) return 0.0f;
-    const float a = kHeadRadiusM;
+    const float a = std::clamp(std::isfinite(headRadiusM) ? headRadiusM : kHeadRadiusM,
+                               0.05f, 0.15f);
     const float rr = std::clamp(r, a + 0.01f, 100.0f);
     const float th = std::clamp(thetaRad, -kPi, kPi);
     const float sx = rr * std::sin(th);

@@ -131,6 +131,10 @@ void OrbeBinaural::setParams(const OrbeParams& p) noexcept {
                        std::memory_order_relaxed);
     diffuse_.store(std::isfinite(p.diffuse) ? std::clamp(p.diffuse, 0.0f, 1.0f) : 0.5f,
                    std::memory_order_relaxed);
+    headRadiusM_.store(std::isfinite(p.headRadiusM)
+                           ? std::clamp(p.headRadiusM, 0.05f, 0.15f)
+                           : nearfield::kHeadRadiusM,
+                       std::memory_order_relaxed);
     headTracking_.store(p.headTracking, std::memory_order_relaxed);
     // bandCount solo se aplica en el próximo prepare(): reconstruir las
     // tablas de bandas en caliente correría contra process().
@@ -145,6 +149,16 @@ void OrbeBinaural::setAmount(float amount) noexcept {
 void OrbeBinaural::setHeadPose(float yawRad) noexcept {
     yawRad_.store(std::isfinite(yawRad) ? std::clamp(yawRad, -kPiF, kPiF) : 0.0f,
                   std::memory_order_relaxed);
+}
+
+void OrbeBinaural::setHeadRadiusM(float radiusM) noexcept {
+    headRadiusM_.store(std::isfinite(radiusM) ? std::clamp(radiusM, 0.05f, 0.15f)
+                                             : nearfield::kHeadRadiusM,
+                       std::memory_order_relaxed);
+}
+
+float OrbeBinaural::headRadiusM() const noexcept {
+    return headRadiusM_.load(std::memory_order_relaxed);
 }
 
 void OrbeBinaural::setThermalShed(bool shed) noexcept {
@@ -169,11 +183,11 @@ float OrbeBinaural::thetaFromItd(float tauSeconds, float r) const noexcept {
     if (a <= 1e-9f) return 0.0f;
     const float sign = (tauSeconds > 0.0f) ? 1.0f : -1.0f;
     const float hi = kPiF * 0.5f;
-    if (nearfield::itdSeconds(hi, r) <= a) return sign * hi;
+    if (nearfield::itdSeconds(hi, r, headRadiusM()) <= a) return sign * hi;
     float lo = 0.0f, hiB = hi;
     for (int i = 0; i < 24; ++i) {
         const float mid = 0.5f * (lo + hiB);
-        if (nearfield::itdSeconds(mid, r) < a) lo = mid; else hiB = mid;
+        if (nearfield::itdSeconds(mid, r, headRadiusM()) < a) lo = mid; else hiB = mid;
     }
     return sign * 0.5f * (lo + hiB);
 }
@@ -183,11 +197,11 @@ float OrbeBinaural::thetaFromIld(float ildDbMeas, float r, float freqHz) const n
     if (a <= 1e-6f) return 0.0f;
     const float sign = (ildDbMeas > 0.0f) ? 1.0f : -1.0f;
     const float hi = kPiF * 0.5f;
-    if (nearfield::ildDb(hi, r, freqHz) <= a) return sign * hi;
+    if (nearfield::ildDb(hi, r, freqHz, headRadiusM()) <= a) return sign * hi;
     float lo = 0.0f, hiB = hi;
     for (int i = 0; i < 24; ++i) {
         const float mid = 0.5f * (lo + hiB);
-        if (nearfield::ildDb(mid, r, freqHz) < a) lo = mid; else hiB = mid;
+        if (nearfield::ildDb(mid, r, freqHz, headRadiusM()) < a) lo = mid; else hiB = mid;
     }
     return sign * 0.5f * (lo + hiB);
 }
@@ -196,12 +210,12 @@ float OrbeBinaural::distanceFromIld(float ildDbMeas, float theta, float freqHz) 
     const float a = std::fabs(ildDbMeas);
     const float th = std::fabs(theta);
     if (th < 0.05f) return distanceM_.load(std::memory_order_relaxed);  // sin info de ILD en el centro
-    if (a <= nearfield::ildDb(th, 2.0f, freqHz)) return 2.0f;
-    if (a >= nearfield::ildDb(th, 0.15f, freqHz)) return 0.15f;
+    if (a <= nearfield::ildDb(th, 2.0f, freqHz, headRadiusM())) return 2.0f;
+    if (a >= nearfield::ildDb(th, 0.15f, freqHz, headRadiusM())) return 0.15f;
     float lo = 0.15f, hi = 2.0f;  // ildDb decrece con r
     for (int i = 0; i < 24; ++i) {
         const float mid = 0.5f * (lo + hi);
-        if (nearfield::ildDb(th, mid, freqHz) > a) lo = mid; else hi = mid;
+        if (nearfield::ildDb(th, mid, freqHz, headRadiusM()) > a) lo = mid; else hi = mid;
     }
     return 0.5f * (lo + hi);
 }
@@ -276,7 +290,7 @@ void OrbeBinaural::renderBins(float* reL, float* imL, float* reR, float* imR) {
         const float th = std::clamp(azimuth_[b] * coherence_[b] - yaw, -kPiF, kPiF);
         thetaB[b] = th;
         rB[b] = distance_[b];
-        itdB[b] = nearfield::itdSeconds(th, rB[b]);
+        itdB[b] = nearfield::itdSeconds(th, rB[b], headRadiusM());
         const float wR = 0.5f * (1.0f + std::sin(th));
         wRB[b] = wR;
         wLB[b] = 1.0f - wR;
@@ -288,7 +302,7 @@ void OrbeBinaural::renderBins(float* reL, float* imL, float* reR, float* imR) {
         const float fSigned = (float)(k <= n / 2 ? k : k - n) * sr / (float)n;
         const float af = std::fabs(fSigned);
         const float itd = itdB[b];
-        const float ild = nearfield::ildDb(theta, r, af);
+        const float ild = nearfield::ildDb(theta, r, af, headRadiusM());
         const float shelf = nearfield::proximityShelfDb(r, af) * proxScale;
         // v2.5.380 — 2 pow en vez de 4: pow(10,a)·pow(10,b) = pow(10,a+b)
         // salvo ≤1 ulp; el cambio en THD+N/IMD es despreciable (el test

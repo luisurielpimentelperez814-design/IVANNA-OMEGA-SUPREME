@@ -1956,3 +1956,8 @@ ivanna_add_test(test_psi_field)
 # include/poller_sched.hpp: decisión pura (FIFO rtprio 2 si se permite,
 # SCHED_OTHER si no). El daemon intenta FIFO primero y cae a best-effort.
 ivanna_add_test(test_poller_sched)
+
+# ── Reformulación Ψ por vía (2026-11-10): el campo conoce la vía ─────────────
+# (audífonos/AUX/celular/estéreo/5.1/7.1/cine): ILD percibido por crosstalk,
+# bocinas por ley dipolar, radio de cabeza personalizado cableado a ORBE.
+ivanna_add_test(test_psi_field_routes)

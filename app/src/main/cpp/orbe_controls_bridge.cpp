@@ -21,3 +21,9 @@ std::atomic<float> g_orbe_spread{1.0f};
 std::atomic<float> g_orbe_proximity_db{3.0f};
 std::atomic<float> g_orbe_diffuse{0.5f};
 std::atomic<bool>  g_orbe_head_tracking{true};
+// Radio de cabeza personalizado (m) para ORBE — Ec. 2 del campo Ψ con la
+// antropometría del oyente (PsiFieldRuntime::headRadiusM). KEMAR 8.75 cm:
+// sin él, el render es bit-idéntico al modelo original. Lo escribe la app
+// (JNI setOrbeHeadRadiusM); la Ruta B no lo recibe aún (snapshot ABI v9
+// no tiene el campo — allí queda KEMAR hasta el bump de ABI).
+std::atomic<float> g_orbe_head_radius_m{0.0875f};

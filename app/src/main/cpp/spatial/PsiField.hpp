@@ -229,4 +229,131 @@ inline float psiGamma(float eta, float eta0, float gamma = 0.5f) noexcept {
     return std::clamp(g, 0.5f, 1.5f);
 }
 
+// ── REFORMULACIÓN POR VÍA DE REPRODUCCIÓN (2026-11-10) ──────────────────────
+// El campo Ψ original era binaural (audífonos): la Ec. 2 da el ILD entre
+// los dos oídos. Pero IVANNA suena por CUALQUIER vía — audífonos, AUX,
+// bocinas del celular, estéreo, home theater, cine — y cada vía cambia
+// lo que el oyente percibe: por bocinas cada oído escucha AMBOS canales
+// (crosstalk), así que el ILD efectivo es menor que el del campo; por
+// multicanal la fuente virtual se reparte entre bocinas discretas.
+//
+// La reformulación: el campo Ψ ahora conoce la vía. La ley física es la
+// misma (SPREAD + SHADOW), pero el ILD PERCIBIDO pasa por la ley de
+// crosstalk, y la energía de cada fuente virtual se reparte entre las
+// bocinas de la vía por la ley dipolar del campo (l=1).
+//
+//   · Ley de crosstalk (exacta): si el ILD del campo es D dB (razón de
+//     amplitudes ρ = 10^(D/20)) y la vía mezcla una fracción κ del canal
+//     opuesto en cada oído, el ILD percibido es
+//         D' = 20·log10((ρ + κ) / (1 + κ·ρ)).
+//     κ=0 (audífonos) → D'=D. κ=1 (mono) → D'=0. Sin aproximaciones.
+//   · Ley de bocina (dipolo l=1): la ganancia de una bocina en azimut φ
+//     para una fuente en θ es max(0, cos(θ−φ)): 1.0 en la bocina, 0.0 a
+//     ≥90°, simétrica. La energía se conserva en el render (no aquí).
+//   · Las constantes de cada vía son de primeros principios y están
+//     documentadas como tales (baseline y distancia típicos, κ estimado
+//     por la geometría — NO medidos en sala). El multicanal se mapea al
+//     bed 7.1: el render de IVANNA es estéreo/7.1, no hay render de cine
+//     con decenas de canales; la vía Cinema usa el mismo bed con la
+//     geometría de sala grande.
+
+enum class ReproductionRoute : int {
+    Headphones = 0,    // Audífonos (AUX / USB / BT): sin crosstalk
+    PhoneSpeakers = 1, // Bocinas nativas del celular (baseline ~12 cm)
+    StereoSpeakers = 2,// Estéreo en sala (triángulo 60°)
+    Surround51 = 3,    // 5.1: L/R ±30°, C 0°, Ls/Rs ±110° + sub
+    Surround71 = 4,    // 7.1: 5.1 + traseras ±150°
+    Cinema = 5,        // Sala de cine: bed 7.1, geometría de sala grande
+};
+
+struct RouteGeometry {
+    float baselineM;        // Separación entre transductores principales
+    float listenerDistanceM;// Distancia típica oyente–fuente
+    float crosstalk;        // κ: fracción del canal opuesto en cada oído
+    bool binaural;          // true solo en audífonos (sin mezcla acústica)
+    int channels;           // Canales de la vía (sub incluido en 5.1/7.1)
+};
+
+// Geometría de cada vía (primeros principios, ver comentario arriba).
+inline RouteGeometry routeGeometry(ReproductionRoute route) noexcept {
+    switch (route) {
+        case ReproductionRoute::Headphones:
+            return RouteGeometry{0.0f, 0.35f, 0.0f, true, 2};
+        case ReproductionRoute::PhoneSpeakers:
+            // Moto G85: bocinas superior/inferior ~12 cm; se escucha a
+            // ~40 cm. κ=0.7: a esa distancia cada oído recibe casi lo
+            // mismo de ambas bocinas.
+            return RouteGeometry{0.12f, 0.40f, 0.7f, false, 2};
+        case ReproductionRoute::StereoSpeakers:
+            return RouteGeometry{2.0f, 2.0f, 0.3f, false, 2};
+        case ReproductionRoute::Surround51:
+            return RouteGeometry{2.0f, 2.5f, 0.25f, false, 6};
+        case ReproductionRoute::Surround71:
+            return RouteGeometry{2.0f, 2.5f, 0.25f, false, 8};
+        case ReproductionRoute::Cinema:
+            return RouteGeometry{10.0f, 10.0f, 0.2f, false, 8};
+    }
+    return RouteGeometry{0.0f, 0.35f, 0.0f, true, 2};
+}
+
+// Ley de crosstalk (exacta): ILD percibido tras mezclar κ del canal
+// opuesto en cada oído. κ se clamp a [0,1]; ILD no finito → 0.
+inline float crosstalkIldDb(float ildDb, float kappa) noexcept {
+    if (!std::isfinite(ildDb)) return 0.0f;
+    const float k = std::clamp(kappa, 0.0f, 1.0f);
+    if (k <= 0.0f) return ildDb;
+    if (k >= 1.0f) return 0.0f;
+    const float rho = std::pow(10.0f, ildDb / 20.0f);
+    return 20.0f * std::log10((rho + k) / (1.0f + k * rho));
+}
+
+// ILD PERCIBIDO por la vía: la Ec. 2 del campo pasada por el crosstalk
+// de la vía. En audífonos es idéntica a la Ec. 2; por bocinas es menor.
+inline float routeIldDb(ReproductionRoute route, float r, float thetaRad,
+                        float freqHz, float headRadiusM = kHeadRadiusM) noexcept {
+    const float ild = ildDb(r, thetaRad, freqHz, headRadiusM);
+    return crosstalkIldDb(ild, routeGeometry(route).crosstalk);
+}
+
+// Azimuts de las bocinas de la vía (radianes, 0 = frontal, + = derecha).
+// Devuelve el número de bocinas direccionales (sin sub). out debe tener
+// al menos 7 entradas. Audífonos y bocinas del celular no tienen bocinas
+// discretas → 0.
+inline int routeSpeakerAzimuths(ReproductionRoute route, float* out, int maxCount) noexcept {
+    if (out == nullptr || maxCount <= 0) return 0;
+    static constexpr float kDeg = 0.017453292519943295f;
+    const float* src = nullptr;
+    int n = 0;
+    static constexpr float kStereo[2] = {-30.0f * kDeg, 30.0f * kDeg};
+    static constexpr float k51[5] = {-30.0f * kDeg, 30.0f * kDeg, 0.0f,
+                                     -110.0f * kDeg, 110.0f * kDeg};
+    static constexpr float k71[7] = {-30.0f * kDeg, 30.0f * kDeg, 0.0f,
+                                     -110.0f * kDeg, 110.0f * kDeg,
+                                     -150.0f * kDeg, 150.0f * kDeg};
+    switch (route) {
+        case ReproductionRoute::StereoSpeakers: src = kStereo; n = 2; break;
+        case ReproductionRoute::Surround51: src = k51; n = 5; break;
+        case ReproductionRoute::Surround71:
+        case ReproductionRoute::Cinema: src = k71; n = 7; break;
+        default: return 0;
+    }
+    const int count = (n < maxCount) ? n : maxCount;
+    for (int i = 0; i < count; ++i) out[i] = src[i];
+    return count;
+}
+
+// Ley de bocina (dipolo l=1 del campo): ganancia lineal de una bocina en
+// azimut φ para una fuente virtual en θ. 1.0 en la bocina, 0.0 a ≥90°.
+inline float speakerGainLinear(float sourceThetaRad, float speakerAzimuthRad) noexcept {
+    if (!std::isfinite(sourceThetaRad) || !std::isfinite(speakerAzimuthRad)) return 0.0f;
+    return std::max(0.0f, std::cos(sourceThetaRad - speakerAzimuthRad));
+}
+
+// Misma ley en dB (ganancia 0 → −120 dB, nunca −inf).
+inline float speakerGainDb(float sourceThetaRad, float speakerAzimuthRad) noexcept {
+    const float g = speakerGainLinear(sourceThetaRad, speakerAzimuthRad);
+    if (g <= 0.0f) return -120.0f;
+    return 20.0f * std::log10(g);
+}
+
 }  // namespace ivanna::psi

@@ -266,3 +266,54 @@ TEST(OrbeBinaural, InvalidParamsFallBackToSafeDefaults) {
     EXPECT_EQ(l, l0) << "amount NaN -> 0 = bypass bit-exacto";
     EXPECT_FLOAT_EQ(o.appliedAmount(), 0.0f);
 }
+
+// ── Radio de cabeza personalizado (campo Ψ, Ec. 2) ──────────────────────────
+// El render ORBE ahora usa el radio de la antropometría del oyente
+// (PsiFieldRuntime::headRadiusM) en vez del fijo 8.75 cm. Sin él, el
+// default es KEMAR y el render es bit-idéntico al modelo original.
+namespace {
+double orbeRightLeftRatioForRadius(float headRadiusM) {
+    ivanna::OrbeBinaural o;
+    o.prepare(48000.0f);
+    ivanna::OrbeParams p;
+    p.amount = 1.0f;
+    p.distanceM = 0.35f;
+    p.headRadiusM = headRadiusM;
+    o.setParams(p);
+    const double fs = 48000.0;
+    const int n = 48000 * 2;
+    auto l = tone(1000.0, 0.3, fs, n);
+    auto r = tone(1000.0, 0.54, fs, n);  // ILD ≈ +5.1 dB a la derecha
+    runBlocks(o, l, r);
+    return rms(r, 48000, 96000) / rms(l, 48000, 96000);
+}
+}  // namespace
+
+TEST(OrbeBinaural, HeadRadiusMovesRender) {
+    // Cabeza más grande → más ILD en el render real (no solo en la fórmula:
+    // a 1 kHz/0.30 m/90°, el ILD del modelo pasa de 9.53 dB a 11.31 dB).
+    const double ratioKemar = orbeRightLeftRatioForRadius(0.0875f);
+    const double ratioBig = orbeRightLeftRatioForRadius(0.10f);
+    EXPECT_GT(ratioKemar, 1.2) << "ORBE preserva el ILD con KEMAR";
+    EXPECT_GT(ratioBig, ratioKemar) << "cabeza más grande → más ILD en el render";
+}
+
+TEST(OrbeBinaural, HeadRadiusClamps) {
+    ivanna::OrbeBinaural o;
+    o.setHeadRadiusM(0.20f);
+    EXPECT_FLOAT_EQ(o.headRadiusM(), 0.15f);
+    o.setHeadRadiusM(0.01f);
+    EXPECT_FLOAT_EQ(o.headRadiusM(), 0.05f);
+    o.setHeadRadiusM(std::nanf(""));
+    EXPECT_FLOAT_EQ(o.headRadiusM(), 0.0875f);
+    o.setHeadRadiusM(0.10f);
+    EXPECT_FLOAT_EQ(o.headRadiusM(), 0.10f);
+    // Por setParams también llega.
+    ivanna::OrbeParams p;
+    p.headRadiusM = 0.11f;
+    o.setParams(p);
+    EXPECT_FLOAT_EQ(o.headRadiusM(), 0.11f);
+    // Default: KEMAR.
+    ivanna::OrbeBinaural o2;
+    EXPECT_FLOAT_EQ(o2.headRadiusM(), 0.0875f);
+}

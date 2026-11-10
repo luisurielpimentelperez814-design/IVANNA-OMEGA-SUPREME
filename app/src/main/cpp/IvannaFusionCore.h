@@ -117,7 +117,8 @@ public:
     // HOLOS (ORBE → HOLOS → IVANNA → Φ), no en su lugar.
     void setOrbeEnabled(bool enable) noexcept;
     void setOrbeParams(float amount, float distanceM, float spread, float proximityDb,
-                       float diffuse, bool headTracking) noexcept;
+                       float diffuse, bool headTracking,
+                       float headRadiusM = 0.0875f) noexcept;  // Ψ: radio KEMAR por defecto
     bool isOrbeEnabled() const noexcept;
     // HOLOS — Operador Único de Campo Acústico (FUSION.md). Corre EN
     // SERIE tras ORBE (ORBE → HOLOS → IVANNA → Φ): cuando HOLOS está

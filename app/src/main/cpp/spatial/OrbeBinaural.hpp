@@ -54,6 +54,10 @@ struct OrbeParams {
     float diffuse = 0.5f;      // 0..1, cuánto side pasa al render directo
     bool headTracking = true;  // parallax por setHeadPose()
     int bandCount = 24;        // 12 o 24 bandas ERB
+    // Radio de cabeza personalizado (m) — Ec. 2 del campo Ψ con la
+    // antropometría del oyente (PsiFieldRuntime::headRadiusM). KEMAR
+    // 8.75 cm por defecto: sin él, bit-idéntico al modelo original.
+    float headRadiusM = nearfield::kHeadRadiusM;
 };
 
 class OrbeBinaural {
@@ -66,6 +70,11 @@ public:
     void setParams(const OrbeParams& p) noexcept;
     void setAmount(float amount) noexcept;
     void setHeadPose(float yawRad) noexcept;
+    // Radio de cabeza personalizado (m, 0.05..0.15, KEMAR 0.0875 por
+    // defecto). Lo alimenta PsiFieldRuntime (antropometría del oyente);
+    // sin él, el render es bit-idéntico al modelo original.
+    void setHeadRadiusM(float radiusM) noexcept;
+    float headRadiusM() const noexcept;
     void setThermalShed(bool shed) noexcept;
     // process() acepta cualquier n > 0; siempre escribe exactamente n
     // muestras. Con amount = 0 y el fade completado es passthrough
@@ -107,6 +116,7 @@ private:
     std::atomic<float> spread_{1.0f};
     std::atomic<float> proximityDb_{3.0f};
     std::atomic<float> diffuse_{0.5f};
+    std::atomic<float> headRadiusM_{nearfield::kHeadRadiusM};
     std::atomic<bool> headTracking_{true};
     std::atomic<bool> thermalShed_{false};
     std::atomic<float> yawRad_{0.0f};

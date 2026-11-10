@@ -339,6 +339,7 @@ extern std::atomic<float> g_orbe_spread;
 extern std::atomic<float> g_orbe_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<bool>  g_orbe_head_tracking;
+extern std::atomic<float> g_orbe_head_radius_m;  // Ψ: radio personalizado (KEMAR 0.0875 por defecto)
 // HOLOS: definidos en holos_controls_bridge.cpp (este target).
 extern std::atomic<float> g_holos_amount;
 extern std::atomic<float> g_holos_distance_m;
@@ -1890,6 +1891,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.headRadiusM = g_orbe_head_radius_m.load(std::memory_order_relaxed);
             op.bandCount = 24;
             {   // Bucle cerrado: deltas locales sobre la base del usuario.
                 const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
@@ -2913,6 +2915,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.headRadiusM = g_orbe_head_radius_m.load(std::memory_order_relaxed);
             op.bandCount = 24;
             {   // Bucle cerrado: deltas locales sobre la base del usuario.
                 const auto tgt = neuroLoopTargetsOrbe(neuroAdjA);
@@ -3511,6 +3514,18 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeParams(JNIEnv*, jobject,
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeEnabled(JNIEnv*, jobject, jboolean enabled) {
     g_orbe_amount.store(enabled == JNI_TRUE ? 1.0f : 0.0f, std::memory_order_relaxed);
+}
+
+// Ψ (v2.5.388): radio de cabeza personalizado (m) para ORBE — Ec. 2 del
+// campo con la antropometría del oyente (PsiFieldRuntime::headRadiusM).
+// La app lo llama cuando conoce la antropometría (foto + CIPIC); hasta
+// entonces el atomic queda en KEMAR 0.0875 y el render es bit-idéntico.
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeHeadRadiusM(JNIEnv*, jobject,
+        jfloat radiusM) {
+    if (std::isfinite(radiusM))
+        g_orbe_head_radius_m.store(std::clamp(radiusM, 0.05f, 0.15f),
+                                   std::memory_order_relaxed);
 }
 
 // IVANNA (v2.5.375): mismo patrón que nativeSetOrbeParams/Enabled.

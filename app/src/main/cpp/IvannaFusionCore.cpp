@@ -36,6 +36,7 @@ extern std::atomic<float> g_orbe_spread;
 extern std::atomic<float> g_orbe_proximity_db;
 extern std::atomic<float> g_orbe_diffuse;
 extern std::atomic<bool>  g_orbe_head_tracking;
+extern std::atomic<float> g_orbe_head_radius_m;  // Ψ: radio personalizado (KEMAR 0.0875)
 extern std::atomic<float> g_holos_amount;          // HOLOS: 0 = bypass bit-exacto (valor inicial del atomic; la app lo pone a 0.5, harmonics 0.0, al restaurar estado — ParameterStore, directiva 2026-11-08)
 extern std::atomic<float> g_omni_amount;           // IVANNA: 0 = bypass bit-exacto (default en Ruta B hasta medir CPU en el G85)
 extern std::atomic<float> g_omni_scene_pull;
@@ -253,13 +254,16 @@ bool IvannaFusionEngine::isOrbeEnabled() const noexcept {
 }
 void IvannaFusionEngine::setOrbeParams(float amount, float distanceM, float spread,
                                        float proximityDb, float diffuse,
-                                       bool headTracking) noexcept {
+                                       bool headTracking, float headRadiusM) noexcept {
     if (std::isfinite(amount)) g_orbe_amount.store(amount, std::memory_order_relaxed);
     if (std::isfinite(distanceM)) g_orbe_distance_m.store(distanceM, std::memory_order_relaxed);
     if (std::isfinite(spread)) g_orbe_spread.store(spread, std::memory_order_relaxed);
     if (std::isfinite(proximityDb)) g_orbe_proximity_db.store(proximityDb, std::memory_order_relaxed);
     if (std::isfinite(diffuse)) g_orbe_diffuse.store(diffuse, std::memory_order_relaxed);
     g_orbe_head_tracking.store(headTracking, std::memory_order_relaxed);
+    if (std::isfinite(headRadiusM))
+        g_orbe_head_radius_m.store(std::clamp(headRadiusM, 0.05f, 0.15f),
+                                   std::memory_order_relaxed);
 }
 void IvannaFusionEngine::setHolosEnabled(bool enable) noexcept {
     g_holos_amount.store(enable ? 1.0f : 0.0f, std::memory_order_relaxed);
@@ -568,6 +572,7 @@ void IvannaFusionEngine::process(Ivanna::AudioBuffer* buffer) {
             op.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
             op.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
             op.headTracking = g_orbe_head_tracking.load(std::memory_order_relaxed);
+            op.headRadiusM = g_orbe_head_radius_m.load(std::memory_order_relaxed);
             op.bandCount = 24;
             // Bucle cerrado: deltas locales sobre la base del usuario.
             {
