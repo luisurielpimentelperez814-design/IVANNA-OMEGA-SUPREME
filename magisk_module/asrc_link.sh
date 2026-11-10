@@ -19,26 +19,33 @@
 
 CLOCK_DIR="${IVANNA_CLOCK_DIR:-/data/vendor/ivanna_audio}"
 CLOCK_FILES="asrc_state clock_snapshot.v2 clock_snapshot"
-# CLOCK_CTX: tipo dedicado ivanna_data_file (auditoria linea 3, 2026-11-10).
-# Antes era adb_data_file + mlstrustedobject global (sepolicy.rule v3.4,
-# eliminado). Si el tipo dedicado no existe en la policy viva (p. ej.
-# magiskpolicy --live rechazo la linea `type`), ivanna_asrc_chcon()
-# vuelve a adb_data_file como fallback y lo deja registrado: el canal
-# sigue funcionando salvo el bypass MLS de escritura.
-CLOCK_CTX="u:object_r:ivanna_data_file:s0"
-CLOCK_CTX_FALLBACK="u:object_r:adb_data_file:s0"
+# CLOCK_CTX (v2.5.385): vendor_audio_data_file, tipo STOCK de /data/vendor/*.
+# Antes era ivanna_data_file con fallback a adb_data_file. Ese fallback era
+# el bug: Magisk 31.1 no carga sepolicy.rule en boot, así que el tipo
+# ivanna_data_file no existía en la policy viva cuando service.sh corría
+# ivanna_asrc_link_prepare en cada arranque; el chcon fallaba y el fallback
+# re-etiquetaba el directorio a adb_data_file, borrando el chcon manual.
+# El HAL corre como hal_audio_default y NO tiene reglas sobre adb_data_file:
+# logcat 2026-11-09 21:07: avc: denied { search } para ivanna_audio,
+# scontext hal_audio_default vs tcontext adb_data_file → el dump del ASRC
+# quedaba ciego tras cada reboot. Con vendor_audio_data_file el HAL escribe
+# sin reglas nuevas (verificado en vivo 2026-11-09: sonda de atributos y
+# dump ASRC frescos tras chcon manual a ese tipo).
+# NUNCA volver a adb_data_file para este directorio: si el chcon a
+# vendor_audio_data_file falla, ivanna_asrc_chcon() devuelve 1 SIN
+# re-etiquetar y deja el contexto que ya tenga el directorio.
+CLOCK_CTX="u:object_r:vendor_audio_data_file:s0"
 
-# Etiqueta una ruta con el tipo dedicado; fallback a adb_data_file si el
-# tipo no existe. Devuelve 0 si quedo con ivanna_data_file, 1 si fallback.
+# Etiqueta una ruta con vendor_audio_data_file. Devuelve 0 si quedó con ese
+# tipo, 1 si no (sin fallback a adb_data_file: ver comentario de CLOCK_CTX).
 ivanna_asrc_chcon() {
     local _path="$1"
     [ -e "$_path" ] || return 1
     command -v chcon >/dev/null 2>&1 || return 1
     chcon "$CLOCK_CTX" "$_path" 2>/dev/null
-    if ls -Zd "$_path" 2>/dev/null | grep -q ivanna_data_file; then
+    if ls -Zd "$_path" 2>/dev/null | grep -q vendor_audio_data_file; then
         return 0
     fi
-    chcon "$CLOCK_CTX_FALLBACK" "$_path" 2>/dev/null
     return 1
 }
 
@@ -90,8 +97,10 @@ ivanna_asrc_link_watch() {
 #   LIB_NOT_INSTALLED  el módulo no trae la librería (zip anterior a v2.5.384)
 #   HAL_NOT_RUNNING    no hay proceso del HAL de audio que inspeccionar
 #   NEEDS_ROOT         hay HAL pero /proc/<pid>/maps no se puede leer
-#   NOT_LOADED         HAL activo y librería no mapeada (el overlay.d no
-#                      aplicó, o falta la regla noatsecure de sepolicy.rule)
+#   NOT_LOADED         HAL activo y librería no mapeada (desde v2.5.385 es
+#                      el veredicto ESPERADO sin opt-in: overlay.d/ivanna_audio.rc
+#                      vive en overlay.d.disabled/; con opt-in, revisar el
+#                      .rc y la regla noatsecure de sepolicy.rule)
 #   LOADED             librería mapeada en al menos un proceso del HAL
 #   LOADED_KILLSWITCH  mapeada pero pal_asrc.off existe: bypass intencional
 #                      (el ASRC pasa el audio sin tocarlo, por decisión
@@ -213,7 +222,7 @@ ivanna_asrc_preload_status() {
         _note="no se pudo leer /proc/<pid>/maps; ejecuta como root (su -c)"
     else
         _verdict=NOT_LOADED
-        _note="HAL activo y libreria no mapeada: revisar overlay.d/ivanna_audio.rc y la regla noatsecure de sepolicy.rule (seccion v3.6)"
+        _note="HAL activo y libreria no mapeada: la inyeccion LD_PRELOAD esta DESACTIVADA por defecto desde v2.5.385 (overlay.d.disabled/ivanna_audio.rc, opt-in) — veredicto esperado sin opt-in; si se activo por opt-in, revisar overlay.d/ivanna_audio.rc y la regla noatsecure de sepolicy.rule (seccion v3.6)"
     fi
     echo "asrc_verdict=$_verdict"
     echo "asrc_note=$_note"

@@ -21,7 +21,7 @@
 
 std::atomic<float> g_orbe_amount{0.0f};
 std::atomic<float> g_orbe_distance_m{0.35f};
-std::atomic<float> g_orbe_spread{1.2f};
+std::atomic<float> g_orbe_spread{1.0f};
 std::atomic<float> g_orbe_proximity_db{3.0f};
 std::atomic<float> g_orbe_diffuse{0.5f};
 std::atomic<bool>  g_orbe_head_tracking{true};

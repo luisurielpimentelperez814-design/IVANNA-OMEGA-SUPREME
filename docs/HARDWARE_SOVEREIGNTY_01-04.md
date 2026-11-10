@@ -92,6 +92,11 @@ dispositivo ni de timing Bluetooth/PCM.
   de instalar, capturar la stanza exacta del teléfono
   (`cat /vendor/etc/init/android.hardware.audio.service_64.rc`) y
   completarla si trae más opciones.
+  **Actualización v2.5.385 (2026-11-10):** la 384 con este `.rc` activo
+  brickeó el teléfono DOS veces tras instalar el módulo + reiniciar
+  (reset de fábrica en ambas). El `.rc` se mueve a
+  `overlay.d.disabled/` (inyección DESACTIVADA por defecto, opt-in con
+  rollback a mano); el HAL arranca stock y la .so v5 queda inerte.
 - **Visibilidad (este cambio, working tree sin commitear):** el dump del
   write-stage ya es consultable desde la app: el daemon (root) lo lee con
   `include/write_stage_asrc_telemetry.hpp` (solo lectura, fail-closed,

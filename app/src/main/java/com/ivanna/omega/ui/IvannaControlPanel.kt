@@ -124,7 +124,7 @@ fun IvannaControlPanel(
     initialOrbeDiffuse: Float = 0.5f,
     initialOrbeHeadTracking: Boolean = true,
     // HOLOS — Operador Único de Campo Acústico (v2.5.364). ACTIVO por defecto en v2.5.369, retuneado (amount 0.5, harmonics 0.0).
-    initialHolosAmount: Float = 0.75f,
+    initialHolosAmount: Float = 0.5f,
     initialHolosDistanceM: Float = 0.35f,
     initialHolosSpread: Float = 1.0f,
     initialHolosProximityDb: Float = 3.0f,

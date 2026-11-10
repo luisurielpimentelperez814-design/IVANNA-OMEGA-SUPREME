@@ -491,7 +491,7 @@ class ParameterStore(context: Context) {
     // IMD SMPTE −159.5 dB. El término K (harmonics) es el que distorsionaba;
     // con K=0 el render espacial G y el campo Γ siguen activos y limpios.)
     // Los 13 parámetros de FUSION.md §6; band_count 12 o 24 (24 = default).
-    fun getHolosAmount(): Float = safeGetFloat(KEY_HOLOS_AMOUNT, 0.75f)
+    fun getHolosAmount(): Float = safeGetFloat(KEY_HOLOS_AMOUNT, 0.5f)
     fun getHolosDistanceM(): Float = safeGetFloat(KEY_HOLOS_DISTANCE_M, 0.35f)
     fun getHolosSpread(): Float = safeGetFloat(KEY_HOLOS_SPREAD, 1.0f)
     fun getHolosProximityDb(): Float = safeGetFloat(KEY_HOLOS_PROXIMITY_DB, 3.0f)

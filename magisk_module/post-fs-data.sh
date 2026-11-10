@@ -60,7 +60,11 @@ activate_safe_mode() {
     set_state "SAFE_MODE"
     touch "$MODDIR/.safe_mode" 2>/dev/null
     # Solo se retiran overlays del módulo; nunca se toca la configuración OEM.
-    rm -f "$MODDIR/system/vendor/etc/audio_effects.xml" \
+    # Desde v2.5.385 también se retira la inyección LD_PRELOAD del ASRC v5
+    # (overlay.d/ivanna_audio.rc) si el usuario la había activado por opt-in:
+    # un HAL en crash-loop por la .so no se arregla solo con quitar el XML.
+    rm -f "$MODDIR/overlay.d/ivanna_audio.rc" \
+          "$MODDIR/system/vendor/etc/audio_effects.xml" \
           "$MODDIR/system/etc/audio_effects_ivanna.xml" \
           "$MODDIR/system/etc/audio_effects_ivanna_omega.xml" 2>/dev/null
     observatory_log "BOOT" "SAFE_MODE activado: $reason"

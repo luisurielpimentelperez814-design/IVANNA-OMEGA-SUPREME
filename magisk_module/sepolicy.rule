@@ -475,7 +475,11 @@ allow audioserver vendor_data_file dir { search getattr }
 # ═══════════════════════════════════════════════════════════════════════
 # v3.6 — ASRC v5 write-stage por LD_PRELOAD en vendor.audio-hal
 #
-# Verificado en vivo en el Moto G85 (2026-11-10): el write-stage
+# DESACTIVADO POR DEFECTO desde v2.5.385: overlay.d/ivanna_audio.rc vive
+# en overlay.d.disabled/ (opt-in). Con la 384 activa, el teléfono no
+# volvió a arrancar DOS veces (reset de fábrica en ambas, 2026-11-10).
+# Estas reglas quedan inertes sin la inyección y se conservan para el
+# opt-in. Verificado en vivo en el Moto G85 (2026-11-10): el write-stage
 # libivanna_asrc_write_stage.so se inyecta en el HAL con el overlay
 # overlay.d/ivanna_audio.rc + esta sección. Tres piezas:
 #
@@ -503,12 +507,13 @@ allow hal_audio_default vendor_file dir { search getattr open read }
 #     dump con O_WRONLY|O_CREAT|O_TRUNC (permiso write, no append) y el
 #     kill switch con access(F_OK) (permiso getattr); el permiso append
 #     se incluye porque README §12 lo documenta como parte del mecanismo
-#     que funcionó con la sonda. El directorio lo crea y etiqueta
-#     asrc_link.sh con el tipo ivanna_data_file (sección 0); el fallback
-#     adb_data_file cubre el caso en que el contexto revierte en cada
-#     reboot (README §12, pendiente conocido: sin estas reglas el HAL no
-#     puede escribir el dump). vendor_data_file es solo travesía de
-#     /data/vendor hacia ese directorio.
+#     que funcionó con la sonda. Desde v2.5.385 el directorio lo crea y
+#     etiqueta asrc_link.sh con el tipo vendor_audio_data_file (tipo stock
+#     de /data/vendor/*, que el HAL ya puede escribir sin reglas nuevas:
+#     verificado en vivo 2026-11-09, dump fresco tras chcon manual).
+#     NUNCA adb_data_file para ese directorio: hal_audio_default no tiene
+#     reglas sobre él y recibe avc: denied { search } (2026-11-09 21:07).
+#     vendor_data_file es solo travesía de /data/vendor hacia ese directorio.
 allow hal_audio_default vendor_data_file dir { search getattr }
 allow hal_audio_default ivanna_data_file dir { search getattr open read add_name }
 allow hal_audio_default ivanna_data_file file { create open read getattr write append }

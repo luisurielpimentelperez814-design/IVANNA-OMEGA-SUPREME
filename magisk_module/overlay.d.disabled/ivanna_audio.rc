@@ -1,0 +1,31 @@
+# IVANNA OMEGA SUPREME — ASRC v5 write-stage (Moto G85 5G)
+# ¡DESACTIVADO POR DEFECTO desde v2.5.385! Este archivo vive en
+# overlay.d.disabled/ (Magisk NO lo importa): el HAL arranca STOCK, sin
+# LD_PRELOAD. Motivo: la v2.5.384 lo activaba en cada arranque y el
+# teléfono no volvió a arrancar DOS veces (reset de fábrica en ambas,
+# 2026-11-10). La .so v5 corre su constructor en el proceso del HAL al
+# cargar (neon_self_test + hilo de control); si ese constructor o el
+# enlace fallan, vendor.audio-hal muere en cada inicio e init lo
+# reinicia en bucle (crash-loop) con el audio caído. El kill switch
+# pal_asrc.off NO protege ese caso: solo actúa DESPUÉS de cargar la .so.
+# OPT-IN (solo con el teléfono arrancando limpio y un rollback a mano):
+#   su -c 'cp /data/adb/modules/ivanna_omega_supreme/overlay.d.disabled/ivanna_audio.rc /data/adb/modules/ivanna_omega_supreme/overlay.d/ivanna_audio.rc'
+# y reiniciar. Para volver atrás: borrar overlay.d/ivanna_audio.rc y
+# reiniciar. Sin este archivo, la .so v5 viaja en el zip pero queda
+# inerte (el chequeo de arranque la reporta NOT_LOADED como WARNING).
+# Adaptación del overlay.d/ivanna_audio.rc del módulo ivanna_audio_probe
+# (~/workspace/preload-evidence/20261107/overlay.d_ivanna_audio.rc, 510 B):
+# stanza COMPLETA del servicio vendor.audio-hal replicada del fabricante
+# (incl. class/user/group/capabilities/ioprio/writepid/onrestart) + override
+# + setenv con la librería v5. Único cambio respecto al original: la ruta
+# de la librería. Magisk overlay.d imports this after init.rc.
+service vendor.audio-hal /vendor/bin/hw/android.hardware.audio.service_64
+    override
+    setenv LD_PRELOAD /vendor/lib64/libivanna_asrc_write_stage.so
+    class hal
+    user audioserver
+    group audio camera drmrpc inet media mediadrm net_bt net_bt_admin oem_2901 wakelock
+    capabilities BLOCK_SUSPEND SYS_NICE
+    ioprio rt 4
+    writepid /dev/cpuset/foreground/tasks /dev/stune/foreground/tasks
+    onrestart restart audioserver

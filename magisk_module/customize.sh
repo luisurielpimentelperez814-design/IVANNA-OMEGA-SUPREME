@@ -413,7 +413,7 @@ fi
 # y la instalación sigue. Nada se reinicia aquí: aplica en el próximo reboot.
 if [ -d /data/adb/modules/ivanna_audio_probe ]; then
     if touch /data/adb/modules/ivanna_audio_probe/disable 2>/dev/null; then
-        ui_print "  ✓ ivanna_audio_probe legacy desactivado para el próximo arranque (solo el overlay del módulo principal aplicará la inyección)"
+        ui_print "  ✓ ivanna_audio_probe legacy desactivado para el próximo arranque (la inyección LD_PRELOAD del módulo principal está DESACTIVADA por defecto desde v2.5.385: overlay.d.disabled/ivanna_audio.rc, opt-in)"
     else
         ui_print "  ⚠ no se pudo desactivar ivanna_audio_probe legacy (hacerlo a mano: touch /data/adb/modules/ivanna_audio_probe/disable)"
     fi
