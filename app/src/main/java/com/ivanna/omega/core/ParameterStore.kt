@@ -197,6 +197,40 @@ class ParameterStore(context: Context) {
         private const val KEY_ROOM_GAINS       = "room_corr_gains"
         private const val KEY_ROOM_ENABLED     = "room_corr_enabled"
         private const val KEY_HOA_IMMERSIVITY = "hoa_immersivity"
+
+        // v2.5.386 — MIGRACIÓN DEL SOBRE 380 (una sola vez). La 384 subió
+        // HOLOS a amount 0.75 / width 1.25 / diffuse 0.65 y ORBE spread a 1.2;
+        // esos valores quedaron PERSISTIDOS y el revert de la 385 solo cambió
+        // los defaults — PersistedStateRestorer seguía reenviando los valores
+        // 384 al daemon en cada arranque. Esta migración los clampa al sobre
+        // 380 (los valores que sonaban bien) y marca la migración como hecha.
+        private const val KEY_MIGRATION_386_ENVELOPE_DONE = "migration_386_envelope_done"
+
+        // Sobre 380 — techos que sonaban bien en la v2.5.380. NO subir.
+        internal const val ENVELOPE_380_HOLOS_AMOUNT = 0.5f
+        internal const val ENVELOPE_380_HOLOS_WIDTH = 1.0f
+        internal const val ENVELOPE_380_HOLOS_DIFFUSE = 0.5f
+        internal const val ENVELOPE_380_ORBE_SPREAD = 1.0f
+
+        /** Los cuatro valores persistidos que la migración 386 clampa. */
+        internal data class Envelope380(
+            val holosAmount: Float,
+            val holosWidth: Float,
+            val holosDiffuse: Float,
+            val orbeSpread: Float
+        )
+
+        /** Pura y testeable: clampa valores persistidos al sobre 380. */
+        internal fun clampTo380Envelope(e: Envelope380): Envelope380 {
+            fun clamp(v: Float, max: Float, def: Float): Float =
+                if (v.isFinite()) v.coerceIn(0f, max) else def
+            return Envelope380(
+                holosAmount = clamp(e.holosAmount, ENVELOPE_380_HOLOS_AMOUNT, ENVELOPE_380_HOLOS_AMOUNT),
+                holosWidth = clamp(e.holosWidth, ENVELOPE_380_HOLOS_WIDTH, ENVELOPE_380_HOLOS_WIDTH),
+                holosDiffuse = clamp(e.holosDiffuse, ENVELOPE_380_HOLOS_DIFFUSE, ENVELOPE_380_HOLOS_DIFFUSE),
+                orbeSpread = clamp(e.orbeSpread, ENVELOPE_380_ORBE_SPREAD, ENVELOPE_380_ORBE_SPREAD)
+            )
+        }
     }
 
     fun getExciter(): Float = safeGetFloat(KEY_EXCITER, 0.55f) // CALIBRACIÓN MAGISTRAL: armónicos 2ª/3ª ricos y controlados (LPF 14.5kHz sin aliasing)
@@ -541,6 +575,32 @@ class ParameterStore(context: Context) {
         .putBoolean(KEY_HOLOS_HEAD_TRACKING, headTracking)
         .putInt(KEY_HOLOS_BAND_COUNT, if (bandCount == 12) 12 else 24)
         .apply()
+
+    /**
+     * v2.5.386 — Migración única del sobre 380. Clampa los valores HOLOS/ORBE
+     * persistidos por la 384 (amount 0.75 / width 1.25 / diffuse 0.65 /
+     * orbeSpread 1.2) al sobre 380 y marca la migración como hecha. Idempotente:
+     * si ya se hizo, no toca nada. Debe llamarse ANTES de que
+     * PersistedStateRestorer reenvíe los valores al daemon.
+     */
+    fun migrateTo386Envelope() {
+        if (safeGetBoolean(KEY_MIGRATION_386_ENVELOPE_DONE, false)) return
+        val before = Envelope380(getHolosAmount(), getHolosWidth(), getHolosDiffuse(), getOrbeSpread())
+        val after = clampTo380Envelope(before)
+        prefs.edit()
+            .putFloat(KEY_HOLOS_AMOUNT, after.holosAmount)
+            .putFloat(KEY_HOLOS_WIDTH, after.holosWidth)
+            .putFloat(KEY_HOLOS_DIFFUSE, after.holosDiffuse)
+            .putFloat(KEY_ORBE_SPREAD, after.orbeSpread)
+            .putBoolean(KEY_MIGRATION_386_ENVELOPE_DONE, true)
+            .apply()
+        if (before != after) {
+            android.util.Log.i("ParameterStore",
+                "Migración 386: sobre 380 aplicado (holos ${before.holosAmount}->${after.holosAmount}, " +
+                "width ${before.holosWidth}->${after.holosWidth}, diffuse ${before.holosDiffuse}->${after.holosDiffuse}, " +
+                "orbeSpread ${before.orbeSpread}->${after.orbeSpread})")
+        }
+    }
 
     // ── IVANNA — Operador Unificado de Campo Espacial (v2.5.375) ── ACTIVO
     // por defecto (amount 1.0, directiva explícita: implementado y activo

@@ -47,14 +47,27 @@ fi
 # arranque, con el mismo fallback línea por línea de customize.sh
 # (magiskpolicy --live --apply aborta al primer tipo inexistente en esta
 # versión de Android y no aplicaría ninguna regla).
+# v2.5.386 — A PRUEBA DE BRICK: magiskpolicy sin timeout podía colgar el
+# arranque si el binario se quedaba esperando (nunca se vio, pero service.sh
+# corre en boot y NO puede permitirse un cuelgue). run_bounded ejecuta con
+# `timeout 15` cuando el applet existe (toybox) y directo cuando no; el
+# bucle línea por línea además está topado a 200 reglas.
+run_bounded() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 15 "$@" 2>/dev/null
+    else
+        "$@" 2>/dev/null
+    fi
+}
 if command -v magiskpolicy >/dev/null 2>&1 && [ -f "$MODDIR/sepolicy.rule" ]; then
-    if magiskpolicy --live --apply "$MODDIR/sepolicy.rule" 2>/dev/null; then
+    if run_bounded magiskpolicy --live --apply "$MODDIR/sepolicy.rule"; then
         echo "$(date) SELINUX-BOOT: sepolicy.rule aplicada (--apply)" >> "$LOG"
     else
-        SE_OK=0; SE_FAIL=0
+        SE_OK=0; SE_FAIL=0; SE_N=0
         while IFS= read -r RULE; do
+            SE_N=$((SE_N+1)); [ "$SE_N" -gt 200 ] && break
             case "$RULE" in ''|'#'*) continue ;; esac
-            if magiskpolicy --live "$RULE" 2>/dev/null; then SE_OK=$((SE_OK+1)); else SE_FAIL=$((SE_FAIL+1)); fi
+            if run_bounded magiskpolicy --live "$RULE"; then SE_OK=$((SE_OK+1)); else SE_FAIL=$((SE_FAIL+1)); fi
         done < "$MODDIR/sepolicy.rule"
         echo "$(date) SELINUX-BOOT: sepolicy.rule línea por línea: $SE_OK aplicadas, $SE_FAIL omitidas (tipos ausentes en esta versión)" >> "$LOG"
     fi

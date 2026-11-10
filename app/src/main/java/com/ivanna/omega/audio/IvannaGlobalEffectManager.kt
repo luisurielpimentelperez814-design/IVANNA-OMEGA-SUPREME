@@ -398,6 +398,60 @@ internal fun shouldAttachDiscoveredSession(
 internal fun usableSessionIds(pairs: List<Pair<Int, Int>>): List<Int> =
     pairs.map { it.first }.filter { isUsableSessionId(it) }.distinct()
 
+/**
+ * Estado del bucle de retroalimentación por beacon (Ruta B, v2.5.386).
+ * `lastFrames` = frames del beacon en el ciclo anterior (-1 = sin línea base
+ * aún); `unchangedCycles` = ciclos consecutivos del watchdog (3 s c/u) con
+ * el contador congelado mientras la sesión sigue sonando.
+ */
+internal data class OrphanBeaconState(val lastFrames: Long, val unchangedCycles: Int)
+
+/** Resultado de la decisión de huérfano: recrear o no, y el estado siguiente. */
+internal data class OrphanDecision(val recreate: Boolean, val nextState: OrphanBeaconState)
+
+/**
+ * Decisión pura: ¿el efecto acoplado a la sesión descubierta está HUÉRFANO?
+ *
+ * v2.5.386 — Ruta B: el efecto omega SÍ se crea y habilita, pero puede quedar
+ * en "Orphan Effect Chains" (existe sin conectarse a ningún hilo de salida):
+ * el objeto existe (`omegaAlive` = true) pero procesa 0 frames. El watchdog
+ * anterior NUNCA consultaba el beacon, así que el huérfano quedaba para
+ * siempre y Ruta B no sonaba. Esta función decide, solo con el beacon, si hay
+ * que destruir el efecto y recrearlo en la misma sesión real.
+ *
+ *   - sin sesión acoplada, o la descubierta ya no es la acoplada: no; resetea.
+ *   - la sesión NO está sonando (pausa): no; los frames congelados son lo
+ *     esperado. Resetea (la pausa no es orfandad).
+ *   - beacon no disponible (frames < 0): no; conserva el estado (fail-closed:
+ *     sin lectura no se destruye nada).
+ *   - sin línea base aún: no; la toma.
+ *   - frames crecen (o el contador se reinició): no; procesando.
+ *   - frames congelados: acumula ciclos; recrea al llegar a
+ *     `unchangedCyclesToRecreate` (3 ciclos × 3 s = 9 s congelado sonando).
+ */
+internal fun decideOrphanRecreation(
+    attachedSessionId: Int,
+    discoveredSessionId: Int,
+    sessionActivelyPlaying: Boolean,
+    beaconFrames: Long,
+    state: OrphanBeaconState,
+    unchangedCyclesToRecreate: Int = 3
+): OrphanDecision {
+    val reset = OrphanBeaconState(-1, 0)
+    if (!isUsableSessionId(attachedSessionId)) return OrphanDecision(false, reset)
+    if (discoveredSessionId != attachedSessionId) return OrphanDecision(false, reset)
+    if (!sessionActivelyPlaying) return OrphanDecision(false, reset)
+    if (beaconFrames < 0) return OrphanDecision(false, state)
+    if (state.lastFrames < 0) return OrphanDecision(false, OrphanBeaconState(beaconFrames, 0))
+    if (beaconFrames > state.lastFrames) return OrphanDecision(false, OrphanBeaconState(beaconFrames, 0))
+    if (beaconFrames < state.lastFrames) return OrphanDecision(false, OrphanBeaconState(beaconFrames, 0))
+    val unchanged = state.unchangedCycles + 1
+    return OrphanDecision(
+        recreate = unchanged >= unchangedCyclesToRecreate,
+        nextState = OrphanBeaconState(beaconFrames, unchanged)
+    )
+}
+
 class IvannaGlobalEffectManager(
     private val context: android.content.Context
 ) {
@@ -482,6 +536,20 @@ class IvannaGlobalEffectManager(
     // la sesión descubierta hay que liberar la anterior y re-acoplar.
     @Volatile private var discoveredAttachedSessionId: Int = 0
     @Volatile private var lastDiscoveredGen: Long = 0
+    // v2.5.386 — BUCLE DE RETROALIMENTACIÓN POR BEACON (huérfano de Ruta B).
+    // lastDiscoveredSessionId = última sesión descubierta que publicó el
+    // daemon (0 = ninguna; se actualiza en cada GET_STATUS aunque el attach
+    // se ignore por shouldAttach=false). activePlayingSessionIds = sesiones
+    // con isActive() en el sondeo por reflexión (vacío cuando el ROM
+    // anonimiza las configs: entonces se confía en isMusicActive()).
+    // orphanBeaconState = línea base del contador de frames del beacon.
+    // lastOrphanRecreateMs = última recreación por huérfano (anti-churn:
+    // como mucho 1 recreación cada 30 s aunque el beacon siga congelado).
+    @Volatile private var lastDiscoveredSessionId: Int = 0
+    @Volatile private var activePlayingSessionIds: Set<Int> = emptySet()
+    @Volatile private var orphanBeaconState: OrphanBeaconState = OrphanBeaconState(-1, 0)
+    @Volatile private var lastOrphanRecreateMs: Long = 0L
+    private val orphanRecreateMinIntervalMs: Long = 30_000L
     // v2.5.380 — throttle 1/30 s para los logs de diagnóstico de acople
     // (tryAttachDiscoveredSession corre cada 3 s desde el watchdog; sin
     // throttle el logcat se llenaría de la misma línea).
@@ -713,6 +781,11 @@ class IvannaGlobalEffectManager(
                     // v2.5.374 — Sondeo de sesiones activas: abre las sesiones
                     // que el broadcast no avisó (ver scanActivePlaybackSessions).
                     runCatching { scanActivePlaybackSessions() }.onFailure { Log.w(TAG, "watchdog scan: ${it.message}") }
+                    // v2.5.386 — Bucle de retroalimentación por beacon: si el
+                    // efecto acoplado a la sesión real lleva ~9 s sin procesar
+                    // frames mientras la música suena (huérfano), se destruye
+                    // y el próximo ciclo lo re-acopla en la misma sesión.
+                    runCatching { checkAttachedEffectOrphan() }.onFailure { Log.w(TAG, "watchdog orphan: ${it.message}") }
                     // v2.5.375 — Vida del omega global (sesión 0): si audioserver
                     // murió, el objeto queda muerto y hay que liberarlo para que
                     // el sondeo reintente (por sesión o global).
@@ -891,6 +964,10 @@ class IvannaGlobalEffectManager(
         }
         val discoveredId = evidence.discoveredSessionId
         val discoveredGen = evidence.discoveredSessionGen
+        // v2.5.386 — se guarda SIEMPRE (también cuando el attach se ignora):
+        // el bucle de huérfano compara la sesión descubierta actual con la
+        // acoplada, y sin este campo no sabría si la descubierta cambió.
+        lastDiscoveredSessionId = discoveredId
         // NOTA v2.5.380: NO hay fallback a leer el archivo snapshot
         // (/data/adb/ivanna_omega es solo-root; la app no puede leerlo).
         // La única vía es GET_STATUS.
@@ -974,20 +1051,90 @@ class IvannaGlobalEffectManager(
         return attached
     }
 
+    /**
+     * v2.5.386 — BUCLE DE RETROALIMENTACIÓN POR BEACON (huérfano de Ruta B).
+     *
+     * El efecto omega puede quedar en "Orphan Effect Chains": creado y
+     * habilitado, pero sin conectarse a ningún hilo de salida (0 frames).
+     * `setEnabled(true)` devuelve éxito aunque sea huérfano, así que ni
+     * `recoverDeadSessions()` ni `shouldAttachDiscoveredSession()` lo
+     * detectaban: el huérfano quedaba para siempre y Ruta B no sonaba.
+     *
+     * Este chequeo corre en cada ciclo del watchdog (3 s), DESPUÉS del
+     * escáner (que actualiza `activePlayingSessionIds`). Lee el contador de
+     * frames del beacon (DSPBridge.effectBeaconFrames()) y, si la sesión
+     * descubierta sigue siendo la acoplada, la música sigue sonando y los
+     * frames llevan 3 ciclos congelados (~9 s), destruye el efecto huérfano
+     * y limpia el backoff para que el próximo ciclo re-acople INMEDIATO en
+     * la misma sesión real. Anti-churn: como mucho 1 recreación cada 30 s.
+     * Fail-closed: si el beacon no se puede leer, no se destruye nada.
+     *
+     * @return true si se recreó el efecto huérfano, false en caso contrario.
+     */
+    @Synchronized
+    internal fun checkAttachedEffectOrphan(): Boolean {
+        val attached = discoveredAttachedSessionId
+        if (attached <= 0) {
+            orphanBeaconState = OrphanBeaconState(-1, 0)
+            return false
+        }
+        val frames = runCatching { com.ivanna.omega.dsp.DSPBridge.effectBeaconFrames() }.getOrDefault(-1L)
+        // La música suena si el AudioManager lo dice Y (el sondeo reflejó la
+        // sesión acoplada como activa, O el ROM anonimizó las configs — en
+        // ese caso el conjunto está vacío y no se puede probar que esté en
+        // pausa, así que se confía en isMusicActive()).
+        val musicActive = runCatching { audioManager?.isMusicActive }.getOrDefault(false) == true
+        val playing = musicActive &&
+            (activePlayingSessionIds.isEmpty() || activePlayingSessionIds.contains(attached))
+        val decision = decideOrphanRecreation(
+            attachedSessionId = attached,
+            discoveredSessionId = lastDiscoveredSessionId,
+            sessionActivelyPlaying = playing,
+            beaconFrames = frames,
+            state = orphanBeaconState
+        )
+        orphanBeaconState = decision.nextState
+        if (!decision.recreate) return false
+        val now = System.currentTimeMillis()
+        if (now - lastOrphanRecreateMs < orphanRecreateMinIntervalMs) return false
+        lastOrphanRecreateMs = now
+        Log.w(TAG, "Ruta B HUÉRFANA: efecto acoplado a sesión $attached sin procesar frames " +
+            "(${orphanBeaconState.unchangedCycles} ciclos × 3 s) mientras la música sigue sonando — " +
+            "recreando el efecto en la sesión real")
+        closeSession(attached)
+        discoveredAttachedSessionId = 0
+        orphanBeaconState = OrphanBeaconState(-1, 0)
+        // closeSession ya limpió el backoff (omegaRetryAttempts/omegaLastAttemptMs):
+        // el attach anterior demostró no funcionar, así que el próximo ciclo
+        // de watchdog re-acopla INMEDIATO (sin esperar el delay de reintento).
+        return true
+    }
+
     @Synchronized
     internal fun scanActivePlaybackSessions(): Int {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return 0
         val am = audioManager ?: return 0
         val configs: List<AudioPlaybackConfiguration> =
             runCatching { am.activePlaybackConfigurations }.getOrNull() ?: return 0
-        if (configs.isEmpty()) return 0
+        if (configs.isEmpty()) {
+            // v2.5.386 — sin configs no hay nada sonando: el conjunto de
+            // sesiones en reproducción queda vacío (el bucle de huérfano
+            // usa isMusicActive() como respaldo, que aquí es false).
+            activePlayingSessionIds = emptySet()
+            return 0
+        }
         var opened = 0
         var reflected = 0
         var anonymized = 0
+        // v2.5.386 — sesiones con isActive() (sonando AHORA), para el bucle
+        // de huérfano: un beacon congelado solo es orfandad si la sesión
+        // sigue sonando; en pausa los frames congelados son lo esperado.
+        val playing = mutableSetOf<Int>()
         for (config in configs) {
             val sessionId = reflectSessionId(config)
             if (!isUsableSessionId(sessionId)) { anonymized++; continue }
             reflected++
+            if (runCatching { config.isActive }.getOrDefault(false)) playing.add(sessionId)
             val uid = reflectClientUid(config)
             val pkg = resolvePackageForUid(uid)
             if (!activeSessions.containsKey(sessionId)) {
@@ -995,6 +1142,7 @@ class IvannaGlobalEffectManager(
                 opened++
             }
         }
+        activePlayingSessionIds = playing
         Log.i(TAG, "scanActivePlaybackSessions: ${configs.size} configs, $reflected con sessionId real, " +
             "$anonymized anonimizadas (-1/0), $opened sesiones abiertas por sondeo")
         // v2.5.380 — ELIMINADO el fallback a omega global (sesión 0).

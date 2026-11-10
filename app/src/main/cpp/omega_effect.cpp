@@ -47,6 +47,7 @@
 #include <atomic>
 #include <algorithm>   // AUDIT FIX #4: std::clamp / std::isfinite en SET_PARAM
 #include "include/SafetyLimiter.h"  // FIX distorsion: limiter de Ruta A reusado en Ruta B
+#include "include/rt_gain_slew.hpp"  // v2.5.386: slew del objetivo de ganancia adaptativa + tope 4:1 del compresor (bombeo 384/385)
 #include "include/rt_band_meter.hpp"
 #include "include/fotoholo_bark_meter.hpp"
 #include <cmath>
@@ -288,6 +289,17 @@ struct omega_effect_context_t {
     // FIX (tronido/zipper por escalon de ganancia adaptativa): ganancia aplicada
     // en el bloque anterior; 0 = sin inicializar (calloc) -> se trata como 1.0.
     float adaptGainPrev;
+    // v2.5.386 — BOMBEO (384/385): el OBJETIVO de ganancia adaptativa
+    // (V2 + ADE) se recalculaba por bloque y se rampaba dentro del bloque
+    // hasta el nuevo objetivo: si el objetivo saltaba entre bloques, la
+    // ganancia formaba un diente de sierra a ritmo de bloque = bombeo.
+    // adaptGainTargetSmooth es el objetivo con pendiente limitada ENTRE
+    // bloques (máx 0.02/bloque); compThresholdSmooth/compRatioSmooth hacen
+    // lo mismo con el compresor arbitrado (ratio topado a 4:1, ver
+    // rt_gain_slew.hpp). 1.0/-20 dB/1.0 = neutros (sin adaptación).
+    float adaptGainTargetSmooth{1.0f};
+    float compThresholdSmooth{-20.0f};
+    float compRatioSmooth{1.0f};
     AntiDolbyState* antiDolby;
     // Supremacía Acústica: Volterra H2 & Hexagon cDSP FastRPC
     ivanna::dsp::VolterraH2Symmetric* volterraEngine;
@@ -449,7 +461,11 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         std::isfinite(s.orbe_diffuse)) {
         fc->setOrbeParams(std::clamp(s.orbe_amount, 0.f, 1.f),
                           std::clamp(s.orbe_distance_m, 0.15f, 2.0f),
-                          std::clamp(s.orbe_spread, 0.f, 1.5f),
+                          // v2.5.386 — SOBRE 380: orbe_spread topado a 1.0.
+                          // La 384 lo subió a 1.2 y ese valor quedó persistido;
+                          // el efecto lo rechaza aunque llegue un snapshot
+                          // viejo o corrupto (defensa en profundidad).
+                          std::clamp(s.orbe_spread, 0.f, 1.0f),
                           std::clamp(s.orbe_proximity_db, 0.f, 6.f),
                           std::clamp(s.orbe_diffuse, 0.f, 1.f),
                           s.orbe_head_tracking != 0u);
@@ -466,15 +482,19 @@ static inline void omega_apply_snapshot(IvannaFusionEngine* fc,
         std::isfinite(s.holos_warmth) && std::isfinite(s.holos_dynamics) &&
         std::isfinite(s.holos_width) && std::isfinite(s.holos_gamma) &&
         std::isfinite(s.holos_room_rt60)) {
-        fc->setHolosParams(std::clamp(s.holos_amount, 0.f, 1.f),
+        // v2.5.386 — SOBRE 380: holos_amount topado a 0.5, holos_width a 1.0
+        // y holos_diffuse a 0.5. La 384 los subió a 0.75/1.25/0.65 y esos
+        // valores quedaron persistidos; el efecto los rechaza aunque llegue
+        // un snapshot viejo o corrupto (defensa en profundidad).
+        fc->setHolosParams(std::clamp(s.holos_amount, 0.f, 0.5f),
                            std::clamp(s.holos_distance_m, 0.15f, 2.0f),
                            std::clamp(s.holos_spread, 0.f, 1.5f),
                            std::clamp(s.holos_proximity_db, 0.f, 6.f),
-                           std::clamp(s.holos_diffuse, 0.f, 1.f),
+                           std::clamp(s.holos_diffuse, 0.f, 0.5f),
                            std::clamp(s.holos_harmonics, 0.f, 1.f),
                            std::clamp(s.holos_warmth, 0.f, 1.f),
                            std::clamp(s.holos_dynamics, 0.f, 1.f),
-                           std::clamp(s.holos_width, 0.f, 1.5f),
+                           std::clamp(s.holos_width, 0.f, 1.0f),
                            std::clamp(s.holos_gamma, 0.5f, 1.f),
                            std::clamp(s.holos_room_rt60, 0.18f, 1.8f),
                            s.holos_head_tracking != 0u,
@@ -1506,9 +1526,22 @@ static int32_t omega_process(effect_handle_t self,
                 std::isfinite(ctx->adaptiveDecisionCompAmount)
                     ? ctx->adaptiveDecisionCompAmount : 0.0f,
                 0.0f, 1.0f);
-            const float effectiveRatio = std::max(v2Ratio, std::max(requestedRatio, adeRatio));
+            // v2.5.386 — BOMBEO: el ratio efectivo era max(...) sin tope
+            // (hasta 20:1 con umbral de -5.5 dB) y el umbral saltaba con cada
+            // análisis de V2 -> el compresor respiraba por bloque. Tope 4:1
+            // y pendiente limitada en umbral y ratio (ver rt_gain_slew.hpp).
+            const float rawRatio = std::max(v2Ratio, std::max(requestedRatio, adeRatio));
+            const float cappedRatio = ivanna::rt::capCompressorRatio(rawRatio);
+            const float effThreshold = ivanna::rt::slewLimitValue(
+                ctx->compThresholdSmooth, effectiveThreshold,
+                ivanna::rt::kCompressorThresholdSlewDbPerBlock);
+            const float effRatio = ivanna::rt::slewLimitValue(
+                ctx->compRatioSmooth, cappedRatio,
+                ivanna::rt::kCompressorRatioSlewPerBlock);
+            ctx->compThresholdSmooth = effThreshold;
+            ctx->compRatioSmooth = effRatio;
             if (fc) {
-                fc->setCompressorParams(effectiveThreshold, effectiveRatio);
+                fc->setCompressorParams(effThreshold, effRatio);
             }
             const float overallTrim = std::clamp(adaptParams.overallGain, 0.75f, 1.15f);
             const float isoGain = adaptParams.applyISO226
@@ -1533,6 +1566,16 @@ static int32_t omega_process(effect_handle_t self,
             adaptiveGainTarget = std::clamp(
                 overallTrim * isoGain * requestedGain * adeGain, 0.50f, 1.0f);
         }
+        // v2.5.386 — BOMBEO (384/385): el objetivo se rampaba DENTRO del
+        // bloque desde gStart hasta adaptiveGainTarget; si el objetivo
+        // saltaba entre bloques, la ganancia formaba un diente de sierra a
+        // ritmo de bloque. El objetivo mismo ahora se mueve como mucho
+        // 0.02 por bloque (excursión completa en ~130 ms: inaudible como
+        // bombeo, sigue respondiendo). La rampa por muestra se conserva.
+        ctx->adaptGainTargetSmooth = ivanna::rt::slewLimitValue(
+            ctx->adaptGainTargetSmooth, adaptiveGainTarget,
+            ivanna::rt::kAdaptiveGainSlewPerBlock);
+        adaptiveGainTarget = ctx->adaptGainTargetSmooth;
         const float gStart = (ctx->adaptGainPrev > 0.0f) ? ctx->adaptGainPrev : 1.0f;
         if (std::fabs(adaptiveGainTarget - 1.0f) > 1.0e-4f ||
             std::fabs(gStart - 1.0f) > 1.0e-4f) {

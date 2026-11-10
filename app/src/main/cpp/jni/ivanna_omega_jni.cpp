@@ -2544,6 +2544,21 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeEffectBeaconState(JNIEnv*, jobject, ji
     return static_cast<jint>(ivanna::readEffectBeacon(win));
 }
 
+// v2.5.386 — Contador de frames procesados por el efecto (beacon bytes 8-15).
+// -1 = beacon no disponible (sin archivo / DAC o SELinux lo bloquea): el
+// llamador debe CONSERVAR su comportamiento previo. >= 0 = frames acumulados
+// desde que el efecto se creó. El watchdog de Ruta B lo usa para detectar el
+// efecto HUÉRFANO (creado y habilitado pero con 0 frames mientras la música
+// suena: el acople por sesión falló y hay que recrearlo en la sesión real).
+JNIEXPORT jlong JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeEffectBeaconFrames(JNIEnv*, jobject) {
+    uint64_t frames = 0;
+    const ivanna::EffectBeaconState st =
+        ivanna::readEffectBeacon(2000ull, ivanna::OMEGA_EFFECT_BEACON_PATH, &frames, nullptr);
+    if (st == ivanna::EffectBeaconState::Unavailable) return -1;
+    return static_cast<jlong>(frames);
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
     g_dspShedGovernor.reset();

@@ -6,7 +6,7 @@
 
 **Audio espacial Android · un solo motor, dos rutas, evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.385-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.386-c8a96b?style=flat-square)](version.properties)
 [![HOLOS](https://img.shields.io/badge/HOLOS-publicado%20v2.5.364-9fb7d0?style=flat-square)](#5-holos--operador-único-de-campo-acústico-)
 [![Φ](https://img.shields.io/badge/Φ-Hiper--Operador%20v2.5.369-9fb7d0?style=flat-square)](#13-hiper-operador-φ--v2515369)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
@@ -27,7 +27,7 @@
 
 | Rama / versión | Contenido | Estado |
 |:---|:---|:---|
-| `main` · **v2.5.385** (676) | **REPARACIÓN URGENTE de la 384 (brickeó el teléfono 2 veces)** — (1) inyección LD_PRELOAD del ASRC v5 DESACTIVADA por defecto (`overlay.d/ivanna_audio.rc` → `overlay.d.disabled/`, opt-in; el HAL arranca stock, la .so v5 queda inerte); (2) SELinux ASRC: `CLOCK_CTX` a `vendor_audio_data_file` sin fallback a `adb_data_file` (causa raíz del ASRC ciego tras cada reboot); (3) audio revertido a valores de la 380 (HOLOS 0.5/1.0/0.5, ORBE spread 1.0). | 🚧 En publicación con este commit; verificación en teléfono pendiente: SOLO el APK (sin módulo, por orden del usuario) + audio como la 380 + beacon creciendo + magic OEBF |
+| `main` · **v2.5.386** (677) | **RECONSTRUCCIÓN DEL MÓDULO DESDE CERO (100 veces mejor, todo completo)** — (1) Ruta B con bucle de retroalimentación por beacon: el watchdog detecta el efecto huérfano (~9 s sin frames sonando) y lo re-acopla en la sesión real; (2) bombeo arreglado de raíz: slew del objetivo de ganancia adaptativa (0.02/bloque) + compresor topado 4:1; (3) migración única que clampa los valores 384 persistidos al sobre 380 + el efecto rechaza valores fuera del sobre; (4) a prueba de brick: `customize.sh` aborta si falta `libomega_effect.so` o el registro en el XML, `magiskpolicy` con timeout 15 s. LD_PRELOAD sigue desactivado por defecto. | 🚧 En publicación con este commit; verificación en teléfono pendiente: instalar módulo 386 + reinicio limpio + audio sin bombeo + beacon creciendo + log de migración 386 |
 | `main` · **v2.5.384** (675) | **ASRC v5 productivizado — write-stage en el módulo principal (HWS-02)** — punto de inserción PAL identificado (`pal_stream_write` en el HAL `android.hardware.audio.service_64`, deriva medida +58.055 ppm en vivo); la CI compila `libivanna_asrc_write_stage.so` desde fuente (`build_asrc_stage.sh`, receta `-nostdlib`, sin `dlinfo`), la empaqueta en `system/vendor/lib64/` y verifica hash idéntico en el zip + `BUILD_INFO` (fail-closed si las fuentes v5 no están commiteadas); host_test_asrc 103/103. Inyección LD_PRELOAD (`overlay.d`/`ivanna_audio.rc`) pendiente del agente del módulo. | ❌ RETIRADA: el módulo brickeó el teléfono 2 veces tras instalar + reiniciar (reset de fábrica en ambas) y el audio sonaba con volumen sube/baja, tronidos y muy woofer. No instalar el módulo 384. |
 | `main` · **v2.5.383** (674) | **Auditoría integral (2 externas, AMBER) + 5D Fase 0 + seguridad + honestidad** — 5D Fase 0 en host (`BioControl5D` + EEG sintético, 15 tests nuevos, total 901); SELinux dedicado `ivanna_data_file` (adiós al `typeattribute` amplio); parser SAF con límites; comentarios ORBE/HOLOS en serie; CTest y licencias reconciliados; PR #39 NO incorporado; HWS-02 sigue NOT_APPROVED (punto de inserción PAL sin identificar; vía: LD_PRELOAD v5). | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (beacon creciendo + logcat `auto-enable` + verificación SELinux) |
 | `main` · **v2.5.382** (673) | **Ruta B — FIX DEFINITIVO del beacon 0** — auto-enable en `omega_process()` (ENABLE jamás llega del HAL) + init del DSP en creación con defaults 48 kHz/estéreo/PCM16 (SET_CONFIG tampoco llega). El efecto procesa aunque el HAL no envíe ENABLE ni SET_CONFIG. Confirmado en Tidal (609) igual que YTM (249): el acople funciona, el problema era `omega_process()`. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (beacon creciendo + logcat `auto-enable`) |
@@ -450,7 +450,7 @@ Todas en host a 48 kHz salvo indicación; la fila de deriva ASRC es medición en
 | ASRC v5, deriva en dispositivo (Moto G85) | −6.250 ppm, sat=0, kalman_drift=−6.250 | dump `pal_asrc_stage.txt`, 2026-11-10 00:40 CST |
 | CPU / XRuns en Moto G85 | **Sin medir** | pendiente |
 
-**Tests host (v2.5.385): 913 tests en total (mismo conteo que la 384; sin cambios en el número de tests).** Verificación local NO disponible en esta VM (g++-14 desapareció tras el reinicio; solo g++-13, que no soporta C++26): la CI es la verificación definitiva. En la 384 eran 913/913 en local (g++-14, CMake 4.4.4, CTest, 130 s, verificado 2026-11-10). La run CI "Tests host (CTest)" concluye en `failure` por el paso preexistente de herramientas (`cppcheck` + `gitleaks`), no por los tests: el paso CTest en sí pasa, igual que el de ASan+UBSan.
+**Tests host (v2.5.386): 918 tests en total (913 + 5 nuevos de `test_rt_gain_slew`).** Verificación local NO disponible en esta VM (g++-14 desapareció tras el reinicio; solo g++-13, que no soporta C++26): la CI es la verificación definitiva. La lógica del slew se verificó en host con un driver standalone (salto máximo 0.02/bloque). Además +18 tests unitarios Kotlin nuevos (11 de huérfano de Ruta B + 7 de migración del sobre 380). En la 384 eran 913/913 en local (g++-14, CMake 4.4.4, CTest, 130 s, verificado 2026-11-10). La run CI "Tests host (CTest)" concluye en `failure` por el paso preexistente de herramientas (`cppcheck` + `gitleaks`), no por los tests: el paso CTest en sí pasa, igual que el de ASan+UBSan.
 
 Regla de trabajo: si HOLOS mide < 2× RT en dispositivo es viable; entre 1–2×, viable con shed; < 1×, no viable y se recorta. La estimación host (15–25× RT) ya quedó desmentida por la medición (3.5× RT): la estimación no es un dato.
 
@@ -524,7 +524,7 @@ La instalación Magisk requiere root y una ruta compatible. Consulta [la guía s
 bash scripts/run_ctest.sh
 ```
 
-Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (913 tests en total en v2.5.385, mismo conteo que la 384; verificación por CI).
+Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (918 tests en total en v2.5.386; verificación por CI).
 
 ### Dashboard web
 

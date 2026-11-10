@@ -143,6 +143,9 @@ ivanna_add_test(test_variable_asrc)
 ivanna_add_test(test_hal_output_rate_control)
 # Route-B adaptive bypass: per-sample bounded ramp back to unity on disable.
 ivanna_add_test(test_adaptive_gain_ramp)
+# v2.5.386 — Ruta B: limitadores de pendiente del objetivo de ganancia
+# adaptativa y tope 4:1 del compresor (bombeo de la 384/385). Header-only.
+ivanna_add_test(test_rt_gain_slew)
 
 # Detector de transientes real (envolvente rápida vs lenta) — sub-módulo
 # propio de la Fase 1 del encargo HOA->Binaural->Upmixing, con sus propios

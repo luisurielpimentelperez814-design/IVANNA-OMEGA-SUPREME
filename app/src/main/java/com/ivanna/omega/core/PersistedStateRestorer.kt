@@ -106,6 +106,10 @@ object PersistedStateRestorer {
             // ORBE — Binaural Esférico de Campo Cercano (v2.5.363): restaura los 6
             // parámetros (amount 0 = apagado por defecto) en la Ruta A por JNI y en
             // la Ruta B por SET_PERCEPTUAL_STATE al daemon (snapshot ABI v9).
+            // v2.5.386 — MIGRACIÓN DEL SOBRE 380: antes de reenviar nada al
+            // daemon, clampa los valores persistidos por la 384 (HOLOS 0.75 /
+            // width 1.25 / diffuse 0.65, ORBE spread 1.2) al sobre 380.
+            runCatching { paramStore.migrateTo386Envelope() }
             runCatching {
                 IvannaNativeLib.nativeSetOrbeParams(
                     paramStore.getOrbeAmount(), paramStore.getOrbeDistanceM(),

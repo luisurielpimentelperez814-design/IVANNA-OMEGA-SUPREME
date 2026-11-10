@@ -272,6 +272,17 @@ object DSPBridge {
         }
     }
 
+    /**
+     * v2.5.386 — Frames acumulados procesados por el efecto (beacon).
+     * -1 = beacon no disponible: el llamador debe conservar su comportamiento
+     * previo. El watchdog de Ruta B lo usa para detectar el efecto huérfano
+     * (frames congelados mientras la sesión descubierta sigue sonando).
+     */
+    fun effectBeaconFrames(): Long {
+        if (!loaded) return -1L
+        return runCatching { nativeEffectBeaconFrames() }.getOrDefault(-1L)
+    }
+
     // ── Reinyeccion diferencial de Ruta A (v2.5.0) ──────────────────────────
     // Output = Dry + g_banda * Delta; aqui solo se calcula el termino Delta*g (el Dry ya suena por la via original).
     fun reinjectPrepare(sampleRate: Int, maxFrames: Int) { if (loaded) nativeReinjectPrepare(sampleRate, maxFrames) }
@@ -314,4 +325,5 @@ object DSPBridge {
     private external fun nativeReset()
     private external fun nativeVersion(): String
     private external fun nativeEffectBeaconState(idleMs: Int): Int
+    private external fun nativeEffectBeaconFrames(): Long
 }

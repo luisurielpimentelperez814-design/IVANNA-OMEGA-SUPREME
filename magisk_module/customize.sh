@@ -530,6 +530,34 @@ else
     fi
 fi
 
+# v2.5.386 — VERIFICACIÓN FINAL DE INSTALACIÓN (fail-closed): el daemon ya
+# se valida arriba (ELF/AArch64); aquí se valida el efecto de Ruta B. Si el
+# zip no trae libomega_effect.so (o está vacía/corrupta), la instalación se
+# ABORTA en vez de instalar un módulo que no puede procesar audio: un módulo
+# instalado a medias es peor que no instalar (el usuario cree que Ruta B
+# funciona y no es así). También se verifica que el XML fusionado registre
+# la librería omega (el merge ya aborta si falla; esto es la segunda capa).
+ui_print "- Verificación final de instalación (v2.5.386)"
+EFFECT_OK=0
+for EFFECT_SO in "$MODPATH/system/vendor/lib64/soundfx/libomega_effect.so" \
+                 "$MODPATH/system/lib64/soundfx/libomega_effect.so"; do
+    if [ -s "$EFFECT_SO" ]; then
+        EFFECT_MAGIC=$(head -c4 "$EFFECT_SO" 2>/dev/null | od -An -tx1 | tr -d " \n")
+        if [ "$EFFECT_MAGIC" = "7f454c46" ]; then
+            EFFECT_OK=1
+            ui_print "  ✓ libomega_effect.so validada (ELF, $(stat -c%s "$EFFECT_SO" 2>/dev/null || echo "?") bytes)"
+            break
+        fi
+    fi
+done
+if [ "$EFFECT_OK" -ne 1 ]; then
+    abort "ERROR: libomega_effect.so ausente, vacía o corrupta en el zip — Ruta B no puede funcionar. Re-descarga el zip del CI y reinstala."
+fi
+if ! grep -q 'name="omega_effect"' "$TARGET_XML" 2>/dev/null; then
+    abort "ERROR: el audio_effects.xml fusionado no registra omega_effect — la factoría no cargaría el efecto. Reinstala."
+fi
+ui_print "  ✓ audio_effects.xml fusionado registra omega_effect"
+
 ui_print "- Reloj de hardware / ASRC (Ruta B)"
 ui_print "  ✓ El daemon publica el reloj HAL solo con pares frames+timestamp del propietario y ejecuta el ASRC por software"
 ui_print "  ℹ No hay actuador ASRC físico identificado en este equipo: no se corrige el reloj del DAC (fail-closed)"
