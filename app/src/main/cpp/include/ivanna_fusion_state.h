@@ -153,14 +153,30 @@ static inline int ivanna_fusion_read(const IvannaFusionState* s,
     return 1;
 }
 
+// ── Seqlock: lectura atómica con sequence ────────────────────────────────
+// Igual que ivanna_fusion_read, pero además devuelve en `seq_out` el valor
+// del sequence al que corresponde la copia (par, estable). Sirve para
+// detectar si alguien escribió entre la lectura y una escritura posterior
+// (read-modify-write): si tras nuestro write el sequence avanzó más de 2,
+// otro escritor se intercaló y hay que reintentar. (FIX H-1, 2026-11-11.)
+static inline int ivanna_fusion_read_seq(const IvannaFusionState* s,
+                                         IvannaFusionState* out,
+                                         uint32_t* seq_out) {
+    uint32_t seq0 = __atomic_load_n(&s->sequence, __ATOMIC_ACQUIRE);
+    if (seq0 & 1u) return 0;  // el escritor está a mitad
+    *out = *s;                // copia (el struct es POD; la copia es segura)
+    uint32_t seq1 = __atomic_load_n(&s->sequence, __ATOMIC_ACQUIRE);
+    if (seq0 != seq1) return 0;  // cambió durante la copia
+    if (seq_out) *seq_out = seq0;
+    return 1;
+}
+
 // ── Seqlock: escritura atómica (solo la hace el dueño de esos campos) ───
 // El escritor marca impar, escribe, marca par. `w` es el struct ya armado.
 static inline void ivanna_fusion_write(IvannaFusionState* s,
                                        const IvannaFusionState* w) {
     __atomic_fetch_add(&s->sequence, 1u, __ATOMIC_RELEASE); // impar
     // Copia todos los campos menos `sequence` (que es el propio seqlock).
-    uint32_t seq = __atomic_load_n(&s->sequence, __ATOMIC_RELAXED);
-    (void)seq;
     s->magic               = w->magic;
     s->version             = w->version;
     s->generation          = w->generation;

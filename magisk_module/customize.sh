@@ -9,29 +9,33 @@ ui_print " "
 
 SKIPUNZIP=0
 
-# ── ANCLAJE AUTOMÁTICO ASRC v5 (v2.5.397, directiva del propietario 2026-11-11) ──
-# El ASRC v5 se ancla AUTOMÁTICAMENTE al HAL en cada arranque: este bloque
-# instala overlay.d/ivanna_audio.rc ACTIVO (LD_PRELOAD de
+# ── ANCLAJE AUTOMÁTICO ASRC v6 (v2.5.401, directiva del propietario 2026-11-11) ──
+# El ASRC v6 se ancla AUTOMÁTICAMENTE al HAL en cada arranque: este bloque
+# instala ivanna_audio.rc ACTIVO (LD_PRELOAD de
 # libivanna_asrc_write_stage.so en vendor.audio-hal) y crea el marcador
 # .preload_optin, para que post-fs-data.sh NO lo retire en el arranque
 # (su guarda FIX BRICK 3 solo retira un .rc SIN marcador).
-# HISTORIAL: la 384 lo activaba y el teléfono no arrancó 2 veces; la 385+
-# lo desactivó por defecto (overlay.d.disabled/, opt-in manual). La .so v5
-# es fail-closed y YA fue verificada en vivo en este teléfono (deriva
-# +58.055 ppm medida, ratio 0.999993750, clock=write-timing, 2026-11-10):
-# si no resuelve los símbolos reales devuelve -ENOSYS y pasa el audio
-# sin tocarlo. El propietario ordenó el anclaje automático (2026-11-11).
-# ROLLBACK: borrar overlay.d/ivanna_audio.rc y .preload_optin y reiniciar;
+# FIX 2026-11-11 (v2.5.401 en vivo): overlay.d/ivanna_audio.rc a secas NO
+# se aplica — Magisk 31.1 no monta overlay.d (el .rc no aparece ni en
+# /vendor/etc/init/ ni en /ivanna_audio.rc, y el HAL arranca sin
+# LD_PRELOAD). La vía que SÍ monta Magisk es system/ (bind-mount
+# verificado: la .so y el daemon llegan por system/). Por eso el .rc se
+# instala en system/vendor/etc/init/ivanna_audio.rc (además de
+# overlay.d/vendor/etc/init/ por si overlay.d funciona con ruta completa).
+# ROLLBACK: borrar system/vendor/etc/init/ivanna_audio.rc,
+# overlay.d/vendor/etc/init/ivanna_audio.rc y .preload_optin y reiniciar;
 # el safe-mode de post-fs-data.sh también retira el .rc tras 3 arranques
 # fallidos. El kill switch pal_asrc.off (en /data/vendor/ivanna_audio/)
 # deja el ASRC en bypass (pass-through) sin descargar la librería.
 if [ -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" ]; then
-    mkdir -p "$MODPATH/overlay.d"
-    cp -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" "$MODPATH/overlay.d/ivanna_audio.rc"
+    mkdir -p "$MODPATH/overlay.d/vendor/etc/init"
+    cp -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" "$MODPATH/overlay.d/vendor/etc/init/ivanna_audio.rc"
+    mkdir -p "$MODPATH/system/vendor/etc/init"
+    cp -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" "$MODPATH/system/vendor/etc/init/ivanna_audio.rc"
     touch "$MODPATH/.preload_optin"
-    ui_print "  ✓ ASRC v5 ANCLADO automáticamente: overlay.d/ivanna_audio.rc activo (LD_PRELOAD en vendor.audio-hal). Se carga en el próximo arranque."
+    ui_print "  ✓ ASRC v6 ANCLADO automáticamente: system/vendor/etc/init/ivanna_audio.rc activo (LD_PRELOAD en vendor.audio-hal). Se carga en el próximo arranque."
 else
-    ui_print "  ⚠ overlay.d.disabled/ivanna_audio.rc ausente: el ASRC v5 NO se ancló (revisar el zip)."
+    ui_print "  ⚠ overlay.d.disabled/ivanna_audio.rc ausente: el ASRC v6 NO se ancló (revisar el zip)."
 fi
 
 # El propio instalador y los helpers de permisos recursivos heredan esta prioridad

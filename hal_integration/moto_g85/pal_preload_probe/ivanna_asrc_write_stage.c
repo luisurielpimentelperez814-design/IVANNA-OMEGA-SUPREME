@@ -265,7 +265,11 @@
  * (16-byte aligned), so 0 and 1 can never be a real handle. */
 #define SLOT_FREE ((uintptr_t)0)
 #define SLOT_TOMBSTONE ((uintptr_t)1)
-#define ATTR_NWORDS 32
+#define ATTR_NWORDS 18
+/* FIX 2026-11-11 (5to brick): antes era 32 palabras (128 B). Solo se usan
+ * raw[0] y raw[14..17] (rate/bits/fmt/ch). Leer 32 palabras de un `attr`
+ * que el HAL puede pasar más chico es leer fuera del struct y puede
+ * tumbar el HAL en el arranque. 18 palabras (72 B) cubren justo lo usado. */
 #define MAX_SANE_SIZE (16u * 1024u * 1024u)
 #define MAX_IN_FRAMES 16384
 /* Output scratch: >= MAX_IN_FRAMES / RATIO_MIN so the resampler never
@@ -366,10 +370,13 @@ struct slot {
     /* v6 envelope stats (audio thread writes, control thread reads):
      * per-block mean |sample| → one-pole slow (~1 Hz) and fast (~8 Hz)
      * envelopes; the control thread derives the 1–8 Hz coherence
-     * (band energy / total energy) that drives η (Ec. 4). */
+     * (band energy / total energy) that drives η (Ec. 4).
+     * FIX H-2 (auditoría 2026-11-11): env_band_e/env_tot_e/env_n son
+     * atómicos (el audio los acumula, el control los lee-y-resetea con
+     * atomic_exchange). env_fast/env_slow solo los toca el hilo de audio. */
     double env_fast, env_slow;      /* one-pole envelopes of |x| */
-    double env_band_e, env_tot_e;   /* accumulated (fast-slow)^2, fast^2 */
-    uint64_t env_n;                 /* blocks accumulated */
+    _Atomic(double) env_band_e, env_tot_e; /* accumulated (fast-slow)^2, fast^2 */
+    _Atomic(uint64_t) env_n;        /* blocks accumulated */
     /* Stats (atomics; audio thread + control thread). */
     atomic_ullong write_calls, write_bytes, processed_calls, passthrough_calls;
     atomic_ullong misaligned, out_frames, in_frames;
@@ -383,6 +390,10 @@ static atomic_ullong g_passthrough_no_slot, g_passthrough_fmt, g_passthrough_siz
 static atomic_ullong g_passthrough_off, g_passthrough_nobuf, g_passthrough_big;
 static atomic_ullong g_max_write_frames; /* largest single write seen, in frames */
 static atomic_int g_enabled = 1;
+/* FIX 2026-11-11 (5to brick): el hilo de control NO se crea en el
+ * constructor (dlopen en el HAL durante el arranque es frágil). Se crea
+ * LAZY en el primer pal_stream_open, cuando el HAL ya está levantado. */
+static _Atomic(int) g_control_started = 0;
 
 /* v6 FUSIÓN: el ratio ya NO lo calcula un servo interno. Lo calcula el
  * CEREBRO (daemon v2, Kalman 3 estados) y lo escribe en el estado
@@ -647,6 +658,12 @@ ASRC_STATIC uint32_t resample_fir_v5(struct slot *s, const int16_t *in, uint32_t
     if (!(ratio >= RATIO_MIN) || ratio > RATIO_MAX) ratio = 1.0;
     const double step = 1.0 / ratio;
     double pos = s->pos;
+    /* FIX M-4 (auditoría 2026-11-11): defensa contra NaN en el carry.
+     * No debería ocurrir, pero si `pos` fuera NaN, `pos >= limit` es
+     * falso siempre y `(int32_t)pos` es UB. Clampear a [-1, 0]. */
+    if (!(pos == pos)) pos = 0.0;
+    if (pos < -1.0) pos = -1.0;
+    if (pos > 0.0) pos = 0.0;
     uint32_t produced = 0;
     const double limit = (double)in_frames - 1.0;
     /* New block: no frames of this block have been written to the
@@ -705,6 +722,14 @@ static int fusion_open(void) {
         g_fusion_fd = open(IVANNA_FUSION_SHM_PATH, O_RDWR, 0666);
         if (g_fusion_fd < 0) return 0;
     }
+    /* FIX C-2 (auditoría 2026-11-11, 5to brick): verificar con fstat que
+     * el archivo ya tenga al menos sizeof(IvannaFusionState) antes de
+     * mapearlo. Si el daemon lo acaba de crear y aún no lo dimensionó,
+     * mapearlo y acceder más allá de EOF da SIGBUS → crash del HAL. */
+    struct stat st;
+    if (fstat(g_fusion_fd, &st) != 0 || st.st_size < (off_t)sizeof(IvannaFusionState)) {
+        return 0;
+    }
     void *m = mmap(NULL, sizeof(IvannaFusionState), PROT_READ | PROT_WRITE,
                    MAP_SHARED, g_fusion_fd, 0);
     if (m == MAP_FAILED) return 0;
@@ -723,21 +748,35 @@ static void fusion_publish_measurements(uint64_t mmap_ns, uint32_t mmap_frames,
                                         uint32_t rate_hz, uint32_t fmt,
                                         uint32_t channels, double coherence) {
     if (!fusion_open()) return;
-    IvannaFusionState st;
-    if (!ivanna_fusion_read(g_fusion, &st)) return;
-    if (st.magic != IVANNA_FUSION_MAGIC) return;
-    IvannaFusionState w = st;
-    w.clock_mmap_ns = (int64_t)mmap_ns;
-    w.clock_mmap_frames = mmap_frames;
-    w.clock_write_ns = (int64_t)write_ns;
-    w.frames_written = frames_written;
-    w.stream_rate_hz = rate_hz;
-    w.stream_format = fmt;
-    w.stream_channels = channels;
-    w.muscle_health = 1;
-    w.muscle_timestamp_ms = (uint64_t)(now_ns() / 1000000ull);
-    w.coherence = (float)coherence;
-    ivanna_fusion_write(g_fusion, &w);
+    /* FIX H-1 (auditoría 2026-11-11, refinado): lost-update race
+     * cerebro↔músculo. Ambos hacen read-modify-write de todo el struct.
+     * Si el cerebro escribe entre nuestra lectura y nuestra escritura,
+     * lo pisamos con valores viejos. Detectarlo con el `sequence` del
+     * seqlock (no con `generation`): cada write lo incrementa en 2.
+     * Si tras nuestro write el sequence avanzó más de 2, el cerebro se
+     * intercaló: re-leer y re-aplicar solo nuestros campos (3 intentos).
+     * Comparar `generation` tenía un falso negativo (nuestro propio write
+     * restauraba el valor viejo y el check pasaba). */
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        IvannaFusionState st;
+        uint32_t seq0 = 0;
+        if (!ivanna_fusion_read_seq(g_fusion, &st, &seq0)) return;
+        if (st.magic != IVANNA_FUSION_MAGIC) return;
+        IvannaFusionState w = st;
+        w.clock_mmap_ns = (int64_t)mmap_ns;
+        w.clock_mmap_frames = mmap_frames;
+        w.clock_write_ns = (int64_t)write_ns;
+        w.frames_written = frames_written;
+        w.stream_rate_hz = rate_hz;
+        w.stream_format = fmt;
+        w.stream_channels = channels;
+        w.muscle_health = 1;
+        w.muscle_timestamp_ms = (uint64_t)(now_ns() / 1000000ull);
+        w.coherence = (float)coherence;
+        ivanna_fusion_write(g_fusion, &w);
+        uint32_t seq1 = __atomic_load_n(&g_fusion->sequence, __ATOMIC_ACQUIRE);
+        if (seq1 == seq0 + 2u) break; /* solo nuestro write; nadie nos piso */
+    }
 }
 
 /* Lee las decisiones del cerebro (ratio + veredicto + FIR Ψ) y las
@@ -810,6 +849,17 @@ static void apply_psi_fir(struct slot *s, int16_t *buf, uint32_t frames) {
     }
 }
 
+/* FIX H-2 (auditoría 2026-11-11): suma atómica de double. C11 no tiene
+ * atomic_fetch_add para _Atomic double, así que se hace con CAS loop. */
+static void atomic_add_double(_Atomic(double) *p, double v) {
+    double old = atomic_load_explicit(p, memory_order_relaxed);
+    double next;
+    do {
+        next = old + v;
+    } while (!atomic_compare_exchange_weak_explicit(p, &old, next,
+                                                   memory_order_relaxed, memory_order_relaxed));
+}
+
 /* Actualiza las estadísticas de la envolvente del bloque (para la
  * coherencia 1–8 Hz que alimenta η). Se llama por bloque (no por
  * muestra): la envolvente del bloque es la media de |x|. Un polo lento
@@ -829,9 +879,11 @@ static void envelope_update(struct slot *s, const int16_t *buf, uint32_t frames)
     s->env_fast += a_fast * (env - s->env_fast);
     s->env_slow += a_slow * (env - s->env_slow);
     const double band = s->env_fast - s->env_slow;
-    s->env_band_e += band * band;
-    s->env_tot_e += s->env_fast * s->env_fast;
-    s->env_n += 1;
+    /* FIX H-2: acumular con CAS loop (atomic_fetch_add no existe para
+     * _Atomic double; el control los lee-y-resetea con atomic_exchange). */
+    atomic_add_double(&s->env_band_e, band * band);
+    atomic_add_double(&s->env_tot_e, s->env_fast * s->env_fast);
+    atomic_fetch_add_explicit(&s->env_n, 1, memory_order_relaxed);
 }
 
 static void *resolve_sym(const char *name) {
@@ -1027,9 +1079,30 @@ ASRC_STATIC pal_get_mmap_position_fn resolve_mmap_fn(void) {
         return NULL;
     }
     const uintptr_t addr = base + (uintptr_t)IVANNA_MMAP_OFFSET;
-    /* The offset is inside the loaded library (a valid symbol offset from
-     * the device audit), so this read cannot fault. It only validates. */
-    const uint32_t insn = *(volatile uint32_t *)addr;
+    /* FIX C-1 (auditoría 2026-11-11, 5to brick): NO dereferenciar `addr`
+     * directamente. Si una OTA futura mueve la función, `addr` apunta a
+     * memoria no mapeada y la lectura hace SEGV → HAL muerto → brick.
+     * En su lugar, leer los 4 bytes con pread() del ARCHIVO (file I/O
+     * no puede hacer SEGV; si el offset está fuera del archivo, pread
+     * devuelve 0/error). El offset de archivo es el mismo que el offset
+     * virtual para este segmento (verificado en el teléfono). Solo si los
+     * bytes son una B válida se usa `base + offset` como puntero. */
+    uint32_t insn = 0;
+    {
+        const int fd = open("/vendor/lib64/libar-pal.so", O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            LOGI("mmap_position: no se pudo abrir libar-pal.so para validar el thunk");
+            return NULL;
+        }
+        uint8_t b[4];
+        const ssize_t nr = pread(fd, b, sizeof(b), (off_t)IVANNA_MMAP_OFFSET);
+        close(fd);
+        if (nr != (ssize_t)sizeof(b)) {
+            LOGI("mmap_position: pread del thunk fallo (nr=%d); offset invalido", (int)nr);
+            return NULL;
+        }
+        insn = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+    }
     if ((insn & 0xFC000000u) != 0x14000000u) {
         LOGI("mmap thunk at 0x%lx is not a B insn (0x%08x); offset wrong for this build",
              (unsigned long)addr, insn);
@@ -1135,6 +1208,10 @@ static struct slot *active_slot(void) {
 /* Hooks                                                               */
 /* ------------------------------------------------------------------ */
 
+/* FIX 2026-11-11 (5to brick): arranque LAZY del hilo de control (se
+ * define tras control_thread, se llama desde pal_stream_open). */
+static void start_control_thread_once(void);
+
 struct pal_buffer_full { void *buffer; size_t size; size_t offset; uint64_t _pad[4]; };
 
 __attribute__((visibility("default"))) int32_t pal_stream_open(void *attr, uint32_t n_dev, void *devs, uint32_t n_mod, void *mods, void *cb, uint64_t cookie, void **handle_out) {
@@ -1147,6 +1224,18 @@ __attribute__((visibility("default"))) int32_t pal_stream_open(void *attr, uint3
             return -ENOSYS;
         }
         atomic_store_explicit(&g_real_open, real, memory_order_release);
+        /* FIX M-2 (auditoría 2026-11-11): resolver las otras dos funciones
+         * reales AQUÍ (hilo de setup, no tiempo real), nunca con dlopen en
+         * el hilo de audio. Si no se resuelven, write/close devuelven
+         * -ENOSYS sin llamar a resolve_sym. */
+        if (!atomic_load_explicit(&g_real_write, memory_order_acquire)) {
+            pal_write_fn w = (pal_write_fn)resolve_sym("pal_stream_write");
+            if (w) atomic_store_explicit(&g_real_write, w, memory_order_release);
+        }
+        if (!atomic_load_explicit(&g_real_close, memory_order_acquire)) {
+            pal_close_fn c = (pal_close_fn)resolve_sym("pal_stream_close");
+            if (c) atomic_store_explicit(&g_real_close, c, memory_order_release);
+        }
     }
     /* Snapshot the attributes BEFORE the real call (REAL offsets w14..w17).
      * Only NULL / alignment are checked; the pointer is the HAL's own data. */
@@ -1222,7 +1311,9 @@ __attribute__((visibility("default"))) int32_t pal_stream_open(void *attr, uint3
     for (int i = 0; i < 64; ++i) { s->psi_hist_l[i] = 0.0f; s->psi_hist_r[i] = 0.0f; }
     s->psi_hist_w = 0;
     s->env_fast = 0.0; s->env_slow = 0.0;
-    s->env_band_e = 0.0; s->env_tot_e = 0.0; s->env_n = 0;
+    atomic_store_explicit(&s->env_band_e, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&s->env_tot_e, 0.0, memory_order_relaxed);
+    atomic_store_explicit(&s->env_n, 0, memory_order_relaxed);
     s->dither_state = (uint32_t)(h ^ (h >> 32) ^ now_ns());
     if (s->dither_state == 0) s->dither_state = 0x9E3779B9u;
     s->err_l[0] = 0.0f; s->err_l[1] = 0.0f;
@@ -1248,19 +1339,22 @@ __attribute__((visibility("default"))) int32_t pal_stream_open(void *attr, uint3
          (unsigned long)h, w00, rate, bits, ch, fmt,
          src == 1 ? "attr" : "known", eligible);
     (void)w00; /* only consumed by LOGI, which is a no-op on host builds */
+    /* FIX 2026-11-11 (5to brick): el hilo de control arranca aquí (HAL ya
+     * levantado), no en el constructor. */
+    start_control_thread_once();
     return r;
 }
 
 __attribute__((visibility("default"))) int32_t pal_stream_close(void *stream) {
     pal_close_fn real = atomic_load_explicit(&g_real_close, memory_order_acquire);
     if (!real) {
-        real = (pal_close_fn)resolve_sym("pal_stream_close");
-        if (!real) {
-            atomic_fetch_add_explicit(&g_close_no_real, 1, memory_order_relaxed);
-            LOGI("no real pal_stream_close found; pretending close ok");
-            return 0;
-        }
-        atomic_store_explicit(&g_real_close, real, memory_order_release);
+        /* FIX M-2 (auditoría 2026-11-11): no llamar a resolve_sym aquí
+         * (dlopen en hilo no-tiempo-real es aceptable, pero close puede
+         * venir del hilo de audio). La función real se resuelve EAGERLY
+         * en pal_stream_open. Si es NULL, el open nunca se resolvió. */
+        atomic_fetch_add_explicit(&g_close_no_real, 1, memory_order_relaxed);
+        LOGI("no real pal_stream_close found; pretending close ok");
+        return 0;
     }
     int32_t r = real(stream);
     atomic_fetch_add_explicit(&g_total_closes, 1, memory_order_relaxed);
@@ -1296,12 +1390,11 @@ static ssize_t passthrough(pal_write_fn real, void *stream, void *buf) {
 __attribute__((visibility("default"))) ssize_t pal_stream_write(void *stream, void *buf) {
     pal_write_fn real = atomic_load_explicit(&g_real_write, memory_order_acquire);
     if (!real) {
-        real = (pal_write_fn)resolve_sym("pal_stream_write");
-        if (!real) {
-            atomic_fetch_add_explicit(&g_write_no_real, 1, memory_order_relaxed);
-            return -ENOSYS;
-        }
-        atomic_store_explicit(&g_real_write, real, memory_order_release);
+        /* FIX M-2 (auditoría 2026-11-11): NUNCA dlopen en el hilo de
+         * audio (tiempo real). La función real se resuelve EAGERLY en
+         * pal_stream_open (hilo de setup). Si es NULL, devolver -ENOSYS. */
+        atomic_fetch_add_explicit(&g_write_no_real, 1, memory_order_relaxed);
+        return -ENOSYS;
     }
     /* Validate the buffer header without touching PCM. Anything invalid
      * is forwarded unchanged (the real function owns the error path). */
@@ -1507,12 +1600,16 @@ static void control_tick(void) {
     /* 3) Coherencia de la envolvente 1–8 Hz (alimenta η, Ec. 4).
      * Es la energía de la banda (rápido−lento)² sobre la energía total. */
     double coherence = atomic_load_explicit(&g_fusion_coherence, memory_order_relaxed);
-    if (s->env_n > 0) {
-        double c = s->env_band_e / (s->env_tot_e + 1e-9);
+    /* FIX H-2: leer-y-resetear con atomic_exchange (el audio acumula con
+     * atomic_fetch_add). Así no se pierde ninguna actualización. */
+    uint64_t n = atomic_exchange_explicit(&s->env_n, 0, memory_order_relaxed);
+    double band_e = atomic_exchange_explicit(&s->env_band_e, 0.0, memory_order_relaxed);
+    double tot_e = atomic_exchange_explicit(&s->env_tot_e, 0.0, memory_order_relaxed);
+    if (n > 0) {
+        double c = band_e / (tot_e + 1e-9);
         if (c < 0.0) c = 0.0;
         if (c > 1.0) c = 1.0;
         coherence = c;
-        s->env_band_e = 0.0; s->env_tot_e = 0.0; s->env_n = 0;
         atomic_store_explicit(&g_fusion_coherence, coherence, memory_order_relaxed);
     }
     /* 4) Publicar las mediciones en el estado de fusión (salvo en el
@@ -1580,7 +1677,13 @@ static void dump_once(void) {
     }
     int fd = open(IVANNA_OUT_PATH, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd >= 0) {
-        if (n > 0) (void)!write(fd, b, (size_t)n);
+        /* FIX M-3 (auditoría 2026-11-11): `n` es lo que snprintf QUERRÍA
+         * escribir, no lo escrito. Clampear a sizeof(b) para no hacer
+         * over-read del buffer. */
+        if (n > 0) {
+            size_t wn = (n < (int)sizeof(b)) ? (size_t)n : sizeof(b);
+            (void)!write(fd, b, wn);
+        }
         (void)fchmod(fd, 0644);
         close(fd);
     }
@@ -1603,17 +1706,35 @@ static void *control_thread(void *a) {
     return NULL;
 }
 
-__attribute__((constructor)) static void ivanna_asrc_stage_init(void) {
-    /* v5: prove the NEON dot product matches scalar before trusting
-     * it on the audio thread (fail-closed: scalar on any mismatch). */
-    neon_self_test();
+/* FIX 2026-11-11 (5to brick): el hilo de control se crea LAZY en el
+ * primer pal_stream_open (start_control_thread_once), NO en el
+ * constructor. Crear un pthread durante el dlopen del HAL en el arranque
+ * es frágil y puede tumbar el servicio. */
+static void start_control_thread_once(void) {
+    /* FIX M-1 (auditoría 2026-11-11): reclamar el flag con CAS ANTES de
+     * crear el hilo, y solo marcarlo si pthread_create tiene éxito. Si
+     * falla, el flag queda en 0 y se reintenta en el próximo open. */
+    int expected = 0;
+    if (!atomic_compare_exchange_strong_explicit(&g_control_started, &expected, 1,
+                                                 memory_order_acq_rel, memory_order_acquire)) return;
     pthread_attr_t at;
     pthread_t th;
     pthread_attr_init(&at);
     pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
     pthread_attr_setstacksize(&at, 64 * 1024);
-    if (pthread_create(&th, &at, control_thread, NULL) != 0) LOGI("control thread not started");
+    if (pthread_create(&th, &at, control_thread, NULL) != 0) {
+        LOGI("control thread not started");
+        pthread_attr_destroy(&at);
+        atomic_store_explicit(&g_control_started, 0, memory_order_release);
+        return;
+    }
     pthread_attr_destroy(&at);
+}
+
+__attribute__((constructor)) static void ivanna_asrc_stage_init(void) {
+    /* v5: prove the NEON dot product matches scalar before trusting
+     * it on the audio thread (fail-closed: scalar on any mismatch). */
+    neon_self_test();
     LOGI("v6 FUSION loaded pid=%d out=%s fir_taps=%d neon=%d (ratio lo da el cerebro)",
          (int)getpid(), IVANNA_OUT_PATH, FIR_V5_TAPS,
          atomic_load_explicit(&g_neon_ok, memory_order_relaxed));
