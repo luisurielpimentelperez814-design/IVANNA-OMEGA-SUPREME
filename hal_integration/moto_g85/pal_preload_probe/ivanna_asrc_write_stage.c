@@ -317,11 +317,14 @@
 
 struct pal_buffer_head { void *buffer; size_t size; };
 
-/* Public pal_mmap_position layout (provisional for this firmware):
- * int64 time_nanoseconds (CLOCK_MONOTONIC) @0, uint32 position_frames @8.
- * If the field order were swapped on this build, the adapter validation
- * (monotonic timestamp + plausible frame delta) rejects the samples and
- * the shim falls back to write-timing — a wrong layout fails closed. */
+/* Public pal_mmap_position layout — VERIFIED by disassembly 2026-11-11
+ * (SessionAlsaPcm::GetMmapPosition, libar-pal.so 0x24e3ac): it stores
+ * the nanosecond timestamp at out+0 (tv_sec*1e9 + tv_nsec, int64) and
+ * the hw_ptr (position_frames, uint32) at out+8. int64 time_nanoseconds
+ * (CLOCK_MONOTONIC) @0, uint32 position_frames @8. If the field order
+ * were swapped on this build, the adapter validation (monotonic
+ * timestamp + plausible frame delta) rejects the samples and the shim
+ * falls back to write-timing — a wrong layout fails closed. */
 struct pal_mmap_position_c {
     int64_t time_nanoseconds;
     uint32_t position_frames;
@@ -419,11 +422,17 @@ static _Atomic(int) g_neon_ok = 0;
 
 static _Atomic(int32_t (*)(void *, uint32_t, void *, uint32_t, void *, void *, uint64_t, void **)) g_real_open;
 static _Atomic(int32_t (*)(void *)) g_real_close;
-static _Atomic(ssize_t (*)(void *, void *)) g_real_write;
+static _Atomic(int32_t (*)(void *, void *)) g_real_write;
 
 typedef int32_t (*pal_open_fn)(void *, uint32_t, void *, uint32_t, void *, void *, uint64_t, void **);
 typedef int32_t (*pal_close_fn)(void *);
-typedef ssize_t (*pal_write_fn)(void *, void *);
+/* ABI (audit 2026-11-11, disassembly of the real pal_stream_write at
+ * libar-pal.so 0x1ec120): PAL returns int32_t (w0), NOT ssize_t. The
+ * previous typedef used ssize_t (64-bit); the real function only sets
+ * w0, so reading x0 could turn a negative error (e.g. -22) into a huge
+ * positive byte count if the upper 32 bits were zero. int32_t here
+ * makes the conversion sign-extend correctly. */
+typedef int32_t (*pal_write_fn)(void *, void *);
 typedef int (*pal_get_mmap_position_fn)(void *stream, void *position);
 
 static unsigned long long now_ns(void) {
@@ -1337,9 +1346,12 @@ __attribute__((visibility("default"))) int32_t pal_stream_close(void *stream) {
     return r;
 }
 
-/* Forward `buf` to the real write unchanged; returns the real result. */
+/* Forward `buf` to the real write unchanged; returns the real result.
+ * The real function returns int32_t; the (ssize_t) cast sign-extends it
+ * (a negative PAL error stays negative instead of becoming a huge
+ * positive byte count). */
 static ssize_t passthrough(pal_write_fn real, void *stream, void *buf) {
-    return real(stream, buf);
+    return (ssize_t)real(stream, buf);
 }
 
 __attribute__((visibility("default"))) ssize_t pal_stream_write(void *stream, void *buf) {
