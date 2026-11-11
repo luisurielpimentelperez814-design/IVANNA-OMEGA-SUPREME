@@ -1,27 +1,18 @@
-# IVANNA OMEGA SUPREME — ASRC v5 write-stage (Moto G85 5G)
-# ¡ACTIVO POR DEFECTO desde v2.5.397! Directiva del propietario
-# (2026-11-11): el ASRC se ancla AUTOMÁTICAMENTE al HAL en cada arranque.
-# customize.sh copia este archivo a overlay.d/ y crea el marcador
-# .preload_optin en cada instalación, así que post-fs-data.sh no lo retira.
-# HISTORIAL: la 384 lo activaba y el teléfono no arrancó 2 veces; la 385+
-# lo desactivó por defecto (este archivo vivía en overlay.d.disabled/ y el
-# HAL arrancaba STOCK, .so v5 inerte). La .so v5 es fail-closed y YA fue
-# verificada en vivo en este teléfono (deriva +58.055 ppm medida, ratio
-# 0.999993750, clock=write-timing, 2026-11-10): si no resuelve los símbolos
-# reales devuelve -ENOSYS y pasa el audio sin tocarlo. El kill switch
-# pal_asrc.off NO protege el caso del constructor (solo actúa DESPUÉS de
-# cargar la .so); el rollback es borrar overlay.d/ivanna_audio.rc y
-# .preload_optin y reiniciar, o el safe-mode de post-fs-data.sh tras 3
-# arranques fallidos.
-# OPT-IN ya no es necesario: la instalación lo activa. Para DESACTIVARLO:
-#   su -c 'rm /data/adb/modules/ivanna_omega_supreme/overlay.d/ivanna_audio.rc /data/adb/modules/ivanna_omega_supreme/.preload_optin'
-# y reiniciar. Sin este archivo, la .so v5 viaja en el zip pero queda
-# inerte (el chequeo de arranque la reporta NOT_LOADED como WARNING).
+# IVANNA OMEGA SUPREME — ASRC v6 write-stage / FUSIÓN MAGISTRAL (Moto G85 5G)
+# ¡ACTIVO POR DEFECTO desde v2.5.401! El músculo (ASRC v6) se ancla
+# AUTOMÁTICAMENTE al HAL en cada arranque. customize.sh copia este archivo
+# a overlay.d/ y crea el marcador .preload_optin en cada instalación, así
+# que post-fs-data.sh no lo retira. La .so v6 es fail-closed y el cerebro
+# (daemon v2) la controla por el estado de fusión: sin cerebro vivo o ratio
+# viejo, el músculo pasa el audio sin tocarlo. El kill switch pal_asrc.off
+# NO protege el caso del constructor (solo actúa DESPUÉS de cargar la .so);
+# el rollback es borrar overlay.d/ivanna_audio.rc y .preload_optin y
+# reiniciar, o el safe-mode de post-fs-data.sh tras 3 arranques fallidos.
 # Adaptación del overlay.d/ivanna_audio.rc del módulo ivanna_audio_probe
 # (~/workspace/preload-evidence/20261107/overlay.d_ivanna_audio.rc, 510 B):
 # stanza COMPLETA del servicio vendor.audio-hal replicada del fabricante
 # (incl. class/user/group/capabilities/ioprio/writepid/onrestart) + override
-# + setenv con la librería v5. Único cambio respecto al original: la ruta
+# + setenv con la librería v6. Único cambio respecto al original: la ruta
 # de la librería. Magisk overlay.d imports this after init.rc.
 service vendor.audio-hal /vendor/bin/hw/android.hardware.audio.service_64
     override

@@ -1,793 +1,544 @@
-#include "../ivanna_hires_config.hpp"
-#include "control/command_server.h"
-#include "session_discovery.hpp"         // Descubrimiento de sesión real por el daemon root (Ruta B, v2.5.379)
-#include "hal_clock_producer.hpp"
-#include "../include/audio_hardware_clock_bridge.hpp"
-#include "../include/poller_sched.hpp"  // P0-b: decisión de planificación del poller
-#include "../include/asrc_state_bridge.hpp"
-#include "control/peer_auth.hpp"
-#include "core/effect_integrity.h"
-#include "core/shm_manager.h"
-#include "../include/omega_shared.h"
-#include "../include/omega_control_bus.h"
-#include "../include/omega_effect_beacon.h"  // OMEGA_EFFECT_BEACON_PATH/SIZE (FIX Ruta B 2026-11-09)
-#include "effect_local_files.h"             // pre-creación 0666 de archivos locales de Ruta B
-#include "../IvannaSelfHealingEngine.hpp"
-#include <iostream>
-#include <filesystem>
-#include <fstream>
-#include <string>
-#include <utility>
-#include <vector>
-#include <cstring>
-#include <cstddef>
-#include <cerrno>
+// ivanna_daemon_v2.cpp — El CEREBRO de la Fusión Magistral (reescritura total).
+//
+// El daemon es UN proceso propio (root), NO vive dentro del HAL:
+//   - Vive en /vendor/bin/ivanna_daemon_v2 (lo instala el módulo).
+//   - Lo arranca service.sh en cada arranque (después de los servicios).
+//   - Se fusiona con el ASRC (que vive DENTRO del HAL) SOLO a través del
+//     estado compartido IvannaFusionState (SHM). Un solo estado, un solo bucle.
+//   - NO puede vivir dentro del HAL: el HAL (usuario audioserver, contexto
+//     hal_audio_default) NO puede correr dumpsys, NO puede leer la UI y NO
+//     puede ser root. Y NO debe: si el cerebro muere, el HAL debe sobrevivir
+//     (el músculo pasa a passthrough, el audio sigue).
+//
+// El cerebro hace (un solo bucle, ~20 Hz):
+//   1. Leer las mediciones del músculo desde el estado compartido.
+//   2. Correr el servo Kalman de 3 estados (deriva + tasa + aceleración)
+//      y calcular el ratio (salida/entrada).
+//   3. Certificar el reloj en vivo (mmap vs CLOCK_MONOTONIC) y decidir la
+//      fuente de reloj.
+//   4. Descubrir la sesión REAL de música (parser de 5 campos, cada 3 s).
+//   5. Decidir el veredicto y el control de la cadena de súper efectos
+//      (lee /data/adb/ivanna_omega/fusion_fx.conf; por defecto TODO apagado).
+//   6. Escribir ratio + veredicto + efectos en el estado compartido.
+//   7. Publicar el snapshot NEUTRO (para el efecto, si lo hay) + heartbeat.
+//
+// Fail-closed: si la SHM no está → no publica; si el músculo no mide →
+// veredicto BYPASS; si descubrir la sesión falla (kError) → se conserva la
+// sesión anterior; si no hay música (kNone) → sessionId 0. Kill switch:
+// /data/vendor/ivanna_audio/pal_asrc.off → fusión en bypass (ratio 1.0,
+// efectos off). Si existe /data/adb/ivanna_omega/ivanna_daemon.off, el
+// daemon no arranca (service.sh lo respeta).
+//
+// Compilación: la CI lo compila para arm64-v8a. El módulo lo instala en
+// system/bin/ivanna_daemon_v2.
+
+#include <atomic>
+#include <cmath>
 #include <csignal>
-#include <chrono>
-#include <iomanip>
-#include <sstream>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <string>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sched.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <android/log.h>
-#include <thread>
-#include <atomic>
-#include <netinet/in.h>
-#include <time.h>
 
-#define LOG_TAG "IVANNA_OMEGA_DAEMON"
+#include "daemon/session_discovery.hpp"
+#include "include/omega_control_bus.h"
+#include "include/psi_core.h"
+#include "include/ivanna_fusion_state.h"
 
-constexpr const char* OMEGA_SHM_PATH = "/data/adb/ivanna_omega/omega_shm";
-constexpr const char* OMEGA_DIR_PATH = "/data/adb/ivanna_omega";
-constexpr const char* DEFAULT_LOG_PATH = "/data/adb/ivanna_omega/daemon.log";
-constexpr const char* DEFAULT_SOCKET_PATH = "@omega_daemon_socket";
+namespace {
 
-static volatile sig_atomic_t g_running = 1;
-static int g_server_fd = -1;
-static std::string g_socket_path = DEFAULT_SOCKET_PATH;
-static std::string g_log_path = DEFAULT_LOG_PATH;
+std::atomic<bool> g_running{true};
+void onSignal(int) noexcept { g_running.store(false); }
 
-void log_message(const std::string& msg) {
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "%s", msg.c_str());
-    std::ofstream log_file(g_log_path, std::ios::app);
-    if (log_file.is_open()) {
-        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        struct tm tm_buf{};
-        localtime_r(&now, &tm_buf);
-        log_file << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S")
-                 << " [IVANNA-DAEMON] " << msg << std::endl;
-    }
+uint64_t monotonicMs() noexcept {
+    struct timespec ts {};
+    if (::clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return static_cast<uint64_t>(ts.tv_sec) * 1000u
+         + static_cast<uint64_t>(ts.tv_nsec) / 1000000u;
+}
+int64_t monotonicNs() noexcept {
+    struct timespec ts {};
+    if (::clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + ts.tv_nsec;
 }
 
-// Threads created by an SCHED_FIFO creator can inherit real-time scheduling.
-// Control, polling and watchdog workers must drop to best-effort before doing
-// I/O. Keep deadline-critical audio processing out of this helper.
-static void setCurrentThreadBestEffort(const char* role) noexcept {
-    struct sched_param p{};
-    errno = 0;
-    const int rc = sched_setscheduler(0, SCHED_OTHER, &p);
-    const int err = (rc == 0) ? 0 : errno;
-    const int policy = sched_getscheduler(0);
-    if (rc != 0 || policy != SCHED_OTHER) {
-        // Avoid std::string/ofstream from this noexcept thread-entry helper.
-        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG,
-                            "SCHED-WORKER: %s could not confirm SCHED_OTHER rc=%d errno=%d policy=%d",
-                            role, rc, err, policy);
-    }
+void logLine(const char* msg) noexcept {
+    std::FILE* f = std::fopen("/data/adb/ivanna_omega/daemon_v2.log", "a");
+    if (!f) return;
+    std::fprintf(f, "[%llu] %s\n",
+                 static_cast<unsigned long long>(monotonicMs()), msg);
+    std::fclose(f);
 }
 
-// P0-b: el poller del reloj HAL es sensible al tiempo (muestrea el reloj
-// para el servo ASRC). Intenta SCHED_FIFO rtprio 2 primero (ver
-// include/poller_sched.hpp: 2 ≤ rlimit `rtprio 10 10` del HAL, nunca
-// compite con el HAL ni con el callback PCM) y cae a best-effort si el
-// syscall falla (sin permiso o sin rlimit). Nunca fatal: el poller
-// funciona en SCHED_OTHER, solo con menos precisión temporal.
-// SOLO el poller usa esto: control/watchdog/session-discovery siguen en
-// SCHED_OTHER vía setCurrentThreadBestEffort.
-static void applyPollerSched(const char* role) noexcept {
-    const auto d = ivanna::decidePollerSched(true);
-    struct sched_param p{};
-    p.sched_priority = d.priority;
-    errno = 0;
-    if (sched_setscheduler(0, d.policy, &p) == 0 && sched_getscheduler(0) == SCHED_FIFO) {
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
-                            "SCHED-POLLER: %s SCHED_FIFO rtprio %d",
-                            role, d.priority);
-        return;
-    }
-    setCurrentThreadBestEffort(role);
+void writeHeartbeat(int32_t sessionId, uint64_t generation,
+                    float driftPpm, uint32_t verdict, float eta, float psiGamma) noexcept {
+    std::FILE* f = std::fopen("/data/adb/ivanna_omega/daemon_v2_heartbeat", "w");
+    if (!f) return;
+    std::fprintf(f, "alive=1\nts_ms=%llu\nsession_id=%d\ngeneration=%llu\ndrift_ppm=%.2f\nverdict=%u\neta=%.3f\npsi_gamma=%.3f\n",
+                 static_cast<unsigned long long>(monotonicMs()),
+                 static_cast<int>(sessionId),
+                 static_cast<unsigned long long>(generation),
+                 static_cast<double>(driftPpm), verdict,
+                 static_cast<double>(eta), static_cast<double>(psiGamma));
+    std::fclose(f);
 }
 
-static std::atomic<bool> g_shutdown_requested{false};
-
-void signal_handler(int signal) {
-    if (signal == SIGINT || signal == SIGTERM) {
-        g_shutdown_requested.store(true, std::memory_order_release);
-        // Signal handler seguro: no hacer IO, malloc, mutex ni logging aquí.
-        // El loop principal detecta g_running y realiza el cierre ordenado.
-        g_running = 0;
-    }
+bool fileExists(const char* path) noexcept {
+    return ::access(path, F_OK) == 0;
 }
 
-void ensure_directory_exists(const char* path) {
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        if (mkdir(path, 0755) != 0 && errno != EEXIST) {
-            log_message("Warning: Failed to create directory " + std::string(path) + ": " + strerror(errno));
-        }
-    }
-}
-
-int setup_shared_memory(int sampleRate) {
-    ensure_directory_exists(OMEGA_DIR_PATH);
-
-    // omega_shm recovery: eliminar estado incompleto de una ejecución anterior
-    try {
-        if (std::filesystem::exists("/data/adb/ivanna_omega/omega_shm")) {
-            // El gestor SHM valida contenido posteriormente.
-            // No se elimina automáticamente para preservar estado válido.
-        }
-    } catch (...) {
-        std::cerr << "[IVANNA-DAEMON] omega_shm recovery check failed" << std::endl;
-    }
-
-    log_message("Initializing Shared Memory via OmegaShmManager at: " + std::string(OMEGA_SHM_PATH));
-
-    if (!ivanna::shmManager().init(OMEGA_SHM_PATH)) {
-        log_message("Error: OmegaShmManager::init() fallo");
+// Socket abstracto @omega_daemon_socket (compatibilidad con el módulo y
+// la app). El cerebro v2 NO tiene servidor de comandos (no lo necesita:
+// el plano de control es el estado de fusión). Pero service.sh,
+// supervisor.sh y la app (MagiskBridge.kt) deciden "SOCKET=CONECTADO"
+// grepeando /proc/net/unix por este nombre, y el supervisor relanza el
+// daemon si el proceso corre SIN socket. Así que el cerebro bindea el
+// socket (abstracto, sin archivo) y acepta+cierra conexiones sin
+// bloquearse. Es solo una señal de vida, no un servidor. Si el bind
+// falla, el cerebro sigue (el bucle de fusión no depende del socket).
+int bindDaemonSocket() noexcept {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (fd < 0) return -1;
+    struct sockaddr_un addr {};
+    addr.sun_family = AF_UNIX;
+    // Abstracto: sun_path[0] = '\0' + nombre (sin archivo en el fs).
+    const char* name = "omega_daemon_socket";
+    const size_t nlen = std::strlen(name);
+    addr.sun_path[0] = '\0';
+    std::memcpy(addr.sun_path + 1, name, nlen);
+    const socklen_t len = static_cast<socklen_t>(
+        offsetof(struct sockaddr_un, sun_path) + 1 + nlen);
+    if (::bind(fd, reinterpret_cast<struct sockaddr*>(&addr), len) != 0) {
+        ::close(fd);
         return -1;
     }
+    if (::listen(fd, 4) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+}
 
-    void* base = ivanna::shmManager().base();
+// ── Servo Kalman de 3 estados ─────────────────────────────────────────────
+// Estado: x = [deriva_ppm, tasa_deriva_ppm/s, aceleracion_ppm/s^2].
+// Medición: z = deriva instantánea (ppm) desde el reloj del músculo.
+// El ratio = 1 + deriva/1e6 (HAL rápido → ratio > 1, ver auditoría riesgo D).
+struct Kalman3 {
+    double x[3] = {0.0, 0.0, 0.0};  // estado
+    double P[3][3] = {{100.0, 0, 0}, {0, 10.0, 0}, {0, 0, 1.0}}; // covarianza
+    // Ruido de proceso (Q) y de medición (R). R se adapta: si la medición
+    // es ruidosa, el filtro confía más en el modelo (como en la v5).
+    double q0 = 0.04, q1 = 0.004, q2 = 0.0004;
+    double R = 25.0;
+    bool initialized = false;
+    double lastInnovation = 0.0;  // |y| de la última actualización (para la pérdida L de η)
 
-    if (base != nullptr) {
-        // Estado en offset fijo SHM_STATE_OFFSET (pagina 1): desacoplado de
-        // sizeof(ShmHeader) y jamas solapa la pagina de control (seqlock+frames).
-        auto* hdr = static_cast<ivanna::ShmHeader*>(base);
-        auto* state =
-            reinterpret_cast<OmegaSharedState*>(
-                static_cast<uint8_t*>(base)
-                + ivanna::SHM_STATE_OFFSET
-            );
+    void predict(double dt) noexcept {
+        if (dt <= 0.0 || dt > 1.0) dt = 0.05;
+        // F = [[1, dt, 0.5*dt^2],[0,1,dt],[0,0,1]]
+        double nx0 = x[0] + x[1] * dt + 0.5 * x[2] * dt * dt;
+        double nx1 = x[1] + x[2] * dt;
+        x[0] = nx0; x[1] = nx1;  // x[2] no cambia
+        // P = F*P*F' + Q (Q diagonal). Se hace explícito para 3x3.
+        double F[3][3] = {{1, dt, 0.5*dt*dt}, {0, 1, dt}, {0, 0, 1}};
+        double FP[3][3] = {};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k) FP[i][j] += F[i][k] * P[k][j];
+        double FPF[3][3] = {};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k) FPF[i][j] += FP[i][k] * F[j][k];
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j) P[i][j] = FPF[i][j];
+        P[0][0] += q0; P[1][1] += q1; P[2][2] += q2;
+    }
 
-        const bool layout_ok =
-            hdr->magic      == ivanna::OMEGA_SHM_MAGIC &&
-            hdr->version    == ivanna::OMEGA_SHM_VERSION &&
-            hdr->state_size == static_cast<uint32_t>(sizeof(OmegaSharedState)) &&
-            state->state_magic.load(std::memory_order_acquire) == OMEGA_STATE_MAGIC;
-
-        if (layout_ok) {
-            // Daemon reiniciado con la app viva: reattach SIN placement-new
-            // destructivo sobre el estado compartido.
-            log_message("OmegaSharedState: magic OK - reattach sin reinicializar");
-            // FIX (2026-09-17): en reattach NO se toca is_processing ni
-            // current_latency_ms — la app esta leyendo esos campos AHORA
-            // MISMO y pisarlos con valores de arranque (true / 0.0) borra
-            // el estado real que el daemon anterior habia publicado. Solo
-            // el primer arranque (layout incompatible) inicializa.
-        } else {
-            log_message("OmegaSharedState: init (primer arranque o layout incompatible)");
-            new(state) OmegaSharedState();
-            state->state_magic.store(OMEGA_STATE_MAGIC, std::memory_order_release);
-            state->is_processing.store(true);
-            state->current_latency_ms.store(0.0f);
+    void update(double z) noexcept {
+        // H = [1,0,0]. S = P00 + R. K = P[:,0]/S.
+        double S = P[0][0] + R;
+        if (S <= 0.0) return;
+        double K[3] = {P[0][0] / S, P[1][0] / S, P[2][0] / S};
+        double y = z - x[0];  // innovación
+        lastInnovation = std::fabs(y);
+        // Puerta 3σ: si la innovación es absurda, no se traga la medición.
+        double sigma = std::sqrt(S);
+        if (std::fabs(y) > 3.0 * sigma + 500.0) return;  // outlier
+        x[0] += K[0] * y; x[1] += K[1] * y; x[2] += K[2] * y;
+        // P = (I - K*H)*P
+        for (int j = 0; j < 3; ++j) {
+            P[0][j] -= K[0] * P[0][j];
+            P[1][j] -= K[1] * P[0][j];
+            P[2][j] -= K[2] * P[0][j];
         }
-
-        log_message("OmegaSharedState listo (offset=4096, sizeof=" +
-                    std::to_string(sizeof(OmegaSharedState)) + ", SHM_SIZE=" +
-                    std::to_string(ivanna::SHM_SIZE) + ")");
+        // R adaptativa: si la innovación es grande, la medición es ruidosa.
+        double ay = std::fabs(y);
+        R = (ay > 50.0) ? 400.0 : (ay > 10.0 ? 100.0 : 25.0);
+        initialized = true;
     }
 
-    log_message("Shared Memory listo fd=" + std::to_string(ivanna::shmManager().fd()));
+    double driftPpm() const noexcept { return x[0]; }
+    double ratio() const noexcept { return 1.0 + x[0] / 1e6; }
+};
 
-    // Deteccion de crash: si el apagado anterior no fue limpio, registrarlo
-    if (!ivanna::shmManager().previousShutdownClean()) {
-        ivanna::shmManager().noteCrashDetected();
-        log_message("AVISO: apagado anterior NO limpio (crash/kill) — crash_count incrementado");
+// ── Control de efectos (lo lee el cerebro de un archivo de config) ────────
+// Formato (una línea por efecto, "nombre=0.0..1.0"): orbe, holos, phi,
+// volterra, supreme, npe, reality, eq, limiter (0/1). Por defecto TODO 0
+// (neutro). La UI / el usuario escribe este archivo para encender efectos.
+// El cerebro lo relee en cada ciclo (barato) para que el cambio sea en vivo.
+struct FxControl {
+    uint32_t flags = 0;
+    float orbe = 0, holos = 0, phi = 0, volterra = 0, supreme = 0;
+    float npe = 0, reality = 0, eq = 0;
+    uint32_t limiter = 0;
+};
+FxControl readFxConfig() noexcept {
+    FxControl fx;
+    std::FILE* f = std::fopen("/data/adb/ivanna_omega/fusion_fx.conf", "r");
+    if (!f) return fx;  // sin config = todo apagado (neutro, fail-closed)
+    char line[128];
+    while (std::fgets(line, sizeof(line), f)) {
+        char name[32]; float v = 0;
+        if (std::sscanf(line, "%31[^=]=%f", name, &v) != 2) continue;
+        if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+        if (!std::strcmp(name, "orbe"))     { fx.orbe = v;     if (v > 0) fx.flags |= IVANNA_FX_ORBE; }
+        else if (!std::strcmp(name, "holos"))    { fx.holos = v;    if (v > 0) fx.flags |= IVANNA_FX_HOLOS; }
+        else if (!std::strcmp(name, "phi"))      { fx.phi = v;      if (v > 0) fx.flags |= IVANNA_FX_PHI; }
+        else if (!std::strcmp(name, "volterra")) { fx.volterra = v; if (v > 0) fx.flags |= IVANNA_FX_VOLTERRA; }
+        else if (!std::strcmp(name, "supreme"))  { fx.supreme = v;  if (v > 0) fx.flags |= IVANNA_FX_SUPREME; }
+        else if (!std::strcmp(name, "npe"))      { fx.npe = v;      if (v > 0) fx.flags |= IVANNA_FX_NPE; }
+        else if (!std::strcmp(name, "reality"))  { fx.reality = v;  if (v > 0) fx.flags |= IVANNA_FX_REALITY; }
+        else if (!std::strcmp(name, "eq"))       { fx.eq = v;       if (v > 0) fx.flags |= IVANNA_FX_EQ; }
+        else if (!std::strcmp(name, "limiter"))  { fx.limiter = (v > 0) ? 1u : 0u; if (v > 0) fx.flags |= IVANNA_FX_LIMITER; }
     }
-    ivanna::shmManager().markShutdownClean(false); // se pondra a 1 solo en apagado limpio
-
-    return ivanna::shmManager().fd();
+    std::fclose(f);
+    return fx;
 }
 
-// FIX (Ruta B, Moto G85 2026-11-09): el efecto corre en audioserver/HAL con UID
-// no-root y NO PUEDE crear archivos en /data/local/tmp/ (0771 root:shell, cero
-// reglas SELinux para crearlo). El demonio (root) pre-crea los dos archivos con
-// 0666 en cada arranque para que el open(O_CREAT) del efecto ya no necesite
-// permiso de creación del directorio. Solo existencia + permisos + tamaño; el
-// efecto los inicializa (magic, contadores) al mapearlos. Un fallo aquí no es
-// fatal: se loguea y el arranque sigue (el efecto puede reintentarlo).
-static void precreateEffectLocalFiles() {
-    const std::pair<const char*, std::size_t> files[] = {
-        {ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH, ivanna::OmegaControlBus::REGION_SIZE},
-        {ivanna::OMEGA_EFFECT_BEACON_PATH, ivanna::OMEGA_EFFECT_BEACON_SIZE},
-    };
-    for (const auto& f : files) {
-        const ivanna::LocalFilePrecreateResult r = ivanna::precreateLocalFile(f.first, f.second);
-        log_message(std::string("EFFECT-LOCAL-FILES: ") + f.first + " -> " +
-                    (r.ok ? "OK (" : "FALLO (") + r.detail + ")");
-    }
+// Snapshot neutro (defensa en profundidad: aunque makeDefault cambiara,
+// esto seguiría siendo neutro).
+ivanna::OmegaDspSnapshot buildNeutralSnapshot(int32_t sessionId, uint64_t sessionGen,
+                                      uint64_t generation) noexcept {
+    ivanna::OmegaDspSnapshot s = ivanna::OmegaDspSnapshot::makeDefault();
+    for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) s.eq_gains[i] = 0.0f;
+    s.bass_boost_db = 0.0f; s.dialog_boost_db = 0.0f;
+    s.room_rt60_s = 0.0f; s.room_wet = 0.0f; s.room_idx = -1;
+    s.upmixing_enabled = 0; s.upmixing_immersivity = 0.0f;
+    s.compressor = 0.0f; s.comp_amount = 0.0f;
+    s.exciter_reduction = 0.0f; s.exc_red = 0.0f;
+    s.harmonic_gain = 0.0f; s.target_gain = 0.0f; s.loudness_target = 0.0f;
+    s.flags = ivanna::OMEGA_FLAG_EQ_CALIBRATED | ivanna::OMEGA_FLAG_PERCEPTUAL_ON
+            | ivanna::OMEGA_FLAG_ANTI_DOLBY_ON | ivanna::OMEGA_FLAG_ATI_ON;
+    s.discovered_session_id = sessionId;
+    s.discovered_session_gen = sessionGen;
+    s.generation = generation;
+    s.timestamp_ms = monotonicMs();
+    return s;
 }
 
-int create_socket_server(const std::string& socket_path) {
-    if (socket_path[0] != '@') unlink(socket_path.c_str());
-    int server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (server_fd < 0) return -1;
-    int one = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    struct sockaddr_un addr; memset(&addr,0,sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    socklen_t addr_len = 0;
-    if (socket_path[0] == '@') {
-        std::string name = socket_path.substr(1);
-        addr.sun_path[0] = '\0';
-        memcpy(addr.sun_path+1, name.c_str(), name.size());
-        addr_len = offsetof(struct sockaddr_un, sun_path) + 1 + name.size();
-    } else {
-        strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path)-1);
-        addr_len = sizeof(addr);
-    }
-    if (bind(server_fd, (struct sockaddr*)&addr, addr_len) < 0) {
-        int e = errno;
-        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "bind(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
-        close(server_fd); return -1;
-    }
-    if (socket_path[0] != '@' && chmod(socket_path.c_str(), 0600) != 0) {
-        int e = errno;
-        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "chmod(0600) %s errno=%d (%s)", socket_path.c_str(), e, strerror(e));
-        close(server_fd); unlink(socket_path.c_str()); return -1;
-    }
-    if (listen(server_fd, 16) < 0) {
-        int e = errno;
-        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "listen(%s) errno=%d (%s)", socket_path.c_str(), e, strerror(e));
-        close(server_fd); return -1;
-    }
-    log_message("Socket server active: " + socket_path);
-    return server_fd;
-}
+} // namespace
 
-static bool validate_shm_region(void* ptr, size_t size) {
-    if (!ptr) {
-        fprintf(stderr, "[IVANNA] omega_shm mmap returned nullptr\n");
-        return false;
-    }
-    if (size < 4096) {
-        fprintf(stderr, "[IVANNA] omega_shm invalid size=%zu\n", size);
-        return false;
-    }
-    return true;
-}
+int main() {
+    ::signal(SIGINT, onSignal);
+    ::signal(SIGTERM, onSignal);
+    ::signal(SIGPIPE, SIG_IGN);
 
-int main(int argc, char* argv[]) {
-    // FIX (corrupción real, commit 37b30e12): este try{} faltaba por completo
-    // — el catch de más abajo (fatal exception / fatal unknown exception) se
-    // había agregado SIN su try correspondiente, error de sintaxis genuino
-    // ("expected expression" / "expected '}'" en CI). Se envuelve todo el
-    // cuerpo de main() para que ambos catch atrapen cualquier excepción no
-    // manejada del daemon completo, tal como indica su intención original.
-    try {
-    std::string socket_path = DEFAULT_SOCKET_PATH;
-    int rate = 48000, buffer = 64; bool realtime = false;
-    ensure_directory_exists(OMEGA_DIR_PATH);
-    int tcp_port = 0; bool hal_clock_enabled = true;
-    for (int i=1;i<argc;i++) {
-        std::string arg=argv[i];
-        if (arg=="--socket" && i+1<argc) socket_path=argv[++i];
-        else if (arg=="--rate" && i+1<argc) { try{rate=std::stoi(argv[++i]);}catch(...){rate=48000;} }
-        else if (arg=="--buffer" && i+1<argc) { try{buffer=std::stoi(argv[++i]);}catch(...){buffer=64;} }
-        else if (arg=="--realtime") realtime=true;
-        else if (arg=="--tcp-port" && i+1<argc) { try{ tcp_port = std::stoi(argv[++i]); } catch(...) { tcp_port = 0; } }
-        else if (arg=="--hal-clock") hal_clock_enabled=true;
-        else if (arg=="--no-hal-clock") hal_clock_enabled=false;
-    }
-    g_socket_path=socket_path;
-    (void)buffer;
-    { int hr=0, hd=0; if (ivanna::hires::readConf("/data/adb/ivanna_omega/hires.conf", hr, hd)) rate = hr; }
-    struct sigaction sa; memset(&sa,0,sizeof(sa)); sa.sa_handler=signal_handler;
-    sigaction(SIGINT,&sa,nullptr); sigaction(SIGTERM,&sa,nullptr);
-    signal(SIGPIPE, SIG_IGN);
-    log_message("IVANNA-OMEGA Daemon iniciado; control plane con SCHED_OTHER.");
-    // polling), not the PCM callback. Giving this main thread SCHED_FIFO—even
-    // at 80—risks propagating RT scheduling to workers and can harm touch/system
-    // responsiveness while it performs I/O. Keep it SCHED_OTHER; only a measured,
-    // bounded audio callback may request high RT priority in its own thread.
-    // --realtime remains accepted for service.sh compatibility, but is not a
-    // license to elevate this control loop.
-    struct sched_param control_sched{};
-    errno = 0;
-    const int control_sched_rc = sched_setscheduler(0, SCHED_OTHER, &control_sched);
-    const int control_sched_errno = (control_sched_rc == 0) ? 0 : errno;
-    const int control_policy = sched_getscheduler(0);
-    if (control_sched_rc == 0 && control_policy == SCHED_OTHER) {
-        log_message(std::string("SCHED-CONTROL: main thread pinned to SCHED_OTHER; --realtime=") +
-                    (realtime ? "requested but intentionally not applied to control plane" : "not requested"));
-    } else {
-        log_message("SCHED-CONTROL: failed to confirm SCHED_OTHER rc=" +
-                    std::to_string(control_sched_rc) + " errno=" +
-                    std::to_string(control_sched_errno) + " policy=" +
-                    std::to_string(control_policy));
-    }
-    // FIX (resiliencia): la SHM es opcional para el socket de comandos. Si
-    // /data/adb/ivanna_omega no está montado/escribible aún, shmManager.init
-    // falla y (antes) el socket nacía paralizado. El daemon DEBE bindear el
-    // socket aunque la SHM falle — el panel usa el socket para telemetría.
-    if (setup_shared_memory(rate) < 0) {
-        log_message("WARN: SHM no disponible — el daemon sigue sirviendo el socket de comandos (modo degradado).");
-    }
-    log_message("DSP sample rate configured: " + std::to_string(rate));
-    // FIX (Ruta B, Moto G85 2026-11-09): pre-crear con 0666 los archivos locales
-    // del efecto (control + beacon) ANTES de bindear el socket, para que el
-    // efecto (UID no-root) no necesite crearlos en /data/local/tmp/.
-    precreateEffectLocalFiles();
-    // FIX (socket DESCONECTADO con daemon CORRIENDO, 2026-08-31): si bind()
-    // falla — EADDRINUSE por una instancia zombie que aun retiene el nombre
-    // abstracto (no se puede unlink en el abstract namespace), o early-boot
-    // con el namespace no listo — el daemon moria en silencio y service.sh lo
-    // relanzaba en bucle: panel muestra "CORRIENDO" pero el socket jamas
-    // queda bindeado (ausente en /proc/net/unix). Reintentar con backoff y
-    // loguear errno al log persistente en cada intento.
+    ::mkdir("/data/adb/ivanna_omega", 0771);
+    ::mkdir("/data/vendor/ivanna_audio", 0771);
+
+    // Kill switch del daemon: si existe, no arrancar.
+    if (fileExists("/data/adb/ivanna_omega/ivanna_daemon.off")) return 0;
+
+    // Abrir/crear el estado compartido de la fusión (SHM por archivo + mmap).
+    int fd = ::open(IVANNA_FUSION_SHM_PATH, O_RDWR | O_CREAT, 0666);
+    if (fd < 0) { logLine("FATAL: no se pudo abrir el estado de fusión"); return 1; }
+    ::ftruncate(fd, sizeof(IvannaFusionState));
+    auto* fusion = static_cast<IvannaFusionState*>(
+        ::mmap(nullptr, sizeof(IvannaFusionState), PROT_READ | PROT_WRITE,
+               MAP_SHARED, fd, 0));
+    if (fusion == MAP_FAILED) { logLine("FATAL: mmap del estado de fusión falló"); return 1; }
+    // Inicializar magic/version si es la primera vez (sequence par = estable).
     {
-        int attempt = 0;
-        while (g_running && (g_server_fd = create_socket_server(socket_path)) < 0) {
-            int e = errno;
-            log_message("bind(" + socket_path + ") fallo: errno=" + std::to_string(e) +
-                        " (" + strerror(e) + ") — reintento " + std::to_string(attempt + 1) + "/12 en 500 ms");
-            usleep(500000);
-            if (++attempt >= 12) {
-                log_message("bind agotado — el daemon aborta para que service.sh lo relance con backlog limpio");
-                return 1;
-            }
-        }
-    }
-    if (g_server_fd < 0) return 1;
-
-    CommandServer commandServer;
-    commandServer.resetState();
-    if (commandServer.start("@omega_command_socket")) {
-        log_message("CONTROL socket ready: @omega_command_socket");
-        std::thread([&commandServer](){
-            setCurrentThreadBestEffort("command-server");
-            commandServer.acceptLoop();
-        }).detach();
-    } else {
-        // FIX: antes este fallo era SILENCIOSO. El socket de control es
-        // secundario — no abortamos el daemon principal, solo lo logueamos.
-        log_message("WARN: no se pudo bindear @omega_command_socket (secundario) — el daemon principal sigue activo.");
-    }
-
-    // ── Seguridad anti-piratería fase 2: integridad del efecto stageado ───
-    // Verifica una sola vez que libomega_effect.so en /vendor coincida con
-    // el hash generado por CI en el módulo. Si no coincide, el daemon NO
-    // aplica parámetros DSP (el servidor de comandos rechaza los SET_*) y
-    // el efecto queda en sus valores por defecto. Si el módulo no trae el
-    // archivo de hash (módulo viejo), se avisa y se continúa.
-    {
-        const ivanna::security::EffectIntegrity eff =
-            ivanna::security::effect_integrity_verify();
-        log_message(std::string("EFFECT-INTEGRITY: libomega_effect.so -> ") +
-                    ivanna::security::effect_integrity_status_string(eff));
-        if (!ivanna::security::effect_integrity_ok()) {
-            log_message("EFFECT-INTEGRITY: MISMATCH — no se aplicarán parámetros DSP al efecto (fail-closed)");
+        IvannaFusionState cur{};
+        if (!ivanna_fusion_read(fusion, &cur) || cur.magic != IVANNA_FUSION_MAGIC) {
+            IvannaFusionState init{};
+            init.magic = IVANNA_FUSION_MAGIC;
+            init.version = IVANNA_FUSION_VERSION;
+            init.verdict = IVANNA_VERDICT_BYPASS;
+            init.ratio = 1.0f;
+            ivanna_fusion_write(fusion, &init);
         }
     }
 
-    // Watchdog de heartbeat DEDICADO: 1 Hz, no depende del accept loop ni de @omega_command_socket.
-    // Si el accept loop se bloquea (cliente colgado), el heartbeat sigue
-    // latiendo y la app distingue "daemon vivo, socket ocupado" de "daemon muerto".
-    std::thread([](){
-        setCurrentThreadBestEffort("heartbeat-watchdog");
-        const auto t0 = std::chrono::steady_clock::now();
-        uint64_t beats = 0;
-        auto publishNowMs = []() noexcept {
-            struct timespec ts{};
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            const uint64_t monoMs = static_cast<uint64_t>(ts.tv_sec) * 1000ULL +
-                                    static_cast<uint64_t>(ts.tv_nsec / 1000000ULL);
-            ivanna::shmManager().publishHeartbeatMs(monoMs);
-        };
-        publishNowMs();
-        while (!g_shutdown_requested.load(std::memory_order_acquire)) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            ++beats;
-            publishNowMs();
-            ivanna::shmManager().bumpHealthCounter(1);   // heartbeats_emitidos
-            ivanna::shmManager().publishUptime(
-                (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::steady_clock::now() - t0).count());
-            // RSS desde /proc/self/status (VmRSS), sin dependencias externas
-            if ((beats & 7) == 0) {  // cada 8 s basta
-                std::ifstream f("/proc/self/status"); std::string line;
-                while (std::getline(f, line)) {
-                    if (line.rfind("VmRSS:", 0) == 0) {
-                        ivanna::shmManager().publishRssKb((uint32_t)std::atol(line.c_str() + 6));
-                        break;
-                    }
+    ivanna::OmegaControlBus bus;
+    bool shmOk = false;
+    Kalman3 servo;
+    // El núcleo Ψ vivo: el cerebro corre el campo (Ec. 4 η + Ec. 2 ILD +
+    // Ec. 3 personalización) y publica sus ganancias por banda en el estado.
+    ivanna::psi::PsiCore psi;
+    uint64_t psiGeneration = 0;
+    // El FIR del campo (lo diseña el cerebro, lo aplica el músculo).
+    // Se recalcula solo cuando η o la fuente cambian de forma significativa.
+    float psiFirL[ivanna::psi::PsiCore::kPsiFirTaps] = {};
+    float psiFirR[ivanna::psi::PsiCore::kPsiFirTaps] = {};
+    uint64_t psiFirGen = 0;
+    double lastFirEta = -1.0;
+    float lastFirR = -1.0f, lastFirTheta = -999.0f;
+    bool firDesigned = false;
+    int32_t sessionId = 0;
+    uint64_t sessionGen = 0;
+    uint64_t generation = 0;
+    uint64_t servoUpdates = 0;
+    int32_t lastPublishedSession = -1;
+    // Estado previo del músculo (para calcular deriva instantánea).
+    bool havePrev = false;
+    int64_t prevMmapNs = 0; uint32_t prevMmapFrames = 0;
+    int64_t prevWriteNs = 0; uint32_t prevFramesWritten = 0;
+    uint64_t prevTimeMs = 0;
+    // Certificación del reloj: diferencia mmap_ns - write_ns (debería ser
+    // estable y pequeña si el timestamp mmap es CLOCK_MONOTONIC).
+    double clockDiffMean = 0.0; double clockDiffM2 = 0.0; uint64_t clockDiffN = 0;
+    bool clockCertified = false;
+    uint32_t clockSource = IVANNA_CLOCK_NONE;
+    uint32_t verdict = IVANNA_VERDICT_BYPASS;
+    int sessionCountdown = 0;  // descubrir sesión cada ~3 s (60 ciclos de 50 ms)
+
+    // Socket de vida (@omega_daemon_socket) para service.sh / supervisor /
+    // app. Si falla, el cerebro sigue (la fusión no depende del socket).
+    const int sockFd = bindDaemonSocket();
+    if (sockFd >= 0) logLine("socket @omega_daemon_socket bindeado");
+    else logLine("WARN: no se pudo bindear @omega_daemon_socket (la fusión sigue)");
+
+    logLine("ivanna_daemon_v2 (CEREBRO) iniciado — fusión homogénea");
+
+    while (g_running.load()) {
+        const uint64_t nowMs = monotonicMs();
+        const double dt = havePrev ? (nowMs - prevTimeMs) / 1000.0 : 0.05;
+        const bool killSwitch = fileExists("/data/vendor/ivanna_audio/pal_asrc.off");
+
+        // 1. Leer las mediciones del músculo (seqlock; reintentar si cambia).
+        IvannaFusionState st{};
+        bool readOk = false;
+        for (int i = 0; i < 5 && !readOk; ++i) readOk = ivanna_fusion_read(fusion, &st);
+        const bool muscleAlive = readOk && st.magic == IVANNA_FUSION_MAGIC
+            && st.version == IVANNA_FUSION_VERSION && st.muscle_health == 1;
+        const bool muscleFresh = muscleAlive
+            && (nowMs - st.muscle_timestamp_ms) < 500;  // el músculo escribe a menudo
+
+        // 2. Deriva instantánea desde el reloj del músculo (si hay datos).
+        bool haveMeasurement = false;
+        double measPpm = 0.0;
+        if (muscleFresh && havePrev && st.stream_rate_hz > 0) {
+            const double rate = static_cast<double>(st.stream_rate_hz);
+            // Reloj mmap (preferido si está certificado).
+            double mmapPpm = 0.0; bool mmapOk = false;
+            if (st.clock_mmap_frames != prevMmapFrames && st.clock_mmap_ns != prevMmapNs) {
+                double dF = static_cast<double>(st.clock_mmap_frames - prevMmapFrames);
+                double dT = static_cast<double>(st.clock_mmap_ns - prevMmapNs) / 1e9;
+                if (dT > 0.0 && dF > 0.0) {
+                    mmapPpm = (dF / dT / rate - 1.0) * 1e6;
+                    mmapOk = std::fabs(mmapPpm) < 5000.0;  // puerta: outlier no
                 }
             }
-        }
-    }).detach(); // heartbeat_watchdog
-
-    Ivanna::IvannaSelfHealingEngine selfHealer;
-    selfHealer.startMonitoring();
-    // ── PRODUCTOR DEL RELOJ HAL (el eslabon que faltaba) ────────────────────
-    // El efecto lee el snapshot y el panel "Reloj hardware" lo muestra, pero en la
-    // ruta Magisk nadie lo publicaba. Este hilo lo publica SOLO con pares
-    // (frames, timestamp) correlacionados leidos del driver en una unica consulta.
-    // Fail-closed: sin fuente fiable no publica nada y lo declara.
-    std::thread hal_clock_thread;
-    if (hal_clock_enabled) {
-        hal_clock_thread = std::thread([hal_clock_enabled](){
-            applyPollerSched("hal-clock-asrc-poller");
-            ivanna::audio::halclock::HalClockProducer::Config c;
-            ivanna::audio::halclock::HalClockProducer producer(c);
-            producer.setEnabled(true);
-            auto& st = producer.status();
-            (void)st;
-            ivanna::audio::halclock::ProducerState last =
-                ivanna::audio::halclock::ProducerState::kDisabled;
-            std::string lastReason;
-
-            // ── CORE ASRC SOFTWARE (el eslabon que faltaba, parte 2) ───────────
-            // AsrcClockController compilaba y tenia tests propios desde antes,
-            // pero NADIE lo instanciaba: cero consumidores reales fuera de su
-            // propio test. Aqui se alimenta con la MISMA muestra que el productor
-            // de reloj acaba de validar y publicar (se relee via HardwareClockReader,
-            // nunca se inventa un par frames+timestamp propio), y su decision
-            // (TRACKING/HOLD/BYPASS/FAULT + correccion en ppm) se publica en su
-            // propio canal para que la app la muestre sin ADB. Sigue siendo un
-            // servo SOFTWARE sobre el resampler de la app: no identifica ni
-            // acciona ningun ASRC fisico del Moto G85.
-            ivanna::dsp::AsrcClockController asrcController;
-            ivanna::audio::AsrcStatePublisher asrcPublisher;
-            ivanna::audio::HardwareClockReader clockReader;
-            ivanna::dsp::AsrcState lastAsrcState = ivanna::dsp::AsrcState::INIT;
-            std::string lastAsrcReason;
-            uint64_t lastClockStreamId = 0;
-            uint64_t lastClockRouteGeneration = 0;
-
-            for (;;) {
-                const auto s = producer.poll();
-                if (s.state != last || std::string(s.reason) != lastReason) {
-                    log_message(std::string("HAL-CLOCK ") +
-                        ivanna::audio::halclock::stateName(s.state) +
-                        " dev=" + (s.device.empty() ? std::string("-") : s.device) +
-                        " motivo=" + s.reason +
-                        " pub=" + std::to_string(s.published) +
-                        " rech=" + std::to_string(s.rejected) +
-                        (s.measuredRateHz > 0.0
-                             ? " rate=" + std::to_string(s.measuredRateHz) +
-                               " deriva_ppm=" + std::to_string(s.driftPpm)
-                             : std::string()));
-                    last = s.state; lastReason = s.reason;
+            // Reloj write-timing.
+            double writePpm = 0.0; bool writeOk = false;
+            if (st.frames_written != prevFramesWritten && st.clock_write_ns != prevWriteNs) {
+                double dF = static_cast<double>(st.frames_written - prevFramesWritten);
+                double dT = static_cast<double>(st.clock_write_ns - prevWriteNs) / 1e9;
+                if (dT > 0.0 && dF > 0.0) {
+                    writePpm = (dF / dT / rate - 1.0) * 1e6;
+                    writeOk = std::fabs(writePpm) < 5000.0;
                 }
-
-                // The daemon must consume a snapshot published by the actual
-                // HAL/PAL stream owner. It must never gate reading on its own PCM
-                // producer: that producer intentionally stays blocked unless an
-                // owner-bound source is injected. A leftover snapshot from an old
-                // route/process is rejected unless its monotonic timestamp is fresh.
-                ivanna::dsp::ClockSample cs{};
-                bool haveSample = false;
-                if (clockReader.open()) {
-                    ivanna::audio::HardwareClockSample hcs{};
-                    if (clockReader.read(hcs)) {
-                        timespec now{};
-                        if (::clock_gettime(CLOCK_MONOTONIC, &now) == 0 &&
-                            now.tv_sec >= 0 && now.tv_nsec >= 0 &&
-                            now.tv_nsec < 1000000000L) {
-                            const uint64_t nowNs =
-                                static_cast<uint64_t>(now.tv_sec) * 1000000000ull +
-                                static_cast<uint64_t>(now.tv_nsec);
-                            if (ivanna::audio::isFreshMonotonicHardwareClockSample(hcs, nowNs)) {
-                                if (hcs.streamId != lastClockStreamId ||
-                                    hcs.routeGeneration != lastClockRouteGeneration) {
-                                    asrcController.reset();
-                                    lastClockStreamId = hcs.streamId;
-                                    lastClockRouteGeneration = hcs.routeGeneration;
-                                }
-                                cs.presentedFrames = hcs.presentedFrames;
-                                cs.timestampNs = static_cast<int64_t>(hcs.hardwareTimestampNs);
-                                cs.nominalRateHz = hcs.nominalSampleRateHz;
-                                haveSample = true;
-                            }
-                        }
-                    }
-                }
-                const bool routeValidated = haveSample;
-                if (!routeValidated) {
-                    asrcController.reset();
-                    lastClockStreamId = 0;
-                    lastClockRouteGeneration = 0;
-                }
-                const auto asrcSnap = asrcController.update(
-                    cs, routeValidated, hal_clock_enabled);
-                if (asrcSnap.state != lastAsrcState || std::string(asrcSnap.reason) != lastAsrcReason) {
-                    log_message(std::string("ASRC-SW ") +
-                        ivanna::audio::asrcStateName(asrcSnap.state) +
-                        " motivo=" + asrcSnap.reason +
-                        " deriva_ppm=" + std::to_string(asrcSnap.driftPpm) +
-                        " correccion_ppm=" + std::to_string(asrcSnap.targetPpm) +
-                        " ratio=" + std::to_string(asrcSnap.appliedRatio));
-                    lastAsrcState = asrcSnap.state; lastAsrcReason = asrcSnap.reason;
-                }
-                if (!asrcPublisher.open()) {
-                    log_message("ASRC-SW no se pudo abrir el canal de publicacion de estado");
-                } else {
-                    asrcPublisher.publish(asrcSnap);
-                }
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
-        });
-        hal_clock_thread.detach();
-        log_message("HAL-CLOCK daemon activo en fail-closed: sin callsite HAL/PAL propietario no abre PCM ni publica reloj");
-        log_message("ASRC-SW core activo: solo consume snapshots HAL/PAL externos, frescos y coherentes; sin ellos permanece bloqueado");
-    } else {
-        log_message("HAL-CLOCK productor deshabilitado por --no-hal-clock");
-        log_message("ASRC-SW core deshabilitado (depende de --hal-clock)");
-    }
-
-    log_message("Self-Healing Engine activated and monitoring components.");
-
-    if (!ivanna::controlBus().openWriter()) {
-        // FIX: degradado, no fatal. El socket de comandos sigue sirviendo
-        // STATUS/TELEMETRY aunque el bus DSP no abra (p.ej. sin consumidor
-        // omega_effect aún). Antes este fallo dejaba el socket funcional
-        // pero el panel interpretaba silencio como muerte.
-        log_message("WARN: OmegaControlBus writer no abrió — modo degradado, socket de comandos sigue sirviendo.");
-    } else {
-        log_message("Master Control Bus: OmegaControlBus writer opened successfully.");
-    }
-
-    // ── Descubrimiento de la sesión REAL de música (Ruta B, v2.5.379) ───────
-    // La sesión 0 es un callejón sin salida en este Moto G85: el efecto se
-    // crea pero NUNCA recibe frames (effect_frames=0 medido 2026-11-09). Y el
-    // sondeo por reflexión de la app no ve sessionIds reales (las configs
-    // llegan anonimizadas -1/0 sin MODIFY_AUDIO_ROUTING). El daemon corre
-    // como root, así que ejecuta `dumpsys media.audio_flinger` cada 3 s,
-    // parsea "Global session refs" y publica el sessionId de música en el
-    // snapshot (ABI v11) + GET_STATUS. La app acopla el efecto omega a ESA
-    // sesión en lugar de a la sesión 0. Hilo propio best-effort: dumpsys
-    // puede tardar ~100-500 ms y jamás debe bloquear el loop principal ni
-    // el callback de audio. Fail-closed: si dumpsys falla, se conserva el
-    // valor anterior (un fallo transitorio no es "sin música"); si dumpsys
-    // funciona pero no hay música, se publica 0 y la app vuelve a sesión 0.
-    // Los sessionIds son DINÁMICOS (YTM era 297 y luego 14177): por eso se
-    // re-descubre cada 3 s y reportDiscoveredSession solo republica al cambiar.
-    std::thread([&commandServer](){
-        setCurrentThreadBestEffort("session-discovery");
-        while (!g_shutdown_requested.load(std::memory_order_acquire)) {
-            const auto outcome = ivanna::daemon::discoverMusicSession();
-            if (outcome.status == ivanna::daemon::SessionDiscoveryStatus::kError) {
-                log_message("SESSION-DISCOVERY: dumpsys falló (transitorio) — se conserva la sesión anterior");
+            // Certificación del reloj: mmap_ns vs write_ns (misma época).
+            if (mmapOk && writeOk) {
+                double diffMs = static_cast<double>(st.clock_mmap_ns - st.clock_write_ns) / 1e6;
+                ++clockDiffN;
+                double delta = diffMs - clockDiffMean;
+                clockDiffMean += delta / static_cast<double>(clockDiffN);
+                clockDiffM2 += delta * (diffMs - clockDiffMean);
+                double var = (clockDiffN > 1) ? clockDiffM2 / (clockDiffN - 1) : 0.0;
+                // Certificado si la diferencia es estable (<5 ms de media y poca varianza).
+                clockCertified = (std::fabs(clockDiffMean) < 5.0 && var < 25.0 && clockDiffN >= 20);
+            }
+            // Fusión de sensores: si ambos, promedio; si uno, ese; si ninguno, nada.
+            if (mmapOk && writeOk && clockCertified) {
+                measPpm = 0.5 * (mmapPpm + writePpm);
+                haveMeasurement = true;
+                clockSource = IVANNA_CLOCK_MMAP;
+            } else if (mmapOk && clockCertified) {
+                measPpm = mmapPpm; haveMeasurement = true; clockSource = IVANNA_CLOCK_MMAP;
+            } else if (writeOk) {
+                measPpm = writePpm; haveMeasurement = true; clockSource = IVANNA_CLOCK_WRITE_TIMING;
+            } else if (mmapOk) {
+                measPpm = mmapPpm; haveMeasurement = true; clockSource = IVANNA_CLOCK_MMAP;
             } else {
-                const int32_t sid = (outcome.status == ivanna::daemon::SessionDiscoveryStatus::kFound)
-                    ? outcome.sessionId : 0;
-                commandServer.reportDiscoveredSession(sid);
+                clockSource = IVANNA_CLOCK_NONE;
             }
-            // Dormir 3 s en tramos de 100 ms para apagar rápido.
-            for (int i = 0; i < 30 && !g_shutdown_requested.load(std::memory_order_acquire); ++i)
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-    }).detach();
-    log_message("SESSION-DISCOVERY: hilo activo (dumpsys cada 3 s, publica en snapshot ABI v11 + GET_STATUS)");
-
-    // El listener TCP de loopback no ofrece SO_PEERCRED ni token de autenticación.
-    // Se deshabilita incluso si se pasa --tcp-port; el control soportado usa UNIX
-    // sockets con validación de credenciales de kernel.
-    if (tcp_port > 0) {
-        log_message("TCP fallback rechazado por seguridad: control solo por UNIX socket autenticado.");
-    }
-
-    // FIX (daemon bloqueante / fd leak / buffer overflow):
-    // 1. El accept loop anterior atendía clientes en el hilo principal de forma
-    //    secuencial bloqueante — mientras un cliente tenía la conexión abierta
-    //    (OmegaDaemon.kt mantiene su socket abierto de forma persistente), ningún otro podía
-    //    conectarse. Se despacha cada cliente en un thread propio (detached).
-    // 2. json_buf[8192] stack con recv parcial causaba lecturas fragmentadas
-    //    sin NUL correcto. Se aumenta a 65536 y se acumula en heap.
-    // 3. reply declarado dos veces en el mismo scope (UB/shadow) — unificado.
-    while (g_running) {
-        // FIX (2026-09-17): el heartbeat ya tiene su propio thread dedicado
-        // (heartbeat_watchdog, 1 Hz, lineas ~255-276) que escribe
-        // SHM_HEARTBEAT_OFFSET y bumpHealthCounter(1). El heartbeat que
-        // este loop escribia aqui era REDUNDANTE — mismo offset, mismo
-        // contador, doble escritura por segundo. El loop principal ahora
-        // solo hace: self-healing pings + accept de clientes. El select()
-        // con timeout de 1s sigue siendo el mecanismo de wakeup (necesario
-        // para detectar g_running=0 sin busy-wait).
-        selfHealer.pingAudioEngine();
-        selfHealer.pingIpcSocket();
-        selfHealer.pingDspKernel();
-        
-        Ivanna::DiagnosticReport report = selfHealer.getDiagnosticReport();
-        if (report.restartCount > 0) {
-            log_message("Self-Healing intervention! Total recoveries: " + std::to_string(report.restartCount));
+        // Guardar el estado previo para el próximo ciclo.
+        if (muscleFresh) {
+            prevMmapNs = st.clock_mmap_ns; prevMmapFrames = st.clock_mmap_frames;
+            prevWriteNs = st.clock_write_ns; prevFramesWritten = st.frames_written;
+            prevTimeMs = nowMs; havePrev = true;
         }
-        // FIX (flanco integración cruzada): antes solo se logueaba local —
-        // nunca llegaba a ningún cliente conectado (la app). Se reporta a
-        // AMBAS instancias de CommandServer (no está claro cuál sirve el
-        // socket real que consume la app hoy, así que se actualizan las dos
-        // por seguridad — costo nulo, un pthread_mutex_lock/unlock más por
-        // segundo).
-        commandServer.reportSelfHealRestarts((uint32_t)report.restartCount);
 
-        fd_set readfds; FD_ZERO(&readfds); FD_SET(g_server_fd,&readfds);
-        struct timeval tv{1,0};
-        int activity = select(g_server_fd+1,&readfds,NULL,NULL,&tv);
-        if (activity<0 && errno!=EINTR) break;
-        if (activity>0 && FD_ISSET(g_server_fd,&readfds)) {
-            struct sockaddr_un client_addr; socklen_t client_len=sizeof(client_addr);
-            int client_fd = accept(g_server_fd,(struct sockaddr*)&client_addr,&client_len);
-            if (client_fd<0) continue;
-            if (!ivanna::security::isAuthorizedControlPeer(client_fd)) {
-                if (ivanna::security::shouldLogRejectedPeer()) {
-                    log_message("Conexión rechazada en socket daemon: UID no autorizado (registro limitado)");
-                }
-                close(client_fd);
-                continue;
+        // 3. Servo: predecir + actualizar con la medición (si la hay).
+        servo.predict(dt);
+        if (haveMeasurement) { servo.update(measPpm); ++servoUpdates; }
+        double ratio = servo.ratio();
+        double drift = servo.driftPpm();
+        // Vigilante: si el ratio diverge demasiado, bypass.
+        bool ratioSane = std::fabs(drift) < 1000.0 && ratio > 0.99 && ratio < 1.01;
+        if (!ratioSane) { ratio = 1.0; }
+
+        // 4. Descubrir la sesión real cada ~3 s.
+        if (--sessionCountdown <= 0) {
+            sessionCountdown = 60;
+            const auto out = ivanna::daemon::discoverMusicSession();
+            if (out.status == ivanna::daemon::SessionDiscoveryStatus::kFound) {
+                if (out.sessionId != sessionId) { sessionId = out.sessionId; ++sessionGen; }
+            } else if (out.status == ivanna::daemon::SessionDiscoveryStatus::kNone) {
+                if (sessionId != 0) { sessionId = 0; ++sessionGen; }
             }
-            ivanna::shmManager().bumpHealthCounter(4); // clientes_conectados
-            commandServer.bumpClientsServed(); // telemetria visible en GET_STATUS
-
-            // FIX (concurrencia): antes el bucle principal atendia a UN cliente
-            // en un recv-loop bloqueante. El bridge Kotlin mantiene su socket
-            // abierto de forma persistente, asi que mientras ese cliente
-            // mandara trafico el daemon jamas volvia a accept() y cualquier
-            // otra conexion (reinstanciacion del engine, hot-reload) se
-            // pudria en el backlog. Ahora cada conexion va a su propio hilo
-            // (los handlers de CommandServer ya estan protegidos por mutex).
-            std::thread([client_fd, &commandServer]() {
-                setCurrentThreadBestEffort("control-client");
-                struct timeval rcv_tv{0,150000}; setsockopt(client_fd,SOL_SOCKET,SO_RCVTIMEO,&rcv_tv,sizeof(rcv_tv));
-                struct timeval snd_tv{0,300000}; setsockopt(client_fd,SOL_SOCKET,SO_SNDTIMEO,&snd_tv,sizeof(snd_tv));
-
-                // FIX (framing): un socket stream NO garantiza mensajes
-                // completos por recv() — un JSON grande podia llegar partido
-                // y parsearse roto (comando perdido en silencio). Se acumula
-                // y se extraen objetos JSON completos por balance de llaves
-                // (respetando comillas y escapes); el resto queda en buffer
-                // para el siguiente recv.
-                std::string pending;
-                pending.reserve(16384);
-                char chunk[8192];
-                bool first_read = true;
-                while (g_running) {
-                    ssize_t nbytes = recv(client_fd, chunk, sizeof(chunk), 0);
-                    if (nbytes<=0) {
-                        // FIX (handshake SHM real — "Modo B" detectaba el
-                        // timeout pero nunca enviaba el fd, solo colgaba):
-                        // ShmManager.kt (mapFromDaemon) conecta y a propósito
-                        // NO escribe nada durante el timeout de 150ms de
-                        // arriba, precisamente para que el daemon lo
-                        // distinga de un cliente de comandos de texto/JSON.
-                        // Antes ambos casos (timeout silencioso y EOF real)
-                        // caían al mismo break sin diferenciarse — el fd de
-                        // ivanna::shmManager().fd() nunca salía del daemon
-                        // aunque la SHM ya estuviera lista. Se distingue
-                        // timeout real (EAGAIN/EWOULDBLOCK, nbytes<0) de EOF
-                        // (nbytes==0, el cliente cerró la conexión): solo el
-                        // timeout en el PRIMER recv (nada recibido aún)
-                        // dispara el envío del fd por SCM_RIGHTS.
-                        if (first_read && nbytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                            int shm_fd = ivanna::shmManager().fd();
-                            if (shm_fd >= 0) {
-                                char one = 0;
-                                struct iovec io;
-                                io.iov_base = &one;
-                                io.iov_len  = 1;
-                                char cmsgbuf[CMSG_SPACE(sizeof(int))];
-                                std::memset(cmsgbuf, 0, sizeof(cmsgbuf));
-                                struct msghdr msg;
-                                std::memset(&msg, 0, sizeof(msg));
-                                msg.msg_iov        = &io;
-                                msg.msg_iovlen      = 1;
-                                msg.msg_control     = cmsgbuf;
-                                msg.msg_controllen  = sizeof(cmsgbuf);
-                                struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-                                cmsg->cmsg_level = SOL_SOCKET;
-                                cmsg->cmsg_type  = SCM_RIGHTS;
-                                cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
-                                std::memcpy(CMSG_DATA(cmsg), &shm_fd, sizeof(int));
-                                const ssize_t sent = sendmsg(client_fd, &msg, MSG_NOSIGNAL);
-                                if (sent < 0) {
-                                    const int send_errno = errno;
-                                    log_message(std::string("Modo B: sendmsg(SCM_RIGHTS) fallo errno=") +
-                                                std::to_string(send_errno) + " (" + strerror(send_errno) + ")");
-                                } else if (sent != 1) {
-                                    log_message("Modo B: sendmsg(SCM_RIGHTS) entrega incompleta: bytes=" +
-                                                std::to_string(sent) + " esperado=1");
-                                } else {
-                                    log_message("Modo B: fd de omega_shm entregado por SCM_RIGHTS (1 byte + 1 fd)");
-                                }
-                            } else {
-                                log_message("Modo B: cliente silencioso pero shmManager().fd() invalido (SHM aun no inicializada)");
-                            }
-                        }
-                        break;
-                    }
-                    first_read = false;
-                    pending.append(chunk, (size_t)nbytes);
-
-                    // Descarta whitespace inter-mensaje.
-                    size_t start = pending.find_first_not_of(" \t\r\n");
-                    if (start==std::string::npos) { pending.clear(); continue; }
-                    pending.erase(0, start);
-
-                    if (pending[0]!='{') {
-                        // Comandos de texto plano (ruta MagiskBridge): se
-                        // procesa la linea completa hasta '\n' si existe, o el
-                        // buffer entero (comportamiento historico).
-                        std::string text = pending;
-                        size_t nl = pending.find('\n');
-                        if (nl!=std::string::npos) { text = pending.substr(0, nl); pending.erase(0, nl+1); }
-                        else pending.clear();
-                        char reply[1024]={};
-                        int rlen = commandServer.handleTextCommand(text.c_str(), reply, sizeof(reply));
-                        if (rlen>0) send(client_fd, reply, rlen, MSG_NOSIGNAL);
-                        continue;
-                    }
-
-                    // Extrae el primer objeto JSON completo del buffer.
-                    int depth=0; bool inStr=false, esc=false; size_t end=std::string::npos;
-                    for (size_t i=0;i<pending.size();++i) {
-                        char c=pending[i];
-                        if (inStr) { if (esc) esc=false; else if (c=='\\') esc=true; else if (c== '"') inStr=false; continue; }
-                        if (c=='"') inStr=true;
-                        else if (c=='{') ++depth;
-                        else if (c=='}' && --depth==0) { end=i+1; break; }
-                    }
-                    if (end==std::string::npos) {
-                        // JSON incompleto: espera al siguiente fragmento.
-                        if (pending.size() > 65536) pending.clear(); // proteccion anti-flood
-                        continue;
-                    }
-                    std::string js = pending.substr(0, end);
-                    pending.erase(0, end);
-
-                    std::string action="UNKNOWN";
-                    auto pos=js.find("\"action\"");
-                    if (pos!=std::string::npos) {
-                        auto p1=js.find("\"",pos+8); auto p2=js.find("\"",p1+1);
-                        if (p1!=std::string::npos && p2!=std::string::npos) action=js.substr(p1+1,p2-p1-1);
-                    }
-                    char reply[4096]={};
-                    int rlen = commandServer.handleJsonCommand(js.c_str(), reply, sizeof(reply));
-                    if (rlen>0) {
-                        send(client_fd, reply, rlen, MSG_NOSIGNAL);
-                    } else {
-                        std::string err = "{\"status\":\"error\",\"reason\":\"not_implemented\",\"action\":\"" + action + "\"}";
-                        send(client_fd, err.c_str(), err.size(), MSG_NOSIGNAL);
-                    }
-                }
-                close(client_fd);
-            }).detach();
+            // kError: se conserva la sesión anterior.
         }
 
-    }
-    if (g_server_fd>=0) close(g_server_fd);
-    commandServer.stop();
-    selfHealer.stopMonitoring();
-    ivanna::shmManager().markShutdownClean(true);
-    log_message("Daemon shutdown REAL");
-    }
-    catch (const std::exception& e) {
-        std::cerr << "[IVANNA-DAEMON] fatal exception: " << e.what() << std::endl;
-        return 1;
-    }
-    catch (...) {
-        std::cerr << "[IVANNA-DAEMON] fatal unknown exception" << std::endl;
-        return 1;
+        // 5. Veredicto.
+        if (killSwitch) verdict = IVANNA_VERDICT_OFF;
+        else if (!muscleAlive || !muscleFresh) verdict = IVANNA_VERDICT_NO_CLOCK;
+        else if (!servo.initialized || !haveMeasurement) verdict = IVANNA_VERDICT_BYPASS;
+        else if (!ratioSane) verdict = IVANNA_VERDICT_BYPASS;
+        else verdict = IVANNA_VERDICT_LOADED;
+        if (verdict != IVANNA_VERDICT_LOADED) ratio = 1.0f;
+
+        // 5b. El campo Ψ vivo (el corazón de la fusión).
+        // El cerebro actualiza η con la coherencia que mide el músculo
+        // (Ec. 4: dη/dt = (η*−η)/τ − λ·L; L = innovación del servo) y
+        // calcula las ganancias por banda del campo (Ec. 2 + Ec. 3 + Γ(η)).
+        // El músculo las aplica a TODO el audio. El campo solo actúa cuando
+        // la fusión está enganchada (LOADED); si no, queda neutro.
+        {
+            const double coherence = muscleFresh && std::isfinite(st.coherence)
+                ? std::clamp(static_cast<double>(st.coherence), 0.0, 1.0) : 0.5;
+            const double loss = std::clamp(servo.lastInnovation / 1000.0, 0.0, 1.0);
+            psi.update(dt, coherence, loss);
+        }
+        float psiGainL[ivanna::psi::kPsiBands];
+        float psiGainR[ivanna::psi::kPsiBands];
+        psi.bandGains(psiGainL, psiGainR);
+        const uint32_t psiActive = (verdict == IVANNA_VERDICT_LOADED && !killSwitch) ? 1u : 0u;
+        if (psiActive) ++psiGeneration;
+        // Diseñar el FIR del campo solo cuando η o la fuente cambian
+        // (el campo se mueve en segundos, no en cada muestra).
+        if (psiActive) {
+            const double dEta = (lastFirEta < 0.0) ? 1.0 : std::fabs(psi.eta - lastFirEta);
+            const bool srcChanged = (std::fabs(psi.srcR - lastFirR) > 0.01f)
+                || (std::fabs(psi.srcTheta - lastFirTheta) > 0.01f);
+            if (!firDesigned || dEta > 0.01 || srcChanged) {
+                const float sr = (muscleFresh && st.stream_rate_hz > 0)
+                    ? static_cast<float>(st.stream_rate_hz) : 48000.0f;
+                psi.designFirs(psiFirL, psiFirR, sr);
+                lastFirEta = psi.eta; lastFirR = psi.srcR; lastFirTheta = psi.srcTheta;
+                firDesigned = true;
+                ++psiFirGen;
+            }
+        }
+
+        // 6. Control de efectos (config; por defecto todo apagado).
+        FxControl fx = readFxConfig();
+        if (verdict != IVANNA_VERDICT_LOADED && verdict != IVANNA_VERDICT_BYPASS) {
+            fx = FxControl{};  // sin cerebro sano, sin efectos
+        }
+        if (killSwitch) fx = FxControl{};
+
+        // 7. Escribir las decisiones del cerebro en el estado compartido.
+        {
+            IvannaFusionState w = st;  // parte de lo último leído (conserva el músculo)
+            w.magic = IVANNA_FUSION_MAGIC; w.version = IVANNA_FUSION_VERSION;
+            w.generation = ++generation;
+            w.session_id = sessionId; w.session_gen = sessionGen;
+            w.ratio = static_cast<float>(ratio);
+            w.drift_ppm = static_cast<float>(drift);
+            w.clock_source = clockSource; w.verdict = verdict;
+            w.brain_health = 1; w.ratio_timestamp_ms = nowMs;
+            w.servo_updates = servoUpdates;
+            w.fx_flags = fx.flags; w.fx_orbe_amount = fx.orbe;
+            w.fx_holos_amount = fx.holos; w.fx_phi_amount = fx.phi;
+            w.fx_volterra_amount = fx.volterra; w.fx_supreme_amount = fx.supreme;
+            w.fx_npe_amount = fx.npe; w.fx_reality_amount = fx.reality;
+            w.fx_eq_amount = fx.eq; w.fx_limiter_on = fx.limiter;
+            ++w.fx_generation;
+            // El campo Ψ vivo (lo calcula el cerebro, lo aplica el músculo).
+            w.psi_eta = static_cast<float>(psi.eta);
+            w.psi_gamma = static_cast<float>(psi.coupling());
+            w.psi_src_r = psi.srcR; w.psi_src_theta = psi.srcTheta; w.psi_src_phi = psi.srcPhi;
+            for (int i = 0; i < ivanna::psi::kPsiBands; ++i) {
+                w.psi_gain_l[i] = psiGainL[i];
+                w.psi_gain_r[i] = psiGainR[i];
+            }
+            w.psi_active = psiActive;
+            w.psi_generation = psiGeneration;
+            for (int i = 0; i < ivanna::psi::PsiCore::kPsiFirTaps; ++i) {
+                w.psi_fir_l[i] = psiFirL[i];
+                w.psi_fir_r[i] = psiFirR[i];
+            }
+            w.psi_fir_gen = psiFirGen;
+            ivanna_fusion_write(fusion, &w);
+        }
+
+        // 8. Publicar el snapshot neutro (SHM del efecto) + heartbeat.
+        if (!shmOk) shmOk = bus.openWriter();
+        if (shmOk) {
+            const auto snap = buildNeutralSnapshot(sessionId, sessionGen, generation);
+            if (!bus.publish(snap)) shmOk = false;
+            else if (sessionId != lastPublishedSession) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "sesión publicada: %d (gen %llu)",
+                              static_cast<int>(sessionId),
+                              static_cast<unsigned long long>(sessionGen));
+                logLine(buf);
+                lastPublishedSession = sessionId;
+            }
+        }
+        writeHeartbeat(sessionId, generation, static_cast<float>(drift), verdict,
+                       static_cast<float>(psi.eta), static_cast<float>(psi.coupling()));
+
+        // Aceptar (no bloqueante) y cerrar cualquier conexión al socket de
+        // vida. Nadie debería conectar (no hay servidor de comandos), pero
+        // si alguien lo intenta, no se deja colgado.
+        if (sockFd >= 0) {
+            for (;;) {
+                const int c = ::accept(sockFd, nullptr, nullptr);
+                if (c < 0) break;
+                ::close(c);
+            }
+        }
+
+        ::usleep(50000);  // ~20 Hz
     }
 
-    // Apagado limpio: marcar ANTES de cerrar el SHM — el proximo arranque
-    // distingue cierre ordenado de crash/kill -9.
-    ivanna::shmManager().markShutdownClean(true);
-    log_message("Daemon apagado limpio (shutdown_clean=1)");
+    // Al salir, dejar el veredicto en BYPASS y el campo Ψ neutro para que
+    // el músculo pase limpio.
+    {
+        IvannaFusionState cur{};
+        if (ivanna_fusion_read(fusion, &cur) && cur.magic == IVANNA_FUSION_MAGIC) {
+            IvannaFusionState w = cur;
+            w.verdict = IVANNA_VERDICT_BYPASS; w.ratio = 1.0f;
+            w.brain_health = 0; w.fx_flags = 0;
+            w.psi_active = 0;
+            for (int i = 0; i < 32; ++i) { w.psi_gain_l[i] = 1.0f; w.psi_gain_r[i] = 1.0f; }
+            ivanna_fusion_write(fusion, &w);
+        }
+    }
+    if (sockFd >= 0) ::close(sockFd);
+    logLine("ivanna_daemon_v2 (CEREBRO) detenido (señal)");
     return 0;
 }

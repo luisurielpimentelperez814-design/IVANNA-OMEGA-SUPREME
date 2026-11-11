@@ -14,18 +14,16 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${IVANNA_DAEMON_HARDENING_
 
 add_executable(ivanna_daemon
     ivanna_daemon.cpp
-    control/command_server.cpp
-    hal_clock_producer.cpp
-    core/shm_manager.cpp
     core/omega_control_bus.cpp
-    ../IvannaSelfHealingEngine.cpp
-    # ── Seguridad anti-piratería fase 2 ────────────────────────────────────
-    # ivanna_integrity: SHA-256 autocontenido (integrity_sha256_file) para
-    # hashear la .so stageada. effect_integrity: verificación de la .so del
-    # efecto contra el hash del módulo + gate SET_* en CommandServer.
-    ../security/ivanna_integrity.cpp
-    core/effect_integrity.cpp
 )
+# v2.5.401 FUSIÓN MAGISTRAL: el daemon viejo (793 líneas + command_server,
+# hal_clock_producer, shm_manager, SelfHealingEngine, integrity,
+# effect_integrity) se reemplazó por el CEREBRO v2 (ivanna_daemon.cpp):
+# solo sesión real + servo Kalman 3 estados + reloj certificado + control
+# de efectos + snapshot neutro + heartbeat, fail-closed. El cerebro solo
+# necesita OmegaControlBus (para publicar el snapshot neutro); el resto
+# del andamiaje viejo ya no se compila. El .bak del daemon v1 queda en
+# ivanna_daemon_v1_legacy.cpp.bak (fuera del build, como referencia).
 
 set_target_properties(ivanna_daemon PROPERTIES
     LINK_FLAGS "${IVANNA_DAEMON_HARDENING_FLAGS}"

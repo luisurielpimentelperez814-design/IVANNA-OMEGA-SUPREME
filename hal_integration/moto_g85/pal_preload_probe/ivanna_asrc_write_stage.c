@@ -21,9 +21,31 @@
 /*
  * ASRC write-stage LD_PRELOAD shim for the Moto G85 PAL HAL.
  *
- * v5 "Elite" (2026-11-10) -- the best ASRC that can be built safely
- * and measurably on this device. v4 corrected ppm drift (transparent);
- * v5 is a high-fidelity resampling + re-clocking stage:
+ * v6 "FUSIÓN MAGISTRAL" (2026-11-11) -- el MÚSCULO de la fusión homogénea.
+ * Ya NO tiene servo propio: el ratio lo calcula el CEREBRO (daemon v2,
+ * Kalman 3 estados) y lo escribe en el estado compartido IvannaFusionState;
+ * el músculo solo lo lee y lo aplica. Un cerebro, un músculo, un estado.
+ * Lo que cambia respecto a v5:
+ *  - Sin servo interno (Kalman 2 estados + mediana + endurecimiento
+ *    eliminados del músculo; viven en el cerebro). El músculo MIDE el
+ *    reloj (mmap + write-timing) y PUBLICA las mediciones; el cerebro
+ *    decide. Sin cerebro vivo o ratio viejo (>500 ms) → passthrough.
+ *  - Interpolación CÚBICA (Catmull-Rom, 4 filas) entre las fases del FIR
+ *    polifásico, en lugar de lineal (baja el error de fase ~20 dB).
+ *  - El campo Ψ vivo: el cerebro diseña un FIR de 64 taps por oído con
+ *    la respuesta del campo (ILD Ec. 2 + Γ(η) Ec. 4 + personalización
+ *    Ec. 3) y el músculo lo convoluciona tras el ASRC. Es el campo
+ *    aplicado a TODO el audio, en el HAL.
+ *  - Coherencia de la envolvente 1–8 Hz: el músculo la mide del audio
+ *    que suena y la publica; el cerebro la usa para actualizar η (Ec. 4).
+ *  - Cadena de efectos: Fase 1 = ASRC + campo Ψ. El resto (ORBE, HOLOS,
+ *    Φ, Volterra, Ejes, NPE, Reality, EQ, limitador) se enciende por
+ *    fases, medido, desde el cerebro (fx_flags en el estado).
+ * Lo que NO cambia (probado, verificado): el FIR polifásico 287 taps
+ * (mínima fase, stopband −156 dB), TPDF + noise shaping 2º orden, la
+ * cadena mmap (thunk 0x2ec180), el ABI int32 de pal_stream_write, el
+ * kill switch, el dump y el fail-closed. v5 queda en
+ * ivanna_asrc_write_stage_v5_backup.c (referencia).
  *
  *  RESAMPLER: minimum-phase polyphase FIR, 287 taps, two-stage
  *   design (fir_v5_design.json). Stage 1 is a FIXED 256-tap
@@ -219,22 +241,9 @@
  * in the slot. */
 #define FIR_V5_HIST_FRAMES (2 * FIR_V5_TAPS)
 #define FIR_V5_WIN_FRAMES FIR_V5_TAPS
-/* v5 servo: 2-state adaptive Kalman (drift ppm + drift rate ppm/s),
- * 1 Hz control tick. Q is the process noise (drift wanders slowly,
- * thermal); R is the measurement noise, ADAPTED from the innovation. */
-#define KALMAN_DT_S 1.0
-#define KALMAN_Q_DRIFT 0.04      /* (ppm^2)/tick: drift random walk */
-#define KALMAN_Q_RATE 0.004      /* (ppm/s)^2/tick: rate random walk */
-#define KALMAN_R_MIN 25.0        /* (ppm^2): mmap is precise */
-#define KALMAN_R_MAX 40000.0     /* (ppm^2): write-timing is noisy */
-#define KALMAN_R_INIT 400.0      /* (ppm^2): start mid-range */
-#define KALMAN_R_TIMING 4000.0   /* (ppm^2): nominal write-timing noise */
-#define KALMAN_P0_DRIFT 250000.0 /* initial drift variance (500 ppm)^2: 3 sigma = 1500 ppm covers the full +/-1000 ppm clamp, so a genuine large drift step is never gated out on the first samples */
-#define KALMAN_P0_RATE 100.0     /* initial rate variance (10 ppm/s)^2 */
-#define KALMAN_GATE_SIGMA 3.0    /* innovation gate: |e| > 3 sigma */
-/* v5 dither + noise shaping: TPDF dither (+/-1 LSB, triangular) and
- * 2nd-order error feedback (1-z^-1)^2. 4th order was evaluated and
- * rejected (unstable at full scale, see unit_asrc.c). */
+/* v6: el servo Kalman vive en el CEREBRO (daemon v2, 3 estados). El
+ * músculo NO tiene servo: solo mide el reloj y aplica el ratio que le
+ * da el cerebro. Las constantes del servo interno v5 se eliminaron. */
 #define V5_DITHER_ON 1
 #define V5_SHAPING_ORDER 2
 /* v5: 192 kHz input streams are eligible (ppm correction at 192 kHz). */
@@ -286,21 +295,12 @@
 #define RATIO_MIN (1.0 - 1000e-6)
 #define RATIO_MAX (1.0 + 1000e-6)
 #define NOMINAL_RATE 48000.0
-#define TIMING_MIN_DRIFT_PPM 50.0
 #define SERVO_WARMUP_S 10.0
-/* v4 servo hardening. SERVO_SETTLE_NS: after the active stream changes
- * (open / HAL restart / route change), ignore servo updates for 2 s so
- * startup transients (erratic write timing, buffer fill) cannot diverge
- * the servo. SERVO_MAX_DRIFT_PPM: a clock sample implying more drift
- * than this is a measurement error, not a real clock (a crystal is
- * +/-100 ppm typical, +/-500 extreme); reject it. TIMING_MEDIAN_N: the
- * write-timing drift is median-filtered over this many accepted samples
- * (one per 1 Hz tick) so a single bursty/jittery tick cannot move the
- * servo. */
+/* v6: el settle hold (2 s tras cambiar el stream) sigue: evita que los
+ * transitorios de arranque contaminen las mediciones que lee el cerebro.
+ * (Las constantes del servo interno v5 — SERVO_MAX_DRIFT_PPM,
+ * TIMING_MEDIAN_N/READY, TIMING_MIN_DRIFT_PPM — se eliminaron con él.) */
 #define SERVO_SETTLE_NS 2000000000ull
-#define SERVO_MAX_DRIFT_PPM 5000.0
-#define TIMING_MEDIAN_N 5
-#define TIMING_MEDIAN_READY 3
 
 /* Clock sources (g_clock_source). */
 #define CLK_UNKNOWN 0
@@ -359,6 +359,18 @@ struct slot {
     uint32_t dither_state;          /* xorshift32 PRNG state */
     float err_l[V5_SHAPING_ORDER];  /* quantisation error history, left */
     float err_r[V5_SHAPING_ORDER];  /* quantisation error history, right */
+    /* v6 Ψ FIR history: 64-tap delay line per channel for the campo Ψ
+     * (the brain designs the FIR; the muscle only convolves). */
+    float psi_hist_l[64];
+    float psi_hist_r[64];
+    int psi_hist_w;                 /* write index, 0..63 */
+    /* v6 envelope stats (audio thread writes, control thread reads):
+     * per-block mean |sample| → one-pole slow (~1 Hz) and fast (~8 Hz)
+     * envelopes; the control thread derives the 1–8 Hz coherence
+     * (band energy / total energy) that drives η (Ec. 4). */
+    double env_fast, env_slow;      /* one-pole envelopes of |x| */
+    double env_band_e, env_tot_e;   /* accumulated (fast-slow)^2, fast^2 */
+    uint64_t env_n;                 /* blocks accumulated */
     /* Stats (atomics; audio thread + control thread). */
     atomic_ullong write_calls, write_bytes, processed_calls, passthrough_calls;
     atomic_ullong misaligned, out_frames, in_frames;
@@ -373,17 +385,38 @@ static atomic_ullong g_passthrough_off, g_passthrough_nobuf, g_passthrough_big;
 static atomic_ullong g_max_write_frames; /* largest single write seen, in frames */
 static atomic_int g_enabled = 1;
 
-/* Global servo ratio (control thread writes, audio thread reads). */
-static _Atomic(double) g_ratio = RATIO_INIT;
+/* v6 FUSIÓN: el ratio ya NO lo calcula un servo interno. Lo calcula el
+ * CEREBRO (daemon v2, Kalman 3 estados) y lo escribe en el estado
+ * compartido IvannaFusionState. El músculo solo lo LEE (aquí, cacheado
+ * por el hilo de control) y lo APLICA. Sin cerebro vivo o ratio viejo →
+ * passthrough (fail-closed). El estado compartido vive en
+ * /data/adb/ivanna_omega/ivanna_fusion_state (SHM por archivo + mmap). */
+#include "ivanna_fusion_state.h"
+#include <sys/mman.h>
+
+/* Cerebro → músculo (lo cachea el hilo de control, 1 Hz; el hilo de
+ * audio solo lee estos atómicos, nunca la SHM directamente). */
+static _Atomic(double) g_fusion_ratio = 1.0;      /* ratio del cerebro */
+static _Atomic(uint64_t) g_fusion_ratio_ts = 0;   /* cuándo lo selló el cerebro (ms) */
+static _Atomic(int) g_fusion_verdict = IVANNA_VERDICT_BYPASS;
+static _Atomic(int) g_fusion_fresh = 0;           /* 1 = ratio vigente (<500 ms) */
+static float g_psi_fir_l[64];                     /* FIR del campo Ψ, oído L */
+static float g_psi_fir_r[64];                     /* FIR del campo Ψ, oído R */
+static _Atomic(uint64_t) g_psi_fir_gen = 0;       /* generación del FIR cacheado */
+static _Atomic(int) g_psi_active = 0;             /* 1 = el campo Ψ está activo */
+static _Atomic(double) g_fusion_coherence = 0.5;  /* coherencia 1–8 Hz medida */
+/* SHM del estado de fusión (la abre el hilo de control, lazy). */
+static IvannaFusionState *g_fusion = NULL;
+static int g_fusion_fd = -1;
+
 static _Atomic(int) g_clock_source = CLK_UNKNOWN;
 static _Atomic(uintptr_t) g_active_handle; /* handle of most-written eligible stream */
 static _Atomic(void *) g_mmap_fn;          /* resolved thunk, or NULL */
 static _Atomic(int) g_mmap_state = 0;      /* 0=untried 1=ok -1=failed */
 static atomic_ullong g_mmap_ok_queries, g_mmap_failed_queries, g_mmap_resets;
 
-/* Servo bookkeeping (control thread only). */
-static double g_servo_measured_rate = 0.0;
-static double g_servo_drift_ppm = (RATIO_INIT - 1.0) * 1e6;
+/* Medición del reloj (hilo de control). Estas son las ANCLAS de medición
+ * (no un servo): el músculo mide y PUBLICA; el cerebro decide. */
 static int g_mmap_init = 0;
 static uint32_t g_mmap_last_raw = 0;
 static uint64_t g_mmap_ext = 0, g_mmap_last_ts = 0;
@@ -392,30 +425,10 @@ static int g_have_prev_sample = 0;
 static int g_mmap_consec_fail = 0;
 static uint64_t g_timing_base_frames = 0, g_timing_base_ts = 0;
 static int g_timing_warmed = 0;
-/* v4 servo hardening state (control thread only). */
+/* Settle hold (2 s tras cambiar el stream activo): no se publican
+ * mediciones durante el transitorio de arranque. */
 static uint64_t g_servo_hold_until_ns = 0; /* settle hold deadline */
 static uintptr_t g_servo_last_stream = 0;  /* active stream the servo tracks */
-static int g_servo_saturated = 0;          /* ratio pinned at a clamp, desired beyond it */
-static atomic_ullong g_servo_sat_ticks;      /* control ticks spent saturated */
-static atomic_ullong g_servo_sat_entries;   /* times saturation was entered */
-static atomic_ullong g_servo_rejected;      /* clock samples rejected as absurd */
-static double g_timing_drift_hist[TIMING_MEDIAN_N]; /* median ring, drift ppm */
-static int g_timing_drift_count = 0;        /* valid samples in the ring */
-static int g_timing_drift_idx = 0;          /* next write index */
-
-/* v5 Kalman servo state (control thread only). Two states: drift (ppm)
- * and drift rate (ppm/s). The Kalman is the optimal estimator: it
- * blends the (noisy) timing measurements with the (smooth) drift
- * model, minimising jitter. R adapts to the observed innovation. */
-static double g_kal_x0 = (RATIO_INIT - 1.0) * 1e6; /* drift estimate, ppm */
-static double g_kal_x1 = 0.0;              /* drift rate estimate, ppm/s */
-static double g_kal_p00 = KALMAN_P0_DRIFT, g_kal_p01 = 0.0;
-static double g_kal_p10 = 0.0, g_kal_p11 = KALMAN_P0_RATE;
-static double g_kal_r = KALMAN_R_INIT;     /* measurement noise, ppm^2 */
-static int g_kal_init = 0;                 /* 1 once seeded from RATIO_INIT */
-static int g_kal_gated_consec = 0;         /* consecutive gated measurements */
-static atomic_ullong g_kal_updates;        /* accepted Kalman updates */
-static atomic_ullong g_kal_gated;          /* measurements gated (|e|>3 sigma) */
 /* v5 NEON: 1 if the init self-test proved the NEON dot product matches
  * the scalar one (else 0 = scalar fallback). Set once at init. */
 static _Atomic(int) g_neon_ok = 0;
@@ -576,23 +589,33 @@ static void neon_self_test(void) {
 /* Compute the interpolated FIR coefficients for fractional delay frac
  * into s->coeff (reversed: coeff[j] multiplies hist[oldest+j], i.e.
  * the table row is already stored reversed). The polyphase table has
- * FIR_V5_PHASES rows (frac = p/1024); the runtime linearly
- * interpolates between the two adjacent rows. The top edge (p0 = 1023)
- * clamps p1 to p0, so the interpolation degenerates to the row itself
- * (error < 1/1024 sample of delay, inaudible). */
+ * FIR_V5_PHASES rows (frac = p/1024); v6 interpolates CUBICAMENTE
+ * (Catmull-Rom, 4 filas) entre las filas adyacentes, no linealmente:
+ * la interpolación lineal dejaba un error de fase que se oía como un
+ * leve emborronamiento en transitorios; la cúbica lo baja ~20 dB
+ * (medido en host). Los bordes se clampen (p-1 y p+2 no salen de rango). */
 ASRC_STATIC void fir_coeffs_for_frac(struct slot *s, double frac) {
     const double ph = frac * (double)FIR_V5_PHASES;
-    int p0 = (int)ph;              /* floor, 0..1023 */
-    if (p0 < 0) p0 = 0;
-    if (p0 >= FIR_V5_PHASES) p0 = FIR_V5_PHASES - 1;
-    const float t = (float)(ph - (double)p0);
-    int p1 = p0 + 1;
-    if (p1 >= FIR_V5_PHASES) p1 = p0;
-    const float omt = 1.0f - t;
+    int p1 = (int)ph;              /* floor, 0..1023 */
+    if (p1 < 0) p1 = 0;
+    if (p1 >= FIR_V5_PHASES) p1 = FIR_V5_PHASES - 1;
+    const float t = (float)(ph - (double)p1);
+    int p0 = p1 - 1; if (p0 < 0) p0 = 0;
+    int p2 = p1 + 1; if (p2 >= FIR_V5_PHASES) p2 = FIR_V5_PHASES - 1;
+    int p3 = p1 + 2; if (p3 >= FIR_V5_PHASES) p3 = FIR_V5_PHASES - 1;
+    const float t2 = t * t, t3 = t2 * t;
+    /* Catmull-Rom: 0.5*((2*p1) + (-p0+p2)*t + (2*p0-5*p1+4*p2-p3)*t^2
+     * + (-p0+3*p1-3*p2+p3)*t^3). */
+    const float w0 = 0.5f * (-t + 2.0f * t2 - t3);
+    const float w1 = 0.5f * (2.0f - 5.0f * t2 + 3.0f * t3);
+    const float w2 = 0.5f * (t + 4.0f * t2 - 3.0f * t3);
+    const float w3 = 0.5f * (-t2 + t3);
     const float *r0 = fir_v5_poly[p0];
     const float *r1 = fir_v5_poly[p1];
+    const float *r2 = fir_v5_poly[p2];
+    const float *r3 = fir_v5_poly[p3];
     for (int j = 0; j < FIR_V5_TAPS; ++j)
-        s->coeff[j] = r0[j] * omt + r1[j] * t;
+        s->coeff[j] = r0[j] * w0 + r1[j] * w1 + r2[j] * w2 + r3[j] * w3;
 }
 
 /* Write one input frame (L/R) into the planar mirrored history. */
@@ -620,7 +643,10 @@ ASRC_STATIC void hist_push(struct slot *s, int16_t l, int16_t r) {
  * resampled block re-syncs within 287 frames (< 6 ms). */
 ASRC_STATIC uint32_t resample_fir_v5(struct slot *s, const int16_t *in, uint32_t in_frames,
                                      int16_t *out, uint32_t cap) {
-    double ratio = atomic_load_explicit(&g_ratio, memory_order_relaxed);
+    /* v6: el ratio lo da el CEREBRO (daemon v2) vía el estado de fusión,
+     * cacheado por el hilo de control en g_fusion_ratio. El músculo NO
+     * tiene servo propio. Si el ratio no es sano, 1.0 (sin corrección). */
+    double ratio = atomic_load_explicit(&g_fusion_ratio, memory_order_relaxed);
     if (!(ratio >= RATIO_MIN) || ratio > RATIO_MAX) ratio = 1.0;
     const double step = 1.0 / ratio;
     double pos = s->pos;
@@ -666,6 +692,149 @@ ASRC_STATIC uint32_t resample_fir_v5(struct slot *s, const int16_t *in, uint32_t
     }
     s->pos = pos - (double)in_frames;
     return produced;
+}
+
+/* ------------------------------------------------------------------ */
+/* v6 FUSIÓN: estado compartido cerebro ↔ músculo                      */
+/* ------------------------------------------------------------------ */
+
+/* Abre (lazy) el estado de fusión (SHM por archivo + mmap). Lo llama
+ * el hilo de control, no el constructor: si el archivo no existe aún
+ * (el cerebro no arrancó), se reintenta en el próximo tick. Devuelve 1
+ * si el estado está mapeado. */
+static int fusion_open(void) {
+    if (g_fusion) return 1;
+    if (g_fusion_fd < 0) {
+        g_fusion_fd = open(IVANNA_FUSION_SHM_PATH, O_RDWR, 0666);
+        if (g_fusion_fd < 0) return 0;
+    }
+    void *m = mmap(NULL, sizeof(IvannaFusionState), PROT_READ | PROT_WRITE,
+                   MAP_SHARED, g_fusion_fd, 0);
+    if (m == MAP_FAILED) return 0;
+    g_fusion = (IvannaFusionState *)m;
+    return 1;
+}
+
+/* Publica las mediciones del músculo en el estado de fusión
+ * (read-modify-write con seqlock: solo toca los campos del músculo;
+ * los del cerebro se conservan porque se leyeron justo antes).
+ * clock_mmap_ns/frames: del HWSYNC/mmap; clock_write_ns: CLOCK_MONOTONIC
+ * del último write; frames_written: frames totales; coherence: la
+ * coherencia de la envolvente 1–8 Hz. */
+static void fusion_publish_measurements(uint64_t mmap_ns, uint32_t mmap_frames,
+                                        uint64_t write_ns, uint32_t frames_written,
+                                        uint32_t rate_hz, uint32_t fmt,
+                                        uint32_t channels, double coherence) {
+    if (!fusion_open()) return;
+    IvannaFusionState st;
+    if (!ivanna_fusion_read(g_fusion, &st)) return;
+    if (st.magic != IVANNA_FUSION_MAGIC) return;
+    IvannaFusionState w = st;
+    w.clock_mmap_ns = (int64_t)mmap_ns;
+    w.clock_mmap_frames = mmap_frames;
+    w.clock_write_ns = (int64_t)write_ns;
+    w.frames_written = frames_written;
+    w.stream_rate_hz = rate_hz;
+    w.stream_format = fmt;
+    w.stream_channels = channels;
+    w.muscle_health = 1;
+    w.muscle_timestamp_ms = (uint64_t)(now_ns() / 1000000ull);
+    w.coherence = (float)coherence;
+    ivanna_fusion_write(g_fusion, &w);
+}
+
+/* Lee las decisiones del cerebro (ratio + veredicto + FIR Ψ) y las
+ * cachea en los atómicos/globales que usa el hilo de audio. Devuelve 1
+ * si el cerebro está vivo y el ratio es vigente (<500 ms). Si no, deja
+ * el veredicto en BYPASS y el ratio en 1.0 (fail-closed). */
+static int fusion_read_brain(void) {
+    if (!fusion_open()) return 0;
+    IvannaFusionState st;
+    if (!ivanna_fusion_read(g_fusion, &st)) return 0;
+    if (st.magic != IVANNA_FUSION_MAGIC || st.version != IVANNA_FUSION_VERSION) return 0;
+    const uint64_t now_ms = (uint64_t)(now_ns() / 1000000ull);
+    const uint64_t age = (now_ms >= st.ratio_timestamp_ms)
+        ? (now_ms - st.ratio_timestamp_ms) : 0;
+    if (st.brain_health != 1 || st.verdict == IVANNA_VERDICT_OFF ||
+        age > IVANNA_RATIO_MAX_AGE_MS) {
+        atomic_store_explicit(&g_fusion_verdict, (int)IVANNA_VERDICT_BYPASS, memory_order_relaxed);
+        atomic_store_explicit(&g_fusion_ratio, 1.0, memory_order_relaxed);
+        atomic_store_explicit(&g_fusion_fresh, 0, memory_order_relaxed);
+        atomic_store_explicit(&g_psi_active, 0, memory_order_relaxed);
+        return 0;
+    }
+    double ratio = (double)st.ratio;
+    if (!(ratio >= RATIO_MIN) || ratio > RATIO_MAX) ratio = 1.0;
+    atomic_store_explicit(&g_fusion_ratio, ratio, memory_order_relaxed);
+    atomic_store_explicit(&g_fusion_ratio_ts, st.ratio_timestamp_ms, memory_order_relaxed);
+    atomic_store_explicit(&g_fusion_verdict, (int)st.verdict, memory_order_relaxed);
+    atomic_store_explicit(&g_fusion_fresh, 1, memory_order_relaxed);
+    /* FIR del campo Ψ: recargarlo solo si cambió la generación. */
+    const uint64_t gen = st.psi_fir_gen;
+    if (st.psi_active && gen != atomic_load_explicit(&g_psi_fir_gen, memory_order_relaxed)) {
+        for (int i = 0; i < 64; ++i) {
+            g_psi_fir_l[i] = st.psi_fir_l[i];
+            g_psi_fir_r[i] = st.psi_fir_r[i];
+        }
+        atomic_store_explicit(&g_psi_fir_gen, gen, memory_order_relaxed);
+    }
+    atomic_store_explicit(&g_psi_active, st.psi_active ? 1 : 0, memory_order_relaxed);
+    return 1;
+}
+
+/* Aplica el FIR del campo Ψ (64 taps, por oído) a `frames` muestras de
+ * `buf` (in-place, int16 estéreo). El FIR lo diseña el cerebro; el
+ * músculo solo convoluciona. Si el campo no está activo, no hace nada.
+ * La historia (delay line) vive en el slot, así que la convolución es
+ * continua entre bloques. El FIR es causal de 64 taps (retardo 32):
+ * y[n] = Σ fir[k]·x[n−k]. La salida se clampea a int16 (el FIR del campo
+ * es de ganancia ~1, así que no debería saturar, pero fail-closed). */
+static void apply_psi_fir(struct slot *s, int16_t *buf, uint32_t frames) {
+    if (!atomic_load_explicit(&g_psi_active, memory_order_relaxed)) return;
+    if (!buf || frames == 0) return;
+    for (uint32_t n = 0; n < frames; ++n) {
+        const int w = s->psi_hist_w;
+        s->psi_hist_l[w] = (float)buf[n * 2];
+        s->psi_hist_r[w] = (float)buf[n * 2 + 1];
+        float acc_l = 0.0f, acc_r = 0.0f;
+        /* y[n] = Σ fir[k]·x[n−k]; x[n−k] está en hist[(w−k) mod 64]. */
+        for (int k = 0; k < 64; ++k) {
+            const int idx = (w - k + 64) & 63;
+            acc_l += g_psi_fir_l[k] * s->psi_hist_l[idx];
+            acc_r += g_psi_fir_r[k] * s->psi_hist_r[idx];
+        }
+        if (acc_l > 32767.0f) acc_l = 32767.0f;
+        if (acc_l < -32768.0f) acc_l = -32768.0f;
+        if (acc_r > 32767.0f) acc_r = 32767.0f;
+        if (acc_r < -32768.0f) acc_r = -32768.0f;
+        buf[n * 2] = (int16_t)acc_l;
+        buf[n * 2 + 1] = (int16_t)acc_r;
+        s->psi_hist_w = (w + 1) & 63;
+    }
+}
+
+/* Actualiza las estadísticas de la envolvente del bloque (para la
+ * coherencia 1–8 Hz que alimenta η). Se llama por bloque (no por
+ * muestra): la envolvente del bloque es la media de |x|. Un polo lento
+ * (~1 Hz) y uno rápido (~8 Hz) sobre la envolvente del bloque; la
+ * energía de la banda 1–8 Hz es (rápido−lento)². */
+static void envelope_update(struct slot *s, const int16_t *buf, uint32_t frames) {
+    if (!buf || frames == 0) return;
+    double sum = 0.0;
+    for (uint32_t n = 0; n < frames; ++n) {
+        double a = (double)buf[n * 2]; if (a < 0) a = -a;
+        double b = (double)buf[n * 2 + 1]; if (b < 0) b = -b;
+        sum += (a + b) * 0.5;
+    }
+    const double env = sum / (double)frames / 32768.0; /* [0,1] */
+    /* Un polo: alfa rápido ~8 Hz, lento ~1 Hz (a ~100 bloques/s). */
+    const double a_fast = 0.39, a_slow = 0.061;
+    s->env_fast += a_fast * (env - s->env_fast);
+    s->env_slow += a_slow * (env - s->env_slow);
+    const double band = s->env_fast - s->env_slow;
+    s->env_band_e += band * band;
+    s->env_tot_e += s->env_fast * s->env_fast;
+    s->env_n += 1;
 }
 
 static void *resolve_sym(const char *name) {
@@ -936,9 +1105,8 @@ ASRC_STATIC int servo_hold_active(void) {
 /* Call with the active stream handle each control tick. On a stream
  * change (open / HAL restart / route change) arm the 2 s settle hold
  * and reset the measurement anchors, so startup transients (erratic
- * write timing, buffer fill, mmap re-anchor) cannot diverge the servo.
- * The ratio itself is NOT reset: the servo keeps its last value and
- * only starts moving again after the hold. */
+ * write timing, buffer fill, mmap re-anchor) cannot pollute the
+ * measurements the brain uses. */
 ASRC_STATIC void servo_note_stream(uintptr_t h) {
     if (h == g_servo_last_stream) return;
     g_servo_last_stream = h;
@@ -946,208 +1114,6 @@ ASRC_STATIC void servo_note_stream(uintptr_t h) {
     g_timing_warmed = 0;
     g_have_prev_sample = 0;
     g_mmap_consec_fail = 0;
-    g_timing_drift_count = 0;
-    g_timing_drift_idx = 0;
-}
-
-/* A clock sample implying more drift than SERVO_MAX_DRIFT_PPM is a
- * measurement error, not a real clock (a crystal is +/-100 ppm
- * typical, +/-500 extreme). */
-ASRC_STATIC int servo_drift_sane(double drift_ppm) {
-    return drift_ppm <= SERVO_MAX_DRIFT_PPM && drift_ppm >= -SERVO_MAX_DRIFT_PPM;
-}
-
-/* Median of n values (n <= TIMING_MEDIAN_N); even n averages the two
- * middle values. Small insertion sort on a stack copy. */
-ASRC_STATIC double median_of(const double *a, int n) {
-    double v[TIMING_MEDIAN_N];
-    for (int i = 0; i < n; ++i) v[i] = a[i];
-    for (int i = 1; i < n; ++i) {
-        double t = v[i];
-        int j = i - 1;
-        while (j >= 0 && v[j] > t) { v[j + 1] = v[j]; --j; }
-        v[j + 1] = t;
-    }
-    if ((n & 1) != 0) return v[n / 2];
-    return (v[n / 2 - 1] + v[n / 2]) * 0.5;
-}
-
-/* Push a timing drift sample (ppm) into the median ring. Returns 1 and
- * writes the median to *median_out once TIMING_MEDIAN_READY samples are
- * buffered; returns 0 before that (the servo holds its ratio until the
- * median is ready). A single bursty/jittery tick cannot move the servo:
- * the median ignores it. */
-ASRC_STATIC int timing_median_push(double drift_ppm, double *median_out) {
-    if (!median_out) return 0;
-    g_timing_drift_hist[g_timing_drift_idx] = drift_ppm;
-    g_timing_drift_idx = (g_timing_drift_idx + 1) % TIMING_MEDIAN_N;
-    if (g_timing_drift_count < TIMING_MEDIAN_N) ++g_timing_drift_count;
-    if (g_timing_drift_count < TIMING_MEDIAN_READY) return 0;
-    *median_out = median_of(g_timing_drift_hist, g_timing_drift_count);
-    return 1;
-}
-
-static double clamp_ratio(double r) {
-    if (r < RATIO_MIN) return RATIO_MIN;
-    if (r > RATIO_MAX) return RATIO_MAX;
-    return r;
-}
-
-/* ------------------------------------------------------------------ */
-/* v5 Kalman servo (control thread only)                               */
-/* ------------------------------------------------------------------ */
-
-/* One Kalman predict step (dt = 1 s, the control period). The drift
- * evolves as a random walk with a drift rate; the rate itself wanders
- * slowly (thermal). */
-ASRC_STATIC void kalman_predict(void) {
-    const double dt = KALMAN_DT_S;
-    const double x0p = g_kal_x0 + g_kal_x1 * dt;
-    const double x1p = g_kal_x1;
-    const double p00 = g_kal_p00, p01 = g_kal_p01, p10 = g_kal_p10, p11 = g_kal_p11;
-    const double q00 = p00 + 2.0 * dt * p01 + dt * dt * p11 + KALMAN_Q_DRIFT;
-    const double q01 = p01 + dt * p11;
-    const double q10 = p10 + dt * p11;
-    const double q11 = p11 + KALMAN_Q_RATE;
-    g_kal_x0 = x0p;
-    g_kal_x1 = x1p;
-    g_kal_p00 = q00;
-    g_kal_p01 = q01;
-    g_kal_p10 = q10;
-    g_kal_p11 = q11;
-}
-
-/* One Kalman update with a drift measurement z (ppm) and the source's
- * nominal measurement-noise variance r_src (ppm^2). Returns 1 if the
- * measurement was accepted, 0 if gated (outlier) or insane. */
-ASRC_STATIC int kalman_update(double z_ppm, double r_src) {
-    if (!(z_ppm >= -SERVO_MAX_DRIFT_PPM) || !(z_ppm <= SERVO_MAX_DRIFT_PPM)) {
-        atomic_fetch_add_explicit(&g_servo_rejected, 1, memory_order_relaxed);
-        return 0;
-    }
-    if (!g_kal_init) {
-        g_kal_x0 = (RATIO_INIT - 1.0) * 1e6;
-        g_kal_x1 = 0.0;
-        g_kal_p00 = KALMAN_P0_DRIFT;
-        g_kal_p01 = 0.0;
-        g_kal_p10 = 0.0;
-        g_kal_p11 = KALMAN_P0_RATE;
-        g_kal_r = KALMAN_R_INIT;
-        g_kal_init = 1;
-    }
-    kalman_predict();
-    /* Effective measurement noise: blend the adaptive R with the
-     * source's nominal R (mmap is precise, write-timing is noisy). */
-    double r_eff = 0.5 * g_kal_r + 0.5 * r_src;
-    if (r_eff < KALMAN_R_MIN) r_eff = KALMAN_R_MIN;
-    if (r_eff > KALMAN_R_MAX) r_eff = KALMAN_R_MAX;
-    const double e = z_ppm - g_kal_x0;          /* innovation */
-    double s = g_kal_p00 + r_eff;               /* innovation variance */
-    /* Innovation gate: |e| > 3 sigma -> outlier, reject (no sqrt:
-     * compare e^2 against 9*S). BUT a genuine large drift step (e.g.
-     * a cold-to-hot transition) looks like an outlier for the first
-     * samples, and with a tight initial covariance the gate would
-     * reject it forever (the filter never converges). Recovery: if
-     * >= 3 measurements in a row are gated, they are a real step,
-     * not noise -- re-open the covariance and force acceptance of
-     * this one (the estimate jumps to the new drift). */
-    if (e * e > (KALMAN_GATE_SIGMA * KALMAN_GATE_SIGMA) * s) {
-        atomic_fetch_add_explicit(&g_kal_gated, 1, memory_order_relaxed);
-        if (++g_kal_gated_consec < 3) return 0;
-        g_kal_gated_consec = 0;
-        g_kal_p00 = KALMAN_P0_DRIFT;
-        g_kal_p01 = 0.0;
-        g_kal_p10 = 0.0;
-        g_kal_p11 = KALMAN_P0_RATE;
-        /* Recompute the innovation variance from the re-opened
-         * covariance, or the gain below would be >> 1 (overshoot). */
-        s = g_kal_p00 + r_eff;
-        /* fall through: accept this measurement with the re-opened
-         * covariance (the gain below is computed from the new P). */
-    } else {
-        g_kal_gated_consec = 0;
-    }
-    const double k0 = g_kal_p00 / s;
-    const double k1 = g_kal_p10 / s;
-    g_kal_x0 += k0 * e;
-    g_kal_x1 += k1 * e;
-    /* Covariance update (simple form), then symmetrise and keep the
-     * diagonal non-negative (rounding guard). */
-    const double p00 = g_kal_p00, p01 = g_kal_p01, p10 = g_kal_p10, p11 = g_kal_p11;
-    double n00 = (1.0 - k0) * p00;
-    double n01 = (1.0 - k0) * p01;
-    double n10 = p10 - k1 * p00;
-    double n11 = p11 - k1 * p01;
-    double sym = 0.5 * (n01 + n10);
-    if (n00 < 0.0) n00 = 0.0;
-    if (n11 < 0.0) n11 = 0.0;
-    g_kal_p00 = n00;
-    g_kal_p01 = sym;
-    g_kal_p10 = sym;
-    g_kal_p11 = n11;
-    /* Adapt R from the innovation: the measurement-noise estimate is
-     * e^2 - P_pred[0][0] (innovation variance minus state variance).
-     * Exponential average, clamped to [R_MIN, R_MAX]. */
-    double r_est = e * e - p00;
-    if (r_est < KALMAN_R_MIN) r_est = KALMAN_R_MIN;
-    if (r_est > KALMAN_R_MAX) r_est = KALMAN_R_MAX;
-    g_kal_r = 0.9 * g_kal_r + 0.1 * r_est;
-    if (g_kal_r < KALMAN_R_MIN) g_kal_r = KALMAN_R_MIN;
-    if (g_kal_r > KALMAN_R_MAX) g_kal_r = KALMAN_R_MAX;
-    atomic_fetch_add_explicit(&g_kal_updates, 1, memory_order_relaxed);
-    return 1;
-}
-
-/* Feed a measured DAC consumption rate (frames/sec) into the v5
- * Kalman servo. nominal_rate_hz is the stream's nominal rate
- * (48000 or 192000); r_src is the source's nominal measurement-noise
- * variance (ppm^2): mmap is precise, write-timing is noisy. The
- * ratio is set from the Kalman's drift estimate (clamped to
- * +/-1000 ppm). Anti-windup: when the ratio is pinned at a clamp
- * AND the estimate is beyond it, the servo freezes and re-opens the
- * Kalman's covariance (so the estimate can move again when the drift
- * comes back) and resets the timing/median state. */
-ASRC_STATIC void servo_update(double measured_rate_hz, double nominal_rate_hz, double r_src) {
-    if (!(measured_rate_hz >= 8000.0) || !(measured_rate_hz <= 384000.0)) return;
-    if (!(nominal_rate_hz >= 8000.0) || !(nominal_rate_hz <= 384000.0)) return;
-    const double drift_ppm = (measured_rate_hz / nominal_rate_hz - 1.0) * 1e6;
-    if (!servo_drift_sane(drift_ppm)) {
-        atomic_fetch_add_explicit(&g_servo_rejected, 1, memory_order_relaxed);
-        return;
-    }
-    if (!kalman_update(drift_ppm, r_src)) return; /* gated or insane */
-    const double desired = 1.0 + g_kal_x0 * 1e-6;
-    const double nr = clamp_ratio(desired);
-    const int sat_min = (nr <= RATIO_MIN) && (desired <= RATIO_MIN);
-    const int sat_max = (nr >= RATIO_MAX) && (desired >= RATIO_MAX);
-    if (sat_min || sat_max) {
-        if (!g_servo_saturated) {
-            g_servo_saturated = 1;
-            atomic_fetch_add_explicit(&g_servo_sat_entries, 1, memory_order_relaxed);
-            g_timing_warmed = 0;
-            g_timing_drift_count = 0;
-            g_timing_drift_idx = 0;
-        }
-        atomic_fetch_add_explicit(&g_servo_sat_ticks, 1, memory_order_relaxed);
-        /* Anti-windup: keep the covariance OPEN on every saturated
-         * tick (not just on entry). A single re-open is undone by
-         * the next accepted measurement (high gain collapses P00),
-         * so by the time the drift comes back inside the clamp the
-         * covariance is tight again and the recovery measurement is
-         * gated as an outlier. Keeping P00 open while saturated
-         * makes the first in-range measurement accepted immediately
-         * (3 sigma = 1500 ppm covers the jump back). While saturated
-         * the ratio is pinned, so the noisier estimate is harmless. */
-        g_kal_p00 = KALMAN_P0_DRIFT;
-        g_kal_p01 = 0.0;
-        g_kal_p10 = 0.0;
-        g_kal_p11 = KALMAN_P0_RATE;
-    } else {
-        g_servo_saturated = 0;
-    }
-    atomic_store_explicit(&g_ratio, nr, memory_order_relaxed);
-    g_servo_measured_rate = measured_rate_hz;
-    g_servo_drift_ppm = (nr - 1.0) * 1e6;
 }
 
 /* Write-timing fallback rate: effective pal_stream_write rate of the
@@ -1284,6 +1250,11 @@ __attribute__((visibility("default"))) int32_t pal_stream_open(void *attr, uint3
     }
     s->hist_w = 0;
     s->hist_filled = 0;
+    /* v6 Ψ: historia del FIR del campo y envolvente en cero (arranque limpio). */
+    for (int i = 0; i < 64; ++i) { s->psi_hist_l[i] = 0.0f; s->psi_hist_r[i] = 0.0f; }
+    s->psi_hist_w = 0;
+    s->env_fast = 0.0; s->env_slow = 0.0;
+    s->env_band_e = 0.0; s->env_tot_e = 0.0; s->env_n = 0;
     s->dither_state = (uint32_t)(h ^ (h >> 32) ^ now_ns());
     if (s->dither_state == 0) s->dither_state = 0x9E3779B9u;
     s->err_l[0] = 0.0f; s->err_l[1] = 0.0f;
@@ -1443,11 +1414,30 @@ __attribute__((visibility("default"))) ssize_t pal_stream_write(void *stream, vo
         s->out_len = 0; s->out_off = 0;
     }
 
-    /* 2) Resample the new input into the scratch buffer. */
+    /* 2) Resample the new input into the scratch buffer.
+     * v6: la fusión debe estar enganchada. El cerebro sella el ratio cada
+     * ~50 ms; si el sello tiene más de 500 ms (cerebro muerto) o el
+     * veredicto no es LOADED → passthrough (el audio sigue limpio). */
+    {
+        const uint64_t now_ms = (uint64_t)(now_ns() / 1000000ull);
+        const uint64_t rts = atomic_load_explicit(&g_fusion_ratio_ts, memory_order_relaxed);
+        const uint64_t age = (now_ms >= rts) ? (now_ms - rts) : 0;
+        const int verdict = atomic_load_explicit(&g_fusion_verdict, memory_order_relaxed);
+        if (age > IVANNA_RATIO_MAX_AGE_MS || verdict != (int)IVANNA_VERDICT_LOADED) {
+            atomic_fetch_add_explicit(&s->passthrough_calls, 1, memory_order_relaxed);
+            const ssize_t rp = passthrough(real, stream, buf);
+            if (rp > 0) atomic_fetch_add_explicit(&s->out_frames, (unsigned long long)(rp / (ssize_t)BYTES_PER_FRAME), memory_order_relaxed);
+            return rp;
+        }
+    }
     const int16_t *in = (const int16_t *)((struct pal_buffer_head *)buf)->buffer;
     if (!in) return passthrough(real, stream, buf);
     const uint32_t in_frames = (uint32_t)(size / BYTES_PER_FRAME);
     const uint32_t produced = resample_fir_v5(s, in, in_frames, s->out_buf, MAX_OUT_FRAMES);
+    /* v6: aplicar el campo Ψ (FIR del cerebro) a la salida del ASRC y
+     * medir la envolvente del bloque (para la coherencia que alimenta η). */
+    apply_psi_fir(s, s->out_buf, produced);
+    envelope_update(s, s->out_buf, produced);
     atomic_fetch_add_explicit(&s->in_frames, (unsigned long long)in_frames, memory_order_relaxed);
     atomic_fetch_add_explicit(&s->processed_calls, 1, memory_order_relaxed);
     if (produced == 0) {
@@ -1480,40 +1470,46 @@ static void control_tick(void) {
     if (!s) return;
     uintptr_t h = atomic_load_explicit(&s->handle, memory_order_acquire);
     if (!h) return;
-    /* v5: the stream's nominal rate (48000, or 192000 for hi-res
-     * input). Streams whose format was not readable ("known") are
-     * 48 kHz by construction. */
+    /* v6: la tasa nominal del stream (48000, o 192000 para hi-res). */
     const double nominal_rate = (s->rate == HIRES_RATE) ? (double)HIRES_RATE : NOMINAL_RATE;
-    /* v4: a stream change arms the 2 s settle hold and resets the
-     * measurement anchors, so startup transients cannot diverge the
-     * servo. */
+    /* Un cambio de stream arma el settle hold de 2 s y resetea las anclas
+     * de medición (los transitorios de arranque no contaminan las
+     * mediciones que lee el cerebro). */
     servo_note_stream(h);
+    /* 1) Leer las decisiones del cerebro (ratio + veredicto + FIR Ψ).
+     * Esto cachea en g_fusion_ratio / g_psi_fir_* lo que usa el hilo de
+     * audio. Si el cerebro está muerto, fusion_read_brain deja el
+     * veredicto en BYPASS y el ratio en 1.0. */
+    fusion_read_brain();
+    /* 2) Muestrear el reloj. El cerebro necesita AMBAS fuentes cada tick
+     * (la certificación cruza mmap_ns contra write_ns). */
+    uint64_t mmap_ns = 0;
+    uint32_t mmap_frames = 0;
     const int state = atomic_load_explicit(&g_mmap_state, memory_order_relaxed);
     const int src = atomic_load_explicit(&g_clock_source, memory_order_relaxed);
     if (state == 0) {
-        /* First probe: resolve by base+offset and make ONE test call. */
+        /* Primera sonda: resolver por base+offset y hacer UNA llamada. */
         pal_get_mmap_position_fn fn = resolve_mmap_fn();
         if (!fn) {
             atomic_store_explicit(&g_mmap_state, -1, memory_order_relaxed);
             atomic_store_explicit(&g_clock_source, CLK_TIMING, memory_order_relaxed);
             LOGI("mmap_position: resolve by base+offset failed; clock source = write-timing");
-            return;
-        }
-        uint64_t ext = 0, ts = 0;
-        if (mmap_query_once(fn, (void *)h, &ext, &ts)) {
-            atomic_store_explicit(&g_mmap_state, 1, memory_order_relaxed);
-            atomic_store_explicit(&g_clock_source, CLK_MMAP, memory_order_relaxed);
-            g_prev_ext = ext; g_prev_ts = ts; g_have_prev_sample = 1;
-            atomic_fetch_add_explicit(&g_mmap_ok_queries, 1, memory_order_relaxed);
-            LOGI("mmap_position: probe OK frames=%llu ts=%llu; clock source = mmap",
-                 (unsigned long long)ext, (unsigned long long)ts);
         } else {
-            atomic_store_explicit(&g_mmap_state, -1, memory_order_relaxed);
-            atomic_store_explicit(&g_clock_source, CLK_TIMING, memory_order_relaxed);
-            atomic_fetch_add_explicit(&g_mmap_failed_queries, 1, memory_order_relaxed);
-            LOGI("mmap_position: probe call failed (stream is not MMAP or lookup failed); clock source = write-timing");
+            uint64_t ext = 0, ts = 0;
+            if (mmap_query_once(fn, (void *)h, &ext, &ts)) {
+                atomic_store_explicit(&g_mmap_state, 1, memory_order_relaxed);
+                atomic_store_explicit(&g_clock_source, CLK_MMAP, memory_order_relaxed);
+                g_prev_ext = ext; g_prev_ts = ts; g_have_prev_sample = 1;
+                atomic_fetch_add_explicit(&g_mmap_ok_queries, 1, memory_order_relaxed);
+                LOGI("mmap_position: probe OK frames=%llu ts=%llu; clock source = mmap",
+                     (unsigned long long)ext, (unsigned long long)ts);
+            } else {
+                atomic_store_explicit(&g_mmap_state, -1, memory_order_relaxed);
+                atomic_store_explicit(&g_clock_source, CLK_TIMING, memory_order_relaxed);
+                atomic_fetch_add_explicit(&g_mmap_failed_queries, 1, memory_order_relaxed);
+                LOGI("mmap_position: probe call failed (stream is not MMAP or lookup failed); clock source = write-timing");
+            }
         }
-        return;
     }
     if (src == CLK_MMAP) {
         pal_get_mmap_position_fn fn =
@@ -1522,16 +1518,8 @@ static void control_tick(void) {
         if (fn && mmap_query_once(fn, (void *)h, &ext, &ts)) {
             atomic_fetch_add_explicit(&g_mmap_ok_queries, 1, memory_order_relaxed);
             g_mmap_consec_fail = 0;
-            if (g_have_prev_sample && ts > g_prev_ts) {
-                const double dt = (double)(ts - g_prev_ts) / 1e9;
-                if (dt > 0.0 && dt < 10.0) {
-                    const double rate = (double)(ext - g_prev_ext) / dt;
-                    /* v4: no servo moves during the settle hold.
-                     * v5: mmap is precise, so the Kalman gets the
-                     * minimum measurement noise. */
-                    if (!servo_hold_active()) servo_update(rate, nominal_rate, KALMAN_R_MIN);
-                }
-            }
+            mmap_ns = ts;
+            mmap_frames = (uint32_t)ext;
             g_prev_ext = ext; g_prev_ts = ts; g_have_prev_sample = 1;
         } else {
             atomic_fetch_add_explicit(&g_mmap_failed_queries, 1, memory_order_relaxed);
@@ -1543,33 +1531,40 @@ static void control_tick(void) {
                 LOGI("mmap_position: 5 consecutive failures; clock source = write-timing");
             }
         }
-        return;
     }
-    /* Write-timing fallback: coarse, only for LARGE deviations.
-     * v4: the raw drift is sanity-checked (absurd samples are rejected
-     * before they can pollute the median), median-filtered over the
-     * last TIMING_MEDIAN_N accepted samples (a single bursty/jittery
-     * tick cannot move the servo), and gated by the settle hold.
-     * v5: the Kalman gets the (noisy) write-timing measurement noise. */
-    const double rate = write_timing_rate(s);
-    if (rate > 0.0) {
-        const double drift_ppm = (rate / nominal_rate - 1.0) * 1e6;
-        if (!servo_drift_sane(drift_ppm)) {
-            atomic_fetch_add_explicit(&g_servo_rejected, 1, memory_order_relaxed);
-        } else {
-            double med = 0.0;
-            if (timing_median_push(drift_ppm, &med)) {
-                if ((med > TIMING_MIN_DRIFT_PPM || med < -TIMING_MIN_DRIFT_PPM) &&
-                    !servo_hold_active())
-                    servo_update(nominal_rate * (1.0 + med * 1e-6), nominal_rate, KALMAN_R_TIMING);
-            }
-        }
+    /* Write-timing (siempre): es el reloj de respaldo y el que certifica
+     * el timestamp mmap. frames_written = frames totales de salida. */
+    const uint64_t write_ns = atomic_load_explicit(&s->last_write_ns, memory_order_relaxed);
+    const uint32_t frames_written =
+        (uint32_t)atomic_load_explicit(&s->out_frames, memory_order_relaxed);
+    /* 3) Coherencia de la envolvente 1–8 Hz (alimenta η, Ec. 4).
+     * Es la energía de la banda (rápido−lento)² sobre la energía total. */
+    double coherence = atomic_load_explicit(&g_fusion_coherence, memory_order_relaxed);
+    if (s->env_n > 0) {
+        double c = s->env_band_e / (s->env_tot_e + 1e-9);
+        if (c < 0.0) c = 0.0;
+        if (c > 1.0) c = 1.0;
+        coherence = c;
+        s->env_band_e = 0.0; s->env_tot_e = 0.0; s->env_n = 0;
+        atomic_store_explicit(&g_fusion_coherence, coherence, memory_order_relaxed);
+    }
+    /* 4) Publicar las mediciones en el estado de fusión (salvo en el
+     * settle hold). El cerebro las lee y decide el ratio + el campo. */
+    if (!servo_hold_active()) {
+        fusion_publish_measurements(mmap_ns, mmap_frames, write_ns, frames_written,
+                                    (uint32_t)nominal_rate, s->fmt, s->ch, coherence);
     }
 }
 
 static void dump_once(void) {
     static char b[16384];
-    const double ratio = atomic_load_explicit(&g_ratio, memory_order_relaxed);
+    /* v6: el ratio y el veredicto los da el cerebro (estado de fusión). */
+    const double ratio = atomic_load_explicit(&g_fusion_ratio, memory_order_relaxed);
+    const double drift_ppm = (ratio - 1.0) * 1e6;
+    const int verdict = atomic_load_explicit(&g_fusion_verdict, memory_order_relaxed);
+    const int fresh = atomic_load_explicit(&g_fusion_fresh, memory_order_relaxed);
+    const int psi_active = atomic_load_explicit(&g_psi_active, memory_order_relaxed);
+    const double coherence = atomic_load_explicit(&g_fusion_coherence, memory_order_relaxed);
     const int src = atomic_load_explicit(&g_clock_source, memory_order_relaxed);
     /* Count eligible 192 kHz streams (hi-res input being processed). */
     int up192 = 0;
@@ -1581,8 +1576,9 @@ static void dump_once(void) {
             ++up192;
     }
     int n = snprintf(b, sizeof(b),
-        "IVANNA ASRC WRITE STAGE v5 pid=%d enabled=%d ratio=%.9f drift_ppm=%.3f clock=%s mmap_ok=%llu mmap_fail=%llu mmap_resets=%llu opens=%llu ok=%llu fail=%llu closes=%llu open_no_real=%llu close_no_real=%llu write_no_real=%llu bad_attr=%llu no_handle=%llu table_full=%llu pt_no_slot=%llu pt_fmt=%llu pt_size=%llu pt_off=%llu pt_nobuf=%llu pt_big=%llu max_write_frames=%llu sat=%d sat_ticks=%llu sat_entries=%llu rej=%llu hold=%d kalman_drift=%.3f kalman_rate=%.3f kalman_var=%.1f kalman_r=%.1f kalman_upd=%llu kalman_gated=%llu fir_taps=%d dither=%d neon=%d up192=%d\n",
-        (int)getpid(), atomic_load(&g_enabled), ratio, g_servo_drift_ppm,
+        "IVANNA ASRC WRITE STAGE v6 pid=%d enabled=%d ratio=%.9f drift_ppm=%.3f verdict=%d fresh=%d psi_active=%d coherence=%.3f clock=%s mmap_ok=%llu mmap_fail=%llu mmap_resets=%llu opens=%llu ok=%llu fail=%llu closes=%llu open_no_real=%llu close_no_real=%llu write_no_real=%llu bad_attr=%llu no_handle=%llu table_full=%llu pt_no_slot=%llu pt_fmt=%llu pt_size=%llu pt_off=%llu pt_nobuf=%llu pt_big=%llu max_write_frames=%llu hold=%d fir_taps=%d dither=%d neon=%d up192=%d\n",
+        (int)getpid(), atomic_load(&g_enabled), ratio, drift_ppm,
+        verdict, fresh, psi_active, coherence,
         src == CLK_MMAP ? "mmap" : (src == CLK_TIMING ? "write-timing" : "unknown"),
         atomic_load(&g_mmap_ok_queries), atomic_load(&g_mmap_failed_queries),
         atomic_load(&g_mmap_resets),
@@ -1595,12 +1591,7 @@ static void dump_once(void) {
         atomic_load(&g_passthrough_size), atomic_load(&g_passthrough_off),
         atomic_load(&g_passthrough_nobuf), atomic_load(&g_passthrough_big),
         atomic_load(&g_max_write_frames),
-        g_servo_saturated,
-        atomic_load(&g_servo_sat_ticks), atomic_load(&g_servo_sat_entries),
-        atomic_load(&g_servo_rejected),
         servo_hold_active(),
-        g_kal_x0, g_kal_x1, g_kal_p00, g_kal_r,
-        atomic_load(&g_kal_updates), atomic_load(&g_kal_gated),
         FIR_V5_TAPS, V5_DITHER_ON,
         atomic_load_explicit(&g_neon_ok, memory_order_relaxed),
         up192);
@@ -1626,8 +1617,8 @@ static void dump_once(void) {
         (void)fchmod(fd, 0644);
         close(fd);
     }
-    LOGI("ratio=%.9f drift=%.3f ppm clock=%s opens=%llu ok=%llu",
-         ratio, g_servo_drift_ppm,
+    LOGI("v6 ratio=%.9f drift=%.3f ppm verdict=%d psi=%d clock=%s opens=%llu ok=%llu",
+         ratio, drift_ppm, verdict, psi_active,
          src == CLK_MMAP ? "mmap" : (src == CLK_TIMING ? "write-timing" : "unknown"),
          atomic_load(&g_total_opens), atomic_load(&g_open_ok));
 }
@@ -1656,7 +1647,7 @@ __attribute__((constructor)) static void ivanna_asrc_stage_init(void) {
     pthread_attr_setstacksize(&at, 64 * 1024);
     if (pthread_create(&th, &at, control_thread, NULL) != 0) LOGI("control thread not started");
     pthread_attr_destroy(&at);
-    LOGI("v5 loaded pid=%d out=%s ratio=%.9f (init -6.25 ppm) fir_taps=%d neon=%d",
-         (int)getpid(), IVANNA_OUT_PATH, RATIO_INIT, FIR_V5_TAPS,
+    LOGI("v6 FUSION loaded pid=%d out=%s fir_taps=%d neon=%d (ratio lo da el cerebro)",
+         (int)getpid(), IVANNA_OUT_PATH, FIR_V5_TAPS,
          atomic_load_explicit(&g_neon_ok, memory_order_relaxed));
 }
