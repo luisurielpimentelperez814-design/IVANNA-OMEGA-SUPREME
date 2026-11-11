@@ -181,14 +181,14 @@ SOFA_DEST="$SAF_DIR/sofa"
 [ -d "$SOFA_SRC" ] || abort "ERROR: falta el dataset SOFA del módulo"
 SOFA_SOURCE_COUNT=$(find "$SOFA_SRC" -type f -name '*.sofa' | wc -l | tr -d '[:space:]')
 SOFA_ARI_SOURCE_COUNT=$(find "$SOFA_SRC/ari" -type f -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
-[ "$SOFA_SOURCE_COUNT" -eq 236 ] && [ "$SOFA_ARI_SOURCE_COUNT" -eq 200 ] || abort "ERROR: SOFA incompleto (total=$SOFA_SOURCE_COUNT/236, ARI=$SOFA_ARI_SOURCE_COUNT/200)"
+[ "$SOFA_SOURCE_COUNT" -eq 239 ] && [ "$SOFA_ARI_SOURCE_COUNT" -eq 200 ] || abort "ERROR: SOFA incompleto (total=$SOFA_SOURCE_COUNT/239, ARI=$SOFA_ARI_SOURCE_COUNT/200)"
 SOFA_STAGE="$SAF_DIR/.sofa-stage.$$"
 rm -rf "$SOFA_STAGE"
 mkdir -p "$SOFA_STAGE" || abort "ERROR: no se pudo preparar el despliegue SOFA"
 run_low_priority cp -rf "$SOFA_SRC"/. "$SOFA_STAGE/" || abort "ERROR: falló la copia SOFA"
 SOFA_STAGE_COUNT=$(find "$SOFA_STAGE" -type f -name '*.sofa' | wc -l | tr -d '[:space:]')
 SOFA_ARI_STAGE_COUNT=$(find "$SOFA_STAGE/ari" -type f -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
-[ "$SOFA_STAGE_COUNT" -eq 236 ] && [ "$SOFA_ARI_STAGE_COUNT" -eq 200 ] || abort "ERROR: despliegue SOFA incompleto (total=$SOFA_STAGE_COUNT/236, ARI=$SOFA_ARI_STAGE_COUNT/200)"
+[ "$SOFA_STAGE_COUNT" -eq 239 ] && [ "$SOFA_ARI_STAGE_COUNT" -eq 200 ] || abort "ERROR: despliegue SOFA incompleto (total=$SOFA_STAGE_COUNT/239, ARI=$SOFA_ARI_STAGE_COUNT/200)"
 verify_tree_equal "$SOFA_SRC" "$SOFA_STAGE" || abort "ERROR: SOFA staged difiere byte a byte del original"
 set_perm_recursive "$SOFA_STAGE" root root 0755 0644 || abort "ERROR: no se pudieron fijar permisos SOFA"
 activate_staged_dir "$SOFA_STAGE" "$SOFA_DEST" || abort "ERROR: no se pudo activar SOFA; se restauró el dataset previo si existía"
