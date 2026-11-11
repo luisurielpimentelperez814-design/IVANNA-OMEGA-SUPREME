@@ -198,7 +198,20 @@ constexpr uint32_t OMEGA_CTRL_MAGIC   = 0x4F4D4543u; // "OMEC"
 // existente (effect_frames sigue en 440, raw_rms en 412): sizeof 616 -> 632,
 // dentro del static_assert <= 640. 0 = sin sesión descubierta; gen = contador
 // que incrementa solo cuando la sesión descubierta CAMBIA (0->N, N->M, N->0).
-constexpr uint16_t OMEGA_CTRL_VERSION = 11u;  // v11: sesión descubierta por el daemon root (Ruta B).
+// ABI v12 (2026-11-11, fusión magistral): añadido el estado de la FUSIÓN
+// (cerebro + músculo + campo Ψ) al snapshot para que la APK lo VEA y se
+// ACOPLE — el acoplamiento con el APK que ya está hecho. 9 campos al FINAL
+// (antes de crc32): fusion_active, fusion_eta, fusion_psi_gamma,
+// fusion_psi_active, fusion_asrc_verdict, fusion_asrc_ratio,
+// fusion_asrc_drift_ppm, fusion_asrc_clock, fusion_generation. El cerebro
+// (daemon v2) los publica en cada snapshot; la app los lee por el canal que
+// ya usa y sabe si el HAL está procesando TODO el audio (fusion_active=1),
+// así la Ruta A cede y no procesa dos veces. sizeof 632 -> 672, crc32 en
+// 664, static_assert pasa a <= 704. Mismo contrato que v9/v10/v11: el bump
+// invalida snapshots viejos; el reader cae a defaults (fusión off) hasta que
+// el daemon publique con la ABI nueva. App y daemon se distribuyen juntos
+// en el mismo release (APK + módulo Magisk v2.5.401).
+constexpr uint16_t OMEGA_CTRL_VERSION = 12u;  // v12: estado de la FUSIÓN MAGISTRAL (cerebro + músculo + campo Ψ) para que la APK lo vea y se acople.
 constexpr int      OMEGA_CTRL_EQ_BANDS = 10;
 constexpr int      OMEGA_CTRL_SAF_Q    = 7;   // Dim del morph vector Φ_SAF
 constexpr int      OMEGA_CTRL_WFS_SPEAKERS = 7; // FL,FR,SL,SR,TL,TR,SW
@@ -587,6 +600,32 @@ struct OmegaDspSnapshot {
     int32_t  discovered_session_id;
     uint64_t discovered_session_gen;
 
+    // ── FUSIÓN MAGISTRAL (ABI v12, 2026-11-11) ─────────────────────────────
+    // El cerebro (daemon v2) publica aquí el estado de la fusión para que
+    // la APK lo VEA y se ACOPLE: si la fusión está viva y procesando en el
+    // HAL, la app lo sabe por este snapshot (el canal que ya lee) y no
+    // procesa dos veces (Ruta A cede ante la fusión). Al FINAL (antes de
+    // crc32) para no desplazar ningún offset existente.
+    // fusion_active: 1 = cerebro + músculo vivos, veredicto LOADED (el HAL
+    //   está procesando TODO el audio); 0 = fusión inactiva / bypass.
+    // fusion_eta: η del campo Ψ [0,1] — se adapta a tu cerebro (Ec. 4).
+    // fusion_psi_gamma: Γ(η) = 1 + γ·(η−η̄) — ganancia del campo.
+    // fusion_psi_active: 1 = el campo Ψ está aplicado (FIR 64 taps).
+    // fusion_asrc_verdict: 0=LOADED, 1=BYPASS, 2=STALE, 3=NO_CLOCK, 4=OFF.
+    // fusion_asrc_ratio: ratio que aplica el músculo (1.0 = sin corrección).
+    // fusion_asrc_drift_ppm: deriva medida del reloj en ppm.
+    // fusion_asrc_clock: 0=MMAP, 1=WRITE_TIMING, 2=NONE.
+    // fusion_generation: generación del estado de fusión (cambia al actualizar).
+    uint32_t fusion_active;
+    float    fusion_eta;
+    float    fusion_psi_gamma;
+    uint32_t fusion_psi_active;
+    int32_t  fusion_asrc_verdict;
+    float    fusion_asrc_ratio;
+    float    fusion_asrc_drift_ppm;
+    int32_t  fusion_asrc_clock;
+    uint64_t fusion_generation;
+
     // ── Integridad ────────────────────────────────────────────────────────────
     uint32_t crc32;            // CRC32 de bytes [magic .. crc32) (todo el struct salvo crc32)
 
@@ -699,6 +738,17 @@ struct OmegaDspSnapshot {
         // ABI v11: sin sesión descubierta por defecto (fail-closed).
         s.discovered_session_id = 0;
         s.discovered_session_gen = 0;
+        // ABI v12: fusión inactiva por defecto (fail-closed). El cerebro
+        // (daemon v2) la enciende al publicar el snapshot con el estado real.
+        s.fusion_active = 0u;
+        s.fusion_eta = 0.0f;
+        s.fusion_psi_gamma = 1.0f;
+        s.fusion_psi_active = 0u;
+        s.fusion_asrc_verdict = 1;  // BYPASS
+        s.fusion_asrc_ratio = 1.0f;
+        s.fusion_asrc_drift_ppm = 0.0f;
+        s.fusion_asrc_clock = 2;    // NONE
+        s.fusion_generation = 0ULL;
         // FIX (v2.5.400, retumbo 2026-11-11): default neutro y fail-closed.
         // Antes el daemon publicaba en cada arranque Volterra + los 5 Ejes
         // Supremos + Reality Recon, ~10 motores encendidos que coloreaban
@@ -747,22 +797,26 @@ struct OmegaDspSnapshot {
 };
 
 // Validar tamaño en tiempo de compilación (host + ARM64)
-static_assert(sizeof(OmegaDspSnapshot) <= 640,
-    "OmegaDspSnapshot supera 640 bytes — revisar campos o padding");
+static_assert(sizeof(OmegaDspSnapshot) <= 704,
+    "OmegaDspSnapshot supera 704 bytes — revisar campos o padding");
 static_assert(std::is_trivially_copyable<OmegaDspSnapshot>::value,
     "OmegaDspSnapshot debe ser trivialmente copiable (POD) para seqlock + mmap");
 
-// ABI v11 (auditoría 379): fijar el tamaño exacto y los offsets que el
-// teléfono lee con `od` (effect_frames byte 448, raw_rms/raw_peak byte 420).
+// ABI v12 (fusión magistral 2026-11-11): fijar el tamaño exacto y los offsets
+// que el teléfono lee con `od` (effect_frames byte 448, raw_rms/raw_peak byte 420).
 // Si alguien mueve un campo, esto rompe en compilación en vez de en silencio.
-static_assert(sizeof(OmegaDspSnapshot) == 632, "ABI v11: sizeof debe ser 632");
+// v12 añade el estado de la fusión al FINAL (antes de crc32): 40 bytes.
+// v11 era 632 (crc32 en 624); v12 es 672 (crc32 en 664).
+static_assert(sizeof(OmegaDspSnapshot) == 672, "ABI v12: sizeof debe ser 672");
 static_assert(offsetof(OmegaDspSnapshot, effect_frames) == 440, "ABI: effect_frames se movió");
 static_assert(offsetof(OmegaDspSnapshot, raw_rms) == 412, "ABI: raw_rms se movió");
 static_assert(offsetof(OmegaDspSnapshot, raw_peak) == 416, "ABI: raw_peak se movió");
 static_assert(offsetof(OmegaDspSnapshot, consumer_generation) == 32, "ABI: consumer_generation se movió");
 static_assert(offsetof(OmegaDspSnapshot, discovered_session_id) == 608, "ABI v11: discovered_session_id");
 static_assert(offsetof(OmegaDspSnapshot, discovered_session_gen) == 616, "ABI v11: discovered_session_gen");
-static_assert(offsetof(OmegaDspSnapshot, crc32) == 624, "ABI v11: crc32");
+static_assert(offsetof(OmegaDspSnapshot, fusion_active) == 624, "ABI v12: fusion_active");
+static_assert(offsetof(OmegaDspSnapshot, fusion_generation) == 656, "ABI v12: fusion_generation");
+static_assert(offsetof(OmegaDspSnapshot, crc32) == 664, "ABI v12: crc32");
 
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -2561,6 +2561,56 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeEffectBeaconFrames(JNIEnv*, jobject) {
     return static_cast<jlong>(frames);
 }
 
+// FUSIÓN MAGISTRAL (v2.5.401, ABI v12) — Estado de la fusión para la APK.
+// Lee /data/local/tmp/ivanna_fusion_heartbeat (lo escribe el cerebro v2;
+// /data/local/tmp sí lo lee una app normal, /data/adb NO) y lo vuelca en
+// `out` (9 floats): [fusion_active, eta, psi_gamma, psi_active, verdict,
+// ratio, drift_ppm, clock, ts_ms]. Retorna 1 si el heartbeat es válido y
+// fresco (<= 5 s; el cerebro escribe ~20 Hz), 0 si no hay fusión / está
+// obsoleto. La app (AudioBackendSelector) lo lee cada 10 s: si
+// fusion_active=1, la Ruta A cede (el HAL ya procesa TODO el audio).
+JNIEXPORT jint JNICALL
+Java_com_ivanna_omega_dsp_DSPBridge_nativeFusionState(JNIEnv* env, jobject, jfloatArray out) {
+    if (out == nullptr) return 0;
+    if (env->GetArrayLength(out) < 9) return 0;
+    std::FILE* f = std::fopen("/data/local/tmp/ivanna_fusion_heartbeat", "r");
+    if (!f) return 0;
+    double fusionActive = 0, eta = 0, psiGamma = 1, psiActive = 0, verdict = 1;
+    double ratio = 1, driftPpm = 0, clock = 2, tsMs = 0;
+    int alive = 0;
+    char line[128];
+    while (std::fgets(line, sizeof(line), f)) {
+        char key[64]; double v = 0;
+        if (std::sscanf(line, "%63[^=]=%lf", key, &v) != 2) continue;
+        if (std::strcmp(key, "alive") == 0) alive = (v != 0.0);
+        else if (std::strcmp(key, "fusion_active") == 0) fusionActive = v;
+        else if (std::strcmp(key, "eta") == 0) eta = v;
+        else if (std::strcmp(key, "psi_gamma") == 0) psiGamma = v;
+        else if (std::strcmp(key, "psi_active") == 0) psiActive = v;
+        else if (std::strcmp(key, "verdict") == 0) verdict = v;
+        else if (std::strcmp(key, "ratio") == 0) ratio = v;
+        else if (std::strcmp(key, "drift_ppm") == 0) driftPpm = v;
+        else if (std::strcmp(key, "clock") == 0) clock = v;
+        else if (std::strcmp(key, "ts_ms") == 0) tsMs = v;
+    }
+    std::fclose(f);
+    if (!alive) return 0;
+    // Frescura: el cerebro escribe ~20 Hz (mismo reloj monotónico); si el
+    // sello tiene más de 5 s, el cerebro murió y la fusión ya no es de fiar.
+    const uint64_t nowMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (tsMs <= 0 || nowMs < static_cast<uint64_t>(tsMs) ||
+        (nowMs - static_cast<uint64_t>(tsMs)) > 5000ULL) return 0;
+    const float vals[9] = {static_cast<float>(fusionActive), static_cast<float>(eta),
+                           static_cast<float>(psiGamma), static_cast<float>(psiActive),
+                           static_cast<float>(verdict), static_cast<float>(ratio),
+                           static_cast<float>(driftPpm), static_cast<float>(clock),
+                           static_cast<float>(tsMs)};
+    env->SetFloatArrayRegion(out, 0, 9, vals);
+    return 1;
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_dsp_DSPBridge_nativeReset(JNIEnv*, jobject) {
     g_dspShedGovernor.reset();

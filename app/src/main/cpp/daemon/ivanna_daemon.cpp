@@ -77,17 +77,36 @@ void logLine(const char* msg) noexcept {
     std::fclose(f);
 }
 
+// Heartbeat de la fusión (para que la APK lo LEA y se ACOPLE).
+// Se escribe en DOS sitios:
+//  - /data/adb/ivanna_omega/daemon_v2_heartbeat (diagnóstico, solo root).
+//  - /data/local/tmp/ivanna_fusion_heartbeat (LA APK LO LEE: /data/local/tmp
+//    sí lo puede leer una app normal; /data/adb NO). Sin este segundo
+//    archivo la APK sería ciega a la fusión cuando la Ruta B no está activa
+//    (el efecto solo publica al bus local cuando procesa).
+// Formato texto clave=valor (como el beacon del efecto): la app lo lee por
+// JNI (DSPBridge.nativeFusionState) cada 10 s en AudioBackendSelector.
+// fusion_active=1 cuando el veredicto es LOADED (el HAL procesa TODO el
+// audio); la app entonces detiene la Ruta A (no procesa dos veces).
 void writeHeartbeat(int32_t sessionId, uint64_t generation,
-                    float driftPpm, uint32_t verdict, float eta, float psiGamma) noexcept {
-    std::FILE* f = std::fopen("/data/adb/ivanna_omega/daemon_v2_heartbeat", "w");
-    if (!f) return;
-    std::fprintf(f, "alive=1\nts_ms=%llu\nsession_id=%d\ngeneration=%llu\ndrift_ppm=%.2f\nverdict=%u\neta=%.3f\npsi_gamma=%.3f\n",
-                 static_cast<unsigned long long>(monotonicMs()),
-                 static_cast<int>(sessionId),
-                 static_cast<unsigned long long>(generation),
-                 static_cast<double>(driftPpm), verdict,
-                 static_cast<double>(eta), static_cast<double>(psiGamma));
-    std::fclose(f);
+                    float driftPpm, uint32_t verdict, float eta, float psiGamma,
+                    float ratio, int32_t clockSource, uint32_t psiActive) noexcept {
+    const uint32_t fusionActive = (verdict == IVANNA_VERDICT_LOADED) ? 1u : 0u;
+    const char* paths[2] = {"/data/adb/ivanna_omega/daemon_v2_heartbeat",
+                            "/data/local/tmp/ivanna_fusion_heartbeat"};
+    for (int i = 0; i < 2; ++i) {
+        std::FILE* f = std::fopen(paths[i], "w");
+        if (!f) continue;
+        std::fprintf(f, "alive=1\nts_ms=%llu\nsession_id=%d\ngeneration=%llu\ndrift_ppm=%.2f\nverdict=%u\neta=%.3f\npsi_gamma=%.3f\nfusion_active=%u\npsi_active=%u\nratio=%.6f\nclock=%d\n",
+                     static_cast<unsigned long long>(monotonicMs()),
+                     static_cast<int>(sessionId),
+                     static_cast<unsigned long long>(generation),
+                     static_cast<double>(driftPpm), verdict,
+                     static_cast<double>(eta), static_cast<double>(psiGamma),
+                     fusionActive, psiActive,
+                     static_cast<double>(ratio), static_cast<int>(clockSource));
+        std::fclose(f);
+    }
 }
 
 bool fileExists(const char* path) noexcept {
@@ -224,8 +243,16 @@ FxControl readFxConfig() noexcept {
 
 // Snapshot neutro (defensa en profundidad: aunque makeDefault cambiara,
 // esto seguiría siendo neutro).
+// Snapshot neutro + ESTADO DE LA FUSIÓN (acoplamiento con la APK).
+// El cerebro publica aquí el estado de la fusión (veredicto, deriva, ratio,
+// reloj, η, Γ, Ψ activo) para que la APK lo VEA por el snapshot — el canal
+// que ya lee — y se ACOPLE: si fusion_active=1, la app sabe que el HAL ya
+// está procesando TODO el audio y la Ruta A cede (no procesa dos veces).
 ivanna::OmegaDspSnapshot buildNeutralSnapshot(int32_t sessionId, uint64_t sessionGen,
-                                      uint64_t generation) noexcept {
+                                      uint64_t generation,
+                                      uint32_t verdict, double driftPpm, double ratio,
+                                      int32_t clockSource, double eta, double psiGamma,
+                                      uint32_t psiActive, uint64_t fusionGen) noexcept {
     ivanna::OmegaDspSnapshot s = ivanna::OmegaDspSnapshot::makeDefault();
     for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) s.eq_gains[i] = 0.0f;
     s.bass_boost_db = 0.0f; s.dialog_boost_db = 0.0f;
@@ -240,6 +267,16 @@ ivanna::OmegaDspSnapshot buildNeutralSnapshot(int32_t sessionId, uint64_t sessio
     s.discovered_session_gen = sessionGen;
     s.generation = generation;
     s.timestamp_ms = monotonicMs();
+    // ── Fusión (ABI v12): la APK lo lee y se acopla. ─────────────────────
+    s.fusion_active = (verdict == IVANNA_VERDICT_LOADED) ? 1u : 0u;
+    s.fusion_eta = static_cast<float>(eta);
+    s.fusion_psi_gamma = static_cast<float>(psiGamma);
+    s.fusion_psi_active = psiActive;
+    s.fusion_asrc_verdict = static_cast<int32_t>(verdict);
+    s.fusion_asrc_ratio = static_cast<float>(ratio);
+    s.fusion_asrc_drift_ppm = static_cast<float>(driftPpm);
+    s.fusion_asrc_clock = clockSource;
+    s.fusion_generation = fusionGen;
     return s;
 }
 
@@ -495,9 +532,15 @@ int main() {
         }
 
         // 8. Publicar el snapshot neutro (SHM del efecto) + heartbeat.
+        // El snapshot lleva TAMBIÉN el estado de la fusión (ABI v12) para
+        // que la APK lo vea y se acople (Ruta A cede si fusion_active=1).
         if (!shmOk) shmOk = bus.openWriter();
         if (shmOk) {
-            const auto snap = buildNeutralSnapshot(sessionId, sessionGen, generation);
+            const auto snap = buildNeutralSnapshot(sessionId, sessionGen, generation,
+                                                   verdict, drift, ratio,
+                                                   static_cast<int32_t>(st.clock_source),
+                                                   psi.eta, psi.coupling(), psiActive,
+                                                   static_cast<uint64_t>(st.sequence));
             if (!bus.publish(snap)) shmOk = false;
             else if (sessionId != lastPublishedSession) {
                 char buf[128];
@@ -509,7 +552,9 @@ int main() {
             }
         }
         writeHeartbeat(sessionId, generation, static_cast<float>(drift), verdict,
-                       static_cast<float>(psi.eta), static_cast<float>(psi.coupling()));
+                       static_cast<float>(psi.eta), static_cast<float>(psi.coupling()),
+                       static_cast<float>(ratio), static_cast<int32_t>(st.clock_source),
+                       psiActive);
 
         // Aceptar (no bloqueante) y cerrar cualquier conexión al socket de
         // vida. Nadie debería conectar (no hay servidor de comandos), pero

@@ -70,6 +70,20 @@ object AudioBackendSelector {
     private val _routeBConfirmed = MutableStateFlow(false)
     val routeBConfirmed: StateFlow<Boolean> = _routeBConfirmed.asStateFlow()
 
+    /**
+     * FUSIÓN MAGISTRAL confirmada (v2.5.401, ABI v12): el cerebro (daemon v2)
+     * escribe el heartbeat en /data/local/tmp y el JNI lo lee. true = el HAL
+     * ya está procesando TODO el audio (ASRC v6 + campo Ψ). Igual que Ruta B
+     * confirmada, autoriza detener el fallback local (Ruta A): si la fusión
+     * procesa y la Ruta A también, el audio se procesa dos veces.
+     */
+    private val _fusionActive = MutableStateFlow(false)
+    val fusionActive: StateFlow<Boolean> = _fusionActive.asStateFlow()
+
+    /** Último estado completo de la fusión (para la UI de diagnóstico). */
+    private val _fusionState = MutableStateFlow<DSPBridge.FusionState?>(null)
+    val fusionState: StateFlow<DSPBridge.FusionState?> = _fusionState.asStateFlow()
+
     /** Daemon respondiendo por socket (última evaluación). */
     private val _daemonAlive = MutableStateFlow(false)
     val daemonAlive: StateFlow<Boolean> = _daemonAlive.asStateFlow()
@@ -120,12 +134,16 @@ object AudioBackendSelector {
 
     /**
      * Decisión pura del modo (probable en host). ROOT_DAEMON exige las tres:
-     * root + daemon vivo + Ruta B confirmada (efecto insertado/procesando).
-     * Con daemon vivo pero Ruta B sin confirmar, el modo es ROOT_NO_DAEMON
-     * y el fallback local SIGUE procesando (fail-closed).
+     * root + daemon vivo + Ruta B confirmada (efecto insertado/procesando)
+     * O fusión confirmada (el HAL procesa TODO el audio con ASRC v6 + Ψ).
+     * Con daemon vivo pero ni Ruta B ni fusión confirmadas, el modo es
+     * ROOT_NO_DAEMON y el fallback local SIGUE procesando (fail-closed).
+     * La fusión vale como confirmación porque, igual que Ruta B, significa
+     * que el audio ya se procesa fuera de la app: si la Ruta A también
+     * procesara, habría doble procesado.
      */
-    internal fun decideMode(root: Boolean, daemon: Boolean, routeBConfirmed: Boolean): Mode = when {
-        root && daemon && routeBConfirmed -> Mode.ROOT_DAEMON
+    internal fun decideMode(root: Boolean, daemon: Boolean, routeBConfirmed: Boolean, fusionActive: Boolean = false): Mode = when {
+        root && daemon && (routeBConfirmed || fusionActive) -> Mode.ROOT_DAEMON
         root && daemon -> Mode.ROOT_NO_DAEMON
         root -> Mode.ROOT_NO_DAEMON
         else -> Mode.NO_ROOT
@@ -142,7 +160,10 @@ object AudioBackendSelector {
         val d = _daemonAlive.value
         val e = _effectState.value
         val c = _routeBConfirmed.value
-        return "RutaB modo=$m daemon=${if (d) "vivo" else "caído"} efecto=$e confirmada=${if (c) "sí" else "no"}" +
+        val f = _fusionActive.value
+        val fs = _fusionState.value
+        val fusionTxt = if (f && fs != null) " fusión=ACTIVA η=${"%.2f".format(fs.eta)} Ψ=${if (fs.psiActive) "sí" else "no"} deriva=${"%.1f".format(fs.driftPpm)}ppm" else if (f) " fusión=ACTIVA" else ""
+        return "RutaB modo=$m daemon=${if (d) "vivo" else "caído"} efecto=$e confirmada=${if (c) "sí" else "no"}$fusionTxt" +
             if (m == Mode.ROOT_NO_DAEMON && d) " (daemon responde pero efecto no creado/procesando — ver docs/RUTA_B_DAEMON_FIX.md)" else ""
     }
 
@@ -173,9 +194,18 @@ object AudioBackendSelector {
         // nada: se conserva el fallback (fail-closed).
         val confirmed = isRouteBConfirmed(_effectState.value)
         _routeBConfirmed.value = confirmed
-        val next = decideMode(root, daemon, confirmed)
+        // FUSIÓN MAGISTRAL (v2.5.401): el cerebro escribe el heartbeat en
+        // /data/local/tmp y el JNI lo lee. Si la fusión está activa, el HAL
+        // ya procesa TODO el audio: la Ruta A debe ceder (igual que con
+        // Ruta B confirmada) para no procesar dos veces. Si no hay fusión
+        // (null / heartbeat obsoleto) se conserva el fallback (fail-closed).
+        val fusion = runCatching { DSPBridge.fusionState() }.getOrNull()
+        _fusionState.value = fusion
+        val fusionOn = fusion?.active == true
+        _fusionActive.value = fusionOn
+        val next = decideMode(root, daemon, confirmed, fusionOn)
         if (next == _mode.value) return
-        Log.i(TAG, "modo de audio: ${_mode.value} -> $next (root=$root daemon=$daemon routeB=$confirmed effect=${_effectState.value})")
+        Log.i(TAG, "modo de audio: ${_mode.value} -> $next (root=$root daemon=$daemon routeB=$confirmed fusion=$fusionOn effect=${_effectState.value})")
         _mode.value = next
         applyMode(app, next)
     }

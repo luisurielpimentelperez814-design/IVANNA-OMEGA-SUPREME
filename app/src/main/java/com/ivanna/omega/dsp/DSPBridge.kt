@@ -283,6 +283,42 @@ object DSPBridge {
         return runCatching { nativeEffectBeaconFrames() }.getOrDefault(-1L)
     }
 
+    /**
+     * FUSIÓN MAGISTRAL (v2.5.401, ABI v12) — Estado de la fusión para la APK.
+     * Lo escribe el cerebro (daemon v2) en /data/local/tmp/ivanna_fusion_heartbeat
+     * (~20 Hz) y lo lee el JNI. null = sin fusión / heartbeat obsoleto (el llamador
+     * conserva su comportamiento previo, fail-closed). fusionActive=true significa
+     * que el HAL ya está procesando TODO el audio (ASRC v6 + campo Ψ): la Ruta A
+     * debe ceder para no procesar dos veces.
+     */
+    data class FusionState(
+        val active: Boolean,
+        val eta: Float,
+        val psiGamma: Float,
+        val psiActive: Boolean,
+        val verdict: Int,
+        val ratio: Float,
+        val driftPpm: Float,
+        val clock: Int,
+    )
+
+    fun fusionState(): FusionState? {
+        if (!loaded) return null
+        val out = FloatArray(9)
+        val ok = runCatching { nativeFusionState(out) }.getOrDefault(0)
+        if (ok != 1) return null
+        return FusionState(
+            active = out[0] != 0f,
+            eta = out[1],
+            psiGamma = out[2],
+            psiActive = out[3] != 0f,
+            verdict = out[4].toInt(),
+            ratio = out[5],
+            driftPpm = out[6],
+            clock = out[7].toInt(),
+        )
+    }
+
     // ── Reinyeccion diferencial de Ruta A (v2.5.0) ──────────────────────────
     // Output = Dry + g_banda * Delta; aqui solo se calcula el termino Delta*g (el Dry ya suena por la via original).
     fun reinjectPrepare(sampleRate: Int, maxFrames: Int) { if (loaded) nativeReinjectPrepare(sampleRate, maxFrames) }
@@ -326,4 +362,5 @@ object DSPBridge {
     private external fun nativeVersion(): String
     private external fun nativeEffectBeaconState(idleMs: Int): Int
     private external fun nativeEffectBeaconFrames(): Long
+    private external fun nativeFusionState(out: FloatArray): Int
 }
