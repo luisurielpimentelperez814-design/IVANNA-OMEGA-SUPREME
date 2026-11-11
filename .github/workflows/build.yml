@@ -637,6 +637,28 @@ jobs:
           echo "$UND" | grep -q "dlinfo" && { echo "ERROR: write-stage requiere dlinfo — el HAL entra en crash-loop (2026-11-09)"; exit 1; }
           echo "OK: write-stage ASRC v5 AArch64, pal_stream_{open,close,write} exportados, sin dlinfo, sin libc++_shared, LOAD p_align >= 0x4000"
           sha256sum "$STAGED" | tee asrc_write_stage_sha256.txt
+          # ── WRAPPER DEL HAL (v2.5.403): lanzador mínimo que pone LD_PRELOAD
+          # y hace exec del binario real. Un módulo Magisk NO puede hacer que
+          # init lea un .rc al arrancar (init parsea /vendor/etc/init/ antes
+          # de que Magisk monte los módulos; overlay.d del módulo no lo lee
+          # nadie). El wrapper se compila estático (sin dependencias) y se
+          # monta sobre el HAL real por system/; customize.sh respalda el
+          # binario real como ...service_64.real en la instalación.
+          WRAP_SRC="$PROBE_DIR/ivanna_hal_wrapper.c"
+          WRAP_OUT="$PROBE_DIR/out/ivanna_hal_wrapper"
+          WRAP_STAGED="magisk_module/system/vendor/bin/hw/android.hardware.audio.service_64"
+          test -f "$WRAP_SRC" || { echo "ERROR: falta ivanna_hal_wrapper.c — commitealo antes de publicar"; exit 1; }
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -static -o "$WRAP_OUT" "$WRAP_SRC" \
+            || { echo "ERROR: no se pudo compilar ivanna_hal_wrapper"; exit 1; }
+          test -s "$WRAP_OUT" || { echo "ERROR: ivanna_hal_wrapper vacío"; exit 1; }
+          "$TC/llvm-readelf" -h "$WRAP_OUT" | grep -q "AArch64" || { echo "ERROR: wrapper no es AArch64"; exit 1; }
+          "$TC/llvm-readelf" -dW "$WRAP_OUT" 2>/dev/null | grep -q "NEEDED" && { echo "ERROR: wrapper no es estático (tiene NEEDED)"; exit 1; }
+          mkdir -p "$(dirname "$WRAP_STAGED")"
+          rm -f "$WRAP_STAGED"
+          cp "$WRAP_OUT" "$WRAP_STAGED"
+          chmod 755 "$WRAP_STAGED"
+          echo "OK: wrapper del HAL AArch64 estático, $(stat -c%s "$WRAP_STAGED") bytes"
+          sha256sum "$WRAP_STAGED" | tee hal_wrapper_sha256.txt
 
       # ── MANIFIESTO DE ARTEFACTOS ───────────────────────────────────────
       - name: Generate BUILD_INFO manifest

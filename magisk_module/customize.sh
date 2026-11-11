@@ -9,34 +9,37 @@ ui_print " "
 
 SKIPUNZIP=0
 
-# ── ANCLAJE AUTOMÁTICO ASRC v6 (v2.5.401, directiva del propietario 2026-11-11) ──
-# El ASRC v6 se ancla AUTOMÁTICAMENTE al HAL en cada arranque: este bloque
-# instala ivanna_audio.rc ACTIVO (LD_PRELOAD de
-# libivanna_asrc_write_stage.so en vendor.audio-hal) y crea el marcador
-# .preload_optin, para que post-fs-data.sh NO lo retire en el arranque
-# (su guarda FIX BRICK 3 solo retira un .rc SIN marcador).
-# FIX 2026-11-11 (v2.5.401 en vivo): overlay.d/ivanna_audio.rc a secas NO
-# se aplica — Magisk 31.1 no monta overlay.d (el .rc no aparece ni en
-# /vendor/etc/init/ ni en /ivanna_audio.rc, y el HAL arranca sin
-# LD_PRELOAD). La vía que SÍ monta Magisk es system/ (bind-mount
-# verificado: la .so y el daemon llegan por system/). Por eso el .rc se
-# instala en system/vendor/etc/init/ivanna_audio.rc (además de
-# overlay.d/vendor/etc/init/ por si overlay.d funciona con ruta completa).
-# ROLLBACK: borrar system/vendor/etc/init/ivanna_audio.rc,
-# overlay.d/vendor/etc/init/ivanna_audio.rc y .preload_optin y reiniciar;
-# el safe-mode de post-fs-data.sh también retira el .rc tras 3 arranques
-# fallidos. El kill switch pal_asrc.off (en /data/vendor/ivanna_audio/)
-# deja el ASRC en bypass (pass-through) sin descargar la librería.
-if [ -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" ]; then
-    mkdir -p "$MODPATH/overlay.d/vendor/etc/init"
-    cp -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" "$MODPATH/overlay.d/vendor/etc/init/ivanna_audio.rc"
-    mkdir -p "$MODPATH/system/vendor/etc/init"
-    cp -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" "$MODPATH/system/vendor/etc/init/ivanna_audio.rc"
-    touch "$MODPATH/.preload_optin"
-    ui_print "  ✓ ASRC v6 ANCLADO automáticamente: system/vendor/etc/init/ivanna_audio.rc activo (LD_PRELOAD en vendor.audio-hal). Se carga en el próximo arranque."
+# ── WRAPPER DEL HAL — ASRC v6 (v2.5.403, directiva del propietario 2026-11-11) ──
+# Por diseño, un módulo Magisk NO puede hacer que init lea un .rc al arrancar:
+# init parsea /vendor/etc/init/ ANTES de que Magisk monte los módulos en
+# post-fs-data, y el overlay.d del módulo no lo lee nadie (es solo del ramdisk
+# de la imagen de arranque). Por eso el HAL se lanza con un WRAPPER: un
+# binario mínimo que pone LD_PRELOAD y hace exec del binario real (patrón del
+# módulo adb_root). El wrapper llega en el zip como
+# system/vendor/bin/hw/android.hardware.audio.service_64 y Magisk lo monta
+# sobre el HAL real; el binario real se respalda AQUÍ (en la instalación,
+# no va en el zip: es propietario de Qualcomm) como
+# ...service_64.real. Magisk clona el contexto SELinux del destino al montar,
+# así que el wrapper hereda el dominio del HAL. El kill switch pal_asrc.off
+# sigue funcionando (el wrapper hace exec SIN LD_PRELOAD si está presente).
+# ROLLBACK: desinstalar el módulo restaura el binario original.
+REAL_HAL="/vendor/bin/hw/android.hardware.audio.service_64"
+WRAP_DIR="$MODPATH/system/vendor/bin/hw"
+REAL_BAK="$WRAP_DIR/android.hardware.audio.service_64.real"
+if [ -f "$REAL_HAL" ] && [ ! -f "$REAL_BAK" ]; then
+    mkdir -p "$WRAP_DIR"
+    cp -f "$REAL_HAL" "$REAL_BAK" && chmod 755 "$REAL_BAK" \
+        && ui_print "  ✓ HAL real respaldado en android.hardware.audio.service_64.real" \
+        || ui_print "  ⚠ no se pudo respaldar el HAL real (revisar antes de reiniciar)"
+elif [ -f "$REAL_BAK" ]; then
+    ui_print "  ✓ Respaldo del HAL real ya existe (no se sobrescribe)"
 else
-    ui_print "  ⚠ overlay.d.disabled/ivanna_audio.rc ausente: el ASRC v6 NO se ancló (revisar el zip)."
+    ui_print "  ⚠ binario del HAL no encontrado en $REAL_HAL (revisar)"
 fi
+# Limpieza: los .rc ya no sirven (init nunca los lee). Si quedaron de una
+# instalación anterior, se retiran para no confundir.
+rm -f "$MODPATH/system/vendor/etc/init/ivanna_audio.rc" "$MODPATH/overlay.d/vendor/etc/init/ivanna_audio.rc" "$MODPATH/overlay.d/ivanna_audio.rc" 2>/dev/null || true
+ui_print "  ✓ Wrapper del HAL activo: el HAL arrancará con LD_PRELOAD en el próximo arranque del servicio."
 
 # El propio instalador y los helpers de permisos recursivos heredan esta prioridad
 # reducida. Así también se suaviza el trabajo de metadatos, no solo los cp.
