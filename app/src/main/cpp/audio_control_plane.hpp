@@ -60,8 +60,10 @@ struct UnifiedControlFrame {
     std::atomic<float> audio_engine_width{0.68f};    // [0..1] stereo width from AudioEngine
 
     // ── Route Profile (BT/AUX/USB) — ver control_set_route_profile() ──
-    std::atomic<float> route_bass_boost_db{2.2f};    // compensa pérdida de graves (AUX)
-    std::atomic<float> route_dialog_boost_db{1.5f};  // compensa codec lossy (BT SBC/AAC)
+    // FIX (v2.5.400, retumbo): 0 por defecto. El 2.2f/1.5f subía graves
+    // en cada arranque y sumaba al retumbo del snapshot default.
+    std::atomic<float> route_bass_boost_db{0.0f};    // compensa pérdida de graves (AUX)
+    std::atomic<float> route_dialog_boost_db{0.0f};  // compensa codec lossy (BT SBC/AAC)
     std::atomic<float> route_widener_mult{1.15f};    // reduce ancho en BT (mono-compat)
 
     // ── Evolutionary Best Genome (actualizado cada 50ms) ───────────
@@ -101,8 +103,8 @@ struct UnifiedControlFrame {
         audio_engine_exciter.store(0.55f, std::memory_order_relaxed);
         audio_engine_eq_gain.store(1.8f, std::memory_order_relaxed);
         audio_engine_width.store(0.68f, std::memory_order_relaxed);
-        route_bass_boost_db.store(2.2f, std::memory_order_relaxed);
-        route_dialog_boost_db.store(1.5f, std::memory_order_relaxed);
+        route_bass_boost_db.store(0.0f, std::memory_order_relaxed);
+        route_dialog_boost_db.store(0.0f, std::memory_order_relaxed);
         route_widener_mult.store(1.15f, std::memory_order_relaxed);
         anti_dolby_enabled.store(true, std::memory_order_relaxed);
         spatial_rendering_active.store(true, std::memory_order_relaxed);

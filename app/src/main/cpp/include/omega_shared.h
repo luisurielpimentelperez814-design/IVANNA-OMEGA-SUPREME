@@ -189,7 +189,8 @@ struct OmegaSharedState {
           ai_spatial_aggressiveness(0.78f),
           ai_yamnet_class_id(-1), ai_yamnet_confidence(0.0f),
           ai_voice_score(0.0f), ai_music_score(0.0f),
-          route_bass_boost_db(2.2f), route_dialog_boost_db(1.5f),
+          // FIX (v2.5.400, retumbo): 0 por defecto, sin realce de graves.
+          route_bass_boost_db(0.0f), route_dialog_boost_db(0.0f),
           route_widener_mult(1.32f),
           write_pos(0), read_pos(0) {}
 };

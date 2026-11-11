@@ -602,8 +602,14 @@ struct OmegaDspSnapshot {
         s.listen_phon = 62.f;
         s.ref_phon    = 82.f;
         {
+            // FIX (v2.5.400, retumbo 2026-11-11): el default del daemon
+            // DEBE ser neutro. La curva "Magistral" subía +2.4/+2.0/+1.4 dB
+            // en 31.5/63/125 Hz y el módulo sonaba inundado de bajos en
+            // cada arranque, sin abrir la app y sin que ningún slider lo
+            // pudiera quitar (ORBE/HOLOS ya estaban en 0). EQ plano por
+            // defecto; la curva Magistral es preset opt-in en la UI.
             constexpr float kMagistralEq[OMEGA_CTRL_EQ_BANDS] = {
-                2.4f, 2.0f, 1.4f, 0.5f, 0.0f, 0.0f, 0.9f, 1.6f, 2.0f, 1.7f
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
             };
             for (int i = 0; i < OMEGA_CTRL_EQ_BANDS; ++i) s.eq_gains[i] = kMagistralEq[i];
         }
@@ -624,10 +630,17 @@ struct OmegaDspSnapshot {
         s.target_gain       = 1.0f;
         s.comp_amount       = 0.22f;
         s.exc_red           = 0.15f;
-        s.bass_boost_db     = 2.5f;
-        s.dialog_boost_db   = 1.5f;
+        // FIX (v2.5.400, retumbo): sin realce de graves por defecto.
+        // bass 2.5 + dialog 1.5 daban trim global +1.4 dB y, sumado al EQ
+        // Magistral, inundaban de bajos cada arranque. 0 por defecto;
+        // el perfil de ruta lo sube solo si la ruta lo pide (AUX/BT).
+        s.bass_boost_db     = 0.0f;
+        s.dialog_boost_db   = 0.0f;
         s.widener_mult      = 1.38f;
-        s.npe_ctl = omega_npe_ctl_encode(true, 0.0f); s.npe_lateral_inhib = 0.2f; s.npe_ohc_compression = 0.3f;
+        // FIX (v2.5.400, retumbo): NPE apagado por defecto. Es un motor
+        // pesado y su coloración sumaba al retumbo del arranque. Opt-in
+        // desde la UI; el default debe ser neutro.
+        s.npe_ctl = omega_npe_ctl_encode(false, 0.0f); s.npe_lateral_inhib = 0.2f; s.npe_ohc_compression = 0.3f;
         s.head_yaw_rad = 0.f; s.head_pitch_rad = 0.f;
         // ORBE (ABI v9): apagado por defecto — amount 0 = bypass bit-exacto.
         s.orbe_amount = 0.f; s.orbe_distance_m = 0.35f; s.orbe_spread = 1.0f;
@@ -686,21 +699,18 @@ struct OmegaDspSnapshot {
         // ABI v11: sin sesión descubierta por defecto (fail-closed).
         s.discovered_session_id = 0;
         s.discovered_session_gen = 0;
+        // FIX (v2.5.400, retumbo 2026-11-11): default neutro y fail-closed.
+        // Antes el daemon publicaba en cada arranque Volterra + los 5 Ejes
+        // Supremos + Reality Recon, ~10 motores encendidos que coloreaban
+        // el audio y sumaban al retumbo, sin que ningún slider de la UI
+        // los apagara (ORBE/HOLOS ya estaban en 0). Ahora son opt-in:
+        // la app los enciende con SET cuando el usuario los activa.
+        // Solo quedan los flags seguros (EQ calibrado, perceptual,
+        // anti-Dolby, ATI). OMEGA_FLAG_COCHLEAR_ON ya era opt-in.
         s.flags = OMEGA_FLAG_EQ_CALIBRATED
                 | OMEGA_FLAG_PERCEPTUAL_ON
                 | OMEGA_FLAG_ANTI_DOLBY_ON
-                | OMEGA_FLAG_VOLTERRA_ON
-                | OMEGA_FLAG_ATI_ON
-                // OMEGA_FLAG_COCHLEAR_ON se omite del default: el motor coclear
-                // es opt-in desde la UI (panel COCLEAR). Activarlo en el bitmask
-                // default producía artefactos tipo "láser" en instalaciones nuevas.
-                | OMEGA_FLAG_SUPREME_LATTICE_ON
-                | OMEGA_FLAG_SUPREME_MICROCHIRP_ON
-                | OMEGA_FLAG_SUPREME_CVNN_ON
-                | OMEGA_FLAG_SUPREME_SNN_HOA_ON
-                | OMEGA_FLAG_SUPREME_PINNA_ON
-                | OMEGA_FLAG_SUPREME_FARROW_MSO_ON
-                | OMEGA_FLAG_REALITY_RECON_ON;
+                | OMEGA_FLAG_ATI_ON;
         s.raw_rms      = 0.0f;
         s.raw_peak     = 0.0f;
         s.supreme_declipped_peaks = 0u;
