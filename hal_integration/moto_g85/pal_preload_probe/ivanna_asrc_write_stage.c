@@ -101,12 +101,23 @@
  * NON-music format (e.g. 16 kHz voice, 24-bit) is passed through.
  * ------------------------------------------------------------------------
  * CLOCK SOURCE (closed loop) — two sources, mmap first, write-timing
- * fallback. pal_stream_get_mmap_position is NOT dlsym-able (absent from
- * libar-pal.so's dynamic symbol table). It EXISTS in the phone's
- * libar-pal.so at ELF offset 0x2ec180 as a 4-byte thunk
- * (StreamOutPrimary::GetMmapPosition [audio.primary.blair.so 0x58d40]
- *  -> pal_stream_get_mmap_position [libar-pal.so 0x2ec180]
- *  -> SessionAlsaPcm::GetMmapPosition -> pcm_mmap_get_hw_ptr).
+ * fallback. pal_stream_get_mmap_position IS in libar-pal.so's dynamic
+ * symbol table (symbol 1369, 0x2ec180, verified 2026-11-11 by readelf),
+ * but it is NOT dlsym-able via RTLD_NEXT: libar-pal.so is loaded
+ * RTLD_LOCAL in the HAL, so RTLD_NEXT cannot see it. It EXISTS in the
+ * phone's libar-pal.so at ELF offset 0x2ec180 as a 4-byte thunk.
+ * Verified chain (disassembly, 2026-11-11, capstone):
+ *   thunk 0x2ec180 -> impl 0x192684 (lookup + type check + refcount
+ *   via ResourceManager::increaseStreamUserCounter, PLT 0x2ee0a0)
+ *   -> vtable GetMmapPosition (offset 0xf0, StreamPCM::GetMmapPosition
+ *   0x1aef54) -> vtable GetMmapPosition (offset 0x100, session)
+ *   -> pcm_mmap_get_hw_ptr (libtinyalsa.so 0x655c, imported).
+ * pcm_mmap_get_hw_ptr first issues the HWSYNC ioctl (0xc0884123) so the
+ * kernel updates hw_ptr AND timestamp together, then reads both from the
+ * kernel ALSA mmap status (snd_pcm_mmap_status): the timestamp is a
+ * struct timespec from the kernel (CLOCK_MONOTONIC domain by ALSA
+ * design), not a userspace clock_gettime. Lookup/type-check failures
+ * return -EINVAL (-22), not -ENOSYS.
  * The shim resolves it WITHOUT dlsym and WITHOUT dlinfo: it reads the
  * libar-pal.so load base from /proc/self/maps (dlinfo does not exist in
  * the HAL's vendor linker namespace — the HAL fails to link with
@@ -1488,7 +1499,7 @@ static void control_tick(void) {
             atomic_store_explicit(&g_mmap_state, -1, memory_order_relaxed);
             atomic_store_explicit(&g_clock_source, CLK_TIMING, memory_order_relaxed);
             atomic_fetch_add_explicit(&g_mmap_failed_queries, 1, memory_order_relaxed);
-            LOGI("mmap_position: probe call failed (ENOSYS? stream is not MMAP); clock source = write-timing");
+            LOGI("mmap_position: probe call failed (stream is not MMAP or lookup failed); clock source = write-timing");
         }
         return;
     }
