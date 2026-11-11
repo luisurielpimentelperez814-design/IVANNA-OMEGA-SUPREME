@@ -741,9 +741,16 @@ jobs:
           set -euo pipefail
           sh -n magisk_module/customize.sh || { echo "ERROR: customize.sh syntax invalid"; exit 1; }
           test -f magisk_module/sepolicy.rule || { echo "ERROR: falta sepolicy.rule"; exit 1; }
-          # typeattribute SI es valido en sepolicy.rule de Magisk (sin ';'); lo que se prohibe es la
-          # sintaxis .te: declaraciones type/attribute/require/neverallow/allowxperm o cualquier ';'.
-          if grep -vE '^[[:space:]]*#|^[[:space:]]*$' magisk_module/sepolicy.rule | grep -qE '^[[:space:]]*(type|attribute|allowxperm|neverallow|require)[[:space:]]|;[[:space:]]*$'; then
+          # typeattribute SI es valido en sepolicy.rule de Magisk (sin ';'), y
+          # `type <nombre> <attrs>` TAMBIEN: Magisk lo documenta como statement
+          # valido y magiskpolicy --live lo soporta; el modulo lo necesita para
+          # DEFINIR el tipo dedicado ivanna_data_file antes de las reglas que lo
+          # usan (sin el, typeattribute y todos los allow sobre ese tipo fallan
+          # porque el tipo no existe). Lo que se prohibe es la sintaxis .te
+          # restante: declaraciones attribute/require/neverallow/allowxperm o
+          # cualquier ';'. (v2.5.392: la 391 murio aqui porque el regex baneaba
+          # `type` y la linea 18 de sepolicy.rule lo necesita.)
+          if grep -vE '^[[:space:]]*#|^[[:space:]]*$' magisk_module/sepolicy.rule | grep -qE '^[[:space:]]*(attribute|allowxperm|neverallow|require)[[:space:]]|;[[:space:]]*$'; then
             echo "ERROR: sepolicy.rule usa sintaxis .te (: o ;)"; exit 1
           fi
           ZIPNAME="ivanna-magisk-module-arm64-${GITHUB_SHA}.zip"

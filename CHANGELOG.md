@@ -1,3 +1,7 @@
+# v2.5.392 (683) - 2026-11-10
+
+- **FIX CI 391.** La CI 391 falló SOLO en el último chequeo de integridad del zip: `ERROR: sepolicy.rule usa sintaxis .te`. Causa: el regex del workflow (`.github/workflows/build.yml`) baneaba líneas que empiezan con `type`, pero `type ivanna_data_file file_type, data_file_type` (línea 18 de `sepolicy.rule`) ES sintaxis válida de Magisk — define el tipo dedicado que usan `typeattribute` y todos los `allow` sobre él; sin esa línea el MLS-bypass se rompe. El APK 391 SÍ se construyó (BUILD SUCCESSFUL ×2; el fallo no era de código). El chequeo ya no banea `type` (sigue baneando `attribute`/`require`/`neverallow`/`allowxperm`/`;`). Verificado en local: el chequeo pasa sin coincidencias.
+
 # v2.5.391 (682) - 2026-11-10
 
 - **FIX BRICK 3 (auditoría completa del módulo + daemon, `analysis-ivanna/AUDITORIA_MODULO_390.md`).** Al actualizar el módulo el teléfono no arrancaba (3er brick, reset de fábrica forzoso) y el retumbo no bajaba con ningún control. Causa: el `overlay.d/ivanna_audio.rc` de la 384 (LD_PRELOAD de la .so ASRC v5 en el HAL) sobrevivía a las actualizaciones — la 385+ solo lo movió a `overlay.d.disabled/` en el zip, pero nada borraba el archivo ya instalado. Ahora `customize.sh` lo borra en cada instalación y `post-fs-data.sh` lo retira en cada arranque salvo opt-in deliberado marcado con `.preload_optin`. El daemon quedó EXONERADO (no reinicia ni mata servicios; supervisor acotado).
