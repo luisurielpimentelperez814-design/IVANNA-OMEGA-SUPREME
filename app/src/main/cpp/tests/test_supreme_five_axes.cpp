@@ -274,7 +274,7 @@ TEST(SupremeFiveAxesPipelineIntegration, FullControlsAndTelemetryEndToEnd) {
 TEST(SupremeFiveAxesPipelineIntegration, CrossProcessSnapshotAndLaboratoryCalibrations) {
     // 1. Verificar ABI y transporte cross-process de los 5 Ejes en OmegaDspSnapshot
     ivanna::OmegaDspSnapshot snap = ivanna::OmegaDspSnapshot::makeDefault();
-    EXPECT_LE(sizeof(ivanna::OmegaDspSnapshot), 640u);  // v10: HOLOS sube el snapshot a 616 B
+    EXPECT_LE(sizeof(ivanna::OmegaDspSnapshot), 704u);  // v12: fusión magistral sube el snapshot a 672 B
     snap.flags |= ivanna::OMEGA_FLAG_SUPREME_LATTICE_ON
                 | ivanna::OMEGA_FLAG_SUPREME_MICROCHIRP_ON
                 | ivanna::OMEGA_FLAG_SUPREME_CVNN_ON

@@ -23,15 +23,24 @@ const char* kTestPath2 = "./omega_upmixing_ctrl_test_2";
 TEST(UpmixingControlPlane, SnapshotAbiEsPodYCompacto) {
     // Barrera ABI: el snapshot debe seguir siendo POD y caber en el limite.
     EXPECT_TRUE(std::is_trivially_copyable<OmegaDspSnapshot>::value);
-    EXPECT_LE(sizeof(OmegaDspSnapshot), 640u);  // v11: sesión descubierta (discovered_session_id/gen) sube el snapshot a 632 B
-    EXPECT_EQ(sizeof(OmegaDspSnapshot), 632u);   // tamaño exacto v11 (16 B de campos discovered_* + padding a 8 B)
+    EXPECT_LE(sizeof(OmegaDspSnapshot), 704u);  // v12: fusión magistral (9 campos fusion_*) sube el snapshot a 672 B
+    EXPECT_EQ(sizeof(OmegaDspSnapshot), 672u);   // tamaño exacto v12 (40 B de campos fusion_* + padding a 8 B)
     OmegaDspSnapshot d = OmegaDspSnapshot::makeDefault();
     EXPECT_TRUE(d.isMagicValid());
     EXPECT_TRUE(d.isVersionValid());
     EXPECT_TRUE(d.isCrcValid());
     EXPECT_EQ(d.upmixing_enabled, 0u);          // default OFF (cero degradacion)
     EXPECT_FLOAT_EQ(d.upmixing_immersivity, 1.0f);
-    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 11u);  // v11: campos discovered_session_id/gen (sesión real por daemon root)
+    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 12u);  // v12: estado de la fusión magistral (fusion_*; la APK se acopla)
+    // FUSIÓN (ABI v12): apagada por defecto — fail-closed (el cerebro la enciende).
+    EXPECT_EQ(d.fusion_active, 0u);
+    EXPECT_FLOAT_EQ(d.fusion_eta, 0.f);
+    EXPECT_FLOAT_EQ(d.fusion_psi_gamma, 1.0f);
+    EXPECT_EQ(d.fusion_psi_active, 0u);
+    EXPECT_EQ(d.fusion_asrc_verdict, 1);   // BYPASS
+    EXPECT_FLOAT_EQ(d.fusion_asrc_ratio, 1.0f);
+    EXPECT_FLOAT_EQ(d.fusion_asrc_drift_ppm, 0.f);
+    EXPECT_EQ(d.fusion_asrc_clock, 2);      // NONE
     EXPECT_FLOAT_EQ(d.head_yaw_rad, 0.f);
     EXPECT_FLOAT_EQ(d.head_pitch_rad, 0.f);
     // ORBE (ABI v9): apagado por defecto — amount 0 = bypass bit-exacto.

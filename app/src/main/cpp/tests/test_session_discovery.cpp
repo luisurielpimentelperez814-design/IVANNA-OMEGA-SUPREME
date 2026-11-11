@@ -205,14 +205,18 @@ TEST(SessionDiscovery, SelectAgrupaRefsDeLaMismaSesion) {
     EXPECT_EQ(selectMusicSessionId(refs), 14177);  // cnt total 5 > 4
 }
 
-TEST(SessionDiscovery, SnapshotAbiV11DiscoveredAlFinalYOffsetsViejosIntactos) {
-    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 11u);
-    EXPECT_EQ(sizeof(OmegaDspSnapshot), 632u);
+TEST(SessionDiscovery, SnapshotAbiV12DiscoveredAlFinalYOffsetsViejosIntactos) {
+    EXPECT_EQ(ivanna::OMEGA_CTRL_VERSION, 12u);
+    EXPECT_EQ(sizeof(OmegaDspSnapshot), 672u);
     // Campos nuevos AL FINAL, antes de crc32 (los offsets viejos NO cambian:
     // el od del teléfono en byte 448/420/40 sigue siendo válido).
     EXPECT_EQ(offsetof(OmegaDspSnapshot, discovered_session_id), 608u);
     EXPECT_EQ(offsetof(OmegaDspSnapshot, discovered_session_gen), 616u);
-    EXPECT_EQ(offsetof(OmegaDspSnapshot, crc32), 624u);
+    // v12: los campos fusion_* van DESPUÉS de discovered_session_gen (624..664);
+    // crc32 se mueve a 664. Los offsets viejos (440/412/416/32) NO cambian.
+    EXPECT_EQ(offsetof(OmegaDspSnapshot, fusion_active), 624u);
+    EXPECT_EQ(offsetof(OmegaDspSnapshot, fusion_generation), 656u);
+    EXPECT_EQ(offsetof(OmegaDspSnapshot, crc32), 664u);
     EXPECT_EQ(offsetof(OmegaDspSnapshot, effect_frames), 440u);
     EXPECT_EQ(offsetof(OmegaDspSnapshot, raw_rms), 412u);
     EXPECT_EQ(offsetof(OmegaDspSnapshot, raw_peak), 416u);
