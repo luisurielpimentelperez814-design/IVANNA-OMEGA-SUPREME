@@ -36,7 +36,7 @@ jobs:
       - name: Inventory all SOFA files
         run: |
           set -euo pipefail
-          python scripts/inventory_sofa_metadata.py --root . --output-dir build/sofa-inventory --expected-count 694
+          python scripts/inventory_sofa_metadata.py --root . --output-dir build/sofa-inventory --expected-count 691
       - name: Upload auditable inventory
         uses: actions/upload-artifact@v7
         with:

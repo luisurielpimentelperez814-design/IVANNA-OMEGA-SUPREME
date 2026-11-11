@@ -89,17 +89,17 @@ RIR_N=$(ls "$DATA_DIR/rir/"*.wav 2>/dev/null | wc -l)
     || ([ "$RIR_N" -gt 0 ] && warn "RIR: solo $RIR_N salas (esperadas 200)" \
         || fail "RIR: directorio $DATA_DIR/rir/ vacío o inexistente")
 
-# Contrato del módulo (desde v2.5.31 el zip SIEMPRE trae los SOFA): 239 .sofa en total, 200 de ellos en sofa/ari/.
+# Contrato del módulo (desde v2.5.31 el zip SIEMPRE trae los SOFA): 236 .sofa en total, 200 de ellos en sofa/ari/.
 # customize.sh aborta la instalación si no cuadran, así que si faltan en el dispositivo el despliegue
 # se corrompió o se borró: debe verse como fallo, no como "dataset opcional".
 SOFA_N=$(find "$DATA_DIR/sofa" -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
 SOFA_ARI_N=$(find "$DATA_DIR/sofa/ari" -name '*.sofa' 2>/dev/null | wc -l | tr -d '[:space:]')
-if [ "$SOFA_N" -eq 239 ] && [ "$SOFA_ARI_N" -eq 200 ]; then
+if [ "$SOFA_N" -eq 236 ] && [ "$SOFA_ARI_N" -eq 200 ]; then
     pass "SOFA: $SOFA_N archivos AES69 presentes ($SOFA_ARI_N ARI)"
 elif [ "$SOFA_N" -gt 0 ]; then
-    warn "SOFA: incompleto ($SOFA_N/239 total, $SOFA_ARI_N/200 ARI) — reinstalar el módulo"
+    warn "SOFA: incompleto ($SOFA_N/236 total, $SOFA_ARI_N/200 ARI) — reinstalar el módulo"
 else
-    fail "SOFA: $DATA_DIR/sofa/ vacío o inexistente (el módulo debe desplegar 239 .sofa) — reinstalar el módulo"
+    fail "SOFA: $DATA_DIR/sofa/ vacío o inexistente (el módulo debe desplegar 236 .sofa) — reinstalar el módulo"
 fi
 
 # ── 5. Logs recientes ─────────────────────────────────────────────────────────
