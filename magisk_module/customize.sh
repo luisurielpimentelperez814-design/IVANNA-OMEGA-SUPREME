@@ -9,21 +9,29 @@ ui_print " "
 
 SKIPUNZIP=0
 
-# ── FIX BRICK 3 (v2.5.391, auditoría 2026-11-10) ─────────────────────────────
-# La 384 instaló overlay.d/ivanna_audio.rc ACTIVO (LD_PRELOAD de la .so v5
-# en el HAL). La 385+ lo "desactivó por defecto" solo en el ZIP (lo movió a
-# overlay.d.disabled/), pero NADA borraba un .rc rancio ya instalado: ni
-# customize.sh ni service.sh lo tocaban, y post-fs-data.sh solo lo quitaba
-# en safe-mode tras 3 arranques fallidos. Resultado: el .rc sobrevivía a
-# cada actualización del módulo, el HAL entraba en crash-loop en cada
-# reinicio y el teléfono no arrancaba (3er brick, reset de fábrica
-# forzoso). El mismo .rc explica el retumbo que no bajaba con ningún
-# control de la app: el write-stage vive en el HAL, por debajo de ORBE /
-# HOLOS / Volterra / Φ. Cada install/update garantiza LD_PRELOAD apagado;
-# el opt-in deliberado se hace DESPUÉS de instalar (ver el .rc).
-if [ -f "$MODPATH/overlay.d/ivanna_audio.rc" ]; then
-    rm -f "$MODPATH/overlay.d/ivanna_audio.rc"
-    ui_print "  ⚠ LD_PRELOAD heredado ELIMINADO (overlay.d/ivanna_audio.rc de la 384 u opt-in viejo): el HAL arranca STOCK. Si lo quieres activar, haz el opt-in DESPUÉS de instalar (ver overlay.d.disabled/ivanna_audio.rc)."
+# ── ANCLAJE AUTOMÁTICO ASRC v5 (v2.5.397, directiva del propietario 2026-11-11) ──
+# El ASRC v5 se ancla AUTOMÁTICAMENTE al HAL en cada arranque: este bloque
+# instala overlay.d/ivanna_audio.rc ACTIVO (LD_PRELOAD de
+# libivanna_asrc_write_stage.so en vendor.audio-hal) y crea el marcador
+# .preload_optin, para que post-fs-data.sh NO lo retire en el arranque
+# (su guarda FIX BRICK 3 solo retira un .rc SIN marcador).
+# HISTORIAL: la 384 lo activaba y el teléfono no arrancó 2 veces; la 385+
+# lo desactivó por defecto (overlay.d.disabled/, opt-in manual). La .so v5
+# es fail-closed y YA fue verificada en vivo en este teléfono (deriva
+# +58.055 ppm medida, ratio 0.999993750, clock=write-timing, 2026-11-10):
+# si no resuelve los símbolos reales devuelve -ENOSYS y pasa el audio
+# sin tocarlo. El propietario ordenó el anclaje automático (2026-11-11).
+# ROLLBACK: borrar overlay.d/ivanna_audio.rc y .preload_optin y reiniciar;
+# el safe-mode de post-fs-data.sh también retira el .rc tras 3 arranques
+# fallidos. El kill switch pal_asrc.off (en /data/vendor/ivanna_audio/)
+# deja el ASRC en bypass (pass-through) sin descargar la librería.
+if [ -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" ]; then
+    mkdir -p "$MODPATH/overlay.d"
+    cp -f "$MODPATH/overlay.d.disabled/ivanna_audio.rc" "$MODPATH/overlay.d/ivanna_audio.rc"
+    touch "$MODPATH/.preload_optin"
+    ui_print "  ✓ ASRC v5 ANCLADO automáticamente: overlay.d/ivanna_audio.rc activo (LD_PRELOAD en vendor.audio-hal). Se carga en el próximo arranque."
+else
+    ui_print "  ⚠ overlay.d.disabled/ivanna_audio.rc ausente: el ASRC v5 NO se ancló (revisar el zip)."
 fi
 
 # El propio instalador y los helpers de permisos recursivos heredan esta prioridad

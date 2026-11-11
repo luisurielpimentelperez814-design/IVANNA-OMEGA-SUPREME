@@ -1,20 +1,21 @@
 # IVANNA OMEGA SUPREME — ASRC v5 write-stage (Moto G85 5G)
-# ¡DESACTIVADO POR DEFECTO desde v2.5.385! Este archivo vive en
-# overlay.d.disabled/ (Magisk NO lo importa): el HAL arranca STOCK, sin
-# LD_PRELOAD. Motivo: la v2.5.384 lo activaba en cada arranque y el
-# teléfono no volvió a arrancar DOS veces (reset de fábrica en ambas,
-# 2026-11-10). La .so v5 corre su constructor en el proceso del HAL al
-# cargar (neon_self_test + hilo de control); si ese constructor o el
-# enlace fallan, vendor.audio-hal muere en cada inicio e init lo
-# reinicia en bucle (crash-loop) con el audio caído. El kill switch
-# pal_asrc.off NO protege ese caso: solo actúa DESPUÉS de cargar la .so.
-# OPT-IN (solo con el teléfono arrancando limpio y un rollback a mano):
-#   su -c 'cp /data/adb/modules/ivanna_omega_supreme/overlay.d.disabled/ivanna_audio.rc /data/adb/modules/ivanna_omega_supreme/overlay.d/ivanna_audio.rc; touch /data/adb/modules/ivanna_omega_supreme/.preload_optin'
-# y reiniciar. El marcador .preload_optin es lo que distingue un opt-in
-# deliberado de un archivo rancio de la 384: sin él, la 391 lo borra en
-# cada instalación y en cada arranque (fix del 3er brick, 2026-11-10).
-# Para volver atrás: borrar overlay.d/ivanna_audio.rc y .preload_optin y
-# reiniciar. Sin este archivo, la .so v5 viaja en el zip pero queda
+# ¡ACTIVO POR DEFECTO desde v2.5.397! Directiva del propietario
+# (2026-11-11): el ASRC se ancla AUTOMÁTICAMENTE al HAL en cada arranque.
+# customize.sh copia este archivo a overlay.d/ y crea el marcador
+# .preload_optin en cada instalación, así que post-fs-data.sh no lo retira.
+# HISTORIAL: la 384 lo activaba y el teléfono no arrancó 2 veces; la 385+
+# lo desactivó por defecto (este archivo vivía en overlay.d.disabled/ y el
+# HAL arrancaba STOCK, .so v5 inerte). La .so v5 es fail-closed y YA fue
+# verificada en vivo en este teléfono (deriva +58.055 ppm medida, ratio
+# 0.999993750, clock=write-timing, 2026-11-10): si no resuelve los símbolos
+# reales devuelve -ENOSYS y pasa el audio sin tocarlo. El kill switch
+# pal_asrc.off NO protege el caso del constructor (solo actúa DESPUÉS de
+# cargar la .so); el rollback es borrar overlay.d/ivanna_audio.rc y
+# .preload_optin y reiniciar, o el safe-mode de post-fs-data.sh tras 3
+# arranques fallidos.
+# OPT-IN ya no es necesario: la instalación lo activa. Para DESACTIVARLO:
+#   su -c 'rm /data/adb/modules/ivanna_omega_supreme/overlay.d/ivanna_audio.rc /data/adb/modules/ivanna_omega_supreme/.preload_optin'
+# y reiniciar. Sin este archivo, la .so v5 viaja en el zip pero queda
 # inerte (el chequeo de arranque la reporta NOT_LOADED como WARNING).
 # Adaptación del overlay.d/ivanna_audio.rc del módulo ivanna_audio_probe
 # (~/workspace/preload-evidence/20261107/overlay.d_ivanna_audio.rc, 510 B):
