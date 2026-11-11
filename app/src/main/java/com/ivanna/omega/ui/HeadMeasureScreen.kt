@@ -100,7 +100,7 @@ fun HeadMeasureScreen(onBack: () -> Unit = {}) {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasCameraPermission = granted
-        if (granted) pictureLauncher.launch()
+        if (granted) pictureLauncher.launch(null)
         else status = "Sin permiso de cámara no se puede tomar la foto. Puedes escribir el ancho a mano."
     }
 
@@ -165,7 +165,7 @@ fun HeadMeasureScreen(onBack: () -> Unit = {}) {
         )
 
         Button(onClick = {
-            if (hasCameraPermission) pictureLauncher.launch()
+            if (hasCameraPermission) pictureLauncher.launch(null)
             else permissionLauncher.launch(Manifest.permission.CAMERA)
         }) { Text(if (bmp == null) "TOMAR FOTO" else "TOMAR OTRA FOTO") }
 

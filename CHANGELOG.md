@@ -1,3 +1,9 @@
+# v2.5.391 (682) - 2026-11-10
+
+- **FIX BRICK 3 (auditoría completa del módulo + daemon, `analysis-ivanna/AUDITORIA_MODULO_390.md`).** Al actualizar el módulo el teléfono no arrancaba (3er brick, reset de fábrica forzoso) y el retumbo no bajaba con ningún control. Causa: el `overlay.d/ivanna_audio.rc` de la 384 (LD_PRELOAD de la .so ASRC v5 en el HAL) sobrevivía a las actualizaciones — la 385+ solo lo movió a `overlay.d.disabled/` en el zip, pero nada borraba el archivo ya instalado. Ahora `customize.sh` lo borra en cada instalación y `post-fs-data.sh` lo retira en cada arranque salvo opt-in deliberado marcado con `.preload_optin`. El daemon quedó EXONERADO (no reinicia ni mata servicios; supervisor acotado).
+- **FIX Kotlin 390.** La CI 390 falló en `compileReleaseKotlin`: `pictureLauncher.launch()` sin argumento en `HeadMeasureScreen.kt` (el contrato `TakePicturePreview` exige `launch(null)`). El fix del link de la 389 sí funcionó (cero `undefined symbol`).
+- **Test merge actualizado** a la política 373 (0 applies de omega/dlb_/music_helper): `check_magisk_install.py` 20/20 en local (antes 10/20 por test rancio, no por bug del merge).
+
 # v2.5.390 (681) - 2026-11-10
 
 - **FIX LINK 389 (la 389 tampoco publicó).** La CI 389 falló en `buildCMakeRelWithDebInfo`: `ld.lld: error: undefined symbol: g_orbe_head_radius_m`. Causa: en la 388 definí el atomic solo en `orbe_controls_bridge.cpp` (target `ivanna_omega`, proceso app) y me faltó el stub de `orbe_globals_effect.cpp` (target `omega_effect`, proceso audioserver, que incluye `IvannaFusionCore.cpp` por unity-build y lo referencia con `extern`). Mismo patrón que los demás `g_orbe_*`. Sin cambios de sonido ni tests nuevos (CTest sigue 954/954 en local).

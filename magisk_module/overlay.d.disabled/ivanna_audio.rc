@@ -9,8 +9,11 @@
 # reinicia en bucle (crash-loop) con el audio caído. El kill switch
 # pal_asrc.off NO protege ese caso: solo actúa DESPUÉS de cargar la .so.
 # OPT-IN (solo con el teléfono arrancando limpio y un rollback a mano):
-#   su -c 'cp /data/adb/modules/ivanna_omega_supreme/overlay.d.disabled/ivanna_audio.rc /data/adb/modules/ivanna_omega_supreme/overlay.d/ivanna_audio.rc'
-# y reiniciar. Para volver atrás: borrar overlay.d/ivanna_audio.rc y
+#   su -c 'cp /data/adb/modules/ivanna_omega_supreme/overlay.d.disabled/ivanna_audio.rc /data/adb/modules/ivanna_omega_supreme/overlay.d/ivanna_audio.rc; touch /data/adb/modules/ivanna_omega_supreme/.preload_optin'
+# y reiniciar. El marcador .preload_optin es lo que distingue un opt-in
+# deliberado de un archivo rancio de la 384: sin él, la 391 lo borra en
+# cada instalación y en cada arranque (fix del 3er brick, 2026-11-10).
+# Para volver atrás: borrar overlay.d/ivanna_audio.rc y .preload_optin y
 # reiniciar. Sin este archivo, la .so v5 viaja en el zip pero queda
 # inerte (el chequeo de arranque la reporta NOT_LOADED como WARNING).
 # Adaptación del overlay.d/ivanna_audio.rc del módulo ivanna_audio_probe

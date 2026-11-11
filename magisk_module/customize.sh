@@ -9,6 +9,23 @@ ui_print " "
 
 SKIPUNZIP=0
 
+# ── FIX BRICK 3 (v2.5.391, auditoría 2026-11-10) ─────────────────────────────
+# La 384 instaló overlay.d/ivanna_audio.rc ACTIVO (LD_PRELOAD de la .so v5
+# en el HAL). La 385+ lo "desactivó por defecto" solo en el ZIP (lo movió a
+# overlay.d.disabled/), pero NADA borraba un .rc rancio ya instalado: ni
+# customize.sh ni service.sh lo tocaban, y post-fs-data.sh solo lo quitaba
+# en safe-mode tras 3 arranques fallidos. Resultado: el .rc sobrevivía a
+# cada actualización del módulo, el HAL entraba en crash-loop en cada
+# reinicio y el teléfono no arrancaba (3er brick, reset de fábrica
+# forzoso). El mismo .rc explica el retumbo que no bajaba con ningún
+# control de la app: el write-stage vive en el HAL, por debajo de ORBE /
+# HOLOS / Volterra / Φ. Cada install/update garantiza LD_PRELOAD apagado;
+# el opt-in deliberado se hace DESPUÉS de instalar (ver el .rc).
+if [ -f "$MODPATH/overlay.d/ivanna_audio.rc" ]; then
+    rm -f "$MODPATH/overlay.d/ivanna_audio.rc"
+    ui_print "  ⚠ LD_PRELOAD heredado ELIMINADO (overlay.d/ivanna_audio.rc de la 384 u opt-in viejo): el HAL arranca STOCK. Si lo quieres activar, haz el opt-in DESPUÉS de instalar (ver overlay.d.disabled/ivanna_audio.rc)."
+fi
+
 # El propio instalador y los helpers de permisos recursivos heredan esta prioridad
 # reducida. Así también se suaviza el trabajo de metadatos, no solo los cp.
 if command -v renice >/dev/null 2>&1; then

@@ -71,6 +71,18 @@ activate_safe_mode() {
     memory_core_record "SAFE_MODE" "$reason"
 }
 
+# FIX BRICK 3 (v2.5.391): un overlay.d/ivanna_audio.rc rancio (de la 384 o de
+# un opt-in viejo) sobrevive a las actualizaciones del módulo porque
+# customize.sh no lo tocaba. Si está activo, el HAL carga la .so v5 en cada
+# arranque y puede entrar en crash-loop (teléfono sin arrancar). En cada
+# arranque se retira salvo opt-in deliberado marcado con .preload_optin
+# (el opt-in manual crea ese marcador; ver overlay.d.disabled/ivanna_audio.rc).
+if [ -f "$MODDIR/overlay.d/ivanna_audio.rc" ] && [ ! -f "$MODDIR/.preload_optin" ]; then
+    rm -f "$MODDIR/overlay.d/ivanna_audio.rc" 2>/dev/null
+    observatory_log "BOOT" "LD_PRELOAD rancio retirado en arranque (overlay.d/ivanna_audio.rc sin .preload_optin); el HAL arranca STOCK"
+    memory_core_record "PRELOAD_STALE_REMOVED" "overlay.d/ivanna_audio.rc retirado sin opt-in marcado"
+fi
+
 memory_core_record "BOOT_EVENT" "Inicio del sistema (runtime health streak: $COUNT)"
 if [ "$COUNT" -ge 3 ] && [ ! -f "$MODDIR/.safe_mode" ]; then
     activate_safe_mode "Tres arranques consecutivos sin alcanzar daemon + socket saludables"

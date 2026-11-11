@@ -82,7 +82,13 @@ MODPATH="$1"
                 self.assertIn({'name': 'oem', 'library': 'oem', 'uuid': 'oem-uuid'}, [e.attrib for e in effects])
                 for stream in ('music', 'movie', 'game'):
                     applies = merged.findall(f'./postprocess/stream[@type="{stream}"]/apply')
-                    self.assertEqual(sum(e.get('effect') == 'omega_effect' for e in applies), 1)
+                    # Política v2.5.373 (Error -3): el merge ELIMINA los applies
+                    # de omega (un apply global crea una instancia duplicada y
+                    # AudioFlinger rechaza la de la app por sesión con BAD_VALUE).
+                    # La activación es por UUID por sesión desde la app.
+                    self.assertEqual(sum(e.get('effect') == 'omega_effect' for e in applies), 0)
+                    self.assertEqual(sum((e.get('effect') or '').startswith('dlb_') for e in applies), 0)
+                    self.assertEqual(sum(e.get('effect') == 'music_helper' for e in applies), 0)
                 if 'effect="oem"' in xml:
                     self.assertIsNotNone(merged.find('./postprocess/stream[@type="music"]/apply[@effect="oem"]'))
                 if repeat:
