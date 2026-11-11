@@ -295,7 +295,6 @@
 #define RATIO_MIN (1.0 - 1000e-6)
 #define RATIO_MAX (1.0 + 1000e-6)
 #define NOMINAL_RATE 48000.0
-#define SERVO_WARMUP_S 10.0
 /* v6: el settle hold (2 s tras cambiar el stream) sigue: evita que los
  * transitorios de arranque contaminen las mediciones que lee el cerebro.
  * (Las constantes del servo interno v5 — SERVO_MAX_DRIFT_PPM,
@@ -423,8 +422,6 @@ static uint64_t g_mmap_ext = 0, g_mmap_last_ts = 0;
 static uint64_t g_prev_ext = 0, g_prev_ts = 0;
 static int g_have_prev_sample = 0;
 static int g_mmap_consec_fail = 0;
-static uint64_t g_timing_base_frames = 0, g_timing_base_ts = 0;
-static int g_timing_warmed = 0;
 /* Settle hold (2 s tras cambiar el stream activo): no se publican
  * mediciones durante el transitorio de arranque. */
 static uint64_t g_servo_hold_until_ns = 0; /* settle hold deadline */
@@ -1111,37 +1108,8 @@ ASRC_STATIC void servo_note_stream(uintptr_t h) {
     if (h == g_servo_last_stream) return;
     g_servo_last_stream = h;
     g_servo_hold_until_ns = now_ns() + SERVO_SETTLE_NS;
-    g_timing_warmed = 0;
     g_have_prev_sample = 0;
     g_mmap_consec_fail = 0;
-}
-
-/* Write-timing fallback rate: effective pal_stream_write rate of the
- * active slot (output frames / wall time). Coarse: it cannot resolve a
- * 6.25 ppm drift over short windows, so the caller only applies it for
- * LARGE deviations. Returns 0 if not enough data / not warmed up. */
-static double write_timing_rate(struct slot *s) {
-    if (!s) return 0.0;
-    const unsigned long long now = now_ns();
-    const unsigned long long first = atomic_load_explicit(&s->first_write_ns, memory_order_relaxed);
-    const unsigned long long last = atomic_load_explicit(&s->last_write_ns, memory_order_relaxed);
-    if (!first || !last || last <= first) return 0.0;
-    const double elapsed = (double)(last - first) / 1e9;
-    if (elapsed < SERVO_WARMUP_S) return 0.0;
-    if (!g_timing_warmed) {
-        /* Anchor the long window at the end of warmup; the transient
-         * (buffer fill, push rate) must not pollute the estimate. */
-        g_timing_base_frames = atomic_load_explicit(&s->out_frames, memory_order_relaxed);
-        g_timing_base_ts = last;
-        g_timing_warmed = 1;
-        return 0.0;
-    }
-    const unsigned long long frames = atomic_load_explicit(&s->out_frames, memory_order_relaxed);
-    if (frames < g_timing_base_frames) { g_timing_warmed = 0; return 0.0; }
-    const double dt = (double)(last - g_timing_base_ts) / 1e9;
-    if (dt < SERVO_WARMUP_S) return 0.0;
-    (void)now;
-    return (double)(frames - g_timing_base_frames) / dt;
 }
 
 /* Pick the active stream: the eligible slot with the most output bytes
@@ -1527,7 +1495,6 @@ static void control_tick(void) {
             if (++g_mmap_consec_fail >= 5) {
                 atomic_store_explicit(&g_clock_source, CLK_TIMING, memory_order_relaxed);
                 g_mmap_consec_fail = 0;
-                g_timing_warmed = 0;
                 LOGI("mmap_position: 5 consecutive failures; clock source = write-timing");
             }
         }
