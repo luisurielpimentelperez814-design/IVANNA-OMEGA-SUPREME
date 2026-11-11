@@ -243,26 +243,17 @@ FxControl readFxConfig() noexcept {
 
 // Snapshot neutro (defensa en profundidad: aunque makeDefault cambiara,
 // esto seguiría siendo neutro).
-// Snapshot neutro + ESTADO DE LA FUSIÓN (acoplamiento con la APK).
-// El cerebro publica aquí el estado de la fusión (veredicto, deriva, ratio,
-// reloj, η, Γ, Ψ activo) para que la APK lo VEA por el snapshot — el canal
-// que ya lee — y se ACOPLE: si fusion_active=1, la app sabe que el HAL ya
-// está procesando TODO el audio y la Ruta A cede (no procesa dos veces).
-ivanna::OmegaDspSnapshot buildNeutralSnapshot(int32_t sessionId, uint64_t sessionGen,
-                                      uint64_t generation,
-                                      uint32_t verdict, double driftPpm, double ratio,
-                                      int32_t clockSource, double eta, double psiGamma,
-                                      uint32_t psiActive, uint64_t fusionGen) noexcept {
-    ivanna::OmegaDspSnapshot s = ivanna::OmegaDspSnapshot::makeDefault();
-    for (int i = 0; i < ivanna::OMEGA_CTRL_EQ_BANDS; ++i) s.eq_gains[i] = 0.0f;
-    s.bass_boost_db = 0.0f; s.dialog_boost_db = 0.0f;
-    s.room_rt60_s = 0.0f; s.room_wet = 0.0f; s.room_idx = -1;
-    s.upmixing_enabled = 0; s.upmixing_immersivity = 0.0f;
-    s.compressor = 0.0f; s.comp_amount = 0.0f;
-    s.exciter_reduction = 0.0f; s.exc_red = 0.0f;
-    s.harmonic_gain = 0.0f; s.target_gain = 0.0f; s.loudness_target = 0.0f;
-    s.flags = ivanna::OMEGA_FLAG_EQ_CALIBRATED | ivanna::OMEGA_FLAG_PERCEPTUAL_ON
-            | ivanna::OMEGA_FLAG_ANTI_DOLBY_ON | ivanna::OMEGA_FLAG_ATI_ON;
+// Aplica el estado de la fusión + sesión a un snapshot EXISTENTE (lo
+// modifica in situ). Solo toca los campos del cerebro; CONSERVA los ajustes
+// de efectos de la APK (ORBE, HOLOS, Φ, Volterra, 5 Ejes, NPE, Reality, EQ,
+// limitador) que ya trae el snapshot. Así la Ruta B aplica TODOS los efectos
+// de la APK en la intercepción, y el cerebro no los borra con un default
+// neutro en cada publicación (20 Hz). El default neutro solo se usa en el
+// primer publish (makeDefault, fail-closed) si aún no hay snapshot.
+void applyFusionToSnapshot(ivanna::OmegaDspSnapshot& s, int32_t sessionId, uint64_t sessionGen,
+                           uint64_t generation, uint32_t verdict, double driftPpm, double ratio,
+                           int32_t clockSource, double eta, double psiGamma,
+                           uint32_t psiActive, uint64_t fusionGen) noexcept {
     s.discovered_session_id = sessionId;
     s.discovered_session_gen = sessionGen;
     s.generation = generation;
@@ -277,7 +268,6 @@ ivanna::OmegaDspSnapshot buildNeutralSnapshot(int32_t sessionId, uint64_t sessio
     s.fusion_asrc_drift_ppm = static_cast<float>(driftPpm);
     s.fusion_asrc_clock = clockSource;
     s.fusion_generation = fusionGen;
-    return s;
 }
 
 } // namespace
@@ -316,6 +306,14 @@ int main() {
 
     ivanna::OmegaControlBus bus;
     bool shmOk = false;
+    // Snapshot que publica el cerebro: se conserva entre iteraciones para
+    // NO borrar los ajustes de efectos de la APK (ORBE, HOLOS, EQ, ...).
+    // Cada vuelta se adopta el snapshot más reciente de la app (si publicó
+    // algo nuevo) y solo se actualizan los campos del cerebro (fusión +
+    // sesión). Así TODOS los efectos de la APK llegan a la Ruta B.
+    ivanna::OmegaDspSnapshot lastSnap = ivanna::OmegaDspSnapshot::makeDefault();
+    uint64_t snapLastSeenGen = 0;
+    uint64_t snapGeneration = 0;
     Kalman3 servo;
     // El núcleo Ψ vivo: el cerebro corre el campo (Ec. 4 η + Ec. 2 ILD +
     // Ec. 3 personalización) y publica sus ganancias por banda en el estado.
@@ -531,17 +529,25 @@ int main() {
             ivanna_fusion_write(fusion, &w);
         }
 
-        // 8. Publicar el snapshot neutro (SHM del efecto) + heartbeat.
-        // El snapshot lleva TAMBIÉN el estado de la fusión (ABI v12) para
-        // que la APK lo vea y se acople (Ruta A cede si fusion_active=1).
+        // 8. Publicar el snapshot (SHM del efecto) + heartbeat.
+        // READ-MODIFY-WRITE: se adopta el snapshot más reciente de la APK
+        // (sus ajustes de efectos: ORBE, HOLOS, Φ, Volterra, 5 Ejes, NPE,
+        // Reality, EQ, limitador) y SOLO se actualizan los campos del
+        // cerebro (fusión + sesión). El cerebro JAMÁS publica un default
+        // neutro que borre los efectos de la APK (antes lo hacía 20 veces
+        // por segundo). Así la Ruta B aplica TODOS los efectos de la APK en
+        // la intercepción, y el HAL suma ASRC + campo Ψ. La APK lo ve por
+        // el snapshot (ABI v12) y la Ruta A cede si fusion_active=1.
         if (!shmOk) shmOk = bus.openWriter();
         if (shmOk) {
-            const auto snap = buildNeutralSnapshot(sessionId, sessionGen, generation,
-                                                   verdict, drift, ratio,
-                                                   static_cast<int32_t>(st.clock_source),
-                                                   psi.eta, psi.coupling(), psiActive,
-                                                   static_cast<uint64_t>(st.sequence));
-            if (!bus.publish(snap)) shmOk = false;
+            ivanna::OmegaDspSnapshot cur{};
+            if (bus.readLatest(cur, snapLastSeenGen)) lastSnap = cur;
+            applyFusionToSnapshot(lastSnap, sessionId, sessionGen, ++snapGeneration,
+                                  verdict, drift, ratio,
+                                  static_cast<int32_t>(st.clock_source),
+                                  psi.eta, psi.coupling(), psiActive,
+                                  static_cast<uint64_t>(st.sequence));
+            if (!bus.publish(lastSnap)) shmOk = false;
             else if (sessionId != lastPublishedSession) {
                 char buf[128];
                 std::snprintf(buf, sizeof(buf), "sesión publicada: %d (gen %llu)",
