@@ -605,6 +605,10 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     private suspend fun runDecodeLoop(uri: Uri) = withContext(Dispatchers.Default) {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
+        // ASRC MAGISTRAL Ruta A (v2.5.404): se declara ANTES del try porque
+        // el finally lo cierra (routeAAsrc.close()); declarado dentro del
+        // try, el finally no lo ve ("Unresolved reference", CI 405).
+        val routeAAsrc = RouteAAsrc()
         try {
             extractor.setDataSource(context, uri, null)
 
@@ -647,8 +651,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // nativo, alimentado por el mismo PLL. Si el nativo no está
             // disponible (isAvailable=false), el remuestreador Kotlin sigue
             // llevando la corrección (fallback, fail-closed); el ASRC es
-            // passthrough y el audio no se rompe.
-            val routeAAsrc = RouteAAsrc()
+            // passthrough y el audio no se rompe. (La instancia se crea
+            // antes del try; aquí solo se alimenta la tasa.)
             // Ψ VIVA: el ASRC necesita la tasa del track para diseñar el
             // FIR Ψ (mapeo 0..Nyquist) y medir la envolvente 1–8 Hz (η).
             // Ψ se activa sola en el primer bloque; sin esto usaría 48 kHz.
