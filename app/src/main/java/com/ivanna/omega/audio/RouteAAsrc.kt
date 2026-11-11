@@ -150,6 +150,14 @@ class RouteAAsrc {
     val psiCoherence: Double
         get() = if (!isAvailable) 0.5 else runCatching { nativePsiCoherence(handle) }.getOrDefault(0.5)
 
+    /** Puerta Ψ: true = el campo convoluciona (telemetría en vivo v2.5.407). */
+    val psiActive: Boolean
+        get() = if (!isAvailable) false else runCatching { nativePsiActive(handle) }.getOrDefault(false)
+
+    /** Corrección de reloj APLICADA por el nativo (ppm, telemetría v2.5.407). */
+    val clockCorrectionPpm: Double
+        get() = if (!isAvailable) 0.0 else runCatching { nativeClockCorrectionPpm(handle) }.getOrDefault(0.0)
+
     /** FIR Ψ del cerebro (64 taps por oído). No-op sin nativo. */
     fun setPsiFir(firL: FloatArray, firR: FloatArray) {
         if (!isAvailable) return
@@ -242,6 +250,8 @@ class RouteAAsrc {
     private external fun nativeSetPsiDesignHold(handle: Long, hold: Boolean)
     private external fun nativePsiEta(handle: Long): Double
     private external fun nativePsiCoherence(handle: Long): Double
+    private external fun nativePsiActive(handle: Long): Boolean
+    private external fun nativeClockCorrectionPpm(handle: Long): Double
     private external fun nativeSetPsiActive(handle: Long, active: Boolean)
     private external fun nativeSetPsiFir(handle: Long, firL: FloatArray, firR: FloatArray)
     private external fun nativeReset(handle: Long)

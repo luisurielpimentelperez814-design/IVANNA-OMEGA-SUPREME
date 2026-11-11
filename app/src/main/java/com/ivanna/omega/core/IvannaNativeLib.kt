@@ -227,6 +227,11 @@ object IvannaNativeLib {
     // compAmount,excReduction,spatialWidth,adaptiveActive]
     external fun nativeGetUnifiedPipelineStatus(): FloatArray?
 
+    // FloatArray[4]: [orbe, holos, phi, volterra] — amounts 0..1
+    // (volterra 1.0/0.0: no tiene amount, solo on/off). Telemetría en vivo
+    // 1 Hz (v2.5.407, IVANNA.Telemetry): una sola llamada JNI por segundo.
+    external fun nativeGetEffectAmounts(): FloatArray?
+
 
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
     // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo

@@ -6,7 +6,7 @@
 
 **Audio espacial Android · un solo motor, dos rutas, evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.406-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.407-c8a96b?style=flat-square)](version.properties)
 [![HOLOS](https://img.shields.io/badge/HOLOS-publicado%20v2.5.364-9fb7d0?style=flat-square)](#5-holos--operador-único-de-campo-acústico-)
 [![Φ](https://img.shields.io/badge/Φ-Hiper--Operador%20v2.5.369-9fb7d0?style=flat-square)](#13-hiper-operador-φ--v2515369)
 [![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
@@ -27,6 +27,7 @@
 
 | Rama / versión | Contenido | Estado |
 |:---|:---|:---|
+| `main` · **v2.5.407** (698) | **TELEMETRÍA EN VIVO DE TODOS LOS EFECTOS — 1 Hz en logcat (`IVANNA.Telemetry`).** Mientras Ruta A reproduce, un poller en hilo de fondo vuelca una línea por segundo con TODOS los efectos en formato `clave=valor` parseable: ASRC (asrc, ppm aplicado), Ψ (eta, coherencia, activa), amounts ORBE/HOLOS/Φ/Volterra, telemetría adaptativa (rms, peak, gr_db, gain, comp, exc, width, safety, voice, applied), bandas (lo/mid/hi) y género NPE. Nuevo JNI `nativeGetEffectAmounts()` (una sola llamada/s) + getters `nativePsiActive`/`nativeClockCorrectionPpm`; formateador top-level con Locale.US y 6 tests host. Fail-closed: si algo falla, la línea se salta y el audio nunca se rompe. |
 | `main` · **v2.5.406** (697) | **FIX CI 405 — `Unresolved reference 'routeAAsrc'` en `compileReleaseKotlin`.** `routeAAsrc` se declaraba como `val` local DENTRO del `try` de `runDecodeLoop`, pero el `finally` lo cerraba fuera de ese ámbito; ahora la instancia se crea ANTES del `try` (el `finally` la cierra siempre, sin leak). La 405 además dejó lección: el job de tests terminó en 8 min normal y lo que se atascó fue el build APK en cola 40 min esperando runner; la API mostraba el job de tests como "in_progress" desactualizado. |
 | `main` · **v2.5.405** (696) | **Ψ ACTIVA en Ruta A — la app calcula el campo ella misma.** Ψ ya no está en bypass: la app diseña los 64 taps por oído con `PsiCore` (ILD Ec. 2, ley de distancia, IFFT + Hann) desde el modelo de cabeza (radio KEMAR 0.0875 m, punto dulce 0.30 m), y alimenta η con la coherencia envolvente medida (AM 4 Hz → η 0.729; tono constante → η 0.182; silencio → η se queda). Ψ activa tras el primer bloque; azimut 30° → ILD −3.54 dB real. **31/31 tests en host.** THD+N con Ψ activa: −95.0 dB @ +100 ppm (Ψ no degrada el remuestreador). Fix CI 404: `#include <new>` para `std::nothrow` en el JNI (el NDK no lo trae por transitividad). El CTest host lleva fallando desde la 402 (clang++-18 no instalado en el runner; preexistente, no bloquea la release). |
 | `main` · **v2.5.399** (690) | **FIX ABI pal_stream_write** — la real retorna int32_t (w0), no ssize_t; un error -22 se leia como +4,294,967,274 bytes. Ahora pal_write_fn es int32_t con sign-extend. Layout pal_mmap_position VERIFICADO por desensamblado (time_ns @0, position @8); SessionAlsaPcm::GetMmapPosition desensamblado (0x24e3ac). Servo con direccion correcta. |

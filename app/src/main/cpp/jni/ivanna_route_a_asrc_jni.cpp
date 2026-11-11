@@ -137,6 +137,26 @@ Java_com_ivanna_omega_audio_RouteAAsrc_nativePsiCoherence(
     return static_cast<jdouble>(asrc->psiCoherence());
 }
 
+// Telemetría en vivo 1 Hz (v2.5.407, IVANNA.Telemetry): puerta Ψ y ppm
+// APLICADO por el nativo. Solo lectura de atómicos, sin locks.
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativePsiActive(
+    JNIEnv* env, jobject /*thiz*/, jlong handle) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return JNI_FALSE;
+    return asrc->psiActive() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jdouble JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativeClockCorrectionPpm(
+    JNIEnv* env, jobject /*thiz*/, jlong handle) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return 0.0;
+    return static_cast<jdouble>(asrc->clockCorrectionPpm());
+}
+
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_audio_RouteAAsrc_nativeSetPsiActive(JNIEnv* env,
                                                           jobject /*thiz*/,

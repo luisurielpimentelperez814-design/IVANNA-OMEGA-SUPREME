@@ -609,6 +609,11 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         // el finally lo cierra (routeAAsrc.close()); declarado dentro del
         // try, el finally no lo ve ("Unresolved reference", CI 405).
         val routeAAsrc = RouteAAsrc()
+        // Telemetría en vivo 1 Hz (v2.5.407, IVANNA.Telemetry): el Job
+        // TAMBIÉN se declara antes del try, por la misma razón: el
+        // finally lo cancela. Si se declarara dentro del try, el
+        // finally no lo vería y el poller seguiría vivo tras el stop.
+        var telemetryJob: Job? = null
         try {
             extractor.setDataSource(context, uri, null)
 
@@ -657,6 +662,11 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // FIR Ψ (mapeo 0..Nyquist) y medir la envolvente 1–8 Hz (η).
             // Ψ se activa sola en el primer bloque; sin esto usaría 48 kHz.
             routeAAsrc.setSampleRate(sampleRate.toFloat())
+            // Telemetría en vivo 1 Hz (v2.5.407): una línea por segundo
+            // en logcat (tag IVANNA.Telemetry) con TODOS los efectos.
+            // Hilo de fondo (Dispatchers.Default), nunca el hilo de audio.
+            // Se cancela en el finally; si el scope muere, muere con él.
+            telemetryJob = startTelemetryPoller(routeAAsrc)
             val outputTimestamp = AudioTimestamp()
             // A one-step latency change from an AudioTrack reroute (Bluetooth
             // connect/disconnect, output-device policy change mid-session) is
@@ -1007,6 +1017,10 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             Log.e(TAG, "Error en decode loop", t)
             state = State.ERROR
         } finally {
+            // Telemetría en vivo (v2.5.407): parar el poller ANTES de
+            // cerrar el ASRC, para que no lea un handle ya destruido.
+            telemetryJob?.cancel()
+            telemetryJob = null
             routeAAsrc.close()
             predictiveAnalyzer?.close()
             predictiveAnalyzer = null

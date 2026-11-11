@@ -5337,6 +5337,30 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetUnifiedPipelineStatus(
     env->SetFloatArrayRegion(arr, 0, 8, v);
     return arr;
 }
+// ── nativeGetEffectAmounts — amounts de los 4 efectos principales ───────
+// Telemetría en vivo 1 Hz (v2.5.407, IVANNA.Telemetry): una sola llamada
+// JNI por segundo en vez de cuatro. FloatArray[4]:
+//   [0] orbe     (g_orbe_amount, 0..1; 1.0 activo por defecto, directiva 2026-11-08)
+//   [1] holos    (g_holos_amount, 0..1; 0.5 activo por defecto, directiva 2026-11-08)
+//   [2] phi      (g_hyper_amount, 0..1; 0.5 activo por defecto, directiva 2026-11-08)
+//   [3] volterra (g_volterra_enabled, 1.0/0.0; no tiene amount, solo on/off)
+// Todos son atómicos del proceso app (orbe/holos definidos en sus
+// *_controls_bridge.cpp del target ivanna_omega; hyper/volterra, estáticos
+// en este archivo). Solo lectura, sin locks, seguro desde el poller.
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEffectAmounts(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(4);
+    if (!arr) return nullptr;
+    const float v[4] = {
+        g_orbe_amount.load(std::memory_order_relaxed),
+        g_holos_amount.load(std::memory_order_relaxed),
+        g_hyper_amount.load(std::memory_order_relaxed),
+        g_volterra_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f
+    };
+    env->SetFloatArrayRegion(arr, 0, 4, v);
+    return arr;
+}
 
 JNIEXPORT jfloat JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetAdaptiveLambdaT(
