@@ -95,6 +95,12 @@ add_library(ivanna_omega SHARED
     jni/ivanna_visualizer_bark64_jni.cpp
     jni/ivanna_npe_jni.cpp
     jni/ivanna_predictive_jni.cpp
+    # ── ASRC MAGISTRAL Ruta A (v2.5.404) ─────────────────────────────────
+    # FIR 287 taps + Catmull-Rom nativo en el proceso app (no HAL).
+    # La tabla de coeficientes es la ÚNICA del HAL (fir_v5_coeffs.h):
+    # se añade su directorio al include path abajo (target_include_directories).
+    ivanna_route_a_asrc.cpp
+    jni/ivanna_route_a_asrc_jni.cpp
     jni/ivanna_jni_stub.cpp
     pi_lstm_bridge_jni.cpp
     spatial/spatial_jni.cpp
@@ -331,6 +337,10 @@ target_include_directories(ivanna_omega PRIVATE
     ${CMAKE_SOURCE_DIR}/visualizer
     ${CMAKE_SOURCE_DIR}/experimental/adaptive_engine
     ${CMAKE_SOURCE_DIR}/ivannalab
+    # ASRC MAGISTRAL Ruta A: tabla FIR v6 (única fuente, no copia).
+    # CMAKE_SOURCE_DIR es app/src/main/cpp (top-level CMake); el repo
+    # está 4 niveles arriba.
+    ${CMAKE_SOURCE_DIR}/../../../../hal_integration/moto_g85/pal_preload_probe
 )
 
 if(ANDROID)

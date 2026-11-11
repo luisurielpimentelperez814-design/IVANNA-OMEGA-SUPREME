@@ -643,6 +643,12 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // One SAFMUS servo owns both rolling clock-drift estimation and
             // queue-phase correction. Never run a second controller on this resampler.
             val bufferPll = AudioTrackBufferPll(sampleRate)
+            // ASRC MAGISTRAL Ruta A (v2.5.404): FIR 319 taps + Catmull-Rom
+            // nativo, alimentado por el mismo PLL. Si el nativo no está
+            // disponible (isAvailable=false), el remuestreador Kotlin sigue
+            // llevando la corrección (fallback, fail-closed); el ASRC es
+            // passthrough y el audio no se rompe.
+            val routeAAsrc = RouteAAsrc()
             val outputTimestamp = AudioTimestamp()
             // A one-step latency change from an AudioTrack reroute (Bluetooth
             // connect/disconnect, output-device policy change mid-session) is
@@ -759,6 +765,10 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             val spatialInR = FloatArray(MAX_CHUNK_FRAMES)
             val spatialOutL = FloatArray(MAX_CHUNK_FRAMES)
             val spatialOutR = FloatArray(MAX_CHUNK_FRAMES)
+            // Salida del ASRC magistral (reutilizado; el FIFO interno del
+            // ASRC absorbe la variación de frames por la corrección ppm).
+            // Margen +512 frames para la válvula high-water del FIFO.
+            val asrcOut = FloatArray((MAX_CHUNK_FRAMES + 512) * 2)
 
             while (isActive && !sawOutputEOS && !stopRequested) {
                 while (pauseRequested && !stopRequested) delay(50)
@@ -770,6 +780,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                     seekTargetUs = -1L
                     sawInputEOS = false
                     predictive.reset()
+                    routeAAsrc.reset()
                     extractor.seekTo(pendingSeekUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                     // codec.flush() sólo es legal en estado Executing (nuestro
                     // RUNNING). Guard + log del estado previo — sin guard,
@@ -884,9 +895,26 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                 }
                             }
                             predictive.feed(chunk, chunkFrames)   // observador: no modifica `chunk`
-                            val writtenSamples = track.write(
-                                chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING
-                            )
+                            // ASRC MAGISTRAL Ruta A: DESPUÉS de la cadena DSP,
+                            // antes de escribir a AudioTrack. El nativo
+                            // remuestrea con FIR 319 taps + Catmull-Rom y
+                            // aplica la corrección ppm del PLL; su FIFO
+                            // interno absorbe la variación de frames por
+                            // bloque (el contrato de bloque del DSP no se
+                            // rompe). Sin nativo, passthrough: el
+                            // remuestreador Kotlin lleva la corrección.
+                            // Si asrcFrames==0 (FIFO vacío: solo al arrancar
+                            // o si el nativo falló), NO se escribe nada este
+                            // bloque: el audio ya está dentro del ASRC/FIFO
+                            // y escribir `chunk` directo lo duplicaría.
+                            val asrcFrames = routeAAsrc.processInto(chunk, chunkFrames, asrcOut)
+                            val writtenSamples = if (asrcFrames > 0) {
+                                track.write(
+                                    asrcOut, 0, asrcFrames * 2, AudioTrack.WRITE_BLOCKING
+                                )
+                            } else {
+                                0
+                            }
                             // Closed-loop software PLL: estimate queue phase from frames
                             // accepted by this AudioTrack minus its timestamped consumed frames.
                             // No Bluetooth/DAC/vendor-HAL clock writes are attempted.
@@ -913,6 +941,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                         Log.i(TAG, "AudioTrack reroute detectado (routedDevice id $priorRoutedId -> $routedId); bufferPll reiniciado, no se interpreta como deriva de reloj")
                                         bufferPll.reset()
                                         resampler.setClockCorrectionPpm(0.0)
+                                        routeAAsrc.reset()
+                                        routeAAsrc.setClockCorrectionPpm(0.0)
                                         OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
                                     } else if (track.getTimestamp(outputTimestamp)) {
                                         // One controller estimates clock slope by centered rolling OLS
@@ -923,7 +953,20 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                             bufferCapacityFrames = track.bufferSizeInFrames,
                                             timestampNs = outputTimestamp.nanoTime
                                         )
-                                        resampler.setClockCorrectionPpm(correctionPpm)
+                                        // ASRC MAGISTRAL: el ppm va al nativo
+                                        // (FIR 319 taps) si está disponible; el
+                                        // remuestreador Kotlin queda en 0.0
+                                        // (solo conversión de tasa). Sin nativo,
+                                        // el Kotlin lleva la corrección
+                                        // (fallback, comportamiento actual).
+                                        // NUNCA los dos a la vez: sería doble
+                                        // corrección (2x ppm).
+                                        if (routeAAsrc.isAvailable) {
+                                            routeAAsrc.setClockCorrectionPpm(correctionPpm)
+                                            resampler.setClockCorrectionPpm(0.0)
+                                        } else {
+                                            resampler.setClockCorrectionPpm(correctionPpm)
+                                        }
                                         OmegaMetrics.updateClockServoTelemetry(
                                             timestampAvailable = true,
                                             locked = bufferPll.isLocked,
@@ -934,6 +977,8 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                     } else {
                                         bufferPll.reset()
                                         resampler.setClockCorrectionPpm(0.0)
+                                        routeAAsrc.reset()
+                                        routeAAsrc.setClockCorrectionPpm(0.0)
                                         OmegaMetrics.updateClockServoTelemetry(false, false, 0.0, 0.0, 0.0)
                                     }
                                 }
@@ -954,6 +999,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             Log.e(TAG, "Error en decode loop", t)
             state = State.ERROR
         } finally {
+            routeAAsrc.close()
             predictiveAnalyzer?.close()
             predictiveAnalyzer = null
             OmegaMetrics.updateSharedPredictive(false, 0f, 0f, false)

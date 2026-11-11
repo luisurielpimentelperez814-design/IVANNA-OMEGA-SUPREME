@@ -9,37 +9,15 @@ ui_print " "
 
 SKIPUNZIP=0
 
-# ── WRAPPER DEL HAL — ASRC v6 (v2.5.403, directiva del propietario 2026-11-11) ──
-# Por diseño, un módulo Magisk NO puede hacer que init lea un .rc al arrancar:
-# init parsea /vendor/etc/init/ ANTES de que Magisk monte los módulos en
-# post-fs-data, y el overlay.d del módulo no lo lee nadie (es solo del ramdisk
-# de la imagen de arranque). Por eso el HAL se lanza con un WRAPPER: un
-# binario mínimo que pone LD_PRELOAD y hace exec del binario real (patrón del
-# módulo adb_root). El wrapper llega en el zip como
-# system/vendor/bin/hw/android.hardware.audio.service_64 y Magisk lo monta
-# sobre el HAL real; el binario real se respalda AQUÍ (en la instalación,
-# no va en el zip: es propietario de Qualcomm) como
-# ...service_64.real. Magisk clona el contexto SELinux del destino al montar,
-# así que el wrapper hereda el dominio del HAL. El kill switch pal_asrc.off
-# sigue funcionando (el wrapper hace exec SIN LD_PRELOAD si está presente).
-# ROLLBACK: desinstalar el módulo restaura el binario original.
-REAL_HAL="/vendor/bin/hw/android.hardware.audio.service_64"
-WRAP_DIR="$MODPATH/system/vendor/bin/hw"
-REAL_BAK="$WRAP_DIR/android.hardware.audio.service_64.real"
-if [ -f "$REAL_HAL" ] && [ ! -f "$REAL_BAK" ]; then
-    mkdir -p "$WRAP_DIR"
-    cp -f "$REAL_HAL" "$REAL_BAK" && chmod 755 "$REAL_BAK" \
-        && ui_print "  ✓ HAL real respaldado en android.hardware.audio.service_64.real" \
-        || ui_print "  ⚠ no se pudo respaldar el HAL real (revisar antes de reiniciar)"
-elif [ -f "$REAL_BAK" ]; then
-    ui_print "  ✓ Respaldo del HAL real ya existe (no se sobrescribe)"
-else
-    ui_print "  ⚠ binario del HAL no encontrado en $REAL_HAL (revisar)"
-fi
-# Limpieza: los .rc ya no sirven (init nunca los lee). Si quedaron de una
-# instalación anterior, se retiran para no confundir.
-rm -f "$MODPATH/system/vendor/etc/init/ivanna_audio.rc" "$MODPATH/overlay.d/vendor/etc/init/ivanna_audio.rc" "$MODPATH/overlay.d/ivanna_audio.rc" 2>/dev/null || true
-ui_print "  ✓ Wrapper del HAL activo: el HAL arrancará con LD_PRELOAD en el próximo arranque del servicio."
+# ── NOTA (v2.5.404): el WRAPPER DEL HAL se ELIMINÓ. El HAL se aborta con
+# "Binder threadpool cannot be shrunk after starting" cuando el wrapper hace
+# exec del binario real (6º reset de fábrica, 2026-11-11). El ASRC magistral
+# ahora vive en RUTA A (app, ivanna_route_a_asrc), no en el HAL. No reinstalar
+# el zip v2.5.403 (lleva el wrapper roto). Si quedaron restos del wrapper de
+# una instalación anterior, se limpian aquí (sin tocar el binario original).
+rm -f "$MODPATH/system/vendor/bin/hw/android.hardware.audio.service_64" "$MODPATH/system/vendor/bin/hw/android.hardware.audio.service_64.real" 2>/dev/null || true
+rmdir "$MODPATH/system/vendor/bin/hw" 2>/dev/null || true
+ui_print "  ✓ Sin wrapper del HAL (eliminado en v2.5.404; el ASRC magistral vive en Ruta A)."
 
 # El propio instalador y los helpers de permisos recursivos heredan esta prioridad
 # reducida. Así también se suaviza el trabajo de metadatos, no solo los cp.
