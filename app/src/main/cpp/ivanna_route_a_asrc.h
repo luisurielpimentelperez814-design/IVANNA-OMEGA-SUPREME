@@ -11,6 +11,18 @@
 // es el FIR 319 taps + Catmull-Rom del v6, con la FIR Ψ del campo, en C++
 // nativo con NEON.
 //
+// Ψ VIVA EN LA APP (2026-11-11, directiva de Esse: Ψ funciona sí o sí).
+// La app ES el cerebro: calcula los taps Ψ ella misma con PsiCore
+// (psi_core.h: Ec. 2 ILD + Ec. 4 η + designFir 64 taps/oído), sin daemon.
+// Por defecto ACTIVA (no en bypass): en el primer bloque se diseñan los
+// taps con η=0.5 y se abre la puerta; η se alimenta de la coherencia de
+// la envolvente 1–8 Hz medida en los propios bloques (misma medida que el
+// músculo del HAL: polo rápido ~8 Hz, polo lento ~1 Hz, coherencia =
+// E[(rápido−lento)²]/E[rápido²]). Los taps solo se rediseñan cuando η se
+// mueve ≥0.02 o cambia la geometría (y ≥0.25 s desde el último diseño):
+// el diseño por IFFT es barato pero no va en cada bloque.
+// Fail-closed: sin medida fiable (silencio), η se queda; sin Ψ, bypass.
+//
 // Seguridad en tiempo real:
 //  - Sin allocs después de crear el objeto (todos los buffers son miembros
 //    de tamaño fijo). Sin locks en el hilo de audio: el ratio y la puerta Ψ
@@ -33,6 +45,7 @@
 #include <cstdint>
 
 #include "fir_v5_coeffs.h"  // FIR_V5_PHASES / FIR_V5_TAPS (tabla única del HAL)
+#include "psi_core.h"       // PsiCore: el cerebro Ψ vive en la app (Ruta A)
 
 namespace ivanna::routea {
 
@@ -79,15 +92,46 @@ public:
         return ratioToPpm(ratio_.load(std::memory_order_relaxed));
     }
 
-    // FIR Ψ (64 taps por oído). La diseña el cerebro; el músculo solo
-    // convoluciona. Por defecto INACTIVA (bypass). setPsiFir copia los
-    // 64 taps por oído; setPsiActive abre/cierra la puerta. Sin cerebro
-    // vivo, Ψ permanece en bypass (misma puerta que la fusión).
+    // FIR Ψ (64 taps por oído). La diseña EL CEREBRO DE LA APP (PsiCore,
+    // ver abajo); el músculo solo convoluciona. Por defecto ACTIVA: la app
+    // diseña los taps en el primer bloque y abre la puerta ella misma.
+    // setPsiFir copia 64 taps por oído de una fuente EXTERNA (fusión/daemon
+    // futuro): mientras haya taps externos, el auto-diseño se suspende y
+    // mandan los externos. setPsiActive abre/cierra la puerta a mano:
+    // setPsiActive(false) apaga Ψ y SUPRIME el auto-diseño hasta que se
+    // vuelva a llamar setPsiActive(true) o setPsiAuto(true).
     void setPsiFir(const float* firL, const float* firR);
     void setPsiActive(bool active);
     bool psiActive() const {
         return psiActive_.load(std::memory_order_relaxed) != 0;
     }
+
+    // ── Ψ VIVA: la app es el cerebro ──────────────────────────────────
+    // Tasa de muestreo del track (Hz) para el diseño del FIR (mapeo
+    // 0..Nyquist) y para la medida de envolvente. Default 48000; el
+    // reproductor la fija al crear el ASRC (RouteAAsrc.setSampleRate).
+    void setSampleRate(float sampleRateHz);
+    // Geometría del campo: radio de cabeza (m), distancia (m), azimut
+    // (rad, 0 = enfrente). Valores no finitos o <= 0 se ignoran (queda el
+    // anterior). Sin setter, el radio se lee del atomic g_orbe_head_radius_m
+    // del proceso app si existe (HeadMeasure), si no KEMAR 0.0875 m.
+    // Distancia default 0.30 m (punto dulce), azimut default 0.
+    void setPsiGeometry(float headRadiusM, float distanceM, float azimuthRad);
+    // Auto-diseño + auto-activación de Ψ (default true). false = Ψ apagada
+    // y sin auto-diseño (solo se activa a mano con setPsiActive(true)).
+    // true = la app retoma el diseño (olvida taps externos).
+    void setPsiAuto(bool autoOn);
+    // Congela el diseño de los FIR Ψ (los taps quedan fijos, la puerta
+    // sigue como esté). Para medir THD+N sin la deriva de ganancia de Γ,
+    // o para sostener el campo mientras se ajusta algo. No congela η.
+    void setPsiDesignHold(bool hold);
+    // Diagnóstico (no en el camino de audio): η actual [0,1] y última
+    // coherencia medida [0,1].
+    double psiEta() const;
+    double psiCoherence() const;
+    // Copia los taps Ψ diseñados actualmente (64 por oído). false si aún
+    // no se ha diseñado ningún FIR.
+    bool psiFirTaps(float* firL, float* firR) const;
 
     // Reinicia el estado (historia, posición, Ψ): usar en seek, cambio
     // de ruta (reroute) o cambio de pista. El primer bloque tras reset
@@ -130,6 +174,37 @@ private:
     float psiFirL_[kPsiTaps];
     float psiFirR_[kPsiTaps];
     std::atomic<int> psiActive_{0};
+
+    // ── Ψ VIVA: el cerebro en la app (Ec. 4 + diseño de FIR) ──────────
+    // PsiCore es el núcleo (η, Γ, ILD Ec. 2, designFir). Solo lo toca el
+    // hilo de audio (process): los setters solo escriben atómicos.
+    ivanna::psi::PsiCore psiCore_;
+    std::atomic<float> psiSampleRate_{48000.0f};
+    std::atomic<float> psiHeadRadiusSet_{-1.0f};  // <0 = no fijado por setter
+    std::atomic<float> psiDistanceSet_{-1.0f};    // <0 = no fijado por setter
+    std::atomic<float> psiAzimuthSet_{0.0f};     // 0 = enfrente
+    std::atomic<int> psiAuto_{1};
+    std::atomic<int> psiManualOff_{0};
+    std::atomic<int> psiExternalTaps_{0};
+    std::atomic<int> psiDesignHold_{0};
+    // Envolvente/coherencia 1–8 Hz (AC-acoplada; ver .cpp: la versión
+    // DC-acoplada del HAL no pasa de ~0.25 y η nunca sube).
+    double envFast_ = 0.0, envSlow_ = 0.0;
+    double envBandE_ = 0.0, envAcE_ = 0.0;
+    int envN_ = 0;
+    double envAccumSec_ = 0.0;
+    double psiTimeSec_ = 0.0;
+    double lastCoherence_ = 0.5;
+    // Caché de diseño: solo se rediseña cuando η se mueve ≥0.02 o cambia
+    // la geometría (y ≥0.25 s desde el último diseño).
+    bool psiFirsDesigned_ = false;
+    double psiEtaLastDesign_ = -1.0;
+    float psiHeadLast_ = -1.0f, psiDistLast_ = -1.0f, psiAzimLast_ = -1.0f;
+    double psiLastDesignSec_ = -1e9;
+
+    void updatePsiEnvelope(const float* in, int inFrames);
+    void maybeRedesignPsi(bool force);
+    float resolvePsiHeadRadius() const;
 
     std::atomic<uint64_t> totalIn_{0};
     std::atomic<uint64_t> totalOut_{0};

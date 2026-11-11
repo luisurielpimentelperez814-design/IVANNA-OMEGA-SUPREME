@@ -8,7 +8,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 HAL_PROBE="$DIR/../../../../hal_integration/moto_g85/pal_preload_probe"
 CXX="${CXX:-g++}"
 "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror \
-    -I"$DIR" -I"$HAL_PROBE" \
+    -I"$DIR" -I"$DIR/include" -I"$HAL_PROBE" \
     "$DIR/ivanna_route_a_asrc.cpp" "$DIR/ivanna_route_a_asrc_test.cpp" \
     -o /tmp/route_a_asrc_test
 /tmp/route_a_asrc_test

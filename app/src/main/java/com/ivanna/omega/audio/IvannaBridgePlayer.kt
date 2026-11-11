@@ -649,6 +649,10 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // llevando la corrección (fallback, fail-closed); el ASRC es
             // passthrough y el audio no se rompe.
             val routeAAsrc = RouteAAsrc()
+            // Ψ VIVA: el ASRC necesita la tasa del track para diseñar el
+            // FIR Ψ (mapeo 0..Nyquist) y medir la envolvente 1–8 Hz (η).
+            // Ψ se activa sola en el primer bloque; sin esto usaría 48 kHz.
+            routeAAsrc.setSampleRate(sampleRate.toFloat())
             val outputTimestamp = AudioTimestamp()
             // A one-step latency change from an AudioTrack reroute (Bluetooth
             // connect/disconnect, output-device policy change mid-session) is

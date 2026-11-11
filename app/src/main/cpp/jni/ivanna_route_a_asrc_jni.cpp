@@ -14,6 +14,7 @@
 #include <jni.h>
 
 #include <cstdint>
+#include <new>  // std::nothrow (el NDK no lo trae por transitividad con -fno-exceptions)
 
 #include "ivanna_route_a_asrc.h"
 
@@ -77,6 +78,63 @@ Java_com_ivanna_omega_audio_RouteAAsrc_nativeSetClockCorrectionPpm(
     RouteAAsrc* asrc = fromHandle(handle);
     if (!asrc) return;
     asrc->setClockCorrectionPpm(static_cast<double>(ppm));
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativeSetSampleRate(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jfloat sampleRateHz) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return;
+    asrc->setSampleRate(static_cast<float>(sampleRateHz));
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativeSetPsiGeometry(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jfloat headRadiusM,
+    jfloat distanceM, jfloat azimuthRad) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return;
+    asrc->setPsiGeometry(static_cast<float>(headRadiusM),
+                         static_cast<float>(distanceM),
+                         static_cast<float>(azimuthRad));
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativeSetPsiAuto(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jboolean autoOn) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return;
+    asrc->setPsiAuto(autoOn == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativeSetPsiDesignHold(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jboolean hold) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return;
+    asrc->setPsiDesignHold(hold == JNI_TRUE);
+}
+
+JNIEXPORT jdouble JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativePsiEta(
+    JNIEnv* env, jobject /*thiz*/, jlong handle) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return 0.5;
+    return static_cast<jdouble>(asrc->psiEta());
+}
+
+JNIEXPORT jdouble JNICALL
+Java_com_ivanna_omega_audio_RouteAAsrc_nativePsiCoherence(
+    JNIEnv* env, jobject /*thiz*/, jlong handle) {
+    (void)env;
+    RouteAAsrc* asrc = fromHandle(handle);
+    if (!asrc) return 0.5;
+    return static_cast<jdouble>(asrc->psiCoherence());
 }
 
 JNIEXPORT void JNICALL

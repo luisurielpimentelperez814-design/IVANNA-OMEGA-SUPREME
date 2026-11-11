@@ -8,8 +8,18 @@
 //  (c) Continuidad entre bloques: procesar en bloques de 2048 frames da
 //      la misma salida que de una sola vez (sin discontinuidad de fase).
 //  (d) Fail-closed: ppm NaN → ratio 1.0; ppm fuera de rango → clamp
-//      ±1000 ppm; Ψ en bypass por defecto (sin cambios en la salida).
+//      ±1000 ppm; Ψ apagada A MANO (setPsiActive(false)) da bypass exacto.
 //  (e) FIR Ψ: convolución correcta (identidad y retardo de 32 muestras).
+//  (f) Ψ VIVA por defecto (2026-11-11): la app diseña los taps con PsiCore
+//      y abre la puerta en el primer bloque (sin daemon): la salida con Ψ
+//      difiere de la de bypass, y psiFirTaps() devuelve taps.
+//  (g) Taps Ψ: finitos y acotados (|tap| ≤ 4.0, el clamp de designFir).
+//  (h) η se mueve con la coherencia (Ec. 4): sube con señal AM a 4 Hz
+//      (coherencia alta) y baja con tono constante (coherencia ~0).
+//  (i) Retardo de grupo con Ψ activa: el pico del impulso se desplaza
+//      ~32 muestras respecto al bypass.
+//  (j) THD+N con Ψ activa < −90 dB a +100 ppm (el campo no debe degradar
+//      la limpieza del remuestreo).
 //
 // Uso: g++ -std=c++17 -O2 -I<hal_probe_dir> ivanna_route_a_asrc.cpp
 //      ivanna_route_a_asrc_test.cpp -o test && ./test
@@ -45,6 +55,39 @@ void genSine(std::vector<float>& buf, int frames, double freqHz, double phase0 =
         buf[n * 2] = static_cast<float>(kAmp * std::sin(ph));
         buf[n * 2 + 1] = static_cast<float>(kAmp * std::cos(ph));
     }
+}
+
+// Tono con modulación de amplitud a `modHz` (profundidad 0.8): la
+// envolvente oscila en la banda 1–8 Hz → coherencia alta (enganche η).
+// Sin AM, la envolvente es constante → coherencia ~0 (desenganche).
+void genAmTone(std::vector<float>& buf, int frames, double freqHz, double modHz) {
+    buf.resize(static_cast<size_t>(frames) * 2);
+    for (int n = 0; n < frames; ++n) {
+        double t = static_cast<double>(n) / kRate;
+        double am = 1.0 + 0.8 * std::sin(2.0 * kPi * modHz * t);
+        double ph = 2.0 * kPi * freqHz * t;
+        buf[n * 2] = static_cast<float>(kAmp * 0.7 * am * std::sin(ph));
+        buf[n * 2 + 1] = static_cast<float>(kAmp * 0.7 * am * std::cos(ph));
+    }
+}
+
+// Impulso unitario en el frame 0 (ambos canales), resto silencio.
+void genImpulse(std::vector<float>& buf, int frames) {
+    buf.assign(static_cast<size_t>(frames) * 2, 0.0f);
+    buf[0] = 1.0f;
+    buf[1] = 1.0f;
+}
+
+// Índice del pico (|x| máximo) del canal L.
+int peakIndexL(const std::vector<float>& buf) {
+    int best = 0;
+    float bestV = -1.0f;
+    int n = static_cast<int>(buf.size() / 2);
+    for (int i = 0; i < n; ++i) {
+        float v = std::fabs(buf[i * 2]);
+        if (v > bestV) { bestV = v; best = i; }
+    }
+    return best;
 }
 
 // Ajuste de seno por mínimos cuadrados (A*sin + B*cos) y THD+N:
@@ -143,9 +186,13 @@ void testThdn() {
     std::vector<float> in;
     genSine(in, inFrames, kToneHz);
     // Canal L (seno) y R (coseno): medir ambos.
+    // Ψ apagada A MANO aquí: (b) mide el remuestreador SOLO; la ganancia
+    // de Γ (que sigue a η) derivaría y se leería como THD+N. La medida
+    // con Ψ activa y diseño congelado está en (j).
     {
         RouteAAsrc asrc;
         asrc.setClockCorrectionPpm(0.0);
+        asrc.setPsiActive(false);
         std::vector<float> out = processBlocked(asrc, in, inFrames, 2048);
         int outFrames = static_cast<int>(out.size() / 2);
         std::vector<float> chL(outFrames), chR(outFrames);
@@ -161,6 +208,7 @@ void testThdn() {
     {
         RouteAAsrc asrc;
         asrc.setClockCorrectionPpm(100.0);
+        asrc.setPsiActive(false);  // (b) mide el remuestreador SOLO
         std::vector<float> out = processBlocked(asrc, in, inFrames, 2048);
         int outFrames = static_cast<int>(out.size() / 2);
         // A +100 ppm la salida se estira: 1 kHz → 1000/1.0001 = 999.9 Hz.
@@ -250,11 +298,14 @@ void testFailClosed() {
         check(std::fabs(ratio - 1.001) < 0.00002, "ppm +5000 → clamp +1000 ppm");
     }
     {
-        // Ψ en bypass por defecto: la salida es idéntica con Ψ apagada
-        // que sin tocar Ψ (la puerta está cerrada desde el constructor).
+        // Ψ apagada A MANO (setPsiActive(false)) en ambas instancias:
+        // la salida es idéntica (bypass exacto). OJO: por defecto Ψ es
+        // ACTIVA (la app la diseña sola); el bypass solo ocurre con
+        // apagado explícito o con setPsiAuto(false).
         RouteAAsrc a1, a2;
         a1.setClockCorrectionPpm(0.0);
         a2.setClockCorrectionPpm(0.0);
+        a1.setPsiActive(false);
         a2.setPsiActive(false);
         std::vector<float> o1 = processBlocked(a1, in, inFrames, 2048);
         std::vector<float> o2 = processBlocked(a2, in, inFrames, 2048);
@@ -264,8 +315,8 @@ void testFailClosed() {
             double d = std::fabs(static_cast<double>(o1[i]) - o2[i]);
             if (d > maxDiff) maxDiff = d;
         }
-        std::printf("  Ψ bypass por defecto: max diff = %.3e\n", maxDiff);
-        check(maxDiff == 0.0, "Ψ en bypass por defecto (salida idéntica)");
+        std::printf("  Ψ apagada a mano: max diff = %.3e\n", maxDiff);
+        check(maxDiff == 0.0, "Ψ apagada a mano = bypass exacto");
     }
 }
 
@@ -275,6 +326,8 @@ void testPsiFir() {
     std::vector<float> in;
     genSine(in, inFrames, kToneHz);
     // Identidad: tap[0]=1, resto 0 → salida = entrada (tras el remuestreo).
+    // La referencia es bypass REAL (setPsiActive(false)): por defecto Ψ es
+    // ACTIVA y la referencia auto-diseñaría el campo.
     {
         RouteAAsrc asrc;
         asrc.setClockCorrectionPpm(0.0);
@@ -286,6 +339,7 @@ void testPsiFir() {
         std::vector<float> outPsi = processBlocked(asrc, in, inFrames, 2048);
         RouteAAsrc ref;
         ref.setClockCorrectionPpm(0.0);
+        ref.setPsiActive(false);  // bypass real
         std::vector<float> outRef = processBlocked(ref, in, inFrames, 2048);
         double maxDiff = 0.0;
         int n = static_cast<int>(outPsi.size() < outRef.size() ? outPsi.size() : outRef.size());
@@ -308,6 +362,7 @@ void testPsiFir() {
         std::vector<float> outPsi = processBlocked(asrc, in, inFrames, 2048);
         RouteAAsrc ref;
         ref.setClockCorrectionPpm(0.0);
+        ref.setPsiActive(false);  // bypass real
         std::vector<float> outRef = processBlocked(ref, in, inFrames, 2048);
         // Comparar outPsi[n] con outRef[n-32] (a partir de n=32+settle).
         double maxDiff = 0.0;
@@ -323,6 +378,189 @@ void testPsiFir() {
     }
 }
 
+void testPsiViva() {
+    std::printf("== (f) Ψ VIVA por defecto (la app diseña los taps) ==\n");
+    const int inFrames = 2 * kRate;
+    std::vector<float> in;
+    genAmTone(in, inFrames, kToneHz, 4.0);
+    // Auto (default) vs apagada a mano: la salida DEBE diferir (el campo
+    // está convolucionando: retardo 32 + respuesta del campo).
+    RouteAAsrc autoAsrc, offAsrc;
+    autoAsrc.setClockCorrectionPpm(0.0);
+    offAsrc.setClockCorrectionPpm(0.0);
+    offAsrc.setPsiActive(false);
+    std::vector<float> outAuto = processBlocked(autoAsrc, in, inFrames, 2048);
+    std::vector<float> outOff = processBlocked(offAsrc, in, inFrames, 2048);
+    std::printf("  Ψ activa tras procesar: %s\n", autoAsrc.psiActive() ? "SI" : "NO");
+    check(autoAsrc.psiActive(), "Ψ activa por defecto tras el primer bloque");
+    check(!offAsrc.psiActive(), "Ψ apagada a mano sigue apagada");
+    double maxDiff = 0.0;
+    int n = static_cast<int>(outAuto.size() < outOff.size() ? outAuto.size() : outOff.size());
+    for (int i = 0; i < n; ++i) {
+        double d = std::fabs(static_cast<double>(outAuto[i]) - outOff[i]);
+        if (d > maxDiff) maxDiff = d;
+    }
+    std::printf("  max |Ψ activa − bypass| = %.4f (tono 0.8)\n", maxDiff);
+    check(maxDiff > 0.01, "Ψ activa cambia la salida (diff medible, no idéntica)");
+    // Los taps diseñados existen y se pueden leer.
+    float firL[64] = {}, firR[64] = {};
+    bool got = autoAsrc.psiFirTaps(firL, firR);
+    std::printf("  psiFirTaps() = %s\n", got ? "SI" : "NO");
+    check(got, "psiFirTaps() devuelve los taps diseñados");
+    // Con azimut 30° el campo es asimétrico: un tono mono (L==R) debe
+    // salir con L != R (ILD real del campo, no solo retardo).
+    {
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        asrc.setPsiGeometry(-1.0f, -1.0f, 0.5236f);  // 30° a la derecha
+        std::vector<float> mono;
+        genSine(mono, inFrames, kToneHz);
+        for (int i = 0; i < inFrames; ++i) mono[i * 2 + 1] = mono[i * 2];  // L==R
+        std::vector<float> out = processBlocked(asrc, mono, inFrames, 2048);
+        int outFrames = static_cast<int>(out.size() / 2);
+        double rmsL = 0.0, rmsR = 0.0;
+        for (int i = 2000; i < outFrames - 100; ++i) {
+            rmsL += static_cast<double>(out[i * 2]) * out[i * 2];
+            rmsR += static_cast<double>(out[i * 2 + 1]) * out[i * 2 + 1];
+        }
+        double ildDb = 10.0 * std::log10((rmsL + 1e-12) / (rmsR + 1e-12));
+        std::printf("  azimut 30°: ILD de salida L/R = %.2f dB (mono de entrada)\n", ildDb);
+        check(std::fabs(ildDb) > 0.5, "azimut 30° produce ILD real (L != R)");
+    }
+}
+
+void testPsiTaps() {
+    std::printf("== (g) Taps Ψ finitos y acotados ==\n");
+    const int inFrames = 2 * kRate;
+    std::vector<float> in;
+    genAmTone(in, inFrames, kToneHz, 4.0);
+    RouteAAsrc asrc;
+    asrc.setClockCorrectionPpm(0.0);
+    // Procesar para que se diseñen los taps (primer bloque ya diseña).
+    std::vector<float> out = processBlocked(asrc, in, inFrames, 2048);
+    (void)out;
+    float firL[64] = {}, firR[64] = {};
+    check(asrc.psiFirTaps(firL, firR), "taps disponibles tras procesar");
+    double maxAbs = 0.0;
+    bool allFinite = true;
+    for (int i = 0; i < 64; ++i) {
+        if (!std::isfinite(firL[i]) || !std::isfinite(firR[i])) allFinite = false;
+        double a = std::fabs(static_cast<double>(firL[i]));
+        double b = std::fabs(static_cast<double>(firR[i]));
+        if (a > maxAbs) maxAbs = a;
+        if (b > maxAbs) maxAbs = b;
+    }
+    std::printf("  max |tap| = %.4f (límite 4.0); finitos: %s\n", maxAbs,
+                allFinite ? "SI" : "NO");
+    check(allFinite, "todos los taps son finitos");
+    check(maxAbs <= 4.0, "|tap| ≤ 4.0 (clamp de designFir)");
+    // El tap central (32) debe dominar (FIR de fase lineal, retardo 32).
+    std::printf("  tap[32] L=%.4f R=%.4f (pico del FIR)\n", firL[32], firR[32]);
+    check(std::fabs(firL[32]) > 0.1 && std::fabs(firR[32]) > 0.1,
+          "tap central dominante (fase lineal, retardo 32)");
+}
+
+void testPsiEta() {
+    std::printf("== (h) η se mueve con la coherencia (Ec. 4) ==\n");
+    // Alta coherencia: AM a 4 Hz durante 3 s → η debe subir de 0.5.
+    {
+        const int inFrames = 3 * kRate;
+        std::vector<float> in;
+        genAmTone(in, inFrames, kToneHz, 4.0);
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        std::printf("  η inicial = %.3f, coherencia inicial = %.3f\n",
+                    asrc.psiEta(), asrc.psiCoherence());
+        check(std::fabs(asrc.psiEta() - 0.5) < 1e-9, "η inicial = 0.5");
+        std::vector<float> out = processBlocked(asrc, in, inFrames, 2048);
+        (void)out;
+        std::printf("  AM 4 Hz, 3 s: η = %.3f, coherencia = %.3f\n",
+                    asrc.psiEta(), asrc.psiCoherence());
+        check(asrc.psiEta() > 0.6, "η sube con coherencia alta (> 0.6)");
+        check(asrc.psiCoherence() > 0.5, "coherencia medida alta (> 0.5)");
+    }
+    // Baja coherencia: tono constante (envolvente plana) durante 3 s,
+    // instancia nueva → η debe bajar de 0.5.
+    {
+        const int inFrames = 3 * kRate;
+        std::vector<float> in;
+        genSine(in, inFrames, kToneHz);
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        std::vector<float> out = processBlocked(asrc, in, inFrames, 2048);
+        (void)out;
+        std::printf("  tono constante, 3 s: η = %.3f, coherencia = %.3f\n",
+                    asrc.psiEta(), asrc.psiCoherence());
+        check(asrc.psiEta() < 0.3, "η baja con coherencia ~0 (< 0.3)");
+        check(asrc.psiCoherence() < 0.2, "coherencia medida baja (< 0.2)");
+    }
+    // Silencio: sin medida fiable, η se queda (fail-closed, no se inventa).
+    {
+        const int inFrames = 2 * kRate;
+        std::vector<float> in(static_cast<size_t>(inFrames) * 2, 0.0f);
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        std::vector<float> out = processBlocked(asrc, in, inFrames, 2048);
+        (void)out;
+        std::printf("  silencio, 2 s: η = %.3f (debe quedarse en 0.5)\n", asrc.psiEta());
+        check(std::fabs(asrc.psiEta() - 0.5) < 1e-9, "η no se mueve en silencio");
+    }
+}
+
+void testPsiGroupDelay() {
+    std::printf("== (i) Retardo de grupo con Ψ activa (~32 muestras) ==\n");
+    const int inFrames = 2 * kRate;
+    std::vector<float> in;
+    genImpulse(in, inFrames);
+    RouteAAsrc autoAsrc, offAsrc;
+    autoAsrc.setClockCorrectionPpm(0.0);
+    offAsrc.setClockCorrectionPpm(0.0);
+    offAsrc.setPsiActive(false);
+    std::vector<float> outAuto = processBlocked(autoAsrc, in, inFrames, 2048);
+    std::vector<float> outOff = processBlocked(offAsrc, in, inFrames, 2048);
+    int peakAuto = peakIndexL(outAuto);
+    int peakOff = peakIndexL(outOff);
+    std::printf("  pico bypass = %d, pico Ψ activa = %d, diferencia = %d (esperado ~32)\n",
+                peakOff, peakAuto, peakAuto - peakOff);
+    check(std::abs((peakAuto - peakOff) - 32) <= 3,
+          "retardo de grupo Ψ ≈ 32 muestras (±3)");
+}
+
+void testPsiThdn() {
+    std::printf("== (j) THD+N con Ψ activa (+100 ppm, meta < -90 dB) ==\n");
+    const int inFrames = 2 * kRate;
+    std::vector<float> in;
+    genSine(in, inFrames, kToneHz);
+    RouteAAsrc asrc;  // Ψ viva por defecto (auto)
+    asrc.setClockCorrectionPpm(100.0);
+    // Calentar un bloque para que Ψ se diseñe y active, y CONGELAR el
+    // diseño: la ganancia de Γ sigue a η y derivaría durante la medida
+    // (eso se leería como THD+N aunque no es distorsión armónica; la
+    // deriva lenta de Γ es el campo vivo, no el remuestreo). Con el diseño
+    // congelado se mide la cadena estática (remuestreo + FIR Ψ fijo).
+    {
+        std::vector<float> warm(2048 * 2);
+        asrc.process(in.data(), 2048, warm.data(), 2048 * 1002 / 1000 + 64);
+    }
+    std::printf("  Ψ activa antes de medir: %s (η=%.3f)\n",
+                asrc.psiActive() ? "SI" : "NO", asrc.psiEta());
+    check(asrc.psiActive(), "Ψ estaba activa durante la medida");
+    asrc.setPsiDesignHold(true);
+    std::vector<float> out = processBlocked(asrc, in, inFrames, 2048);
+    int outFrames = static_cast<int>(out.size() / 2);
+    double fOut = kToneHz / 1.0001;
+    std::vector<float> chL(outFrames), chR(outFrames);
+    for (int i = 0; i < outFrames; ++i) {
+        chL[i] = out[i * 2];
+        chR[i] = out[i * 2 + 1];
+    }
+    double tL = thdnDb(chL.data(), outFrames, fOut, 2000);
+    double tR = thdnDb(chR.data(), outFrames, fOut, 2000);
+    std::printf("  Ψ activa +100 ppm: THD+N L=%.1f dB  R=%.1f dB (f=%.2f Hz)\n",
+                tL, tR, fOut);
+    check(tL < -90.0 && tR < -90.0, "THD+N < -90 dB con Ψ activa a +100 ppm");
+}
+
 }  // namespace
 
 int main() {
@@ -333,6 +571,11 @@ int main() {
     testBlockContinuity();
     testFailClosed();
     testPsiFir();
+    testPsiViva();
+    testPsiTaps();
+    testPsiEta();
+    testPsiGroupDelay();
+    testPsiThdn();
     std::printf("======================================\n");
     if (failures == 0) {
         std::printf("TODOS LOS TESTS PASARON\n");

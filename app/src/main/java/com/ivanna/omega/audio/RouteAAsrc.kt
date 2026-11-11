@@ -26,8 +26,13 @@ import com.ivanna.omega.core.NativeLibraryLoader
  *  - setClockCorrectionPpm(): alimenta el ratio del nativo desde el PLL
  *    (AudioTrackBufferPll). Si el nativo NO está disponible, es no-op y
  *    el llamador debe usar resampler.setClockCorrectionPpm (fallback).
- *  - FIR Ψ: por defecto en bypass. Solo se activa si el cerebro/fusión
- *    la enciende (setPsiFir + setPsiActive). Sin cerebro, bypass.
+ *  - FIR Ψ: VIVA POR DEFECTO (2026-11-11, directiva de Esse: Ψ funciona
+ *    sí o sí). La app calcula los taps ella misma con PsiCore (Ec. 2 ILD +
+ *    Ec. 4 η + designFir 64 taps/oído) y alimenta η con la coherencia de
+ *    la envolvente 1–8 Hz medida en los propios bloques: NO depende del
+ *    daemon ni de ninguna SHM. setPsiFir + setPsiActive quedan para una
+ *    fuente externa futura (fusión/daemon); mientras haya taps externos,
+ *    mandan ellos. setPsiAuto(true) devuelve la propiedad a la app.
  *
  * Fail-closed: si la librería nativa no carga o la creación falla,
  * isAvailable=false y processInto() es passthrough (copia entrada→salida).
@@ -112,6 +117,38 @@ class RouteAAsrc {
         if (!isAvailable) return
         runCatching { nativeSetClockCorrectionPpm(handle, ppm) }
     }
+
+    /** Tasa de muestreo del track (Hz) para el diseño del FIR Ψ. */
+    fun setSampleRate(sampleRateHz: Float) {
+        if (!isAvailable) return
+        runCatching { nativeSetSampleRate(handle, sampleRateHz) }
+    }
+
+    /** Geometría del campo Ψ: radio de cabeza (m), distancia (m), azimut (rad). */
+    fun setPsiGeometry(headRadiusM: Float, distanceM: Float, azimuthRad: Float) {
+        if (!isAvailable) return
+        runCatching { nativeSetPsiGeometry(handle, headRadiusM, distanceM, azimuthRad) }
+    }
+
+    /** Auto-diseño de Ψ por la app (default true). false = Ψ apagada. */
+    fun setPsiAuto(autoOn: Boolean) {
+        if (!isAvailable) return
+        runCatching { nativeSetPsiAuto(handle, autoOn) }
+    }
+
+    /** Congela el diseño de los FIR Ψ (taps fijos, puerta como esté). */
+    fun setPsiDesignHold(hold: Boolean) {
+        if (!isAvailable) return
+        runCatching { nativeSetPsiDesignHold(handle, hold) }
+    }
+
+    /** η actual del campo [0,1] (diagnóstico). 0.5 sin nativo. */
+    val psiEta: Double
+        get() = if (!isAvailable) 0.5 else runCatching { nativePsiEta(handle) }.getOrDefault(0.5)
+
+    /** Última coherencia de envolvente medida [0,1] (diagnóstico). */
+    val psiCoherence: Double
+        get() = if (!isAvailable) 0.5 else runCatching { nativePsiCoherence(handle) }.getOrDefault(0.5)
 
     /** FIR Ψ del cerebro (64 taps por oído). No-op sin nativo. */
     fun setPsiFir(firL: FloatArray, firR: FloatArray) {
@@ -199,6 +236,12 @@ class RouteAAsrc {
         out: FloatArray, outCap: Int
     ): Int
     private external fun nativeSetClockCorrectionPpm(handle: Long, ppm: Double)
+    private external fun nativeSetSampleRate(handle: Long, sampleRateHz: Float)
+    private external fun nativeSetPsiGeometry(handle: Long, headRadiusM: Float, distanceM: Float, azimuthRad: Float)
+    private external fun nativeSetPsiAuto(handle: Long, autoOn: Boolean)
+    private external fun nativeSetPsiDesignHold(handle: Long, hold: Boolean)
+    private external fun nativePsiEta(handle: Long): Double
+    private external fun nativePsiCoherence(handle: Long): Double
     private external fun nativeSetPsiActive(handle: Long, active: Boolean)
     private external fun nativeSetPsiFir(handle: Long, firL: FloatArray, firR: FloatArray)
     private external fun nativeReset(handle: Long)
