@@ -233,6 +233,14 @@ struct omega_effect_context_t {
                                     // IvannaFusionEngine. La instancia ya se crea
                                     // como new IvannaFusionEngine(sr) — el tipo
                                     // del puntero debe coincidir.
+    // FIX (v2.5.396, 4to brick 2026-11-11): el FusionEngine NO se crea en
+    // omega_create_effect. Su constructor hace I/O de archivos (HRTF .ihr1,
+    // agent_memory.bin por mmap) y muchas alocaciones con `new` plano; si
+    // algo ahí falla en el proceso audioserver, std::terminate tumba el
+    // servicio, el teléfono se reinicia solo y no arranca (brick). La
+    // creación se difiere a omega_process() (lazy, un solo intento): si
+    // falla, el efecto queda en passthrough y audioserver sigue vivo.
+    bool fusionCoreInitAttempted = false; // lazy init ya intentado (1 vez)
     // ── RIR sala — instanciados per-session, cargados lazy al primer SET_ROOM_RT60
     Ivanna::RirConvolver* rirConvolver; // convolucionador overlap-save (null hasta 1er load)
     Ivanna::RirDataset*   rirDataset;   // dataset de 200 salas (cargado una vez por proceso)
@@ -1128,8 +1136,24 @@ static int32_t omega_process(effect_handle_t self,
     }
 
     // AUDIT FIX (session isolation): usar el fusionCore de ESTA instancia,
-    // nunca el global g_fusionCore. Motor aún no configurado: passthrough.
+    // nunca el global g_fusionCore.
+    // FIX (v2.5.396, 4to brick 2026-11-11): creación LAZY del FusionEngine,
+    // un solo intento. No se crea en omega_create_effect para no tumbar
+    // audioserver si el constructor falla (hace I/O de archivos y muchas
+    // alocaciones con `new` plano -> std::terminate). Si la creación falla
+    // aquí, el efecto queda en passthrough y audioserver sigue vivo.
     IvannaFusionEngine* fc = ctx->fusionCore;
+    if (!fc && !ctx->fusionCoreInitAttempted) {
+        ctx->fusionCoreInitAttempted = true;
+        fc = new (std::nothrow) IvannaFusionEngine(48000.0f);
+        if (fc) {
+            fc->initSpatial(48000.0f, 4096);
+            ctx->fusionCore = fc;
+            LOGI("omega_process: FusionEngine creado lazy (1er bloque)");
+        } else {
+            LOGE("omega_process: FusionEngine lazy FALLO (nothrow null) — passthrough");
+        }
+    }
     if (!fc) {
         logPassthroughThrottled(PassthroughReason::kFusionCoreNull,
                                 "fusionCore NULO (motor no inicializado)");
@@ -2756,10 +2780,15 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
     {
         constexpr float kDefaultSr = 48000.0f;
         constexpr uint32_t kDefaultSrU = 48000u;
-        if (!ctx->fusionCore) {
-            ctx->fusionCore = new (std::nothrow) IvannaFusionEngine(kDefaultSr);
-            if (ctx->fusionCore) ctx->fusionCore->initSpatial(kDefaultSr, 4096);
-        }
+        // FIX (v2.5.396, 4to brick 2026-11-11): NO crear el FusionEngine aquí.
+        // La v2.5.382 lo creó en omega_create_effect porque SET_CONFIG jamás
+        // llega en este HAL — pero su constructor hace I/O (HRTF .ihr1,
+        // agent_memory.bin por mmap) y muchas alocaciones con `new` plano;
+        // si algo falla en audioserver, std::terminate tumba el servicio y
+        // el teléfono se reinicia solo y no arranca. El FusionEngine se crea
+        // lazy en omega_process() (un solo intento); si falla, el efecto
+        // queda en passthrough y audioserver sigue vivo. fusionCore queda
+        // en nullptr aquí por diseño.
         if (!ctx->antiDolby) {
             ctx->antiDolby = new (std::nothrow) AntiDolbyState();
         }
@@ -2808,11 +2837,13 @@ static int32_t omega_create_effect(const effect_uuid_t *uuid, int32_t sessionId,
         ctx->config.outputCfg.channels = AUDIO_CHANNEL_OUT_STEREO;
         ctx->config.outputCfg.format = ivanna::kOmegaDefaultFormat;
         ctx->lastConfiguredSr = kDefaultSrU;
-        if (!ctx->fusionCore || !ctx->rtL || !ctx->rtR || ctx->rtCapacity <= 0) {
+        // v2.5.396: fusionCore ya NO se revisa aquí — queda en nullptr por
+        // diseño (creación lazy en omega_process). Solo importan los buffers RT.
+        if (!ctx->rtL || !ctx->rtR || ctx->rtCapacity <= 0) {
             LOGE("omega_create_effect: init DSP por defecto INCOMPLETO "
-                 "(fusionCore=%p rtL=%p rtR=%p rtCapacity=%d) — el efecto "
+                 "(rtL=%p rtR=%p rtCapacity=%d) — el efecto "
                  "caera a passthrough hasta SET_CONFIG",
-                 (const void*)ctx->fusionCore, (const void*)ctx->rtL,
+                 (const void*)ctx->rtL,
                  (const void*)ctx->rtR, ctx->rtCapacity);
         }
     }
