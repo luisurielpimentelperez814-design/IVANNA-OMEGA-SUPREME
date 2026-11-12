@@ -209,6 +209,105 @@ class ParameterStore(context: Context) {
         // 384 al daemon en cada arranque. Esta migración los clampa al sobre
         // 380 (los valores que sonaban bien) y marca la migración como hecha.
         private const val KEY_MIGRATION_386_ENVELOPE_DONE = "migration_386_envelope_done"
+
+        // ── Perfiles de fábrica (v2.5.411, tarea 2) — UNA sola fuente de verdad ──
+        // Los defaults de fábrica de la firma (ORBE/HOLOS/OmniField/Φ/Volterra)
+        // viven SOLO aquí, en 3 perfiles con nombre. Los getters de abajo usan
+        // BOOT_PROFILE como default: un fresh install (sin prefs guardadas)
+        // arranca en "Espacial". Las preferencias EXISTENTES no se migran ni
+        // se borran: si el usuario ya tiene un valor guardado (p. ej.
+        // holos_harmonics=0.298, holos_eq_low=+7.8), el getter devuelve el
+        // guardado, no el del perfil. El perfil de arranque es UNA constante
+        // (BOOT_PROFILE); se cambiará tras el ABX.
+        //   "Limpio": solo HOA+HRTF (la base; todos los operadores añadidos a 0).
+        //   "Espacial": Limpio + ORBE ~0.5 + HOLOS 0.5 con K=0 (sin Φ, sin
+        //     OmniField, sin Volterra).
+        //   "Completo": defaults actuales del README (ORBE 1.0, HOLOS 0.5 con
+        //     K=0, OmniField 1.0, Φ 0.5, Volterra ON) como perfil SELECCIONABLE,
+        //     NO como arranque. El bypass de OmniField de la 410 (0.0) queda
+        //     como arranque (Espacial no lo enciende) y "Completo" lo mantiene
+        //     disponible para comparar por ABX; pendiente de confirmación.
+        // Valores de partida (tarea 2): EQ estático de HOLOS plano (0 dB en
+        // las 6 bandas), distance 0.35 m, harmonics 0, hyper_bass_trim 0,
+        // preset Harman 2018 (targetKind 0) SIN corrección MEDIDA hasta que
+        // haya calibración (el sensor MEDIDO solo corre con permiso
+        // RECORD_AUDIO; sin él, Φ corre en APROXIMADO fail-closed).
+        // La base compartida es el sobre 380 (los valores que sonaban bien).
+        data class FactoryProfile(
+            val name: String,
+            val orbeAmount: Float,
+            val orbeDistanceM: Float,
+            val orbeSpread: Float,
+            val orbeProximityDb: Float,
+            val orbeDiffuse: Float,
+            val orbeHeadTracking: Boolean,
+            val orbeHeadRadiusM: Float,
+            val holosAmount: Float,
+            val holosDistanceM: Float,
+            val holosSpread: Float,
+            val holosProximityDb: Float,
+            val holosDiffuse: Float,
+            val holosHarmonics: Float,
+            val holosWarmth: Float,
+            val holosDynamics: Float,
+            val holosWidth: Float,
+            val holosGamma: Float,
+            val holosRoomRt60: Float,
+            val holosHeadTracking: Boolean,
+            val holosBandCount: Int,
+            val holosEqLow: Float,
+            val holosEqMid: Float,
+            val holosEqHigh: Float,
+            val holosEqPresence: Float,
+            val holosEqTiltDb: Float,
+            val holosEqFreq: Float,
+            val omniAmount: Float,
+            val omniScenePull: Float,
+            val omniDistanceM: Float,
+            val omniHeadTracking: Boolean,
+            val hyperAmount: Float,
+            val hyperPreset: Int,
+            val hyperXtc: Boolean,
+            val hyperTargetKind: Int,
+            val hyperBassTrimDb: Float,
+            val volterraEnabled: Boolean
+        )
+
+        private val PROFILE_BASE = FactoryProfile(
+            name = "Base",
+            orbeAmount = 1.0f, orbeDistanceM = 0.35f, orbeSpread = 1.0f,
+            orbeProximityDb = 3.0f, orbeDiffuse = 0.5f, orbeHeadTracking = true,
+            orbeHeadRadiusM = 0.0875f,
+            holosAmount = 0.5f, holosDistanceM = 0.35f, holosSpread = 1.0f,
+            holosProximityDb = 3.0f, holosDiffuse = 0.5f, holosHarmonics = 0.0f,
+            holosWarmth = 0.5f, holosDynamics = 1.0f, holosWidth = 1.0f,
+            holosGamma = 1.0f, holosRoomRt60 = 0.34f, holosHeadTracking = true,
+            holosBandCount = 24,
+            holosEqLow = 0f, holosEqMid = 0f, holosEqHigh = 0f,
+            holosEqPresence = 0f, holosEqTiltDb = 0f, holosEqFreq = 1000f,
+            omniAmount = 1.0f, omniScenePull = 0.3f, omniDistanceM = 1.2f,
+            omniHeadTracking = true,
+            hyperAmount = 0.5f, hyperPreset = 0, hyperXtc = true,
+            hyperTargetKind = 0, hyperBassTrimDb = 0f,
+            volterraEnabled = true
+        )
+
+        val PROFILE_LIMPIO: FactoryProfile = PROFILE_BASE.copy(
+            name = "Limpio",
+            orbeAmount = 0f, holosAmount = 0f, omniAmount = 0f,
+            hyperAmount = 0f, volterraEnabled = false
+        )
+
+        val PROFILE_ESPACIAL: FactoryProfile = PROFILE_BASE.copy(
+            name = "Espacial",
+            orbeAmount = 0.5f, holosAmount = 0.5f, holosHarmonics = 0.0f,
+            omniAmount = 0f, hyperAmount = 0f, volterraEnabled = false
+        )
+
+        val PROFILE_COMPLETO: FactoryProfile = PROFILE_BASE.copy(name = "Completo")
+
+        // El perfil de arranque es UNA constante; se cambiará tras el ABX.
+        val BOOT_PROFILE: FactoryProfile = PROFILE_ESPACIAL
     }
 
     fun getExciter(): Float = safeGetFloat(KEY_EXCITER, 0.55f) // CALIBRACIÓN MAGISTRAL: armónicos 2ª/3ª ricos y controlados (LPF 14.5kHz sin aliasing)
@@ -478,15 +577,15 @@ class ParameterStore(context: Context) {
     // ── ORBE — Binaural Esférico de Campo Cercano (v2.5.363) ── ACTIVO por defecto
     // (v2.5.369, directiva explícita: amount 1.0; THD+N −139.33 dB @1 kHz,
     // 23× RT, limpio sin retuneo). amount 0 = bypass bit-exacto.
-    fun getOrbeAmount(): Float = safeGetFloat(KEY_ORBE_AMOUNT, 1.0f)
-    fun getOrbeDistanceM(): Float = safeGetFloat(KEY_ORBE_DISTANCE_M, 0.35f)
-    fun getOrbeSpread(): Float = safeGetFloat(KEY_ORBE_SPREAD, 1.0f)
-    fun getOrbeProximityDb(): Float = safeGetFloat(KEY_ORBE_PROXIMITY_DB, 3.0f)
-    fun getOrbeDiffuse(): Float = safeGetFloat(KEY_ORBE_DIFFUSE, 0.5f)
-    fun isOrbeHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_ORBE_HEAD_TRACKING, true)
+    fun getOrbeAmount(): Float = safeGetFloat(KEY_ORBE_AMOUNT, BOOT_PROFILE.orbeAmount)
+    fun getOrbeDistanceM(): Float = safeGetFloat(KEY_ORBE_DISTANCE_M, BOOT_PROFILE.orbeDistanceM)
+    fun getOrbeSpread(): Float = safeGetFloat(KEY_ORBE_SPREAD, BOOT_PROFILE.orbeSpread)
+    fun getOrbeProximityDb(): Float = safeGetFloat(KEY_ORBE_PROXIMITY_DB, BOOT_PROFILE.orbeProximityDb)
+    fun getOrbeDiffuse(): Float = safeGetFloat(KEY_ORBE_DIFFUSE, BOOT_PROFILE.orbeDiffuse)
+    fun isOrbeHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_ORBE_HEAD_TRACKING, BOOT_PROFILE.orbeHeadTracking)
     // Ψ (v2.5.388): radio de cabeza personalizado (m). KEMAR 0.0875 si
     // nunca se midió. Se clampa a [0.05, 0.15] m, igual que el nativo.
-    fun getOrbeHeadRadiusM(): Float = safeGetFloat(KEY_ORBE_HEAD_RADIUS_M, 0.0875f)
+    fun getOrbeHeadRadiusM(): Float = safeGetFloat(KEY_ORBE_HEAD_RADIUS_M, BOOT_PROFILE.orbeHeadRadiusM)
     fun setOrbeHeadRadiusM(radiusM: Float) =
         prefs.edit().putFloat(KEY_ORBE_HEAD_RADIUS_M,
             if (radiusM.isFinite()) radiusM.coerceIn(0.05f, 0.15f) else 0.0875f).apply()
@@ -509,26 +608,26 @@ class ParameterStore(context: Context) {
     // IMD SMPTE −159.5 dB. El término K (harmonics) es el que distorsionaba;
     // con K=0 el render espacial G y el campo Γ siguen activos y limpios.)
     // Los 13 parámetros de FUSION.md §6; band_count 12 o 24 (24 = default).
-    fun getHolosAmount(): Float = safeGetFloat(KEY_HOLOS_AMOUNT, 0.5f)
-    fun getHolosDistanceM(): Float = safeGetFloat(KEY_HOLOS_DISTANCE_M, 0.35f)
-    fun getHolosSpread(): Float = safeGetFloat(KEY_HOLOS_SPREAD, 1.0f)
-    fun getHolosProximityDb(): Float = safeGetFloat(KEY_HOLOS_PROXIMITY_DB, 3.0f)
-    fun getHolosDiffuse(): Float = safeGetFloat(KEY_HOLOS_DIFFUSE, 0.5f)
-    fun getHolosHarmonics(): Float = safeGetFloat(KEY_HOLOS_HARMONICS, 0.0f)
-    fun getHolosWarmth(): Float = safeGetFloat(KEY_HOLOS_WARMTH, 0.5f)
-    fun getHolosDynamics(): Float = safeGetFloat(KEY_HOLOS_DYNAMICS, 1.0f)
-    fun getHolosWidth(): Float = safeGetFloat(KEY_HOLOS_WIDTH, 1.0f)
-    fun getHolosGamma(): Float = safeGetFloat(KEY_HOLOS_GAMMA, 1.0f)
-    fun getHolosRoomRt60(): Float = safeGetFloat(KEY_HOLOS_ROOM_RT60, 0.34f)
-    fun isHolosHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_HOLOS_HEAD_TRACKING, true)
-    fun getHolosBandCount(): Int = safeGetInt(KEY_HOLOS_BAND_COUNT, 24).let { if (it == 12) 12 else 24 }
+    fun getHolosAmount(): Float = safeGetFloat(KEY_HOLOS_AMOUNT, BOOT_PROFILE.holosAmount)
+    fun getHolosDistanceM(): Float = safeGetFloat(KEY_HOLOS_DISTANCE_M, BOOT_PROFILE.holosDistanceM)
+    fun getHolosSpread(): Float = safeGetFloat(KEY_HOLOS_SPREAD, BOOT_PROFILE.holosSpread)
+    fun getHolosProximityDb(): Float = safeGetFloat(KEY_HOLOS_PROXIMITY_DB, BOOT_PROFILE.holosProximityDb)
+    fun getHolosDiffuse(): Float = safeGetFloat(KEY_HOLOS_DIFFUSE, BOOT_PROFILE.holosDiffuse)
+    fun getHolosHarmonics(): Float = safeGetFloat(KEY_HOLOS_HARMONICS, BOOT_PROFILE.holosHarmonics)
+    fun getHolosWarmth(): Float = safeGetFloat(KEY_HOLOS_WARMTH, BOOT_PROFILE.holosWarmth)
+    fun getHolosDynamics(): Float = safeGetFloat(KEY_HOLOS_DYNAMICS, BOOT_PROFILE.holosDynamics)
+    fun getHolosWidth(): Float = safeGetFloat(KEY_HOLOS_WIDTH, BOOT_PROFILE.holosWidth)
+    fun getHolosGamma(): Float = safeGetFloat(KEY_HOLOS_GAMMA, BOOT_PROFILE.holosGamma)
+    fun getHolosRoomRt60(): Float = safeGetFloat(KEY_HOLOS_ROOM_RT60, BOOT_PROFILE.holosRoomRt60)
+    fun isHolosHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_HOLOS_HEAD_TRACKING, BOOT_PROFILE.holosHeadTracking)
+    fun getHolosBandCount(): Int = safeGetInt(KEY_HOLOS_BAND_COUNT, BOOT_PROFILE.holosBandCount).let { if (it == 12) 12 else 24 }
     // EQ estático de Γ (dB -12..12; frecuencia del tilt 20..20000 Hz). Plano = no-op.
-    fun getHolosEqLow(): Float = safeGetFloat(KEY_HOLOS_EQ_LOW, 0f)
-    fun getHolosEqMid(): Float = safeGetFloat(KEY_HOLOS_EQ_MID, 0f)
-    fun getHolosEqHigh(): Float = safeGetFloat(KEY_HOLOS_EQ_HIGH, 0f)
-    fun getHolosEqPresence(): Float = safeGetFloat(KEY_HOLOS_EQ_PRESENCE, 0f)
-    fun getHolosEqTiltDb(): Float = safeGetFloat(KEY_HOLOS_EQ_TILT_DB, 0f)
-    fun getHolosEqFreq(): Float = safeGetFloat(KEY_HOLOS_EQ_FREQ, 1000f)
+    fun getHolosEqLow(): Float = safeGetFloat(KEY_HOLOS_EQ_LOW, BOOT_PROFILE.holosEqLow)
+    fun getHolosEqMid(): Float = safeGetFloat(KEY_HOLOS_EQ_MID, BOOT_PROFILE.holosEqMid)
+    fun getHolosEqHigh(): Float = safeGetFloat(KEY_HOLOS_EQ_HIGH, BOOT_PROFILE.holosEqHigh)
+    fun getHolosEqPresence(): Float = safeGetFloat(KEY_HOLOS_EQ_PRESENCE, BOOT_PROFILE.holosEqPresence)
+    fun getHolosEqTiltDb(): Float = safeGetFloat(KEY_HOLOS_EQ_TILT_DB, BOOT_PROFILE.holosEqTiltDb)
+    fun getHolosEqFreq(): Float = safeGetFloat(KEY_HOLOS_EQ_FREQ, BOOT_PROFILE.holosEqFreq)
     fun setHolosEq(
         low: Float, mid: Float, high: Float, presence: Float, tiltDb: Float, freq: Float
     ) = prefs.edit()
@@ -598,10 +697,10 @@ class ParameterStore(context: Context) {
     // amount 0 = bypass bit-exacto (verificado en host); se reactiva en
     // un toque (setOmniParams / nativeSetOmniEnabled) si Esse lo pide
     // tras escuchar. scenePull 0..1, distancia 0.5..2.0 m.
-    fun getOmniAmount(): Float = safeGetFloat(KEY_OMNI_AMOUNT, 0.0f)
-    fun getOmniScenePull(): Float = safeGetFloat(KEY_OMNI_SCENE_PULL, 0.3f)
-    fun getOmniDistanceM(): Float = safeGetFloat(KEY_OMNI_DISTANCE_M, 1.2f)
-    fun isOmniHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_OMNI_HEAD_TRACKING, true)
+    fun getOmniAmount(): Float = safeGetFloat(KEY_OMNI_AMOUNT, BOOT_PROFILE.omniAmount)
+    fun getOmniScenePull(): Float = safeGetFloat(KEY_OMNI_SCENE_PULL, BOOT_PROFILE.omniScenePull)
+    fun getOmniDistanceM(): Float = safeGetFloat(KEY_OMNI_DISTANCE_M, BOOT_PROFILE.omniDistanceM)
+    fun isOmniHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_OMNI_HEAD_TRACKING, BOOT_PROFILE.omniHeadTracking)
     fun setOmniParams(
         amount: Float, scenePull: Float, distanceM: Float, headTracking: Boolean
     ) = prefs.edit()
@@ -616,11 +715,11 @@ class ParameterStore(context: Context) {
     // solo corta, máx ~-1.5 dB a 0.5). preset 0 teléfono / 1 sala Genezi /
     // 2 auto. target kind 0 Harman 2018 (default) / 1 élite-lean /
     // 2 campo difuso H&M / 3 altavoces en sala. bass trim ±3 dB.
-    fun getHyperAmount(): Float = safeGetFloat(KEY_HYPER_AMOUNT, 0.5f)
-    fun getHyperPreset(): Int = safeGetInt(KEY_HYPER_PRESET, 0).let { if (it in 0..2) it else 0 }
-    fun isHyperXtcEnabled(): Boolean = safeGetBoolean(KEY_HYPER_XTC, true)
-    fun getHyperTargetKind(): Int = safeGetInt(KEY_HYPER_TARGET_KIND, 0).let { if (it in 0..3) it else 0 }
-    fun getHyperBassTrimDb(): Float = safeGetFloat(KEY_HYPER_BASS_TRIM_DB, 0f)
+    fun getHyperAmount(): Float = safeGetFloat(KEY_HYPER_AMOUNT, BOOT_PROFILE.hyperAmount)
+    fun getHyperPreset(): Int = safeGetInt(KEY_HYPER_PRESET, BOOT_PROFILE.hyperPreset).let { if (it in 0..2) it else 0 }
+    fun isHyperXtcEnabled(): Boolean = safeGetBoolean(KEY_HYPER_XTC, BOOT_PROFILE.hyperXtc)
+    fun getHyperTargetKind(): Int = safeGetInt(KEY_HYPER_TARGET_KIND, BOOT_PROFILE.hyperTargetKind).let { if (it in 0..3) it else 0 }
+    fun getHyperBassTrimDb(): Float = safeGetFloat(KEY_HYPER_BASS_TRIM_DB, BOOT_PROFILE.hyperBassTrimDb)
     fun setHyperParams(
         amount: Float, preset: Int, xtcEnabled: Boolean,
         targetKind: Int, bassTrimDb: Float
@@ -635,7 +734,7 @@ class ParameterStore(context: Context) {
     // ── Volterra H2 Genezi (v2.5.369) ── ON por defecto. Sin valor
     // persistido, el kernel se carga al arrancar y suena. Apagarlo en la
     // UI persiste y se respeta en el siguiente arranque.
-    fun isVolterraEnabled(): Boolean = safeGetBoolean(KEY_VOLTERRA_ENABLED, true)
+    fun isVolterraEnabled(): Boolean = safeGetBoolean(KEY_VOLTERRA_ENABLED, BOOT_PROFILE.volterraEnabled)
     fun setVolterraEnabled(v: Boolean) = prefs.edit().putBoolean(KEY_VOLTERRA_ENABLED, v).apply()
 
     // ── Selector de kernel Volterra (v2.5.369) ── device id del kernel

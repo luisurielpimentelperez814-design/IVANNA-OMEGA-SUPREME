@@ -17,7 +17,7 @@ std::atomic<float> g_holos_distance_m{0.35f};
 std::atomic<float> g_holos_spread{1.0f};
 std::atomic<float> g_holos_proximity_db{3.0f};
 std::atomic<float> g_holos_diffuse{0.5f};
-std::atomic<float> g_holos_harmonics{0.32f};
+std::atomic<float> g_holos_harmonics{0.0f};  // v2.5.411: inicial = perfil de arranque (Espacial, harmonics 0); la unica fuente de verdad es ParameterStore.FactoryProfile; el 0.32 viejo no estaba validado (tarea 1: max 0.002)
 std::atomic<float> g_holos_warmth{0.5f};
 std::atomic<float> g_holos_dynamics{1.0f};
 std::atomic<float> g_holos_width{1.0f};
