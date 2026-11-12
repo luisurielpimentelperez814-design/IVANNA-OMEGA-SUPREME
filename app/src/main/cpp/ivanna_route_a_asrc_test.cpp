@@ -20,9 +20,22 @@
 //      ~32 muestras respecto al bypass.
 //  (j) THD+N con Ψ activa < −90 dB a +100 ppm (el campo no debe degradar
 //      la limpieza del remuestreo).
+//  (k) Captura (v2.5.412): THD+N con bloques de 320 frames (tamaño de
+//      bloque de captura) a ratio 1.0 y +100 ppm, Ψ apagada y Ψ activa
+//      congelada (misma meta < −90 dB que (b)/(j)).
+//  (l) Captura: inFrames variable 320/319 (micro-slips de MasterTiming):
+//      salida finita, sin clicks, y el número de frames sigue a la entrada.
+//  (m) Captura: Ψ viva con bloques de 320 (activa tras el primer bloque,
+//      η se mueve con AM 4 Hz, ILD real a azimut 30°).
+//  (n) Captura: coste por bloque de 320 frames (ASRC+Ψ juntos):
+//      media/p99/máx en µs; la cadena en vivo tiene 5.67 ms de
+//      presupuesto (gobernador 85%) y el ASRC debe caber en ~60 µs
+//      en el teléfono (el 410 midió ~40 µs en host).
 //
 // Uso: g++ -std=c++17 -O2 -I<hal_probe_dir> ivanna_route_a_asrc.cpp
 //      ivanna_route_a_asrc_test.cpp -o test && ./test
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -561,6 +574,203 @@ void testPsiThdn() {
     check(tL < -90.0 && tR < -90.0, "THD+N < -90 dB con Ψ activa a +100 ppm");
 }
 
+void testCaptureThdn() {
+    std::printf("== (k) Captura: THD+N con bloques de 320 frames ==\n");
+    const int inFrames = 2 * kRate;
+    std::vector<float> in;
+    genSine(in, inFrames, kToneHz);
+    auto measure = [&](RouteAAsrc& asrc, double fOut) {
+        std::vector<float> out = processBlocked(asrc, in, inFrames, 320);
+        int outFrames = static_cast<int>(out.size() / 2);
+        std::vector<float> chL(outFrames), chR(outFrames);
+        for (int i = 0; i < outFrames; ++i) {
+            chL[i] = out[i * 2];
+            chR[i] = out[i * 2 + 1];
+        }
+        double tL = thdnDb(chL.data(), outFrames, fOut, 2000);
+        double tR = thdnDb(chR.data(), outFrames, fOut, 2000);
+        std::printf("  THD+N L=%.1f dB  R=%.1f dB (f=%.2f Hz)\n", tL, tR, fOut);
+        return tL < -90.0 && tR < -90.0;
+    };
+    {
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        asrc.setPsiActive(false);  // remuestreador solo
+        check(measure(asrc, kToneHz), "captura 320f: THD+N < -90 dB a ratio 1.0");
+    }
+    {
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(100.0);
+        asrc.setPsiActive(false);
+        check(measure(asrc, kToneHz / 1.0001),
+              "captura 320f: THD+N < -90 dB a +100 ppm");
+    }
+    {
+        // Ψ activa con diseño congelado (como (j), pero a 320 frames).
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(100.0);
+        std::vector<float> warm(320 * 2);
+        asrc.process(in.data(), 320, warm.data(), 320 * 1002 / 1000 + 64);
+        check(asrc.psiActive(), "captura 320f: Ψ activa tras el primer bloque");
+        asrc.setPsiDesignHold(true);
+        check(measure(asrc, kToneHz / 1.0001),
+              "captura 320f: THD+N < -90 dB con Ψ activa a +100 ppm");
+    }
+}
+
+void testCaptureVariableBlocks() {
+    std::printf("== (l) Captura: bloques variables 320/319 (micro-slips) ==\n");
+    const int totalFrames = 10 * kRate;
+    std::vector<float> in;
+    genSine(in, totalFrames, kToneHz);
+    RouteAAsrc asrc;
+    asrc.setClockCorrectionPpm(0.0);
+    asrc.setPsiActive(false);  // el slip es del ASRC, no de Ψ
+    std::vector<float> out;
+    out.reserve(static_cast<size_t>(totalFrames) * 2 + 4096);
+    std::vector<float> scratch(320 * 2 + 4096);
+    int done = 0, blockIdx = 0, zeroBlocks = 0;
+    while (done < totalFrames) {
+        // Un micro-slip cada 7 bloques (MasterTiming quita 1 frame).
+        int n = (blockIdx % 7 == 3) ? 319 : 320;
+        if (done + n > totalFrames) n = totalFrames - done;
+        int cap = n * 1002 / 1000 + 64;
+        int produced = asrc.process(in.data() + done * 2, n, scratch.data(), cap);
+        if (produced <= 0) ++zeroBlocks;
+        out.insert(out.end(), scratch.begin(), scratch.begin() + produced * 2);
+        done += n;
+        ++blockIdx;
+    }
+    int outFrames = static_cast<int>(out.size() / 2);
+    double ratio = static_cast<double>(outFrames) / totalFrames;
+    std::printf("  bloques=%d (320/319), in=%d out=%d ratio=%.6f, bloques con 0 salida=%d\n",
+                blockIdx, totalFrames, outFrames, ratio, zeroBlocks);
+    check(zeroBlocks == 0, "ningún bloque produce 0 frames (el track nunca se queda sin datos)");
+    check(std::fabs(ratio - 1.0) < 0.0002, "el número de frames sigue a la entrada (±0.02%)");
+    bool allFinite = true;
+    for (float v : out) if (!std::isfinite(v)) { allFinite = false; break; }
+    check(allFinite, "salida finita con bloques variables");
+    // Sin clicks: el mayor paso entre muestras consecutivas no supera
+    // 1.5× la pendiente del seno (un slip quita 1 frame: el salto de fase
+    // es ~ la pendiente del seno, no un click).
+    double maxStep = 0.0;
+    double sineStep = kAmp * 2.0 * kPi * kToneHz / kRate;
+    for (int i = 0; i + 1 < outFrames; ++i) {
+        double s = std::fabs(static_cast<double>(out[(i + 1) * 2]) - out[i * 2]);
+        if (s > maxStep) maxStep = s;
+    }
+    std::printf("  max paso entre muestras = %.4f (pendiente seno = %.4f)\n",
+                maxStep, sineStep);
+    check(maxStep < sineStep * 1.5, "sin click con bloques variables");
+}
+
+void testCapturePsi() {
+    std::printf("== (m) Captura: Ψ viva con bloques de 320 frames ==\n");
+    // η se mueve con AM a 4 Hz (mismo criterio que (h), a 320 frames).
+    {
+        const int inFrames = 3 * kRate;
+        std::vector<float> in;
+        genAmTone(in, inFrames, kToneHz, 4.0);
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        std::vector<float> out = processBlocked(asrc, in, inFrames, 320);
+        (void)out;
+        std::printf("  AM 4 Hz, 3 s, 320f: η = %.3f, coherencia = %.3f, activa = %s\n",
+                    asrc.psiEta(), asrc.psiCoherence(),
+                    asrc.psiActive() ? "SI" : "NO");
+        check(asrc.psiActive(), "Ψ activa en captura tras el primer bloque");
+        check(asrc.psiEta() > 0.6, "η sube con coherencia alta en captura (> 0.6)");
+    }
+    // ILD real a azimut 30° con tono mono (mismo criterio que (f)).
+    {
+        const int inFrames = 2 * kRate;
+        std::vector<float> mono;
+        genSine(mono, inFrames, kToneHz);
+        for (int i = 0; i < inFrames; ++i) mono[i * 2 + 1] = mono[i * 2];
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        asrc.setPsiGeometry(-1.0f, -1.0f, 0.5236f);  // 30° a la derecha
+        std::vector<float> out = processBlocked(asrc, mono, inFrames, 320);
+        int outFrames = static_cast<int>(out.size() / 2);
+        double rmsL = 0.0, rmsR = 0.0;
+        for (int i = 2000; i < outFrames - 100; ++i) {
+            rmsL += static_cast<double>(out[i * 2]) * out[i * 2];
+            rmsR += static_cast<double>(out[i * 2 + 1]) * out[i * 2 + 1];
+        }
+        double ildDb = 10.0 * std::log10((rmsL + 1e-12) / (rmsR + 1e-12));
+        std::printf("  azimut 30°, 320f: ILD de salida L/R = %.2f dB (mono de entrada)\n", ildDb);
+        check(std::fabs(ildDb) > 0.5, "azimut 30° produce ILD real en captura (L != R)");
+    }
+    // Taps diseñados a 320 frames: finitos y acotados (mismo criterio que (g)).
+    {
+        const int inFrames = 2 * kRate;
+        std::vector<float> in;
+        genAmTone(in, inFrames, kToneHz, 4.0);
+        RouteAAsrc asrc;
+        asrc.setClockCorrectionPpm(0.0);
+        std::vector<float> out = processBlocked(asrc, in, inFrames, 320);
+        (void)out;
+        float firL[64] = {}, firR[64] = {};
+        check(asrc.psiFirTaps(firL, firR), "taps Ψ disponibles en captura tras procesar");
+        double maxAbs = 0.0;
+        bool allFinite = true;
+        for (int i = 0; i < 64; ++i) {
+            if (!std::isfinite(firL[i]) || !std::isfinite(firR[i])) allFinite = false;
+            double a = std::fabs(static_cast<double>(firL[i]));
+            double b = std::fabs(static_cast<double>(firR[i]));
+            if (a > maxAbs) maxAbs = a;
+            if (b > maxAbs) maxAbs = b;
+        }
+        std::printf("  max |tap| = %.4f (límite 4.0); finitos: %s\n", maxAbs,
+                    allFinite ? "SI" : "NO");
+        check(allFinite && maxAbs <= 4.0, "taps Ψ finitos y acotados en captura");
+    }
+}
+
+void testCaptureCost() {
+    std::printf("== (n) Captura: coste por bloque de 320 frames (ASRC+Ψ) ==\n");
+    const int kBlocks = 1000;
+    std::vector<float> in;
+    genAmTone(in, 320, kToneHz, 4.0);  // contenido real (Ψ activa)
+    std::vector<float> scratch(320 * 2 + 4096);
+    auto measureMean = [&](RouteAAsrc& asrc, const char* label) {
+        // Calentar 10 bloques (incluye el auto-diseño de Ψ del primer bloque).
+        for (int i = 0; i < 10; ++i) {
+            asrc.process(in.data(), 320, scratch.data(), 320 * 1002 / 1000 + 64);
+        }
+        std::vector<double> us;
+        us.reserve(kBlocks);
+        for (int i = 0; i < kBlocks; ++i) {
+            auto t0 = std::chrono::steady_clock::now();
+            asrc.process(in.data(), 320, scratch.data(), 320 * 1002 / 1000 + 64);
+            auto t1 = std::chrono::steady_clock::now();
+            us.push_back(std::chrono::duration<double, std::micro>(t1 - t0).count());
+        }
+        std::sort(us.begin(), us.end());
+        double sum = 0.0;
+        for (double v : us) sum += v;
+        double mean = sum / us.size();
+        double p99 = us[static_cast<size_t>(us.size() * 0.99)];
+        double mx = us.back();
+        std::printf("  %s: media=%.1f µs p99=%.1f µs máx=%.1f µs\n", label, mean, p99, mx);
+        return mean;
+    };
+    // Desglose: el ASRC solo (Ψ apagada) y la cadena completa (Ψ activa).
+    // La 410 citaba ~40 µs/bloque en host; aquí se mide el proceso completo
+    // (ASRC FIR 319 taps + FIR Ψ 64 taps/oído) en build escalar sin NEON.
+    RouteAAsrc asrcOff;
+    asrcOff.setClockCorrectionPpm(-70.0);  // deriva típica por USB
+    asrcOff.setPsiActive(false);
+    double meanOff = measureMean(asrcOff, "ASRC solo (Ψ apagada), -70 ppm");
+    RouteAAsrc asrcOn;
+    asrcOn.setClockCorrectionPpm(-70.0);
+    double meanOn = measureMean(asrcOn, "ASRC+Ψ activa, -70 ppm");
+    std::printf("  (presupuesto gobernador 85%% = 5670 µs; el ASRC debe caber en ~60 µs en el teléfono)\n");
+    std::printf("  (host escalar sin NEON: el teléfono tiene NEON, el coste en vivo debe ser MENOR)\n");
+    check(meanOff < 500.0, "coste medio ASRC solo < 500 µs en host");
+    check(meanOn < 500.0, "coste medio ASRC+Ψ < 500 µs en host (< 9%% del presupuesto)");
+}
+
 }  // namespace
 
 int main() {
@@ -576,6 +786,10 @@ int main() {
     testPsiEta();
     testPsiGroupDelay();
     testPsiThdn();
+    testCaptureThdn();
+    testCaptureVariableBlocks();
+    testCapturePsi();
+    testCaptureCost();
     std::printf("======================================\n");
     if (failures == 0) {
         std::printf("TODOS LOS TESTS PASARON\n");

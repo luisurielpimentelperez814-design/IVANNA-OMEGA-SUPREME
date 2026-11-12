@@ -308,6 +308,15 @@ fun IvannaControlPanel(
     var unityTelemetry by remember { mutableStateOf(FloatArray(0)) }
     var punchAmount by remember { mutableFloatStateOf(initialPunchAmount) }
     var crossfeed by remember { mutableFloatStateOf(initialCrossfeed) }
+    // Mezcla de captura AJUSTABLE (v2.5.412): cuánto del procesado se
+    // reinyecta frente al original de Tidal (100%). Default 0.60 = el
+    // valor vivo actual (DELTA_BLEND_SOLO). El engine la aplica con
+    // rampa per-sample (sin zipper noise) en ≤250 ms.
+    var captureMix by remember {
+        mutableFloatStateOf(
+            com.ivanna.omega.audio.PlaybackCaptureService.getCaptureMixGain(context)
+        )
+    }
     // ORBE — Binaural Esférico de Campo Cercano (v2.5.363), ACTIVO por defecto en v2.5.369 (amount 1.0).
     var orbeAmount by remember { mutableFloatStateOf(initialOrbeAmount) }
     var orbeDistanceM by remember { mutableFloatStateOf(initialOrbeDistanceM) }
@@ -1054,6 +1063,26 @@ fun IvannaControlPanel(
             AuroraSlider("EXCITER", exciter, 0f..1f, unit = "×") { exciter = it; onExciterChange(it) }
             AuroraSlider("EQ GAIN", eq, -18f..18f, unit = "dB") { eq = it; onEqChange(it) }
             AuroraSlider("STEREO WIDTH", width, 0f..1.5f, unit = "γ") { width = it; onWidthChange(it) }
+            // MEZCLA CAPTURA (v2.5.412): cuánto del procesado se reinyecta
+            // frente al original de Tidal, que suena al 100% (no hay API
+            // pública para silenciarlo). En captura los efectos SÍ corren;
+            // lo que faltaba era presencia. Default 0.60 = el valor vivo
+            // actual. El engine aplica el cambio con rampa per-sample
+            // (cero zipper noise) en ≤250 ms; ver `mix=` en la telemetría.
+            AuroraSlider(
+                "MEZCLA CAPTURA", captureMix, 0.20f..1.00f, unit = "×",
+                displayValue = { "%.0f%%".format(it * 100f) }
+            ) {
+                captureMix = it
+                com.ivanna.omega.audio.PlaybackCaptureService.setCaptureMixGain(context, it)
+            }
+            if (captureMix > 0.50f) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Por encima de 0.50 el eco / comb filtering vuelve: el original suena al 100% y la copia procesada ya no se funde como cuerpo.",
+                    style = MaterialTheme.typography.labelSmall, color = CoralWarn
+                )
+            }
         }
 
         GlassCard(title = "COMPRESOR", accent = AmberSignal, subtitle = "g_comp · dinámica lock-free") {

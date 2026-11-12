@@ -43,8 +43,9 @@ import java.util.Locale
  *    hilo de audio RT. Solo mientras Ruta A reproduce: arranca con el
  *    decode loop de IvannaBridgePlayer (se cancela en su `finally`) y con
  *    la captura de PlaybackCaptureService (se cancela en stopEngineLocked).
- *    En la captura routeAAsrc es null: asrc=0, psi en defaults — el ASRC
- *    y Ψ solo existen en el BridgePlayer; el shed sí se lee en ambas rutas.
+ *    Desde la v2.5.412 la captura SÍ tiene su propio RouteAAsrc (y Ψ):
+ *    el poller recibe el ASRC de la sesión y asrc/psi son vivos en ambas
+ *    rutas; el shed sí se lee en ambas rutas.
  *  - Todos los reads con runCatching y fail-closed: si algo falla, la
  *    línea se salta; el audio NUNCA se rompe por la telemetría.
  *  - Locale.US en el formateo: en un teléfono con locale es-ES, "%.2f"
@@ -93,6 +94,9 @@ data class TelemetrySnapshot(
     val bandMid: Float = 0f,
     val bandHi: Float = 0f,
     val npeGenre: String = "none",
+    // Mezcla de captura aplicada (v2.5.412): ganancia del procesado
+    // reinyectado (rampa). NaN = no aplica (BridgePlayer no reinyecta).
+    val mix: Float = Float.NaN,
     // Tiempos por etapa (v2.5.411, tarea 4): del getter nativeGetDspShed
     // (extendido a 25 floats). blockBudgetNs = periodo del último bloque
     // (ns); stageStats = 21 floats [mean_ns, p99_ns, max_ns] por etapa en
@@ -111,10 +115,12 @@ data class TelemetrySnapshot(
  */
 fun formatTelemetryLine(s: TelemetrySnapshot): String {
     val genre = s.npeGenre.ifBlank { "none" }.replace(Regex("[\\s=]+"), "_")
+    // mix=-- cuando no aplica (BridgePlayer); mix=0.60 en captura.
+    val mixStr = if (s.mix.isFinite()) String.format(Locale.US, "%.2f", s.mix) else "--"
     return String.format(
         Locale.US,
         "route=%s asrc=%d ppm=%+.1f psi_eta=%.2f psi_coh=%.2f psi_active=%d " +
-            "orbe=%.2f holos=%.2f phi=%.2f volterra=%d " +
+            "orbe=%.2f holos=%.2f phi=%.2f volterra=%d mix=%s " +
             "shed=%.3f dsp_us=%.0f dsp_pk=%.0f " +
             "rms=%.2f peak=%.2f gr_db=%.2f gain_db=%.2f comp=%.2f exc=%.2f " +
             "width=%.2f safety=%.2f voice=%.2f applied=%d " +
@@ -129,6 +135,7 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
         s.holos,
         s.phi,
         if (s.volterra > 0.5f) 1 else 0,
+        mixStr,
         s.shedFrac,
         s.shedEmaUs,
         s.shedPeakUs,
@@ -155,12 +162,16 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
  * runCatching: un getter que falle deja su valor en 0, nunca rompe nada.
  *
  * routeAAsrc es NULLABLE (v2.5.410): la ruta de captura en vivo
- * (PlaybackCaptureService, Tidal por MediaProjection) NO usa RouteAAsrc
- * — no hay ASRC ni Ψ ahí (viven solo en IvannaBridgePlayer) — así que el
- * poller corre igual con asrc=0 y psi en sus defaults (0.5/0.5/inactivo).
- * El shed sí se lee en ambas rutas: el gobernador es estático en el JNI.
+ * (PlaybackCaptureService, Tidal por MediaProjection) recibe su propio
+ * RouteAAsrc desde la v2.5.412; antes era null (asrc=0, psi en defaults).
+ * Si es null (sin ASRC en esta ruta), el poller corre igual con asrc=0 y
+ * psi en sus defaults (0.5/0.5/inactivo). El shed sí se lee en ambas rutas:
+ * el gobernador es estático en el JNI.
  */
-fun collectTelemetrySnapshot(routeAAsrc: RouteAAsrc?): TelemetrySnapshot? {
+fun collectTelemetrySnapshot(
+    routeAAsrc: RouteAAsrc?,
+    mixGain: Float = Float.NaN
+): TelemetrySnapshot? {
     val lib = IvannaNativeLib
     if (!lib.isLoaded) return null
     val tele = runCatching { lib.nativeGetAdaptiveTelemetry() }.getOrNull()
@@ -201,6 +212,7 @@ fun collectTelemetrySnapshot(routeAAsrc: RouteAAsrc?): TelemetrySnapshot? {
         bandMid = bands?.getOrNull(1) ?: 0f,
         bandHi = bands?.getOrNull(2) ?: 0f,
         npeGenre = genre?.takeIf { it.isNotBlank() } ?: "none",
+        mix = mixGain,
         // El array shed viene extendido (25 floats, v2.5.411): [3] es el
         // presupuesto del bloque y [4..24] las 21 estadísticas de etapa.
         // Se lee UNA vez por segundo aquí: el getter hace snapshot-and-
@@ -216,15 +228,17 @@ fun collectTelemetrySnapshot(routeAAsrc: RouteAAsrc?): TelemetrySnapshot? {
  * Arranca el volcado 1 Hz en un hilo de fondo (Dispatchers.Default).
  * El llamador guarda el Job y lo cancela cuando la reproducción termina
  * (IvannaBridgePlayer lo cancela en el `finally` del decode loop;
- * PlaybackCaptureService en stopEngineLocked, con routeAAsrc=null porque
- * la captura no usa ASRC). El Job es hijo del scope que lo lanza: si el
- * scope se cancela, el poller muere con él. La cancelación durante
- * delay() es normal.
+ * PlaybackCaptureService en stopEngineLocked). Desde la v2.5.412 la
+ * captura pasa su propio RouteAAsrc (asrc/psi vivos) y un proveedor de
+ * la ganancia de mezcla aplicada (`mix=` en la línea). El Job es hijo
+ * del scope que lo lanza: si el scope se cancela, el poller muere con
+ * él. La cancelación durante delay() es normal.
  */
 fun CoroutineScope.startTelemetryPoller(
     routeAAsrc: RouteAAsrc?,
     intervalMs: Long = 1000L,
-    appContext: Context? = null
+    appContext: Context? = null,
+    mixGainProvider: (() -> Float)? = null
 ): Job = launch(Dispatchers.Default) {
     // Diagnóstico de arranque (v2.5.411, tarea 4 — por qué el tag salía
     // vacío): si IVANNA.Telemetry está vacío Y no aparece esta línea, el
@@ -240,7 +254,8 @@ fun CoroutineScope.startTelemetryPoller(
     var lastXruns = -1
     while (isActive) {
         runCatching {
-            val snapshot = collectTelemetrySnapshot(routeAAsrc)
+            val mix = runCatching { mixGainProvider?.invoke() ?: Float.NaN }.getOrDefault(Float.NaN)
+            val snapshot = collectTelemetrySnapshot(routeAAsrc, mixGain = mix)
             if (snapshot != null) {
                 Log.i(TELEMETRY_TAG, formatTelemetryLine(snapshot))
                 // Tiempos por etapa + xruns (tarea 4), tag propio para no

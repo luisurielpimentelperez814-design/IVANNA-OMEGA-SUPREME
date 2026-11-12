@@ -40,17 +40,27 @@ class IvannaTelemetryTest {
         bandLo = 0.30f,
         bandMid = 0.50f,
         bandHi = 0.20f,
-        npeGenre = "rock"
+        npeGenre = "rock",
+        mix = 0.60f
     )
 
     @Test fun fullSnapshotFormatsExactLine() {
         val expected = "route=A asrc=1 ppm=+12.3 psi_eta=0.73 psi_coh=0.80 psi_active=1 " +
-            "orbe=1.00 holos=0.50 phi=0.50 volterra=1 " +
+            "orbe=1.00 holos=0.50 phi=0.50 volterra=1 mix=0.60 " +
             "shed=0.034 dsp_us=5459 dsp_pk=17462 " +
             "rms=0.12 peak=0.45 gr_db=-2.10 gain_db=1.50 comp=0.20 exc=0.10 " +
             "width=1.10 safety=0.90 voice=0.00 applied=1 " +
             "band_lo=0.30 band_mid=0.50 band_hi=0.20 npe_genre=rock"
         assertEquals(expected, formatTelemetryLine(fullSnapshot()))
+    }
+
+    @Test fun mixFormatsValueAndDashWhenNotApplicable() {
+        // v2.5.412: `mix=` es la ganancia de mezcla aplicada en captura.
+        // En BridgePlayer no aplica (NaN) y se imprime como `--`.
+        assertTrue(formatTelemetryLine(fullSnapshot()).contains("mix=0.60"))
+        assertTrue(formatTelemetryLine(TelemetrySnapshot()).contains("mix=--"))
+        assertTrue(formatTelemetryLine(fullSnapshot().copy(mix = 1.0f)).contains("mix=1.00"))
+        assertTrue(formatTelemetryLine(fullSnapshot().copy(mix = 0.20f)).contains("mix=0.20"))
     }
 
     @Test fun shedFieldsFormatAsMeasured() {

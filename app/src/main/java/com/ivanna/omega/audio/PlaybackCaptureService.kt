@@ -3,6 +3,7 @@ package com.ivanna.omega.audio
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
@@ -131,6 +132,46 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
 
         private val _isCapturing = MutableStateFlow(false)
         val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
+
+        // Ganancia de mezcla de captura AJUSTABLE (v2.5.412): cuánto del
+        // procesado se reinyecta frente al original de Tidal, que suena al
+        // 100% (no hay API pública para silenciarlo). La mueve el usuario
+        // con el slider "MEZCLA CAPTURA" del panel (DSP CORE). Rango
+        // 0.20–1.00. Default 0.60 = DELTA_BLEND_SOLO, el valor vivo actual:
+        // NO cambia el comportamiento de arranque. (OJO: el 0.40 del
+        // comentario Haas es el punto dulce LEGACY; en el modelo
+        // diferencial actual el target vivo es 0.60, no 0.40. Poner 0.40
+        // de default BAJARÍA la presencia, lo contrario de lo que pide
+        // Esse. El 0.40 sigue disponible en el slider.) Por encima de
+        // ~0.50 el eco / comb filtering vuelve (aviso en el slider).
+        // Con módulo activo el target sigue siendo DELTA_BLEND_WITH_MODULE
+        // (0.45): el módulo ya procesa in-place. El engine re-lee el
+        // valor throttled (250 ms) desde el hilo de audio: el slider tarda
+        // ≤250 ms en aplicarse y la rampa per-sample (MIX_GAIN_STEP) lo
+        // lleva sin zipper noise.
+        const val CAPTURE_MIX_PREFS = "ivanna_capture"
+        const val CAPTURE_MIX_KEY = "capture_mix_gain"
+        const val CAPTURE_MIX_MIN = 0.20f
+        const val CAPTURE_MIX_MAX = 1.00f
+        const val CAPTURE_MIX_DEFAULT = 0.60f
+
+        /** Clamp puro (testeable en JVM sin Android). No-finito → default. */
+        fun clampCaptureMixGain(value: Float): Float =
+            if (!value.isFinite()) CAPTURE_MIX_DEFAULT
+            else value.coerceIn(CAPTURE_MIX_MIN, CAPTURE_MIX_MAX)
+
+        fun getCaptureMixGain(context: Context): Float = runCatching {
+            context.getSharedPreferences(CAPTURE_MIX_PREFS, Context.MODE_PRIVATE)
+                .getFloat(CAPTURE_MIX_KEY, CAPTURE_MIX_DEFAULT)
+        }.getOrDefault(CAPTURE_MIX_DEFAULT).let { clampCaptureMixGain(it) }
+
+        fun setCaptureMixGain(context: Context, value: Float) {
+            val v = clampCaptureMixGain(value)
+            runCatching {
+                context.getSharedPreferences(CAPTURE_MIX_PREFS, Context.MODE_PRIVATE)
+                    .edit().putFloat(CAPTURE_MIX_KEY, v).apply()
+            }
+        }
     }
 
     private val lock        = ReentrantLock()
@@ -287,8 +328,17 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             _isCapturing.value = true
             retryAttempts = 0
             // Telemetría en vivo 1 Hz (v2.5.410): arranca con la captura.
+            // ASRC + Ψ EN CAPTURA (v2.5.412): el poller recibe el ASRC de
+            // esta sesión (antes null: asrc=0, psi en defaults). Ahora
+            // asrc=1 y psi_eta/psi_coh/psi_active son vivos en captura.
+            // Mezcla AJUSTABLE (v2.5.412): el poller recibe la ganancia
+            // aplicada (rampa) para exponerla como `mix=` en la línea.
             telemetryJob?.cancel()
-            telemetryJob = telemetryScope.startTelemetryPoller(routeAAsrc = null, appContext = this)
+            telemetryJob = telemetryScope.startTelemetryPoller(
+                routeAAsrc = engine.asrc,
+                appContext = this,
+                mixGainProvider = { engine.currentMixGain }
+            )
         }
     }
 
@@ -491,8 +541,23 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         //
         // La rampa interpola la ganancia muestra a muestra dentro del bloque
         // (no por bloque) → cero zipper noise y cero tronido al conmutar.
-        private var mixGain = 0f                       // nivel actual del stream procesado
+        // @Volatile: la telemetría (hilo Default) lee mixGain vía
+        // currentMixGain mientras el hilo de audio lo escribe.
+        @Volatile private var mixGain = 0f                 // nivel actual del stream procesado
         private var mixGainTarget = HAAS_SAFE_GAIN     // objetivo mientras la captura está activa
+        // Mezcla AJUSTABLE (v2.5.412): objetivo del usuario (slider). Se
+        // carga en start() y se re-lee throttled (250 ms) en el bucle; el
+        // hilo de audio solo hace getFloat (mapa en memoria, sin I/O).
+        @Volatile var userMixGain: Float = CAPTURE_MIX_DEFAULT
+        private var mixPrefs: SharedPreferences? = null
+
+        /** ASRC de esta sesión de captura (para la telemetría 1 Hz). Null antes de start(). */
+        val asrc: RouteAAsrc?
+            get() = captureAsrc
+
+        /** Ganancia de mezcla aplicada ahora mismo (rampa), para la telemetría `mix=`. */
+        val currentMixGain: Float
+            get() = mixGain
 
         // MISION HAAS — atacar latencia, no ganancia (2026-09-18):
         // histeresis del resync anti-deriva. Sin ella, mientras la deriva
@@ -524,6 +589,27 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         @Volatile private var systemWideCheckedAtMs = 0L
         private val systemWideRefreshing = java.util.concurrent.atomic.AtomicBoolean(false)
         private val predictiveGovernor = PredictiveLoadGovernor(SAMPLE_RATE)
+
+        // ASRC MAGISTRAL + Ψ EN CAPTURA (v2.5.412): el ASRC nativo v6
+        // (RouteAAsrc: FIR 319 taps + FIR Ψ 64 taps/oído) como corrector
+        // de tasa en el write-stage, espejo de IvannaBridgePlayer. Sin
+        // él, la captura corregía la deriva solo con micro-slips y Ψ no
+        // corría (telemetría asrc=0, psi_active=0). Se crea en start() y
+        // se cierra en stop()/cleanup(); si el nativo no carga,
+        // processInto() es passthrough y la captura sigue como hoy.
+        private var captureAsrc: RouteAAsrc? = null
+        // Servo de reloj propio de la captura (instancia independiente de
+        // la del BridgePlayer: cada uno disciplina su propio AudioTrack).
+        private var capturePll: AudioTrackBufferPll? = null
+        // Frames entregados al track a 48 kHz (dominio del PLL). Se cuentan
+        // en el bucle, no en writeAllToTrack (que también escribe silencio
+        // de mute y reprimes de colchón).
+        private var captureSubmittedFrames48k = 0L
+        private var lastPllPollNs = 0L
+        // Salida del ASRC: capacidad inFrames*1.002+32 del wrapper + margen.
+        private val asrcOutBuf = FloatArray((BLOCK_FRAMES + 64) * CHANNEL_COUNT)
+        // Primer fallo del ASRC: se loguea una sola vez (nunca por bloque).
+        @Volatile private var asrcFirstFailureLogged = false
 
         private val rtSpatialInL  = FloatArray(BLOCK_FRAMES)
         private val rtSpatialInR  = FloatArray(BLOCK_FRAMES)
@@ -624,6 +710,22 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             antiPopEngine.reset()
             budgetGuard.reset()
             predictiveGovernor.reset()
+            // ASRC MAGISTRAL + Ψ EN CAPTURA (v2.5.412): una instancia por
+            // sesión de captura (estado FIR + Ψ locales, sin compartir con
+            // el BridgePlayer). Si el nativo no carga, isAvailable=false y
+            // processInto() es passthrough: la captura sigue como hoy.
+            captureAsrc = RouteAAsrc().also { it.setSampleRate(SAMPLE_RATE.toFloat()) }
+            capturePll = AudioTrackBufferPll(SAMPLE_RATE)
+            captureSubmittedFrames48k = 0L
+            lastPllPollNs = 0L
+            asrcFirstFailureLogged = false
+            Log.i(TAG, "ASRC captura: disponible=${captureAsrc?.isAvailable == true} (Ψ viva por defecto)")
+            // Mezcla AJUSTABLE (v2.5.412): objetivo del usuario (slider),
+            // persistido en ivanna_capture. Default 0.60 = DELTA_BLEND_SOLO.
+            mixPrefs = context.getSharedPreferences(CAPTURE_MIX_PREFS, Context.MODE_PRIVATE)
+            userMixGain = clampCaptureMixGain(
+                mixPrefs?.getFloat(CAPTURE_MIX_KEY, CAPTURE_MIX_DEFAULT) ?: CAPTURE_MIX_DEFAULT
+            )
             workerHandler?.post(processingLoop)
             readerHandler?.post(readerLoop)
         }
@@ -631,6 +733,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         fun stop() {
             active = false
             Log.i(TAG, "Anillo captura->DSP: ofrecidos=${blockRing.offeredBlocks} descartados=${blockRing.droppedBlocks} consumidos=${blockRing.polledBlocks} pendientes=${blockRing.pending()}")
+            // ASRC MAGISTRAL + Ψ EN CAPTURA (v2.5.412): cerrar siempre
+            // (espejo del finally de BridgePlayer); close() es idempotente.
+            runCatching { captureAsrc?.close() }
+            captureAsrc = null
+            capturePll = null
             masterTiming.reset()
             antiPopEngine.reset()
             val sysCap: SystemAudioCapture = SystemAudioCapture.getInstance(context)
@@ -658,6 +765,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             antiPopEngine.reset()
             budgetGuard.reset()
             predictiveGovernor.reset()
+            // ASRC + Ψ EN CAPTURA (v2.5.412): cerrar si stop() no lo hizo
+            // (close() es idempotente).
+            runCatching { captureAsrc?.close() }
+            captureAsrc = null
+            capturePll = null
             (context.applicationContext as? IVANNAApplication)?.let { app ->
                 if (audioSessionId > 0) {
                     app.globalEffectManager.closeSession(audioSessionId)
@@ -1179,7 +1291,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                     // COMPLEMENTO MODULO+APK: con el motor in-place (Magisk/sesion) activo ya no se
                     // silencia la reinyeccion: al ser solo DELTA no duplica el audio ni crea peine.
                     // Solo el video sigue silenciado (desfase labial). Blend algo menor con modulo.
-                    mixGainTarget = if (inPlaceSessionActive || systemWideActive) DELTA_BLEND_WITH_MODULE else DELTA_BLEND_SOLO
+                    // Mezcla AJUSTABLE (v2.5.412): en solo, el objetivo es el
+                    // del usuario (slider, default 0.60 = DELTA_BLEND_SOLO);
+                    // con módulo sigue DELTA_BLEND_WITH_MODULE (0.45).
+                    mixGainTarget = if (inPlaceSessionActive || systemWideActive) DELTA_BLEND_WITH_MODULE else userMixGain
                     if (LEGACY_HAAS_MIX) mixGainTarget = HAAS_SAFE_GAIN
                     val reinject = if (LEGACY_HAAS_MIX) (!inPlaceSessionActive && !systemWideActive && !isVideoActive) else !isVideoActive
                     if (reinject) {
@@ -1200,7 +1315,33 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                                 i += CHANNEL_COUNT
                             }
                         }
-                        writeAllToTrack(outBuf, samplesToWrite)
+                        // ASRC MAGISTRAL + Ψ EN CAPTURA (v2.5.412): corrector
+                        // de tasa en el write-stage, espejo de BridgePlayer.
+                        // Consume el delta ya compensado (effectiveFrames a
+                        // 48 kHz) y produce asrcFrames a 48 kHz; writeAllToTrack
+                        // aplica el resampler hi-res si procede. Sin nativo,
+                        // processInto() es passthrough (misma salida que hoy).
+                        // Si el ASRC no produce nada (FIFO vacío al arrancar
+                        // o error), NO se escribe nada este bloque: el audio
+                        // ya está dentro del ASRC y escribir outBuf directo
+                        // lo DUPLICARÍA (misma regla que BridgePlayer).
+                        val asrc = captureAsrc
+                        if (asrc != null && effectiveFrames > 0) {
+                            val asrcFrames = runCatching {
+                                asrc.processInto(outBuf, effectiveFrames, asrcOutBuf)
+                            }.getOrDefault(0)
+                            if (asrcFrames > 0) {
+                                captureSubmittedFrames48k += asrcFrames.toLong()
+                                writeAllToTrack(asrcOutBuf, asrcFrames * CHANNEL_COUNT)
+                            } else if (!asrcFirstFailureLogged) {
+                                asrcFirstFailureLogged = true
+                                Log.w(TAG, "ASRC captura sin salida (0 frames); bloque no escrito (audio dentro del FIFO)")
+                            }
+                        } else {
+                            // Sin ASRC (no creado): comportamiento actual.
+                            captureSubmittedFrames48k += effectiveFrames.toLong()
+                            writeAllToTrack(outBuf, samplesToWrite)
+                        }
                     } else {
                         if (!trackMuted) {
                             trackMuted = true
@@ -1209,7 +1350,52 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                         // Antes la pista se quedaba SIN escribir mientras había vídeo: el HAL contaba un underrun
                         // por ciclo de mezcla (cientos/s) y al volver no había colchon. Con volumen 0 se la mantiene
                         // alimentada con ceros: mismo silencio, cero underruns, cola lista al reanudar.
+                        // El silencio también es audio escrito: cuenta en el submitted del PLL.
+                        captureSubmittedFrames48k += effectiveFrames.toLong()
                         writeAllToTrack(silenceBuf, samplesToWrite.coerceIn(0, BLOCK_SAMPLES))
+                    }
+
+                    // Servo de reloj de la captura (v2.5.412): alimenta el ppm
+                    // del ASRC desde el PLL (espejo de BridgePlayer). Throttle
+                    // 250 ms: getTimestamp() cruza Binder. Sin detección
+                    // explícita de reroute: el PLL se auto-resetea ante
+                    // discontinuidad de timestamp/posición.
+                    val nowPllNs = android.os.SystemClock.elapsedRealtimeNanos()
+                    if (lastPllPollNs == 0L || nowPllNs - lastPllPollNs >= 250_000_000L) {
+                        lastPllPollNs = nowPllNs
+                        // Mezcla AJUSTABLE (v2.5.412): el slider escribe el
+                        // pref; el engine lo re-lee aquí (getFloat = mapa en
+                        // memoria, sin I/O). La rampa per-sample lleva
+                        // mixGain al nuevo objetivo sin zipper noise.
+                        mixPrefs?.let { prefs ->
+                            userMixGain = clampCaptureMixGain(
+                                prefs.getFloat(CAPTURE_MIX_KEY, CAPTURE_MIX_DEFAULT)
+                            )
+                        }
+                        val track = audioTrack
+                        val pll = capturePll
+                        val asrc = captureAsrc
+                        if (track != null && pll != null && asrc != null) {
+                            runCatching {
+                                if (track.getTimestamp(audioTs)) {
+                                    // Dominio 48 kHz: framePosition y capacidad
+                                    // vienen en frames DE PISTA (192 kHz en
+                                    // hi-res); el PLL exige el mismo dominio
+                                    // que su tasa nominal (48 kHz).
+                                    val rateRatio = SAMPLE_RATE.toLong()
+                                    val trackRate = trackSampleRate.toLong().coerceAtLeast(1L)
+                                    val consumed48k = audioTs.framePosition * rateRatio / trackRate
+                                    val capacity48k = (track.bufferSizeInFrames.toLong() * rateRatio / trackRate).toInt()
+                                    val ppm = pll.observe(
+                                        submittedFrames = captureSubmittedFrames48k,
+                                        consumedFrames = consumed48k,
+                                        bufferCapacityFrames = capacity48k,
+                                        timestampNs = audioTs.nanoTime
+                                    )
+                                    asrc.setClockCorrectionPpm(ppm)
+                                }
+                            }
+                        }
                     }
 
                     // Tick de latencia adaptativa (throttled cada 8 bloques para evitar Binder IPC por bloque)

@@ -6,7 +6,7 @@
 
 **Audio espacial Android · evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.411-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.412-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-13%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -23,7 +23,7 @@
 
 ## Estado actual · 12 de noviembre de 2026
 
-**Versión vigente: v2.5.411 (702).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
+**Versión vigente: v2.5.412 (703).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
 
 **Las dos rutas:** la **Ruta A** (APK, capture) procesa el audio del reproductor propio (Tidal, YouTube Music) con el ASRC magistral nativo + Ψ activa; si algo falla, solo cae la app. La **Ruta B** (Magisk + HAL, todo el sistema) está **MUERTA desde el 2026-11-11** — la historia completa, sin maquillar, en [docs/HISTORIA_RUTA_B.md](docs/HISTORIA_RUTA_B.md). No instalar ningún zip; la v2.5.403 lleva el wrapper roto y la **v2.5.384 está RETIRADA** (brickeó el teléfono 2 veces).
 
@@ -45,6 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.412** (703) | ASRC magistral + Ψ portados a la captura (antes solo micro-slips; telemetría asrc/psi ahora vivos en captura), mezcla de captura ajustable con slider (0.20–1.00, default 0.60 = valor vivo actual; corrección: el target vivo era 0.60, no 0.40), telemetría con `mix=`. Medido en host: THD+N −138.8 dB a ratio 1.0 / −95.0 dB a +100 ppm en bloques de 320 frames; ASRC+Ψ 46/46; CTest 970/970. |
 | **v2.5.411** (702) | Guarda de armónicos HOLOS (el valor vivo 0.298 se lee como 0.002: THD+N −41 dB medido → dentro de −70 dB), defaults de fábrica en una sola fuente con 3 perfiles (Limpio / Espacial / Completo), auditoría de parámetros, telemetría con tiempos por etapa y contador de xruns, diagnóstico de underruns. Fix CI: tests-host usa g++-14 (clang-18 + libstdc++15 rompía `<format>`). |
 | **v2.5.410** (701) | Firma acústica refinada con datos reales del teléfono (captura 2026-11-11, Tidal): presupuesto del gobernador 70%→85% (shed crónico 4.7%→0% medido), OmniField en bypass por distorsión medida (residuo −3.7/−6.1 dB en estéreo), telemetría 1 Hz ya en captura en vivo, logs de shed/Magisk throttled. ORBE/HOLOS/Φ siguen activos. |
 | **v2.5.409** (700) | README recortado a ~40% según segunda crítica externa (historia de Ruta B a docs, cada dato en un solo lugar, tensiones resueltas, CPU 130% como riesgo principal). |
@@ -185,7 +186,7 @@ Todas en host a 48 kHz. Mediciones en dispositivo: **ver Estado actual (único l
 | Sensor, throughput host | 280× RT | `test_real_acoustic_sensor` |
 | ASRC v5 (host) | THD+N @1 kHz −90.4 dB banda ancha / −92.1 dB en banda · rechazo alias @23 kHz −156…−162 dB | validación host ASRC v5 (103 de 103 checks) |
 
-**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 970/970 en CI (v2.5.411, run 43151492736)** — la cifra subió de 954 (v2.5.406) a 970 por los tests nuevos de la 410/411 (StageTimings, guarda de armónicos, costes/firma de cadena). **ASRC magistral + Ψ (Ruta A): 31/31 en binario host standalone** (verificado 2026-11-11); NO forma parte de CTest, por eso coexiste con el 970 sin sumarse. **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además +18 tests unitarios Kotlin y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
+**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 970/970 en CI (v2.5.411, run 43151492736)** — la cifra subió de 954 (v2.5.406) a 970 por los tests nuevos de la 410/411 (StageTimings, guarda de armónicos, costes/firma de cadena). **ASRC magistral + Ψ (Ruta A): 46/46 en binario host standalone** (31/31 hasta la 411; +15 checks de captura en la 412: THD+N a 320 frames, bloques variables 320/319, Ψ viva a 320 frames, coste por bloque) (verificado 2026-11-11); NO forma parte de CTest, por eso coexiste con el 970 sin sumarse. **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además +18 tests unitarios Kotlin y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
 
 ---
 
