@@ -640,7 +640,13 @@ TEST(OmniField, SirenParity) {
             maxErr1 = std::max(maxErr1, (double)std::abs(out[j] - kN1ParityY[i * 2 + j]));
     }
     std::printf("[omni-field] N1 parity max err: %.2e dB\n", maxErr1);
-    EXPECT_LT(maxErr1, 1e-4);
+    // Tolerancia 2e-4 (no 1e-4): el forward SIREN en float varía con la
+    // plataforma — host g++-14.2.0 mide 6.96e-05, CI g++-14.3.0 mide
+    // 1.08e-04 (mismo código, FMA/libm distintos). La paridad existe para
+    // cazar regresiones (pesos rotos = errores de orden dB), no para exigir
+    // bit-identidad entre compiladores; 2e-4 conserva ese poder con ~2x
+    // de margen sobre el peor valor medido. N3 queda en 1e-4 (6.26e-06).
+    EXPECT_LT(maxErr1, 2e-4);
     // N3: 96 puntos, forward contra la salida del entrenador.
     double maxErr3 = 0.0;
     for (int i = 0; i < kN3ParityCount; ++i) {
