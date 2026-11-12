@@ -13,11 +13,13 @@ and *what still needs a real device*.
 
 ## Two processing routes
 
-| | **Route A — app, no root** | **Route B — root, system-wide** |
+| | **Route A — app, no root** | **Route B — root, system-wide · RETIRED** |
 |---|---|---|
-| Where it runs | Inside the app's own player and capture service | Magisk module: a root daemon plus an audio effect loaded by `audioserver` |
-| Affects | Audio the app itself plays or captures | Output audio of the system mixer |
-| Needs | Just the APK | A rooted device with Magisk (APK **and** module) |
+| Where it runs | Inside the app's own player and capture service | Nowhere. Retired 2026-11-11 (see below) |
+| Affects | Audio the app itself plays or captures | Nothing |
+| Needs | Just the APK | Do not install any module ZIP |
+
+**Route B is dead.** The HAL wrapper failed on 2026-11-11 (the real HAL binary aborts with SIGABRT when the wrapper `exec`s it; the phone ended in a bootloop and its 6th factory reset). A Magisk module cannot make init read an `.rc` at boot. Do not flash any `ivanna_omega_supreme_vX.Y.Z.zip` — including v2.5.403, which carries the broken wrapper. Route A (APK only) is the only supported route.
 
 The software clock-drift control (PLL) applies to the app's own `AudioTrack` path only. It does **not** control
 the physical clock of a USB DAC, a Bluetooth sink or the vendor HAL; the repo documents those as unproven
@@ -26,15 +28,14 @@ integration points, not features.
 ## Install
 
 1. Open the [Releases](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases) page and
-   take the latest release. Each release carries the APK and the Magisk module ZIP
-   (`ivanna_omega_supreme_vX.Y.Z.zip`), built from the same commit by CI.
-2. Install the APK (Route A).
-3. For Route B only: flash the ZIP from the Magisk app. Do this only if you understand what a root module does
-   and have a way to recover (see [SECURITY.md](SECURITY.md)).
+   take the latest release. Each release carries the APK (the Magisk module ZIP is still built by CI, but
+   Route B is retired — do not flash it).
+2. Install the APK (Route A). That is the whole install now.
 
 A green CI badge is not proof of sound quality or hardware compatibility. The reference test device is a
-Moto G85 on Android 14 (SDK 34); see [the acceptance plan](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md) for the physical tests
-that are still pending.
+Moto G85 on Android 15 (SDK 35); see [the acceptance plan](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md) for the physical tests
+that are still pending. Measured on device 2026-11-11 (v2.5.406, Tidal, all effects on): app at 130% CPU,
+0 xruns over USB OTG at 384 kHz/32-bit; blind ABX and temperature still pending.
 
 ## Build and test on a computer (no Android SDK needed)
 

@@ -1,1 +1,8 @@
-{"badge_label":"901/901","commit":"v2.5.383 (sin commit todavia; HEAD fc988a49 + trabajo de auditoria)","duration_sec":362.45,"failed":0,"note":"901/901 en build-tests (Debug, g++-14, CMake 4.4.4) 2026-11-10 04:15 CST. Total 901 = 885 + 15 nuevos 5D Fase 0 + 1 nuevo ThdnProductionRetune (HOLOS). Aviso: los tests de throughput (ORBE/HOLOS/PZ1D) son sensibles a carga y optimizacion: en un build Debug sobre esta VM compartida y cargada pueden medir por debajo del umbral y fallar; en esta corrida pasaron todos. No son fallos de logica (THD+N/IMD/latencia de esos mismos tests pasan).","pass_rate_percent":100,"passed":901,"scope":"Local Linux host, Debug (g++-14, CMake 4.4.4, CTest); no device acoustic measurement","total":901,"verified_at":"2026-11-10 04:15 CST","version":"v2.5.383"}
+{
+  "passed": 954,
+  "failed": 0,
+  "total": 954,
+  "pass_rate_percent": 100,
+  "duration_sec": 111.91,
+  "badge_label": "954/954"
+}

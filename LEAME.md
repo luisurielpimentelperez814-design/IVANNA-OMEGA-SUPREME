@@ -90,7 +90,7 @@ El mapa muestra las relaciones generales del código. El bloque HAL/PAL represen
 | Medición de sala | Hay flujo de tonos, captura, comparación y lógica de restauración. | Mediciones repetidas con equipo, salas y salidas diferentes. |
 | Captura AR | Hay actividad de captura y exportación basada en ARCore. | Confirmar cámara, seguimiento, ciclo de vida y exportación en cada equipo objetivo. |
 | Renderizador geométrico | Dibuja una geometría configurada y admite imágenes de hasta 3840 × 2160 píxeles. | Verificar rendimiento y recordar que no es un escaneo automático ni una simulación acústica validada. |
-| SAFMUS / ACSR / HAL-PAL | El write-stage ASRC v5 está verificado en el dispositivo (deriva −6.25 ppm, sin saturación; ver README §12). | Falta el veredicto de escucha vs v4 y el fix permanente del contexto SELinux; sigue siendo experimental (LD_PRELOAD, no parte del APK). |
+| SAFMUS / ACSR / HAL-PAL | El write-stage ASRC v5 está verificado en el dispositivo (deriva −6.25 ppm, sin saturación; ver README §12). **La vía HAL está muerta desde 2026-11-11** (el wrapper falló, 6º reset); el ASRC vive ahora en la app (Ruta A, v2.5.404+). | Falta el veredicto de escucha del ASRC de Ruta A y la puerta auditiva ABX. |
 | Wi-Fi / CSI | Hay políticas conservadoras para tratar observaciones de radio como indicios. | Hardware/proveedor compatible y adquisición real; Wi-Fi común no equivale a CSI. |
 
 ## ¿Necesita una API key de Google?
@@ -120,12 +120,12 @@ Consulta [GitHub Actions](https://github.com/luisurielpimentelperez814-design/IV
 
 - [ ] La compilación corresponde al commit que se quiere probar.
 - [ ] Las pruebas automáticas terminan correctamente.
-- [ ] APK y módulo Magisk proceden del mismo commit.
+- [ ] Solo el APK (la Ruta B / módulo Magisk está retirada desde 2026-11-11: no instalar ningún zip).
 - [ ] Se verificaron los hashes y el contenido de los artefactos.
 - [ ] Se instaló y probó en el teléfono objetivo.
 - [ ] Se anotaron los errores, límites y resultados reales.
 
-Un CI verde no demuestra por sí solo calidad sonora ni compatibilidad física. Para el Moto G85 con Android 14 / SDK 34, consulta el [plan de aceptación y sus pruebas pendientes](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md).
+Un CI verde no demuestra por sí solo calidad sonora ni compatibilidad física. Para el Moto G85 con Android 15 / SDK 35, consulta el [plan de aceptación y sus pruebas pendientes](docs/PLAN_10D_MOTO_G85_ACCEPTANCE.md).
 
 ## Seguridad y privacidad
 

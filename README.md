@@ -6,10 +6,10 @@
 
 **Audio espacial Android · un solo motor, dos rutas, evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.407-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.408-c8a96b?style=flat-square)](version.properties)
 [![HOLOS](https://img.shields.io/badge/HOLOS-publicado%20v2.5.364-9fb7d0?style=flat-square)](#5-holos--operador-único-de-campo-acústico-)
 [![Φ](https://img.shields.io/badge/Φ-Hiper--Operador%20v2.5.369-9fb7d0?style=flat-square)](#13-hiper-operador-φ--v2515369)
-[![Android](https://img.shields.io/badge/Android-9%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
+[![Android](https://img.shields.io/badge/Android-13%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
 
@@ -19,40 +19,52 @@
 
 ---
 
-> **IVANNA OMEGA SUPREME es un motor de audio espacial (spatial audio) para cualquier Android 13 en adelante: DSP nativo en C++26 con NDK, render binaural con HRTF, upmixing HOA (armónicos esféricos), síntesis de campo de onda WFS, binaural de campo cercano ORBE, operador unificado HOLOS, Hiper-Operador de Estado Φ con sensor acústico real por micrófono y curvas objetivo élite (Harman 2018), y holofonía en el teléfono.** Convierte cualquier estéreo en una escena espacial con 8 altavoces virtuales, externalización y graves coherentes, en un solo hilo en tiempo real — dentro de la app (Ruta A, capture) o en todo el sistema (Ruta B, Magisk — el acople a la sesión real está confirmado en YTM/Tidal, el procesado efectivo se verifica con la v2.5.382, ver §11). Este README describe solo lo que el código realmente hace: qué está activo, qué está apagado, qué está en desarrollo y qué no está medido.
+> **IVANNA OMEGA SUPREME es un motor de audio espacial (spatial audio) para cualquier Android 13 en adelante: DSP nativo en C++26 con NDK, render binaural con HRTF, upmixing HOA (armónicos esféricos), síntesis de campo de onda WFS, binaural de campo cercano ORBE, operador unificado HOLOS, Hiper-Operador de Estado Φ con sensor acústico real por micrófono y curvas objetivo élite (Harman 2018), y holofonía en el teléfono.** Convierte cualquier estéreo en una escena espacial con 8 altavoces virtuales, externalización y graves coherentes, en un solo hilo en tiempo real — **dentro de la app (Ruta A, capture), que es la vía viva y la única soportada**. La Ruta B (Magisk + HAL, todo el sistema) está **MUERTA desde el 2026-11-11**: el wrapper del HAL falló, el teléfono entró en bootloop y se reseteó de fábrica por 6ª vez; no se reintenta (ver §11). Este README describe solo lo que el código realmente hace: qué está activo, qué está apagado, qué está en desarrollo y qué no está medido. Donde dice "campo unificado acústico-neural" o "bucle neuro", léase modelo: el bucle neuro es identidad sin un sensor real conectado (§6), y el sensor real es el micrófono del teléfono (§13).
 
 > **Propiedad intelectual — NO es código abierto.** IVANNA-OMEGA-SUPREME es software propietario de Luis Uriel Pimentel Pérez. Todos los derechos reservados. El repositorio es público en GitHub (visible), pero el código **NO** es de código abierto: no tiene licencia open source. Prohibida su reproducción, distribución, modificación o uso sin autorización expresa del autor.
 
-## Estado actual · 10 de noviembre de 2026
+## Estado actual · 11 de noviembre de 2026
 
-| Rama / versión | Contenido | Estado |
+**Versión vigente: v2.5.408 (699).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
+
+### Las dos rutas
+
+| | **Ruta A — APK (capture) · VIVA** | **Ruta B — Magisk + HAL · MUERTA** |
 |:---|:---|:---|
-| `main` · **v2.5.407** (698) | **TELEMETRÍA EN VIVO DE TODOS LOS EFECTOS — 1 Hz en logcat (`IVANNA.Telemetry`).** Mientras Ruta A reproduce, un poller en hilo de fondo vuelca una línea por segundo con TODOS los efectos en formato `clave=valor` parseable: ASRC (asrc, ppm aplicado), Ψ (eta, coherencia, activa), amounts ORBE/HOLOS/Φ/Volterra, telemetría adaptativa (rms, peak, gr_db, gain, comp, exc, width, safety, voice, applied), bandas (lo/mid/hi) y género NPE. Nuevo JNI `nativeGetEffectAmounts()` (una sola llamada/s) + getters `nativePsiActive`/`nativeClockCorrectionPpm`; formateador top-level con Locale.US y 6 tests host. Fail-closed: si algo falla, la línea se salta y el audio nunca se rompe. |
-| `main` · **v2.5.406** (697) | **FIX CI 405 — `Unresolved reference 'routeAAsrc'` en `compileReleaseKotlin`.** `routeAAsrc` se declaraba como `val` local DENTRO del `try` de `runDecodeLoop`, pero el `finally` lo cerraba fuera de ese ámbito; ahora la instancia se crea ANTES del `try` (el `finally` la cierra siempre, sin leak). La 405 además dejó lección: el job de tests terminó en 8 min normal y lo que se atascó fue el build APK en cola 40 min esperando runner; la API mostraba el job de tests como "in_progress" desactualizado. |
-| `main` · **v2.5.405** (696) | **Ψ ACTIVA en Ruta A — la app calcula el campo ella misma.** Ψ ya no está en bypass: la app diseña los 64 taps por oído con `PsiCore` (ILD Ec. 2, ley de distancia, IFFT + Hann) desde el modelo de cabeza (radio KEMAR 0.0875 m, punto dulce 0.30 m), y alimenta η con la coherencia envolvente medida (AM 4 Hz → η 0.729; tono constante → η 0.182; silencio → η se queda). Ψ activa tras el primer bloque; azimut 30° → ILD −3.54 dB real. **31/31 tests en host.** THD+N con Ψ activa: −95.0 dB @ +100 ppm (Ψ no degrada el remuestreador). Fix CI 404: `#include <new>` para `std::nothrow` en el JNI (el NDK no lo trae por transitividad). El CTest host lleva fallando desde la 402 (clang++-18 no instalado en el runner; preexistente, no bloquea la release). |
-| `main` · **v2.5.399** (690) | **FIX ABI pal_stream_write** — la real retorna int32_t (w0), no ssize_t; un error -22 se leia como +4,294,967,274 bytes. Ahora pal_write_fn es int32_t con sign-extend. Layout pal_mmap_position VERIFICADO por desensamblado (time_ns @0, position @8); SessionAlsaPcm::GetMmapPosition desensamblado (0x24e3ac). Servo con direccion correcta. |
-| `main` · **v2.5.398** (689) | **AUDITORIA ASRC COMPLETA + CADENA DE RELOJ VERIFICADA** — desensamblado (capstone, solo lectura): pal_stream_get_mmap_position ES funcion real (simbolo 1369, 0x2ec180), no ausente como decia el probe v5 (corregido; el motivo es RTLD_LOCAL); cadena thunk -> impl -> vtable GetMmapPosition (0xf0 StreamPCM, 0x100 sesion) -> pcm_mmap_get_hw_ptr (tinyalsa) que hace HWSYNC y lee timestamp + hw_ptr del mmap status del kernel (CLOCK_MONOTONIC por diseno ALSA). Anclaje automatico ASRC v5 de la 397 consolidado. Verificacion en vivo (clock=mmap, mmap_ok creciendo) tras instalar + reinicio normal. |
-| `main` · **v2.5.397** (688) | **ANCLAJE AUTOMÁTICO ASRC v5** — customize.sh instala overlay.d/ivanna_audio.rc activo + .preload_optin: el HAL carga libivanna_asrc_write_stage.so (v5, FIR 287 taps + Kalman, fail-closed, SHA ac1ef787) por LD_PRELOAD en el próximo arranque; cronología completa en hal_integration/moto_g85/ASRC_CRONOLOGIA_COMPLETA.md.  **FIX 4TO BRICK** — el FusionEngine ya NO se crea en omega_create_effect (su constructor hace I/O y new plano; si falla en audioserver, std::terminate tumba el servicio y el teléfono no arranca — 4to brick tras killall audioserver). Ahora creación LAZY en omega_process (un solo intento, nothrow); si falla, passthrough y audioserver sigue vivo. **MÓDULO <100 MB POR COMPRESIÓN REAL** — los 239 SOFA se re-codifican de float64 a float32 + gzip 9 (sin borrar nada); el loader solo verifica la firma HDF5 y reconstruye el HRIR desde la base PCA, así que es seguro. Zip 105,968,893 → **94,725,419 B (94.73 MB)**. Sin cambios de sonido. La 392 queda como base: **FIX CI 391** — el chequeo de integridad ya permite `type` en sepolicy.rule (sintaxis válida de Magisk para definir ivanna_data_file). La 391 queda como base: **FIX BRICK 3 + FIX KOTLIN 390** — HeadMeasureScreen nueva: foto frontal con tarjeta de crédito como regla (8.56 cm) + líneas arrastrables o ancho a mano; el radio personalizado ya se aplica a ORBE (JNI + persistencia + restauración al arrancar); la foto no se guarda ni se sube. TransducerOperator (núcleo usable de MANT Ec. 1): compensación por banda con límite WNG; sin medida del transductor, no-op. FIX: la 388 falló la CI por versionCode=678 en module.prop. 5 tests nuevos (CTest 949→954/954 en local). La 388 queda como base: **REFORMULACIÓN Ψ POR VÍA (el campo conoce la vía)** — Ecs. 7–8: ley de crosstalk exacta D' = 20·log10((ρ+κ)/(1+κρ)) + ley de bocina dipolar max(0, cos(θ−φ)); ILD percibido audífonos > cine > estéreo > celular; radio de cabeza personalizado CABLEADO a ORBE (Ruta A y FusionCore; Ruta B queda KEMAR); P0-b poller SCHED_FIFO rtprio 2; PsiFieldRuntime con vía; 18 tests nuevos (CTest 931→949/949 en local). La 387 queda como base: **FORMULACIÓN MAGISTRAL Ψ (campo unificado acústico-neural, en código)** — Ec. 2 ley de distancia (ILD = SPREAD + SHADOW, corregida y calibrada), Ec. 3 operador de personalización CIPIC, Ec. 4 EDO neural con pérdida; 13 tests nuevos (CTest 918→931/931 en local). La 386 queda como base: **RECONSTRUCCIÓN DEL MÓDULO DESDE CERO (100 veces mejor, todo completo)** — (1) Ruta B con bucle de retroalimentación por beacon: el watchdog detecta el efecto huérfano (~9 s sin frames sonando) y lo re-acopla en la sesión real; (2) bombeo arreglado de raíz: slew del objetivo de ganancia adaptativa (0.02/bloque) + compresor topado 4:1; (3) migración única que clampa los valores 384 persistidos al sobre 380 + el efecto rechaza valores fuera del sobre; (4) a prueba de brick: `customize.sh` aborta si falta `libomega_effect.so` o el registro en el XML; `magiskpolicy` con timeout 15 s. LD_PRELOAD sigue desactivado por defecto. | 🚧 En publicación con este commit; verificación en teléfono pendiente: instalar módulo 386 + reinicio limpio + audio sin bombeo + beacon creciendo + log de migración 386 |
-| `main` · **v2.5.384** (675) | **ASRC v5 productivizado — write-stage en el módulo principal (HWS-02)** — punto de inserción PAL identificado (`pal_stream_write` en el HAL `android.hardware.audio.service_64`, deriva medida +58.055 ppm en vivo); la CI compila `libivanna_asrc_write_stage.so` desde fuente (`build_asrc_stage.sh`, receta `-nostdlib`, sin `dlinfo`), la empaqueta en `system/vendor/lib64/` y verifica hash idéntico en el zip + `BUILD_INFO` (fail-closed si las fuentes v5 no están commiteadas); host_test_asrc 103/103. Inyección LD_PRELOAD (`overlay.d`/`ivanna_audio.rc`) pendiente del agente del módulo. | ❌ RETIRADA: el módulo brickeó el teléfono 2 veces tras instalar + reiniciar (reset de fábrica en ambas) y el audio sonaba con volumen sube/baja, tronidos y muy woofer. No instalar el módulo 384. |
-| `main` · **v2.5.383** (674) | **Auditoría integral (2 externas, AMBER) + 5D Fase 0 + seguridad + honestidad** — 5D Fase 0 en host (`BioControl5D` + EEG sintético, 15 tests nuevos, total 901); SELinux dedicado `ivanna_data_file` (adiós al `typeattribute` amplio); parser SAF con límites; comentarios ORBE/HOLOS en serie; CTest y licencias reconciliados; PR #39 NO incorporado; HWS-02 sigue NOT_APPROVED (punto de inserción PAL sin identificar; vía: LD_PRELOAD v5). | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (beacon creciendo + logcat `auto-enable` + verificación SELinux) |
-| `main` · **v2.5.382** (673) | **Ruta B — FIX DEFINITIVO del beacon 0** — auto-enable en `omega_process()` (ENABLE jamás llega del HAL) + init del DSP en creación con defaults 48 kHz/estéreo/PCM16 (SET_CONFIG tampoco llega). El efecto procesa aunque el HAL no envíe ENABLE ni SET_CONFIG. Confirmado en Tidal (609) igual que YTM (249): el acople funciona, el problema era `omega_process()`. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (beacon creciendo + logcat `auto-enable`) |
-| `main` · **v2.5.381** (672) | **Ruta B — diagnóstico del beacon 0** — el efecto está creado y habilitado en la sesión real de YTM (249) pero `omega_process()` nunca llega a `onBlock()`; las 5 salidas tempranas hacían passthrough en silencio. La 381 hace que cada salida loguee su motivo (throttle 5 s, tag `IvannaOmegaEffect`). La 380 confirmó en teléfono que YTM ya no se calla. | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (logcat `IvannaOmegaEffect` → motivo del passthrough + beacon creciendo) |
-| `main` · **v2.5.380** (671) | **Ruta B — sin fallback global + passthrough garantizado + diagnóstico de acople** — se elimina el omega global en sesión 0, que callaba a YTM a los ~3 s de abrir la app; `omega_process` hace passthrough con memmove aunque el efecto no esté habilitado (un efecto que no procesa jamás silencia); logs visibles en los 3 retornos silenciosos de `tryAttachDiscoveredSession` + en `exchange()` (throttle 1/30 s). T0 en el teléfono confirmó que el descriptor NO necesita bajarse (APM 128 KB, máx 129 KB; sin "memory limit exceeded"). **ASRC v5 "Élite" verificada en dispositivo** (ver §12) | 🚧 En publicación con este commit; verificación en teléfono pendiente tras instalar (YTM sin callarse + beacon creciendo + escucha con Genezi) |
-| `main` · **v2.5.379** (670) | **Ruta B — descubrimiento de sesión real por daemon** — el daemon (root) lee `dumpsys media.audio_flinger` cada 3 s y publica el sessionId real en el snapshot (ABI v11) + GET_STATUS; la app libera el global antes de acoplar (K1-rev); fusión OmniField dormida en Ruta B | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.379) — instalada; PERO con regresión: abrir IVANNA callaba a YTM y la app no acoplaba (beacon 0). Corregido en la 380 |
-| `main` · **v2.5.378** (669) | **Ruta B — fix Error −38**: `memoryUsage` del descriptor omega 1024 → 128 KB (el APM solo presupuesta 512 KB total; con 1024 el registro fallaba SIEMPRE con INVALID_OPERATION) | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.378) |
-| `main` · **v2.5.377** (668) | **Fusión IVANNA (OmniField)** — OmniSpatial + HRTF personalizada con gradiente por MAA + escena auto-supervisada + renderer INAF continuo por muestra (SIREN) + convergencia Omega–SAFMUS (Kuramoto K=40, r=0.9636, 4º tono 884 Hz); ACTIVA por defecto en Ruta A (ORBE → HOLOS → OMNI-FIELD → Φ). 375/376 nunca se publicaron; su contenido llegó íntegro aquí | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.377) |
-| `main` · **v2.5.374** (665) | **Ruta B** — AudioSessionReceiver con RECEIVER_EXPORTED + sondeo de sesiones activas + clasificación del −38 + extirpación de Dolby del XML + volumen de Ruta A sin duck + captura con anillo de 8 bloques | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.374) |
-| `main` · **v2.5.373** (664) | **Ruta B — Error −3 resuelto** — el `<apply>` global de omega en el XML duplicaba la instancia (−22); 4 fixes (archivos locales pre-creados por el daemon, sepolicy en cada boot, logs del beacon, RouteArbiter) + `vendor_file` permanente + higiene nothrow | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.373) |
-| `main` · **v2.5.372** (663) | **SAFMUS Nivel 6** (voxel 8.89×, decode PCA NEON, cadencias partidas) + auto-auditoría de dispositivo en primer arranque + 30 conciertos de rock + intro de apertura primero + charla offline con la biblioteca | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.372) |
-| `main` · **v2.5.369** (660) | **Hiper-Operador Φ + sensor acústico real + curvas élite + protección del producto** — operador muestra a muestra sin FFT, sensor por micrófono, target Harman 2018, cableado en Rutas A y B; Φ, sensor y Volterra (kernel PZ1D refinado, G85 + DAC + Genezi) ACTIVOS por defecto; ORBE y HOLOS también ACTIVOS por defecto (directiva del propietario; HOLOS retuneado, ver §5) | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.369) — publicada e instalada en el Moto G85 |
-| `main` · **v2.5.368** (659) | **Pilares pendientes**: Volterra diagonal K=4096, DoP v1.1, pinna-EQ Blauert, estimador EMF Thiele-Small — como componentes con tests, sin cablear a la cadena de audio | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.368) — APK (200 MB) + zip Magisk (103 MB) + flyers + `SHA256SUMS.txt` |
-| `main` · **v2.5.367** (658) | **Fusión Homogénea Phi**: un solo coordinador (bucle neuro + ruta AUX + puerta Volterra) con un solo `update()` por bloque — como clase, sin cablear a la cadena de audio | ✅ Incluida en el release v2.5.368 |
-| `main` · **v2.5.366** (657) | **Ruta AUX Genezi / auto**: presets XTC + campo AUX coherente cableados en Rutas A y B; puerta Volterra solo con kernel medido | ✅ Incluida en el release v2.5.368 |
-| `main` · **v2.5.365** (656) | **Bucle cerrado neural v2**: `ClosedLoopController` + `NeuroBandEq` cableados antes de HOLOS/ORBE; solo acepta EEG/ABR/fNIRS reales; sin driver de sensor todavía | ✅ Incluida en el release v2.5.368 |
-| `main` · **v2.5.364** (655) | **HOLOS** — Operador Único de Campo Acústico, con UI en CONTROL, ABI v10 | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.364) |
-| `main` · **v2.5.363** (654) | **ORBE** — binaural esférico de campo cercano, con UI en CONTROL, ABI v9 | ✅ [Release público](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/releases/tag/v2.5.363) |
+| Qué procesa | El audio del reproductor propio de IVANNA (Tidal, YouTube Music) | Nada. Retirada el 2026-11-11 |
+| Requisitos | Instalar solo el APK | — (no instalar ningún zip; la v2.5.403 lleva el wrapper roto) |
+| Por qué | ASRC magistral nativo + Ψ activa en la app; si algo falla, solo cae la app | El wrapper del HAL falló: el binario real se aborta con SIGABRT al hacer `exec` por init, el HAL quedó atorado en "restarting", el teléfono se reinició solo y quedó en bootloop → **6º reset de fábrica**. Un módulo Magisk no puede hacer que init lea un `.rc` al arrancar (init parsea `/vendor/etc/init/` antes de que Magisk monte los módulos). No se reintenta. Ver §11 y §12 |
+| Estado | ✅ Verificada en vivo 2026-11-11 (ver abajo) | ❌ Cerrada |
 
-> **Lee esto primero.** Desde v2.5.369, lo nuevo de esa versión (Φ, sensor acústico real, Volterra con kernel PZ1D refinado, ORBE y HOLOS) arranca **ACTIVO por defecto** — suena desde la primera canción (directiva del propietario: ninguna función muerta; la puerta GREEN queda anulada para este release por decisión explícita del propietario). El bucle neuro sigue **apagado por defecto** (identidad sin frames de sensor real). HOLOS no se encendió a lo bruto: se retuneó por medición (ver §5) porque sus defaults distorsionaban −31.5 dB. Lo honesto: el combinado Φ + Volterra + ORBE + HOLOS todavía **no se ha escuchado en el teléfono** — falta la escucha en el Moto G85 y la medición de CPU/XRuns. Los números que verás son mediciones de host, no de teléfono: **la CPU y la latencia en dispositivo siguen sin medirse**. Y dos precisiones que este README corrige respecto a versiones anteriores: la **Fusión Phi (367)** y los **pilares (368)** existen como componentes con tests que pasan, pero **no están cableados a la cadena de audio** — no suenan. El Hiper-Operador Φ (369) **sí** está cableado (ver §13). Lo que suena es la cadena de la §2.
+### Evidencia medida en dispositivo (Moto G85, v2.5.406, Tidal sonando, 2026-11-11 ~17:41 CST)
+
+Método: Termux (`top`, `logcat`, `dumpsys`) + pantalla ESTADO DE MOTORES de la app. Todo activo (ORBE, HOLOS, Φ, Volterra, 5 ejes, NPE, cognición).
+
+| Medida | Valor |
+|:---|:---|
+| CPU de la app | **130%** (más de un núcleo) · 43:55 min de CPU acumulado · RSS 289 MB |
+| XRuns (USB OTG 384 kHz / 32-bit) | **0** |
+| ASRC nativo + Ψ | Cargados sin errores (logcat de los 3 tags vacío: sin "no se pudo crear", sin FIFO lleno) |
+| Escucha | **Los efectos SE SIENTEN** (veredicto de Esse, Tidal) |
+| HRTF / 5 ejes / control loop / cognición | Renderer activo (tu_berlin_kemar, head tracking ROTATION_VECTOR) · 5/5 ejes · loop 50 ms · Realismo 71–75%, Juez 85–88%, Homeostasis 96–98% |
+
+Lo que esto establece: el teléfono aguanta la cadena completa en tiempo real (xruns=0, se escucha bien), pero el DSP trabaja pesado: costo en batería y calor. Lo que NO establece: temperatura (sin medir), ni preferencia ciega (sin ABX). **Pendientes de Esse:** sesión ABX (16 ensayos, niveles igualados) y temperatura en uso.
+
+### Limitación conocida: Harman 2018 por defecto (pendiente de decisión del propietario)
+
+El target de corrección por defecto es la curva **Harman 2018, que es una curva de auriculares**. Para medir altavoz en sala, el preset físicamente correcto es el **3 (altavoces en sala)**; además el micrófono del teléfono **no está calibrado** y mide el punto del teléfono, no los oídos. Corregir hacia un target equivocado con un sensor sin calibrar puede empeorar el sonido. El default NO se cambia en código en esta versión (decisión de producto de Esse); queda documentado aquí como limitación conocida, con el preset 3 y el modo MEDIDO opt-in como alternativas. Ver §13.
+
+### Versiones recientes (1–2 líneas; historial completo en [CHANGELOG.md](CHANGELOG.md))
+
+| Versión | Qué trae |
+|:---|:---|
+| **v2.5.408** (699) | README reescrito según crítica externa (Ruta B muerta, evidencia medida en dispositivo, tabla recortada, inconsistencias reconciliadas) + fix CI: `tests-host.yml` instala clang-18 (causa raíz del CTest rojo desde la 402). |
+| **v2.5.407** (698) | Telemetría en vivo 1 Hz de TODOS los efectos en logcat, tag `IVANNA.Telemetry` (ASRC + ppm, Ψ η/coherencia, ORBE/HOLOS/Φ/Volterra, adaptativa, bandas, NPE). |
+| **v2.5.406** (697) | Fix CI 405: `routeAAsrc` se crea ANTES del `try` (`Unresolved reference` en `compileReleaseKotlin`). Publicada e instalada; efectos sentidos en Tidal. |
+| **v2.5.405** (696) | Ψ ACTIVA en Ruta A: la app diseña los 64 taps por oído con `PsiCore`; η por coherencia envolvente. 31/31 tests host (binario standalone, no CTest). |
+| **v2.5.404** (695) | ASRC magistral en Ruta A (FIR 319 taps + Catmull-Rom nativo, alimentado por el PLL). 13/13 tests host. |
+
+> **Lee esto primero.** Desde v2.5.369, lo nuevo de esa versión (Φ, sensor acústico real, Volterra con kernel PZ1D refinado, ORBE y HOLOS) arranca **ACTIVO por defecto** — suena desde la primera canción (directiva del propietario: ninguna función muerta; la puerta GREEN queda anulada para este release por decisión explícita del propietario). El bucle neuro sigue **apagado por defecto** (identidad sin frames de sensor real). HOLOS no se encendió a lo bruto: se retuneó por medición (ver §5) porque sus defaults distorsionaban −31.5 dB. **El combinado Φ + Volterra + ORBE + HOLOS ya se escuchó en el teléfono** (2026-11-11, v2.5.406, Tidal: los efectos SE SIENTEN) y la CPU/XRuns ya están medidas (app 130% CPU, xruns=0, ver arriba). **Siguen pendientes: la escucha ciega ABX y la temperatura.** Los números de host que verás en las secciones no son de teléfono salvo donde se dice explícitamente. Y dos precisiones que este README corrige respecto a versiones anteriores: la **Fusión Phi (367)** y los **pilares (368)** existen como componentes con tests que pasan, pero **no están cableados a la cadena de audio** — no suenan. El Hiper-Operador Φ (369) **sí** está cableado (ver §13). Lo que suena es la cadena de la §2.
 
 **En esta página** · [Qué es](#1-qué-es-ivanna) · [Cadena](#2-la-cadena-de-señal) · [HOA + HRTF](#3-el-corazón-hoa--hrtf) · [ORBE](#4-orbe--binaural-esférico-de-campo-cercano-) · [HOLOS](#5-holos--operador-único-de-campo-acústico-) · [Bucle neuro](#6-bucle-cerrado-neural-v2515365) · [AUX Genezi](#7-ruta-aux-genezi--auto-v2515366) · [Phi](#8-fusión-homogénea-phi-v2515367) · [Pilares](#9-pilares-pendientes-v2515368) · [NPE](#10-npe--motor-neuromórfico) · [Rutas](#11-las-dos-rutas) · [PAL/ASRC](#12-pal--asrc-y-sonda--experimental) · [Hiper-Operador Φ](#13-hiper-operador-φ--v2515369) · [Controles](#14-controles-en-control) · [Mediciones](#15-mediciones-reales) · [Puerta auditiva](#16-la-puerta-auditiva-y-el-índice-visceral) · [Límites](#17-límites-honestos) · [Compilar](#18-compilar-y-probar) · [Verificación](#19-verificación-y-evidencia) · [Documentación](#20-documentación)
 
@@ -60,7 +72,7 @@
 
 ## 1. Qué es IVANNA
 
-IVANNA es un motor de audio espacial para cualquier Android 13 en adelante (el Moto G85 es el dispositivo de desarrollo/prueba): un reproductor propio, un motor DSP nativo en C++26, controles de efectos, herramientas de calibración y medición, un módulo Magisk para procesar el audio de todo el sistema y un dashboard web. Todo el audio pasa por un solo núcleo, `IvannaFusionCore`, en bloques de 128 muestras, de 8 a 384 kHz.
+IVANNA es un motor de audio espacial para cualquier Android 13 en adelante (el Moto G85 es el dispositivo de desarrollo/prueba): un reproductor propio, un motor DSP nativo en C++26, controles de efectos, herramientas de calibración y medición, y un dashboard web. Todo el audio pasa por un solo núcleo, `IvannaFusionCore`, en bloques de 128 muestras, de 8 a 384 kHz. Hubo un módulo Magisk para procesar el audio de todo el sistema (Ruta B); está **retirado desde 2026-11-11** (ver §11).
 
 **Qué es, en una frase:** un renderizador binaural que reconstruye una escena espacial a partir de cualquier estéreo, sin necesitar metadata ni multicanal.
 
@@ -120,7 +132,7 @@ flowchart LR
 | 14 | **NPE** | Banco coclear + LIF + inhibición lateral (`NpeStereoCore`) | ✅ Cableado; se habilita desde la app (sub-interruptores por defecto en on) |
 | — | **Fusión Phi (367)** | Un solo coordinador: neuro + AUX + Volterra, un solo `update()` por bloque | ⚠️ **Clase con tests, NO cableada a la cadena** |
 | — | **Pilares (368)** | Volterra diagonal K=4096, DoP v1.1, pinna-EQ Blauert, estimador EMF | ⚠️ **Componentes con tests, NO cableados a la cadena** |
-| — | **Hiper-Operador Φ (369)** | Un solo operador muestra a muestra, sin FFT: S_neuro + Z_emf + W_acústico en una sola ganancia unificada | ✅ Cableado en Rutas A y B; ACTIVO por defecto (`amount = 0.5`, Harman 2018); Ruta B en APROXIMADO |
+| — | **Hiper-Operador Φ (369)** | Un solo operador muestra a muestra, sin FFT: S_neuro + Z_emf + W_acústico en una sola ganancia unificada | ✅ Cableado en Ruta A; ACTIVO por defecto (`amount = 0.5`, Harman 2018). Ruta B muerta (ver §11) |
 | — | **Sensor acústico real (369)** | Micrófono → FFT 8192 → 24 bandas ERB → `SensorFrame` (magnitud, error, coherencia) | ✅ Cableado en Ruta A; medición real, sin calibrar |
 | — | **Curvas objetivo élite (369)** | Harman 2018 (default) + élite-lean + difuso H&M + sala; graves ±3 dB | ✅ Target de corrección en Φ y sensor |
 
@@ -132,7 +144,7 @@ Las etapas 8–14 no desaparecen con HOLOS: HOLOS las **absorbe** matemáticamen
 
 El análisis del código (`VEREDICTO.md`) deja un ranking claro, y todo lo nuevo se construye sobre el ganador:
 
-1. **HOA orden 2 + decodificación binaural HRTF con 8 altavoces virtuales** — activa por defecto en ambas rutas, con autoridad de arbitraje (neutraliza el widener M/S). Es la función más fuerte del motor.
+1. **HOA orden 2 + decodificación binaural HRTF con 8 altavoces virtuales** — activa por defecto en Ruta A, con autoridad de arbitraje (neutraliza el widener M/S). Es la función más fuerte del motor.
 2. WFS · 3. RIR (200 salas) · 4. GoldenEar/HarmonicExciter · 5. Compresor + limitador.
 
 Cómo funciona: el estéreo se codifica en armónicos esféricos (SN3D/ACN, plano horizontal), se reconstruye un campo con 8 altavoces virtuales en ±30°/±90°/centro con pesos max-rE, y cada altavoz se convoluciona con su HRTF (HRIR sintética o dataset medido IHR1/SOFA). Un detector de transitorios estrecha el ancho en ataques. Coste despreciable frente al resto de la cadena; latencia 0 solo del upmixer aislado (la cadena completa ORBE+HOLOS+Omni suma ~22 ms algorítmicos, ver §2).
@@ -159,7 +171,7 @@ entrada estéreo → STFT (hop 128 / FFT 512, escalable con SR)
 | Difuso → sala | 0–1 | 0.5 |
 | Seguimiento de cabeza | on/off | on si hay pose |
 
-6 valores persistentes en `ParameterStore`, restaurados al abrir. Ruta B lo recibe por snapshot ABI v9/v10; el governor térmico puede bajarlo a 12 bandas o apagarlo (a 384 kHz, y en tier ≥ LIMITED).
+6 valores persistentes en `ParameterStore`, restaurados al abrir. (La Ruta B, hoy muerta, lo recibía por snapshot ABI v9/v10.) El governor térmico puede bajarlo a 12 bandas o apagarlo (a 384 kHz, y en tier ≥ LIMITED).
 
 **Mediciones en host (48 kHz, −3 dBFS):** THD+N apagado **−153.45 dB** @1 kHz (bypass bit-exacto) · encendido **−139.37 dB** @1 kHz, −138.47 dB @100 Hz · IMD −156.04 dB · latencia algorítmica 512 muestras = **10.7 ms** (solo el STFT; la latencia total —buffers + AudioFlinger + USB + DAC— está sin medir en el teléfono) · throughput host **23× RT** (dato a vigilar en teléfono). 21 tests host nuevos, sin regresión en vecinos; los tests encontraron y corrigieron 5 bugs reales (el grave: la COLA fija inflaba la salida 2×/4×/8× a 96/192/384 kHz).
 
@@ -208,7 +220,7 @@ $$Y_b(t) = G_b(s_b) \;\circledast\; \big[\, K_b(s_b) \cdot X_b(t) \,\big] \cdot 
 | Seguimiento de cabeza | on/off | on si hay pose |
 | 12 bandas (ahorro CPU) | on/off | off (24 bandas) |
 
-13 parámetros, ACTIVOS por defecto desde v2.5.369 (`holos_amount = 0.5`, `holos_harmonics = 0`). El EQ estático de Γ (graves, medios, agudos, presencia, tilt dB y frecuencia del tilt, ±12 dB) tiene 6 controles en CONTROL, persiste en `ParameterStore`, se restaura al abrir y llega a las dos rutas (JNI `nativeSetHolosEq` en Ruta A; `holosEq*` en `SET_PERCEPTUAL_STATE` → snapshot ABI v10 en Ruta B); plano por defecto = no-op. Entra en `FusionCore` tras el blend WFS, antes del M/S; `amount = 0` es la cadena legacy bit-exacta, con crossfade de 15 ms y fail-closed por término. Shed térmico en 4 tiers (24→12 bandas → H3 off → difuso sin convolución → HOLOS off). Cero alloc en el callback.
+13 parámetros, ACTIVOS por defecto desde v2.5.369 (`holos_amount = 0.5`, `holos_harmonics = 0`). El EQ estático de Γ (graves, medios, agudos, presencia, tilt dB y frecuencia del tilt, ±12 dB) tiene 6 controles en CONTROL, persiste en `ParameterStore`, se restaura al abrir y llega a Ruta A (JNI `nativeSetHolosEq`); plano por defecto = no-op. Entra en `FusionCore` tras el blend WFS, antes del M/S; `amount = 0` es la cadena legacy bit-exacta, con crossfade de 15 ms y fail-closed por término. Shed térmico en 4 tiers (24→12 bandas → H3 off → difuso sin convolución → HOLOS off). Cero alloc en el callback.
 
 **Mediciones en host (48 kHz) — con el retuneo de v2.5.369 incluido:**
 
@@ -223,7 +235,7 @@ $$Y_b(t) = G_b(s_b) \;\circledast\; \big[\, K_b(s_b) \cdot X_b(t) \,\big] \cdot 
 
 **Retuneo v2.5.369 (medido, test `test_holos_retune_sweep.cpp`):** barrido en rejilla amount × harmonics (tono −3 dBFS, 3 s, ventana del segundo 2). El término armónico K domina la distorsión: cualquier harmonics > 0 incumple −70 dB (p. ej. amount 0.5 / harm 0.05 → −53.7 dB; amount 1.0 / harm 0.32 → −31.5 dB). Solo harmonics = 0 cumple en ambas frecuencias. **Default elegido: amount 0.5, harmonics 0.0 (K apagado).** Con K = 0 el render espacial G y el campo Γ siguen activos y limpios; el efecto espacial es medible (diferencia vs bypass, latencia compensada: −44.0 dB). Requisito THD+N ≤ −70 dB cumplido con margen; ideal ≤ −80 dB cumplido a 1 kHz (a 100 Hz queda a 0.4 dB, diferencia inaudible, dentro de tolerancia de medida).
 
-La bandera roja que queda es honesta y está en el informe de diseño: **la viabilidad en el Moto G85 está en cuestión** hasta medir CPU/XRuns en dispositivo — 3.5× RT en host está muy por debajo de la estimación de diseño (15–25× RT), y el retuneo no cambia el throughput (el operador hace el mismo trabajo a cualquier amount). La distorsión de los defaults viejos ya NO es un problema: el retuneo (K = 0) la resolvió por medición. 38/38 tests HOLOS pasan (green 10, gain 6, volterra 9, operator 8, chain 5) + 2 tests nuevos de retuneo; los tests encontraron y corrigieron 2 bugs reales (escala Parseval del estimador, coherencia tipo Welch). Recortes ya decididos: Manifold B eliminado, difuso con una sola IR (sala estimada, no las 200), EvoEQ por magnitud por bin (se pierde fase lineal), sin interpolación OT de pinna en v1, sin kernel Volterra por banda sin kernel medido.
+La bandera roja que queda es honesta y está en el informe de diseño: **la viabilidad en el Moto G85 estaba en cuestión** hasta medir CPU/XRuns en dispositivo — 3.5× RT en host está muy por debajo de la estimación de diseño (15–25× RT), y el retuneo no cambia el throughput (el operador hace el mismo trabajo a cualquier amount). **Medición en dispositivo 2026-11-11 (v2.5.406, Tidal, todo activo): la app corre al 130% CPU (más de un núcleo), xruns=0 a 384 kHz/32-bit por USB, y se escucha bien** — el teléfono aguanta la cadena completa en tiempo real, a costa de batería y calor (ver Estado actual). Temperatura en uso sigue sin medirse. La distorsión de los defaults viejos ya NO es un problema: el retuneo (K = 0) la resolvió por medición. 38/38 tests HOLOS pasan (green 10, gain 6, volterra 9, operator 8, chain 5) + 2 tests nuevos de retuneo; los tests encontraron y corrigieron 2 bugs reales (escala Parseval del estimador, coherencia tipo Welch). Recortes ya decididos: Manifold B eliminado, difuso con una sola IR (sala estimada, no las 200), EvoEQ por magnitud por bin (se pierde fase lineal), sin interpolación OT de pinna en v1, sin kernel Volterra por banda sin kernel medido.
 
 **Honestidad:** no hay física nueva en HOLOS. Lo inédito como producto es la unificación en un solo hilo RT fail-closed sobre estéreo arbitrario. La física nueva, si existe, está en la [sección 16](#16-la-puerta-auditiva-y-el-índice-visceral).
 
@@ -247,7 +259,7 @@ Lo que es verdad y lo que no:
 
 ## 7. Ruta AUX Genezi / auto · v2.5.366
 
-**Cableada en Rutas A y B.** La ruta AUX (DAC USB-C + Aux 3.5 mm) tiene presets propios con geometría XTC y campo AUX coherente:
+**Cableada en Ruta A.** La ruta AUX (DAC USB-C + Aux 3.5 mm) tiene presets propios con geometría XTC y campo AUX coherente:
 
 - **Presets `GeneziRoom` / `CarCabin`**: geometría de cancelación de diafonía (XTC) del par de altavoces + campo AUX de graves coherentes en fase (LR4). Se aplican con `setAuxGeneziPreset` y corren en `FusionCore` (`m_aux.process`, tras ORBE y antes del campo temporal).
 - **Puerta Volterra (`AuxVolterraGate`)**: solo deja pasar el kernel IVK1 medido (GENEZY01, K=64). Sin kernel medido, el Volterra es identidad. La puerta de carga rechaza por causa y hace bypass ante error.
@@ -301,26 +313,27 @@ El NPE (`NpeStereoCore`, `app/src/main/cpp/neuromorphic/`) implementa modelos de
 
 ## 11. Las dos rutas
 
-| | **Ruta A — APK (capture)** | **Ruta B — Magisk + daemon** |
+| | **Ruta A — APK (capture) · VIVA** | **Ruta B — Magisk + daemon · MUERTA** |
 |:---|:---|:---|
-| Qué procesa | El audio del reproductor propio de IVANNA (captura de reproducción) | Todo el audio del sistema (Spotify, YouTube…) vía AudioFlinger + `omega_effect` |
-| Requisitos | Instalar el APK | Root + Magisk + el zip **de la misma versión** (un snapshot viejo se rechaza y deja la Ruta B en defaults) |
-| Parámetros | Atomics nativos directos (`g_orbe_*`, `g_holos_*`) | Snapshot ABI: app → `SET_PERCEPTUAL_STATE` → daemon → efecto |
-| Snapshot ABI | — | **v10 · 616 B** (test `EXPECT_LE(sizeof(OmegaDspSnapshot), 640)`); v9 era 536 B |
-| Shed térmico | `ThermalGovernor` (Kotlin) → tiers nativos: HOLOS por tiers y ORBE/NPE apagados desde LIMITED | Automático por tiers en el daemon |
-| Para probar ORBE/HOLOS | Basta el APK | Solo si quieres system-wide |
+| Qué procesa | El audio del reproductor propio de IVANNA (Tidal, YouTube Music) | Nada. Retirada el 2026-11-11 |
+| Requisitos | Instalar solo el APK | No instalar ningún zip de ninguna versión |
+| Parámetros | Atomics nativos directos (`g_orbe_*`, `g_holos_*`) | — |
+| Shed térmico | `ThermalGovernor` (Kotlin) → tiers nativos: HOLOS por tiers y ORBE/NPE apagados desde LIMITED | — |
+| Para probar ORBE/HOLOS | Basta el APK | — |
 
 **⚠️ Firma del APK:** sin el secreto `ANDROID_KEYSTORE_B64` en la CI, el APK se firma con llave efímera y **no puede actualizar una instalación previa**: hay que desinstalar la versión anterior antes de instalar la nueva. Los hashes de cada release están en `SHA256SUMS.txt`.
 
-**⚠️ Estado real de la Ruta B en el Moto G85 (2026-11-10, v2.5.380):** el daemon descubre la sesión real de música (YouTube Music, sesión 369, generación 20, verificado en vivo 2026-11-09) y la publica en el snapshot ABI v11 + GET_STATUS, pero **la app aún no acopla omega a esa sesión**: el beacon (`/data/local/tmp/omega_effect_beacon`) sigue en 0 frames, sin magic "OEBF", y no hay logs de acople. La 379 tenía además una regresión: el fallback a omega global en sesión 0 **callaba a YTM** a los ~3 s de abrir la app (el `omega_process` retornaba sin copiar input→output cuando el efecto no estaba habilitado). **La 380 lo corrige:** elimina el fallback global (sin sesión descubierta no se crea efecto, YTM sigue sonando sin DSP), garantiza el passthrough con memmove en `omega_process` (un efecto que no procesa jamás silencia) y hace visible el fallo de acople con logs en los 3 retornos silenciosos + `exchange()` (throttle 1/30 s). El diagnóstico T0 en el teléfono (2026-11-10 01:06 CST) confirmó que el descriptor NO necesita bajarse (APM: 128 KB, máx 129 KB; sin "memory limit exceeded"; un 2º omega llegaría a ~257 KB, por debajo de los 512 KB). **Verificación pendiente tras instalar la 380:** YTM sonando + abrir IVANNA → YTM no se calla; logcat "Sesión real descubierta" + "Ruta B acoplada"; beacon creciendo (~144,000 frames/3 s, magic "OEBF"). Si el beacon sigue en 0, los logs de la 380 dicen dónde falla el acople. **Workaround: deshabilitar el módulo y reiniciar devuelve el modo capture, que sí funciona. La puerta auditiva se hace por Ruta A.**
+**❌ Ruta B MUERTA (2026-11-11, 6º reset de fábrica — no se reintenta).** La historia completa, sin edulcorar: un módulo Magisk **no puede** hacer que init lea un `.rc` al arrancar — init parsea `/vendor/etc/init/` al principio de `SecondStageMain`, ANTES del trigger `post-fs-data` donde Magisk monta los módulos, y el `overlay.d` del módulo nunca fue un mecanismo de módulos. La vía alternativa (binario wrapper del HAL que pone `LD_PRELOAD` y hace `exec` del HAL real, v2.5.403) se aplicó en caliente y **falló**: al reiniciar el HAL, el binario real se aborta con SIGABRT "Binder threadpool cannot be shrunk after starting" (tombstone 11:50:42). El rollback se aplicó y verificó, pero el HAL quedó atorado en "restarting" y el teléfono se reinició solo y quedó en bootloop → **6º reset de fábrica (~12:39 CST)**. El teléfono quedó limpio (sin Magisk, sin módulos, sin Termux). **NO instalar el zip v2.5.403 (lleva el wrapper roto) ni el módulo de ninguna versión.** Informe: `analysis-ivanna/MAGISK_RC_CARGA_2026-11-11.md` (fuera del repo público, por ser evidencia propietaria).
 
-El daemon publica un beacon tras cada bloque DSP completado (`applied_control_generation`); la app solo muestra `applied = true` cuando la generación aplicada alcanza la publicada. Sin beacon, el sistema informa "evidencia no disponible" — no inventa confirmación.
+Lo que sí se verificó antes de morir (registro histórico, no estado actual): el daemon descubría la sesión real de música (YouTube Music, sesión 369, generación 20, 2026-11-09) y la publicaba en el snapshot ABI v11 + GET_STATUS, pero la app nunca acopló omega a esa sesión (beacon en 0 frames). La 380 corrigió el mute de YTM (elimina el fallback global, passthrough con memmove) y el diagnóstico T0 confirmó que el descriptor no necesitaba bajarse (APM 128 KB, máx 129 KB). Todo eso queda como historia; la vía HAL no tiene sucesor previsto. **La puerta auditiva se hace por Ruta A.**
 
 ---
 
-## 12. PAL / ASRC y sonda · experimental
+## 12. PAL / ASRC y sonda · experimental — VÍA HAL MUERTA (2026-11-11)
 
-El lado software del ASRC está construido en el repo (ASRC variable, servo de reloj, bridges, `hal_integration/` con el seam `ivanna_qualcomm_pal_clock_integration.hpp`, `PalAsrcBridge` y el write-stage `ivanna_pal_asrc_write_stage.hpp`, con tests host con callbacks simulados). **La conexión total dentro del HAL propietario no existe** (no hay seam en `audio.primary.blair.so`); **la vía viable es la interposición LD_PRELOAD, que ya está verificada en el dispositivo (ver ASRC v5 abajo).** Estado honesto:
+**La vía HAL está muerta.** El ASRC v5 del HAL nunca llegó a cargar en el HAL real: el HAL arrancó sin `LD_PRELOAD` aunque el `.rc` y la `.so` estaban montados, y el wrapper que debía inyectarlo mató el HAL (ver §11). **El ASRC ahora vive en la app (Ruta A):** ASRC nativo v6 (FIR 319 taps + Catmull-Rom + Ψ, alimentado por el PLL) desde la v2.5.404, con Ψ activa desde la 405 y telemetría en vivo desde la 407. Todo lo que sigue en esta sección es registro histórico de la vía HAL — las mediciones son reales, la vía no existe.
+
+El lado software del ASRC está construido en el repo (ASRC variable, servo de reloj, bridges, `hal_integration/` con el seam `ivanna_qualcomm_pal_clock_integration.hpp`, `PalAsrcBridge` y el write-stage `ivanna_pal_asrc_write_stage.hpp`, con tests host con callbacks simulados). **La conexión total dentro del HAL propietario no existe** (no hay seam en `audio.primary.blair.so`); **la vía viable era la interposición LD_PRELOAD, que ya está muerta con el wrapper (ver §11).** Estado honesto:
 
 - **No existe actuador de ratio variable en PAL para la ruta de música.** Card 1 (blair, primaria): 196 controles, cero `clk/clock/pll/asrc/ppm/ratio`. `RAT_RENDER` (ID `0xC0000022`) solo existe en grafos A2DP/ABR; `devicePPMFC` solo en voz SCO. El actuador es el propio ASRC de IVANNA en el write-stage.
 - **Deriva medida en vivo** (sonda PAL, Moto G85): AudioOut_D 47999.7 Hz vs 48000 nominal (−6.25 ppm, dongle USB JieLi); `Timestamp corrected: no`; el reloj interno deriva poco y con ruido (±20 ppm). Informes en el workspace de análisis (`SONDA_PAL_2026-11-07.md`). La sonda de atributos PAL (2026-11-09) fijó los offsets reales de `pal_stream_attributes`: `in_rate` @56, `in_bits` @60, `in_fmt` @64, `in_ch` @68; música **48000 Hz / 16-bit / formato 1 (PCM)**; voz 16000/16. Consecuencia: AudioFlinger ya resamplea a 48 kHz — el ASRC es corrección fina de ppm, NO resampleo 44.1→48.
@@ -333,9 +346,9 @@ El lado software del ASRC está construido en el repo (ASRC variable, servo de r
 El write-stage ASRC **sí está ligado al stream real y verificado en el Moto G85** (dump `pal_asrc_stage.txt`, 2026-11-10 00:40 CST, pid 31498): cabecera "v5", `enabled=1`, `ratio=0.999993750`, `drift_ppm=−6.250`, `clock=write-timing`, `sat=0 sat_entries=0` (sin saturación), `fir_taps=287`, `dither=1`, `neon=1`, `kalman_drift=−6.250` (= drift_ppm, el Kalman sigue bien), 2 streams de música procesando (653 + 98 writes, `passthrough=0`). Es el **primer ASRC de IVANNA que corre en el teléfono corrigiendo la deriva real** (−6.25 ppm medida en vivo; 199 underruns / 523 overruns antes del ASRC).
 
 - **Diseño:** FIR polifásico de fase mínima, **287 taps en 2 etapas** — paso-bajo fijo de 256 taps (Kaiser beta 16.67, FC 22 kHz) + interpolador de retardo fraccional de 32 taps (windowed-sinc Kaiser beta 8.6); tabla de 1024 fases × 287 taps; núcleo **NEON** (float32x4 FMA) con fallback escalar y self-test en init; 99.8% de la energía en los primeros 64 taps; sin pre-ringing. **Servo Kalman de 2 estados** (deriva ppm + tasa ppm/s; R adaptativa a la innovación; converge <5 s) + settle hold 2 s + rechazo de outliers + mediana + anti-windup. **Dither TPDF + noise shaping de 2º orden** (el 4º orden se evaluó y se RECHAZÓ con datos: THD+N −81.6/−85.0 dB vs −90.4/−92.1 del 2º). Upsampling 48→192 kHz en write-stage NO implementado (contrato de buffer 4× no verificado; la app ya tiene camino hi-res); streams de entrada a 192 kHz sí son elegibles.
-- **Mediciones en host (103 de 103 checks PASS):** respuesta plana a 20 kHz (0.00 dB), −6 dB @22 kHz, **rechazo de alias −156…−162 dB @23 kHz**; THD+N @1 kHz **−90.4 dB banda ancha / −92.1 dB en banda**; DC gain 1.000000000; CPU estimada en ARM A78 NEON ~2 ms/bloque de 1920 muestras (~5% de un núcleo).
+- **Mediciones en host (103 checks, todos PASS):** respuesta plana a 20 kHz (0.00 dB), −6 dB @22 kHz, **rechazo de alias −156…−162 dB @23 kHz**; THD+N @1 kHz **−90.4 dB banda ancha / −92.1 dB en banda**; DC gain 1.000000000; CPU estimada en ARM A78 NEON ~2 ms/bloque de 1920 muestras (~5% de un núcleo).
 - **Qué se oye:** previene clics/pops/micro-cortes por deriva (under/overruns); se percibe como *ausencia de problemas*. NO cambia el pitch. **ASRC ≠ 192 kHz/24-bit:** corrige ppm a 48 kHz/16-bit; AudioFlinger ya resamplea a 48 kHz.
-- **Estado:** componente **experimental por LD_PRELOAD** (módulo `ivanna_audio_probe`, `.so` intercambiable con script de swap + rollback automático; kill switch `touch /data/vendor/ivanna_audio/pal_asrc.off`), **no parte del APK**. **Pendiente:** el veredicto de escucha de Esse (v5 vs v4 con el Genezi) y el fix permanente del contexto SELinux de `/data/vendor/ivanna_audio` (`vendor_audio_data_file`, que se revierte a `adb_data_file` en cada reboot y deja al HAL sin escribir el dump). Rollback inmediato a la v4 ante cualquier corte, distorsión o cambio de tono nuevo.
+- **Estado:** componente **retirado con la vía HAL (2026-11-11)**. La .so v6 auditada nunca llegó a cargar en el HAL; el ASRC vive ahora en la app (Ruta A, v2.5.404+). **Pendiente:** el veredicto de escucha del ASRC de Ruta A vs el remuestreador Kotlin, y la puerta auditiva ABX.
 
 ---
 
@@ -369,7 +382,7 @@ El modo APROXIMADO es **audible en Ruta A hoy** (sin micrófono, sin hardware ex
 
 ### Sensor acústico real por micrófono
 
-El teléfono mismo es el sensor. Mientras la Ruta A procesa audio en la app, el micrófono captura la salida acústica real de los altavoces en la habitación o en la cabina del auto (AudioRecord UNPROCESSED con fallback a MIC, 48 kHz mono, PCM_FLOAT) y mide, por banda ERB (24 bandas, las mismas que HOLOS), la transferencia real altavoz+habitación: magnitud medida, error contra el objetivo y coherencia micrófono/referencia (FFT 8192, hop 4096, ~85 ms por frame). Publica un `SensorFrame` lock-free que alimenta al operador Φ. Nada simulado: cada número sale de muestras PCM reales del micrófono.
+El teléfono mismo es el sensor. Mientras la Ruta A procesa audio en la app, el micrófono captura la salida acústica real de los altavoces en la habitación o en la cabina del auto (AudioRecord UNPROCESSED con fallback a MIC, 48 kHz mono, PCM_FLOAT) y mide, por banda ERB (24 bandas, las mismas que HOLOS), la transferencia real altavoz+habitación: magnitud medida, error contra el objetivo y coherencia micrófono/referencia (FFT 8192, hop 4096, ~85 ms por frame). Publica un `SensorFrame` por cola SPSC sin cerrojo que alimenta al operador Φ. Nada simulado: cada número sale de muestras PCM reales del micrófono.
 
 La corrección vive como última etapa de `nativeProcessBlock` (JNI): `sensorRoomCorrectionRouteA` aplica el error medido a través de `RoomCorrectionEq` (bit-exacta si el bucle está apagado; recorta hasta −9 dB, realza hasta +3 dB; slew 0.25 dB/bloque; techo de seguridad 0.98). La corrección converge en ~0.5–1 s: es una medida de sala, no una corrección muestra a muestra. El glue existe completo: `RealAcousticSensor.kt` (AudioRecord → `nativeSensorFeedMic`) + JNI + C++ (`RealAcousticSensor.hpp`). 10/10 tests host; throughput host **280× RT**.
 
@@ -392,23 +405,23 @@ Exclusiones honestas: el valor Harman a 20 kHz (−17.1 dB) es un artefacto y **
 
 **Honestidad sobre el target:** Harman 2018 es una curva de auriculares; para medir altavoz en sala el preset físicamente correcto es el 3 (altavoces en sala). Harman 2018 queda como default por directiva (maximiza la preferencia media y es la referencia élite), y el control de graves ±3 dB existe para ajustar la preferencia individual.
 
-### Cableado (Ruta A magistral + Ruta B)
+### Cableado (Ruta A magistral — la que funciona)
 
-**Ruta A (capture, in-app — la que funciona):** `hyperProcessRouteA()` en `ivanna_omega_jni.cpp`, tras HOLOS/ORBE y antes del limiter, en `nativeProcess` y en `nativeProcessBlock`. Alimenta al operador con el `SensorFrame` vivo del micrófono en cada bloque. **Guarda anti-doble-corrección:** si el operador está en modo MEDIDO, el EQ de sala del sensor queda en 0 (la Γ del operador ya es la corrección). JNI: `nativeSetHyperAmount(amount, preset, xtcEnabled)`, `nativeSetHyperTarget(kind, bassTrimDb)`, `nativeHyperStatus()`. Kotlin: `IvannaNativeLib`, `ParameterStore` (claves `hyper_*`), `PersistedStateRestorer` (restaura en arranque), tarjeta **HYPER · ESTADO Φ** en CONTROL (cantidad, ruta/geometría, XTC, curva objetivo, graves ±3 dB).
+**Ruta A (capture, in-app):** `hyperProcessRouteA()` en `ivanna_omega_jni.cpp`, tras HOLOS/ORBE y antes del limiter, en `nativeProcess` y en `nativeProcessBlock`. Alimenta al operador con el `SensorFrame` vivo del micrófono en cada bloque. **Guarda anti-doble-corrección:** si el operador está en modo MEDIDO, el EQ de sala del sensor queda en 0 (la Γ del operador ya es la corrección). JNI: `nativeSetHyperAmount(amount, preset, xtcEnabled)`, `nativeSetHyperTarget(kind, bassTrimDb)`, `nativeHyperStatus()`. Kotlin: `IvannaNativeLib`, `ParameterStore` (claves `hyper_*`), `PersistedStateRestorer` (restaura en arranque), tarjeta **HYPER · ESTADO Φ** en CONTROL (cantidad, ruta/geometría, XTC, curva objetivo, graves ±3 dB).
 
-**Ruta B (audioserver):** `IvannaFusionEngine::m_hyper`, tras `m_room` y antes de `m_xtc`. Hoy **corre en modo APROXIMADO**: no hay transporte de `SensorFrame`/`NeuroFrame` por snapshot (el ABI v10 no tiene campos `hyper_*`; bump de ABI pendiente). Los parámetros se restauran solo en el proceso app.
+**Ruta B (audioserver): MUERTA con la vía HAL (2026-11-11, ver §11).** El código (`IvannaFusionEngine::m_hyper`) sigue en el repo, pero no hay HAL que lo cargue.
 
 ### Mediciones en host (48 kHz)
 
 | Medida | Valor |
 |:---|:---|
-| CTest completo | **820 de 820 pasan (100%, 0 fallos)** en v2.5.369 — operador 20/20, curvas élite 8/8, sensor 10/10 (la suite actual es 885/885, ver §15) |
+| CTest completo | **954 de 954 pasan (100%, 0 fallos)** en v2.5.406 (CI, run 43102191730) — operador 20/20, curvas élite 8/8, sensor 10/10 (ver §15) |
 | Φ, throughput host | **41–42× RT** (SensorFrame, K=64 identidad) · **33–34× RT** (Volterra K=64 no identidad) |
 | Sensor, throughput host | **280× RT** |
 | Φ, `amount = 0` | Identidad bit-exacta (verificado por test) |
 | Φ, guarda de pico | La salida nunca supera el pico de entrada (verificado por test) |
 
-**Pendiente en dispositivo (fuera de este entorno):** medir CPU/XRuns/temperatura del operador Φ en el teléfono y la puerta auditiva ABX con niveles igualados. Desde v2.5.369, Φ, el sensor, Volterra (kernel PZ1D refinado), ORBE y HOLOS se encienden por defecto (directiva del propietario; la puerta GREEN queda anulada para este release). El build de Android/Kotlin lo verifica la CI (aquí solo se verificaron los tests host C++).
+**Medición en dispositivo (2026-11-11, v2.5.406, Tidal, todo activo): CPU de la app 130% (más de un núcleo), xruns=0 a 384 kHz/32-bit por USB, efectos sentidos.** Temperatura en uso y puerta auditiva ABX con niveles igualados siguen pendientes. Desde v2.5.369, Φ, el sensor, Volterra (kernel PZ1D refinado), ORBE y HOLOS se encienden por defecto (directiva del propietario; la puerta GREEN queda anulada para este release). El build de Android/Kotlin lo verifica la CI (aquí solo se verificaron los tests host C++).
 
 ---
 
@@ -452,10 +465,20 @@ Todas en host a 48 kHz salvo indicación; la fila de deriva ASRC es medición en
 | Φ, amount=0 | Identidad bit-exacta | `test_hyper_state_operator` |
 | ASRC v5, THD+N @1 kHz (host) | −90.4 dB banda ancha / −92.1 dB en banda | validación host ASRC v5 (103 de 103 checks) |
 | ASRC v5, rechazo alias @23 kHz (host) | −156…−162 dB | validación host ASRC v5 (103 de 103 checks) |
-| ASRC v5, deriva en dispositivo (Moto G85) | −6.250 ppm, sat=0, kalman_drift=−6.250 | dump `pal_asrc_stage.txt`, 2026-11-10 00:40 CST |
-| CPU / XRuns en Moto G85 | **Sin medir** | pendiente |
+| ASRC v5, deriva en dispositivo (Moto G85) | −6.250 ppm, sat=0, kalman_drift=−6.250 | dump `pal_asrc_stage.txt`, 2026-11-10 00:40 CST (vía HAL, hoy muerta; ver §12) |
+| **CPU app en Moto G85 (todo activo, Tidal)** | **130% (más de un núcleo) · 43:55 min CPU acumulado · RSS 289 MB** | Termux `top`, 2026-11-11 17:57 CST, v2.5.406 |
+| **XRuns en Moto G85 (USB OTG 384 kHz/32-bit)** | **0** | Pantalla ESTADO DE MOTORES, 2026-11-11 17:55 CST, v2.5.406 |
+| **Escucha en Moto G85 (Tidal)** | **Efectos sentidos** (veredicto de Esse) | 2026-11-11, v2.5.406 |
+| Temperatura en uso | **Sin medir** | pendiente |
+| ABX ciega (ORBE/HOLOS/Φ) | **Sin hacer** | pendiente (16 ensayos, niveles igualados) |
 
-**Tests host (v2.5.389): 954 tests en total (949 + 5 nuevos del operador de transducción).** Verificación local: 954/954 en esta VM (g++-14, CMake 4.4.4, CTest, 130 s, 2026-11-10). La lógica del slew se verificó en host con un driver standalone (salto máximo 0.02/bloque). Además +18 tests unitarios Kotlin nuevos (11 de huérfano de Ruta B + 7 de migración del sobre 380) y 3 de HeadMeasureMath (la CI los corre; gradle no corre en esta VM). En la 384 eran 913/913 en local (g++-14, CMake 4.4.4, CTest, 130 s, verificado 2026-11-10). La run CI "Tests host (CTest)" concluye en `failure` por el paso preexistente de herramientas (`cppcheck` + `gitleaks`), no por los tests: el paso CTest en sí pasa, igual que el de ASan+UBSan.
+**Tests — tres conteos distintos, no confundirlos:**
+- **CTest (suite DSP host): 954/954 en CI (v2.5.406, run 43102191730, 111.91 s).** La cifra "954" es la misma desde la v2.5.389 porque el total no ha cambiado; lo que estaba desactualizado era la etiqueta de versión, no el número.
+- **ASRC magistral + Ψ (Ruta A): 31/31 en binario host standalone** (`bash app/src/main/cpp/run_route_a_asrc_test.sh`, verificado en esta VM 2026-11-11). NO forma parte de CTest — por eso coexiste con el 954 sin sumarse.
+- **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (`IvannaTelemetryTest.kt`, los corre la CI en `testReleaseUnitTest`).
+- Además +18 tests unitarios Kotlin (11 de huérfano de Ruta B + 7 de migración del sobre 380) y 3 de HeadMeasureMath (la CI los corre; gradle no corre en esta VM). La lógica del slew se verificó en host con un driver standalone (salto máximo 0.02/bloque). En la 384 eran 913 tests, todos en verde, en local.
+
+**CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 por una causa raíz tonta, no por los tests: el workflow ponía `CC: clang-18` / `CXX: clang++-18` sin instalar clang-18 (`CMAKE_CXX_COMPILER not set`). **Corregido en v2.5.408:** `tests-host.yml` instala clang-18 antes de correr `scripts/run_ctest.sh`. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
 
 Regla de trabajo: si HOLOS mide < 2× RT en dispositivo es viable; entre 1–2×, viable con shed; < 1×, no viable y se recorta. La estimación host (15–25× RT) ya quedó desmentida por la medición (3.5× RT): la estimación no es un dato.
 
@@ -463,7 +486,7 @@ Regla de trabajo: si HOLOS mide < 2× RT en dispositivo es viable; entre 1–2×
 
 ## 16. La puerta auditiva y el Índice VISCERAL
 
-Ninguna función nueva se enciende por defecto sin `GREEN`. La puerta está implementada en [`scripts/ivanna_auditory_gate.py`](scripts/ivanna_auditory_gate.py): exige checks explícitos, rutas requeridas, evidencia del dispositivo y **escucha ciega con niveles igualados**. Ausencia de evidencia no pasa como éxito. **Excepción registrada (v2.5.369):** el propietario anuló la puerta explícitamente para este release — ORBE y HOLOS arrancan ACTIVOS por defecto (HOLOS retuneado por medición). La puerta sigue vigente como regla para funciones futuras.
+Ninguna función nueva se enciende por defecto sin `GREEN`. La puerta está implementada en [`scripts/ivanna_auditory_gate.py`](scripts/ivanna_auditory_gate.py): exige checks explícitos, rutas requeridas, evidencia del dispositivo y **escucha ciega con niveles igualados**. Ausencia de evidencia no pasa como éxito. **Excepción registrada (v2.5.369):** el propietario anuló la puerta explícitamente para este release — ORBE y HOLOS arrancan ACTIVOS por defecto (HOLOS retuneado por medición). La puerta sigue vigente como regla para funciones futuras. **Mediciones que la crítica pedía y ya existen (2026-11-11, v2.5.406, Tidal, todo activo): CPU de la app 130%, xruns=0, efectos sentidos** — lo que sigue faltando es la escucha ciega ABX (16 ensayos, niveles igualados) y la temperatura en uso.
 
 El objetivo perceptual — eso visceral que se siente en el cuerpo, no solo se escucha — se define en cinco dimensiones medibles, resumidas en un **Índice VISCERAL** con regla anti-trampa (no sube si alguna dimensión baja más de 10 puntos):
 
@@ -491,12 +514,12 @@ Transporte óptimo de pinna y HRTF personal por BEM son prometedores como ingeni
 
 ## 17. Límites honestos
 
-- **Sin medición en dispositivo:** no hay CPU, latencia extremo a extremo, XRuns ni SPL medidos en el Moto G85. Todo lo de host es una pista, no una prueba.
-- **Sin ABX todavía:** no hay medición perceptual ni ABX en el repo para ORBE ni HOLOS.
+- **Medición en dispositivo, parcial:** CPU (130%) y XRuns (0) ya están medidos en el Moto G85 (2026-11-11, v2.5.406; ver Estado actual). Faltan temperatura en uso y latencia extremo a extremo. Todo lo de host es una pista, no una prueba.
+- **Sin ABX todavía:** no hay medición perceptual ni ABX en el repo para ORBE, HOLOS ni Φ (pendiente: 16 ensayos, niveles igualados, con Esse).
 - **Phi (367) y pilares (368) no suenan:** existen como componentes con tests en verde, pero no están cableados a la cadena de audio. No confundir "test que pasa" con "efecto audible".
-- **Ruta B sin verificar en dispositivo:** el daemon descubre la sesión real (369, gen 20) y la 380 quita el mute y hace visible el fallo de acople, pero el beacon aún no ha crecido en el teléfono (verificación pendiente tras instalar la 380; ver §11). La puerta auditiva se hace por Ruta A.
+- **Ruta B MUERTA:** la vía HAL murió el 2026-11-11 (wrapper falló, 6º reset de fábrica; ver §11). No instalar ningún zip. La puerta auditiva se hace por Ruta A.
 - **Bucle neuro sin sensor:** el bucle está cableado pero no recibe frames de ningún EEG/ABR/fNIRS. Sin sensor, es identidad.
-- **Hiper-Operador Φ sin medir en dispositivo:** no hay CPU, XRuns ni temperatura medidos en el teléfono, y la puerta auditiva ABX está pendiente. La Ruta B corre en APROXIMADO (sin transporte de `SensorFrame` al daemon; bump de ABI pendiente). El modo APROXIMADO es solo corte y no es una medición de sala. El build de Android/Kotlin lo verifica la CI.
+- **Hiper-Operador Φ medido en dispositivo (parcial):** CPU 130% y XRuns 0 medidos (2026-11-11); temperatura y ABX pendientes. El modo APROXIMADO es solo corte y no es una medición de sala. El build de Android/Kotlin lo verifica la CI.
 - **Sensor sin calibrar:** el micrófono mide balance tonal relativo, no SPL absoluto; mide el punto donde está el teléfono, no los oídos; poco fiable bajo ~80 Hz. Harman 2018 es una curva de auriculares: para medir altavoz en sala, el preset físicamente correcto es el 3 (altavoces en sala).
 - **El producto está protegido contra piratería;** los detalles de la protección no se documentan públicamente.
 - **Volterra sin kernel medido:** la puerta de carga (contenedor IVK1) rechaza por causa y hace bypass ante error; en producción el Volterra sigue en identidad.
@@ -515,7 +538,7 @@ Transporte óptimo de pinna y HRTF personal por BEM son prometedores como ingeni
 
 ### Aplicación Android
 
-La [configuración Android](app/build.gradle.kts) declara **SDK mínimo 28**, **compile/target SDK 35**, **NDK 27.2.12479018** y **JDK 17**. El [workflow de entrega](.github/workflows/build.yml) configura CMake 3.30.3 y documenta el ensamblado completo.
+La [configuración Android](app/build.gradle.kts) declara **SDK mínimo 28**, **compile/target SDK 35**, **NDK 27.2.12479018** y **JDK 17**. Ojo con el número: **minSdk 28 es el piso de compilación, no el alcance soportado** — el producto es para **Android 13 en adelante** (el Moto G85, dispositivo de desarrollo, corre Android 15 / SDK 35). El [workflow de entrega](.github/workflows/build.yml) configura CMake 3.30.3 y documenta el ensamblado completo.
 
 ```bash
 ./gradlew :app:assembleDebug
@@ -529,7 +552,7 @@ La instalación Magisk requiere root y una ruta compatible. Consulta [la guía s
 bash scripts/run_ctest.sh
 ```
 
-Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (954 tests en total en v2.5.389; 954/954 en local, verificación por CI).
+Compila el DSP en host (C++26; la validación NDK/Kotlin la hace la CI) y ejecuta CTest: unitarias de DSP, degeneraciones legacy↔HOLOS, cadena medida (THD+N/IMD/latencia/throughput) y contratos de control. Los tests viven en `app/src/main/cpp/tests/` (**CTest 954/954 en CI, v2.5.406**; el binario standalone ASRC+Ψ es 31/31 aparte, ver §15).
 
 ### Dashboard web
 
@@ -611,7 +634,7 @@ El distintivo CI consulta el estado de GitHub. Los resultados de una ejecución 
 
 Los informes de análisis que fundamentan este README — `VEREDICTO.md` (ranking de funciones), `IMPLEMENTACION_ORBE.md`, `UI_RELEASE_ORBE.md`, `FUSION.md` (diseño HOLOS) y `FRONTERA.md` (física nueva e Índice VISCERAL) — viven en el workspace de análisis, fuera del repositorio. Este README es su resumen fiel y verificado contra el código; si una afirmación de aquí contradice el código, manda el código.
 
-> **Nota sobre `README.en.md` y `LEAME.md`:** siguen en v2.5.212 y están desactualizados frente a este README. Este archivo es la referencia veraz y actual; los otros dos necesitan la misma reescritura.
+> **Nota sobre `README.en.md` y `LEAME.md`:** son guías cortas sin número de versión (ninguno de los dos menciona "v2.5.212" ni ninguna versión: esa afirmación de una nota anterior era falsa y se corrige aquí). Sus datos desactualizados — Android 14 / SDK 34 en el G85 (hoy Android 15 / SDK 35) y la Ruta B como opción viva (muerta desde 2026-11-11) — se corrigieron en esta versión. Este archivo es la referencia veraz y actual.
 
 ---
 

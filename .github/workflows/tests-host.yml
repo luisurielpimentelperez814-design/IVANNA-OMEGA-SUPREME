@@ -76,6 +76,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # FIX v2.5.408 — causa raíz del CTest host rojo desde la 402: el job
+      # pone CC=clang-18 / CXX=clang++-18 pero NUNCA instalaba clang-18,
+      # así que `cmake` fallaba con "CMAKE_CXX_COMPILER not set". El runner
+      # ubuntu-latest trae clang por defecto, pero no el 18 con ese nombre.
+      - name: Instalar clang-18 (compilador CTest)
+        run: |
+          if ! command -v clang++-18 >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq clang-18
+          fi
+          clang++-18 --version | head -1
+
       - name: Instalar cmake (verificación explícita de versión)
         run: |
           cmake --version || { sudo apt-get update -qq && sudo apt-get install -y -qq cmake; }
