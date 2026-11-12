@@ -217,6 +217,14 @@ fun IvannaControlPanel(
     // Phase Oracle — intensidad global de coherencia de fase (0=off, 1=max)
     initialPhaseOracleIntensity: Float = 0.72f,
     onPhaseOracleChange: (Float) -> Unit = {},
+    // FIX (scroll 413): el panel es contenido raíz de ControlTabScreen (ahí
+    // necesita su propio scroll interno, default true) y también hijo del
+    // Dashboard, donde va seguido de BridgePlayerCard. Con fillMaxSize() +
+    // scroll interno, en el Dashboard el panel se comía TODA la altura y la
+    // tarjeta quedaba con 0 px — inalcanzable. Con scrollable=false el panel
+    // se mide a su contenido y el scroll lo pone el padre (un solo scroller,
+    // sin scroll vertical anidado).
+    scrollable: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     // FIX (build): 'context' y 'savedState' estaban duplicados — una copia
@@ -665,20 +673,39 @@ fun IvannaControlPanel(
         )
     }
 
+    // El scroll del panel es condicional (ver param scrollable): con
+    // scrollable=true es el scroller de la pantalla (ControlTabScreen);
+    // con false el padre pone el scroll y este estado no se usa.
+    val panelScrollState = rememberScrollState()
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        ObsidianSoft.copy(alpha = 0.65f),
-                        ObsidianVoid.copy(alpha = 0.92f)
-                    ),
-                    radius = 1400f
+        modifier = if (scrollable) {
+            modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            ObsidianSoft.copy(alpha = 0.65f),
+                            ObsidianVoid.copy(alpha = 0.92f)
+                        ),
+                        radius = 1400f
+                    )
                 )
-            )
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+                .verticalScroll(panelScrollState)
+                .padding(horizontal = 16.dp, vertical = 20.dp)
+        } else {
+            modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            ObsidianSoft.copy(alpha = 0.65f),
+                            ObsidianVoid.copy(alpha = 0.92f)
+                        ),
+                        radius = 1400f
+                    )
+                )
+                .padding(horizontal = 16.dp, vertical = 20.dp)
+        },
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         RouteModeBanner()

@@ -1300,401 +1300,416 @@ fun DashboardScreen(
             }
         }
 
-        val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
-        IvannaControlPanel(
-            metrics = omegaMetrics,
-            initialExciter = dsp.value.wet,
-            initialEq = dsp.value.mid,
-            initialWidth = dsp.value.stereoWidth,
-            initialCompThreshold = dsp.value.alpha,
-            initialCompRatio = dsp.value.beta,
-            onExciterChange = { dsp.value = dsp.value.copy(wet = it); dsp.value.pushToNative() },
-            onEqChange = {
-                dsp.value = dsp.value.copy(low = it, mid = it, high = it, presence = it)
-                dsp.value.pushToNative()
-            },
-            onWidthChange = { dsp.value = dsp.value.copy(stereoWidth = it); dsp.value.pushToNative() },
-            onCompThresholdChange = { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() },
-            onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
-            onNhoHarmonicChange = {
-                if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
-            },
-            onEvoEnabledChange = { enabled ->
-                if (IvannaNativeLib.isLoaded) {
-                    if (enabled) IvannaNativeLib.nativeStartEvoThread()
-                    else IvannaNativeLib.nativeStopEvoThread()
-                }
-            },
-            onNpeBypassChange = { on ->
-                npeBypassState = on
-                if (PiLstmBridge.isReady) PiLstmBridge.setBypass(on)
-            },
-            onNpeHarmonicChange = { v ->
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setHarmonicGain(v)
-            },
-            onNpeLateralInhibChange = { v ->
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setBeta(v)
-            },
-            onNpeOhcCompressionChange = { v ->
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAlpha(v)
-            },
-            onNpeMasterGainChange = { v ->
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setMasterGain(v)
-            },
-            onNpeAgcChange = { targetDb, rate ->
-                if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAgc(targetDb, rate)
-            },
-            onNpeFlagsChange = { hrtf, cochlear, adapt ->
-                if (PiLstmBridge.isReady) {
-                    PiLstmBridge.setHrtfEnabled(hrtf, context.applicationContext)
-                    PiLstmBridge.setCochlearEnabled(cochlear)
-                    PiLstmBridge.setAdaptEnabled(adapt)
-                }
-            },
-            onSpatialAngleChange = {
-                if (IvannaNativeLib.isLoaded)
-                    IvannaNativeLib.nativeSetSpatialAngleRad((it - 0.5f) * 2f * PI.toFloat())
-                IvannaSpatialEngine.setAzimuth((it - 0.5f) * 2f * PI.toFloat())
-            },
-            onSpatialWidthChange = {
-                if (IvannaNativeLib.isLoaded)
-                    IvannaNativeLib.nativeSetSpatialWidthDirect(it)
-                IvannaSpatialEngine.setWidth(it)
-            },
-            onOpenVisualizer        = { nav.navigate("visualizer") },
-            onOpenHiRes             = { nav.navigate("hires") },
-            onOpenOpe               = { nav.navigate(IvannaRoute.SOUND) },
-            onOpenBinaural          = { nav.navigate(IvannaRoute.SOUND) },
-            onOpenTelemetry         = { nav.navigate(IvannaRoute.SYSTEM) },
-            onOpenAdaptiveProfiles  = { nav.navigate("adaptive_profiles") },
-            onAntiDolbyChange = { enabled ->
-                if (enabled) antiDolbyController.enableAntiDolby()
-                else antiDolbyController.disableAntiDolby()
-            },
-            adaptiveTelemetry = adaptiveTelemetry,
-            // Estado persistente de los módulos que también aparecen en el panel
-            // legado del dashboard (no depender de los defaults de callbacks).
-            initialHoaUpmixingEnabled = paramStore.isHoaUpmixingEnabled(),
-            initialHoaImmersivity = paramStore.getHoaImmersivity(),
-            initialWfsEnabled = paramStore.isWfsEnabled(),
-            initialWfsSpread = paramStore.getWfsSpread(),
-            initialAuxFieldEnabled = paramStore.isAuxFieldEnabled(),
-            initialAuxXoverHz = paramStore.getAuxXoverHz(),
-            initialAuxCoherence = paramStore.getAuxCoherence(),
-            initialPunchAmount = paramStore.getPunchAmount(),
-            initialCrossfeed = paramStore.getCrossfeedStrength(),
-            initialOrbeAmount = paramStore.getOrbeAmount(),
-            initialOrbeDistanceM = paramStore.getOrbeDistanceM(),
-            initialOrbeSpread = paramStore.getOrbeSpread(),
-            initialOrbeProximityDb = paramStore.getOrbeProximityDb(),
-            initialOrbeDiffuse = paramStore.getOrbeDiffuse(),
-            initialOrbeHeadTracking = paramStore.isOrbeHeadTrackingEnabled(),
-            initialHolosAmount = paramStore.getHolosAmount(),
-            initialHolosDistanceM = paramStore.getHolosDistanceM(),
-            initialHolosSpread = paramStore.getHolosSpread(),
-            initialHolosProximityDb = paramStore.getHolosProximityDb(),
-            initialHolosDiffuse = paramStore.getHolosDiffuse(),
-            initialHolosHarmonics = paramStore.getHolosHarmonics(),
-            initialHolosWarmth = paramStore.getHolosWarmth(),
-            initialHolosDynamics = paramStore.getHolosDynamics(),
-            initialHolosWidth = paramStore.getHolosWidth(),
-            initialHolosGamma = paramStore.getHolosGamma(),
-            initialHolosRoomRt60 = paramStore.getHolosRoomRt60(),
-            initialHolosHeadTracking = paramStore.isHolosHeadTrackingEnabled(),
-            initialHolosBandCount = paramStore.getHolosBandCount(),
-            initialHolosEqLow = paramStore.getHolosEqLow(),
-            initialHolosEqMid = paramStore.getHolosEqMid(),
-            initialHolosEqHigh = paramStore.getHolosEqHigh(),
-            initialHolosEqPresence = paramStore.getHolosEqPresence(),
-            initialHolosEqTiltDb = paramStore.getHolosEqTiltDb(),
-            initialHolosEqFreq = paramStore.getHolosEqFreq(),
-            initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
-            initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
-            initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
-            initialBassHapticEnabled = paramStore.isBassHapticEnabled(),
-            initialBassHapticStrength = paramStore.getBassHapticStrength(),
-            initialBassHapticRumble = paramStore.getBassHapticRumble(),
-            initialBassHapticTrimMs = paramStore.getBassHapticTrimMs(),
-            bassHapticSupported = com.ivanna.omega.audio.BassHaptics.isSupported(context),
-            roomGains = roomGains,
-            roomEnabled = roomEnabled,
-            roomBusy = roomBusy,
-            roomProgress = roomProgress,
-            roomStatus = roomStatus,
-            onRoomMeasure = {
-                val micState = com.ivanna.omega.hardware.PermissionGate.stateFor(
-                    context, android.Manifest.permission.RECORD_AUDIO
-                )
-                when (micState) {
-                    com.ivanna.omega.hardware.PermissionState.GRANTED -> startRoomMeasure()
-                    com.ivanna.omega.hardware.PermissionState.OPEN_SETTINGS -> {
-                        roomStatus = com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(micState)
-                        com.ivanna.omega.hardware.PermissionGate.openAppSettings(context)
-                    }
-                    else -> {
-                        com.ivanna.omega.hardware.PermissionGate.markRequested(
-                            context, android.Manifest.permission.RECORD_AUDIO
-                        )
-                        roomMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                    }
-                }
-            },
-            onRoomToggle = { enabled ->
-                roomEnabled = enabled && roomGains != null
-                paramStore.setRoomCorrection(roomGains, roomEnabled)
-                applyRoomCorrection(roomGains, roomEnabled)
-            },
-            onRoomClear = {
-                roomGains = null
-                roomEnabled = false
-                roomStatus = ""
-                paramStore.setRoomCorrection(null, false)
-                applyRoomCorrection(null, false)
-            },
-            onHoaUpmixingEnabledChange = { enabled ->
-                paramStore.setHoaUpmixingEnabled(enabled)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled)
-                }
-                perceptualCommands.trySend(
-                    """{"action":"SET_PERCEPTUAL_STATE","upmixingEnabled":${if (enabled) 1.0f else 0.0f}}"""
-                )
-            },
-            onHoaImmersivityChange = { value ->
-                val bounded = value.coerceIn(0f, 2f)
-                paramStore.setHoaImmersivity(bounded)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetUpmixingImmersivity(bounded)
-                }
-                perceptualCommands.trySend(
-                    """{"action":"SET_PERCEPTUAL_STATE","upmixingImmersivity":$bounded}"""
-                )
-            },
-            onWfsEnabledChange = { enabled ->
-                paramStore.setWfsEnabled(enabled)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetWfsEnabled(enabled)
-                }
-            },
-            onWfsSpreadChange = { value ->
-                val bounded = value.coerceIn(0f, 2f)
-                paramStore.setWfsSpread(bounded)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetWfsSpread(bounded)
-                }
-            },
-            onAuxFieldChange = { enabled, crossover, coherence ->
-                val boundedXover = crossover.coerceIn(60f, 200f)
-                val boundedCoherence = coherence.coerceIn(0f, 1f)
-                paramStore.setAuxField(enabled, boundedXover, boundedCoherence)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetAuxField(enabled, boundedXover, boundedCoherence)
-                }
-            },
-            onCrossfeedChange = { s ->
-                val bounded = s.coerceIn(0f, 1f)
-                paramStore.setCrossfeedStrength(bounded)
-                if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetCrossfeed(bounded) }
-            },
-            onOrbeChange = { amount, distanceM, spread, proximityDb, diffuse, headTracking ->
-                val a = amount.coerceIn(0f, 1f)
-                val d = distanceM.coerceIn(0.15f, 2.0f)
-                val sp = spread.coerceIn(0f, 1.5f)
-                val px = proximityDb.coerceIn(0f, 6f)
-                val df = diffuse.coerceIn(0f, 1f)
-                paramStore.setOrbeParams(a, d, sp, px, df, headTracking)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetOrbeParams(a, d, sp, px, df, headTracking)
-                }
-                perceptualCommands.trySend(
-                    """{"action":"SET_PERCEPTUAL_STATE","orbeAmount":$a,"orbeDistanceM":$d,"orbeSpread":$sp,"orbeProximityDb":$px,"orbeDiffuse":$df,"orbeHeadTracking":${if (headTracking) 1.0f else 0.0f}}"""
-                )
-            },
-            onHolosChange = { amount, distanceM, spread, proximityDb, diffuse, harmonics, warmth, dynamics, width, gamma, roomRt60, headTracking, bandCount ->
-                val a = amount.coerceIn(0f, 1f)
-                val d = distanceM.coerceIn(0.15f, 2.0f)
-                val sp = spread.coerceIn(0f, 1.5f)
-                val px = proximityDb.coerceIn(0f, 6f)
-                val df = diffuse.coerceIn(0f, 1f)
-                val hm = harmonics.coerceIn(0f, 1f)
-                val wm = warmth.coerceIn(0f, 1f)
-                val dy = dynamics.coerceIn(0f, 1f)
-                val wd = width.coerceIn(0f, 1.5f)
-                val gm = gamma.coerceIn(0.5f, 1f)
-                val rt = roomRt60.coerceIn(0.18f, 1.8f)
-                val bc = if (bandCount == 12) 12 else 24
-                paramStore.setHolosParams(a, d, sp, px, df, hm, wm, dy, wd, gm, rt, headTracking, bc)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetHolosParams(a, d, sp, px, df, hm, wm, dy, wd, gm, rt, headTracking, bc)
-                }
-                perceptualCommands.trySend(
-                    """{"action":"SET_PERCEPTUAL_STATE","holosAmount":$a,"holosDistanceM":$d,"holosSpread":$sp,"holosProximityDb":$px,"holosDiffuse":$df,"holosHarmonics":$hm,"holosWarmth":$wm,"holosDynamics":$dy,"holosWidth":$wd,"holosGamma":$gm,"holosRoomRt60":$rt,"holosHeadTracking":${if (headTracking) 1.0f else 0.0f},"holosBandCount":$bc}"""
-                )
-            },
-            onHolosEqChange = { low, mid, high, presence, tiltDb, freq ->
-                val lo = low.coerceIn(-12f, 12f)
-                val mi = mid.coerceIn(-12f, 12f)
-                val hi = high.coerceIn(-12f, 12f)
-                val pr = presence.coerceIn(-12f, 12f)
-                val tl = tiltDb.coerceIn(-12f, 12f)
-                val fq = freq.coerceIn(20f, 20000f)
-                paramStore.setHolosEq(lo, mi, hi, pr, tl, fq)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetHolosEq(lo, mi, hi, pr, tl, fq)
-                }
-                perceptualCommands.trySend(
-                    """{"action":"SET_PERCEPTUAL_STATE","holosEqLow":$lo,"holosEqMid":$mi,"holosEqHigh":$hi,"holosEqPresence":$pr,"holosEqTiltDb":$tl,"holosEqFreq":$fq}"""
-                )
-            },
-            onPunchChange = { amount ->
-                val bounded = amount.coerceIn(0f, 1f)
-                paramStore.setPunchAmount(bounded)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetPunch(bounded)
-                }
-            },
-            onTemporalFieldChange = { enabled, amount, adaptive ->
-                val bounded = amount.coerceIn(0f, 1f)
-                paramStore.setTemporalField(enabled, bounded, adaptive)
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetTemporalField(enabled, bounded, adaptive)
-                }
-            },
-            onBassHapticChange = { enabled, strength, rumble, trimMs ->
-                paramStore.setBassHaptic(enabled, strength, rumble, trimMs)
-                com.ivanna.omega.audio.BassHaptics.configure(
-                    context, enabled, strength, rumble, trimMs.toInt()
-                )
-            },
-            onOpenSupremeAxesHub = { nav.navigate(IvannaRoute.SUPREME_AXES_HUB) },
-            onOpenAdaptive = { nav.navigate(IvannaRoute.BRAIN) },
-            // FIX (pantalla muerta): el botón "MOTOR ADAPTATIVO"
-            // (IvannaOmniComponents.kt:260) disparaba este callback hacia
-            // MAGISTRAL (dashboard cognitivo), dejando la ruta "adaptive"
-            // (AdaptiveEngineScreen — motor adaptativo completo con
-            // voiceProtectionManager + adaptiveBackend) registrada en el
-            // NavHost pero SIN ningún punto de entrada. Inalcanzable.
-            // Ahora abre su pantalla real; MAGISTRAL sigue accesible vía
-            // la ruta adaptive_dash (alias registrado en el NavHost).
-            onOpenAdaptiveEngineManual = { nav.navigate(IvannaRoute.ADAPTIVE) },
-            onOpenMagisk = { nav.navigate(IvannaRoute.MAGISK) },
-            onOpenProfiles = { nav.navigate(IvannaRoute.PROFILES) },
-            adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
-            onAdaptiveModeChange = { uiMode ->
-                val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
-                com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetAdaptiveControls(
-                        backendMode.ordinal,
-                        com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveIntensity * 100f
-                    )
-                }
-                if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
-                    com.ivanna.omega.audio.AudioStateManager.audioState.value
-                )
-            },
-            adaptiveIntensity = audioState.adaptiveIntensity * 100f,
-            onAdaptiveIntensityChange = { percent ->
-                val v = percent.coerceIn(0f, 100f) / 100f
-                com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
-                if (IvannaNativeLib.isLoaded) runCatching {
-                    IvannaNativeLib.nativeSetAdaptiveControls(
-                        com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveMode.ordinal,
-                        percent.coerceIn(0f, 100f)
-                    )
-                }
-                if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
-                    com.ivanna.omega.audio.AudioStateManager.audioState.value
-                )
-            },
-            voiceProtectionEnabled = voiceActive,
-            onVoiceProtectionChange = { voiceProtectionManager.toggle() },
-            initialSpatialEnabled = com.ivanna.omega.spatial.IvannaSpatialEngine.enabled,
-            onSpatialEnabledChange = { on ->
-                com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
-            },
-            onNpeManifoldChange = { enabled ->
-                com.ivanna.omega.audio.VolterraSwitch.enabled = enabled
-            },
-            routeState = routeState,
-            initialAutoMode  = paramStore.isAutoModeEnabled(),
-            initialOmegaMode = paramStore.getOmegaMode().takeIf { it in 0..2 } ?: com.ivanna.omega.core.OmegaEngine.getMode(),
-            onPresetSelected = { presetName ->
-                val profile = ProfilesLoader.load(context)
-                    .firstOrNull { it.name.equals(presetName, ignoreCase = true) }
-                if (profile != null) {
-                    dsp.value = dsp.value.copy(
-                        wet         = profile.audioEngine.exciterAmount,
-                        low         = profile.audioEngine.eqGain,
-                        mid         = profile.audioEngine.eqGain,
-                        high        = profile.audioEngine.eqGain,
-                        presence    = profile.audioEngine.eqGain,
-                        stereoWidth = profile.audioEngine.widthAmount
-                    )
+        // FIX (scroll 413): el contenido (panel de controles + tarjeta del
+        // reproductor) baja con UN solo scroll vertical; el encabezado y la
+        // fila de navegación quedan fijos arriba. Antes esta columna no tenía
+        // scroll y el panel (fillMaxSize + scroll interno) se comía toda la
+        // altura: BridgePlayerCard quedaba con 0 px, inalcanzable. La fila de
+        // navegación sigue siendo horizontalScroll (ortogonal, sin conflicto)
+        // y ningún hijo de este contenedor tiene scroll vertical propio: el
+        // panel lo desactiva con scrollable=false y la tarjeta no tiene.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+            val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
+            IvannaControlPanel(
+                scrollable = false,
+                metrics = omegaMetrics,
+                initialExciter = dsp.value.wet,
+                initialEq = dsp.value.mid,
+                initialWidth = dsp.value.stereoWidth,
+                initialCompThreshold = dsp.value.alpha,
+                initialCompRatio = dsp.value.beta,
+                onExciterChange = { dsp.value = dsp.value.copy(wet = it); dsp.value.pushToNative() },
+                onEqChange = {
+                    dsp.value = dsp.value.copy(low = it, mid = it, high = it, presence = it)
                     dsp.value.pushToNative()
-                }
-            },
-            onAutoModeChange = { enabled ->
-                paramStore.setAutoModeEnabled(enabled)
-                com.ivanna.omega.audio.AudioStateManager.updateState {
-                    it.copy(manualModeEnabled = !enabled)
-                }
-            },
-            onOmegaModeChange = { mode ->
-                paramStore.setOmegaMode(mode)
-                com.ivanna.omega.core.OmegaEngine.setMode(mode)
-                OmegaEngineBridge.setIntensity(mode / 2f)
-            },
-            onPhaseOracleChange = { intensity ->
-                val i = intensity.coerceIn(0f, 1f)
-                com.ivanna.omega.audio.AudioStateManager.updateState {
-                    it.copy(phaseOracleIntensity = i)
-                }
-                if (IvannaNativeLib.isLoaded) {
-                    runCatching {
-                        IvannaNativeLib.nativeSetPhaseParameters(
-                            i,
-                            i * 0.7f,
-                            i * 0.5f
+                },
+                onWidthChange = { dsp.value = dsp.value.copy(stereoWidth = it); dsp.value.pushToNative() },
+                onCompThresholdChange = { dsp.value = dsp.value.copy(alpha = it); dsp.value.pushToNative() },
+                onCompRatioChange = { dsp.value = dsp.value.copy(beta = it); dsp.value.pushToNative() },
+                onNhoHarmonicChange = {
+                    if (IvannaNativeLib.isLoaded) IvannaNativeLib.nativeSetHarmonicGain(it)
+                },
+                onEvoEnabledChange = { enabled ->
+                    if (IvannaNativeLib.isLoaded) {
+                        if (enabled) IvannaNativeLib.nativeStartEvoThread()
+                        else IvannaNativeLib.nativeStopEvoThread()
+                    }
+                },
+                onNpeBypassChange = { on ->
+                    npeBypassState = on
+                    if (PiLstmBridge.isReady) PiLstmBridge.setBypass(on)
+                },
+                onNpeHarmonicChange = { v ->
+                    if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setHarmonicGain(v)
+                },
+                onNpeLateralInhibChange = { v ->
+                    if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setBeta(v)
+                },
+                onNpeOhcCompressionChange = { v ->
+                    if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAlpha(v)
+                },
+                onNpeMasterGainChange = { v ->
+                    if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setMasterGain(v)
+                },
+                onNpeAgcChange = { targetDb, rate ->
+                    if (PiLstmBridge.isReady && !npeBypassState) PiLstmBridge.setAgc(targetDb, rate)
+                },
+                onNpeFlagsChange = { hrtf, cochlear, adapt ->
+                    if (PiLstmBridge.isReady) {
+                        PiLstmBridge.setHrtfEnabled(hrtf, context.applicationContext)
+                        PiLstmBridge.setCochlearEnabled(cochlear)
+                        PiLstmBridge.setAdaptEnabled(adapt)
+                    }
+                },
+                onSpatialAngleChange = {
+                    if (IvannaNativeLib.isLoaded)
+                        IvannaNativeLib.nativeSetSpatialAngleRad((it - 0.5f) * 2f * PI.toFloat())
+                    IvannaSpatialEngine.setAzimuth((it - 0.5f) * 2f * PI.toFloat())
+                },
+                onSpatialWidthChange = {
+                    if (IvannaNativeLib.isLoaded)
+                        IvannaNativeLib.nativeSetSpatialWidthDirect(it)
+                    IvannaSpatialEngine.setWidth(it)
+                },
+                onOpenVisualizer        = { nav.navigate("visualizer") },
+                onOpenHiRes             = { nav.navigate("hires") },
+                onOpenOpe               = { nav.navigate(IvannaRoute.SOUND) },
+                onOpenBinaural          = { nav.navigate(IvannaRoute.SOUND) },
+                onOpenTelemetry         = { nav.navigate(IvannaRoute.SYSTEM) },
+                onOpenAdaptiveProfiles  = { nav.navigate("adaptive_profiles") },
+                onAntiDolbyChange = { enabled ->
+                    if (enabled) antiDolbyController.enableAntiDolby()
+                    else antiDolbyController.disableAntiDolby()
+                },
+                adaptiveTelemetry = adaptiveTelemetry,
+                // Estado persistente de los módulos que también aparecen en el panel
+                // legado del dashboard (no depender de los defaults de callbacks).
+                initialHoaUpmixingEnabled = paramStore.isHoaUpmixingEnabled(),
+                initialHoaImmersivity = paramStore.getHoaImmersivity(),
+                initialWfsEnabled = paramStore.isWfsEnabled(),
+                initialWfsSpread = paramStore.getWfsSpread(),
+                initialAuxFieldEnabled = paramStore.isAuxFieldEnabled(),
+                initialAuxXoverHz = paramStore.getAuxXoverHz(),
+                initialAuxCoherence = paramStore.getAuxCoherence(),
+                initialPunchAmount = paramStore.getPunchAmount(),
+                initialCrossfeed = paramStore.getCrossfeedStrength(),
+                initialOrbeAmount = paramStore.getOrbeAmount(),
+                initialOrbeDistanceM = paramStore.getOrbeDistanceM(),
+                initialOrbeSpread = paramStore.getOrbeSpread(),
+                initialOrbeProximityDb = paramStore.getOrbeProximityDb(),
+                initialOrbeDiffuse = paramStore.getOrbeDiffuse(),
+                initialOrbeHeadTracking = paramStore.isOrbeHeadTrackingEnabled(),
+                initialHolosAmount = paramStore.getHolosAmount(),
+                initialHolosDistanceM = paramStore.getHolosDistanceM(),
+                initialHolosSpread = paramStore.getHolosSpread(),
+                initialHolosProximityDb = paramStore.getHolosProximityDb(),
+                initialHolosDiffuse = paramStore.getHolosDiffuse(),
+                initialHolosHarmonics = paramStore.getHolosHarmonics(),
+                initialHolosWarmth = paramStore.getHolosWarmth(),
+                initialHolosDynamics = paramStore.getHolosDynamics(),
+                initialHolosWidth = paramStore.getHolosWidth(),
+                initialHolosGamma = paramStore.getHolosGamma(),
+                initialHolosRoomRt60 = paramStore.getHolosRoomRt60(),
+                initialHolosHeadTracking = paramStore.isHolosHeadTrackingEnabled(),
+                initialHolosBandCount = paramStore.getHolosBandCount(),
+                initialHolosEqLow = paramStore.getHolosEqLow(),
+                initialHolosEqMid = paramStore.getHolosEqMid(),
+                initialHolosEqHigh = paramStore.getHolosEqHigh(),
+                initialHolosEqPresence = paramStore.getHolosEqPresence(),
+                initialHolosEqTiltDb = paramStore.getHolosEqTiltDb(),
+                initialHolosEqFreq = paramStore.getHolosEqFreq(),
+                initialTemporalFieldEnabled = paramStore.isTemporalFieldEnabled(),
+                initialTemporalFieldAmount = paramStore.getTemporalFieldAmount(),
+                initialTemporalFieldAdaptive = paramStore.isTemporalFieldAdaptive(),
+                initialBassHapticEnabled = paramStore.isBassHapticEnabled(),
+                initialBassHapticStrength = paramStore.getBassHapticStrength(),
+                initialBassHapticRumble = paramStore.getBassHapticRumble(),
+                initialBassHapticTrimMs = paramStore.getBassHapticTrimMs(),
+                bassHapticSupported = com.ivanna.omega.audio.BassHaptics.isSupported(context),
+                roomGains = roomGains,
+                roomEnabled = roomEnabled,
+                roomBusy = roomBusy,
+                roomProgress = roomProgress,
+                roomStatus = roomStatus,
+                onRoomMeasure = {
+                    val micState = com.ivanna.omega.hardware.PermissionGate.stateFor(
+                        context, android.Manifest.permission.RECORD_AUDIO
+                    )
+                    when (micState) {
+                        com.ivanna.omega.hardware.PermissionState.GRANTED -> startRoomMeasure()
+                        com.ivanna.omega.hardware.PermissionState.OPEN_SETTINGS -> {
+                            roomStatus = com.ivanna.omega.hardware.PermissionPolicy.micDeniedMessage(micState)
+                            com.ivanna.omega.hardware.PermissionGate.openAppSettings(context)
+                        }
+                        else -> {
+                            com.ivanna.omega.hardware.PermissionGate.markRequested(
+                                context, android.Manifest.permission.RECORD_AUDIO
+                            )
+                            roomMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                },
+                onRoomToggle = { enabled ->
+                    roomEnabled = enabled && roomGains != null
+                    paramStore.setRoomCorrection(roomGains, roomEnabled)
+                    applyRoomCorrection(roomGains, roomEnabled)
+                },
+                onRoomClear = {
+                    roomGains = null
+                    roomEnabled = false
+                    roomStatus = ""
+                    paramStore.setRoomCorrection(null, false)
+                    applyRoomCorrection(null, false)
+                },
+                onHoaUpmixingEnabledChange = { enabled ->
+                    paramStore.setHoaUpmixingEnabled(enabled)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetIntelligentUpmixingEnabled(enabled)
+                    }
+                    perceptualCommands.trySend(
+                        """{"action":"SET_PERCEPTUAL_STATE","upmixingEnabled":${if (enabled) 1.0f else 0.0f}}"""
+                    )
+                },
+                onHoaImmersivityChange = { value ->
+                    val bounded = value.coerceIn(0f, 2f)
+                    paramStore.setHoaImmersivity(bounded)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetUpmixingImmersivity(bounded)
+                    }
+                    perceptualCommands.trySend(
+                        """{"action":"SET_PERCEPTUAL_STATE","upmixingImmersivity":$bounded}"""
+                    )
+                },
+                onWfsEnabledChange = { enabled ->
+                    paramStore.setWfsEnabled(enabled)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetWfsEnabled(enabled)
+                    }
+                },
+                onWfsSpreadChange = { value ->
+                    val bounded = value.coerceIn(0f, 2f)
+                    paramStore.setWfsSpread(bounded)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetWfsSpread(bounded)
+                    }
+                },
+                onAuxFieldChange = { enabled, crossover, coherence ->
+                    val boundedXover = crossover.coerceIn(60f, 200f)
+                    val boundedCoherence = coherence.coerceIn(0f, 1f)
+                    paramStore.setAuxField(enabled, boundedXover, boundedCoherence)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetAuxField(enabled, boundedXover, boundedCoherence)
+                    }
+                },
+                onCrossfeedChange = { s ->
+                    val bounded = s.coerceIn(0f, 1f)
+                    paramStore.setCrossfeedStrength(bounded)
+                    if (IvannaNativeLib.isLoaded) runCatching { IvannaNativeLib.nativeSetCrossfeed(bounded) }
+                },
+                onOrbeChange = { amount, distanceM, spread, proximityDb, diffuse, headTracking ->
+                    val a = amount.coerceIn(0f, 1f)
+                    val d = distanceM.coerceIn(0.15f, 2.0f)
+                    val sp = spread.coerceIn(0f, 1.5f)
+                    val px = proximityDb.coerceIn(0f, 6f)
+                    val df = diffuse.coerceIn(0f, 1f)
+                    paramStore.setOrbeParams(a, d, sp, px, df, headTracking)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetOrbeParams(a, d, sp, px, df, headTracking)
+                    }
+                    perceptualCommands.trySend(
+                        """{"action":"SET_PERCEPTUAL_STATE","orbeAmount":$a,"orbeDistanceM":$d,"orbeSpread":$sp,"orbeProximityDb":$px,"orbeDiffuse":$df,"orbeHeadTracking":${if (headTracking) 1.0f else 0.0f}}"""
+                    )
+                },
+                onHolosChange = { amount, distanceM, spread, proximityDb, diffuse, harmonics, warmth, dynamics, width, gamma, roomRt60, headTracking, bandCount ->
+                    val a = amount.coerceIn(0f, 1f)
+                    val d = distanceM.coerceIn(0.15f, 2.0f)
+                    val sp = spread.coerceIn(0f, 1.5f)
+                    val px = proximityDb.coerceIn(0f, 6f)
+                    val df = diffuse.coerceIn(0f, 1f)
+                    val hm = harmonics.coerceIn(0f, 1f)
+                    val wm = warmth.coerceIn(0f, 1f)
+                    val dy = dynamics.coerceIn(0f, 1f)
+                    val wd = width.coerceIn(0f, 1.5f)
+                    val gm = gamma.coerceIn(0.5f, 1f)
+                    val rt = roomRt60.coerceIn(0.18f, 1.8f)
+                    val bc = if (bandCount == 12) 12 else 24
+                    paramStore.setHolosParams(a, d, sp, px, df, hm, wm, dy, wd, gm, rt, headTracking, bc)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetHolosParams(a, d, sp, px, df, hm, wm, dy, wd, gm, rt, headTracking, bc)
+                    }
+                    perceptualCommands.trySend(
+                        """{"action":"SET_PERCEPTUAL_STATE","holosAmount":$a,"holosDistanceM":$d,"holosSpread":$sp,"holosProximityDb":$px,"holosDiffuse":$df,"holosHarmonics":$hm,"holosWarmth":$wm,"holosDynamics":$dy,"holosWidth":$wd,"holosGamma":$gm,"holosRoomRt60":$rt,"holosHeadTracking":${if (headTracking) 1.0f else 0.0f},"holosBandCount":$bc}"""
+                    )
+                },
+                onHolosEqChange = { low, mid, high, presence, tiltDb, freq ->
+                    val lo = low.coerceIn(-12f, 12f)
+                    val mi = mid.coerceIn(-12f, 12f)
+                    val hi = high.coerceIn(-12f, 12f)
+                    val pr = presence.coerceIn(-12f, 12f)
+                    val tl = tiltDb.coerceIn(-12f, 12f)
+                    val fq = freq.coerceIn(20f, 20000f)
+                    paramStore.setHolosEq(lo, mi, hi, pr, tl, fq)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetHolosEq(lo, mi, hi, pr, tl, fq)
+                    }
+                    perceptualCommands.trySend(
+                        """{"action":"SET_PERCEPTUAL_STATE","holosEqLow":$lo,"holosEqMid":$mi,"holosEqHigh":$hi,"holosEqPresence":$pr,"holosEqTiltDb":$tl,"holosEqFreq":$fq}"""
+                    )
+                },
+                onPunchChange = { amount ->
+                    val bounded = amount.coerceIn(0f, 1f)
+                    paramStore.setPunchAmount(bounded)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetPunch(bounded)
+                    }
+                },
+                onTemporalFieldChange = { enabled, amount, adaptive ->
+                    val bounded = amount.coerceIn(0f, 1f)
+                    paramStore.setTemporalField(enabled, bounded, adaptive)
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetTemporalField(enabled, bounded, adaptive)
+                    }
+                },
+                onBassHapticChange = { enabled, strength, rumble, trimMs ->
+                    paramStore.setBassHaptic(enabled, strength, rumble, trimMs)
+                    com.ivanna.omega.audio.BassHaptics.configure(
+                        context, enabled, strength, rumble, trimMs.toInt()
+                    )
+                },
+                onOpenSupremeAxesHub = { nav.navigate(IvannaRoute.SUPREME_AXES_HUB) },
+                onOpenAdaptive = { nav.navigate(IvannaRoute.BRAIN) },
+                // FIX (pantalla muerta): el botón "MOTOR ADAPTATIVO"
+                // (IvannaOmniComponents.kt:260) disparaba este callback hacia
+                // MAGISTRAL (dashboard cognitivo), dejando la ruta "adaptive"
+                // (AdaptiveEngineScreen — motor adaptativo completo con
+                // voiceProtectionManager + adaptiveBackend) registrada en el
+                // NavHost pero SIN ningún punto de entrada. Inalcanzable.
+                // Ahora abre su pantalla real; MAGISTRAL sigue accesible vía
+                // la ruta adaptive_dash (alias registrado en el NavHost).
+                onOpenAdaptiveEngineManual = { nav.navigate(IvannaRoute.ADAPTIVE) },
+                onOpenMagisk = { nav.navigate(IvannaRoute.MAGISK) },
+                onOpenProfiles = { nav.navigate(IvannaRoute.PROFILES) },
+                adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioState.adaptiveMode.name),
+                onAdaptiveModeChange = { uiMode ->
+                    val backendMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(uiMode.name)
+                    com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveMode = backendMode) }
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetAdaptiveControls(
+                            backendMode.ordinal,
+                            com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveIntensity * 100f
                         )
                     }
+                    if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
+                        com.ivanna.omega.audio.AudioStateManager.audioState.value
+                    )
+                },
+                adaptiveIntensity = audioState.adaptiveIntensity * 100f,
+                onAdaptiveIntensityChange = { percent ->
+                    val v = percent.coerceIn(0f, 100f) / 100f
+                    com.ivanna.omega.audio.AudioStateManager.updateState { it.copy(adaptiveIntensity = v) }
+                    if (IvannaNativeLib.isLoaded) runCatching {
+                        IvannaNativeLib.nativeSetAdaptiveControls(
+                            com.ivanna.omega.audio.AudioStateManager.audioState.value.adaptiveMode.ordinal,
+                            percent.coerceIn(0f, 100f)
+                        )
+                    }
+                    if (audioState.manualModeEnabled) adaptiveBackend.applyManualState(
+                        com.ivanna.omega.audio.AudioStateManager.audioState.value
+                    )
+                },
+                voiceProtectionEnabled = voiceActive,
+                onVoiceProtectionChange = { voiceProtectionManager.toggle() },
+                initialSpatialEnabled = com.ivanna.omega.spatial.IvannaSpatialEngine.enabled,
+                onSpatialEnabledChange = { on ->
+                    com.ivanna.omega.spatial.IvannaSpatialEngine.enabled = on
+                },
+                onNpeManifoldChange = { enabled ->
+                    com.ivanna.omega.audio.VolterraSwitch.enabled = enabled
+                },
+                routeState = routeState,
+                initialAutoMode  = paramStore.isAutoModeEnabled(),
+                initialOmegaMode = paramStore.getOmegaMode().takeIf { it in 0..2 } ?: com.ivanna.omega.core.OmegaEngine.getMode(),
+                onPresetSelected = { presetName ->
+                    val profile = ProfilesLoader.load(context)
+                        .firstOrNull { it.name.equals(presetName, ignoreCase = true) }
+                    if (profile != null) {
+                        dsp.value = dsp.value.copy(
+                            wet         = profile.audioEngine.exciterAmount,
+                            low         = profile.audioEngine.eqGain,
+                            mid         = profile.audioEngine.eqGain,
+                            high        = profile.audioEngine.eqGain,
+                            presence    = profile.audioEngine.eqGain,
+                            stereoWidth = profile.audioEngine.widthAmount
+                        )
+                        dsp.value.pushToNative()
+                    }
+                },
+                onAutoModeChange = { enabled ->
+                    paramStore.setAutoModeEnabled(enabled)
+                    com.ivanna.omega.audio.AudioStateManager.updateState {
+                        it.copy(manualModeEnabled = !enabled)
+                    }
+                },
+                onOmegaModeChange = { mode ->
+                    paramStore.setOmegaMode(mode)
+                    com.ivanna.omega.core.OmegaEngine.setMode(mode)
+                    OmegaEngineBridge.setIntensity(mode / 2f)
+                },
+                onPhaseOracleChange = { intensity ->
+                    val i = intensity.coerceIn(0f, 1f)
+                    com.ivanna.omega.audio.AudioStateManager.updateState {
+                        it.copy(phaseOracleIntensity = i)
+                    }
+                    if (IvannaNativeLib.isLoaded) {
+                        runCatching {
+                            IvannaNativeLib.nativeSetPhaseParameters(
+                                i,
+                                i * 0.7f,
+                                i * 0.5f
+                            )
+                        }
+                    }
                 }
-            }
-        )
+            )
 
-        BridgePlayerCard(
-            playerState = playerState,
-            currentUri  = currentUri,
-            onPickFile  = { singlePicker.launch("audio/*") },
-            onPlay = {
-                val uri = currentUri
-                if (uri != null) {
-                    if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
-                    else player.play(uri)
+            BridgePlayerCard(
+                playerState = playerState,
+                currentUri  = currentUri,
+                onPickFile  = { singlePicker.launch("audio/*") },
+                onPlay = {
+                    val uri = currentUri
+                    if (uri != null) {
+                        if (queue.size > 1) player.playQueue(queue, queueIdx.coerceAtLeast(0))
+                        else player.play(uri)
+                    }
+                },
+                onPause  = { player.pause() },
+                onResume = { player.resume() },
+                onStop   = { player.stop() },
+                currentPositionMs = playerPositionMs,
+                durationMs = playerDurationMs,
+                onSeek   = { player.seekTo(it) },
+                queue    = queue,
+                queueIndex = queueIdx,
+                onPickQueue = { queuePicker.launch("audio/*") },
+                onNext = {
+                    val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
+                    if (nextIdx != queueIdx && queue.isNotEmpty()) {
+                        queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
+                    }
+                },
+                onPrev = {
+                    val prevIdx = (queueIdx - 1).coerceAtLeast(0)
+                    if (prevIdx != queueIdx && queue.isNotEmpty()) {
+                        queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
+                    }
                 }
-            },
-            onPause  = { player.pause() },
-            onResume = { player.resume() },
-            onStop   = { player.stop() },
-            currentPositionMs = playerPositionMs,
-            durationMs = playerDurationMs,
-            onSeek   = { player.seekTo(it) },
-            queue    = queue,
-            queueIndex = queueIdx,
-            onPickQueue = { queuePicker.launch("audio/*") },
-            onNext = {
-                val nextIdx = (queueIdx + 1).coerceAtMost(queue.lastIndex)
-                if (nextIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = nextIdx; currentUri = queue[nextIdx]; player.play(queue[nextIdx])
-                }
-            },
-            onPrev = {
-                val prevIdx = (queueIdx - 1).coerceAtLeast(0)
-                if (prevIdx != queueIdx && queue.isNotEmpty()) {
-                    queueIdx = prevIdx; currentUri = queue[prevIdx]; player.play(queue[prevIdx])
-                }
-            }
-        )
+            )
+        } // fin del contenedor scrollable (FIX scroll 413)
     }
 }
 

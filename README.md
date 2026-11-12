@@ -6,7 +6,7 @@
 
 **Audio espacial Android · evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.412-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.413-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-13%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -23,7 +23,7 @@
 
 ## Estado actual · 12 de noviembre de 2026
 
-**Versión vigente: v2.5.412 (703).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
+**Versión vigente: v2.5.413 (704).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
 
 **Las dos rutas:** la **Ruta A** (APK, capture) procesa el audio del reproductor propio (Tidal, YouTube Music) con el ASRC magistral nativo + Ψ activa; si algo falla, solo cae la app. La **Ruta B** (Magisk + HAL, todo el sistema) está **MUERTA desde el 2026-11-11** — la historia completa, sin maquillar, en [docs/HISTORIA_RUTA_B.md](docs/HISTORIA_RUTA_B.md). No instalar ningún zip; la v2.5.403 lleva el wrapper roto y la **v2.5.384 está RETIRADA** (brickeó el teléfono 2 veces).
 
@@ -45,6 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.413** (704) | Fix scroll de la pantalla principal: el panel de controles (fillMaxSize + scroll interno) se comía toda la altura y la tarjeta "IVANNA BRIDGE PLAYER" quedaba con 0 px, inalcanzable. Ahora panel + tarjeta bajan con un solo scroll vertical (encabezado y navegación fijos arriba; el panel desactiva su scroll interno solo en el Dashboard). Sin cambios de sonido ni de funcionalidad. |
 | **v2.5.412** (703) | ASRC magistral + Ψ portados a la captura (antes solo micro-slips; telemetría asrc/psi ahora vivos en captura), mezcla de captura ajustable con slider (0.20–1.00, default 0.60 = valor vivo actual; corrección: el target vivo era 0.60, no 0.40), telemetría con `mix=`. Medido en host: THD+N −138.8 dB a ratio 1.0 / −95.0 dB a +100 ppm en bloques de 320 frames; ASRC+Ψ 46/46; CTest 970/970. |
 | **v2.5.411** (702) | Guarda de armónicos HOLOS (el valor vivo 0.298 se lee como 0.002: THD+N −41 dB medido → dentro de −70 dB), defaults de fábrica en una sola fuente con 3 perfiles (Limpio / Espacial / Completo), auditoría de parámetros, telemetría con tiempos por etapa y contador de xruns, diagnóstico de underruns. Fix CI: tests-host usa g++-14 (clang-18 + libstdc++15 rompía `<format>`). |
 | **v2.5.410** (701) | Firma acústica refinada con datos reales del teléfono (captura 2026-11-11, Tidal): presupuesto del gobernador 70%→85% (shed crónico 4.7%→0% medido), OmniField en bypass por distorsión medida (residuo −3.7/−6.1 dB en estéreo), telemetría 1 Hz ya en captura en vivo, logs de shed/Magisk throttled. ORBE/HOLOS/Φ siguen activos. |
