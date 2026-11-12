@@ -358,4 +358,52 @@ class AudioTrackBufferPllTest {
         assertEquals(1_000.0, pll.measuredDriftPpm, 10.0)
         assertTrue("un reloj rápido real debe pedir corrección positiva", pll.correctionPpm > 0.0)
     }
+
+    // ── v2.5.420: EVOLUCIÓN DEL SERVO — HOLD ANTE SENSOR NO FIABLE ──
+    // La 419 descartaba la estima de reloj y el integrador cuando había
+    // inanición, pero dejaba que el término P moviera el actuador con una
+    // cola distorsionada (el track se vació y se rellena a ráfagas: la cola
+    // medida oscila y no es un error real). El controlador debe congelar
+    // su salida en la última corrección válida mientras el sensor no sea
+    // fiable, y retomar en la próxima medida limpia.
+    @Test fun starvationHold_freezesActuatorDespiteQueueError420() {
+        val pll = AudioTrackBufferPll(48_000)
+        repeat(100) { k ->
+            val t = 1.0 + k * 0.25
+            val timeNs = (t * 1.0e9).toLong()
+            // El reloj presentado es nominal en todo momento (12_000
+            // frames/sondeo): el único "error" es la cola.
+            val consumed = (t * 48_000.0).toLong()
+            // Fase 1 (k < 20): cola en el objetivo (5_000), sin underruns.
+            // Fase 2 (k >= 20): la cola salta a 9_000 (error de fase +0.40)
+            // CON underruns subiendo en cada sondeo: es inanición, y la cola
+            // medida es un artefacto de las ráfagas, no un error real.
+            val queue = if (k < 20) 5_000L else 9_000L
+            val underruns = if (k < 20) 0L else (k - 19).toLong()
+            pll.observe(consumed + queue, consumed, 10_000, timeNs, underruns = underruns)
+        }
+        assertEquals(0.0, pll.correctionPpm, 0.0)
+        assertEquals(0.0, pll.measuredDriftPpm, 0.0)
+        assertTrue("el hold no debe bloquear una estima de reloj", !pll.isDriftLocked)
+        assertEquals(80L, pll.starvationHolds)
+        assertTrue("con hold, el servo no debe clavarse en el riel", !pll.isAtRail)
+    }
+
+    @Test fun sameQueueErrorWithoutUnderruns_movesActuator420() {
+        // Control del test anterior: el MISMO error de cola (9_000) SIN
+        // underruns es un error de cola real y el PI SÍ debe actuar sobre
+        // él. Si este test fallara, el hold de la 420 habría dejado al servo
+        // sordo ante la cola.
+        val pll = AudioTrackBufferPll(48_000)
+        repeat(100) { k ->
+            val t = 1.0 + k * 0.25
+            val timeNs = (t * 1.0e9).toLong()
+            val consumed = (t * 48_000.0).toLong()
+            val queue = if (k < 20) 5_000L else 9_000L
+            pll.observe(consumed + queue, consumed, 10_000, timeNs, underruns = 0L)
+        }
+        assertTrue("sin inanición, el PI debe corregir el error de cola", pll.correctionPpm <= -400.0)
+        assertTrue(pll.isAtRail)
+        assertEquals(0L, pll.starvationHolds)
+    }
 }

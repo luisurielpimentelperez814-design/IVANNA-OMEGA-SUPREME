@@ -117,6 +117,10 @@ data class TelemetrySnapshot(
     val pllPhaseError: Double = 0.0,
     val pllDemandedPpm: Double = 0.0,
     val pllAtRail: Boolean = false,
+    // v2.5.420: cuántas veces el servo congeló su salida por inanición
+    // (hold). Si sube, el servo está aguantando sin medida fiable, no
+    // corrigiendo un reloj.
+    val pllStarvationHolds: Long = 0L,
     // Estado de las puertas de ORBE/HOLOS (v2.5.415, bandera 5 de la 414):
     // tier térmico, coherencia media del estimador, cantidad aplicada y
     // shed térmico. Dice POR QUÉ una etapa está en bypass (~1 µs) en vez
@@ -141,7 +145,7 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
     return String.format(
         Locale.US,
         "route=%s asrc=%d ppm=%+.1f psi_eta=%.2f psi_coh=%.2f psi_active=%d " +
-            "pll_drift=%+.1f pll_occ=%d pll_ph=%+.2f pll_dem=%+.1f pll_rail=%d " +
+            "pll_drift=%+.1f pll_occ=%d pll_ph=%+.2f pll_dem=%+.1f pll_rail=%d pll_hold=%d " +
             "orbe=%.2f holos=%.2f phi=%.2f volterra=%d mix=%s " +
             "gate_holos_tier=%d gate_holos_coh=%.2f gate_holos_wet=%.2f " +
             "gate_orbe_coh=%.2f gate_orbe_shed=%d gate_orbe_wet=%.2f " +
@@ -160,6 +164,7 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
         s.pllPhaseError,
         s.pllDemandedPpm,
         if (s.pllAtRail) 1 else 0,
+        s.pllStarvationHolds,
         s.orbe,
         s.holos,
         s.phi,
@@ -243,6 +248,7 @@ internal fun collectTelemetrySnapshot(
         pllPhaseError = runCatching { pll?.phaseErrorFraction ?: 0.0 }.getOrDefault(0.0),
         pllDemandedPpm = runCatching { pll?.demandedPpm ?: 0.0 }.getOrDefault(0.0),
         pllAtRail = runCatching { pll?.isAtRail ?: false }.getOrDefault(false),
+        pllStarvationHolds = runCatching { pll?.starvationHolds ?: 0L }.getOrDefault(0L),
         gateHolosTier = gate?.getOrNull(0)?.toInt() ?: 0,
         gateHolosCoherence = gate?.getOrNull(1) ?: 1f,
         gateHolosWet = gate?.getOrNull(2) ?: 0f,

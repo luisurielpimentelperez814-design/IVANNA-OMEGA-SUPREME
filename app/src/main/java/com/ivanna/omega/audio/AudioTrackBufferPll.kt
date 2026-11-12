@@ -84,6 +84,11 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
     // riel por accidente: la telemetría lo expone como pll_dem/pll_rail.
     var demandedPpm: Double = 0.0
         private set
+    // v2.5.420: cuántas veces el servo CONGELÓ su salida por inanición
+    // (hold). Contador acumulativo de la sesión, visible en telemetría
+    // como pll_hold; se reinicia con reset().
+    var starvationHolds: Long = 0L
+        private set
 
     val isLocked: Boolean get() = validSamples >= LOCK_SAMPLES
     val isDriftLocked: Boolean get() = historyCount >= REQUIRED_REGRESSION_POINTS && hasDriftEstimate
@@ -138,11 +143,25 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         // como siempre: un reloj lento de verdad SÍ se corrige (ver el test
         // de control en AudioTrackBufferPllTest).
         if (underruns >= 0L) {
-            if (previousUnderruns >= 0L && underruns > previousUnderruns) {
+            val starved = previousUnderruns >= 0L && underruns > previousUnderruns
+            previousUnderruns = underruns
+            if (starved) {
                 clearClockEstimate()
                 integralErrorSeconds = 0.0
+                starvationHolds++
+                // v2.5.420 — HOLD: con el sensor (framePosition) corrompido
+                // por la inanición, la cola medida también está
+                // distorsionada (el track se vació y se rellena a ráfagas):
+                // el término P actuaría sobre un error de cola falso. El
+                // controlador congela su salida en la última corrección
+                // válida y retoma en la próxima medida limpia. Es el
+                // comportamiento fail-closed estándar ante un sensor no
+                // fiable: no se actúa sobre una medida que no se cree.
+                // La 419 descartaba la estima de reloj y el integrador,
+                // pero dejaba que el P moviera el actuador con la cola
+                // distorsionada; el hold cierra ese hueco.
+                return correctionPpm
             }
-            previousUnderruns = underruns
         }
 
         occupancyFrames = queued
@@ -348,6 +367,7 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         previousTimestampNs = 0L
         previousConsumedFrames = -1L
         previousUnderruns = -1L
+        starvationHolds = 0L
         integralErrorSeconds = 0.0
         validSamples = 0
         historyCount = 0
