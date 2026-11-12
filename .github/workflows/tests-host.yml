@@ -69,8 +69,8 @@ jobs:
       matrix:
         san: ['', 'asan']
     env:
-      CC: clang-18
-      CXX: clang++-18
+      CC: gcc-14
+      CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: ${{ matrix.san }}
     steps:
@@ -80,12 +80,22 @@ jobs:
       # pone CC=clang-18 / CXX=clang++-18 pero NUNCA instalaba clang-18,
       # así que `cmake` fallaba con "CMAKE_CXX_COMPILER not set". El runner
       # ubuntu-latest trae clang por defecto, pero no el 18 con ese nombre.
-      - name: Instalar clang-18 (compilador CTest)
+      # FIX v2.5.411 — la 408 quedó obsoleta: el runner ahora trae libstdc++
+      # 15 (headers en /usr/include/c++/15) y clang-18 NO compila el
+      # <format> de libstdc++-15 ("call to immediate function ... is not a
+      # constant expression"). gtest tira de <iomanip> → <format>, así que
+      # TODA TU con gtest fallaba en compilación (corridas 409/410: CTest y
+      # ASan+UBSan en rojo sin tocar código; la 409 solo tocó docs). El
+      # compilador pasa a g++-14: es el compilador a juego con libstdc++-14
+      # y soporta el C++26 que exige el proyecto (verificado en host VM:
+      # CTest 961/962 con g++-14; el único fallo, test_perf_auditor, es un
+      # test de wall-clock que pasa en solitario — carga del runner, no DSP).
+      - name: Instalar g++-14 (compilador CTest)
         run: |
-          if ! command -v clang++-18 >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq clang-18
+          if ! command -v g++-14 >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq g++-14
           fi
-          clang++-18 --version | head -1
+          g++-14 --version | head -1
 
       - name: Instalar cmake (verificación explícita de versión)
         run: |
@@ -157,13 +167,22 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # FIX v2.5.411 — mismo motivo que el job ctest: clang-18 no compila el
+    # <format> de libstdc++-15 del runner. g++-14 (ver comentario arriba).
     env:
-      CC: clang-18
-      CXX: clang++-18
+      CC: gcc-14
+      CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: '4'
       IVANNA_SAN: 'tsan'
     steps:
       - uses: actions/checkout@v7
+
+      - name: Instalar g++-14 (compilador CTest; ver fix v2.5.411 arriba)
+        run: |
+          if ! command -v g++-14 >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq g++-14
+          fi
+          g++-14 --version | head -1
 
       - name: Instalar cmake
         run: |
