@@ -87,7 +87,7 @@ class TidalStreamResolverTest {
                 url.endsWith("seg_0.m4s") -> "SEG0".toByteArray()
                 url.endsWith("seg_1.m4s") -> "SEG1".toByteArray()
                 url.endsWith("seg_2.m4s") -> "SEG2".toByteArray()
-                else -> fail("URL inesperada: $url")
+                else -> error("URL inesperada: $url")
             }
         })
         val resolver = TidalStreamResolver(http)
@@ -118,7 +118,7 @@ class TidalStreamResolverTest {
             when {
                 url == "https://cdn.example/audio/init.mp4" -> "INIT".toByteArray()
                 url == "https://cdn.example/audio/seg_0.m4s" -> "SEG0".toByteArray()
-                else -> fail("URL inesperada: $url")
+                else -> error("URL inesperada: $url")
             }
         })
         val resolver = TidalStreamResolver(http)
