@@ -79,7 +79,8 @@ data class TelemetrySnapshot(
     val volterra: Float = 0f, // 1.0/0.0 (on/off, no tiene amount)
     val shedFrac: Float = 0f, // fracción de bloques en passthrough por shed (0..1)
     val shedEmaUs: Float = 0f, // coste medio DSP por bloque procesado (µs)
-    val shedPeakUs: Float = 0f, // peor bloque procesado visto (µs)
+    val shedPeakUs: Float = 0f, // peor bloque procesado en la ventana de 1 s (µs; v2.5.415, antes pico de sesión)
+    val shedPeakSessionUs: Float = 0f, // peor bloque procesado en la sesión (µs; v2.5.415)
     val rms: Float = 0f,
     val peak: Float = 0f,
     val gainReductionDb: Float = 0f,
@@ -105,7 +106,27 @@ data class TelemetrySnapshot(
     // FloatArray (no 21 campos): el snapshot es un valor desechable por
     // segundo; copy() funciona y nadie compara snapshots por igualdad.
     val blockBudgetNs: Float = 0f,
-    val stageStats: FloatArray = floatArrayOf()
+    val stageStats: FloatArray = floatArrayOf(),
+    // Internos del servo PLL (v2.5.415, bandera 1 de la 414): la deriva
+    // medida, la ocupación real, el error de fase, la demanda sin clampar
+    // y si está en el riel. Sin esto el ppm=-500 en el riel se descubrió
+    // por accidente; ahora la línea lo dice explícito.
+    val pllDriftPpm: Double = 0.0,
+    val pllOccupancyFrames: Long = 0L,
+    val pllTargetOccupancyFrames: Long = 0L,
+    val pllPhaseError: Double = 0.0,
+    val pllDemandedPpm: Double = 0.0,
+    val pllAtRail: Boolean = false,
+    // Estado de las puertas de ORBE/HOLOS (v2.5.415, bandera 5 de la 414):
+    // tier térmico, coherencia media del estimador, cantidad aplicada y
+    // shed térmico. Dice POR QUÉ una etapa está en bypass (~1 µs) en vez
+    // de dejarlo a la adivinanza.
+    val gateHolosTier: Int = 0,
+    val gateHolosCoherence: Float = 1f,
+    val gateHolosWet: Float = 0f,
+    val gateOrbeCoherence: Float = 1f,
+    val gateOrbeShed: Boolean = false,
+    val gateOrbeWet: Float = 0f
 )
 
 /**
@@ -120,8 +141,11 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
     return String.format(
         Locale.US,
         "route=%s asrc=%d ppm=%+.1f psi_eta=%.2f psi_coh=%.2f psi_active=%d " +
+            "pll_drift=%+.1f pll_occ=%d pll_ph=%+.2f pll_dem=%+.1f pll_rail=%d " +
             "orbe=%.2f holos=%.2f phi=%.2f volterra=%d mix=%s " +
-            "shed=%.3f dsp_us=%.0f dsp_pk=%.0f " +
+            "gate_holos_tier=%d gate_holos_coh=%.2f gate_holos_wet=%.2f " +
+            "gate_orbe_coh=%.2f gate_orbe_shed=%d gate_orbe_wet=%.2f " +
+            "shed=%.3f dsp_us=%.0f dsp_pk=%.0f dsp_pk_ses=%.0f " +
             "rms=%.2f peak=%.2f gr_db=%.2f gain_db=%.2f comp=%.2f exc=%.2f " +
             "width=%.2f safety=%.2f voice=%.2f applied=%d " +
             "band_lo=%.2f band_mid=%.2f band_hi=%.2f npe_genre=%s",
@@ -131,14 +155,26 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
         s.psiEta,
         s.psiCoherence,
         if (s.psiActive) 1 else 0,
+        s.pllDriftPpm,
+        s.pllOccupancyFrames,
+        s.pllPhaseError,
+        s.pllDemandedPpm,
+        if (s.pllAtRail) 1 else 0,
         s.orbe,
         s.holos,
         s.phi,
         if (s.volterra > 0.5f) 1 else 0,
         mixStr,
+        s.gateHolosTier,
+        s.gateHolosCoherence,
+        s.gateHolosWet,
+        s.gateOrbeCoherence,
+        if (s.gateOrbeShed) 1 else 0,
+        s.gateOrbeWet,
         s.shedFrac,
         s.shedEmaUs,
         s.shedPeakUs,
+        s.shedPeakSessionUs,
         s.rms,
         s.peak,
         s.gainReductionDb,
@@ -170,7 +206,8 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
  */
 fun collectTelemetrySnapshot(
     routeAAsrc: RouteAAsrc?,
-    mixGain: Float = Float.NaN
+    mixGain: Float = Float.NaN,
+    pll: AudioTrackBufferPll? = null
 ): TelemetrySnapshot? {
     val lib = IvannaNativeLib
     if (!lib.isLoaded) return null
@@ -178,6 +215,7 @@ fun collectTelemetrySnapshot(
     val bands = runCatching { lib.nativeGetBandEnergies() }.getOrNull()
     val amounts = runCatching { lib.nativeGetEffectAmounts() }.getOrNull()
     val shed = runCatching { lib.nativeGetDspShed() }.getOrNull()
+    val gate = runCatching { lib.nativeGetSpatialGateState() }.getOrNull()
     val npeReady = IvannaNpeEngine.isReady
     val genre = if (npeReady) {
         runCatching { IvannaNpeEngine.getDetectedGenre() }.getOrNull()
@@ -198,6 +236,19 @@ fun collectTelemetrySnapshot(
         shedFrac = shed?.getOrNull(0) ?: 0f,
         shedEmaUs = shed?.getOrNull(1) ?: 0f,
         shedPeakUs = shed?.getOrNull(2) ?: 0f,
+        shedPeakSessionUs = shed?.getOrNull(25) ?: 0f,
+        pllDriftPpm = runCatching { pll?.measuredDriftPpm ?: 0.0 }.getOrDefault(0.0),
+        pllOccupancyFrames = runCatching { pll?.occupancyFrames ?: 0L }.getOrDefault(0L),
+        pllTargetOccupancyFrames = runCatching { pll?.targetOccupancyFrames ?: 0L }.getOrDefault(0L),
+        pllPhaseError = runCatching { pll?.phaseErrorFraction ?: 0.0 }.getOrDefault(0.0),
+        pllDemandedPpm = runCatching { pll?.demandedPpm ?: 0.0 }.getOrDefault(0.0),
+        pllAtRail = runCatching { pll?.isAtRail ?: false }.getOrDefault(false),
+        gateHolosTier = gate?.getOrNull(0)?.toInt() ?: 0,
+        gateHolosCoherence = gate?.getOrNull(1) ?: 1f,
+        gateHolosWet = gate?.getOrNull(2) ?: 0f,
+        gateOrbeCoherence = gate?.getOrNull(3) ?: 1f,
+        gateOrbeShed = (gate?.getOrNull(4) ?: 0f) > 0.5f,
+        gateOrbeWet = gate?.getOrNull(5) ?: 0f,
         rms = tele?.getOrNull(0) ?: 0f,
         peak = tele?.getOrNull(1) ?: 0f,
         gainReductionDb = tele?.getOrNull(2) ?: 0f,
@@ -238,7 +289,8 @@ fun CoroutineScope.startTelemetryPoller(
     routeAAsrc: RouteAAsrc?,
     intervalMs: Long = 1000L,
     appContext: Context? = null,
-    mixGainProvider: (() -> Float)? = null
+    mixGainProvider: (() -> Float)? = null,
+    pllProvider: (() -> AudioTrackBufferPll?)? = null
 ): Job = launch(Dispatchers.Default) {
     // Diagnóstico de arranque (v2.5.411, tarea 4 — por qué el tag salía
     // vacío): si IVANNA.Telemetry está vacío Y no aparece esta línea, el
@@ -255,7 +307,8 @@ fun CoroutineScope.startTelemetryPoller(
     while (isActive) {
         runCatching {
             val mix = runCatching { mixGainProvider?.invoke() ?: Float.NaN }.getOrDefault(Float.NaN)
-            val snapshot = collectTelemetrySnapshot(routeAAsrc, mixGain = mix)
+            val pll = runCatching { pllProvider?.invoke() }.getOrNull()
+            val snapshot = collectTelemetrySnapshot(routeAAsrc, mixGain = mix, pll = pll)
             if (snapshot != null) {
                 Log.i(TELEMETRY_TAG, formatTelemetryLine(snapshot))
                 // Tiempos por etapa + xruns (tarea 4), tag propio para no

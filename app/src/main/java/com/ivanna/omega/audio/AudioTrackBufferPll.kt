@@ -17,7 +17,17 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
     companion object {
         private const val MIN_INTERVAL_NS = 10_000_000L
         private const val MAX_INTERVAL_NS = 2_000_000_000L
-        private const val MAX_CORRECTION_PPM = 500.0
+        // Autoridad del servo (v2.5.415, bandera 1 de la 414): ±1000 ppm,
+        // antes ±500. Justificación medida en vivo (414, Tidal, sesión
+        // estable 11 min, shed 0.6 %, xruns 0): ppm=-500.0 CLAVADO en el
+        // riel todo el rato con la cola estable — el lazo necesitaba más
+        // autoridad de la que tenía. El ASRC nativo ya clampa a ±1000 ppm
+        // (setClockCorrectionPpm) y el resampler Kotlin se ensancha en
+        // paridad; el slew (25 ppm/update) y el anti-windup no cambian.
+        // Si la deriva real es ~-500 ppm o mayor, el servo ahora la
+        // alcanza; la telemetría (demandedPpm/isAtRail + measuredDriftPpm)
+        // dirá en vivo si el riel nuevo basta o si el PLL diverge.
+        private const val MAX_CORRECTION_PPM = 1000.0
         private const val MAX_SLEW_PPM_PER_UPDATE = 25.0
         private const val KP_PPM_PER_FULL_BUFFER = 800.0
         private const val KI_PPM_PER_FULL_BUFFER_SECOND = 120.0
@@ -65,9 +75,17 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         private set
     var measuredDriftPpm: Double = 0.0
         private set
+    // Demanda SIN clampar del lazo (feed-forward + PI) en ppm (v2.5.415).
+    // Si |demandedPpm| supera MAX_CORRECTION_PPM el servo está en el riel:
+    // pide más autoridad de la que tiene (en la 414 la demanda era <= -500
+    // con el riel en ±500). Es el dato que faltaba para no descubrir el
+    // riel por accidente: la telemetría lo expone como pll_dem/pll_rail.
+    var demandedPpm: Double = 0.0
+        private set
 
     val isLocked: Boolean get() = validSamples >= LOCK_SAMPLES
     val isDriftLocked: Boolean get() = historyCount >= REQUIRED_REGRESSION_POINTS && hasDriftEstimate
+    val isAtRail: Boolean get() = abs(demandedPpm) >= MAX_CORRECTION_PPM - 1e-9
 
     /**
      * @param submittedFrames cumulative stereo frames accepted by this AudioTrack
@@ -166,11 +184,13 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         val currentRawTarget = driftFeedForward -
             (KP_PPM_PER_FULL_BUFFER * occupancyError +
                 KI_PPM_PER_FULL_BUFFER_SECOND * integralErrorSeconds)
+        demandedPpm = currentRawTarget
 
         // Conditional-integration anti-windup: test the actuator's current
         // unsaturated demand, not the candidate integral. This lets one update
         // reach the hard limit exactly; subsequent updates cannot wind farther
-        // into saturation. The final actuator remains clamped to ±500 ppm.
+        // into saturation. The final actuator remains clamped to ±1000 ppm
+        // (v2.5.415; antes ±500).
         val pushesFurtherIntoSaturation =
             (currentRawTarget >= MAX_CORRECTION_PPM && occupancyError < 0.0) ||
             (currentRawTarget <= -MAX_CORRECTION_PPM && occupancyError > 0.0)
@@ -295,6 +315,7 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         hasDriftEstimate = false
         windowSpanSeconds = 0.0
         correctionPpm = 0.0
+        demandedPpm = 0.0
         occupancyFrames = 0L
         targetOccupancyFrames = 0L
         phaseErrorFraction = 0.0

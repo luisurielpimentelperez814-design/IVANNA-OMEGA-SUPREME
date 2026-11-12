@@ -15,8 +15,12 @@ class StereoAudioResamplerAsrcControlTest {
             r.setClockCorrectionPpm(ppm)
             return r.process(tone(12_000, 997.0, 48_000)).size / 2
         }
-        assertEquals(outputFrames(500.0), outputFrames(1.0e9))
-        assertEquals(outputFrames(-500.0), outputFrames(-1.0e9))
+        // ±1000 ppm en paridad con el servo (v2.5.415; antes ±500).
+        assertEquals(outputFrames(1000.0), outputFrames(1.0e9))
+        assertEquals(outputFrames(-1000.0), outputFrames(-1.0e9))
+        // 500 ppm ya NO es el riel: debe producir más que 500 y menos que 1000.
+        assertTrue(outputFrames(1000.0) > outputFrames(500.0))
+        assertTrue(outputFrames(-1000.0) < outputFrames(-500.0))
     }
 
     @Test fun nonFiniteCorrectionFallsBackToNominalUnity() {
@@ -39,7 +43,7 @@ class StereoAudioResamplerAsrcControlTest {
             setClockCorrectionPpm(ppm)
             process(input).size / 2
         }
-        assertTrue("positive ppm must increase output frame count", frames(500.0) > frames(-500.0))
+        assertTrue("positive ppm must increase output frame count", frames(1000.0) > frames(-1000.0))
     }
 
     @Test fun irregularChunksKeepFiniteOutputAndCumulativeFrameAccounting() {

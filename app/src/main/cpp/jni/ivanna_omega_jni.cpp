@@ -2546,6 +2546,16 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     }
 
     // Re-intercalar el resultado estéreo real de vuelta en `data` — sin downmix.
+    // v2.5.415, bandera 3 de la 414: la ruta de CAPTURA nunca publicaba
+    // rms/peak (g_lastRawRms/g_lastRawPeak solo los escribían el observador
+    // de Ruta B y el BridgePlayer), así que la telemetría en captura mostraba
+    // un valor residual/ajeno (rms 0.01-0.02) y parecía señal baja. Se mide
+    // aquí la salida DSP real (pdOutL/pdOutR, post-limiter, pre-mix de
+    // Kotlin), con la misma fórmula que nativeProcessBlock (un solo pase,
+    // acumulación en double, RMS sobre ambos canales), plegado en este
+    // bucle que ya recorre la salida — cero pases extra.
+    double capSumSq = 0.0;
+    float capPeakAbs = 0.0f;
     for (int i = 0; i < n; ++i) {
         float l = g_ats.pdOutL[i];
         float r = g_ats.pdOutR[i];
@@ -2553,7 +2563,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         if (!std::isfinite(r)) { r = 0.f; g_ats.nanRecoveries++; }
         data[2 * i]     = l;
         data[2 * i + 1] = r;
+        capSumSq += (double)l * l + (double)r * r;
+        const float al = std::fabs(l);
+        const float ar = std::fabs(r);
+        if (al > capPeakAbs) capPeakAbs = al;
+        if (ar > capPeakAbs) capPeakAbs = ar;
     }
+    // Snapshot para telemetría (getters JNI, fuera del audio thread).
+    // Nota: en bloques en shed / DSP no inicializado este código no corre
+    // y persiste el último valor publicado (como en el reproductor cuando
+    // no está sonando); el valor aquí es siempre de la captura real.
+    g_lastRawRms.store((float)std::sqrt(capSumSq / (double)(2 * std::max(n, 1))),
+                       std::memory_order_relaxed);
+    g_lastRawPeak.store(capPeakAbs, std::memory_order_relaxed);
     env->ReleaseFloatArrayElements(buf, data, 0);
     // Cierre del gobernador de shed: alimenta la deuda/EMA con el coste
     // REAL de la cadena (incluye preemption del hilo: si el planificador
@@ -5440,11 +5462,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEffectAmounts(
 // ── nativeGetDspShed — estado del gobernador de shed + tiempos por etapa (v2.5.410/411) ──
 // Telemetría en vivo 1 Hz (IVANNA.Telemetry / IVANNA.StageTimings): el shed
 // es el dato que confirma si la cadena alcanza el periodo en el teléfono.
-// FloatArray[25] (antes [3]; los índices 0..2 no cambian, los llamadores
+// FloatArray[26] (antes [25]; los índices 0..24 no cambian, los llamadores
 // viejos siguen leyendo lo mismo):
 //   [0] shedFraction (0..1; 0.034 = 3.4% de bloques en passthrough)
 //   [1] emaUs        (coste medio DSP por bloque procesado, µs)
-//   [2] peakUs       (peor bloque procesado visto, µs)
+//   [2] peakUs       (v2.5.415: peor bloque de la VENTANA de 1 s, µs —
+//                    antes era el pico de sesión, que nunca se reseteaba
+//                    y un spike aislado (117 ms en la 414) persistía
+//                    para siempre en dsp_pk; el pico de sesión vive en [25])
 //   [3] blockBudgetNs (periodo del último bloque procesado, ns)
 //   [4..24] por etapa (orden ivanna::Stage: hoa, orbe, holos, phi,
 //     volterra, npe, asrc): [mean_ns, p99_ns, max_ns] por bloque.
@@ -5453,19 +5478,52 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEffectAmounts(
 //     (stageSnapshotReset); el poller lee 1 Hz. Solo lectura de atómicos
 //     (sin locks, sin I/O); el sort del p99 corre aquí, en el hilo del
 //     poller, nunca en el hilo de audio.
+//   [25] sessionPeakUs (peor bloque de la sesión, µs; solo informativo).
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetDspShed(
     JNIEnv* env, jobject) {
-    jfloatArray arr = env->NewFloatArray(25);
+    jfloatArray arr = env->NewFloatArray(26);
     if (!arr) return nullptr;
-    float v[25] = {
+    float v[26] = {
         static_cast<float>(g_dspShedGovernor.shedFraction()),
         static_cast<float>(g_dspShedGovernor.emaUs()),
-        static_cast<float>(g_dspShedGovernor.peakUs()),
+        static_cast<float>(g_dspShedGovernor.takePeakWindowUs()),
         static_cast<float>(ivanna::g_stageTimings.blockBudgetNs.load(std::memory_order_relaxed))
     };
     ivanna::stageSnapshotReset(&v[4]);
-    env->SetFloatArrayRegion(arr, 0, 25, v);
+    v[25] = static_cast<float>(g_dspShedGovernor.peakUs());
+    env->SetFloatArrayRegion(arr, 0, 26, v);
+    return arr;
+}
+
+// ── nativeGetSpatialGateState — por qué ORBE/HOLOS están en bypass (v2.5.415, bandera 5) ──
+// FloatArray[6] (solo lectura de atómicos / accessors, sin locks, sin I/O):
+//   [0] holosTier (0 Normal / 1 Warm / 2 Limited / 3 Bypass; lo publica el ThermalGovernor)
+//   [1] holosMeanCoherence (estimador STFT de HOLOS; < 0.3 cierra su puerta)
+//   [2] holosWet (cantidad aplicada; 0 = bypass)
+//   [3] orbeMeanCoherence (estimador de ORBE; < 0.3 cierra su puerta)
+//   [4] orbeShed (1 = shed térmico del gobernador, apaga ORBE; por diseño)
+//   [5] orbeWet (cantidad aplicada; 0 = bypass)
+// En la 414 ambas etapas medían ~1 µs en captura sin que nadie supiera por
+// qué: la puerta de coherencia era un latch (el estimador solo se actualiza
+// en runFrame, que se detiene al cerrarse la puerta) y el shed térmico no se
+// veía. Con esta lectura + el re-sondeo, la próxima verificación en vivo
+// dice explícito si una etapa está apagada por tier, por shed o por
+// coherencia — y si el sondeo la reabre al volver la señal coherente.
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetSpatialGateState(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(6);
+    if (!arr) return nullptr;
+    float v[6] = {
+        static_cast<float>(g_holosTierA.load(std::memory_order_relaxed)),
+        g_holosRouteA.meanCoherence(),
+        g_holosRouteA.appliedAmount(),
+        g_orbeRouteA.meanCoherence(),
+        g_spatialShedA.load(std::memory_order_relaxed) ? 1.0f : 0.0f,
+        g_orbeRouteA.appliedAmount()
+    };
+    env->SetFloatArrayRegion(arr, 0, 6, v);
     return arr;
 }
 

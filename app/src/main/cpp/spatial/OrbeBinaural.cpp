@@ -437,11 +437,44 @@ void OrbeBinaural::process(float* l, float* r, int n) noexcept {
             ? 0.0f
             : amount_.load(std::memory_order_relaxed);
     const float blendTarget = (wetTarget > 0.0f || wet_ > 0.0f) ? 1.0f : 0.0f;
+    // La puerta abierta resetea el sondeo (el próximo cierre empieza su
+    // espera desde cero).
+    if (wetTarget > 0.0f) { cohBypassBlocks_ = 0; cohProbeBlocksRemaining_ = 0; }
     // Apagado completo y sin fades pendientes: passthrough bit-exacto, cero CPU.
     // Se marca flushPending_: al reactivar, las colas guardan hops viejos.
+    // PERO con trampa (v2.5.415, bandera 5 de la 414): el estimador de
+    // coherencia solo se actualiza dentro de runFrame(), y runFrame() solo
+    // corre cuando la etapa está activa — si la coherencia cae bajo 0.3 la
+    // puerta se cierra, el estimador se congela bajo 0.3 y la puerta NO
+    // puede reabrirse jamás (latch). En la 414 ORBE medía ~1 µs en
+    // captura por esto (además del shed térmico, que es por diseño y NO se
+    // sondea). Cuando SOLO la coherencia cierra la puerta, cada ~1 s se
+    // sondean 8 bloques (~53 ms): se cae al camino normal, runFrame
+    // re-sondea el estimador y la salida sigue en vivo (wetTarget=0)
+    // hasta que la coherencia se recupere; si sigue baja, la puerta se
+    // vuelve a cerrar y el sondeo se repite.
     if (wet_ == 0.0f && blend_ == 0.0f && wetTarget == 0.0f && blendTarget == 0.0f) {
-        flushPending_ = true;
-        return;
+        const bool cohOnly = !thermalShed_.load(std::memory_order_relaxed) &&
+                             meanCoherence_ < 0.3f;
+        if (cohOnly) {
+            if (cohProbeBlocksRemaining_ > 0) {
+                --cohProbeBlocksRemaining_;
+                // Cae al camino normal (sondeo): runFrame actualiza el
+                // estimador; la salida sigue en vivo hasta que se recupere.
+            } else if (++cohBypassBlocks_ >= kCohProbePeriodBlocks) {
+                cohBypassBlocks_ = 0;
+                cohProbeBlocksRemaining_ = kCohProbeBlocks - 1;
+                // Cae al camino normal (primer bloque del sondeo).
+            } else {
+                flushPending_ = true;
+                return;
+            }
+        } else {
+            cohBypassBlocks_ = 0;
+            cohProbeBlocksRemaining_ = 0;
+            flushPending_ = true;
+            return;
+        }
     }
     const float slew = 1.0f / (0.015f * sr);  // rampa de 15 ms por muestra
     // Reactivación tras estar apagado (flag puesto por el fast-path):

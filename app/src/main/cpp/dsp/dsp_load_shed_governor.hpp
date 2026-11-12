@@ -72,6 +72,7 @@
 //
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 
 namespace ivanna::dsp {
@@ -105,6 +106,17 @@ public:
         ++totalBlocks_;
         emaUs_ = (emaUs_ == 0) ? elapsedUs : emaUs_ + (elapsedUs - emaUs_) / 8;
         if (elapsedUs > peakUs_) peakUs_ = elapsedUs;
+        // Pico de VENTANA (v2.5.415, bandera 2 de la 414): el pico de sesión
+        // nunca se reseteaba, así que un spike aislado (arranque/GC, 117 ms
+        // en la 414) persistía para siempre en dsp_pk y parecía una
+        // regresión. El pico de ventana se resetea en cada lectura de
+        // telemetría (takePeakWindowUs, 1 Hz, como los stage stats); el
+        // pico de sesión se conserva aparte (peakUs) para el log.
+        int64_t w = peakWindowUs_.load(std::memory_order_relaxed);
+        while (elapsedUs > w &&
+               !peakWindowUs_.compare_exchange_weak(w, elapsedUs,
+                                                   std::memory_order_relaxed)) {
+        }
         debtUs_ += elapsedUs - budgetUs;
         clampDebt(budgetUs);
     }
@@ -124,13 +136,23 @@ public:
         debtUs_ = 0;
         emaUs_ = 0;
         peakUs_ = 0;
+        peakWindowUs_.store(0, std::memory_order_relaxed);
         totalBlocks_ = 0;
         shedBlocks_ = 0;
     }
 
     int64_t debtUs() const noexcept { return debtUs_; }
     int64_t emaUs() const noexcept { return emaUs_; }
+    // Pico de sesión (nunca se resetea salvo reset()): para el log.
     int64_t peakUs() const noexcept { return peakUs_; }
+    // Pico de la ventana actual (1 s) + reset: lo llama el getter de
+    // telemetría (nativeGetDspShed, 1 Hz). El valor devuelto es el peor
+    // bloque de la ventana que termina; tras la lectura la ventana nueva
+    // empieza en 0. Atómico relaxed: el hilo de audio escribe, el poller
+    // lee/resetea; un pico perdido en la carrera es inocuo (telemetría).
+    int64_t takePeakWindowUs() noexcept {
+        return peakWindowUs_.exchange(0, std::memory_order_relaxed);
+    }
     uint64_t totalBlocks() const noexcept { return totalBlocks_; }
     uint64_t shedBlocks() const noexcept { return shedBlocks_; }
     double shedFraction() const noexcept {
@@ -146,7 +168,12 @@ private:
 
     int64_t debtUs_ = 0;       // >0: hay que soltar bloques. Acotada a ±presupuesto.
     int64_t emaUs_ = 0;        // EMA (1/8) del coste de los bloques PROCESADOS.
-    int64_t peakUs_ = 0;       // Peor bloque procesado visto (telemetria).
+    int64_t peakUs_ = 0;       // Peor bloque procesado visto EN LA SESIÓN (log).
+    // Peor bloque de la ventana de telemetría actual (~1 s). Atómico: lo
+    // escribe el hilo de audio (observeRun) y lo lee+resetea el poller
+    // (takePeakWindowUs). v2.5.415: antes dsp_pk era el pico de sesión y
+    // un spike aislado (117 ms en la 414) persistía para siempre.
+    std::atomic<int64_t> peakWindowUs_{0};
     uint64_t totalBlocks_ = 0;
     uint64_t shedBlocks_ = 0;
 };

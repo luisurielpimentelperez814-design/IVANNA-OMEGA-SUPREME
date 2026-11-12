@@ -425,6 +425,32 @@ TEST(DspLoadShedGovernor, ResetClearsDebtAndCounters) {
     EXPECT_FALSE(gov.shouldShed(kPeriodUs));
 }
 
+TEST(DspLoadShedGovernor, WindowedPeakForgetsIsolatedSpike415) {
+    // Bandera 2 de la v2.5.414: dsp_pk=117268 us persistía para siempre
+    // porque peakUs_ era un máximo de sesión que nunca se reseteaba — dos
+    // spikes aislados distintos (60 ms en la 411, 117 ms en la 414) parecían
+    // una regresión. v2.5.415: la telemetría (nativeGetDspShed, 1 Hz) lee
+    // el pico de la VENTANA (takePeakWindowUs) y la ventana se resetea en
+    // cada lectura; el pico de sesión se conserva aparte (peakUs).
+    ivanna::dsp::DspLoadShedGovernor gov;
+    // Ventana 1: spike aislado de 117 ms (el de la 414) + bloques normales.
+    gov.observeRun(117268, kPeriodUs);
+    runShedTrace(gov, {3500}, 100);
+    EXPECT_EQ(gov.takePeakWindowUs(), 117268);
+    // Ventana 2: solo bloques normales — el spike ya no debe aparecer.
+    runShedTrace(gov, {3500}, 100);
+    EXPECT_EQ(gov.takePeakWindowUs(), 3500);
+    // El pico de sesión SÍ conserva el spike (para el log / [25]).
+    EXPECT_EQ(gov.peakUs(), 117268);
+    // Una ventana sin bloques devuelve 0 y no resucita el spike.
+    EXPECT_EQ(gov.takePeakWindowUs(), 0);
+    EXPECT_EQ(gov.peakUs(), 117268);
+    // reset() limpia ambos.
+    gov.reset();
+    EXPECT_EQ(gov.takePeakWindowUs(), 0);
+    EXPECT_EQ(gov.peakUs(), 0);
+}
+
 TEST(DspLoadShedGovernor, DegeneratePeriodNeverSheds) {
     ivanna::dsp::DspLoadShedGovernor gov;
     EXPECT_FALSE(gov.shouldShed(0));

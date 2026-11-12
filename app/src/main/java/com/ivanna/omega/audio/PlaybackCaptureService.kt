@@ -337,7 +337,10 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             telemetryJob = telemetryScope.startTelemetryPoller(
                 routeAAsrc = engine.asrc,
                 appContext = this,
-                mixGainProvider = { engine.currentMixGain }
+                mixGainProvider = { engine.currentMixGain },
+                // v2.5.415, bandera 1: el poller expone los internos del
+                // servo (deriva medida, ocupación, fase, demanda, riel).
+                pllProvider = { capturePll }
             )
         }
     }
@@ -603,9 +606,17 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         private var capturePll: AudioTrackBufferPll? = null
         // Frames entregados al track a 48 kHz (dominio del PLL). Se cuentan
         // en el bucle, no en writeAllToTrack (que también escribe silencio
-        // de mute y reprimes de colchón).
+        // de mute — esos frames del bloque sí se cuentan como submitted).
+        // v2.5.415, bandera 1 de la 414: el silencio de PRIMING del colchón
+        // y los REPRIMES tras underrun se escribían al track SIN contarlos
+        // (writeSilence fuera del bucle): el PLL veía la cola más vacía de
+        // lo real (sesgo positivo de hasta ~colchón/capacidad en
+        // phaseError) y su estima de cola era sistemáticamente falsa.
+        // Ahora se cuentan convertidos al dominio 48 kHz (ver abajo).
         private var captureSubmittedFrames48k = 0L
         private var lastPllPollNs = 0L
+        // Throttle del aviso de riel del PLL (v2.5.415): 1/s, no por poll.
+        private var lastPllRailWarnMs = 0L
         // Salida del ASRC: capacidad inFrames*1.002+32 del wrapper + margen.
         private val asrcOutBuf = FloatArray((BLOCK_FRAMES + 64) * CHANNEL_COUNT)
         // Primer fallo del ASRC: se loguea una sola vez (nunca por bloque).
@@ -964,6 +975,15 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             cushionFramesTarget = OutputCushionPolicy.cushionFrames(
                 adaptiveLatency.targetHeadroomFrames, audioTrack?.bufferSizeInFrames ?: 0, trackBlockFrames)
             val primed = writeSilence(cushionFramesTarget)
+            // v2.5.415: el priming ES audio entregado al track (silencio de
+            // colchón): se cuenta en el dominio 48 kHz del PLL, o el servo
+            // ve la cola ~colchón más vacía de lo real desde el arranque.
+            // primed viene en frames DE PISTA (writeSilence devuelve
+            // frames de track); la conversión es la misma que para
+            // consumed/capacidad (framePosition × 48k / trackRate).
+            if (primed > 0) {
+                captureSubmittedFrames48k += primed.toLong() * SAMPLE_RATE / trackSampleRate
+            }
             Log.i(TAG, "Colchon de salida: objetivo=%d frames (%.1f ms), escrito=%d, pista=%d frames, trackRate=%d Hz".format(
                 cushionFramesTarget, cushionFramesTarget * 1000f / trackSampleRate, primed, audioTrack?.bufferSizeInFrames ?: 0, trackSampleRate))
             audioRecord?.startRecording()
@@ -1393,6 +1413,20 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                                         timestampNs = audioTs.nanoTime
                                     )
                                     asrc.setClockCorrectionPpm(ppm)
+                                    // v2.5.415, bandera 1 de la 414: aviso
+                                    // throttled (1/s) cuando el servo está EN
+                                    // EL RIEL — la 414 lo descubrió por
+                                    // accidente en la telemetría. La línea de
+                                    // telemetría ya lleva pll_dem/pll_rail.
+                                    if (pll.isAtRail) {
+                                        val nowRail = android.os.SystemClock.elapsedRealtime()
+                                        if (nowRail - lastPllRailWarnMs >= 1000L) {
+                                            lastPllRailWarnMs = nowRail
+                                            Log.w(TAG, "PLL captura EN EL RIEL: ppm=%+.1f demanda=%+.1f deriva_medida=%+.1f occ=%d/%d fase=%+.2f"
+                                                .format(pll.correctionPpm, pll.demandedPpm, pll.measuredDriftPpm,
+                                                    pll.occupancyFrames, pll.targetOccupancyFrames, pll.phaseErrorFraction))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1420,6 +1454,13 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                                 lastRepriming = nowR
                                 cushionReprimes++
                                 val w = writeSilence(n)
+                                // v2.5.415: el reprime ES audio entregado al
+                                // track: se cuenta en el dominio 48 kHz del
+                                // PLL (igual que el priming), o cada reprime
+                                // falsea la cola del servo hacia vacío.
+                                if (w > 0) {
+                                    captureSubmittedFrames48k += w.toLong() * SAMPLE_RATE / trackSampleRate
+                                }
                                 Log.i(TAG, "Colchon repuesto tras %d underrun(s): +%d frames (cola=%d, total reposiciones=%d)"
                                     .format(newUr, w, queuedR, cushionReprimes))
                             }

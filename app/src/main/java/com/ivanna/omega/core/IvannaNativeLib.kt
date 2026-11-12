@@ -232,10 +232,17 @@ object IvannaNativeLib {
     // 1 Hz (v2.5.407, IVANNA.Telemetry): una sola llamada JNI por segundo.
     external fun nativeGetEffectAmounts(): FloatArray?
 
-    // FloatArray[3]: [shedFraction 0..1, emaUs, peakUs] — estado del
-    // gobernador de shed de carga DSP (v2.5.410). Telemetría en vivo 1 Hz:
-    // confirma si la cadena alcanza el periodo sin loguear en el hilo RT.
+    // FloatArray[26]: [shedFraction 0..1, emaUs, peakUs (ventana 1 s),
+    // blockBudgetNs, 21 floats de tiempos por etapa, sessionPeakUs] —
+    // estado del gobernador de shed de carga DSP (v2.5.410; ventana de pico
+    // y pico de sesión en v2.5.415). Telemetría en vivo 1 Hz: confirma si
+    // la cadena alcanza el periodo sin loguear en el hilo RT.
     external fun nativeGetDspShed(): FloatArray?
+
+    // FloatArray[6]: [holosTier, holosMeanCoherence, holosWet,
+    // orbeMeanCoherence, orbeShed, orbeWet] — por qué ORBE/HOLOS están en
+    // bypass (v2.5.415, bandera 5 de la 414). Telemetría en vivo 1 Hz.
+    external fun nativeGetSpatialGateState(): FloatArray?
 
 
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════

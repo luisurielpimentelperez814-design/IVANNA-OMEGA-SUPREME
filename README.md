@@ -6,7 +6,7 @@
 
 **Audio espacial Android · evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.414-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.415-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-13%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -23,7 +23,7 @@
 
 ## Estado actual · 12 de noviembre de 2026
 
-**Versión vigente: v2.5.414 (705).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
+**Versión vigente: v2.5.415 (706).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
 
 **Las dos rutas:** la **Ruta A** (APK, capture) procesa el audio del reproductor propio (Tidal, YouTube Music) con el ASRC magistral nativo + Ψ activa; si algo falla, solo cae la app. La **Ruta B** (Magisk + HAL, todo el sistema) está **MUERTA desde el 2026-11-11** — la historia completa, sin maquillar, en [docs/HISTORIA_RUTA_B.md](docs/HISTORIA_RUTA_B.md). No instalar ningún zip; la v2.5.403 lleva el wrapper roto y la **v2.5.384 está RETIRADA** (brickeó el teléfono 2 veces).
 
@@ -45,6 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.415** (706) | Reparación de las 5 banderas rojas de la 414: servo ppm con riel ±1000 ppm + telemetría de riel (priming/reprimes ahora contados en la cola); dsp_pk ahora pico de ventana de 1 s (+ pico de sesión aparte en `dsp_pk_ses`); rms/peak reales de captura (bug de telemetría, sin cambio de ganancia); Reality THD+N −78.7 dB @0.12 / −72.7 dB @0.24 (el −68.8 dB era el piso del generador de tono del test); ORBE/HOLOS con re-sondeo de la puerta de coherencia + telemetría `gate_*`. 4 tests host + 2 Kotlin nuevos. CTest 980/980. ASRC+Psi 91/91. Solo APK. Ruta B en pausa. |
 | **v2.5.414** (705) | Integración magistral completa en captura + reproductor: Reality (pase microExtractor) ahora corre también en el BridgePlayer (antes solo en captura), crossfeed por paridad en el reproductor, y StageTimings (Hoa/Orbe/Holos/Phi/Volterra/Npe) ahora se registran también en captura. Medido en host: Reality 5.8 µs/bloque (p99 12.6 µs), THD+N −68.8 dB en tono 1 kHz; 4 tests nuevos; CTest 974/974. Solo APK. Ruta B en pausa. |
 | **v2.5.413** (704) | Fix scroll de la pantalla principal: el panel de controles (fillMaxSize + scroll interno) se comía toda la altura y la tarjeta "IVANNA BRIDGE PLAYER" quedaba con 0 px, inalcanzable. Ahora panel + tarjeta bajan con un solo scroll vertical (encabezado y navegación fijos arriba; el panel desactiva su scroll interno solo en el Dashboard). Sin cambios de sonido ni de funcionalidad. |
 | **v2.5.412** (703) | ASRC magistral + Ψ portados a la captura (antes solo micro-slips; telemetría asrc/psi ahora vivos en captura), mezcla de captura ajustable con slider (0.20–1.00, default 0.60 = valor vivo actual; corrección: el target vivo era 0.60, no 0.40), telemetría con `mix=`. Medido en host: THD+N −138.8 dB a ratio 1.0 / −95.0 dB a +100 ppm en bloques de 320 frames; ASRC+Ψ 46/46; CTest en verde. |
@@ -188,7 +189,7 @@ Todas en host a 48 kHz. Mediciones en dispositivo: **ver Estado actual (único l
 | Sensor, throughput host | 280× RT | `test_real_acoustic_sensor` |
 | ASRC v5 (host) | THD+N @1 kHz −90.4 dB banda ancha / −92.1 dB en banda · rechazo alias @23 kHz −156…−162 dB | validación host ASRC v5 (103 de 103 checks) |
 
-**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 974/974 en host local (v2.5.414)** — la cifra subió de 954 (v2.5.406) a 970 (v2.5.411) y a 974 (v2.5.414) por los tests nuevos de la 410/411 (StageTimings, guarda de armónicos, costes/firma de cadena) y los 4 de Reality de la 414. **ASRC magistral + Ψ (Ruta A): 46/46 en binario host standalone** (31/31 hasta la 411; +15 checks de captura en la 412: THD+N a 320 frames, bloques variables 320/319, Ψ viva a 320 frames, coste por bloque) (verificado 2026-11-11); NO forma parte de CTest, por eso coexiste con el 974 sin sumarse. **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además +18 tests unitarios Kotlin y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
+**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 980/980 en host local (v2.5.415)** — la cifra subió de 954 (v2.5.406) a 970 (v2.5.411), a 974 (v2.5.414) y a 980 (v2.5.415) por los 4 tests nuevos de la 415 (pico ventaneado, Reality a contraste máximo, re-sondeo HOLOS, recuperación de shed ORBE). **ASRC magistral + Ψ (Ruta A): 91/91 en CTest** (12 binarios; el 46/46 citado hasta la 414 era el conteo del binario standalone de la 412: 31/31 hasta la 411 + 15 checks de captura en la 412 — THD+N a 320 frames, bloques variables 320/319, Ψ viva a 320 frames, coste por bloque — ya absorbido en la suite) (verificado 2026-11-12). **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además 18 tests unitarios Kotlin previos + **38 nuevos de TIDAL en la 416** (`TidalApiParsingTest` 10, `TidalAuthTest` 10, `TidalStreamResolverTest` 7, `TidalPlayerControllerTest` 11) y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
 
 ---
 
@@ -222,7 +223,7 @@ La [configuración Android](app/build.gradle.kts) declara **SDK mínimo 28**, **
 
 ```bash
 ./gradlew :app:assembleDebug
-bash scripts/run_ctest.sh   # DSP en host (C++26); CTest en verde en CI (v2.5.414)
+bash scripts/run_ctest.sh   # DSP en host (C++26); CTest en verde en CI (v2.5.415)
 ```
 
 ---

@@ -250,6 +250,48 @@ TEST(OrbeBinaural, ThermalShedForcesBypass) {
     EXPECT_EQ(r, r0);
 }
 
+TEST(OrbeBinaural, ShedRecoveryReengages415) {
+    // Bandera 5 de la v2.5.414: ORBE medía ~1 µs en captura. La causa en
+    // vivo es el SHED TÉRMICO (el gobernador apaga ORBE cuando holosTier
+    // >= 1, por diseño) — NO la puerta de coherencia: el estimador de
+    // ORBE da coh media 0.67 con ruido blanco incorrelado (su coh por
+    // banda es |Σ cross|/√(Σ pL·Σ pR) sin el suavizado Welch de HOLOS,
+    // así que el ruido no cancela vectorialmente), muy por encima del
+    // umbral 0.3 — la puerta de coherencia no se cierra con ruido y su
+    // latch es un caso límite, no lo que pasó en vivo. v2.5.415: al
+    // levantarse el shed, ORBE debe re-activarse sola; el re-sondeo de
+    // coherencia queda como red de seguridad simétrica con HOLOS (cuyo
+    // latch SÍ se reproduce con ruido y SÍ se repara — ver
+    // HolosOperator.CoherenceGateReopensAfterProbe415).
+    ivanna::OrbeBinaural o;
+    o.prepare(48000.0f);
+    ivanna::OrbeParams p;
+    p.amount = 1.0f;
+    o.setParams(p);
+    constexpr int kBlock = 320;  // bloque real de la Ruta A (6.67 ms)
+    auto run320 = [&](std::vector<float>& l, std::vector<float>& r, int blocks) {
+        for (int b = 0; b < blocks; ++b)
+            o.process(l.data() + b * kBlock, r.data() + b * kBlock, kBlock);
+    };
+    auto t = tone(1000.0, 0.5, 48000.0, (size_t)(4.0 * 48000.0));
+    std::vector<float> tl = t, tr = t;
+    // 1) Con shed: bypass bit-exacto.
+    o.setThermalShed(true);
+    auto tl0 = tl, tr0 = tr;
+    run320(tl, tr, (int)tl.size() / kBlock);
+    EXPECT_FALSE(o.isActive());
+    EXPECT_EQ(tl, tl0);
+    EXPECT_EQ(tr, tr0);
+    // 2) Se levanta el shed: con señal coherente, se re-activa sola.
+    o.setThermalShed(false);
+    run320(tl, tr, (int)tl.size() / kBlock);
+    std::printf("[orbe] shed off: coh media %.2f, activo %d, wet %.2f\n",
+                o.meanCoherence(), (int)o.isActive(), o.appliedAmount());
+    EXPECT_GT(o.meanCoherence(), 0.3f);
+    EXPECT_TRUE(o.isActive());
+    EXPECT_GT(o.appliedAmount(), 0.0f);
+}
+
 TEST(OrbeBinaural, InvalidParamsFallBackToSafeDefaults) {
     ivanna::OrbeBinaural o;
     o.prepare(48000.0f);

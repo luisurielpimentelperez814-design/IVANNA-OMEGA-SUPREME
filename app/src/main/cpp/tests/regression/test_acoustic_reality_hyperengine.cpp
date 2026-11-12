@@ -34,6 +34,11 @@ namespace {
 constexpr float kSampleRate = 48000.0f;
 constexpr size_t kBlockSize = 256;
 constexpr float kTwoPi      = 6.28318530717958647692f;
+// Doble precisión para los tonos de THD+N (v2.5.415): kTwoPi en float
+// desvía la frecuencia 3e-8 relativa (3e-5 bins) y el FFT rectangular
+// de thdn filtra esa fuga como -85.9 dB de THD+N — el tono crudo medía
+// -85.9 dB en vez de -154.9 dB. Con kTwoPiD el tono cae exacto en el bin.
+constexpr double kTwoPiD = 6.28318530717958647692;
 
 // Genera un bloque estéreo sintético que modela un evento acústico de concierto:
 // - Cuerda pulsada de guitarra (440 Hz + armónicos con decaimiento exponencial y ataque de púa)
@@ -840,14 +845,63 @@ TEST(RealityPlayerWiring414, MicroExtractorActive_SteadyTone_LowThdn) {
     map.intelligibilityContrast = 0.12f;
 
     // 2 s de tono 1 kHz por el pase; THD+N del último segundo.
+    // v2.5.415, bandera 4 de la 414: el generador del tono era float
+    // (t en float, argumento del seno hasta ~12566 rad) y su propio error
+    // de cuantificación de fase ponía un suelo de THD+N de -69.5 dB —
+    // con contraste 0.00 (pase bit-idéntico) ya medía -69.47 dB, así que
+    // el -68.8 dB reportado NO era distorsión del pase sino del test.
+    // Barrido medido en host (tono doble precisión): crudo -154.9 dB,
+    // contraste 0.12 -> -78.7 dB, 0.24 (máximo) -> -72.7 dB. El tono se
+    // genera ahora en doble precisión y se guarda también el crudo para
+    // probar que el generador es limpio antes de medir el pase.
+    constexpr int kTotal = 2 * 48000;
+    constexpr int kBlocks = kTotal / k414Block;  // 300 bloques
+    std::vector<float> lastSec(48000, 0.0f), lastSecRaw(48000, 0.0f);
+    std::vector<float> bL(k414Block), bR(k414Block);
+    for (int blk = 0; blk < kBlocks; ++blk) {
+        for (int i = 0; i < k414Block; ++i) {
+            const double t = static_cast<double>(blk * k414Block + i) / 48000.0;
+            bL[i] = static_cast<float>(0.5 * std::sin(kTwoPiD * 1000.0 * t));
+            bR[i] = bL[i];
+        }
+        if (blk >= kBlocks / 2) {
+            std::memcpy(&lastSecRaw[(blk - kBlocks / 2) * k414Block], bL.data(),
+                        k414Block * sizeof(float));
+        }
+        ext.applyMicroIntelligibilityPass(bL.data(), bR.data(), k414Block, map);
+        if (blk >= kBlocks / 2) {
+            std::memcpy(&lastSec[(blk - kBlocks / 2) * k414Block], bL.data(),
+                        k414Block * sizeof(float));
+        }
+    }
+    const auto rRaw = ivanna::measure::thdn(lastSecRaw.data(), 48000, 48000.0, 1000.0);
+    std::printf("[Reality414] tono crudo 1kHz (doble precisión): THD+N=%.1f dB\n",
+                rRaw.thdnDb);
+    EXPECT_LT(rRaw.thdnDb, -120.0) << "el generador del tono debe ser limpio; si no, el test mide su propio ruido";
+    const auto r = ivanna::measure::thdn(lastSec.data(), 48000, 48000.0, 1000.0);
+    std::printf("[Reality414] microExtractor tono 1kHz: THD+N=%.1f dB amp=%.4f\n",
+                r.thdnDb, r.amp);
+    EXPECT_TRUE(std::isfinite(r.thdnDb));
+    EXPECT_LT(r.thdnDb, -70.0) << "sobre tono estacionario el pase debe cumplir el criterio -70 dB (medido -78.7 dB a contraste 0.12, -72.7 dB al máximo 0.24)";
+}
+
+TEST(RealityPlayerWiring414, MicroExtractorMaxContrast_SteadyTone_MeetsCriterion) {
+    // El tope de producción es contraste 0.24 (clamp interno del pase y
+    // del orquestador): con tono en doble precisión debe seguir cumpliendo
+    // el criterio -70 dB. Medido en host: -72.7 dB (margen 2.7 dB).
+    using namespace ivanna::reality;
+    MicroRealityExtractor ext;
+    MicroDetailMap map{};
+    map.intelligibilityContrast = 0.24f;
+
     constexpr int kTotal = 2 * 48000;
     constexpr int kBlocks = kTotal / k414Block;  // 300 bloques
     std::vector<float> lastSec(48000, 0.0f);
     std::vector<float> bL(k414Block), bR(k414Block);
     for (int blk = 0; blk < kBlocks; ++blk) {
         for (int i = 0; i < k414Block; ++i) {
-            const float t = static_cast<float>(blk * k414Block + i) / 48000.0f;
-            bL[i] = 0.5f * std::sin(kTwoPi * 1000.0f * t);
+            const double t = static_cast<double>(blk * k414Block + i) / 48000.0;
+            bL[i] = static_cast<float>(0.5 * std::sin(kTwoPiD * 1000.0 * t));
             bR[i] = bL[i];
         }
         ext.applyMicroIntelligibilityPass(bL.data(), bR.data(), k414Block, map);
@@ -857,8 +911,8 @@ TEST(RealityPlayerWiring414, MicroExtractorActive_SteadyTone_LowThdn) {
         }
     }
     const auto r = ivanna::measure::thdn(lastSec.data(), 48000, 48000.0, 1000.0);
-    std::printf("[Reality414] microExtractor tono 1kHz: THD+N=%.1f dB amp=%.4f\n",
+    std::printf("[Reality414] microExtractor contraste 0.24: THD+N=%.1f dB amp=%.4f\n",
                 r.thdnDb, r.amp);
     EXPECT_TRUE(std::isfinite(r.thdnDb));
-    EXPECT_LT(r.thdnDb, -50.0) << "sobre tono estacionario el pase no debe distorsionar";
+    EXPECT_LT(r.thdnDb, -70.0) << "al contraste máximo de producción (0.24) el pase debe cumplir -70 dB";
 }

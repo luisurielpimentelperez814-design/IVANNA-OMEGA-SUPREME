@@ -242,6 +242,52 @@ TEST(HolosOperator, FailClosedOnIncoherentContent) {
     }
 }
 
+TEST(HolosOperator, CoherenceGateReopensAfterProbe415) {
+    // Bandera 5 de la v2.5.414: la puerta de coherencia era un LATCH — el
+    // estimador solo se actualiza en runFrame(), que se detiene al
+    // cerrarse la puerta, así que una coherencia < 0.3 la cerraba para
+    // siempre (en captura HOLOS medía ~1 µs). v2.5.415: en bypass por
+    // coherencia, cada ~150 bloques se sondean 8 bloques seguidos para
+    // re-evaluar el estimador; si la señal vuelve a ser coherente, la
+    // etapa se re-activa sola (sin tocar amount ni tier).
+    HolosOperator op;
+    op.prepare(48000.0f);
+    op.setParams(onParams());
+    constexpr int kBlock = 320;  // bloque real de la Ruta A (6.67 ms)
+    auto runBlocks = [&](std::vector<float>& l, std::vector<float>& r, int blocks) {
+        for (int b = 0; b < blocks; ++b)
+            op.process(l.data() + b * kBlock, r.data() + b * kBlock, kBlock);
+    };
+    // 1) Ruido incorrelado: la puerta se cierra.
+    auto l = noise(0.4, 4.0, 41);
+    auto r = noise(0.4, 4.0, 42);
+    runBlocks(l, r, (int)l.size() / kBlock);
+    EXPECT_LT(op.meanCoherence(), 0.3f);
+    EXPECT_FALSE(op.isActive());
+    // 2) Más ruido incorrelado: la puerta sigue cerrada (el sondeo no la
+    // reabre sin señal coherente) y la salida sigue en passthrough.
+    auto l2 = noise(0.4, 4.0, 43);
+    auto r2 = noise(0.4, 4.0, 44);
+    const std::vector<float> inL2 = l2, inR2 = r2;
+    runBlocks(l2, r2, (int)l2.size() / kBlock);
+    EXPECT_FALSE(op.isActive());
+    for (int i = 72000; i < (int)l2.size(); ++i) {
+        EXPECT_FLOAT_EQ(l2[i], inL2[i]);
+        EXPECT_FLOAT_EQ(r2[i], inR2[i]);
+    }
+    // 3) Tono estéreo coherente: tras la espera (~150 bloques) + el
+    // sondeo (8 bloques), el estimador se recupera y la etapa se
+    // re-activa sola.
+    auto t = tone(1000.0, 0.5, 4.0);
+    std::vector<float> tl = t, tr = t;
+    runBlocks(tl, tr, (int)tl.size() / kBlock);
+    std::printf("[holos-op] re-sondeo: coh media %.2f, activo %d, wet %.2f\n",
+                op.meanCoherence(), (int)op.isActive(), op.appliedAmount());
+    EXPECT_GT(op.meanCoherence(), 0.3f);
+    EXPECT_TRUE(op.isActive());
+    EXPECT_GT(op.appliedAmount(), 0.0f);
+}
+
 TEST(HolosOperator, NoNanInfOnSilenceDcAndNoise) {
     for (const char* name : {"silence", "dc", "noise", "hot"}) {
         HolosOperator op;

@@ -64,7 +64,9 @@ class StereoAudioResampler(
 
     /** Bounded ppm correction from paired output frame-position/timestamp samples. */
     fun setClockCorrectionPpm(ppm: Double) {
-        clockCorrectionPpm = if (ppm.isFinite()) ppm.coerceIn(-500.0, 500.0) else 0.0
+        // ±1000 ppm en paridad con el servo (v2.5.415; antes ±500) y con el
+        // clamp del ASRC nativo: el PLL ya no se queda sin autoridad.
+        clockCorrectionPpm = if (ppm.isFinite()) ppm.coerceIn(-1000.0, 1000.0) else 0.0
         step = inputRate.toDouble() / targetRate.toDouble() /
             (1.0 + clockCorrectionPpm * 1.0e-6)
     }

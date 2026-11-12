@@ -152,6 +152,15 @@ private:
     float wet_ = 0.0f;
     float blend_ = 0.0f;
     bool flushPending_ = false;  // vaciar colas una vez al reactivar
+    // Re-sondeo de la puerta de coherencia (v2.5.415, bandera 5): el
+    // estimador solo se actualiza en runFrame() (solo cuando la etapa está
+    // activa), así que una coherencia < 0.3 cerraba la puerta para siempre
+    // (latch). Cada kCohProbePeriodBlocks en bypass por coherencia se
+    // sondean kCohProbeBlocks seguidos para re-evaluar el estimador.
+    static constexpr int kCohProbePeriodBlocks = 150;  // ~1 s entre sondeos
+    static constexpr int kCohProbeBlocks = 8;          // ~53 ms por sondeo
+    int cohBypassBlocks_ = 0;
+    int cohProbeBlocksRemaining_ = 0;
     size_t totalIn_ = 0;   // muestras consumidas
     size_t totalOut_ = 0;  // muestras retardadas ya emitidas
 };
