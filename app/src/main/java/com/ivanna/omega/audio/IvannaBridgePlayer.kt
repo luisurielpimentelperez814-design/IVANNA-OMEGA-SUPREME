@@ -682,7 +682,15 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // en logcat (tag IVANNA.Telemetry) con TODOS los efectos.
             // Hilo de fondo (Dispatchers.Default), nunca el hilo de audio.
             // Se cancela en el finally; si el scope muere, muere con él.
-            telemetryJob = startTelemetryPoller(routeAAsrc, appContext = context)
+            // v2.5.419: el poller también recibe el servo de este
+            // reproductor (antes pllProvider era null y la telemetría del
+            // reproductor salía con pll_drift/pll_dem/pll_rail en 0, lo que
+            // escondía el riel del servo del reproductor en vivo).
+            telemetryJob = startTelemetryPoller(
+                routeAAsrc,
+                appContext = context,
+                pllProvider = { bufferPll }
+            )
             val outputTimestamp = AudioTimestamp()
             // A one-step latency change from an AudioTrack reroute (Bluetooth
             // connect/disconnect, output-device policy change mid-session) is
@@ -985,7 +993,11 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                                             submittedFrames = submittedFrames,
                                             consumedFrames = outputTimestamp.framePosition,
                                             bufferCapacityFrames = track.bufferSizeInFrames,
-                                            timestampNs = outputTimestamp.nanoTime
+                                            timestampNs = outputTimestamp.nanoTime,
+                                            // v2.5.419: los underruns invalidan
+                                            // la estima de reloj de ese
+                                            // intervalo (inanición, no deriva).
+                                            underruns = track.underrunCount.toLong()
                                         )
                                         // ASRC MAGISTRAL: el ppm va al nativo
                                         // (FIR 319 taps) si está disponible; el

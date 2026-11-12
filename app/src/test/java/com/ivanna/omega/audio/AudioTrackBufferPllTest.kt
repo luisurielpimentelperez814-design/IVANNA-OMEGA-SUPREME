@@ -294,4 +294,68 @@ class AudioTrackBufferPllTest {
         }
         assertEquals(10.0, pll.measuredDriftPpm, 3.0)
     }
+
+    // ── v2.5.419: INANICIÓN NO ES DERIVA DE RELOJ ──
+    // Verificado en vivo en la 417/418: con el DSP al límite (dsp_us ~7 ms
+    // por bloque > 6.67 ms de presupuesto) el track se queda sin audio,
+    // framePosition avanza lento y el servo lo leía como reloj lento:
+    // deriva medida de -7 a -577 ppm en 10 s, demanda hasta -1040 ppm, ppm
+    // clavado en -500. La pendiente de un intervalo con underruns NO es
+    // una medida de reloj: el servo debe descartarla, no corregirla.
+    @Test fun starvationUnderruns_doNotCreateFalseClockDrift419() {
+        val pll = AudioTrackBufferPll(48_000)
+        repeat(100) { k ->
+            val t = 1.0 + k * 0.25
+            val slow = k >= 20
+            // Fase 1 (k < 20): reloj nominal, estima bloqueada en ~0.
+            // Fase 2 (k >= 20): el track avanza lento (-600 ppm, como la
+            // deriva medida en vivo) PERO con underruns subiendo en cada
+            // sondeo: es inanición, no un reloj lento.
+            val consumed = if (slow) (t * 48_000.0 * (1.0 - 600.0e-6)).toLong()
+                else (t * 48_000.0).toLong()
+            val underruns = if (slow) (k - 19).toLong() else 0L
+            pll.observe(consumed + 5_000L, consumed, 10_000, (t * 1.0e9).toLong(), underruns = underruns)
+        }
+        assertTrue("la inanición no debe bloquear una estima de reloj", !pll.isDriftLocked)
+        assertEquals(0.0, pll.measuredDriftPpm, 0.0)
+        assertEquals(0.0, pll.demandedPpm, 0.0)
+        assertEquals(0.0, pll.correctionPpm, 0.0)
+        assertTrue("la inanición no debe clavar el servo en el riel", !pll.isAtRail)
+    }
+
+    @Test fun sameSlowClockWithoutUnderruns_isMeasuredAndCorrected419() {
+        // Control del test anterior: la MISMA pendiente lenta (-600 ppm)
+        // SIN underruns es un reloj lento de verdad y el servo SÍ debe
+        // medirla y corregirla. Si este test fallara, la puerta de la 419
+        // habría cegado al servo.
+        val pll = AudioTrackBufferPll(48_000)
+        repeat(100) { k ->
+            val t = 1.0 + k * 0.25
+            val consumed = (t * 48_000.0 * (1.0 - 600.0e-6)).toLong()
+            pll.observe(consumed + 5_000L, consumed, 10_000, (t * 1.0e9).toLong(), underruns = 0L)
+        }
+        assertTrue(pll.isDriftLocked)
+        assertEquals(-600.0, pll.measuredDriftPpm, 10.0)
+        assertEquals(-600.0, pll.demandedPpm, 20.0)
+        assertEquals(-500.0, pll.correctionPpm, 0.0)
+        assertTrue(pll.isAtRail)
+    }
+
+    @Test fun underrunCountDecrease_isNotTreatedAsStarvation419() {
+        // Un contador de underruns que BAJA es un track recreado (o un
+        // wraparound), no inanición: no debe disparar la puerta ni cegar
+        // la estima de reloj.
+        val pll = AudioTrackBufferPll(48_000)
+        var timeNs = 1_000_000_000L
+        var consumed = 0L
+        repeat(20) { k ->
+            pll.observe(consumed + 5_000L, consumed, 10_000, timeNs,
+                underruns = (5 - k).coerceAtLeast(0).toLong())
+            consumed += 12_012L
+            timeNs += 250_000_000L
+        }
+        assertTrue(pll.isDriftLocked)
+        assertEquals(1_000.0, pll.measuredDriftPpm, 10.0)
+        assertTrue("un reloj rápido real debe pedir corrección positiva", pll.correctionPpm > 0.0)
+    }
 }

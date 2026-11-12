@@ -51,6 +51,9 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
 
     private var previousTimestampNs = 0L
     private var previousConsumedFrames = -1L
+    // v2.5.419: último conteo de underruns visto (AudioTrack.getUnderrunCount).
+    // -1 = desconocido (el llamador no lo pasa, o es la primera observación).
+    private var previousUnderruns: Long = -1L
     private var integralErrorSeconds = 0.0
     private var validSamples = 0
     private val frameHistory = LongArray(REGRESSION_WINDOW)
@@ -91,13 +94,20 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
      * @param consumedFrames cumulative presented frames from this same track's AudioTimestamp
      * @param bufferCapacityFrames configured AudioTrack buffer size in frames
      * @param timestampNs monotonic timestamp paired with consumedFrames
+     * @param underruns cumulative AudioTrack.getUnderrunCount() (-1 = desconocido).
+     *        Un underrun nuevo invalida la estima de reloj de ese intervalo:
+     *        framePosition deja de avanzar (o avanza lento) mientras el reloj
+     *        de pared sigue, y esa pendiente mide inanición, no reloj
+     *        (v2.5.419: la 417/418 se clavaba en -500 ppm con deriva medida
+     *        de -7 a -577 ppm en 10 s por leer inanición como reloj lento).
      * @return bounded ppm correction for StereoAudioResampler
      */
     fun observe(
         submittedFrames: Long,
         consumedFrames: Long,
         bufferCapacityFrames: Int,
-        timestampNs: Long
+        timestampNs: Long,
+        underruns: Long = -1L
     ): Double {
         if (nominalSampleRateHz !in 8_000..768_000 ||
             submittedFrames < 0L || consumedFrames < 0L ||
@@ -111,6 +121,28 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         if (queued < 0L || queued > capacity * 2L) {
             reset()
             return 0.0
+        }
+
+        // v2.5.419 — INANICIÓN NO ES DERIVA DE RELOJ. Cuando el AudioTrack
+        // se queda sin audio (underrun), framePosition deja de avanzar (o
+        // avanza lento) mientras el reloj de pared sigue: la pendiente
+        // frame/tiempo de ese intervalo mide la inanición, no el reloj. El
+        // servo la leía como reloj lento y pedía producir MENOS frames
+        // (-500 ppm), lo que agravaba la inanición: realimentación positiva
+        // hasta el riel (en vivo, 417/418: deriva medida -7 -> -577 ppm en
+        // 10 s, demanda hasta -1040 ppm). Si el contador de underruns subió
+        // desde la última observación, la estima de reloj y el integrador
+        // (ambos alimentados por una cola distorsionada por el stall) se
+        // descartan; el PI proporcional sigue controlando la cola con la
+        // medida viva. Sin underruns nuevos, el servo mide el reloj real
+        // como siempre: un reloj lento de verdad SÍ se corrige (ver el test
+        // de control en AudioTrackBufferPllTest).
+        if (underruns >= 0L) {
+            if (previousUnderruns >= 0L && underruns > previousUnderruns) {
+                clearClockEstimate()
+                integralErrorSeconds = 0.0
+            }
+            previousUnderruns = underruns
         }
 
         occupancyFrames = queued
@@ -285,7 +317,12 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         resetClockEstimateAt(latestFrame, latestTime)
     }
 
-    private fun resetClockEstimateAt(framePosition: Long, timestampNs: Long) {
+    // Vacía la estima de reloj sin sembrar: la próxima muestra limpia
+    // reconstruye la ventana desde cero (v2.5.419, inanición). La muestra
+    // actual se añade después por el flujo normal de observe(): es el
+    // extremo del intervalo inanido y el siguiente intervalo (limpio) es
+    // el que define la pendiente.
+    private fun clearClockEstimate() {
         frameHistory.fill(0L)
         timeHistoryNs.fill(0L)
         historyCount = 0
@@ -295,6 +332,10 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         windowSpanSeconds = 0.0
         measuredRateHz = 0.0
         measuredDriftPpm = 0.0
+    }
+
+    private fun resetClockEstimateAt(framePosition: Long, timestampNs: Long) {
+        clearClockEstimate()
         if (framePosition >= 0L && timestampNs > 0L) {
             frameHistory[0] = framePosition
             timeHistoryNs[0] = timestampNs
@@ -306,6 +347,7 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
     fun reset() {
         previousTimestampNs = 0L
         previousConsumedFrames = -1L
+        previousUnderruns = -1L
         integralErrorSeconds = 0.0
         validSamples = 0
         historyCount = 0

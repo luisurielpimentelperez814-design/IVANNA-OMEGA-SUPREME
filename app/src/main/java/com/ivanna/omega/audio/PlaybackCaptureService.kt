@@ -1415,7 +1415,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                                         submittedFrames = captureSubmittedFrames48k,
                                         consumedFrames = consumed48k,
                                         bufferCapacityFrames = capacity48k,
-                                        timestampNs = audioTs.nanoTime
+                                        timestampNs = audioTs.nanoTime,
+                                        // v2.5.419: los underruns invalidan
+                                        // la estima de reloj de ese intervalo
+                                        // (inanición, no deriva).
+                                        underruns = track.underrunCount.toLong()
                                     )
                                     asrc.setClockCorrectionPpm(ppm)
                                     // v2.5.415, bandera 1 de la 414: aviso
