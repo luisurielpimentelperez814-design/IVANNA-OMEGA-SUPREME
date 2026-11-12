@@ -185,7 +185,7 @@ Todas en host a 48 kHz. Mediciones en dispositivo: **ver Estado actual (único l
 | Sensor, throughput host | 280× RT | `test_real_acoustic_sensor` |
 | ASRC v5 (host) | THD+N @1 kHz −90.4 dB banda ancha / −92.1 dB en banda · rechazo alias @23 kHz −156…−162 dB | validación host ASRC v5 (103 de 103 checks) |
 
-**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 954/954 en CI (v2.5.406, run 43102191730, 111.91 s)** — la cifra "954" es la misma desde la v2.5.389 porque el total no ha cambiado; lo que estaba desactualizado era la etiqueta de versión, no el número. **ASRC magistral + Ψ (Ruta A): 31/31 en binario host standalone** (verificado 2026-11-11); NO forma parte de CTest, por eso coexiste con el 954 sin sumarse. **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además +18 tests unitarios Kotlin y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
+**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 970/970 en CI (v2.5.411, run 43151492736)** — la cifra subió de 954 (v2.5.406) a 970 por los tests nuevos de la 410/411 (StageTimings, guarda de armónicos, costes/firma de cadena). **ASRC magistral + Ψ (Ruta A): 31/31 en binario host standalone** (verificado 2026-11-11); NO forma parte de CTest, por eso coexiste con el 970 sin sumarse. **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además +18 tests unitarios Kotlin y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
 
 ---
 
@@ -219,7 +219,7 @@ La [configuración Android](app/build.gradle.kts) declara **SDK mínimo 28**, **
 
 ```bash
 ./gradlew :app:assembleDebug
-bash scripts/run_ctest.sh   # DSP en host (C++26); CTest 954/954 en CI, v2.5.406
+bash scripts/run_ctest.sh   # DSP en host (C++26); CTest 970/970 en CI, v2.5.411
 ```
 
 ---
