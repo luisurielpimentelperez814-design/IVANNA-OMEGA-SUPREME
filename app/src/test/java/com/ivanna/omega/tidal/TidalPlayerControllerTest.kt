@@ -141,7 +141,9 @@ class TidalPlayerControllerTest {
         controller.onPlayerStateChanged(TidalSinkState.PLAYING)
         controller.stop()
         controller.onPlayerStateChanged(TidalSinkState.STOPPED)
-        assertEquals(listOf(1L), resolver.resolveCalls)
+        // v2.5.421: el PLAYING ya prefetcheó t2 (resolveCalls [1,2]); el
+        // stop lo invalida y no avanza.
+        assertEquals(listOf(1L, 2L), resolver.resolveCalls)
         assertNull(controller.currentTrack.value)
         assertEquals(1, sink.stopCalls)
     }
@@ -178,8 +180,41 @@ class TidalPlayerControllerTest {
         controller.onPlayerStateChanged(TidalSinkState.PAUSED)
         controller.resume()
         controller.onPlayerStateChanged(TidalSinkState.PLAYING)
-        assertEquals(listOf(1L), resolver.resolveCalls)
+        // v2.5.421: el primer PLAYING prefetcheó t2 ([1,2]); el segundo
+        // PLAYING no lo repite (ya está prefetcheado) ni avanza.
+        assertEquals(listOf(1L, 2L), resolver.resolveCalls)
         assertEquals(t1, controller.currentTrack.value)
+    }
+
+    // ── v2.5.421: PREFETCH ──────────────────────────────────────────────
+
+    @Test
+    fun prefetch_nextTrackReadyBeforeAdvance() {
+        controller.playQueue(listOf(t1, t2, t3), 0)
+        // Al sonar t1, el siguiente (t2) ya se resolvió en segundo plano.
+        controller.onPlayerStateChanged(TidalSinkState.PLAYING)
+        assertEquals(listOf(1L, 2L), resolver.resolveCalls)
+        assertEquals(listOf(1L, 2L), api.playbackCalls)
+        // Al terminar t1, el avance usa el prefetch: SIN resolver de nuevo.
+        controller.onPlayerStateChanged(TidalSinkState.STOPPED)
+        assertEquals(listOf(1L, 2L), resolver.resolveCalls)
+        assertEquals(t2, controller.currentTrack.value)
+        assertEquals(2, sink.playedUris.size)
+        assertEquals(Uri.parse("https://cdn.example/track_2.flac"), sink.playedUris[1])
+    }
+
+    @Test
+    fun prefetch_invalidatedByStop() {
+        controller.playQueue(listOf(t1, t2), 0)
+        controller.onPlayerStateChanged(TidalSinkState.PLAYING)
+        assertEquals(listOf(1L, 2L), resolver.resolveCalls)
+        controller.stop()
+        // Tras el stop, volver a poner la cola resuelve todo de nuevo:
+        // el prefetch viejo no se reutiliza.
+        controller.playQueue(listOf(t1, t2), 0)
+        assertEquals(listOf(1L, 2L, 1L), resolver.resolveCalls)
+        controller.onPlayerStateChanged(TidalSinkState.PLAYING)
+        assertEquals(listOf(1L, 2L, 1L, 2L), resolver.resolveCalls)
     }
 
     @Test

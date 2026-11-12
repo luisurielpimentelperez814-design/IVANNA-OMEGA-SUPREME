@@ -83,7 +83,8 @@ class TidalStreamResolverTest {
     @Test
     fun bts_downloadFailure_throwsAndDeletesTemp() {
         val http = FakeHttp(bytesHandler = { error("red caída") })
-        val resolver = TidalStreamResolver(http)
+        // sleeper {}: el reintento no debe dormir 1 s en el test.
+        val resolver = TidalStreamResolver(http, sleeper = {})
         try {
             resolver.resolve(info("application/vnd.tidal.bts", BTS_PLAIN), cacheDir)
             fail("debió lanzar al fallar la descarga BTS")
@@ -91,6 +92,44 @@ class TidalStreamResolverTest {
             assertTrue(e.message!!.contains("No se pudo bajar"))
         }
         assertTrue(cacheDir.listFiles()?.none { it.name.startsWith("tidal_bts_") } ?: true)
+    }
+
+    // ── v2.5.421: CACHÉ ──────────────────────────────────────────────────
+
+    @Test
+    fun bts_secondResolve_usesCacheWithoutNetwork() {
+        val flacBytes = "FAKEFLAC".toByteArray()
+        var downloads = 0
+        val http = FakeHttp(bytesHandler = { downloads++; flacBytes })
+        val cache = TidalStreamCache(
+            File(cacheDir, "cache421"), maxBytes = 10L * 1024 * 1024, maxFiles = 5
+        )
+        val resolver = TidalStreamResolver(http, cache, sleeper = {})
+        val first = resolver.resolve(info("application/vnd.tidal.bts", BTS_PLAIN), cacheDir)
+        assertEquals(1, downloads)
+        assertTrue(first.isCached)
+        assertTrue(first.downloadedFile!!.exists())
+        assertEquals("FAKEFLAC", String(first.downloadedFile!!.readBytes(), Charsets.UTF_8))
+        // Segunda vez: sale de la caché, SIN tocar la red.
+        val second = resolver.resolve(info("application/vnd.tidal.bts", BTS_PLAIN), cacheDir)
+        assertEquals(1, downloads)
+        assertTrue(second.isCached)
+        assertEquals(first.downloadedFile!!.absolutePath, second.downloadedFile!!.absolutePath)
+        cache.clear()
+    }
+
+    @Test
+    fun bts_downloadRetry_recoversFromOneFailure() {
+        var attempts = 0
+        val http = FakeHttp(bytesHandler = {
+            attempts++
+            if (attempts == 1) error("corte de red") else "FAKEFLAC".toByteArray()
+        })
+        val resolver = TidalStreamResolver(http, sleeper = {})
+        val resolved = resolver.resolve(info("application/vnd.tidal.bts", BTS_PLAIN), cacheDir)
+        assertEquals(2, attempts)
+        assertEquals("FAKEFLAC", String(resolved.downloadedFile!!.readBytes(), Charsets.UTF_8))
+        resolved.downloadedFile!!.delete()
     }
 
     @Test

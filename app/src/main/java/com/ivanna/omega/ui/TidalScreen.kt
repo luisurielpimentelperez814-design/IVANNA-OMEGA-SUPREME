@@ -109,7 +109,7 @@ fun TidalScreen(
     var manualUrl by remember { mutableStateOf("") }
     var loginBusy by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
-    var quality by remember { mutableStateOf(tidal.quality) }
+    var quality by remember { mutableStateOf(tidal.qualityPref) }
     var dragMs by remember { mutableStateOf<Long?>(null) }
 
     // El token (y su posible refresh, que es red) se resuelve en IO:
@@ -231,13 +231,23 @@ fun TidalScreen(
             Spacer(Modifier.weight(1f))
             if (authState is TidalAuth.AuthState.SignedIn) {
                 TextButton(onClick = {
-                    val next = if (quality == TidalApiClient.QUALITY_HI_RES)
-                        TidalApiClient.QUALITY_LOSSLESS else TidalApiClient.QUALITY_HI_RES
+                    // v2.5.421: Auto → MAX HiRes → LOSSLESS → Auto. En Auto
+                    // la red decide (WiFi → HiRes, móvil → Lossless).
+                    val next = when (quality) {
+                        TidalClient.QUALITY_AUTO -> TidalApiClient.QUALITY_HI_RES
+                        TidalApiClient.QUALITY_HI_RES -> TidalApiClient.QUALITY_LOSSLESS
+                        else -> TidalClient.QUALITY_AUTO
+                    }
                     quality = next
-                    tidal.quality = next
+                    tidal.qualityPref = next
                 }) {
                     Text(
-                        if (quality == TidalApiClient.QUALITY_HI_RES) "MAX HiRes" else "LOSSLESS",
+                        when (quality) {
+                            TidalClient.QUALITY_AUTO ->
+                                if (tidal.quality == TidalApiClient.QUALITY_HI_RES) "Auto · HiRes" else "Auto · Lossless"
+                            TidalApiClient.QUALITY_HI_RES -> "MAX HiRes"
+                            else -> "LOSSLESS"
+                        },
                         color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold
                     )
                 }

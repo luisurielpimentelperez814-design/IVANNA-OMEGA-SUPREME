@@ -47,10 +47,20 @@ data class ResolvedStream(
     /** Calidad ENTREGADA real, p. ej. "FLAC 24-bit/96 kHz" o "AAC 320 kbps". */
     val qualityLabel: String,
     /** Archivo temporal (DASH y BTS). El controlador lo borra tras sonar. */
-    val downloadedFile: File? = null
+    val downloadedFile: File? = null,
+    /** true si el archivo vive en la caché (la gestiona ella; el
+     * controlador NO lo borra). v2.5.421. */
+    val isCached: Boolean = false
 )
 
-open class TidalStreamResolver(private val http: TidalHttp) {
+open class TidalStreamResolver(
+    private val http: TidalHttp,
+    /** Caché acotada (v2.5.421). null = sin caché: temporales que el
+     * controlador borra tras sonar (comportamiento de la 418). */
+    private val cache: TidalStreamCache? = null,
+    /** Dormir entre reintentos; inyectable para los tests. */
+    private val sleeper: (Long) -> Unit = { Thread.sleep(it) }
+) {
 
     companion object {
         private const val TAG = "IVANNA.TidalStream"
@@ -84,14 +94,22 @@ open class TidalStreamResolver(private val http: TidalHttp) {
         val url = urls?.optString(0, "")?.takeIf { it.isNotBlank() }
             ?: throw TidalApiException("Tidal no dio URL de stream para esta pista")
         val codecs = json.optString("codecs", "")
+        // v2.5.421: la caché primero — un tema ya bajado no se vuelve a
+        // bajar (repetición instantánea, funciona sin red).
+        val ext = if ("flac" in codecs.lowercase()) "flac" else "m4a"
+        val quality = info.audioQualityDelivered
+        cache?.lookup(info.trackId, quality, ext)?.let { cached ->
+            cache.touch(cached)
+            Log.i(TAG, "BTS en caché: track=${info.trackId} bytes=${cached.length()}")
+            return ResolvedStream("file://${cached.absolutePath}", qualityLabel(info, codecs), cached, isCached = true)
+        }
         // v2.5.418: NO streaming directo. Con la red inestable el extractor
         // se quedaba sin datos (cortes) y marcaba EOS prematuro → STOPPED →
         // la cola avanzaba sola. Se descarga el archivo completo primero
         // (igual que DASH) y se reproduce el temporal local.
-        val ext = if ("flac" in codecs.lowercase()) "flac" else "m4a"
         val outFile = File(cacheDir, "tidal_bts_${info.trackId}.$ext")
         try {
-            val bytes = runCatching { http.requestBytes(url) }
+            val bytes = runCatching { downloadBytes(url) }
                 .getOrElse { throw TidalApiException("No se pudo bajar el audio de Tidal: ${it.message}") }
             if (bytes.size > MAX_TOTAL_BYTES) throw TidalApiException("Pista de Tidal demasiado grande")
             FileOutputStream(outFile).use { it.write(bytes) }
@@ -99,8 +117,12 @@ open class TidalStreamResolver(private val http: TidalHttp) {
             runCatching { outFile.delete() }
             throw e
         }
-        Log.i(TAG, "BTS descargado: track=${info.trackId} bytes=${outFile.length()}")
-        return ResolvedStream("file://${outFile.absolutePath}", qualityLabel(info, codecs), outFile)
+        // v2.5.421: el temporal pasa a la caché (o se queda temporal si no
+        // hay caché). El controlador solo borra los no-cacheados.
+        val finalFile = cache?.put(info.trackId, quality, ext, outFile) ?: outFile
+        val cached = cache?.isManaged(finalFile) == true
+        Log.i(TAG, "BTS descargado: track=${info.trackId} bytes=${finalFile.length()} cache=$cached")
+        return ResolvedStream("file://${finalFile.absolutePath}", qualityLabel(info, codecs), finalFile, isCached = cached)
     }
 
     // ── DASH: descargar segmentos a archivo temporal ─────────────────────
@@ -149,12 +171,21 @@ open class TidalStreamResolver(private val http: TidalHttp) {
             segmentUrls.add(resolveUrl(baseUrl, url))
         }
 
+        // v2.5.421: la caché primero (igual que BTS).
+        val quality = info.audioQualityDelivered
+        cache?.lookup(info.trackId, quality, "m4s")?.let { cached ->
+            cache.touch(cached)
+            Log.i(TAG, "DASH en caché: track=${info.trackId} bytes=${cached.length()}")
+            val codecs = representation.attrs["codecs"] ?: audioSet.attrs["codecs"] ?: ""
+            return ResolvedStream("file://${cached.absolutePath}", qualityLabel(info, codecs), cached, isCached = true)
+        }
+
         val outFile = File(cacheDir, "tidal_dash_${info.trackId}.m4s")
         var totalBytes = 0L
         try {
             FileOutputStream(outFile).use { out ->
                 for (url in segmentUrls) {
-                    val bytes = runCatching { http.requestBytes(url) }
+                    val bytes = runCatching { downloadBytes(url) }
                         .getOrElse { throw TidalApiException("No se pudo bajar el audio de Tidal: ${it.message}") }
                     if (bytes.size > MAX_SEGMENT_BYTES) throw TidalApiException("Segmento de Tidal demasiado grande")
                     totalBytes += bytes.size
@@ -166,9 +197,31 @@ open class TidalStreamResolver(private val http: TidalHttp) {
             runCatching { outFile.delete() }
             throw e
         }
-        Log.i(TAG, "DASH descargado: track=${info.trackId} segmentos=${segmentUrls.size} bytes=$totalBytes")
+        // v2.5.421: el temporal pasa a la caché (o se queda temporal).
+        val finalFile = cache?.put(info.trackId, quality, "m4s", outFile) ?: outFile
+        val cached = cache?.isManaged(finalFile) == true
+        Log.i(TAG, "DASH descargado: track=${info.trackId} segmentos=${segmentUrls.size} bytes=$totalBytes cache=$cached")
         val codecs = representation.attrs["codecs"] ?: audioSet.attrs["codecs"] ?: ""
-        return ResolvedStream("file://${outFile.absolutePath}", qualityLabel(info, codecs), outFile)
+        return ResolvedStream("file://${finalFile.absolutePath}", qualityLabel(info, codecs), finalFile, isCached = cached)
+    }
+
+    // ── Descarga con reintento ────────────────────────────────────────────
+
+    /**
+     * Descarga con UN reintento (v2.5.421): la red móvil se corta un
+     * segundo y vuelve; un solo fallo no debe matar el tema. El llamador
+     * envuelve el error con su mensaje ("No se pudo bajar el audio...").
+     */
+    private fun downloadBytes(url: String): ByteArray {
+        var lastError: Exception? = null
+        repeat(2) { attempt ->
+            val result = runCatching { http.requestBytes(url) }
+            if (result.isSuccess) return result.getOrThrow()
+            lastError = result.exceptionOrNull() as? Exception
+                ?: Exception(result.exceptionOrNull()?.message)
+            if (attempt == 0) sleeper(1_000L)
+        }
+        throw lastError ?: TidalApiException("No se pudo bajar el audio de Tidal")
     }
 
     // ── Etiqueta de calidad ENTREGADA (honestidad: lo que dio el servidor) ──
