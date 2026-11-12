@@ -14,7 +14,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * TIDAL — tests del resolvedor de streams (v2.5.416).
+ * TIDAL — tests del resolvedor de streams (v2.5.418).
  * Fixtures: manifiesto BTS real (base64) y MPDs DASH reales en estructura
  * (SegmentTemplate + SegmentTimeline, como los entrega Tidal).
  * Sin red: los segmentos los sirve el HTTP falso.
@@ -60,12 +60,37 @@ class TidalStreamResolverTest {
         )
 
     @Test
-    fun bts_directUrl() {
-        val resolver = TidalStreamResolver(FakeHttp())
+    fun bts_downloadsToFile() {
+        // v2.5.418: BTS ya NO se reproduce por streaming directo (con la
+        // red inestable el extractor marcaba EOS prematuro y la cola
+        // avanzaba sola). Ahora se descarga completo a temporal, como DASH.
+        val flacBytes = "FAKEFLAC".toByteArray()
+        val http = FakeHttp(bytesHandler = { url ->
+            assertEquals("https://cdn.example/track.flac", url)
+            flacBytes
+        })
+        val resolver = TidalStreamResolver(http)
         val resolved = resolver.resolve(info("application/vnd.tidal.bts", BTS_PLAIN), cacheDir)
-        assertEquals("https://cdn.example/track.flac", resolved.playbackUri)
+        assertTrue(resolved.playbackUri.startsWith("file://"))
         assertEquals("FLAC 16-bit/44.1 kHz", resolved.qualityLabel)
-        assertNull(resolved.downloadedFile)
+        val file = resolved.downloadedFile!!
+        assertTrue(file.exists())
+        assertEquals("FAKEFLAC", String(file.readBytes(), Charsets.UTF_8))
+        assertTrue(file.name.startsWith("tidal_bts_789."))
+        file.delete()
+    }
+
+    @Test
+    fun bts_downloadFailure_throwsAndDeletesTemp() {
+        val http = FakeHttp(bytesHandler = { error("red caída") })
+        val resolver = TidalStreamResolver(http)
+        try {
+            resolver.resolve(info("application/vnd.tidal.bts", BTS_PLAIN), cacheDir)
+            fail("debió lanzar al fallar la descarga BTS")
+        } catch (e: TidalApiException) {
+            assertTrue(e.message!!.contains("No se pudo bajar"))
+        }
+        assertTrue(cacheDir.listFiles()?.none { it.name.startsWith("tidal_bts_") } ?: true)
     }
 
     @Test

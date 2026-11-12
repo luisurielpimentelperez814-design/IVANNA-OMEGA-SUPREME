@@ -9,7 +9,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * TIDAL — resolvedor de streams (v2.5.416).
+ * TIDAL — resolvedor de streams (v2.5.418).
  *
  * Entrada: TidalPlaybackInfo de playbackinfopostpaywall (manifiesto en
  * base64 + calidad ENTREGADA por el servidor). Salida: algo que el
@@ -18,7 +18,13 @@ import java.io.FileOutputStream
  * Dos rutas, verificadas contra tidalapi (media.py) y el sondeo en vivo de
  * cliamp PR #313 (ago 2026):
  * - BTS (manifestMimeType con vnd.tidal.bts): JSON {urls[], codecs,
- *   mimeType, encryptionType}. URL directa → se reproduce tal cual.
+ *   mimeType, encryptionType}. v2.5.418: la URL YA NO se reproduce en
+ *   streaming directo — con la red inestable el extractor se quedaba sin
+ *   datos (cortes) y marcaba EOS prematuro → el BridgePlayer pasaba a
+ *   STOPPED y la cola avanzaba sola, cambiando de canción sin tocar nada.
+ *   Ahora la URL se descarga COMPLETA a un temporal y se reproduce el
+ *   archivo local, igual que DASH. Coste honesto: cada tema tarda unos
+ *   segundos en cargar (en WiFi); en datos móviles lentos tarda más.
  * - DASH (manifestMimeType dash+xml): MPD con SegmentTemplate
  *   (initialization + media con $Number$) y SegmentTimeline (Ss d/r).
  *   Se descargan init + segmentos en orden a un archivo temporal
@@ -36,11 +42,11 @@ import java.io.FileOutputStream
 class TidalEncryptedException(message: String) : Exception(message)
 
 data class ResolvedStream(
-    /** URI para BridgePlayer.play(): URL https (BTS) o file:// del temporal (DASH). */
+    /** URI para BridgePlayer.play(): file:// del temporal (DASH y BTS). */
     val playbackUri: String,
     /** Calidad ENTREGADA real, p. ej. "FLAC 24-bit/96 kHz" o "AAC 320 kbps". */
     val qualityLabel: String,
-    /** Archivo temporal (solo DASH). El controlador lo borra tras sonar. */
+    /** Archivo temporal (DASH y BTS). El controlador lo borra tras sonar. */
     val downloadedFile: File? = null
 )
 
@@ -57,15 +63,15 @@ open class TidalStreamResolver(private val http: TidalHttp) {
             String(Base64.decode(info.manifestBase64, Base64.DEFAULT), Charsets.UTF_8)
         }.getOrElse { throw TidalApiException("Manifiesto de Tidal ilegible") }
         return when {
-            "bts" in info.manifestMimeType.lowercase() -> resolveBts(info, manifestText)
+            "bts" in info.manifestMimeType.lowercase() -> resolveBts(info, manifestText, cacheDir)
             "dash" in info.manifestMimeType.lowercase() -> resolveDash(info, manifestText, cacheDir)
             else -> throw TidalApiException("Formato de stream de Tidal no reconocido (${info.manifestMimeType})")
         }
     }
 
-    // ── BTS: URL directa ──────────────────────────────────────────────────
+    // ── BTS: descargar la URL completa a temporal ────────────────────────
 
-    private fun resolveBts(info: TidalPlaybackInfo, manifestText: String): ResolvedStream {
+    private fun resolveBts(info: TidalPlaybackInfo, manifestText: String, cacheDir: File): ResolvedStream {
         val json = runCatching { JSONObject(manifestText) }
             .getOrElse { throw TidalApiException("Manifiesto BTS de Tidal ilegible") }
         val encryption = json.optString("encryptionType", "NONE")
@@ -78,7 +84,23 @@ open class TidalStreamResolver(private val http: TidalHttp) {
         val url = urls?.optString(0, "")?.takeIf { it.isNotBlank() }
             ?: throw TidalApiException("Tidal no dio URL de stream para esta pista")
         val codecs = json.optString("codecs", "")
-        return ResolvedStream(url, qualityLabel(info, codecs), null)
+        // v2.5.418: NO streaming directo. Con la red inestable el extractor
+        // se quedaba sin datos (cortes) y marcaba EOS prematuro → STOPPED →
+        // la cola avanzaba sola. Se descarga el archivo completo primero
+        // (igual que DASH) y se reproduce el temporal local.
+        val ext = if ("flac" in codecs.lowercase()) "flac" else "m4a"
+        val outFile = File(cacheDir, "tidal_bts_${info.trackId}.$ext")
+        try {
+            val bytes = runCatching { http.requestBytes(url) }
+                .getOrElse { throw TidalApiException("No se pudo bajar el audio de Tidal: ${it.message}") }
+            if (bytes.size > MAX_TOTAL_BYTES) throw TidalApiException("Pista de Tidal demasiado grande")
+            FileOutputStream(outFile).use { it.write(bytes) }
+        } catch (e: Exception) {
+            runCatching { outFile.delete() }
+            throw e
+        }
+        Log.i(TAG, "BTS descargado: track=${info.trackId} bytes=${outFile.length()}")
+        return ResolvedStream("file://${outFile.absolutePath}", qualityLabel(info, codecs), outFile)
     }
 
     // ── DASH: descargar segmentos a archivo temporal ─────────────────────

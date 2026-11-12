@@ -4,7 +4,7 @@ import android.content.Context
 import com.ivanna.omega.audio.IvannaBridgePlayer
 
 /**
- * TIDAL — cliente completo (v2.5.417).
+ * TIDAL — cliente completo (v2.5.418).
  *
  * Un solo objeto creado UNA vez en el ámbito del setContent de MainActivity
  * (vida de la actividad) y pasado a la pantalla TIDAL. Así la música sigue
@@ -59,10 +59,13 @@ class TidalClient(context: Context, player: IvannaBridgePlayer) {
 
     init {
         controller.quality = quality
-        // Limpieza de temporales DASH de ejecuciones anteriores.
+        // Limpieza de temporales DASH/BTS de ejecuciones anteriores.
         runCatching {
             appContext.cacheDir.listFiles()
-                ?.filter { it.name.startsWith("tidal_dash_") && it.name.endsWith(".m4s") }
+                ?.filter {
+                    (it.name.startsWith("tidal_dash_") && it.name.endsWith(".m4s")) ||
+                        it.name.startsWith("tidal_bts_")
+                }
                 ?.forEach { it.delete() }
         }
     }

@@ -6,7 +6,7 @@
 
 **Audio espacial Android · evidencia antes que promesas**
 
-[![Versión](https://img.shields.io/badge/versión-2.5.417-c8a96b?style=flat-square)](version.properties)
+[![Versión](https://img.shields.io/badge/versión-2.5.418-c8a96b?style=flat-square)](version.properties)
 [![Android](https://img.shields.io/badge/Android-13%2B-83c6b0?style=flat-square)](app/build.gradle.kts)
 [![Motor](https://img.shields.io/badge/motor-C%2B%2B26%20%C2%B7%20Kotlin-9fb7d0?style=flat-square)](app/src/main/)
 [![CI](https://img.shields.io/github/actions/workflow/status/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/build.yml?branch=main&label=CI%20main&style=flat-square)](https://github.com/luisurielpimentelperez814-design/IVANNA-OMEGA-SUPREME/actions/workflows/build.yml)
@@ -23,7 +23,7 @@
 
 ## Estado actual · 12 de noviembre de 2026
 
-**Versión vigente: v2.5.417 (708).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
+**Versión vigente: v2.5.418 (709).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
 
 **Las dos rutas:** la **Ruta A** (APK, capture) procesa el audio del reproductor propio (Tidal, YouTube Music) con el ASRC magistral nativo + Ψ activa; si algo falla, solo cae la app. La **Ruta B** (Magisk + HAL, todo el sistema) está **MUERTA desde el 2026-11-11** — la historia completa, sin maquillar, en [docs/HISTORIA_RUTA_B.md](docs/HISTORIA_RUTA_B.md). No instalar ningún zip; la v2.5.403 lleva el wrapper roto y la **v2.5.384 está RETIRADA** (brickeó el teléfono 2 veces).
 
@@ -45,6 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.418** (709) | Fix TIDAL: cortes y canciones que cambiaban solas. El stream BTS se reproducía directo por red; con la red inestable el extractor marcaba EOS prematuro y la cola avanzaba sola. Ahora BTS se descarga completo a temporal antes de sonar, igual que DASH. 1 test Kotlin nuevo. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.417** (708) | Fix TIDAL HTTP 400 en vivo: la API v1 exige `countryCode` (+ `sessionId`) en toda petición y la 416 no los mandaba — búsqueda y playback fallaban con HTTP 400. Ahora se mandan desde la sesión (MX). 3 tests Kotlin nuevos. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.416** (707) | TIDAL dentro de IVANNA (reproductor propio, sin redirecciones): pestaña TIDAL en el dock, login OAuth PKCE en la página de Tidal (tokens cifrados, contraseña nunca guardada), búsqueda, mis listas, cola y playback por el BridgePlayer al 100% (cadena magistral completa). BTS directo y DASH a temporal; pistas cifradas no se reproducen (sin bypass de DRM); calidad entregada siempre visible. 38 tests Kotlin nuevos. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.415** (706) | Reparación de las 5 banderas rojas de la 414: servo ppm con riel ±500 ppm (contrato SAFMUS) + telemetría de riel (priming/reprimes ahora contados en la cola); dsp_pk ahora pico de ventana de 1 s (+ pico de sesión aparte en `dsp_pk_ses`); rms/peak reales de captura (bug de telemetría, sin cambio de ganancia); Reality THD+N −78.7 dB @0.12 / −72.7 dB @0.24 (el −68.8 dB era el piso del generador de tono del test); ORBE/HOLOS con re-sondeo de la puerta de coherencia + telemetría `gate_*`. 4 tests host + 2 Kotlin nuevos. CTest 978/978 (medido por la CI). ASRC+Psi 91/91. Solo APK. Ruta B en pausa. |
@@ -191,7 +192,7 @@ Todas en host a 48 kHz. Mediciones en dispositivo: **ver Estado actual (único l
 | Sensor, throughput host | 280× RT | `test_real_acoustic_sensor` |
 | ASRC v5 (host) | THD+N @1 kHz −90.4 dB banda ancha / −92.1 dB en banda · rechazo alias @23 kHz −156…−162 dB | validación host ASRC v5 (103 de 103 checks) |
 
-**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 978/978 medido por la CI (v2.5.415; sin cambios en la 416 ni en la 417, que solo añaden Kotlin)** — la cifra subió de 954 (v2.5.406) a 970 (v2.5.411), a 976 (v2.5.414) y a 978 (v2.5.415, medido por la CI; en host local la suite registra 980) por los 4 tests nuevos de la 415 (pico ventaneado, Reality a contraste máximo, re-sondeo HOLOS, recuperación de shed ORBE). **ASRC magistral + Ψ (Ruta A): 91/91 en CTest** (12 binarios; el 46/46 citado hasta la 414 era el conteo del binario standalone de la 412: 31/31 hasta la 411 + 15 checks de captura en la 412 — THD+N a 320 frames, bloques variables 320/319, Ψ viva a 320 frames, coste por bloque — ya absorbido en la suite) (verificado 2026-11-12). **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además 18 tests unitarios Kotlin previos + **41 nuevos de TIDAL (38 en la 416 + 3 en la 417)** (`TidalApiParsingTest` 13, `TidalAuthTest` 10, `TidalStreamResolverTest` 7, `TidalPlayerControllerTest` 11) y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
+**Tests — tres conteos distintos, no confundirlos:** **CTest (suite DSP host): 978/978 medido por la CI (v2.5.415; sin cambios en la 416, la 417 ni la 418, que solo añaden Kotlin)** — la cifra subió de 954 (v2.5.406) a 970 (v2.5.411), a 976 (v2.5.414) y a 978 (v2.5.415, medido por la CI; en host local la suite registra 980) por los 4 tests nuevos de la 415 (pico ventaneado, Reality a contraste máximo, re-sondeo HOLOS, recuperación de shed ORBE). **ASRC magistral + Ψ (Ruta A): 91/91 en CTest** (12 binarios; el 46/46 citado hasta la 414 era el conteo del binario standalone de la 412: 31/31 hasta la 411 + 15 checks de captura en la 412 — THD+N a 320 frames, bloques variables 320/319, Ψ viva a 320 frames, coste por bloque — ya absorbido en la suite) (verificado 2026-11-12). **Telemetría 1 Hz (v2.5.407): 6 tests Kotlin** (los corre la CI en `testReleaseUnitTest`). Además 18 tests unitarios Kotlin previos + **42 nuevos de TIDAL (38 en la 416, 3 en la 417, 1 en la 418)** (`TidalApiParsingTest` 13, `TidalAuthTest` 10, `TidalStreamResolverTest` 8, `TidalPlayerControllerTest` 11) y 3 de HeadMeasureMath (los corre la CI). **CI host:** la run "Tests host (CTest)" estuvo en `failure` desde la v2.5.402 porque el workflow ponía `CC: clang-18` sin instalar clang-18. **Corregido en v2.5.408:** `tests-host.yml` instala clang-18. Si la CI vuelve a ponerse roja, es una regresión real — no se normaliza.
 
 ---
 
@@ -225,7 +226,7 @@ La [configuración Android](app/build.gradle.kts) declara **SDK mínimo 28**, **
 
 ```bash
 ./gradlew :app:assembleDebug
-bash scripts/run_ctest.sh   # DSP en host (C++26); CTest en verde en CI (v2.5.417)
+bash scripts/run_ctest.sh   # DSP en host (C++26); CTest en verde en CI (v2.5.418)
 ```
 
 ---
