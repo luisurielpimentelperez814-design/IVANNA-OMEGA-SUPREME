@@ -351,6 +351,38 @@ fun OmegaApp() {
                 com.ivanna.omega.audio.ParameterStore(context)
             )
         }
+        // TIDAL (v2.5.416): el reproductor y el cliente de Tidal viven en el
+        // ámbito de la actividad, NO de la pestaña: la música sigue sonando
+        // al cambiar de pestaña (CONTROL ↔ TIDAL) o al ir a otras pantallas.
+        // El DashboardScreen legacy creaba su propio player y lo liberaba al
+        // salir (~líneas 1187-1188); ese código está muerto (nadie llama a
+        // DashboardScreen) y no se toca.
+        val bridgePlayer = remember { IvannaBridgePlayer(context) }
+        val tidalClient = remember { com.ivanna.omega.tidal.TidalClient(context, bridgePlayer) }
+        DisposableEffect(bridgePlayer) {
+            com.ivanna.omega.audio.MediaSessionManager.init(context, bridgePlayer)
+            onDispose {
+                com.ivanna.omega.audio.MediaSessionManager.release()
+                bridgePlayer.release()
+                tidalClient.close()
+            }
+        }
+        // Sondeo del estado del reproductor para el controlador de Tidal
+        // (avance de cola al terminar un tema). Vive aquí, no en la pantalla
+        // TIDAL, para que la cola avance aunque se esté en otra pestaña.
+        LaunchedEffect(bridgePlayer) {
+            while (true) {
+                val sinkState = when (bridgePlayer.state) {
+                    IvannaBridgePlayer.State.PLAYING -> com.ivanna.omega.tidal.TidalSinkState.PLAYING
+                    IvannaBridgePlayer.State.PAUSED -> com.ivanna.omega.tidal.TidalSinkState.PAUSED
+                    IvannaBridgePlayer.State.STOPPED -> com.ivanna.omega.tidal.TidalSinkState.STOPPED
+                    IvannaBridgePlayer.State.ERROR -> com.ivanna.omega.tidal.TidalSinkState.ERROR
+                    IvannaBridgePlayer.State.IDLE -> com.ivanna.omega.tidal.TidalSinkState.IDLE
+                }
+                tidalClient.controller.onPlayerStateChanged(sinkState)
+                kotlinx.coroutines.delay(100L)
+            }
+        }
         var pendingBandProfileId by remember { mutableStateOf<String?>(null) }
         val introAlreadyShown = remember { com.ivanna.omega.ui.IntroVideoGate.hasShownIntroVideo(context) }
         NavHost(nav, startDestination = if (introAlreadyShown) "splash" else "introVideo") {
@@ -416,6 +448,8 @@ fun OmegaApp() {
                     dsp          = dsp,
                     adaptiveBack = adaptiveBackend,
                     voiceMgr     = voiceProtectionManager,
+                    player       = bridgePlayer,
+                    tidal        = tidalClient,
                     metrics      = com.ivanna.omega.audio.OmegaMetrics.shared.collectAsState().value,
                     adaptiveMode = com.ivanna.omega.audio.AdaptiveMode.valueOf(audioStateMs.adaptiveMode.name),
                     onAdaptiveModeChange = { uiMode ->

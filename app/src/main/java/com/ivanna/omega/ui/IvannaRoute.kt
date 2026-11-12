@@ -60,6 +60,9 @@ object IvannaRoute {
     // Colección de los 30 mejores conciertos de rock (v2.5.372)
     const val ROCK_CONCERTS = "rock_concerts"
 
+    // TIDAL dentro de IVANNA (v2.5.416): reproductor propio, sin redirecciones.
+    const val TIDAL = "tidal"
+
     // ── 5 Ejes de Supremacía Cuántico-Neuromórfica (Prompt Maestro 2026) ─────
     const val SUPREME_AXES_HUB       = "supreme_axes_hub"
     const val SUPREME_AXIS_1_LATTICE = "supreme_axis_1_lattice"

@@ -15,7 +15,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.ivanna.omega.audio.IvannaBridgePlayer
 import com.ivanna.omega.core.LiveDiagnosticConnector
+import com.ivanna.omega.tidal.TidalClient
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -45,7 +47,10 @@ private val TABS = listOf(
     NavTab("tab_brain",    "BRAIN",    Icons.Filled.Memory),
     NavTab("tab_adaptive", "ADAPTIVE", Icons.Filled.GraphicEq),
     NavTab("tab_spatial",  "SPATIAL",  Icons.Filled.SurroundSound),
-    NavTab("tab_system",   "SYSTEM",   Icons.Filled.Settings)
+    NavTab("tab_system",   "SYSTEM",   Icons.Filled.Settings),
+    // TIDAL (v2.5.416): última para no desplazar los índices TABS[0..4]
+    // que usa el resto del archivo (onOpenAdaptiveTab, etc.).
+    NavTab("tab_tidal",    "TIDAL",    Icons.Filled.MusicNote)
 )
 
 /**
@@ -64,7 +69,11 @@ fun MainScaffold(
     onAdaptiveModeChange : (AdaptiveMode) -> Unit = {},
     adaptiveIntensity    : Float   = 50f,
     onAdaptiveIntensityChange : (Float) -> Unit = {},
-    routeState : PipelineState     = PipelineState()
+    routeState : PipelineState     = PipelineState(),
+    // TIDAL (v2.5.416): el reproductor y el cliente viven en el ámbito de
+    // la actividad (MainActivity) y se pasan aquí para la pestaña TIDAL.
+    player     : IvannaBridgePlayer,
+    tidal      : TidalClient
 ) {
     val tabNav  = rememberNavController()
     val entry   by tabNav.currentBackStackEntryAsState()
@@ -223,6 +232,18 @@ fun MainScaffold(
                     onOpenHiRes     = { outerNav.navigate("hires") },
                     onOpenMusicIntel = { outerNav.navigate("music_intelligence") },
                     onOpenRockConcerts = { outerNav.navigate(IvannaRoute.ROCK_CONCERTS) }
+                )
+            }
+
+            // ── TIDAL (v2.5.416) ────────────────────────────────────────
+            // Reproductor propio dentro de IVANNA: el audio va por el
+            // BridgePlayer (cadena magistral al 100%), nunca por captura
+            // ni por el reproductor del sistema.
+            composable(TABS[5].route) {
+                TidalScreen(
+                    tidal  = tidal,
+                    player = player,
+                    onBack = { tabNav.navigate(TABS[0].route) { launchSingleTop = true } }
                 )
             }
         }
