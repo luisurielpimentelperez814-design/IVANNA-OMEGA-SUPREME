@@ -224,8 +224,12 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
     // rms=0.00). Con prioridad urgente el hilo de audio expropia a lo
     // demás, no al revés. La prioridad se fija DENTRO del Runnable del
     // hilo (no en el factory: ahí corre el hilo que crea, no el creado).
-    // Se cierra en release(); el buffer se queda en minBuf×4 (se conserva
-    // el fast mixer; si los cortes siguen, el siguiente paso es ×6).
+    // Se cierra en release(); el buffer sube a minBuf×6 (la 423 NO paró los
+    // cortes: verificado en vivo 2026-11-12 16:54, xruns=3549, HOLOS p99
+    // 10.4 ms, cola llena occ 16522 vs objetivo 7696 — el hilo urgente no
+    // movió ni la cola ni los picos; el cuello es el cómputo del DSP, y el
+    // colchón mayor absorbe los picos. Si los cortes siguen, el siguiente
+    // paso es atacar los picos de HOLOS mismos).
     private val audioDispatcher = Executors.newSingleThreadExecutor { r ->
         Thread({
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -752,7 +756,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
                         .setChannelMask(channelMask)
                         .build()
                 )
-                .setBufferSizeInBytes(minBuf * 4)
+                .setBufferSizeInBytes(minBuf * 6)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
