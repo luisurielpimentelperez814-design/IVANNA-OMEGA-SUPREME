@@ -27,6 +27,7 @@
 #include "../../spatial/WfsRenderer.cpp"
 #include "../../experimental/adaptive_engine/adaptive_decision_engine.cpp"
 #include "../../daemon/core/omega_control_bus.cpp"
+#include "../ivanna_measure.hpp"
 
 namespace {
 
@@ -709,3 +710,155 @@ TEST(AcousticRealityHumanValidationSuite, 11_HumanValidation_FatigueVsTraditiona
     EXPECT_LE(snap24h.cognitive.executiveDecision.arbitratedWfsSpreadScale, 1.25f);
 }
 
+
+// ── v2.5.414: Reality en el BridgePlayer (nativeProcessBlock) ──────────────
+// La auditoría magistral encontró que el pase microExtractor de Reality solo
+// corría en captura; nativeProcessBlock no lo llamaba. Estos tests verifican
+// la lógica exacta del cableado (mismo gate que el JNI: isEnabled() +
+// stateBus sequence > 0) y miden coste y THD+N en host, bloques de 320.
+namespace {
+constexpr int k414Block = 320;
+
+float rmsOf414(const float* x, int n) {
+    double s = 0.0;
+    for (int i = 0; i < n; ++i) s += static_cast<double>(x[i]) * x[i];
+    return static_cast<float>(std::sqrt(s / n));
+}
+}  // namespace
+
+TEST(RealityPlayerWiring414, StateBusSequenceGate) {
+    using namespace ivanna::reality;
+    AcousticRealityOrchestrator orch;  // fresco: nada publicado aún
+    EXPECT_TRUE(orch.isEnabled());     // default true
+    // Sin publicar, el gate del JNI (sequence > 0) bloquea el pase.
+    EXPECT_EQ(orch.stateBus().readLatestSnapshot().sequence, 0u);
+
+    ivanna::experimental::RawAudioMetrics m{};
+    m.rms = 0.24f; m.peak = 0.74f; m.crest_factor_db = 9.8f;
+    m.band_low_energy = 0.08f; m.band_mid_energy = 0.11f; m.band_high_energy = 0.05f;
+    m.band_energy_valid = true; m.voice_score = 0.62f; m.voice_score_valid = true;
+    std::array<ivanna::spatial::DecomposedObject, 4> objs{};
+    objs[0].position = {0.0f, 1.5f, 0.05f}; objs[0].gain = 1.0f;
+    objs[1].position = {-0.7f, 2.1f, 0.15f}; objs[1].gain = 0.85f;
+    objs[2].position = {0.7f, 2.1f, 0.15f}; objs[2].gain = 0.85f;
+    objs[3].position = {0.0f, 3.0f, 0.45f}; objs[3].gain = 0.70f;
+    const auto adaptSt = ivanna::experimental::AdaptiveDecisionEngine::evaluate(m, 0.14f, 0.10f);
+    const auto snap = orch.orchestrateCycle(m, adaptSt, objs, 0.45f, 0.32f, 48000.0f, 0.050f, 50000);
+    EXPECT_GT(snap.sequence, 0u);
+    EXPECT_EQ(orch.stateBus().readLatestSnapshot().sequence, snap.sequence);
+}
+
+TEST(RealityPlayerWiring414, MicroExtractorDisabled_IsBitExact) {
+    using namespace ivanna::reality;
+    std::vector<float> inL(k414Block), inR(k414Block);
+    synthesizeConcertEventBlock(inL.data(), inR.data(), k414Block, 0);
+
+    // enabled=false -> identidad bit-exacta.
+    {
+        MicroRealityExtractor ext;
+        std::vector<float> oL = inL, oR = inR;
+        MicroDetailMap map{};
+        map.intelligibilityContrast = 0.12f;
+        ext.applyMicroIntelligibilityPass(oL.data(), oR.data(), k414Block, map,
+                                         /*enabled=*/false);
+        EXPECT_EQ(std::memcmp(oL.data(), inL.data(), k414Block * sizeof(float)), 0);
+        EXPECT_EQ(std::memcmp(oR.data(), inR.data(), k414Block * sizeof(float)), 0);
+    }
+    // Mapa con contraste 0 en extractor fresco -> identidad bit-exacta.
+    {
+        MicroRealityExtractor ext;
+        std::vector<float> oL = inL, oR = inR;
+        MicroDetailMap zero{};
+        ext.applyMicroIntelligibilityPass(oL.data(), oR.data(), k414Block, zero);
+        EXPECT_EQ(std::memcmp(oL.data(), inL.data(), k414Block * sizeof(float)), 0);
+        EXPECT_EQ(std::memcmp(oR.data(), inR.data(), k414Block * sizeof(float)), 0);
+    }
+}
+
+TEST(RealityPlayerWiring414, MicroExtractorActive_ModifiesAudio_CostAndEnergy) {
+    using namespace ivanna::reality;
+    MicroRealityExtractor ext;
+    MicroDetailMap map{};
+    map.intelligibilityContrast = 0.12f;
+
+    std::vector<float> inL(k414Block), inR(k414Block);
+    std::vector<float> wL(k414Block), wR(k414Block);
+    uint64_t off = 0;
+    // Calentamiento: 100 bloques para que la envolvente suba y los envs se asienten.
+    for (int b = 0; b < 100; ++b) {
+        synthesizeConcertEventBlock(wL.data(), wR.data(), k414Block, off);
+        off += k414Block;
+        ext.applyMicroIntelligibilityPass(wL.data(), wR.data(), k414Block, map);
+    }
+
+    // Coste: mediana de 200 bloques (host escalar, sin NEON).
+    std::vector<double> us;
+    us.reserve(200);
+    for (int b = 0; b < 200; ++b) {
+        synthesizeConcertEventBlock(wL.data(), wR.data(), k414Block, off);
+        off += k414Block;
+        const auto t0 = std::chrono::steady_clock::now();
+        ext.applyMicroIntelligibilityPass(wL.data(), wR.data(), k414Block, map);
+        const auto t1 = std::chrono::steady_clock::now();
+        us.push_back(std::chrono::duration<double, std::micro>(t1 - t0).count());
+    }
+    std::sort(us.begin(), us.end());
+    const double medUs = us[us.size() / 2];
+    const double p99Us = us[static_cast<size_t>(us.size() * 0.99)];
+
+    // Medición: un bloque fresco, entrada guardada.
+    synthesizeConcertEventBlock(inL.data(), inR.data(), k414Block, off);
+    std::vector<float> oL = inL, oR = inR;
+    ext.applyMicroIntelligibilityPass(oL.data(), oR.data(), k414Block, map);
+
+    double maxDiff = 0.0;
+    bool finite = true;
+    for (int i = 0; i < k414Block; ++i) {
+        finite = finite && std::isfinite(oL[i]) && std::isfinite(oR[i]);
+        maxDiff = std::max(maxDiff, static_cast<double>(std::fabs(oL[i] - inL[i])));
+        maxDiff = std::max(maxDiff, static_cast<double>(std::fabs(oR[i] - inR[i])));
+    }
+    const float rmsIn = rmsOf414(inL.data(), k414Block);
+    const float rmsOut = rmsOf414(oL.data(), k414Block);
+    std::printf("[Reality414] microExtractor 320f: mediana=%.1f us p99=%.1f us "
+                "maxDiff=%.5f rmsIn=%.4f rmsOut=%.4f ratio=%.4f\n",
+                medUs, p99Us, maxDiff, rmsIn, rmsOut, rmsOut / rmsIn);
+    EXPECT_TRUE(finite);
+    EXPECT_GT(maxDiff, 1.0e-4) << "con contraste 0.12 y transitorios, el pase debe modificar el audio";
+    // Conservación de energía (el pase promete 0 dB de inflación; la
+    // normalización interna recorta a [0.85, 1.0]).
+    EXPECT_GE(rmsOut / rmsIn, 0.85f);
+    EXPECT_LE(rmsOut / rmsIn, 1.05f);
+    // Cabe en presupuesto con holgura (gobernador 85% = 5670 us/bloque).
+    EXPECT_LT(medUs, 1000.0) << "el pase debe costar < 1 ms/bloque en host escalar";
+}
+
+TEST(RealityPlayerWiring414, MicroExtractorActive_SteadyTone_LowThdn) {
+    using namespace ivanna::reality;
+    MicroRealityExtractor ext;
+    MicroDetailMap map{};
+    map.intelligibilityContrast = 0.12f;
+
+    // 2 s de tono 1 kHz por el pase; THD+N del último segundo.
+    constexpr int kTotal = 2 * 48000;
+    constexpr int kBlocks = kTotal / k414Block;  // 300 bloques
+    std::vector<float> lastSec(48000, 0.0f);
+    std::vector<float> bL(k414Block), bR(k414Block);
+    for (int blk = 0; blk < kBlocks; ++blk) {
+        for (int i = 0; i < k414Block; ++i) {
+            const float t = static_cast<float>(blk * k414Block + i) / 48000.0f;
+            bL[i] = 0.5f * std::sin(kTwoPi * 1000.0f * t);
+            bR[i] = bL[i];
+        }
+        ext.applyMicroIntelligibilityPass(bL.data(), bR.data(), k414Block, map);
+        if (blk >= kBlocks / 2) {
+            std::memcpy(&lastSec[(blk - kBlocks / 2) * k414Block], bL.data(),
+                        k414Block * sizeof(float));
+        }
+    }
+    const auto r = ivanna::measure::thdn(lastSec.data(), 48000, 48000.0, 1000.0);
+    std::printf("[Reality414] microExtractor tono 1kHz: THD+N=%.1f dB amp=%.4f\n",
+                r.thdnDb, r.amp);
+    EXPECT_TRUE(std::isfinite(r.thdnDb));
+    EXPECT_LT(r.thdnDb, -50.0) << "sobre tono estacionario el pase no debe distorsionar";
+}

@@ -1912,7 +1912,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             }
             g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
             g_orbeRouteA.setParams(op);
+            // StageTimings (v2.5.414, paridad con nativeProcessBlock): sin estos
+            // probes, IVANNA.StageTimings mostraba ceros en captura.
+            const auto tOrbe0 = std::chrono::steady_clock::now();
             g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
+            ivanna::stageRecord(ivanna::Stage::Orbe, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tOrbe0).count()));
         }
         // HOLOS después.
         const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
@@ -1948,15 +1952,19 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_holosRouteA.setThermalTier(static_cast<ivanna::HolosThermalTier>(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
+            const auto tHolos0 = std::chrono::steady_clock::now();
             g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
+            ivanna::stageRecord(ivanna::Stage::Holos, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tHolos0).count()));
         }
     }
     // IVANNA (v2.5.375): tras HOLOS, antes de Φ (ver omniProcessRouteA).
     omniProcessRouteA(g_ats.chL, g_ats.chR, n);
     // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la ganancia
     // de salida y del limiter. amount=0 = no-op.
+    const auto tPhi0 = std::chrono::steady_clock::now();
     hyperProcessRouteA(g_ats.chL, g_ats.chR, n,
                        static_cast<float>(std::max(g_params.sampleRate, 8000u)));
+    ivanna::stageRecord(ivanna::Stage::Phi, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tPhi0).count()));
     g_gain.processOutput(g_ats.chL, g_ats.chR, n);
     // FIX distorsión: g_safety_limiter se aplicaba aquí (antes de PDEngine)
     // Y OTRA VEZ en FASE 4B (después de PDEngine) — dos limiters en serie.
@@ -1987,9 +1995,12 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
         g_pd.set_spatial_width(sp_width);
     }
     // buffers en g_ats
+    // StageTimings (v2.5.414, paridad con nativeProcessBlock): Hoa = PDEngine + WFS.
+    const auto tHoa0 = std::chrono::steady_clock::now();
     g_pd.process_block(g_ats.chL, g_ats.chR, g_ats.pdOutL, g_ats.pdOutR, n);
     // WFS real en Ruta A, post-PDEngine y pre-RIR/limitador final.
     processRouteAWfs(g_ats.pdOutL, g_ats.pdOutR, n);
+    ivanna::stageRecord(ivanna::Stage::Hoa, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tHoa0).count()));
     // FEATURE (Spatial adaptativo, fase 1 de "HRTF adaptativo"): mide la
     // correlación L/R real del material SECO (dryL/dryR, antes de
     // cualquier DSP) y aplica un ensanchamiento M/S extra cuando el
@@ -2388,6 +2399,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // ── Supremacía Acústica: Volterra H2 (Anti-Lossy Reconstruction) ──
     if (g_volterra_enabled.load(std::memory_order_relaxed)) {
         static thread_local float voltInter[2 * 2048];
+        const auto tVolt0 = std::chrono::steady_clock::now();
         const int samples = std::min(n, 2048);
         for (int i = 0; i < samples; ++i) {
             voltInter[2 * i]     = g_ats.pdOutL[i];
@@ -2398,9 +2410,13 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             g_ats.pdOutL[i] = voltInter[2 * i];
             g_ats.pdOutR[i] = voltInter[2 * i + 1];
         }
+        ivanna::stageRecord(ivanna::Stage::Volterra, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tVolt0).count()));
     }
 
     // ── Eje Supremo: Inversión Biomecánica Coclear Activa + Cadena Declarativa + 5 Ejes de Supremacía (Ruta A / Ruta C) ──
+    // StageTimings (v2.5.414, paridad con nativeProcessBlock): Npe = cochlear
+    // + pipe (5 Ejes) + routeAApplyNpe. El record va tras routeAApplyNpe.
+    const auto tNpe0 = std::chrono::steady_clock::now();
     {
         static ivanna::supreme::SupremeAcousticStabilityGuard s_routeAGuard{};
         auto& pipe = ivanna::spatial::IvannaAudioPipeline::getActiveInstance();
@@ -2492,6 +2508,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);   // y modula el espacio: se abre antes, se recoge en el impacto
     g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
     routeAApplyNpe(g_ats.pdOutL, g_ats.pdOutR, n);   // paridad con Ruta B (NPE neuromorfico)
+    ivanna::stageRecord(ivanna::Stage::Npe, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tNpe0).count()));
     g_punch.process(g_ats.pdOutL, g_ats.pdOutR, n);
     // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
     // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
@@ -2929,6 +2946,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
 
     g_exciter.process(lBuf, rBuf, n);
     g_widener.process(lBuf, rBuf, n);
+    // Crossfeed (v2.5.414, paridad con nativeProcess): tras el widener, antes
+    // de la ganancia de salida. Default 0 = identidad bit-exacta; con el
+    // slider de la UI > 0 aplica en ambas rutas (antes solo en captura).
+    g_crossfeed.process(lBuf, rBuf, n);
     g_gain.processOutput(lBuf, rBuf, n);
     // AUDIT FIX (limiter en posición equivocada — pumping): el SafetyLimiter
     // corría aquí, ANTES de g_pd.process_block(). Es el mismo patrón que el
@@ -3124,6 +3145,25 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         s_blkGuard.enforceStageEnergyCeiling(
             ivanna::supreme::AcousticModuleId::SupremeAxis1_WarpedLattice,
             oL, oR, nSamples, 1.18f, 0.95f);
+
+        // ── Reality Recon (v2.5.414, paridad con nativeProcess) ──────────
+        // El pase microExtractor de Reality no corría en esta ruta: la cadena
+        // magistral quedaba incompleta en el reproductor. Espejo exacto de
+        // nativeProcess (mismo gate isEnabled() + sequence > 0 del state bus,
+        // que se publica desde orchestrateCycle dentro del pipeline — corre
+        // en ambas rutas). Fail-closed: apagado o sin publicar → no se toca
+        // el audio. Sin allocs ni logging en el hilo de audio.
+        auto& realityOrch = ivanna::reality::AcousticRealityOrchestrator::instance();
+        if (realityOrch.isEnabled()) {
+            const auto rSnap = realityOrch.stateBus().readLatestSnapshot();
+            if (rSnap.sequence > 0) {
+                realityOrch.microExtractor().applyMicroIntelligibilityPass(
+                    oL, oR, nSamples, rSnap.microMap);
+                s_blkGuard.enforceStageEnergyCeiling(
+                    ivanna::supreme::AcousticModuleId::RealityReconstruction,
+                    oL, oR, nSamples, 1.15f, 0.95f);
+            }
+        }
         s_blkGuard.processBlock(oL, oR, nSamples, 0.92f);
     }
 
