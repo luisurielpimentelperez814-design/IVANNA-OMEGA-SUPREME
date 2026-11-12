@@ -340,7 +340,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
                 mixGainProvider = { engine.currentMixGain },
                 // v2.5.415, bandera 1: el poller expone los internos del
                 // servo (deriva medida, ocupación, fase, demanda, riel).
-                pllProvider = { capturePll }
+                pllProvider = { engine.pll }
             )
         }
     }
@@ -604,6 +604,11 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         // Servo de reloj propio de la captura (instancia independiente de
         // la del BridgePlayer: cada uno disciplina su propio AudioTrack).
         private var capturePll: AudioTrackBufferPll? = null
+        // Acceso de solo lectura para el poller de telemetría (el servicio
+        // lo lee vía engine.pll; el campo sigue siendo privado y mutable
+        // solo dentro del engine). Fix v2.5.415: `capturePll` no existe en
+        // el scope del servicio, solo dentro de CaptureEngine.
+        val pll: AudioTrackBufferPll? get() = capturePll
         // Frames entregados al track a 48 kHz (dominio del PLL). Se cuentan
         // en el bucle, no en writeAllToTrack (que también escribe silencio
         // de mute — esos frames del bloque sí se cuentan como submitted).

@@ -204,7 +204,7 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
  * psi en sus defaults (0.5/0.5/inactivo). El shed sí se lee en ambas rutas:
  * el gobernador es estático en el JNI.
  */
-fun collectTelemetrySnapshot(
+internal fun collectTelemetrySnapshot(
     routeAAsrc: RouteAAsrc?,
     mixGain: Float = Float.NaN,
     pll: AudioTrackBufferPll? = null
@@ -285,7 +285,7 @@ fun collectTelemetrySnapshot(
  * del scope que lo lanza: si el scope se cancela, el poller muere con
  * él. La cancelación durante delay() es normal.
  */
-fun CoroutineScope.startTelemetryPoller(
+internal fun CoroutineScope.startTelemetryPoller(
     routeAAsrc: RouteAAsrc?,
     intervalMs: Long = 1000L,
     appContext: Context? = null,
