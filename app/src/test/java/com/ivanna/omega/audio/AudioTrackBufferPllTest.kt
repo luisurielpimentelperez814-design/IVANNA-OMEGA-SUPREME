@@ -59,12 +59,17 @@ class AudioTrackBufferPllTest {
             assertTrue(pll.observe(9_000, 0, 10_000, timeNs) in -500.0..500.0)
         }
         // Cola 9000/10000 (error 0.38 tras deadband): demanda = -(800*0.38 +
-        // 120*4.0 integral) = -784 ppm. Supera la autoridad de ±500 (contrato
-        // SAFMUS): la corrección se clava en -500 y el riel queda visible en
-        // demandedPpm/isAtRail para la telemetría (eso es lo que faltaba en la 414).
+        // 120*integral). Con el riel en ±1000 (primer intento de la 415) el
+        // integrador llegaba a su tope de 4 s y la demanda era -784 ppm.
+        // Con el riel del contrato (±500) NO: el anti-windup de integración
+        // condicional congela el integrador en cuanto la demanda cruza el
+        // riel (es el comportamiento correcto: no se acumula más allá de la
+        // autoridad), así que la demanda queda congelada apenas pasada de
+        // -500. Lo que el test exige es el contrato: corrección clavada en
+        // -500, demanda por encima de la autoridad y riel reportado.
         assertEquals(-500.0, pll.correctionPpm, 0.0)
-        assertEquals(-784.0, pll.demandedPpm, 1.0)
-        assertTrue("demanda -784 ppm > autoridad 500: está en el riel", pll.isAtRail)
+        assertTrue("la demanda supera la autoridad de ±500", pll.demandedPpm <= -500.0)
+        assertTrue("la demanda supera la autoridad de ±500: está en el riel", pll.isAtRail)
     }
 
     @Test fun invalidQueueAndTimestampFailClosed() {
