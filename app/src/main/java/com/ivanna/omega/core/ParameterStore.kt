@@ -415,6 +415,22 @@ class ParameterStore(context: Context) {
     fun isNpeBypass(): Boolean = safeGetBoolean(KEY_NPE_BYPASS, false)
     fun setNpeBypass(value: Boolean) = prefs.edit().putBoolean(KEY_NPE_BYPASS, value).apply()
 
+    // ── NPE — PRECEDENCIA (v2.5.411, tarea 3b, auditoría) ──
+    // Hay DOS almacenes NPE y sus valores DIFIEREN en el teléfono de Esse
+    // (eso es el síntoma, no un bug de lectura): este (ivanna_omega_params)
+    // y AdaptiveControlsPrefs (ivanna_adaptive_controls). Precedencia:
+    //   * El motor NPE VIVO (PiLstmBridge / nativeSetNpeLocal) se alimenta
+    //     de AdaptiveControlsPrefs: los sliders de la UI solo escriben ahí
+    //     (LaunchedEffect en IvannaControlPanel) y PersistedStateRestorer
+    //     restaura desde ahí. ESE es el autoritativo para lo que suena.
+    //   * ESTOS getters solo alimentan el sync al cDSP (OemViewModel) y
+    //     conservan los valores del preset de firma (applySignaturePreset-
+    //     IfFirstRun: 0.60/0.50/0.40/2.5); la UI ya NO los escribe (el
+    //     setter setNpeNeuroParams no tiene llamadores desde la UI).
+    //   * Los FLAGS NPE (bypass/hrtf/cochlear/adapt/manifold) sí viven
+    //     aquí y sí se leen en el arranque: no confundir con los valores.
+    // NO se re-apunta el cDSP a AdaptiveControlsPrefs: cambiaría su sonido
+    // sin evidencia ni ABX. La duplicidad queda documentada, no eliminada.
     fun getNpeHarmonic(): Float = safeGetFloat(KEY_NPE_HARMONIC, 0.60f) // RESOLUCIÓN v3.4: 0.58→0.60 (más color armónico para sabor analógico)
     fun getNpeLateralInhib(): Float = safeGetFloat(KEY_NPE_LATERAL_INHIB, 0.50f) // RESOLUCIÓN v3.4: 0.56→0.50 (menos inhibición = menos artificioso, más natural)
     fun getNpeOhcCompression(): Float = safeGetFloat(KEY_NPE_OHC_COMPRESSION, 0.40f) // RESOLUCIÓN v3.4: 0.60→0.40 — CRÍTICO: OHC alta aplana micro-dinámicas que dan textura

@@ -666,7 +666,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             // en logcat (tag IVANNA.Telemetry) con TODOS los efectos.
             // Hilo de fondo (Dispatchers.Default), nunca el hilo de audio.
             // Se cancela en el finally; si el scope muere, muere con él.
-            telemetryJob = startTelemetryPoller(routeAAsrc)
+            telemetryJob = startTelemetryPoller(routeAAsrc, appContext = context)
             val outputTimestamp = AudioTimestamp()
             // A one-step latency change from an AudioTrack reroute (Bluetooth
             // connect/disconnect, output-device policy change mid-session) is

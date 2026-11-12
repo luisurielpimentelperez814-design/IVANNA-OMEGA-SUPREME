@@ -82,6 +82,13 @@ object PersistedStateRestorer {
             // Modo AUX/altavoces: restaura estado, crossover y coherencia (ruta A + daemon/ruta B).
             runCatching { IvannaNativeLib.nativeSetAuxField(paramStore.isAuxFieldEnabled(), paramStore.getAuxXoverHz(), paramStore.getAuxCoherence()) }
             // NPE neuromórfico: estado al módulo (Ruta B). Sin esto el módulo arrancaba con su valor por defecto.
+            // PRECEDENCIA (v2.5.411, tarea 3b): el motor NPE VIVO se alimenta
+            // de AdaptiveControlsPrefs (ivanna_adaptive_controls), NO de
+            // ParameterStore: los sliders de la UI solo escriben ahí y los
+            // valores NPE de ParameterStore (ivanna_omega_params) difieren
+            // de estos en el teléfono de Esse. ParameterStore NPE solo
+            // alimenta el sync al cDSP (OemViewModel). No se re-apunta nada:
+            // cambiar la fuente cambiaría el sonido sin evidencia ni ABX.
             runCatching {
                 com.ivanna.omega.neuromorphic.PiLstmBridge.restoreModuleNpe(paramStore.isNpeBypass())
                 // Los valores que la UI MUESTRA (guardados o por defecto) son los que debe usar el motor desde el arranque;

@@ -288,7 +288,7 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             retryAttempts = 0
             // Telemetría en vivo 1 Hz (v2.5.410): arranca con la captura.
             telemetryJob?.cancel()
-            telemetryJob = telemetryScope.startTelemetryPoller(routeAAsrc = null)
+            telemetryJob = telemetryScope.startTelemetryPoller(routeAAsrc = null, appContext = this)
         }
     }
 

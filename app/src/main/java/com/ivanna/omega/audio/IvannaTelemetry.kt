@@ -1,8 +1,11 @@
 package com.ivanna.omega.audio
 
+import android.content.Context
 import android.util.Log
 import com.ivanna.omega.core.IvannaNativeLib
+import com.ivanna.omega.core.ParameterStore
 import com.ivanna.omega.neuromorphic.IvannaNpeEngine
+import com.ivanna.omega.ui.AdaptiveControlsPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,6 +57,9 @@ import java.util.Locale
 
 /** Tag logcat para la lectura en vivo: `logcat -s IVANNA.Telemetry`. */
 const val TELEMETRY_TAG = "IVANNA.Telemetry"
+
+/** Tag logcat para la ganancia apilada por banda: `logcat -s IVANNA.EqStack`. */
+const val EQ_STACK_TAG = "IVANNA.EqStack"
 
 /** Un snapshot de todos los efectos en un instante. Valores por defecto = silencio/apagado. */
 data class TelemetrySnapshot(
@@ -197,12 +203,55 @@ fun collectTelemetrySnapshot(routeAAsrc: RouteAAsrc?): TelemetrySnapshot? {
  */
 fun CoroutineScope.startTelemetryPoller(
     routeAAsrc: RouteAAsrc?,
-    intervalMs: Long = 1000L
+    intervalMs: Long = 1000L,
+    appContext: Context? = null
 ): Job = launch(Dispatchers.Default) {
     while (isActive) {
         runCatching {
             val snapshot = collectTelemetrySnapshot(routeAAsrc)
             if (snapshot != null) Log.i(TELEMETRY_TAG, formatTelemetryLine(snapshot))
+        }
+        // Diagnóstico de ganancia apilada por banda (v2.5.411, tarea 3c).
+        // Cuánto EQ se apila en cada banda, en dB, desde sus fuentes de
+        // verdad en Kotlin (valores COMANDADOS = prefs; la UI actualiza
+        // prefs y nativo a la vez, así que coinciden salvo en el instante
+        // del cambio — no es readback nativo). Las 4 capas:
+        //   holos: EQ estático Γ de HOLOS (ParameterStore; Esse:
+        //     +7.8/−8.1/−8.6, tilt +5.2). presence se suma a la banda alta.
+        //   user: EQ de usuario (AdaptiveControlsPrefs eqBass/eqMid/eqTreble;
+        //     defaults 2.2/0.8/1.8), aplicado por nativeSetEQParams a g_eq.
+        //   trim: hyper_bass_trim de Φ (ParameterStore; ±3 dB, solo graves).
+        //   legacy: ganancia master del GainStage (g_params.master, vía
+        //     nativeSetEQParams; masterGain lineal → dB), plana en las 3
+        //     bandas. tilt es pendiente, no ganancia de banda: se reporta
+        //     aparte. Con los valores de Esse: lo ≈ +10.7 dB, mid ≈ −6.6 dB,
+        //     hi ≈ −6.1 dB (spread ~17 dB): el stack existe y se ve aquí.
+        // El comentario en el JNI (línea ~1168) ya advertía que con boosts
+        // grandes el EQ apila >6 dB y el SafetyLimiter arranca en modo pared.
+        if (appContext != null) {
+            runCatching {
+                val ps = ParameterStore(appContext)
+                val ac = AdaptiveControlsPrefs.load(appContext)
+                val legacyDb =
+                    (20.0 * kotlin.math.log10(ac.masterGain.coerceIn(0.1f, 2.0f).toDouble())).toFloat()
+                val stackLo = ps.getHolosEqLow() + ac.eqBass + ps.getHyperBassTrimDb() + legacyDb
+                val stackMid = ps.getHolosEqMid() + ac.eqMid + legacyDb
+                val stackHi = ps.getHolosEqHigh() + ps.getHolosEqPresence() + ac.eqTreble + legacyDb
+                Log.i(
+                    EQ_STACK_TAG,
+                    String.format(
+                        Locale.US,
+                        "stack_lo=%+.2f stack_mid=%+.2f stack_hi=%+.2f tilt=%+.2f " +
+                            "holos_lo=%+.2f holos_mid=%+.2f holos_hi=%+.2f holos_pres=%+.2f " +
+                            "user_lo=%+.2f user_mid=%+.2f user_hi=%+.2f trim=%+.2f legacy=%+.2f",
+                        stackLo, stackMid, stackHi, ps.getHolosEqTiltDb(),
+                        ps.getHolosEqLow(), ps.getHolosEqMid(), ps.getHolosEqHigh(),
+                        ps.getHolosEqPresence(),
+                        ac.eqBass, ac.eqMid, ac.eqTreble,
+                        ps.getHyperBassTrimDb(), legacyDb
+                    )
+                )
+            }
         }
         delay(intervalMs)
     }
