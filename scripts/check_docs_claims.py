@@ -45,12 +45,15 @@ def generate_from_log(log_path: Path) -> int:
         print(f"[ERROR] No existe log de CTest: {log_path}", file=sys.stderr)
         return 1
     txt = log_path.read_text(encoding="utf-8", errors="replace")
-    m = re.search(r'(\d+)%\s+tests\s+passed,\s+(\d+)\s+tests\s+failed\s+out\s+of\s+(\d+)', txt)
+    # CTest 4.4.4 imprime "100% tests passed, 0 tests failed out of N";
+    # CTest 4.4.5 omite la cláusula cuando no hay fallos:
+    # "100% tests passed out of N". La cláusula es opcional (failed=0).
+    m = re.search(r'(\d+)%\s+tests\s+passed(?:,\s+(\d+)\s+tests\s+failed)?\s+out\s+of\s+(\d+)', txt)
     if not m:
         print("[ERROR] No se encontró línea resumen de CTest en el log.", file=sys.stderr)
         return 1
     pct = int(m.group(1))
-    failed = int(m.group(2))
+    failed = int(m.group(2)) if m.group(2) is not None else 0
     total = int(m.group(3))
     passed = total - failed
     t_match = re.search(r'Total Test time \(real\)\s*=\s*([0-9.]+)\s*sec', txt)
