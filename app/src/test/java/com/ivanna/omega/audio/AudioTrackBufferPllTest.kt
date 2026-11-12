@@ -15,7 +15,7 @@ class AudioTrackBufferPllTest {
             pll.observe(8_000, 0, 10_000, timeNs)
         }
         assertTrue("full queue must reduce output frame production", pll.correctionPpm < 0.0)
-        assertTrue("correction must remain bounded", pll.correctionPpm in -1000.0..1000.0)
+        assertTrue("correction must remain bounded", pll.correctionPpm in -500.0..500.0)
         assertTrue("integrator must not cause a sudden correction", pll.correctionPpm >= -200.0)
         assertTrue(pll.isLocked)
         assertEquals(8_000L, pll.occupancyFrames)
@@ -56,14 +56,15 @@ class AudioTrackBufferPllTest {
         pll.observe(9_000, 0, 10_000, timeNs)
         repeat(300) {
             timeNs += 100_000_000L
-            assertTrue(pll.observe(9_000, 0, 10_000, timeNs) in -1000.0..1000.0)
+            assertTrue(pll.observe(9_000, 0, 10_000, timeNs) in -500.0..500.0)
         }
         // Cola 9000/10000 (error 0.38 tras deadband): demanda = -(800*0.38 +
-        // 120*4.0 integral) = -784 ppm. Con el riel viejo (±500) se clavaba
-        // en -500; con el riel nuevo (±1000, v2.5.415) la alcanza exacta.
-        assertEquals(-784.0, pll.correctionPpm, 1.0)
+        // 120*4.0 integral) = -784 ppm. Supera la autoridad de ±500 (contrato
+        // SAFMUS): la corrección se clava en -500 y el riel queda visible en
+        // demandedPpm/isAtRail para la telemetría (eso es lo que faltaba en la 414).
+        assertEquals(-500.0, pll.correctionPpm, 0.0)
         assertEquals(-784.0, pll.demandedPpm, 1.0)
-        assertTrue("demanda -784 ppm < riel 1000: no está en el riel", !pll.isAtRail)
+        assertTrue("demanda -784 ppm > autoridad 500: está en el riel", pll.isAtRail)
     }
 
     @Test fun invalidQueueAndTimestampFailClosed() {
@@ -92,7 +93,7 @@ class AudioTrackBufferPllTest {
         assertEquals(48_048.0, pll.measuredRateHz, 0.5)
         assertEquals(1_000.0, pll.measuredDriftPpm, 10.0)
         assertTrue("faster consumer needs positive resampler production correction", pll.correctionPpm > 0.0)
-        assertTrue(pll.correctionPpm <= 1000.0)
+        assertTrue(pll.correctionPpm <= 500.0)
     }
 
     @Test fun negativeConsumerClockDriftProducesNegativeResamplerCorrection() {
@@ -110,14 +111,15 @@ class AudioTrackBufferPllTest {
         assertEquals(47_952.0, pll.measuredRateHz, 0.5)
         assertEquals(-1_000.0, pll.measuredDriftPpm, 10.0)
         assertTrue("slower consumer must request negative resampler correction", pll.correctionPpm < 0.0)
-        assertTrue(pll.correctionPpm >= -1000.0)
+        assertTrue(pll.correctionPpm >= -500.0)
     }
 
-    @Test fun largeNegativeDriftRailsAtOneThousandPpmAndReportsDemand415() {
-        // Bandera 1 de la v2.5.414: con deriva real de -1500 ppm el servo
-        // viejo (±500) se clavaba en -500 sin decirlo. Con el riel nuevo
-        // (±1000) la corrección llega a -1000 y la demanda sin clampar
-        // (-1500) queda visible en demandedPpm/isAtRail para la telemetría.
+    @Test fun largeNegativeDriftRailsAtFiveHundredPpmAndReportsDemand415() {
+        // Bandera 1 de la v2.5.414: con deriva de -1500 ppm el servo se
+        // clava en -500 (riel del contrato SAFMUS) sin esconderlo: la
+        // demanda sin clampar (-1500) queda visible en demandedPpm/isAtRail
+        // para la telemetría. La 415 primero ensanchó el riel a ±1000 y la
+        // CI lo rechazó — el riel no era la causa, era la contabilidad.
         val pll = AudioTrackBufferPll(48_000)
         var consumed = 0L
         repeat(100) { k ->
@@ -128,26 +130,26 @@ class AudioTrackBufferPllTest {
         assertTrue(pll.isDriftLocked)
         assertEquals(-1500.0, pll.measuredDriftPpm, 10.0)
         assertEquals(-1500.0, pll.demandedPpm, 20.0)
-        assertEquals(-1000.0, pll.correctionPpm, 0.0)
+        assertEquals(-500.0, pll.correctionPpm, 0.0)
         assertTrue("la demanda supera la autoridad: el servo está en el riel", pll.isAtRail)
     }
 
-    @Test fun driftWithinNewRailIsTrackedWithoutRailing415() {
-        // Deriva real de -700 ppm (mayor que el riel viejo de ±500): con
-        // el riel nuevo el servo la sigue exacta, sin clavarse. Es el caso
-        // que la 414 no podía resolver (ppm=-500 clavado con la cola
-        // estable).
+    @Test fun driftWithinRailIsTrackedWithoutRailing415() {
+        // Deriva de -400 ppm (dentro del riel de ±500, muy por encima de
+        // cualquier deriva real medida: -6 a -70 ppm): el servo la sigue
+        // exacta, sin clavarse. Es el caso simétrico al del riel: dentro
+        // de la autoridad no hay saturación; fuera, se reporta con isAtRail.
         val pll = AudioTrackBufferPll(48_000)
         var consumed = 0L
         repeat(100) { k ->
             val t = 1.0 + k * 0.25
-            consumed = (t * 48_000.0 * (1.0 - 700.0e-6)).toLong()
+            consumed = (t * 48_000.0 * (1.0 - 400.0e-6)).toLong()
             pll.observe(consumed + 5_000L, consumed, 10_000, (t * 1.0e9).toLong())
         }
         assertTrue(pll.isDriftLocked)
-        assertEquals(-700.0, pll.measuredDriftPpm, 10.0)
-        assertEquals(-700.0, pll.demandedPpm, 20.0)
-        assertEquals(-700.0, pll.correctionPpm, 20.0)
+        assertEquals(-400.0, pll.measuredDriftPpm, 10.0)
+        assertEquals(-400.0, pll.demandedPpm, 20.0)
+        assertEquals(-400.0, pll.correctionPpm, 20.0)
         assertTrue("deriva dentro de la autoridad: no debe estar en el riel", !pll.isAtRail)
     }
 
@@ -191,7 +193,7 @@ class AudioTrackBufferPllTest {
         assertTrue(!pll.isDriftLocked)
         assertEquals(0.0, pll.measuredDriftPpm, 0.0)
         assertEquals(0.0, pll.measuredRateHz, 0.0)
-        assertTrue(correction in -1000.0..1000.0)
+        assertTrue(correction in -500.0..500.0)
     }
 
     @Test fun timestampRegressionResetsClockAndActuatorToUnity() {
@@ -206,17 +208,18 @@ class AudioTrackBufferPllTest {
         assertTrue(!pll.isLocked)
     }
 
-    @Test fun outputCorrectionAlwaysStaysWithinOneThousandPpm() {
+    @Test fun outputCorrectionAlwaysStaysWithinFiveHundredPpm() {
         val pll = AudioTrackBufferPll(48_000)
         var timeNs = 1_000_000_000L
         pll.observe(9_000, 0, 10_000, timeNs)
         repeat(200) {
             timeNs += 100_000_000L
             val value = pll.observe(9_000, 0, 10_000, timeNs)
-            assertTrue(value in -1000.0..1000.0)
+            assertTrue(value in -500.0..500.0)
         }
-        // Misma demanda que sustainedSaturationRemainsBounded: -784 ppm.
-        assertEquals(-784.0, pll.correctionPpm, 1.0)
+        // Misma demanda que sustainedSaturationRemainsBounded: -784 ppm,
+        // que supera la autoridad de ±500: la corrección se clava en -500.
+        assertEquals(-500.0, pll.correctionPpm, 0.0)
     }
 
     // ── Jitter de timestamp REAL de la salida USB (AudioFlinger, captura Moto G85 + DAC USB full-speed) ──

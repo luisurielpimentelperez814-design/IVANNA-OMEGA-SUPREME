@@ -17,17 +17,16 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
     companion object {
         private const val MIN_INTERVAL_NS = 10_000_000L
         private const val MAX_INTERVAL_NS = 2_000_000_000L
-        // Autoridad del servo (v2.5.415, bandera 1 de la 414): ±1000 ppm,
-        // antes ±500. Justificación medida en vivo (414, Tidal, sesión
-        // estable 11 min, shed 0.6 %, xruns 0): ppm=-500.0 CLAVADO en el
-        // riel todo el rato con la cola estable — el lazo necesitaba más
-        // autoridad de la que tenía. El ASRC nativo ya clampa a ±1000 ppm
-        // (setClockCorrectionPpm) y el resampler Kotlin se ensancha en
-        // paridad; el slew (25 ppm/update) y el anti-windup no cambian.
-        // Si la deriva real es ~-500 ppm o mayor, el servo ahora la
-        // alcanza; la telemetría (demandedPpm/isAtRail + measuredDriftPpm)
-        // dirá en vivo si el riel nuevo basta o si el PLL diverge.
-        private const val MAX_CORRECTION_PPM = 1000.0
+        // Autoridad del servo: ±500 ppm, CONTRATO SAFMUS (lo exige
+        // scripts/check_safmus_transversal_wiring.py). La 415 primero lo
+        // ensanchó a ±1000 y la CI lo rechazó: el riel NO era la causa
+        // del ppm=-500 clavado de la 414 — era el bug de contabilidad
+        // (priming/reprimes no contados en captureSubmittedFrames48k),
+        // ya corregido. Las derivas reales medidas son -6 a -70 ppm,
+        // muy dentro de ±500. Si una deriva real superara el riel, la
+        // telemetría (demandedPpm/isAtRail + measuredDriftPpm) lo dirá
+        // en vivo; el slew (25 ppm/update) y el anti-windup no cambian.
+        private const val MAX_CORRECTION_PPM = 500.0
         private const val MAX_SLEW_PPM_PER_UPDATE = 25.0
         private const val KP_PPM_PER_FULL_BUFFER = 800.0
         private const val KI_PPM_PER_FULL_BUFFER_SECOND = 120.0
@@ -189,8 +188,8 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         // Conditional-integration anti-windup: test the actuator's current
         // unsaturated demand, not the candidate integral. This lets one update
         // reach the hard limit exactly; subsequent updates cannot wind farther
-        // into saturation. The final actuator remains clamped to ±1000 ppm
-        // (v2.5.415; antes ±500).
+        // into saturation. The final actuator remains clamped to ±500 ppm
+        // (contrato SAFMUS; el ASRC nativo clampa más ancho, a ±1000).
         val pushesFurtherIntoSaturation =
             (currentRawTarget >= MAX_CORRECTION_PPM && occupancyError < 0.0) ||
             (currentRawTarget <= -MAX_CORRECTION_PPM && occupancyError > 0.0)
