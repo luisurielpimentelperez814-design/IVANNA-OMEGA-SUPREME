@@ -2,6 +2,7 @@ package com.ivanna.omega.tidal
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -11,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * TIDAL — tests de parsing y de cliente de API (v2.5.416).
+ * TIDAL — tests de parsing y de cliente de API (v2.5.417).
  * Fixtures con la forma real de las respuestas de api.tidal.com/v1
  * (estructura documentada por tidalapi). Sin red.
  */
@@ -106,6 +107,49 @@ class TidalApiParsingTest {
         assertTrue(info.manifestBase64.isNotBlank())
         assertTrue(http.requestedUrls.single().contains("tracks/789/playbackinfopostpaywall"))
         assertTrue(http.requestedUrls.single().contains("audioquality=LOSSLESS"))
+    }
+
+    @Test
+    fun apiClient_search_includesCountryCodeAndSessionId() {
+        // v2.5.417: la 416 no mandaba countryCode/sessionId y Tidal
+        // respondía HTTP 400 en búsqueda y playback (tidalapi los inyecta
+        // en TODA petición a api.tidal.com/v1).
+        val http = FakeHttp(getHandler = { TidalHttpResponse(200, SEARCH_JSON) })
+        val client = TidalApiClient(
+            http,
+            countryCodeProvider = { "MX" },
+            sessionIdProvider = { "sess-1" }
+        )
+        client.search("token-abc", "x")
+        val url = http.requestedUrls.single()
+        assertTrue(url.contains("countryCode=MX"))
+        assertTrue(url.contains("sessionId=sess-1"))
+    }
+
+    @Test
+    fun apiClient_playbackInfo_includesCountryCode() {
+        val http = FakeHttp(getHandler = { TidalHttpResponse(200, PLAYBACK_BTS_JSON) })
+        val client = TidalApiClient(
+            http,
+            countryCodeProvider = { "MX" },
+            sessionIdProvider = { "sess-1" }
+        )
+        client.playbackInfo("token-abc", 789L, TidalApiClient.QUALITY_LOSSLESS)
+        val url = http.requestedUrls.single()
+        assertTrue(url.contains("tracks/789/playbackinfopostpaywall"))
+        assertTrue(url.contains("countryCode=MX"))
+        assertTrue(url.contains("sessionId=sess-1"))
+    }
+
+    @Test
+    fun apiClient_noSessionParams_whenProvidersBlank() {
+        // Antes del login (sessions) no hay país ni sesión: no se inventan.
+        val http = FakeHttp(getHandler = { TidalHttpResponse(200, SEARCH_JSON) })
+        val client = TidalApiClient(http)
+        client.search("token-abc", "x")
+        val url = http.requestedUrls.single()
+        assertFalse(url.contains("countryCode="))
+        assertFalse(url.contains("sessionId="))
     }
 
     @Test

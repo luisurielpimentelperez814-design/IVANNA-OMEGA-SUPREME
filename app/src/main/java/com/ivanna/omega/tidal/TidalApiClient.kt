@@ -5,7 +5,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 /**
- * TIDAL — cliente de la API v1 (v2.5.416).
+ * TIDAL — cliente de la API v1 (v2.5.417).
  *
  * Endpoints verificados contra tidalapi (EbbLabs/python-tidal) y el PR
  * cliamp #313 (ago 2026). Base: https://api.tidal.com/v1/
@@ -42,7 +42,15 @@ data class TidalPlaybackInfo(
 open class TidalApiClient(
     private val http: TidalHttp,
     private val baseUrl: String = "https://api.tidal.com/v1/",
-    private val sleeper: (Long) -> Unit = { Thread.sleep(it) }
+    private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
+    /**
+     * Parámetros de sesión (v2.5.417): tidalapi inyecta `countryCode` y
+     * `sessionId` en TODA petición a api.tidal.com/v1. La 416 no los
+     * mandaba y Tidal respondía HTTP 400 en búsqueda y playback. Se leen
+     * en vivo del store (vacíos antes del login: `sessions` no los lleva).
+     */
+    private val countryCodeProvider: () -> String = { "" },
+    private val sessionIdProvider: () -> String = { "" }
 ) {
 
     companion object {
@@ -134,14 +142,21 @@ open class TidalApiClient(
     // ── HTTP con backoff ──────────────────────────────────────────────────
 
     private fun getJson(token: String, path: String, params: Map<String, String> = emptyMap()): JSONObject {
-        val query = params.entries.joinToString("&") { (k, v) ->
+        // Parámetros de sesión primero (tidalapi los inyecta en toda petición).
+        val allParams = LinkedHashMap<String, String>()
+        val cc = countryCodeProvider()
+        if (cc.isNotBlank()) allParams["countryCode"] = cc
+        val sid = sessionIdProvider()
+        if (sid.isNotBlank()) allParams["sessionId"] = sid
+        allParams.putAll(params)
+        val query = allParams.entries.joinToString("&") { (k, v) ->
             "${encode(k)}=${encode(v)}"
         }
         val url = baseUrl + path + if (query.isNotEmpty()) "?$query" else ""
         val headers = mapOf(
             "Authorization" to "Bearer $token",
             "Accept" to "application/json",
-            "User-Agent" to "IVANNA-Tidal/2.5.416 (Android; com.ivanna.omega)"
+            "User-Agent" to "IVANNA-Tidal/2.5.417 (Android; com.ivanna.omega)"
         )
         var attempt = 0
         while (true) {
@@ -172,7 +187,10 @@ open class TidalApiClient(
                     sleeper(TidalBackoff.delayFor(ex, attempt))
                     attempt++
                 }
-                else -> throw TidalApiException("Tidal respondió HTTP ${resp.status}")
+                else -> throw TidalApiException(
+                    "Tidal respondió HTTP ${resp.status}" +
+                        resp.body.take(200).takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+                )
             }
         }
     }
