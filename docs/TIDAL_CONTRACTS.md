@@ -94,8 +94,17 @@ propio) está en el plan (§5).
 
 ## 5. Contrato de resiliencia
 
-- **Refresh:** el access token se refresca 60 s antes de caducar. Si el
-  refresh falla (`invalid_client` / `invalid_grant`), la sesión se
+- **Refresh:** el access token se refresca 60 s antes de caducar. **Detalle
+  preciso (verificado 2026-11-12):** en tidalapi el refresh envía el
+  `client_secret` PKCE junto al `client_id`; ese secreto es público (va
+  ofuscado en base64 en el código de tidalapi) y por eso el refresh
+  funciona hoy para la comunidad. IVANNA **no lo incrusta a propósito**:
+  es una credencial de terceros (de la propia app de TIDAL) y no se copia
+  ninguna credencial confidencial al repo. Consecuencia honesta: si TIDAL
+  exige el secreto en el refresh, la sesión pedirá re-login al caducar el
+  access token (típicamente ~1 semana). Si TIDAL lo rota, el refresh se
+  rompe para todos los que usan ese client_id, con o sin secreto. Cuando
+  el refresh falla (`invalid_client` / `invalid_grant`), la sesión se
   invalida y se pide re-login — nunca se queda en un estado roto.
 - **Backoff:** 429 y 5xx reintentan con backoff (hasta 3 intentos).
   `countryCode` y `sessionId` se inyectan en toda petición (v2.5.417).

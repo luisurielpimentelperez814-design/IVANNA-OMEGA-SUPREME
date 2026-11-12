@@ -27,9 +27,12 @@ import java.security.SecureRandom
  *   grant_type=authorization_code, code, client_id, redirect_uri,
  *   scope=r_usr+w_usr+w_sub, code_verifier, client_unique_key (SIN secreto)
  * - refresh: POST mismo endpoint con grant_type=refresh_token,
- *   refresh_token, client_id (SIN secreto). Si el servidor responde
- *   invalid_client, el refresh de este cliente exige secreto: se invalida
- *   la sesión y se pide re-login (peor caso: un re-login por semana).
+ *   refresh_token, client_id (SIN secreto). tidalapi envía además el
+ *   client_secret PKCE (público, ofuscado en base64 en su código); IVANNA
+ *   NO lo incrusta a propósito (es una credencial de terceros y no se
+ *   copia ninguna al repo). Si el servidor responde invalid_client, el
+ *   refresh de este cliente exige secreto: se invalida la sesión y se
+ *   pide re-login (peor caso: un re-login por semana, al caducar el token).
  * - Tras el intercambio: GET sessions → sessionId, countryCode, userId.
  *
  * El login ocurre SOLO en el WebView con la página de Tidal: Esse escribe

@@ -45,6 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.422** (713) | Fix CI: el test de telemetría no conocía el campo nuevo `pll_hold` (la 420 y la 421 fallaron por eso). Línea esperada actualizada. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.421** (712) | Tidal magistral: prefetch del siguiente tema (transición instantánea), caché acotada de temas (repetición instantánea, sin red), calidad automática (WiFi → HiRes, móvil → Lossless), reintento de descarga, telemetría de stream. Contratos en `docs/TIDAL_CONTRACTS.md` (la verdad contractual + borrador de solicitud de acuerdo comercial con TIDAL). 10 tests Kotlin nuevos. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.420** (711) | Evolución del servo: ante inanición (underruns) el servo ahora congela su salida (hold) en vez de actuar sobre una cola distorsionada; contador `pll_hold` en telemetría. 2 tests Kotlin nuevos. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.419** (710) | Fix servo del reloj: la inanición del track (underruns, DSP al límite) se leía como reloj lento y clavaba el ppm en -500 con la deriva divergiendo a -577 ppm. Ahora los underruns invalidan la estima de reloj de ese intervalo (el PI sigue controlando la cola). Telemetría del reproductor ahora muestra su propio servo. 3 tests Kotlin nuevos. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
