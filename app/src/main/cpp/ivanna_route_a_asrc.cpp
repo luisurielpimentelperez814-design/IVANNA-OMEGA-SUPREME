@@ -16,9 +16,18 @@
 //     se probó y salió PEOR (Runge: -53 dB); Catmull-Rom es la correcta.
 #include "ivanna_route_a_asrc.h"
 
+#include <chrono>
 #include <cmath>
 
 #include "fir_v5_coeffs.h"
+#include "ivanna_stage_timings.h"
+
+// Tiempos por etapa (v2.5.411, tarea 4): la instancia del recorder vive
+// AQUÍ (no en el JNI) porque el test standalone del ASRC solo enlaza este
+// TU; el .so la comparte con el JNI (mismo target ivanna_omega).
+namespace ivanna {
+StageTimings g_stageTimings;
+} // namespace ivanna
 
 // Radio de cabeza del oyente (ORBE, proceso app): el atomic vive en
 // orbe_controls_bridge.cpp del target ivanna_omega (default KEMAR
@@ -445,6 +454,9 @@ void RouteAAsrc::applyPsiFir(float* buf, int frames) {
 
 int RouteAAsrc::process(const float* in, int inFrames, float* out, int outCap) {
     if (!in || !out || inFrames <= 0 || outCap <= 0) return 0;
+    // Tiempos por etapa (v2.5.411, tarea 4): solo stores atómicos en el
+    // record; el sort/p99 lo hace el getter en el hilo del poller.
+    const auto tStage0 = std::chrono::steady_clock::now();
     // Ψ VIVA: medir la coherencia de la envolvente en este bloque y
     // avanzar η (Ec. 4); rediseñar los FIR si toca y abrir la puerta.
     // Va ANTES del remuestreo para que applyPsiFir (al final) ya use los
@@ -502,6 +514,9 @@ int RouteAAsrc::process(const float* in, int inFrames, float* out, int outCap) {
     totalOut_.fetch_add(static_cast<uint64_t>(produced), std::memory_order_relaxed);
     // FIR Ψ tras el remuestreo (solo si el cerebro la activó).
     if (produced > 0) applyPsiFir(out, produced);
+    stageRecord(Stage::Asrc, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                     std::chrono::steady_clock::now() - tStage0)
+                                                     .count()));
     return produced;
 }
 

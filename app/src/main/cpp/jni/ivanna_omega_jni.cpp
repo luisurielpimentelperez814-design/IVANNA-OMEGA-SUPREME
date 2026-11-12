@@ -60,6 +60,7 @@
 #include "../neuromorphic/neuro_acoustic_closed_loop.hpp"
 #include "../dsp/NeuromorphicAbHarness.hpp"                // corrección acústica de sala: detección síncrona y diseño (2.5.49)
 #include "../dsp/dsp_load_shed_governor.hpp"              // shed de carga DSP por deuda (sobrecarga Ruta A, v2.5.375)
+#include "../include/ivanna_stage_timings.h"             // tiempos por etapa (media/p99/max, tarea 4, v2.5.411)
 #include "../include/BlockPeakGuard.h"
 #include "../include/omega_user_flags.hpp"            // app -> daemon -> snapshot: bits de usuario para Ruta B (v2.5.16)
 #include "../include/punch_engine.hpp"                // impacto predictivo por bandas (v2.5.41)
@@ -2866,6 +2867,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         return;
     }
     drainPendingDspParamsLocked();
+    // Tiempos por etapa (v2.5.411, tarea 4): presupuesto del bloque en ns
+    // (periodo = n muestras a la tasa de la sesión). Lo lee el getter de
+    // telemetría para comparar cada etapa contra el presupuesto.
+    ivanna::g_stageTimings.blockBudgetNs.store(
+        (g_params.sampleRate > 0)
+            ? static_cast<uint64_t>(n) * 1000000000ull / static_cast<uint64_t>(g_params.sampleRate)
+            : 0,
+        std::memory_order_relaxed);
     // Cadena 4D (v2.5.48): alimentación con la entrada SECA (lBuf/rBuf aún sin DSP).
     // Apagada por defecto = retorno inmediato, cero bits alterados.
     ivanna::fourd::feedPlanar(lBuf, rBuf, n);
@@ -2948,10 +2957,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
         g_pd.set_spatial_angle(sp_angle);
         g_pd.set_spatial_width(sp_width);
     }
-    // PDEngine (NHO + Spatial on modes 1/2)
+    // PDEngine (NHO + Spatial on modes 1/2) + WFS = etapa HOA/HRTF.
+    // Tiempos por etapa (tarea 4): 2 lecturas de steady_clock + stores
+    // atómicos; el p99 se calcula en el getter (hilo del poller, no RT).
+    const auto tHoa0 = std::chrono::steady_clock::now();
     g_pd.process_block(lBuf, rBuf, oL, oR, n);
     // Misma etapa WFS que DSPBridge.nativeProcess: evita divergencia entre APIs JNI.
     processRouteAWfs(oL, oR, n);
+    ivanna::stageRecord(ivanna::Stage::Hoa, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tHoa0).count()));
 
     // ── ORBE + HOLOS en serie (Ruta A/C, v2.5.363/364; v2.5.369: AMBOS activos
     // por directiva explícita). Antes era if/else (HOLOS ocupaba el lugar de
@@ -2985,7 +2998,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             }
             g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
             g_orbeRouteA.setParams(op);
+            const auto tOrbe0 = std::chrono::steady_clock::now();
             g_orbeRouteA.process(oL, oR, n);
+            ivanna::stageRecord(ivanna::Stage::Orbe, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tOrbe0).count()));
         }
         // HOLOS después.
         const float holosAmount = g_holos_amount.load(std::memory_order_relaxed);
@@ -3021,7 +3036,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             g_holosRouteA.setThermalTier(static_cast<ivanna::HolosThermalTier>(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
+            const auto tHolos0 = std::chrono::steady_clock::now();
             g_holosRouteA.process(oL, oR, n);
+            ivanna::stageRecord(ivanna::Stage::Holos, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tHolos0).count()));
         }
     }
 
@@ -3031,8 +3048,10 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // Hiper-Operador Φ (v2.5.369): tras HOLOS/ORBE, antes de la RIR y del
     // limiter. Es la etapa que el usuario ESCUCHA en Ruta A cuando
     // hyper_amount > 0. amount=0 = no-op.
+    const auto tPhi0 = std::chrono::steady_clock::now();
     hyperProcessRouteA(oL, oR, n,
                        static_cast<float>(std::max(g_params.sampleRate, 8000u)));
+    ivanna::stageRecord(ivanna::Stage::Phi, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tPhi0).count()));
 
     // ── RIR en nativeProcessBlock (PlaybackCaptureService) ─────────────────
     if (Ivanna::RirConvolver* s_rirConvolver = g_rirConvolver.load(std::memory_order_acquire)) {
@@ -3043,6 +3062,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
 
     // ── Supremacía Acústica: Volterra H2 (Anti-Lossy Reconstruction) ──
     if (g_volterra_enabled.load(std::memory_order_relaxed)) {
+        const auto tVolt0 = std::chrono::steady_clock::now();
         float inter[4096];
         const int samples = std::min(n, 2048);
         for (int i = 0; i < samples; ++i) {
@@ -3054,11 +3074,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             oL[i] = inter[2 * i];
             oR[i] = inter[2 * i + 1];
         }
+        ivanna::stageRecord(ivanna::Stage::Volterra, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tVolt0).count()));
     }
 
     // ── Eje Supremo: Inversión Biomecánica Coclear Activa (Cochlear-PINN) ────
     // Post-Volterra, pre-limiter: la señal está en su nivel final de mezcla.
     // 0.00 ms de latencia añadida. Rampa suave interna al activar/desactivar.
+    // Etapa NPE (tarea 4): cochlear + pipe unificado + routeAApplyNpe.
+    const auto tNpe0 = std::chrono::steady_clock::now();
     g_cochlearEngine.setEnabled(g_cochlearEnabled.load(std::memory_order_relaxed));
     g_cochlearEngine.process(oL, oR, n);
 
@@ -3112,6 +3135,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     g_temporal_arc_tension.store(ivanna::fourd::arcTension(), std::memory_order_relaxed);
     g_temporal_arc_impact.store(ivanna::fourd::arcImpact(), std::memory_order_relaxed);
     routeAApplyNpe(oL, oR, n);   // paridad con Ruta B (NPE neuromorfico)
+    ivanna::stageRecord(ivanna::Stage::Npe, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tNpe0).count()));
     g_punch.process(oL, oR, n);
     // Cancelación de diafonía de la Cadena 4D antes del limitador (ver nativeProcess).
     ivanna::fourd::applyOutputPlanar(oL, oR, n);
@@ -5373,27 +5397,35 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEffectAmounts(
     return arr;
 }
 
-// ── nativeGetDspShed — estado del gobernador de shed (v2.5.410) ──────────
-// Telemetría en vivo 1 Hz (IVANNA.Telemetry): el shed es el dato que
-// confirma si la cadena alcanza el periodo en el teléfono. FloatArray[3]:
+// ── nativeGetDspShed — estado del gobernador de shed + tiempos por etapa (v2.5.410/411) ──
+// Telemetría en vivo 1 Hz (IVANNA.Telemetry / IVANNA.StageTimings): el shed
+// es el dato que confirma si la cadena alcanza el periodo en el teléfono.
+// FloatArray[25] (antes [3]; los índices 0..2 no cambian, los llamadores
+// viejos siguen leyendo lo mismo):
 //   [0] shedFraction (0..1; 0.034 = 3.4% de bloques en passthrough)
 //   [1] emaUs        (coste medio DSP por bloque procesado, µs)
 //   [2] peakUs       (peor bloque procesado visto, µs)
-// Solo lectura de la instancia estática del gobernador (sin locks, sin
-// I/O); seguro desde el poller de fondo. Antes de la 410 el shed solo se
-// veía en las líneas throttled "DSP shed Ruta A ..." del hilo de audio;
-// con este getter la telemetría 1 Hz lo lleva sin loguear en RT.
+//   [3] blockBudgetNs (periodo del último bloque procesado, ns)
+//   [4..24] por etapa (orden ivanna::Stage: hoa, orbe, holos, phi,
+//     volterra, npe, asrc): [mean_ns, p99_ns, max_ns] por bloque.
+//     Todo cero = la etapa no corrió en la ventana (bypass por amount=0
+//     o sin bloques). Ventana de 1 s: cada lectura hace snapshot-and-reset
+//     (stageSnapshotReset); el poller lee 1 Hz. Solo lectura de atómicos
+//     (sin locks, sin I/O); el sort del p99 corre aquí, en el hilo del
+//     poller, nunca en el hilo de audio.
 JNIEXPORT jfloatArray JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetDspShed(
     JNIEnv* env, jobject) {
-    jfloatArray arr = env->NewFloatArray(3);
+    jfloatArray arr = env->NewFloatArray(25);
     if (!arr) return nullptr;
-    const float v[3] = {
+    float v[25] = {
         static_cast<float>(g_dspShedGovernor.shedFraction()),
         static_cast<float>(g_dspShedGovernor.emaUs()),
-        static_cast<float>(g_dspShedGovernor.peakUs())
+        static_cast<float>(g_dspShedGovernor.peakUs()),
+        static_cast<float>(ivanna::g_stageTimings.blockBudgetNs.load(std::memory_order_relaxed))
     };
-    env->SetFloatArrayRegion(arr, 0, 3, v);
+    ivanna::stageSnapshotReset(&v[4]);
+    env->SetFloatArrayRegion(arr, 0, 25, v);
     return arr;
 }
 

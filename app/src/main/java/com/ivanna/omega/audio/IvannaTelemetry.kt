@@ -61,6 +61,9 @@ const val TELEMETRY_TAG = "IVANNA.Telemetry"
 /** Tag logcat para la ganancia apilada por banda: `logcat -s IVANNA.EqStack`. */
 const val EQ_STACK_TAG = "IVANNA.EqStack"
 
+/** Tag logcat para los tiempos por etapa: `logcat -s IVANNA.StageTimings`. */
+const val STAGE_TIMINGS_TAG = "IVANNA.StageTimings"
+
 /** Un snapshot de todos los efectos en un instante. Valores por defecto = silencio/apagado. */
 data class TelemetrySnapshot(
     val route: String = "A",
@@ -89,7 +92,16 @@ data class TelemetrySnapshot(
     val bandLo: Float = 0f,
     val bandMid: Float = 0f,
     val bandHi: Float = 0f,
-    val npeGenre: String = "none"
+    val npeGenre: String = "none",
+    // Tiempos por etapa (v2.5.411, tarea 4): del getter nativeGetDspShed
+    // (extendido a 25 floats). blockBudgetNs = periodo del último bloque
+    // (ns); stageStats = 21 floats [mean_ns, p99_ns, max_ns] por etapa en
+    // orden hoa, orbe, holos, phi, volterra, npe, asrc. Todo cero = la
+    // etapa no corrió en la ventana (bypass por amount=0 o sin bloques).
+    // FloatArray (no 21 campos): el snapshot es un valor desechable por
+    // segundo; copy() funciona y nadie compara snapshots por igualdad.
+    val blockBudgetNs: Float = 0f,
+    val stageStats: FloatArray = floatArrayOf()
 )
 
 /**
@@ -188,7 +200,15 @@ fun collectTelemetrySnapshot(routeAAsrc: RouteAAsrc?): TelemetrySnapshot? {
         bandLo = bands?.getOrNull(0) ?: 0f,
         bandMid = bands?.getOrNull(1) ?: 0f,
         bandHi = bands?.getOrNull(2) ?: 0f,
-        npeGenre = genre?.takeIf { it.isNotBlank() } ?: "none"
+        npeGenre = genre?.takeIf { it.isNotBlank() } ?: "none",
+        // El array shed viene extendido (25 floats, v2.5.411): [3] es el
+        // presupuesto del bloque y [4..24] las 21 estadísticas de etapa.
+        // Se lee UNA vez por segundo aquí: el getter hace snapshot-and-
+        // reset, así que una segunda lectura en el mismo segundo daría
+        // ceros. Por eso el poller formatea la línea StageTimings desde
+        // este snapshot y NO vuelve a llamar al getter.
+        blockBudgetNs = shed?.getOrNull(3) ?: 0f,
+        stageStats = if (shed != null && shed.size >= 25) shed.copyOfRange(4, 25) else floatArrayOf()
     )
 }
 
@@ -206,10 +226,66 @@ fun CoroutineScope.startTelemetryPoller(
     intervalMs: Long = 1000L,
     appContext: Context? = null
 ): Job = launch(Dispatchers.Default) {
+    // Diagnóstico de arranque (v2.5.411, tarea 4 — por qué el tag salía
+    // vacío): si IVANNA.Telemetry está vacío Y no aparece esta línea, el
+    // poller nunca arrancó (build sin telemetría — la 406 no la tenía — o
+    // el decode loop / startEngine no llegó a arrancar el poller). Si
+    // aparece esta línea pero no las de 1 Hz, el snapshot es null (ver el
+    // aviso throttled de abajo: librería nativa no cargada). La causa más
+    // probable en el teléfono de Esse es la versión: instaló la 406
+    // (2026-11-11 22:43 UTC, ANTES de publicarse la 407 con telemetría);
+    // el código del poller en 407/410 es correcto por inspección.
+    Log.i(TELEMETRY_TAG, "poller_started route=A interval_ms=$intervalMs")
+    var lastNullWarnMs = 0L
+    var lastXruns = -1
     while (isActive) {
         runCatching {
             val snapshot = collectTelemetrySnapshot(routeAAsrc)
-            if (snapshot != null) Log.i(TELEMETRY_TAG, formatTelemetryLine(snapshot))
+            if (snapshot != null) {
+                Log.i(TELEMETRY_TAG, formatTelemetryLine(snapshot))
+                // Tiempos por etapa + xruns (tarea 4), tag propio para no
+                // romper el parseo de la línea principal. xruns =
+                // AudioTrack.getUnderrunCount() acumulado de la sesión
+                // (publicado en OmegaMetrics por la captura y por el
+                // BridgePlayer); xruns_1s = delta del último segundo
+                // (clamp a 0: al recrearse el track el total vuelve a 0).
+                // NO hay AAudio en la app: el I/O es AudioTrack/AudioRecord
+                // (verificado por grep); este es el contador equivalente.
+                val xruns = OmegaMetrics.shared.value.underrunCount
+                val xruns1s = if (lastXruns < 0) 0 else maxOf(0, xruns - lastXruns)
+                lastXruns = xruns
+                val st = snapshot.stageStats
+                if (st.size >= 21) {
+                    Log.i(
+                        STAGE_TIMINGS_TAG,
+                        String.format(
+                            Locale.US,
+                            "budget_ns=%.0f xruns=%d xruns_1s=%d " +
+                                "hoa_mean=%.0f hoa_p99=%.0f hoa_max=%.0f " +
+                                "orbe_mean=%.0f orbe_p99=%.0f orbe_max=%.0f " +
+                                "holos_mean=%.0f holos_p99=%.0f holos_max=%.0f " +
+                                "phi_mean=%.0f phi_p99=%.0f phi_max=%.0f " +
+                                "volt_mean=%.0f volt_p99=%.0f volt_max=%.0f " +
+                                "npe_mean=%.0f npe_p99=%.0f npe_max=%.0f " +
+                                "asrc_mean=%.0f asrc_p99=%.0f asrc_max=%.0f",
+                            snapshot.blockBudgetNs, xruns, xruns1s,
+                            st[0], st[1], st[2], st[3], st[4], st[5],
+                            st[6], st[7], st[8], st[9], st[10], st[11],
+                            st[12], st[13], st[14], st[15], st[16], st[17],
+                            st[18], st[19], st[20]
+                        )
+                    )
+                }
+            } else {
+                // Antes el snapshot null se tragaba en silencio y el tag
+                // quedaba vacío sin ningún diagnóstico. Ahora avisa (1/30 s)
+                // con la causa probable: librería nativa no cargada.
+                val now = System.currentTimeMillis()
+                if (now - lastNullWarnMs >= 30_000L) {
+                    lastNullWarnMs = now
+                    Log.w(TELEMETRY_TAG, "snapshot_null: lib nativa no cargada (IvannaNativeLib.isLoaded=false); sin telemetría hasta que cargue")
+                }
+            }
         }
         // Diagnóstico de ganancia apilada por banda (v2.5.411, tarea 3c).
         // Cuánto EQ se apila en cada banda, en dB, desde sus fuentes de

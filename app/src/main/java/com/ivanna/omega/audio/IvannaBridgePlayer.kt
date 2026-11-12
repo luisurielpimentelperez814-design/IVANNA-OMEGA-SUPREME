@@ -297,6 +297,22 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
             val predictive = predictiveAnalyzer?.snapshot() ?: PredictiveSnapshot()
             OmegaMetrics.updateSharedPredictive(predictive.valid, predictive.confidence, predictive.predictionGainDb, predictive.transient)
 
+            // Underruns del AudioTrack propio (v2.5.411, tarea 4): la captura
+            // ya publica los suyos en OmegaMetrics.shared vía
+            // updateRefinedTelemetry; el BridgePlayer no publicaba ninguno,
+            // así que el contador de xruns de la telemetría 1 Hz se quedaba
+            // en el último valor de la captura (o en 0). Total acumulado
+            // desde que se creó el track (API 24+); el poller calcula el
+            // delta por segundo y clampa a 0 al recrearse el track. NO hay
+            // AAudio en la app: AudioTrack.getUnderrunCount() es el contador
+            // equivalente (verificado por grep: ningún AAudioStream en el
+            // código; el I/O es AudioTrack/AudioRecord).
+            runCatching {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    OmegaMetrics.updateRefinedTelemetry(underrunCount = audioTrack?.underrunCount ?: 0)
+                }
+            }
+
             _omegaMetrics.value = OmegaMetrics(
                 predictiveValid      = predictive.valid,
                 predictiveConfidence = predictive.confidence,

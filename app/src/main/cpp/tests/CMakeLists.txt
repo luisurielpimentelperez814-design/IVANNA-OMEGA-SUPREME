@@ -2037,3 +2037,23 @@ ivanna_add_test(test_psi_field_routes)
 # Compensación por banda con límite WNG (mínimos cuadrados + Tikhonov por
 # bisección). Sin medida del transductor devuelve no-op (no inventa).
 ivanna_add_test(test_transducer_operator)
+
+# ── Tiempos por etapa del DSP (v2.5.411, tarea 4) ────────────────────────────
+# ivanna_stage_timings.h: media/p99/max por etapa (lock-free, anillo 256).
+# La instancia g_stageTimings vive en ../ivanna_route_a_asrc.cpp (misma
+# definición que enlaza el .so); por eso se compila aquí también.
+add_executable(test_stage_timings
+  test_stage_timings.cpp
+  ../ivanna_route_a_asrc.cpp
+)
+target_link_libraries(test_stage_timings PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+# ../ivanna_route_a_asrc.cpp incluye fir_v5_coeffs.h, que vive en
+# hal_integration (mismo include dir que el CMakeLists principal añade
+# para el .so; el archivo está trackeado, así que la CI lo tiene).
+target_include_directories(test_stage_timings PRIVATE .. ../include host_stubs ../../../../../hal_integration/moto_g85/pal_preload_probe)
+target_compile_options(test_stage_timings PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_stage_timings PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_stage_timings PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_stage_timings)
