@@ -2,6 +2,7 @@ package com.ivanna.omega.tidal
 
 import android.net.Uri
 import com.ivanna.omega.audio.IvannaBridgePlayer
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
