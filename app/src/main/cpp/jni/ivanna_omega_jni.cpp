@@ -1922,7 +1922,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             hp.spread = g_holos_spread.load(std::memory_order_relaxed);
             hp.proximityDb = g_holos_proximity_db.load(std::memory_order_relaxed);
             hp.diffuse = g_holos_diffuse.load(std::memory_order_relaxed);
-            hp.harmonics = g_holos_harmonics.load(std::memory_order_relaxed);
+            hp.harmonics = std::clamp(g_holos_harmonics.load(std::memory_order_relaxed), 0.0f, ivanna::kHolosHarmonicsMaxValidated);  // guarda v2.5.411: el valor guardado (p. ej. 0.298) nunca llega al DSP sin validar
             hp.warmth = g_holos_warmth.load(std::memory_order_relaxed);
             hp.dynamics = g_holos_dynamics.load(std::memory_order_relaxed);
             hp.width = g_holos_width.load(std::memory_order_relaxed);
@@ -2996,7 +2996,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             hp.spread = g_holos_spread.load(std::memory_order_relaxed);
             hp.proximityDb = g_holos_proximity_db.load(std::memory_order_relaxed);
             hp.diffuse = g_holos_diffuse.load(std::memory_order_relaxed);
-            hp.harmonics = g_holos_harmonics.load(std::memory_order_relaxed);
+            hp.harmonics = std::clamp(g_holos_harmonics.load(std::memory_order_relaxed), 0.0f, ivanna::kHolosHarmonicsMaxValidated);  // guarda v2.5.411: el valor guardado (p. ej. 0.298) nunca llega al DSP sin validar
             hp.warmth = g_holos_warmth.load(std::memory_order_relaxed);
             hp.dynamics = g_holos_dynamics.load(std::memory_order_relaxed);
             hp.width = g_holos_width.load(std::memory_order_relaxed);

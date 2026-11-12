@@ -89,6 +89,28 @@
 
 namespace ivanna {
 
+// Guarda de armónicos (v2.5.411, tarea 1): máximo de holos_harmonics
+// VALIDADO por test (test_holos_retune_sweep, HolosHarmonicsGuard).
+// Medido en host a 48 kHz, tonos −3 dBFS, criterio THD+N ≤ −70 dB
+// (@1 kHz y @100 Hz) e IMD SMPTE ≤ −60 dB:
+//   amount=0.359 (valor vivo de Esse), harmonics=0.298 → THD+N −41.1/−43.6
+//   dB, IMD −37.7 dB: FALLA por ~29 dB. El término K distorsiona muchísimo:
+//   a 0.359, 0.005 pasa (−76.5/−77.5/−73.2) y 0.015 ya falla (−67.0).
+//   El máximo depende del amount: a 0.5, 0.005 pasa y 0.010 falla; a 1.0,
+//   0.003 pasa con solo 0.3 dB de margen y 0.004 falla. El mayor valor que
+//   pasa a TODOS los amounts (0.359, 0.5, 1.0) con ≥1 dB de margen en la
+//   métrica que manda es 0.002 (a 1.0: −75.3/−71.5/−72.2; margen 1.5 dB
+//   @100 Hz). Por encima de eso el K no está validado; por debajo es
+//   prácticamente inaudible como mezcla, pero la guarda existe para que un
+//   valor guardado sin validar (p. ej. 0.298) nunca llegue al DSP.
+//   La guarda se aplica AL LEER (clamp en los 3 sitios que cargan
+//   g_holos_harmonics en la ruta viva de Ruta A: JNI ×2, FusionCore ×1),
+//   NUNCA reescribiendo la preferencia del usuario: su 0.298 sigue
+//   guardado y se restaura; el DSP recibe min(0.298, 0.002).
+//   El struct HolosParams conserva su default 0.32f (el operador procesa
+//   lo que se le pide; la guarda vive en la lectura, no en el operador).
+constexpr float kHolosHarmonicsMaxValidated = 0.002f;
+
 struct HolosParams {
     float amount = 0.0f;       // 0..1 wet/dry vs legacy; 0 = bit-exacto
     float distanceM = 0.35f;   // 0.15..2.0 m, distancia base ("íntimo")
