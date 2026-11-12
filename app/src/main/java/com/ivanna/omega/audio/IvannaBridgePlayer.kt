@@ -11,6 +11,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import com.ivanna.omega.ai.PerceptualState
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.Executors
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -213,6 +215,23 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         private set
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    // v2.5.423: hilo de audio DEDICADO con prioridad URGENT_AUDIO.
+    // El bucle decode+DSP+write corría en Dispatchers.Default (prioridad
+    // normal, pool compartido): el sistema lo expropiaba y HOLOS llegaba a
+    // p99 15-23 ms (presupuesto 6.67 ms/bloque) → underruns → cortes a
+    // silencio (verificado en vivo 2026-11-12 14:55, xruns 834→1292, salida
+    // rms=0.00). Con prioridad urgente el hilo de audio expropia a lo
+    // demás, no al revés. La prioridad se fija DENTRO del Runnable del
+    // hilo (no en el factory: ahí corre el hilo que crea, no el creado).
+    // Se cierra en release(); el buffer se queda en minBuf×4 (se conserva
+    // el fast mixer; si los cortes siguen, el siguiente paso es ×6).
+    private val audioDispatcher = Executors.newSingleThreadExecutor { r ->
+        Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+            r.run()
+        }, "IvannaAudio")
+    }.asCoroutineDispatcher()
     private var job: Job? = null
     private var audioTrack: AudioTrack? = null
     // Session-scoped counters used only for diagnostic queue-latency telemetry.
@@ -529,6 +548,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         stop()
         runCatching { voiceProtection?.release() }
         scope.cancel()
+        runCatching { audioDispatcher.close() }
     }
 
     // ── AUDIT FIX PR 1: Implementación de PerceptualStateListener ──────────────
@@ -618,7 +638,7 @@ class IvannaBridgePlayer(private val context: Context) : PerceptualStateListener
         codecState = CodecState.IDLE
     }
 
-    private suspend fun runDecodeLoop(uri: Uri) = withContext(Dispatchers.Default) {
+    private suspend fun runDecodeLoop(uri: Uri) = withContext(audioDispatcher) {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         // ASRC MAGISTRAL Ruta A (v2.5.404): se declara ANTES del try porque

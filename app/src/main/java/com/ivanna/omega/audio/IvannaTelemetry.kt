@@ -114,6 +114,9 @@ data class TelemetrySnapshot(
     val pllDriftPpm: Double = 0.0,
     val pllOccupancyFrames: Long = 0L,
     val pllTargetOccupancyFrames: Long = 0L,
+    // v2.5.423: capacidad del track (frames). Sin ella la línea no
+    // permitía saber si pll_occ era mucho o poco: se adivinaba.
+    val pllCapacityFrames: Long = 0L,
     val pllPhaseError: Double = 0.0,
     val pllDemandedPpm: Double = 0.0,
     val pllAtRail: Boolean = false,
@@ -145,7 +148,7 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
     return String.format(
         Locale.US,
         "route=%s asrc=%d ppm=%+.1f psi_eta=%.2f psi_coh=%.2f psi_active=%d " +
-            "pll_drift=%+.1f pll_occ=%d pll_ph=%+.2f pll_dem=%+.1f pll_rail=%d pll_hold=%d " +
+            "pll_drift=%+.1f pll_occ=%d pll_tgt=%d pll_cap=%d pll_ph=%+.2f pll_dem=%+.1f pll_rail=%d pll_hold=%d " +
             "orbe=%.2f holos=%.2f phi=%.2f volterra=%d mix=%s " +
             "gate_holos_tier=%d gate_holos_coh=%.2f gate_holos_wet=%.2f " +
             "gate_orbe_coh=%.2f gate_orbe_shed=%d gate_orbe_wet=%.2f " +
@@ -161,6 +164,8 @@ fun formatTelemetryLine(s: TelemetrySnapshot): String {
         if (s.psiActive) 1 else 0,
         s.pllDriftPpm,
         s.pllOccupancyFrames,
+        s.pllTargetOccupancyFrames,
+        s.pllCapacityFrames,
         s.pllPhaseError,
         s.pllDemandedPpm,
         if (s.pllAtRail) 1 else 0,
@@ -245,6 +250,7 @@ internal fun collectTelemetrySnapshot(
         pllDriftPpm = runCatching { pll?.measuredDriftPpm ?: 0.0 }.getOrDefault(0.0),
         pllOccupancyFrames = runCatching { pll?.occupancyFrames ?: 0L }.getOrDefault(0L),
         pllTargetOccupancyFrames = runCatching { pll?.targetOccupancyFrames ?: 0L }.getOrDefault(0L),
+        pllCapacityFrames = runCatching { pll?.lastBufferCapacityFrames ?: 0L }.getOrDefault(0L),
         pllPhaseError = runCatching { pll?.phaseErrorFraction ?: 0.0 }.getOrDefault(0.0),
         pllDemandedPpm = runCatching { pll?.demandedPpm ?: 0.0 }.getOrDefault(0.0),
         pllAtRail = runCatching { pll?.isAtRail ?: false }.getOrDefault(false),

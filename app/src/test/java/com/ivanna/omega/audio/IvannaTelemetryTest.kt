@@ -31,6 +31,7 @@ class IvannaTelemetryTest {
         pllDriftPpm = -500.0,
         pllOccupancyFrames = 2400L,
         pllTargetOccupancyFrames = 1920L,
+        pllCapacityFrames = 3840L,
         pllPhaseError = 0.25,
         pllDemandedPpm = -500.0,
         pllAtRail = true,
@@ -60,7 +61,7 @@ class IvannaTelemetryTest {
 
     @Test fun fullSnapshotFormatsExactLine() {
         val expected = "route=A asrc=1 ppm=+12.3 psi_eta=0.73 psi_coh=0.80 psi_active=1 " +
-            "pll_drift=-500.0 pll_occ=2400 pll_ph=+0.25 pll_dem=-500.0 pll_rail=1 pll_hold=7 " +
+            "pll_drift=-500.0 pll_occ=2400 pll_tgt=1920 pll_cap=3840 pll_ph=+0.25 pll_dem=-500.0 pll_rail=1 pll_hold=7 " +
             "orbe=1.00 holos=0.50 phi=0.50 volterra=1 mix=0.60 " +
             "gate_holos_tier=1 gate_holos_coh=0.85 gate_holos_wet=0.46 " +
             "gate_orbe_coh=0.90 gate_orbe_shed=1 gate_orbe_wet=0.46 " +
@@ -92,11 +93,11 @@ class IvannaTelemetryTest {
         // v2.5.415, banderas 1 y 5 de la 414: la línea dice si el servo
         // está en el riel y por qué ORBE/HOLOS están en bypass.
         val line = formatTelemetryLine(fullSnapshot())
-        assertTrue(line.contains("pll_drift=-500.0 pll_occ=2400 pll_ph=+0.25 pll_dem=-500.0 pll_rail=1 pll_hold=7"))
+        assertTrue(line.contains("pll_drift=-500.0 pll_occ=2400 pll_tgt=1920 pll_cap=3840 pll_ph=+0.25 pll_dem=-500.0 pll_rail=1 pll_hold=7"))
         assertTrue(line.contains("gate_holos_tier=1 gate_holos_coh=0.85 gate_holos_wet=0.46"))
         assertTrue(line.contains("gate_orbe_coh=0.90 gate_orbe_shed=1 gate_orbe_wet=0.46"))
         val def = formatTelemetryLine(TelemetrySnapshot())
-        assertTrue(def.contains("pll_drift=+0.0 pll_occ=0 pll_ph=+0.00 pll_dem=+0.0 pll_rail=0 pll_hold=0"))
+        assertTrue(def.contains("pll_drift=+0.0 pll_occ=0 pll_tgt=0 pll_cap=0 pll_ph=+0.00 pll_dem=+0.0 pll_rail=0 pll_hold=0"))
         assertTrue(def.contains("gate_holos_tier=0 gate_holos_coh=1.00 gate_holos_wet=0.00"))
         assertTrue(def.contains("gate_orbe_coh=1.00 gate_orbe_shed=0 gate_orbe_wet=0.00"))
     }

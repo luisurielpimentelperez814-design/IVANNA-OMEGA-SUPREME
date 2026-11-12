@@ -406,4 +406,18 @@ class AudioTrackBufferPllTest {
         assertTrue(pll.isAtRail)
         assertEquals(0L, pll.starvationHolds)
     }
+
+    @Test fun capacityAndTargetAreExposedForTelemetry423() {
+        // v2.5.423: la línea de telemetría ya imprime pll_tgt/pll_cap, pero
+        // el servo no exponía la capacidad: el objetivo se adivinaba del
+        // log (en vivo 2026-11-12, captura: occ ~5600 con ph +0.23 →
+        // capacidad ~7670, objetivo ~3835). Ahora ambos quedan registrados.
+        val pll = AudioTrackBufferPll(48_000)
+        pll.observe(8_000, 0, 10_000, 1_000_000_000L)
+        assertEquals(5_000L, pll.targetOccupancyFrames)
+        assertEquals(10_000L, pll.lastBufferCapacityFrames)
+        pll.reset()
+        assertEquals(0L, pll.targetOccupancyFrames)
+        assertEquals(0L, pll.lastBufferCapacityFrames)
+    }
 }

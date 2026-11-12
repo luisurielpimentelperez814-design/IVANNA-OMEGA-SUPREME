@@ -71,6 +71,13 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         private set
     var targetOccupancyFrames: Long = 0L
         private set
+    // v2.5.423: capacidad del track en la última observación válida, para
+    // telemetría. La línea imprimía pll_occ y pll_ph pero ni el objetivo
+    // ni la capacidad: en vivo (2026-11-12) occ ~5600 con ph +0.23 solo
+    // permitía ADIVINAR capacidad ~7670 y objetivo ~3835. Ahora ambos
+    // quedan registrados y la línea los imprime (pll_tgt/pll_cap).
+    var lastBufferCapacityFrames: Long = 0L
+        private set
     var phaseErrorFraction: Double = 0.0
         private set
     var measuredRateHz: Double = 0.0
@@ -123,6 +130,7 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
 
         val queued = submittedFrames - consumedFrames
         val capacity = bufferCapacityFrames.toLong()
+        lastBufferCapacityFrames = capacity
         if (queued < 0L || queued > capacity * 2L) {
             reset()
             return 0.0
@@ -379,6 +387,7 @@ internal class AudioTrackBufferPll(private val nominalSampleRateHz: Int) {
         demandedPpm = 0.0
         occupancyFrames = 0L
         targetOccupancyFrames = 0L
+        lastBufferCapacityFrames = 0L
         phaseErrorFraction = 0.0
         measuredRateHz = 0.0
         measuredDriftPpm = 0.0

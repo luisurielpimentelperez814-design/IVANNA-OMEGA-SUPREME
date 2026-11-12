@@ -156,7 +156,7 @@ open class TidalApiClient(
         val headers = mapOf(
             "Authorization" to "Bearer $token",
             "Accept" to "application/json",
-            "User-Agent" to "IVANNA-Tidal/2.5.422 (Android; com.ivanna.omega)"
+            "User-Agent" to "IVANNA-Tidal/2.5.423 (Android; com.ivanna.omega)"
         )
         var attempt = 0
         while (true) {

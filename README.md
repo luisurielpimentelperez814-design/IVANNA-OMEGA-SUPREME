@@ -45,6 +45,8 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.423** (714) | Telemetría del servo completa: la línea ya trae `pll_tgt` y `pll_cap` (el objetivo y la capacidad ya no se adivinan del log). Diagnóstico del riel en captura: reloj sano, cola ~5600 por backlog de catch-up que el servo solo drena a 500 ppm. 1 test Kotlin nuevo. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
+| **v2.5.423** (714) | Fix cortes: hilo de audio dedicado `IvannaAudio` con prioridad URGENT_AUDIO (HOLOS p99 15-23 ms por expropiación del sistema → underruns 834→1292 → silencio). Telemetría de cola: la línea ahora imprime `pll_tgt` y `pll_cap` (antes solo `pll_occ`, se adivinaba). Descargas DASH y prefetch verificados en vivo (no era la red). CTest 978/978. Solo APK. Ruta B en pausa. |
 | **v2.5.422** (713) | Fix CI: el test de telemetría no conocía el campo nuevo `pll_hold` (la 420 y la 421 fallaron por eso). Línea esperada actualizada. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.421** (712) | Tidal magistral: prefetch del siguiente tema (transición instantánea), caché acotada de temas (repetición instantánea, sin red), calidad automática (WiFi → HiRes, móvil → Lossless), reintento de descarga, telemetría de stream. Contratos en `docs/TIDAL_CONTRACTS.md` (la verdad contractual + borrador de solicitud de acuerdo comercial con TIDAL). 10 tests Kotlin nuevos. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.420** (711) | Evolución del servo: ante inanición (underruns) el servo ahora congela su salida (hold) en vez de actuar sobre una cola distorsionada; contador `pll_hold` en telemetría. 2 tests Kotlin nuevos. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
