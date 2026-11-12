@@ -155,7 +155,9 @@ static ivanna::OrbeBinaural g_orbeRouteA;
 // en el proceso audioserver.
 static ivanna::HolosOperator g_holosRouteA;
 // IVANNA (Operador Unificado de Campo Espacial, v2.5.375), Ruta A:
-// instancia propia del proceso app. Activo por defecto (g_omni_amount=1.0).
+// instancia propia del proceso app. BYPASS por defecto desde v2.5.410
+// (g_omni_amount=0.0; antes 1.0): medición host de la 410, residuo
+// no-lineal −3.7/−6.1 dB en pseudo-música estéreo, fundamental colapsada.
 // Corre en serie tras HOLOS y antes de Φ: ORBE → HOLOS → IVANNA → Φ.
 // ORBE y HOLOS siguen activos (directiva 2026-11-08); IVANNA re-espacializa
 // el campo ya mejorado por ellos. amount=0 = bypass bit-exacto.
@@ -1605,9 +1607,17 @@ static void logDspShedStateThrottled() noexcept {
     const bool shedding = g_dspShedGovernor.debtUs() > 0;
     if (sheds == lastLoggedSheds && shedding == lastLoggedShedding) return;
     const auto now = Clock::now();
-    // Mientras sigue en shed, max 1 linea / 5 s; la recuperacion se
-    // anuncia siempre (es el dato que confirma que el bucle respira).
-    if (shedding && lastLoggedSheds != 0 && now - lastLog < std::chrono::seconds(5)) return;
+    // FIX v2.5.410 — la recuperación ("terminado") NO se throttleaba:
+    // cada bloque en shed incrementa `sheds`, así que cada transición
+    // shed→recuperación imprimía una línea: 2836 líneas en 7 min (~7/s)
+    // desde el hilo de audio RT en la captura 2026-11-11 19:09 (y las
+    // líneas ACTIVO quedaban ahogadas por el mismo throttle: 0 en 7 min).
+    // Ahora AMBOS estados se limitan a 1 línea / 5 s una vez que ya se
+    // logueó (el primer cambio de estado siempre se anuncia). Los
+    // contadores son acumulativos, así que cada línea sigue mostrando los
+    // totales reales; el detalle por segundo vive en IVANNA.Telemetry
+    // (campo shed=, v2.5.410) sin loguear en RT.
+    if (lastLoggedSheds != 0 && now - lastLog < std::chrono::seconds(5)) return;
     lastLog = now;
     lastLoggedSheds = sheds;
     lastLoggedShedding = shedding;
@@ -1672,8 +1682,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // más corto que nFrames provocaba lectura/escritura fuera de rango del heap.
     const int n = std::min({(int)nFrames, 2048, (int)(env->GetArrayLength(buf) / 2)});
     if (n <= 0) return;
-    // ── Shed de carga DSP (v2.5.375) ──────────────────────────────────────
-    // Si la cadena viene debiendo tiempo (coste medio > 70% del periodo),
+    // ── Shed de carga DSP (v2.5.375; presupuesto 85% desde v2.5.410) ───────
+    // Si la cadena viene debiendo tiempo (coste medio > 85% del periodo),
     // este bloque va en SECO: se retorna SIN tocar `buf` — exactamente el
     // mismo passthrough que ya ocurre cuando el mutex esta tomado o el DSP
     // no esta inicializado. Ningun estado interno avanza a medias, la
@@ -3579,7 +3589,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetOrbeHeadRadiusM(JNIEnv*, job
 }
 
 // IVANNA (v2.5.375): mismo patrón que nativeSetOrbeParams/Enabled.
-// amount 0..1 (0 = apagado, bypass bit-exacto; default 1.0 = activo),
+// amount 0..1 (0 = apagado, bypass bit-exacto; default 0.0 = bypass
+// desde v2.5.410 por distorsión medida, antes 1.0 = activo),
 // scenePull 0..1, distancia 0.5..2.0 m, head-tracking on/off.
 // Escriben los atomics g_omni_* que lee la Ruta A (g_omniRouteA).
 JNIEXPORT void JNICALL
@@ -5359,6 +5370,30 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetEffectAmounts(
         g_volterra_enabled.load(std::memory_order_relaxed) ? 1.0f : 0.0f
     };
     env->SetFloatArrayRegion(arr, 0, 4, v);
+    return arr;
+}
+
+// ── nativeGetDspShed — estado del gobernador de shed (v2.5.410) ──────────
+// Telemetría en vivo 1 Hz (IVANNA.Telemetry): el shed es el dato que
+// confirma si la cadena alcanza el periodo en el teléfono. FloatArray[3]:
+//   [0] shedFraction (0..1; 0.034 = 3.4% de bloques en passthrough)
+//   [1] emaUs        (coste medio DSP por bloque procesado, µs)
+//   [2] peakUs       (peor bloque procesado visto, µs)
+// Solo lectura de la instancia estática del gobernador (sin locks, sin
+// I/O); seguro desde el poller de fondo. Antes de la 410 el shed solo se
+// veía en las líneas throttled "DSP shed Ruta A ..." del hilo de audio;
+// con este getter la telemetría 1 Hz lo lleva sin loguear en RT.
+JNIEXPORT jfloatArray JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetDspShed(
+    JNIEnv* env, jobject) {
+    jfloatArray arr = env->NewFloatArray(3);
+    if (!arr) return nullptr;
+    const float v[3] = {
+        static_cast<float>(g_dspShedGovernor.shedFraction()),
+        static_cast<float>(g_dspShedGovernor.emaUs()),
+        static_cast<float>(g_dspShedGovernor.peakUs())
+    };
+    env->SetFloatArrayRegion(arr, 0, 3, v);
     return arr;
 }
 

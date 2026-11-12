@@ -586,18 +586,26 @@ class ParameterStore(context: Context) {
         }
     }
 
-    // ── IVANNA — Operador Unificado de Campo Espacial (v2.5.375) ── ACTIVO
-    // por defecto (amount 1.0, directiva explícita: implementado y activo
-    // totalmente). amount 0 = bypass bit-exacto. scenePull 0..1 (atracción
-    // de los stems hacia el centroide de escena), distancia 0.5..2.0 m.
-    fun getOmniAmount(): Float = safeGetFloat(KEY_OMNI_AMOUNT, 1.0f)
+    // ── IVANNA — Operador Unificado de Campo Espacial (v2.5.375) ── BYPASS
+    // por defecto desde v2.5.410 (amount 0.0). Antes ACTIVO 1.0 por
+    // directiva explícita 2026-11-09; la medición host de la 410 lo
+    // revoca: con tonos decorrelados y pseudo-música estéreo, OmniField
+    // a 1.0 deja un residuo no-lineal añadido de −3.7/−6.1 dB (piso
+    // −43.4 dB) y colapsa la fundamental (0.30 → 0.12); la cadena
+    // completa termina con residuo L −2.08 / R +4.94 dB (más residuo que
+    // señal en R). En bypass la cadena queda en el nivel post-HOLOS
+    // (~−31.6/−34.4 dB) y se ahorran ~363 µs/bloque en el teléfono.
+    // amount 0 = bypass bit-exacto (verificado en host); se reactiva en
+    // un toque (setOmniParams / nativeSetOmniEnabled) si Esse lo pide
+    // tras escuchar. scenePull 0..1, distancia 0.5..2.0 m.
+    fun getOmniAmount(): Float = safeGetFloat(KEY_OMNI_AMOUNT, 0.0f)
     fun getOmniScenePull(): Float = safeGetFloat(KEY_OMNI_SCENE_PULL, 0.3f)
     fun getOmniDistanceM(): Float = safeGetFloat(KEY_OMNI_DISTANCE_M, 1.2f)
     fun isOmniHeadTrackingEnabled(): Boolean = safeGetBoolean(KEY_OMNI_HEAD_TRACKING, true)
     fun setOmniParams(
         amount: Float, scenePull: Float, distanceM: Float, headTracking: Boolean
     ) = prefs.edit()
-        .putFloat(KEY_OMNI_AMOUNT, if (amount.isFinite()) amount.coerceIn(0f, 1f) else 1.0f)
+        .putFloat(KEY_OMNI_AMOUNT, if (amount.isFinite()) amount.coerceIn(0f, 1f) else 0.0f)
         .putFloat(KEY_OMNI_SCENE_PULL, if (scenePull.isFinite()) scenePull.coerceIn(0f, 1f) else 0.3f)
         .putFloat(KEY_OMNI_DISTANCE_M, if (distanceM.isFinite()) distanceM.coerceIn(0.5f, 2.0f) else 1.2f)
         .putBoolean(KEY_OMNI_HEAD_TRACKING, headTracking)

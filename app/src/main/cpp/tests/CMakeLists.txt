@@ -757,6 +757,77 @@ if(IVANNA_SAN_FLAGS)
 endif()
 gtest_discover_tests(test_holos_operator)
 
+# ── Coste por etapa de la cadena DSP de Ruta A (v2.5.410, SOLO MEDICION) ──
+# test_route_a_chain_cost_410.cpp: timea cada etapa con los defaults en vivo
+# en bloques de 320 frames @48 kHz (200 warmup + 2000 medidos) + cadena total
+# en serie + simulacion del DspLoadShedGovernor + THD+N a 1 kHz. Fuentes
+# extra copiadas de los tests de cada etapa: OrbeBinaural.cpp (test_orbe),
+# HolosOperator/RirConvolver (test_holos_operator), RouteAWfsEngine +
+# WfsRenderer + wfs_controls_bridge (test_route_a_wfs_engine), phase_oracle
+# (test_hyper_state_operator), evolutionary_kernel_v2 + audio_control_plane
+# (simbolos evo_* y g_control_frame de PDEngine, cf. test_phase2_jni_natives).
+add_executable(test_route_a_chain_cost_410
+  test_route_a_chain_cost_410.cpp
+  ../spatial/OrbeBinaural.cpp
+  ../spatial/HolosOperator.cpp
+  ../spatial/HolosVolterraKernel.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/RouteAWfsEngine.cpp
+  ../spatial/WfsRenderer.cpp
+  ../wfs_controls_bridge.cpp
+  ../phase_oracle.cpp
+  ../spatial/hrtf_convolver.cpp
+  ../SafPcaDecoder.cpp
+  ../SafHRTFDatasetBridge.cpp
+  ../SafModelLoader.cpp
+  ../HRTFBinLoader.cpp
+  ../evolutionary_kernel_v2.cpp
+  ../audio_control_plane.cpp
+)
+target_link_libraries(test_route_a_chain_cost_410 PRIVATE GTest::gtest_main ivanna_dsp_under_test Threads::Threads m)
+target_include_directories(test_route_a_chain_cost_410 PRIVATE .. ../include ../neuromorphic host_stubs)
+target_compile_options(test_route_a_chain_cost_410 PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_route_a_chain_cost_410 PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_route_a_chain_cost_410 PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_route_a_chain_cost_410)
+
+# ── Firma de rebalanceo de Ruta A (v2.5.410, SOLO MEDICION) ──
+# test_route_a_signature_410.cpp: HOLOS 12 vs 24 bandas (coste + THD+N),
+# OmniField THD+N con estereo real (tonos decorrelados + pseudo-musica) a
+# amount 1.0/0.5/0.0, ORBE coste vs amount, confirmacion del reinjector y
+# cadena completa con pseudo-musica. Mismas fuentes extra que el test de
+# costes (OrbeBinaural, HolosOperator/RirConvolver, RouteAWfsEngine +
+# WfsRenderer + wfs_controls_bridge, phase_oracle, hrtf, evolutionary_kernel_v2
+# + audio_control_plane para los simbolos de PDEngine).
+add_executable(test_route_a_signature_410
+  test_route_a_signature_410.cpp
+  ../spatial/OrbeBinaural.cpp
+  ../spatial/HolosOperator.cpp
+  ../spatial/HolosVolterraKernel.cpp
+  ../spatial/RirConvolver.cpp
+  ../spatial/RouteAWfsEngine.cpp
+  ../spatial/WfsRenderer.cpp
+  ../wfs_controls_bridge.cpp
+  ../phase_oracle.cpp
+  ../spatial/hrtf_convolver.cpp
+  ../SafPcaDecoder.cpp
+  ../SafHRTFDatasetBridge.cpp
+  ../SafModelLoader.cpp
+  ../HRTFBinLoader.cpp
+  ../evolutionary_kernel_v2.cpp
+  ../audio_control_plane.cpp
+)
+target_link_libraries(test_route_a_signature_410 PRIVATE GTest::gtest_main ivanna_dsp_under_test Threads::Threads m)
+target_include_directories(test_route_a_signature_410 PRIVATE .. ../include ../neuromorphic host_stubs)
+target_compile_options(test_route_a_signature_410 PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_route_a_signature_410 PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_route_a_signature_410 PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_route_a_signature_410)
+
 add_executable(test_holos_chain
   test_holos_chain.cpp
   ../spatial/HolosOperator.cpp

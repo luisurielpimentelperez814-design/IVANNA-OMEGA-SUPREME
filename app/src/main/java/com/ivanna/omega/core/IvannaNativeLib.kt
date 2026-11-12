@@ -232,6 +232,11 @@ object IvannaNativeLib {
     // 1 Hz (v2.5.407, IVANNA.Telemetry): una sola llamada JNI por segundo.
     external fun nativeGetEffectAmounts(): FloatArray?
 
+    // FloatArray[3]: [shedFraction 0..1, emaUs, peakUs] — estado del
+    // gobernador de shed de carga DSP (v2.5.410). Telemetría en vivo 1 Hz:
+    // confirma si la cadena alcanza el periodo sin loguear en el hilo RT.
+    external fun nativeGetDspShed(): FloatArray?
+
 
     // ═══ ADAPTIVE ENGINE MAGISTRAL ═════════════════════════════════════════
     // Motor inteligente que convierte CUALQUIER melodía en deleite auditivo

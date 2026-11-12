@@ -38,6 +38,11 @@ import com.ivanna.omega.audio.engine.ProfessionalAntiPopEngine
 import com.ivanna.omega.audio.engine.AudioThreadBudgetGuard
 import com.ivanna.omega.audio.engine.CaptureBlockRing
 import com.ivanna.omega.audio.engine.PredictiveLoadGovernor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -138,6 +143,16 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
     private var retryHandler: Handler? = null
     private var retryThread: HandlerThread? = null
 
+    // Telemetría en vivo 1 Hz (v2.5.410, IVANNA.Telemetry): la 407 solo la
+    // arrancaba en IvannaBridgePlayer, pero la ruta en vivo es ESTA
+    // (captura por MediaProjection, Tidal) — sin poller aquí, el logcat
+    // de telemetría quedaba en silencio mientras suena la música.
+    // routeAAsrc=null: la captura no usa ASRC ni Ψ (viven solo en el
+    // BridgePlayer); el shed/amounts/niveles sí se leen en ambas rutas.
+    // Scope propio del servicio: muere en onDestroy, nunca en el hilo RT.
+    private val telemetryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var telemetryJob: Job? = null
+
     // FIX (causa raíz del eco/desface reproducción original + procesada):
     // este servicio capturaba el audio de Tidal por software y reproducía su
     // propia copia procesada, pero nunca solicitaba audio focus — Tidal
@@ -205,6 +220,9 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
         runCatching { audioCallbackManager.abandonAudioFocus() }
         stopEngine()
         releaseWakeLock()
+        telemetryJob?.cancel()
+        telemetryJob = null
+        telemetryScope.cancel()
         retryHandler?.removeCallbacksAndMessages(null)
         retryThread?.quitSafely()
         _isCapturing.value = false
@@ -268,12 +286,17 @@ class PlaybackCaptureService : Service(), PerceptualStateListener {
             running.set(true)
             _isCapturing.value = true
             retryAttempts = 0
+            // Telemetría en vivo 1 Hz (v2.5.410): arranca con la captura.
+            telemetryJob?.cancel()
+            telemetryJob = telemetryScope.startTelemetryPoller(routeAAsrc = null)
         }
     }
 
     private fun stopEngine() = lock.withLock { stopEngineLocked() }
 
     private fun stopEngineLocked() {
+        telemetryJob?.cancel()
+        telemetryJob = null
         engineRef.getAndSet(null)?.let { engine ->
             engine.stop()
             engine.cleanup()

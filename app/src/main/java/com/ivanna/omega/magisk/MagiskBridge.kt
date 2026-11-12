@@ -194,11 +194,28 @@ val isDaemonRunning: Boolean
                 val n = runCatching { sock.inputStream.read(buf) }.getOrDefault(-1)
                 return if (n > 0) String(buf, 0, n, Charsets.UTF_8).trim() else "ACK"
             }
-        }.onFailure { Log.d(TAG, "abstract socket send failed: ${it.message}") }
+        }.onFailure { logDaemonOfflineThrottled("abstract socket send failed: ${it.message}") }
 
         // Daemon offline: retorna "" (sentinel) para que callers usen isEmpty().
-        Log.w(TAG, "Daemon offline — command NOT delivered: $command")
+        // FIX v2.5.410 — el fallo se logueaba en CADA intento: sin módulo
+        // instalado, el poller de telemetría (~1 intento / 1.5 s) dejó 528
+        // líneas en 7 min en la captura 2026-11-11 19:09 (2 por fallo:
+        // Log.d + Log.w). La entrega no cambia (el connect se sigue
+        // intentando siempre); solo el LOG se limita a 1 vez / 30 s.
+        logDaemonOfflineThrottled("Daemon offline — command NOT delivered: $command")
         return ""
+    }
+
+    // Throttle del log de daemon ausente: 1 vez / 30 s (primer fallo
+    // inmediato, el resto silencioso). Solo el log; el connect se intenta
+    // siempre y el valor de retorno ("") no cambia.
+    @Volatile private var lastOfflineLogMs = 0L
+    private const val OFFLINE_LOG_COOLDOWN_MS = 30_000L
+    private fun logDaemonOfflineThrottled(msg: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastOfflineLogMs < OFFLINE_LOG_COOLDOWN_MS) return
+        lastOfflineLogMs = now
+        Log.w(TAG, msg)
     }
 
     // Helpers extension for use{} (LocalSocket no es Closeable en API antiguo)

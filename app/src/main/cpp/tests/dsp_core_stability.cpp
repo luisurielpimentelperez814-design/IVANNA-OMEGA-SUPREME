@@ -292,7 +292,8 @@ TEST(DspLoadShedGovernor, FastChainNeverSheds) {
 
 TEST(DspLoadShedGovernor, MeasuredOverloadRangeSelfRegulates) {
     // Rango medido: dsp_bridge alterna 3.5 ms (core grande) y 8.9 ms
-    // (core pequeno). Coste medio 6.2 ms > presupuesto 4.67 ms.
+    // (core pequeno). Coste medio 6.2 ms > presupuesto 5.67 ms (85%,
+    // v2.5.410; antes 4.67 ms al 70%).
     ivanna::dsp::DspLoadShedGovernor gov;
     const ShedTrace t = runShedTrace(gov, {3500, 8900}, 400);
     // Contrafactual (reproduccion del bug): SIN gobernador, el DSP toma
@@ -306,17 +307,43 @@ TEST(DspLoadShedGovernor, MeasuredOverloadRangeSelfRegulates) {
     // realizada queda <= presupuesto.
     EXPECT_GT(t.sheds, 0u);
     const double frac = static_cast<double>(t.sheds) / static_cast<double>(t.total);
-    // Fraccion sostenible INGENUA: 1 - presupuesto/costeMedio = 1 - 4666/6200 = 24.7%.
-    // La real es mayor (~44%): el coste va ligado a la posicion del bloque,
+    // Fraccion sostenible INGENUA: 1 - presupuesto/costeMedio = 1 - 5667/6200 = 8.6%.
+    // La real es mayor: el coste va ligado a la posicion del bloque,
     // asi que un shed "consume" el hueco barato (3.5 ms) y el siguiente
     // bloque que corre es el caro (8.9 ms) — un controlador causal no puede
     // saber el coste futuro. La garantia del gobernador no es la fraccion,
     // es la media realizada (assert de abajo); la fraccion solo se acota
     // por arriba para detectar un shed desbocado.
-    EXPECT_GT(frac, 0.15);
+    EXPECT_GT(frac, 0.05);
     EXPECT_LT(frac, 0.55);
-    EXPECT_LE(t.realizedAvgUs, 4666.0 * 1.05);  // <= presupuesto + 5%
+    EXPECT_LE(t.realizedAvgUs, 5667.0 * 1.05);  // <= presupuesto + 5%
     EXPECT_GT(gov.emaUs(), 5000);  // la EMA sigue midiendo la DEMANDA, no la media realizada
+}
+
+TEST(DspLoadShedGovernor, PhoneMeasuredProfileNoChronicShed) {
+    // v2.5.410 — captura Moto G85 2026-11-11 19:09 (Tidal, 320 frames):
+    // coste medio real ~4.90 ms/bloque (EMA muestreada 5.46 ms, sesgada
+    // al alza por muestrearse en finales de shed). Con el presupuesto
+    // viejo (70% = 4.67 ms) la media superaba el presupuesto y el shed
+    // era cronico: 4.7% en la ventana (1 seco cada 21 bloques, ~7 Hz).
+    // Con 85% (5.67 ms) la media cabe con 0.77 ms de margen: cero shed
+    // cronico; solo los picos aislados cuestan algun bloque.
+    ivanna::dsp::DspLoadShedGovernor gov;
+    // Coste constante = media medida: ni un solo shed.
+    const ShedTrace steady = runShedTrace(gov, {4900}, 1000);
+    EXPECT_EQ(steady.sheds, 0u);
+    EXPECT_NEAR(steady.realizedAvgUs, 4900.0, 1.0);
+    // Misma media con picos de 17.5 ms cada 50 bloques (episodios lentos
+    // de la captura: EMA > 10 ms durante ~3 s): el shed viene solo de
+    // los picos, fraccion pequena (1 shed por pico).
+    ivanna::dsp::DspLoadShedGovernor gov2;
+    std::vector<int64_t> spiky;
+    for (int i = 0; i < 50; ++i) spiky.push_back(4900);
+    spiky[49] = 17500;
+    const ShedTrace t = runShedTrace(gov2, spiky, 1000);
+    const double frac = static_cast<double>(t.sheds) / static_cast<double>(t.total);
+    EXPECT_LT(frac, 0.05);
+    EXPECT_LE(t.realizedAvgUs, 5667.0);
 }
 
 TEST(DspLoadShedGovernor, SustainedWorstCaseShedsAboutHalfTheBlocks) {
@@ -324,13 +351,14 @@ TEST(DspLoadShedGovernor, SustainedWorstCaseShedsAboutHalfTheBlocks) {
     ivanna::dsp::DspLoadShedGovernor gov;
     const ShedTrace t = runShedTrace(gov, {8900}, 300);
     const double frac = static_cast<double>(t.sheds) / static_cast<double>(t.total);
-    // Fraccion sostenible teorica: 1 - 4666/8900 = 47.6%.
-    EXPECT_GT(frac, 0.38);
+    // Fraccion sostenible teorica: 1 - 5667/8900 = 36.3% (85%, v2.5.410).
+    EXPECT_GT(frac, 0.28);
     EXPECT_LT(frac, 0.58);
-    EXPECT_LE(t.realizedAvgUs, 4666.0 * 1.05);
+    EXPECT_LE(t.realizedAvgUs, 5667.0 * 1.05);
     // Y la carga de la vuelta completa vuelve a caber: DSP realizado
-    // 4.67 ms + resto del bucle (~1 ms) < periodo 6.67 ms.
-    EXPECT_LT(t.realizedAvgUs + 1000.0, 6667.0);
+    // 5.67 ms + resto del bucle (~0.4 ms medido: reinjector ~0.12 ms,
+    // etapa de salida, masterTiming, NPE decimado) < periodo 6.67 ms.
+    EXPECT_LT(t.realizedAvgUs + 400.0, 6667.0);
 }
 
 TEST(DspLoadShedGovernor, SingleSpikeCostsAtMostTwoShedBlocks) {

@@ -21,9 +21,9 @@
 
 > **Propiedad intelectual — NO es código abierto.** Software propietario de Luis Uriel Pimentel Pérez. Todos los derechos reservados. El repositorio es público (visible), sin licencia open source. Prohibida su reproducción, distribución, modificación o uso sin autorización expresa del autor.
 
-## Estado actual · 11 de noviembre de 2026
+## Estado actual · 12 de noviembre de 2026
 
-**Versión vigente: v2.5.409 (700).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
+**Versión vigente: v2.5.410 (701).** Solo APK (Ruta A). Sin módulo Magisk, sin riesgo de brick.
 
 **Las dos rutas:** la **Ruta A** (APK, capture) procesa el audio del reproductor propio (Tidal, YouTube Music) con el ASRC magistral nativo + Ψ activa; si algo falla, solo cae la app. La **Ruta B** (Magisk + HAL, todo el sistema) está **MUERTA desde el 2026-11-11** — la historia completa, sin maquillar, en [docs/HISTORIA_RUTA_B.md](docs/HISTORIA_RUTA_B.md). No instalar ningún zip; la v2.5.403 lleva el wrapper roto y la **v2.5.384 está RETIRADA** (brickeó el teléfono 2 veces).
 
@@ -45,6 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.410** (701) | Firma acústica refinada con datos reales del teléfono (captura 2026-11-11, Tidal): presupuesto del gobernador 70%→85% (shed crónico 4.7%→0% medido), OmniField en bypass por distorsión medida (residuo −3.7/−6.1 dB en estéreo), telemetría 1 Hz ya en captura en vivo, logs de shed/Magisk throttled. ORBE/HOLOS/Φ siguen activos. |
 | **v2.5.409** (700) | README recortado a ~40% según segunda crítica externa (historia de Ruta B a docs, cada dato en un solo lugar, tensiones resueltas, CPU 130% como riesgo principal). |
 | **v2.5.408** (699) | README reescrito según primera crítica + fix CI: `tests-host.yml` instala clang-18 (causa raíz del CTest rojo desde la 402). |
 

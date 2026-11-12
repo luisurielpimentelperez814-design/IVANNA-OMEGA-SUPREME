@@ -20,20 +20,33 @@
 //   374 y el decimado del NPE solo absorben transitorios.
 //
 // Solucion: shed por DEUDA. El DSP dispone de un presupuesto por bloque
-// (= 70% del periodo, el mismo margen de seguridad que
-// AudioThreadBudgetGuard.SAFETY_MARGIN_RATIO en Kotlin; el 30% restante
-// queda para NPE, etapa de salida, reinyeccion, escritura bloqueante a
-// AudioTrack y telemetria). Cada bloque procesado suma a la deuda su
-// sobrecoste (coste - presupuesto); cada bloque en shed la reduce en un
-// presupuesto entero. Mientras haya deuda, el bloque se pasa en seco
-// (passthrough). En regimen, el ciclo de trabajo converge exactamente a
-// la fraccion sostenible presupuesto/coste (p. ej. coste 8.9 ms ->
-// ~52% de bloques procesados, ~48% en passthrough), asi que la carga
-// media del DSP nunca supera el presupuesto y la lectura nunca se retrasa
-// mas de lo que el anillo absorbe. La deuda esta acotada a [-presupuesto,
-// +presupuesto]: un pico aislado (GC, 20 ms) cuesta como mucho 1 bloque
-// en shed, y tras una racha buena solo se toleran ~1 presupuesto de
-// rafaga lenta antes de volver a soltar.
+// (= 85% del periodo, v2.5.410; antes 70%). Cada bloque procesado suma a
+// la deuda su sobrecoste (coste - presupuesto); cada bloque en shed la
+// reduce en un presupuesto entero. Mientras haya deuda, el bloque se pasa
+// en seco (passthrough). En regimen, el ciclo de trabajo converge
+// exactamente a la fraccion sostenible presupuesto/coste (p. ej. coste
+// 8.9 ms -> ~64% de bloques procesados, ~36% en passthrough), asi que la
+// carga media del DSP nunca supera el presupuesto y la lectura nunca se
+// retrasa mas de lo que el anillo absorbe. La deuda esta acotada a
+// [-presupuesto, +presupuesto]: un pico aislado (GC, 20 ms) cuesta como
+// mucho 1 bloque en shed, y tras una racha buena solo se toleran
+// ~1 presupuesto de rafaga lenta antes de volver a soltar.
+//
+// Por que 85% (v2.5.410, medido en el Moto G85, captura 2026-11-11 19:09):
+// el coste medio real de la cadena es ~4.90 ms/bloque (EMA muestreada
+// 5.46 ms, sesgada al alza) y el 70% (4.67 ms) quedaba POR DEBAJO de la
+// media: el gobernador soltaba 1 bloque de cada 21 (4.7% en la ventana,
+// 3.4% acumulado) de forma cronica, ~7 veces/s — la imagen espacial
+// respiraba. Con 85% (5.67 ms) la media cabe con 0.77 ms de margen y el
+// shed cronico desaparece (solo quedan los sheds por picos aislados,
+// ~1 bloque por pico). El 15% restante (1.0 ms) cubre el resto de la
+// vuelta (reinjector ~0.12 ms medido en host, etapa de salida,
+// masterTiming, NPE decimado: ~0.3-0.5 ms en total): 5.67 + 0.5 < 6.67 ms
+// de periodo. El gobernador de vuelta completa (LoopLoadGovernor, Kotlin)
+// sigue como red de seguridad si la vuelta entera supera el 100%.
+// NOTA: AudioThreadBudgetGuard.SAFETY_MARGIN_RATIO (Kotlin) se queda en
+// 70%: es solo referencia de medicion (su canExecute no se llama en la
+// ruta en vivo) y no decide ningun shed; no confundir con este presupuesto.
 //
 // Fail-closed, por diseno:
 //   - Shed = NO TOCAR el buffer: la senal seca sigue sonando por su via
@@ -66,9 +79,12 @@ namespace ivanna::dsp {
 class DspLoadShedGovernor {
 public:
     // Presupuesto del DSP por bloque, como fraccion del periodo:
-    // 70% — mismo margen que AudioThreadBudgetGuard.SAFETY_MARGIN_RATIO.
-    static constexpr int64_t kBudgetNumerator = 7;
-    static constexpr int64_t kBudgetDenominator = 10;
+    // 85% (v2.5.410; antes 70%). Ver el comentario de diseno arriba:
+    // el coste medio medido en el G85 (~4.90 ms) superaba el 70%
+    // (4.67 ms) y el shed era cronico (4.7% en la ventana 2026-11-11).
+    // El 15% restante (1.0 ms) cubre el resto de la vuelta (~0.4 ms).
+    static constexpr int64_t kBudgetNumerator = 17;
+    static constexpr int64_t kBudgetDenominator = 20;
 
     static int64_t dspBudgetUs(int64_t periodUs) noexcept {
         if (periodUs <= 0) return 0;
