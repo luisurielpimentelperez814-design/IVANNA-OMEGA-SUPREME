@@ -24,6 +24,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -102,6 +103,15 @@
             android:name=".audio.PlaybackCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection"/>
+
+        <!-- Bridge playback service (v2.5.438): mantiene el proceso en
+             primer plano mientras suena el BridgePlayer (Tidal/locales),
+             para que Android no estrangule el hilo de audio al cambiar
+             a otra app (tronido-metralleta). No posee el reproductor. -->
+        <service
+            android:name=".audio.BridgePlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"/>
 
         <!-- FIX: Receptor de sesiones de audio globales (Global Effect Manager) -->
         <!-- Permite capturar el broadcast de Android cuando cualquier app abre audio -->

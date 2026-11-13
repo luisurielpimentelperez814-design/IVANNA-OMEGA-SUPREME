@@ -363,6 +363,7 @@ fun OmegaApp() {
             com.ivanna.omega.audio.MediaSessionManager.init(context, bridgePlayer)
             onDispose {
                 com.ivanna.omega.audio.MediaSessionManager.release()
+                com.ivanna.omega.audio.BridgePlaybackService.stop(context)
                 bridgePlayer.release()
                 tidalClient.close()
             }
@@ -378,6 +379,17 @@ fun OmegaApp() {
                     IvannaBridgePlayer.State.STOPPED -> com.ivanna.omega.tidal.TidalSinkState.STOPPED
                     IvannaBridgePlayer.State.ERROR -> com.ivanna.omega.tidal.TidalSinkState.ERROR
                     IvannaBridgePlayer.State.IDLE -> com.ivanna.omega.tidal.TidalSinkState.IDLE
+                }
+                // v2.5.438: servicio en primer plano mientras suena el
+                // BridgePlayer. Sin él, al cambiar a otra app Android
+                // estrangula el proceso y el hilo de audio no alcanza a
+                // llenar el buffer (metralleta). Solo corre en PLAYING;
+                // en pausa/parado se detiene (no hay audio que proteger).
+                // Idempotente (el servicio lleva su propio flag isRunning).
+                if (bridgePlayer.state == IvannaBridgePlayer.State.PLAYING) {
+                    com.ivanna.omega.audio.BridgePlaybackService.start(context)
+                } else {
+                    com.ivanna.omega.audio.BridgePlaybackService.stop(context)
                 }
                 tidalClient.controller.onPlayerStateChanged(sinkState)
                 kotlinx.coroutines.delay(100L)
