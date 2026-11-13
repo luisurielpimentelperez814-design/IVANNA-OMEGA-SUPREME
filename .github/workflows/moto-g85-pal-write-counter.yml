@@ -34,7 +34,7 @@ jobs:
           "$B/llvm-readelf" --dyn-syms -W out/libivanna_pal_write_counter.so | grep -E " UND " | grep -E "pal_" && { echo "unexpected pal_* import"; exit 1; } || true
           sha256sum out/libivanna_pal_write_counter.so | tee out/sha256.txt
           cp hal_integration/moto_g85/pal_preload_probe/swap_probe_with_rollback.sh out/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Omega_PAL_Write_Counter_arm64
           path: out/

@@ -51,7 +51,7 @@ jobs:
           ./ivanna_asrc_tests | tee suite.log
           grep -q "RESULTADO: 25 pasan, 0 fallan" suite.log
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ivanna_asrcd-aarch64
           path: magisk_module/system/bin/ivanna_asrcd
