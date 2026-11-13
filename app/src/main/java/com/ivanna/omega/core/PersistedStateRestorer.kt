@@ -117,6 +117,7 @@ object PersistedStateRestorer {
             // daemon, clampa los valores persistidos por la 384 (HOLOS 0.75 /
             // width 1.25 / diffuse 0.65, ORBE spread 1.2) al sobre 380.
             runCatching { paramStore.migrateTo386Envelope() }
+            runCatching { paramStore.migrateTo437DirectiveAmounts() }
             runCatching {
                 IvannaNativeLib.nativeSetOrbeParams(
                     paramStore.getOrbeAmount(), paramStore.getOrbeDistanceM(),

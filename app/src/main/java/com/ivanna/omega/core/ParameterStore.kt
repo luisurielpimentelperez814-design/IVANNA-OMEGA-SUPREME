@@ -209,6 +209,7 @@ class ParameterStore(context: Context) {
         // 384 al daemon en cada arranque. Esta migración los clampa al sobre
         // 380 (los valores que sonaban bien) y marca la migración como hecha.
         private const val KEY_MIGRATION_386_ENVELOPE_DONE = "migration_386_envelope_done"
+        private const val KEY_MIGRATION_437_AMOUNTS_DONE = "migration_437_amounts_done"
 
         // ── Perfiles de fábrica (v2.5.411, tarea 2) — UNA sola fuente de verdad ──
         // Los defaults de fábrica de la firma (ORBE/HOLOS/OmniField/Φ/Volterra)
@@ -300,7 +301,7 @@ class ParameterStore(context: Context) {
 
         val PROFILE_ESPACIAL: FactoryProfile = PROFILE_BASE.copy(
             name = "Espacial",
-            orbeAmount = 0.5f, holosAmount = 0.5f, holosHarmonics = 0.0f,
+            orbeAmount = 1.0f, holosAmount = 0.5f, holosHarmonics = 0.0f,
             omniAmount = 0f, hyperAmount = 0f, volterraEnabled = false
         )
 
@@ -699,6 +700,29 @@ class ParameterStore(context: Context) {
                 "width ${before.holosWidth}->${after.holosWidth}, diffuse ${before.holosDiffuse}->${after.holosDiffuse}, " +
                 "orbeSpread ${before.orbeSpread}->${after.orbeSpread})")
         }
+    }
+
+    /**
+     * v2.5.437 — Migración única: restaurar los amounts a los valores de la
+     * directiva de Esse (ORBE 1.0, HOLOS 0.5, ACTIVOS). En vivo 2026-11-13
+     * los persistidos estaban en ORBE 0.19 / HOLOS 0.05 (casi inaudibles) y
+     * el perfil de arranque ESPACIAL traía ORBE 0.5; con esos valores los
+     * efectos se sienten a veces sí y a veces no. La migración pone los
+     * valores de la directiva y marca la migración como hecha. Idempotente.
+     * Debe llamarse ANTES de que PersistedStateRestorer reenvíe los valores.
+     * El usuario puede bajar los sliders después si los quiere más bajos.
+     */
+    fun migrateTo437DirectiveAmounts() {
+        if (safeGetBoolean(KEY_MIGRATION_437_AMOUNTS_DONE, false)) return
+        val beforeOrbe = getOrbeAmount()
+        val beforeHolos = getHolosAmount()
+        prefs.edit()
+            .putFloat(KEY_ORBE_AMOUNT, 1.0f)
+            .putFloat(KEY_HOLOS_AMOUNT, 0.5f)
+            .putBoolean(KEY_MIGRATION_437_AMOUNTS_DONE, true)
+            .apply()
+        android.util.Log.i("ParameterStore",
+            "Migración 437: amounts directiva restaurados (orbe $beforeOrbe->1.0, holos $beforeHolos->0.5)")
     }
 
     // ── IVANNA — Operador Unificado de Campo Espacial (v2.5.375) ── BYPASS
