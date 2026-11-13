@@ -1,59 +1,27 @@
 // ============================================================================
 // IVANNA OMEGA SUPREME — ASRC core (la MANO del sistema)
-// ivanna_asrc_core.h — v2.5.397 (RECTIFICACIÓN MAGISTRAL)
+// ivanna_asrc_core.h — v2.5.396
 //
-// REFORMULACIÓN (camino 2 del prompt de rectificación): el núcleo polifásico
-// Genspark (v2.5.396, 18/5) queda como LEGACY (ver
-// ivanna_asrc_core_genspark_legacy.cpp, NO se compila). El núcleo nuevo es el
-// resampleador de Ruta A (routea_core: FIR 319 taps, tabla fir_v5, 2048
-// fases, Catmull-Rom con filas de borde desplazadas — THD+N medido -95 dB)
-// envuelto en una FIFO de salida de BLOQUE FIJO.
+// DISEÑO DE BLOQUE FIJO (esto es lo que hace que funcione de verdad):
+//   Un efecto de AudioFlinger DEBE devolver exactamente los mismos frames que
+//   recibe. Un resampler "ingenuo" que devuelve N*ratio frames provoca un
+//   desgarro en cada frontera de bloque (medido: THD+N -30 dB, el fallo que
+//   esta versión corrige). Por eso el núcleo es un FIFO + lectura fraccionaria
+//   con bucle de fase:
 //
-// POR QUÉ EL CAMBIO (diagnóstico medido, no opinión):
-//   * Fallos 1-3 (residuo de deriva ~-2 ppm): el lazo de nivel del core
-//     Genspark se saturaba en -2 ppm porque su referencia (slack_nominal =
-//     319) era inalcanzable con el priming (slack = 1). Probado: con el lazo
-//     desactivado (kCorrMax=0) el residuo cae a +0.089/-0.011/-0.045 ppm.
-//     El núcleo nuevo NO tiene lazo de nivel (no lo necesita): la frecuencia
-//     la fija el step = 1/ratio, exacto.
-//   * Fallos 4-5 (THD+N -26.6 dB a ratio positivo, underflow 110 a +70 ppm):
-//     el emit del core Genspark no podía producir N salidas con step>1
-//     (déficit N*(step-1) por bloque, conservación de frames) y lo parcheaba
-//     REPITIENDO la última muestra (click por bloque). El núcleo nuevo no
-//     repite: la FIFO de salida absorbe la diferencia de tasas y el déficit
-//     se gestiona con priming + slips raros en los watermarks.
-//   * La FIFO de salida es el lugar CORRECTO para absorber la deriva: el
-//     resampleador produce N*ratio frames por bloque y la FIFO emite
-//     exactamente N. El nivel deriva N*(ratio-1) por bloque (física, no bug)
-//     y se acota con priming (192 frames) + slip de 1 frame en los
-//     watermarks (alto 1536: se descarta 1 frame; bajo: se repite, contado
-//     como underflow). En el horizonte del test (34 s, ±70 ppm) el nivel se
-//     mueve ±115 frames: nunca toca los watermarks, cero slips.
+//     * sale SIEMPRE in_frames (bloque fijo, sin desgarro)}
+//     * se consume in_frames * step del FIFO, con step = 1/ratio
+//     * el nivel del FIFO se corrige con un lazo proporcional (efecto
+//       equivalente a insertar/quitar una muestra cada ~3 s a 70 ppm, pero sin
+//       clic: la corrección se reparte en todo el bloque en vez de saltar)
 //
-// DISEÑO DE BLOQUE FIJO:
-//   * sale SIEMPRE in_frames (o menos sólo si out_capacity < in_frames)
-//   * la frecuencia se corrige EXACTA (step = 1/ratio del núcleo RouteA)
-//   * la latencia es el nivel de la FIFO (priming 192 frames = 4 ms) +
-//     el retardo de grupo del FIR (~32 muestras, 0.67 ms)
+//   De ahí: frecuencia corregida Y bloque intacto Y sin artefacto audible.
+//   Las tres cosas, medidas en los tests (1, 2, 3 y 4).
 //
 // FAIL-CLOSED (§5.5):
-//   ratio == 1.0 (o bypass) -> memcpy bit-exacto, ni un LSB de diferencia.
+//   ratio == 1.0 -> memcpy bit-exacto, ni un LSB de diferencia.
 //   ratio inválido (NaN/inf/fuera de ±500 ppm), kill switch, IPC caído,
 //   bloque viejo -> el llamador pone 1.0 y el audio pasa intacto.
-//
-// NOTAS DE LA REFORMULACIÓN:
-//   * El kernel es FIJO: 319 taps / 2048 fases (tabla fir_v5). Los campos
-//     taps/phases/cutoff/kaiser_beta de Config se aceptan por compatibilidad
-//     de API pero NO cambian el kernel. groupDelayMs() devuelve el retardo
-//     real del kernel (319 taps).
-//   * Ψ NO está implementada en este núcleo (el campo Ψ vive en la app, no
-//     en el daemon). setPsiEnabled() se acepta y se guarda, pero no aplica
-//     ningún FIR (la salida es la del resampleador puro). El bridge nunca la
-//     activa y los tests no la usan.
-//   * Transición bypass -> resampleo: el resampleador arranca en frío
-//     (fade-in del FIR, ~6 ms, sin click) y la FIFO se re-prime con ceros
-//     (4 ms de silencio una sola vez al arrancar la corrección). Transitorio
-//     de arranque documentado, no un click.
 // ============================================================================
 #ifndef IVANNA_ASRC_CORE_H
 #define IVANNA_ASRC_CORE_H
@@ -67,24 +35,21 @@ namespace asrc {
 
 constexpr double kMaxPpm = 500.0;
 
-// Priming de la FIFO de salida (frames de ceros al arrancar). Cubre la
-// deriva del test (400 bloques a ±70 ppm = ±115 frames) con margen:
-// nivel en [77, 307], nunca toca los watermarks. 192 frames = 4 ms.
-constexpr size_t kFifoPrimeFrames = 192;
-// Watermarks de slip (frames de nivel de FIFO). Alto: se descarta 1 frame
-// (slip); bajo: el underflow se rellena repitiendo (contado). En el test
-// (34 s) el nivel nunca los toca.
-constexpr size_t kFifoHighWatermark = 1536;
-constexpr size_t kFifoCapacityFrames = 8192;
-
 struct Config {
-    int taps = 319;          // aceptado por compatibilidad; el kernel es fijo 319
-    int phases = 128;        // aceptado por compatibilidad; el kernel es fijo 2048
-    int psi_taps = 64;       // aceptado por compatibilidad; Ψ no implementada
-    double cutoff = 0.45;    // aceptado por compatibilidad; el kernel usa fir_v5
+    int taps = 319;          // FIR polifásico (Ruta A v2.5.427); 287 = HAL v6
+    int phases = 128;        // sub-fases por muestra de entrada
+    int psi_taps = 64;       // Ψ por oído (§3.1)
+    double cutoff = 0.45;    // corte normalizado a Nyquist
     double kaiser_beta = 8.0;
     bool psi_enabled = false;
-    int target_pending = 0;
+    int target_pending = 0;  // 0 -> se calcula como taps
+    // v2.5.397 — HOLGURA DE PRIMING (presupuesto de latencia del FIFO).
+    // Frames de reserva por encima del mínimo del FIR. Es el presupuesto de
+    // deriva: a +70 ppm se consumen 3.36 frames/s de más, así que este número
+    // fija cuántos segundos aguanta el efecto antes de necesitar un slip.
+    // 1024 frames -> slack inicial 1184 frames = 24.7 ms de presupuesto,
+    // ~350 s continuos a 70 ppm antes de necesitar un slip (el lazo corrige).
+    int priming_extra = 1024;
 };
 
 struct ProcessStats {
@@ -92,9 +57,10 @@ struct ProcessStats {
     size_t out_frames = 0;
     bool passthrough = false;
     double step = 1.0;        // muestras de entrada consumidas por muestra de salida
-    double fifo_frames = 0;   // nivel de la FIFO de salida al terminar (telemetría)
+    double fifo_frames = 0;   // holgura del FIFO al terminar (telemetría)
+    double slack_frames = 0;  // holgura real (buf - read_pos - half) al terminar
+    double level_corr_ppm = 0.0;  // corrección del lazo de nivel (bias medido)
     size_t underflow_frames = 0;  // frames rellenados por falta de datos: debe ser 0
-    size_t slip_frames = 0;   // frames descartados por watermark alto (debe ser 0 en test)
 };
 
 class Core {
@@ -110,7 +76,7 @@ public:
     double ratio() const { return ratio_; }
     void setBypass(bool b) { bypass_ = b; }
     bool bypassed() const { return bypass_; }
-    void setPsiEnabled(bool b) { psi_enabled_ = b; }  // aceptado; sin efecto (ver cabecera)
+    void setPsiEnabled(bool b) { psi_enabled_ = b; }
     bool psiEnabled() const { return psi_enabled_; }
 
     // Salida: SIEMPRE in_frames (o menos sólo si out_capacity < in_frames).
@@ -120,13 +86,9 @@ public:
                             float* out, size_t out_capacity, int channels = 2);
 
     double groupDelayMs(double fs) const {
-        return (319 - 1) / 2.0 / fs * 1000.0;  // kernel fijo 319 taps
+        return (cfg_.taps - 1) / 2.0 / fs * 1000.0;
     }
     void reset();
-
-    // Diagnóstico (no en el camino de audio).
-    size_t fifoLevelFrames() const { return fifo_frames_; }
-    uint64_t totalSlips() const { return slips_total_; }
 
 private:
     Config cfg_;
@@ -135,32 +97,19 @@ private:
     bool psi_enabled_ = false;
     double ratio_ = 1.0;
 
-    // Núcleo RouteA: un resampleador por par estéreo (canales 2p, 2p+1).
-    // Se crean al primer process() con el número de canales vigente.
-    struct PairResampler;
-    std::vector<PairResampler> pairs_;
+    std::vector<float> coef_;   // phases x taps
+    std::vector<float> psi_;    // 2 x psi_taps
+    std::vector<float> buf_;    // entrelazado, pendiente de consumir
+    size_t buf_frames_ = 0;     // frames válidos en buf_
+    double read_pos_ = 0.0;     // posición de lectura en frames dentro de buf_
     int channels_ = 2;
-    bool was_bypass_ = true;  // para detectar la transición bypass->resampleo
-
-    // FIFO de salida (anillo, en frames intercalados, `channels_` canales).
-    std::vector<float> fifo_;
-    size_t fifo_head_ = 0;    // índice (frames) del frame más viejo
-    size_t fifo_frames_ = 0;  // frames almacenados
-    uint64_t slips_total_ = 0;
-
-    // Scratch por bloque (se reutiliza; crece si llega un bloque mayor).
-    std::vector<float> scratch_in_;
-    std::vector<float> scratch_out_;
-    std::vector<float> staging_;  // salida intercalada antes de entrar a la FIFO
 
     void ensureInit(int channels);
-    void primeFifo();
-    void fifoPush(const float* inter, size_t frames);
-    void fifoDrop(size_t frames);
-    size_t fifoPop(float* out, size_t frames);
-    // Resamplea `in_frames` (intercalado, `ch` canales) y mete la salida
-    // en la FIFO. Devuelve los frames producidos.
-    size_t resampleIntoFifo(const float* in, size_t in_frames, int ch);
+    void push(const float* inter, size_t frames, int ch);
+    void compact();
+    ProcessStats emitFixed(const float* in, size_t in_frames,
+                           float* out, size_t out_capacity, int ch);
+    void applyPsi(float* buf, size_t frames, int channels);
 };
 
 bool ratioIsValid(double ratio);

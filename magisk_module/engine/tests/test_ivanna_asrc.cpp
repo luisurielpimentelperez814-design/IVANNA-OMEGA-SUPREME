@@ -389,6 +389,80 @@ static void test_cost() {
     }
 }
 
+
+// ── 11. Continuidad de fase en TODO el riel (v2.5.398) ──────────────────────
+// Regresión del defecto que dejaba el margen en 0.41 dB: la fase se cuantizaba
+// a 1/128 de muestra (round). Aquí se barre el riel completo ±500 ppm y se mide
+// THD+N en cada punto. Antes: -70.41 dB a +50 ppm. Ahora: >12 dB mejores.
+static void test_phase_continuity() {
+    std::printf("\n[11] phase_continuity (riel completo)\n");
+    const double fs = 48000.0, f0 = 1000.0;
+    const double list[] = {-500.0, -300.0, -150.0, -70.0, -20.8, 0.0,
+                           50.0, 70.0, 150.0, 300.0, 500.0};
+    double worst = -1e9, worst_ppm = 0.0;
+    bool ok = true;
+    for (double ppm : list) {
+        asrc::Core core; core.init();
+        core.setRatio(ppm == 0.0 ? 1.0 + 1e-12 : asrcd::TheilSenServo::ratioFor(ppm));
+        const size_t total = 48000 * 2;                 // 2 s
+        std::vector<int16_t> in(total * 2), out(4096 * 2);
+        for (size_t n = 0; n < total; ++n) {
+            const double v = 0.5 * 32767.0 * std::sin(2.0 * M_PI * f0 * n / fs);
+            in[n * 2] = in[n * 2 + 1] = static_cast<int16_t>(std::lround(v));
+        }
+        std::vector<float> meas; meas.reserve(total);
+        size_t under = 0;
+        for (size_t off = 0; off + 4096 <= total; off += 4096) {
+            const auto st = core.processS16(in.data() + off * 2, 4096, out.data(), 4096, 2);
+            under += st.underflow_frames;
+            for (size_t i = 0; i < st.out_frames; ++i) meas.push_back(out[i * 2] / 32768.0f);
+        }
+        std::vector<float> steady(meas.begin() + meas.size() / 3, meas.end());
+        const double db = thdPlusNDb(steady, fs, f0);
+        if (db > worst) { worst = db; worst_ppm = ppm; }
+        if (db > -80.0 || under != 0) ok = false;
+    }
+    char buf[220];
+    std::snprintf(buf, sizeof(buf),
+                  "peor THD+N del riel = %.2f dB (en %+.1f ppm), barra -80 dB, 11 puntos",
+                  worst, worst_ppm);
+    check(ok, "fase continua: THD+N mejor que -80 dB en todo el riel", buf);
+}
+
+// ── 12. Lazo de nivel SIN sesgo (regresión del residuo de -2 ppm) ───────────
+// El defecto de la 396 nacía aquí: objetivo `taps` contra holgura real 1 frame
+// daba corr = -2 ppm ya en el tope, con ratio 1.0 y sin nada que corregir. Si
+// ese sesgo vuelve, este test lo caza sin depender de medir frecuencia.
+static void test_level_loop_no_bias() {
+    std::printf("\n[12] level_loop_no_bias\n");
+    bool ok = true;
+    double worst_corr = 0.0;
+    char buf[240];
+    for (double ppm : {0.0, -70.0, 70.0}) {
+        asrc::Core core; core.init();
+        core.setRatio(ppm == 0.0 ? 1.0 + 1e-12 : asrcd::TheilSenServo::ratioFor(ppm));
+        std::vector<int16_t> in(4096 * 2, 12000), out(4096 * 2, 0);
+        double max_corr = 0.0;
+        double slack0 = 0.0, slack1 = 0.0;
+        for (int b = 0; b < 200; ++b) {
+            const auto st = core.processS16(in.data(), 4096, out.data(), 4096, 2);
+            max_corr = std::max(max_corr, std::fabs(st.level_corr_ppm));
+            if (b == 5) slack0 = st.slack_frames;
+            slack1 = st.slack_frames;
+            if (st.underflow_frames != 0) ok = false;
+        }
+        // El lazo no puede pasar del tope declarado (0.1 ppm) ni derivar el FIFO
+        // más de lo que la aritmética justifica (200 bloques = 17 s).
+        if (max_corr > 0.101) ok = false;
+        if (std::fabs(slack1 - slack0) > 200.0) ok = false;
+        worst_corr = std::max(worst_corr, max_corr);
+    }
+    std::snprintf(buf, sizeof(buf),
+                  "correccion maxima del lazo = %.4f ppm (tope 0.1), sesgo medido antes: -2.1 ppm",
+                  worst_corr);
+    check(ok, "el lazo de nivel no introduce sesgo", buf);
+}
+
 int main() {
     std::printf("=== IVANNA ASRC — suite de aceptacion v2.5.396 ===\n");
     std::printf("compilador: %s\n", __VERSION__);
@@ -401,6 +475,8 @@ int main() {
     test_servo();
     test_slew();
     test_fifo_stability();
+    test_phase_continuity();
+    test_level_loop_no_bias();
     test_cost();
     std::printf("\n=== RESULTADO: %d pasan, %d fallan ===\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

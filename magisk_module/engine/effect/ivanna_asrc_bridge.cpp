@@ -20,6 +20,8 @@ using ivanna::asrc::Writer;
 std::string g_ratio_path = ivanna::asrc::kDefaultShm;
 std::string g_frames_path = "/data/adb/ivanna_omega/asrc_frames.shm";
 std::string g_kill_path = ivanna::asrc::kDefaultKillSwitch;
+std::string g_enable_path  = "/data/adb/ivanna_omega/asrc.enable";   // compat (fuerza ON)
+std::string g_disable_path = "/data/adb/ivanna_omega/asrc.disable";  // KILL SWITCH del motor
 
 std::atomic<bool> g_attempted{false};
 Core* g_core = nullptr;
@@ -71,6 +73,19 @@ void publish(double ratio, uint32_t flags, int64_t frames) {
     g_updates.fetch_add(1);
 }
 
+// v2.5.397 — RECTIFICACIÓN: el motor polifásico es el ESTADO POR DEFECTO.
+// La 396 lo escondía detrás de un archivo `asrc.enable` que había que crear a
+// mano: eso convertía el bypass en el producto. Aquí se invierte el sentido:
+//   * sin archivos                        -> motor ACTIVO con la ratio del daemon
+//   * /data/adb/ivanna_omega/asrc.disable -> motor OFF (kill switch, sin reiniciar)
+//   * /data/adb/ivanna_omega/pal_asr.off  -> daemon OFF (publica 1.0 -> passthrough)
+// El fail-closed NO se toca: ratio inválido, bloque viejo, CRC malo, NaN/Inf,
+// fuera del riel o kill switch -> Core pone 1.0 -> memcpy bit-exacto.
+bool polyphaseEnabled() {
+    if (ivanna::asrc::killSwitchPresent(g_disable_path)) return false;
+    return true;
+}
+
 }  // namespace
 
 void configure(const std::string& ratio_path, const std::string& frames_path,
@@ -81,13 +96,6 @@ void configure(const std::string& ratio_path, const std::string& frames_path,
     g_kill_path = kill_switch_path;
 }
 
-// RECTIFICACIÓN v2.5.397: el motor ya NO va detrás de una puerta. El núcleo
-// Genspark (18/5) se reemplazó por el resampleador de Ruta A + FIFO de bloque
-// fijo (23/23 medido en host: deriva ±0.01 ppm, THD+N -85.6 dB, underflow 0).
-// El motor está ACTIVO por defecto: el bypass queda SOLO como red de
-// seguridad (fail-closed): kill switch, ratio inválido, IPC caído o daemon
-// muerto -> ratio 1.0 -> passthrough bit-exacto. El archivo asrc.enable ya
-// no existe como puerta (si existe, se ignora: no se lee).
 size_t process(int16_t* buf, size_t frames, int channels, int rate) {
     (void)rate;
     if (!buf || frames == 0) return frames;
@@ -104,10 +112,8 @@ size_t process(int16_t* buf, size_t frames, int channels, int rate) {
         publish(1.0, ivanna::asrc::kFlagKillSwitch | ivanna::asrc::kFlagDaemonAlive, f);
         return frames;
     }
-    // Motor ACTIVO por defecto (rectificación v2.5.397): el bypass solo se
-    // pone con el kill switch (arriba) o si el core no cargó. Sin daemon o
-    // sin ratio válido, setRatio(1.0) deja el audio intacto (fail-closed).
-    g_core->setBypass(false);
+    // Sin asrc.disable -> motor activo (v2.5.397). Ver polyphaseEnabled().
+    g_core->setBypass(!polyphaseEnabled());
 
     double ratio = 1.0;
     bool fresh = false;

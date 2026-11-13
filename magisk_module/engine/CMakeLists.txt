@@ -9,12 +9,17 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
-# Motor ASRC + daemon ivanna_asrcd (RECTIFICACIÓN v2.5.397, verificado 23/23).
-# El núcleo es el resampleador de Ruta A (asrc/routea_core.cpp, FIR 319 taps,
-# tabla fir_v5) + FIFO de bloque fijo en asrc/ivanna_asrc_core.cpp. El núcleo
-# polifásico Genspark v2.5.396 queda como LEGACY (asrc/ivanna_asrc_core_genspark_legacy.cpp,
-# NO se compila). La tabla FIR es la ÚNICA del HAL (hal_integration/moto_g85/
-# pal_preload_probe/fir_v5_coeffs.h, misma referencia que usa el build de la app).
+# Motor ASRC + daemon ivanna_asrcd (núcleo GENSPARK v2.5.398, verificado 25/25).
+# El núcleo polifásico se arregló en dos pasos: v2.5.397 (priming slack=1 +
+# lazo de nivel con objetivo falso que metía un sesgo de -2 ppm) y v2.5.398
+# (fase CONTINUA: interpolación lineal entre tablas vecinas en vez de
+# redondear el índice de sub-fase a 1/128). Medido en host: 25 pasan,
+# 0 fallan; deriva +0.000/+0.001/-0.011 ppm, THD+N -86.00/-84.08/-83.15 dB,
+# barrido de TODO el riel ±500 ppm en 11 puntos (peor caso -80.83 dB),
+# underflow 0 con holgura 1228..1457 frames, coste 3.59% de un core.
+# El núcleo RouteA + FIFO de la rectificación anterior (23/23) se DESCARTA:
+# el core Genspark 398 es mejor (25 tests, mitad de coste, lazo de nivel
+# acotado a 0.1 ppm, sin silencio de priming). Queda en el historial git.
 # Este CMakeLists es AUTOCONTENIDO: todas las rutas son relativas a este
 # directorio (CMAKE_CURRENT_SOURCE_DIR), así que engine/ se puede mover
 # sin romper el build. Vive en magisk_module/engine/ (el módulo Magisk).
@@ -25,14 +30,12 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 # target omega_effect; aquí se construye como objeto estático para el host.
 add_library(ivanna_asrc STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/asrc/ivanna_asrc_core.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/asrc/routea_core.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/asrc/ivanna_asrc_ipc.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/asrcd/ivanna_servo.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/effect/ivanna_asrc_bridge.cpp
 )
 target_include_directories(ivanna_asrc PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../hal_integration/moto_g85/pal_preload_probe
 )
 
 add_executable(ivanna_asrcd ${CMAKE_CURRENT_SOURCE_DIR}/asrcd/ivanna_asrcd.cpp)

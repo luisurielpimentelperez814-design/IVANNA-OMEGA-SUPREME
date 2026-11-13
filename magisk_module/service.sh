@@ -8,6 +8,49 @@ LOG="$STATE/daemon.log"
 
 mkdir -p "$STATE" || exit 1
 
+# ═══════════════════════════════════════════════════════════════════════════
+# DAEMON ASRC (ivanna_asrcd) — v2.5.397
+#
+# CAUSA RAIZ del defecto de la 396: este bloque se insertó ANTES del primer
+# "exit 0" del script, que está DENTRO del camino "daemon ya activo". O sea:
+# el daemon nuevo sólo arrancaba si el daemon VIEJO ya estaba sano; en un
+# arranque limpio el script salía antes y ivanna_asrcd NUNCA se ejecutaba.
+# Aquí va arriba, antes de cualquier return temprano, y con verificación real
+# de proceso (no se asume que setsid funcionó).
+# ivanna_daemon (viejo) y ivanna_asrcd (nuevo) son independientes: no comparten
+# socket ni estado. El primero sirve el diagnóstico de la app; el segundo es el
+# cerebro ASRC.
+# ═══════════════════════════════════════════════════════════════════════════
+ASRCD_BIN="$MODDIR/system/bin/ivanna_asrcd"
+if [ -x "$ASRCD_BIN" ] && [ ! -f "$STATE/pal_asr.off" ]; then
+    if pidof ivanna_asrcd >/dev/null 2>&1; then
+        echo "$(date) ivanna_asrcd ya estaba corriendo (pid $(pidof ivanna_asrcd | awk '{print $1}'))" >> "$LOG"
+        setprop persist.ivanna.asrcd.active 1 2>/dev/null
+    else
+        setsid -f "$ASRCD_BIN" \
+            --ratio "$STATE/asrc_ratio.bin" \
+            --frames "$STATE/asrc_frames.bin" \
+            --kill "$STATE/pal_asr.off" \
+            --period-ms 20 >> "$STATE/asrcd.log" 2>&1 < /dev/null
+        sleep 1
+        if pidof ivanna_asrcd >/dev/null 2>&1; then
+            echo "$(date) ivanna_asrcd ARRANCADO pid=$(pidof ivanna_asrcd | awk '{print $1}')" >> "$LOG"
+            setprop persist.ivanna.asrcd.active 1 2>/dev/null
+        else
+            # fail-soft: el modulo arranca, el audio queda intacto (ratio 1.0)
+            echo "$(date) ivanna_asrcd NO arranco -> fail-closed, ratio 1.0, audio intacto" >> "$LOG"
+            setprop persist.ivanna.asrcd.active 0 2>/dev/null
+        fi
+    fi
+else
+    if [ ! -x "$ASRCD_BIN" ]; then
+        echo "$(date) ivanna_asrcd AUSENTE (build aarch64 pendiente de CI) -> ASRC inactivo, el resto arranca igual" >> "$LOG"
+    else
+        echo "$(date) pal_asr.off presente -> ivanna_asrcd no arranca (kill switch)" >> "$LOG"
+    fi
+    setprop persist.ivanna.asrcd.active 0 2>/dev/null
+fi
+
 # Supervision continua: un solo supervisor vivo (verificado por cmdline, no solo por PID).
 if [ -z "$IVANNA_SUPERVISED" ] && [ -f "$MODDIR/supervisor.sh" ]; then
     SUP_OLD=$(cat "$STATE/supervisor.pid" 2>/dev/null)
@@ -16,6 +59,34 @@ if [ -z "$IVANNA_SUPERVISED" ] && [ -f "$MODDIR/supervisor.sh" ]; then
         chmod 755 "$MODDIR/supervisor.sh" 2>/dev/null
         nohup sh "$MODDIR/supervisor.sh" >/dev/null 2>&1 &
     fi
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v2.5.394 — ÁRBITRO DE RUTAS A/B + DESCUBRIMIENTO DE SESSION ID (Ruta B)
+#
+# Se lanza AL PRINCIPIO y desacoplado del daemon a propósito: el diagnóstico de
+# Ruta B tiene que existir aunque el daemon tarde en levantar o falle, porque el
+# síntoma original era justamente "no hay rastro en los logs".
+#
+# Instancia única verificada por cmdline (no solo por PID), igual que el
+# supervisor: si quedó una instancia colgada de un arranque anterior, se mata.
+RUTAB="$MODDIR/core/rutab_link.sh"
+if [ -f "$RUTAB" ]; then
+    chmod 755 "$RUTAB" 2>/dev/null
+    RB_OLD=$(cat "$STATE/rutab.pid" 2>/dev/null)
+    case "$RB_OLD" in ''|*[!0-9]*) RB_OLD="" ;; esac
+    if [ -n "$RB_OLD" ] && grep -aq rutab_link.sh "/proc/$RB_OLD/cmdline" 2>/dev/null; then
+        echo "$(date) RUTAB: árbitro ya vivo (pid $RB_OLD)" >> "$LOG"
+    else
+        if [ -n "$RB_OLD" ]; then
+            kill -9 "$RB_OLD" 2>/dev/null
+            echo "$(date) RUTAB: instancia previa ($RB_OLD) sin cmdline vivo — relanzando" >> "$LOG"
+        fi
+        nohup sh "$RUTAB" daemon >/dev/null 2>&1 &
+        echo "$(date) RUTAB: árbitro lanzado (session discovery 3 s, arbitraje A/B con histéresis, clamp de ejes)" >> "$LOG"
+    fi
+else
+    echo "$(date) RUTAB: core/rutab_link.sh ausente — sin árbitro de rutas (Ruta B sin diagnóstico)" >> "$LOG"
 fi
 
 # FIX (omega_shm, causa raiz MLS): la app (untrusted_app:s0:cXXX,...) leia
@@ -134,43 +205,6 @@ fi
 chmod 755 "$DAEMON" 2>/dev/null
 chmod 755 "$MODDIR/system/bin/ivanna_client" 2>/dev/null
 chmod 755 "$MODDIR/service.sh" 2>/dev/null
-
-# ─── DAEMON ASRC NUEVO (ivanna_asrcd, engine/, v2.5.396) ─────────────────────
-# El daemon NUEVO del ASRC (servo Theil-Sen + IPC pwrite/pread + seqlock +
-# CRC). Se arranca AQUÍ, ANTES del chequeo del daemon viejo, a propósito:
-# el script tiene salidas tempranas más abajo (daemon viejo ya activo →
-# exit 0; safe_mode → exit 0; veto → exit 0) y si este bloque estuviera al
-# final (como venía en el zip de Genspark) NUNCA se ejecutaría cuando el
-# daemon viejo ya está sano — ivanna_asrcd quedaría sin arrancar y el
-# supervisor (que solo miraba ivanna_daemon) jamás lo relanzaría.
-# Reglas del encargo: no .rc, no init, no LD_PRELOAD, no wrapper HAL.
-# Fail-soft: si el binario no está (build aún en CI), se registra y se
-# sigue — NUNCA se bloquea el arranque del módulo por esta pieza.
-# Respeta safe_mode (veto de emergencia del módulo) y el kill switch
-# pal_asr.off (apaga el ASRC sin reiniciar). El supervisor también vigila
-# ivanna_asrcd (ver supervisor.sh) y relanza service.sh si cae.
-ASRCD_BIN="$MODDIR/system/bin/ivanna_asrcd"
-ASRC_STATE="$STATE"
-if [ -f "$MODDIR/.safe_mode" ]; then
-    echo "$(date '+%F %T') service.sh: SAFE_MODE activo — ivanna_asrcd no arranca" >> "$LOG" 2>/dev/null
-elif [ ! -x "$ASRCD_BIN" ]; then
-    echo "$(date '+%F %T') service.sh: ivanna_asrcd AUSENTE (build pendiente) -> ASRC inactivo, todo lo demas intacto" >> "$LOG" 2>/dev/null
-    setprop persist.ivanna.asrcd.bin 0 2>/dev/null || true
-elif [ -e "$ASRC_STATE/pal_asr.off" ]; then
-    echo "$(date '+%F %T') service.sh: kill switch pal_asr.off presente -> ASRC no arranca" >> "$LOG" 2>/dev/null
-    setprop persist.ivanna.asrcd.bin 0 2>/dev/null || true
-elif pidof ivanna_asrcd >/dev/null 2>&1; then
-    echo "$(date '+%F %T') service.sh: ivanna_asrcd ya activo" >> "$LOG" 2>/dev/null
-    setprop persist.ivanna.asrcd.bin 1 2>/dev/null || true
-else
-    setsid -f "$ASRCD_BIN" \
-      --ratio "$ASRC_STATE/asrc_ratio.bin" \
-      --frames "$ASRC_STATE/asrc_frames.bin" \
-      --kill "$ASRC_STATE/pal_asr.off" \
-      --period-ms 20 >> "$ASRC_STATE/asrcd.log" 2>&1 < /dev/null
-    echo "$(date '+%F %T') service.sh: ivanna_asrcd lanzado" >> "$LOG" 2>/dev/null
-    setprop persist.ivanna.asrcd.bin 1 2>/dev/null || true
-fi
 
 if pidof ivanna_daemon >/dev/null 2>&1; then
     # FIX (síntoma exacto reportado: panel muestra DAEMON=CORRIENDO en verde
@@ -337,3 +371,4 @@ else
     setprop persist.ivanna.daemon_active 0 2>/dev/null
     echo $((CRASHES + 1)) > "$CRASH_COUNT_FILE"
 fi
+
