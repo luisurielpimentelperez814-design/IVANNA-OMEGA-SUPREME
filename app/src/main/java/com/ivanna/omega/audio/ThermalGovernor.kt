@@ -103,18 +103,30 @@ object ThermalGovernor {
     }
 
     /**
-     * Lee la fraccion de shed del gobernador de carga DSP y actualiza el tier
-     * de HOLOS por carga (DspLoadTierPolicy). Solo re-aplica la politica
-     * combinada cuando el tier de carga cambia (el dedup de lastHolosTier
-     * evita escrituras JNI de mas).
+     * Lee la carga real del DSP y actualiza el tier de HOLOS por carga
+     * (DspLoadTierPolicy). Solo re-aplica la politica combinada cuando el
+     * tier de carga cambia (el dedup de lastHolosTier evita escrituras JNI
+     * de mas).
+     *
+     * v2.5.429: el disparador es la CARGA REAL (EMA del tiempo por bloque
+     * dividida por el presupuesto), NO el shed. Medido en vivo (23:43,
+     * v2.5.428): con HOLOS p99 13-25 ms y dsp_us 9-11 ms, el shed se quedo
+     * en 1.3-1.4% y el tier en 0 — el shed no refleja la sobrecarga.
+     * nativeGetDspShed() devuelve [shed, emaUs, peakWindowUs, budgetNs,
+     * ...tiempos por etapa..., peakUs]; aqui usamos emaUs [1] y budgetNs [3].
      */
     private fun tickLoad() {
         if (!IvannaNativeLib.isLoaded) return
-        val shed = runCatching { IvannaNativeLib.nativeGetDspShed()?.getOrNull(0) }.getOrNull() ?: return
-        val loadTier = loadTierPolicy.update(shed)
+        val arr = runCatching { IvannaNativeLib.nativeGetDspShed() }.getOrNull() ?: return
+        if (arr.size < 4) return
+        val emaUs = arr[1]
+        val budgetUs = arr[3] / 1000f
+        if (emaUs.isNaN() || budgetUs <= 0f) return
+        val load = (emaUs / budgetUs).coerceIn(0f, 2f)
+        val loadTier = loadTierPolicy.update(load)
         if (loadTier != lastLoadTier) {
             lastLoadTier = loadTier
-            Log.i(TAG, "DSP load: shed=${"%.3f".format(shed)} -> HOLOS load tier=$loadTier")
+            Log.i(TAG, "DSP load: emaUs=${"%.0f".format(emaUs)}us budget=${"%.0f".format(budgetUs)}us load=${"%.2f".format(load)} -> HOLOS load tier=$loadTier")
             val thermalTier = if (thermalApiAvailable) ThermalTier.of(currentThermalLoad) else null
             applyCombinedPolicy(thermalTier)
         }

@@ -1,7 +1,7 @@
 package com.ivanna.omega.audio
 
 /**
- * DspLoadTierPolicy — tier de HOLOS por carga del DSP (v2.5.426).
+ * DspLoadTierPolicy — tier de HOLOS por carga del DSP (v2.5.426, re-disparado v2.5.429).
  *
  * Problema medido en vivo (Moto G85, 2026-11-12 20:34, v2.5.424, Tidal propio
  * por USB): con HOLOS en 0.50, el DSP cuesta 5.9-6.7 ms/bloque frente a un
@@ -11,14 +11,23 @@ package com.ivanna.omega.audio
  * termico de HOLOS (24->12 bandas) ya existe, pero solo responde a la
  * TEMPERATURA (ThermalGovernor): con el DSP saturado pero el telefono frio,
  * el tier se queda en 0 (Normal) y el unico alivio es el shed de bloques
- * enteros. Esta politica cierra ese hueco: el tier de HOLOS tambien sube
- * por CARGA (shed alto), degradando con gracia (menos bandas) en vez de
- * soltar bloques a seco.
+ * enteros.
+ *
+ * v2.5.426: esta politica cerro ese hueco disparando el tier por SHED alto.
+ * v2.5.429 CORRECCION (medido en vivo 23:43, v2.5.428): el shed NO refleja
+ * la sobrecarga real — con HOLOS p99 13-25 ms (presupuesto 6.67 ms), ORBE
+ * p99 8-9 ms y dsp_us 9-11 ms, el shed se quedo en 1.3-1.4% y el tier en 0,
+ * asi que HOLOS siguio a 24 bandas y el tronido siguio. El disparador
+ * correcto es la CARGA REAL del DSP: la media movil (EMA) del tiempo por
+ * bloque (emaUs) dividida por el presupuesto (budgetNs), ambas de
+ * nativeGetDspShed()[1] y [3]. Cuando el DSP tarda mas del 85% del
+ * presupuesto, HOLOS baja a 12 bandas; mas del 100% (sobre presupuesto),
+ * a Limited (difuso off). Degradacion con gracia en vez de tronidos.
  *
  * Histeresis (el tick del ThermalGovernor es de 2 s):
- *   - sube a 1 (Warm, 12 bandas) con shed > 0.10 durante 2 ticks (4 s)
- *   - sube a 2 (Limited, difuso off) con shed > 0.25 durante 2 ticks (4 s)
- *   - baja un nivel con shed bajo durante 4 ticks (8 s) desde 2, o 5 ticks
+ *   - sube a 1 (Warm, 12 bandas) con carga > 0.85 durante 2 ticks (4 s)
+ *   - sube a 2 (Limited, difuso off) con carga > 1.00 durante 2 ticks (4 s)
+ *   - baja un nivel con carga baja durante 4 ticks (8 s) desde 2, o 5 ticks
  *     (10 s) desde 1: sesgo a quedarse en el nivel reducido (evita el
  *     flapping 24<->12 bandas, que tambien se oiria).
  * Kotlin puro (sin Android), igual que ThermalTier: se prueba en JVM.
@@ -31,12 +40,15 @@ class DspLoadTierPolicy {
     private var upTicks = 0
     private var downTicks = 0
 
-    /** Un tick (2 s) con este shed; devuelve el tier resultante (0..2). */
-    fun update(shedFrac: Float): Int {
-        val shed = if (shedFrac.isNaN()) 0f else shedFrac.coerceIn(0f, 1f)
+    /**
+     * Un tick (2 s) con esta carga del DSP (emaUs / presupuesto, 1.0 = al
+     * 100% del presupuesto); devuelve el tier resultante (0..2).
+     */
+    fun update(loadFrac: Float): Int {
+        val load = if (loadFrac.isNaN()) 0f else loadFrac.coerceIn(0f, 2f)
         val target = when {
-            shed > UP_TO_LIMITED -> 2
-            shed > UP_TO_WARM -> 1
+            load > UP_TO_LIMITED -> 2
+            load > UP_TO_WARM -> 1
             else -> 0
         }
         if (target > tier) {
@@ -60,10 +72,10 @@ class DspLoadTierPolicy {
     }
 
     companion object {
-        /** shed > 10% sostenido: HOLOS a 12 bandas. */
-        const val UP_TO_WARM = 0.10f
-        /** shed > 25% sostenido: HOLOS a 12 bandas + difuso off. */
-        const val UP_TO_LIMITED = 0.25f
+        /** carga > 85% del presupuesto sostenida: HOLOS a 12 bandas. */
+        const val UP_TO_WARM = 0.85f
+        /** carga > 100% del presupuesto (sobre presupuesto): HOLOS a 12 bandas + difuso off. */
+        const val UP_TO_LIMITED = 1.00f
         /** ticks (2 s) para subir un nivel. */
         const val UP_TICKS = 2
         /** ticks para bajar de 2 a 1. */
