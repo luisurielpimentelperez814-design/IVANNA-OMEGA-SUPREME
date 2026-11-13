@@ -40,13 +40,17 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/un.h>
 
+#include "control/daemon_command_responder.h"
 #include "daemon/session_discovery.hpp"
 #include "include/omega_control_bus.h"
 #include "include/psi_core.h"
@@ -114,14 +118,19 @@ bool fileExists(const char* path) noexcept {
 }
 
 // Socket abstracto @omega_daemon_socket (compatibilidad con el módulo y
-// la app). El cerebro v2 NO tiene servidor de comandos (no lo necesita:
-// el plano de control es el estado de fusión). Pero service.sh,
-// supervisor.sh y la app (MagiskBridge.kt) deciden "SOCKET=CONECTADO"
-// grepeando /proc/net/unix por este nombre, y el supervisor relanza el
-// daemon si el proceso corre SIN socket. Así que el cerebro bindea el
-// socket (abstracto, sin archivo) y acepta+cierra conexiones sin
-// bloquearse. Es solo una señal de vida, no un servidor. Si el bind
-// falla, el cerebro sigue (el bucle de fusión no depende del socket).
+// la app). service.sh, supervisor.sh y la app (MagiskBridge.kt) deciden
+// "SOCKET=CONECTADO" grepeando /proc/net/unix por este nombre, y el
+// supervisor relanza el daemon si el proceso corre SIN socket.
+//
+// v2.5.440 — EL SOCKET YA NO ES SOLO SEÑAL DE VIDA: sirve comandos
+// (HELLO + GET_STATUS) en un hilo propio (ver control/
+// daemon_command_responder.h). Antes (v2.5.401–439) el cerebro bindeaba
+// el socket y el bucle principal drenaba las conexiones con accept()+
+// close() inmediato, así que GET_STATUS jamás se respondía y la app no
+// podía descubrir la sesión: el efecto omega nunca se acoplaba (Ruta B
+// muerta). El hilo de comandos lee el estado vivo (sesión, generación,
+// veredicto) de los atómicos que el bucle principal actualiza cada
+// iteración; si el hilo muere, la fusión sigue (fail-closed).
 int bindDaemonSocket() noexcept {
     int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0) return -1;
@@ -345,11 +354,25 @@ int main() {
     uint32_t verdict = IVANNA_VERDICT_BYPASS;
     int sessionCountdown = 0;  // descubrir sesión cada ~3 s (60 ciclos de 50 ms)
 
-    // Socket de vida (@omega_daemon_socket) para service.sh / supervisor /
-    // app. Si falla, el cerebro sigue (la fusión no depende del socket).
+    // Socket de comandos (abstracto @omega_daemon_socket) + hilo que lo
+    // sirve (HELLO + GET_STATUS). v2.5.440: antes el socket se bindeaba y
+    // nadie lo atendía (el bucle drenaba accept()+close()), así que la app
+    // jamás recibía la sesión descubierta y Ruta B no se acoplaba. El hilo
+    // lee el estado vivo de cmdState (el bucle lo actualiza cada
+    // iteración); si el bind falla, el cerebro sigue sin comandos (la
+    // fusión no depende del socket) y la app verá Ruta B sin acople.
     const int sockFd = bindDaemonSocket();
-    if (sockFd >= 0) logLine("socket @omega_daemon_socket bindeado");
-    else logLine("WARN: no se pudo bindear @omega_daemon_socket (la fusión sigue)");
+    ivanna::daemon::CommandPlaneState cmdState;
+    cmdState.startMs.store(monotonicMs(), std::memory_order_relaxed);
+    std::thread cmdThread;
+    if (sockFd >= 0) {
+        logLine("socket @omega_daemon_socket bindeado");
+        cmdThread = std::thread(ivanna::daemon::serveCommandSocket, sockFd,
+                                std::ref(cmdState), std::ref(g_running), true);
+        logLine("hilo de comandos @omega_daemon_socket iniciado (GET_STATUS/HELLO)");
+    } else {
+        logLine("WARN: no se pudo bindear @omega_daemon_socket (la fusión sigue; Ruta B sin acople)");
+    }
 
     logLine("ivanna_daemon_v2 (CEREBRO) iniciado — fusión homogénea");
 
@@ -529,6 +552,13 @@ int main() {
             ivanna_fusion_write(fusion, &w);
         }
 
+        // Estado vivo para el hilo de comandos (GET_STATUS): la app lee la
+        // sesión descubierta de aquí, no del bucle. Stores atómicos baratos.
+        cmdState.sessionId.store(sessionId, std::memory_order_relaxed);
+        cmdState.sessionGen.store(sessionGen, std::memory_order_relaxed);
+        cmdState.generation.store(generation, std::memory_order_relaxed);
+        cmdState.verdict.store(verdict, std::memory_order_relaxed);
+
         // 8. Publicar el snapshot (SHM del efecto) + heartbeat.
         // READ-MODIFY-WRITE: se adopta el snapshot más reciente de la APK
         // (sus ajustes de efectos: ORBE, HOLOS, Φ, Volterra, 5 Ejes, NPE,
@@ -562,19 +592,17 @@ int main() {
                        static_cast<float>(ratio), static_cast<int32_t>(st.clock_source),
                        psiActive);
 
-        // Aceptar (no bloqueante) y cerrar cualquier conexión al socket de
-        // vida. Nadie debería conectar (no hay servidor de comandos), pero
-        // si alguien lo intenta, no se deja colgado.
-        if (sockFd >= 0) {
-            for (;;) {
-                const int c = ::accept(sockFd, nullptr, nullptr);
-                if (c < 0) break;
-                ::close(c);
-            }
-        }
+        // El socket de comandos lo atiende el hilo propio (serveCommandSocket,
+        // v2.5.440). Antes este punto drenaba accept()+close() y GET_STATUS
+        // jamás se respondía; ese drenaje se eliminó: robaría conexiones al
+        // hilo y rompería el acople de Ruta B de forma intermitente.
 
         ::usleep(50000);  // ~20 Hz
     }
+
+    // El hilo de comandos sale solo cuando g_running cae (select 1 s);
+    // se espera antes de cerrar el socket que atiende.
+    if (cmdThread.joinable()) cmdThread.join();
 
     // Al salir, dejar el veredicto en BYPASS y el campo Ψ neutro para que
     // el músculo pase limpio.

@@ -113,14 +113,25 @@ inline ReceiveFdResult receiveExactlyOneFd(int socket_fd, int* out_fd, int* out_
 
 
 // Evitar conflictos con android/log.h en omega_effect.cpp
+// v2.5.440: LOGW tiene guarda propia (antes solo LOGD la cubría): el
+// responder de comandos incluye omega_effect_beacon.h, que define LOGW
+// bajo #ifndef OMEGA_CTRL_LOGW; sin esta guarda, incluir el beacon antes
+// que este header redefinía LOGW (warning en el build del daemon).
 #ifndef OMEGA_CTRL_LOGD
 #  if defined(__ANDROID__)
 #    include <android/log.h>
 #    define OMEGA_CTRL_LOGD(fmt,...) __android_log_print(ANDROID_LOG_DEBUG,"OmegaCtrlBus",fmt,##__VA_ARGS__)
-#    define OMEGA_CTRL_LOGW(fmt,...) __android_log_print(ANDROID_LOG_WARN, "OmegaCtrlBus",fmt,##__VA_ARGS__)
 #  else
 #    include <cstdio>
 #    define OMEGA_CTRL_LOGD(fmt,...) std::fprintf(stderr,"[OCB DBG] " fmt "\n",##__VA_ARGS__)
+#  endif
+#endif
+#ifndef OMEGA_CTRL_LOGW
+#  if defined(__ANDROID__)
+#    include <android/log.h>
+#    define OMEGA_CTRL_LOGW(fmt,...) __android_log_print(ANDROID_LOG_WARN, "OmegaCtrlBus",fmt,##__VA_ARGS__)
+#  else
+#    include <cstdio>
 #    define OMEGA_CTRL_LOGW(fmt,...) std::fprintf(stderr,"[OCB WRN] " fmt "\n",##__VA_ARGS__)
 #  endif
 #endif
