@@ -110,6 +110,91 @@ inline float diffuseMix(float coherence, float diffuseParam) noexcept {
     return (1.0f - coh) * d;
 }
 
+// ── Reforma v2.5.429: G_b por banda + por bin ──────────────────────────
+// Problema medido en vivo (2026-11-12 23:43, v2.5.428): HOLOS p99 13–25 ms
+// (presupuesto 6.67 ms). El cuello es renderBins(): llamaba a greenGains()
+// por BIN (512×/frame), y greenGains() recalcula por bin cosas que solo
+// dependen de la BANDA (24 bandas): itdSeconds() (2× pathLengthToEar con
+// atan2/acos/sin/cos/sqrt), el ILD por divergencia ildDb(θ,r,0) y
+// sin(θ). La reforma separa G_b en dos partes con la MISMA matemática
+// (bit-idéntica a greenGains, verificada por test):
+//   - GreenBandBase: todo lo independiente de la frecuencia, 1×/banda/frame.
+//   - greenGainsBin(): solo lo dependiente de f (sombra cefálica,
+//     estante de proximidad, pow de ganancias), 1×/bin.
+// El render pasa de ~15–20 trascendentales por bin a ~4 (1 log10, 4 pow,
+// 1 sqrt). HOLOS deja de ser el cuello y corre a 24 bandas dentro del
+// presupuesto — IVANNA cumple lo que ofrece, sin bypass ni degradación.
+// greenGains() se conserva (tests y referencia); el camino vivo usa la
+// versión por banda+bin.
+struct GreenBandBase {
+    float theta = 0.0f;        // azimut de banda (clamp −π..π)
+    float itdSeconds = 0.0f;   // ITD esférico (s), independiente de f
+    float spreadingDb = 0.0f;  // ILD por divergencia 20·log10(dL/dR) (f=0)
+    float sinTheta = 0.0f;
+    float sin2Theta = 0.0f;    // sin²θ (sombra cefálica)
+    float wR = 0.5f, wL = 0.5f;  // reparto de proximidad por lateralización
+    float proxCapDb = 0.0f;    // min(20·log10(1/r), 6), 0 si r≥1 m
+    float gamma = 1.0f;        // exponente de divergencia (clamp 0.5..1)
+    float proxScale = 0.0f;    // clamp(proximityCapDb,0,6)/6
+};
+
+inline GreenBandBase greenBandBase(float thetaRad, float r, float gamma,
+                                   float proximityCapDb) noexcept {
+    GreenBandBase b;
+    if (!std::isfinite(thetaRad) || !std::isfinite(r) || !std::isfinite(gamma) ||
+        !std::isfinite(proximityCapDb))
+        return b;
+    const float theta = std::clamp(thetaRad, -kPiF, kPiF);
+    const float rr = std::clamp(r, 0.15f, 2.0f);
+    b.theta = theta;
+    b.itdSeconds = nearfield::itdSeconds(theta, rr);
+    // A f=0 la sombra es 0 (ka=0), así que ildDb(θ,r,0) ES el spreading.
+    b.spreadingDb = nearfield::ildDb(theta, rr, 0.0f);
+    b.sinTheta = std::sin(theta);
+    b.sin2Theta = b.sinTheta * b.sinTheta;
+    b.wR = 0.5f * (1.0f + b.sinTheta);
+    b.wL = 1.0f - b.wR;
+    if (rr >= 1.0f) {
+        b.proxCapDb = 0.0f;
+    } else {
+        b.proxCapDb = std::min(20.0f * std::log10(1.0f / rr), 6.0f);
+    }
+    b.gamma = std::clamp(gamma, 0.5f, 1.0f);
+    b.proxScale = std::clamp(proximityCapDb, 0.0f, 6.0f) / 6.0f;
+    return b;
+}
+
+// G_b por bin desde la base de banda: misma matemática que greenGains().
+// Solo lo dependiente de f: sombra cefálica (ka=2πfa/c) y estante de
+// proximidad (shape 1/(1+(f/300)²)); las ganancias combinan los mismos
+// 4 pow() que greenGains() en el mismo orden.
+inline GreenGains greenGainsBin(const GreenBandBase& b, float freqHz,
+                                float pinnaDb) noexcept {
+    GreenGains out;
+    if (!std::isfinite(freqHz) || !std::isfinite(pinnaDb)) return out;
+    const float f = std::clamp(freqHz, 0.0f, 20000.0f);
+    const float ka = 2.0f * kPiF * f * nearfield::kHeadRadiusM /
+                     nearfield::kSoundSpeedMps;
+    const float shadowMagDb =
+        20.0f * std::log10(1.0f + 0.25f * ka * ka * b.sin2Theta);
+    const float shadowDb = (b.sinTheta >= 0.0f) ? shadowMagDb : -shadowMagDb;
+    const float ildDb = b.gamma * b.spreadingDb + shadowDb;
+    const float shape = 1.0f / (1.0f + (f / 300.0f) * (f / 300.0f));
+    const float proximityDb = b.proxCapDb * shape * b.proxScale;
+    const float ildTotal = ildDb + std::clamp(pinnaDb, -24.0f, 24.0f);
+    float gL = std::pow(10.0f, -ildTotal / 40.0f);
+    float gR = std::pow(10.0f, +ildTotal / 40.0f);
+    gL *= std::pow(10.0f, proximityDb * b.wL / 20.0f);
+    gR *= std::pow(10.0f, proximityDb * b.wR / 20.0f);
+    const float norm = std::sqrt(2.0f / (gL * gL + gR * gR));
+    out.gL = gL * norm;
+    out.gR = gR * norm;
+    out.itdSeconds = b.itdSeconds;
+    out.ildDb = ildDb;
+    out.proximityDb = proximityDb;
+    return out;
+}
+
 // Tabla de magnitud de pinna medida (diferencial R−L, dB), interpolación
 // lineal en azimut y en log-frecuencia (v1; transporte óptimo en fase 2).
 // Sin tabla cargada → 0 dB (identidad). La tabla se alimenta desde

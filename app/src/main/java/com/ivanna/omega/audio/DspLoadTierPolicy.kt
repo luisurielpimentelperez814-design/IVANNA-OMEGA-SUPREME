@@ -27,13 +27,15 @@ package com.ivanna.omega.audio
  * Histeresis (el tick del ThermalGovernor es de 2 s):
  *   - sube a 1 (Warm, 12 bandas) con carga > 0.85 durante 2 ticks (4 s)
  *   - sube a 2 (Limited, difuso off) con carga > 1.00 durante 2 ticks (4 s)
- *   - sube a 3 (Bypass, HOLOS off bit-exacto) con carga > 1.50 durante
- *     2 ticks (4 s): valvula de seguridad para sobrecarga catastrofica —
- *     sin HOLOS el audio pasa limpio (coste 0) en vez de tronar; el
- *     nativo ya soporta el tier 3 (HolosThermalTier.Bypass, bit-exacto).
- *   - baja un nivel con carga baja durante 4 ticks (8 s) desde 3 o 2, o
- *     5 ticks (10 s) desde 1: sesgo a quedarse en el nivel reducido
- *     (evita el flapping 24<->12 bandas, que tambien se oiria).
+ *   - baja un nivel con carga baja durante 4 ticks (8 s) desde 2, o 5 ticks
+ *     (10 s) desde 1: sesgo a quedarse en el nivel reducido (evita el
+ *     flapping 24<->12 bandas, que tambien se oiria).
+ *
+ * NO hay tier 3 Bypass: IVANNA ofrece HOLOS y HOLOS cumple — apagarlo
+ * (bypass) es no entregar lo que se vende. Si el DSP no alcanza, la
+ * respuesta es hacer HOLOS mas rapido (reformular/refactorizar), no
+ * apagarlo. El tier 3 existio brevemente en la 429 y se ELIMINO por
+ * directiva de Esse (2026-11-12 23:56 CST).
  * Kotlin puro (sin Android), igual que ThermalTier: se prueba en JVM.
  */
 class DspLoadTierPolicy {
@@ -46,12 +48,11 @@ class DspLoadTierPolicy {
 
     /**
      * Un tick (2 s) con esta carga del DSP (emaUs / presupuesto, 1.0 = al
-     * 100% del presupuesto); devuelve el tier resultante (0..3).
+     * 100% del presupuesto); devuelve el tier resultante (0..2).
      */
     fun update(loadFrac: Float): Int {
         val load = if (loadFrac.isNaN()) 0f else loadFrac.coerceIn(0f, 2f)
         val target = when {
-            load > UP_TO_BYPASS -> 3
             load > UP_TO_LIMITED -> 2
             load > UP_TO_WARM -> 1
             else -> 0
@@ -81,8 +82,6 @@ class DspLoadTierPolicy {
         const val UP_TO_WARM = 0.85f
         /** carga > 100% del presupuesto (sobre presupuesto): HOLOS a 12 bandas + difuso off. */
         const val UP_TO_LIMITED = 1.00f
-        /** carga > 150% del presupuesto (catastrofica): HOLOS en bypass (bit-exacto, coste 0). */
-        const val UP_TO_BYPASS = 1.50f
         /** ticks (2 s) para subir un nivel. */
         const val UP_TICKS = 2
         /** ticks para bajar de 2 a 1. */

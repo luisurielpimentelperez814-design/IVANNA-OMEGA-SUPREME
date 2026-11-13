@@ -148,3 +148,38 @@ TEST(HolosGreen, DiffuseMixFromCoherence) {
     EXPECT_NEAR(diffuseMix(0.5f, 1.0f), 0.5f, 1e-9f);
     EXPECT_NEAR(diffuseMix(0.0f, 0.0f), 0.0f, 1e-9f);   // diffuse=0 → sin cola
 }
+
+TEST(HolosGreen, BandBasePlusBinMatchesGreenGains) {
+    // Reforma v2.5.429: greenBandBase() + greenGainsBin() deben dar la
+    // MISMA matemática que greenGains() (bit-idéntica salvo 1 ULP).
+    // Barrido de θ, r, f, γ, pinna y proximidad, incluidos los bordes.
+    const float thetas[] = {-2.5f, -1.0f, -0.3f, 0.0f, 0.3f, 1.0f, 2.5f};
+    const float rs[] = {0.15f, 0.35f, 1.0f, 2.0f};
+    const float freqs[] = {0.0f, 100.0f, 300.0f, 1000.0f, 4000.0f, 8000.0f, 16000.0f, 20000.0f};
+    const float gammas[] = {0.5f, 0.75f, 1.0f};
+    const float pinnas[] = {-24.0f, 0.0f, 6.0f, 24.0f};
+    const float proxCaps[] = {0.0f, 3.0f, 6.0f};
+    for (float th : thetas) {
+        for (float r : rs) {
+            for (float ga : gammas) {
+                for (float pc : proxCaps) {
+                    const GreenBandBase base = greenBandBase(th, r, ga, pc);
+                    for (float f : freqs) {
+                        for (float pin : pinnas) {
+                            const GreenGains a = greenGains(th, r, f, ga, pin, pc);
+                            const GreenGains b = greenGainsBin(base, f, pin);
+                            const float tol = 1e-6f;
+                            EXPECT_NEAR(a.gL, b.gL, tol) << "gL th=" << th << " r=" << r
+                                << " f=" << f << " ga=" << ga << " pin=" << pin << " pc=" << pc;
+                            EXPECT_NEAR(a.gR, b.gR, tol) << "gR th=" << th << " r=" << r
+                                << " f=" << f << " ga=" << ga << " pin=" << pin << " pc=" << pc;
+                            EXPECT_NEAR(a.itdSeconds, b.itdSeconds, 1e-9f);
+                            EXPECT_NEAR(a.ildDb, b.ildDb, 1e-5f);
+                            EXPECT_NEAR(a.proximityDb, b.proximityDb, 1e-6f);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

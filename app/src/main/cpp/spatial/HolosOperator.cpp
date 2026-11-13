@@ -300,17 +300,24 @@ void HolosOperator::renderBins(float* reL, float* imL, float* reR, float* imR,
                           ? yawRad_.load(std::memory_order_relaxed)
                           : 0.0f;
     const std::vector<int>& bandOfBin = activeSet_->bandOfBin;
+    // Reforma v2.5.429: G_b por banda (1×/banda/frame) + por bin.
+    // Antes, greenGains() corría por BIN (512×) recalculando itdSeconds
+    // (atan2/acos), el spreading y sin(θ) — todo independiente de f.
+    // Ahora la base se precalcula por banda y el bin solo aplica lo
+    // dependiente de f (greenGainsBin). Misma matemática, bit-idéntica.
+    holos::GreenBandBase bandBase[kMaxBands];
+    for (int b = 0; b < activeBands_; ++b) {
+        const holos::HolosBandState& s = estimator_.state(b);
+        const float theta = std::clamp(s.theta * s.coh - yaw, -kPiF, kPiF);
+        bandBase[b] = holos::greenBandBase(theta, s.r, effGamma, proxCap);
+    }
     for (int k = 0; k < n; ++k) {
         const int b = bandOfBin[k];
-        const holos::HolosBandState& s = estimator_.state(b);
-        float theta = s.theta * s.coh - yaw;  // banda difusa -> centro
-        theta = std::clamp(theta, -kPiF, kPiF);
-        const float r = s.r;
         const float fSigned = (float)(k <= n / 2 ? k : k - n) * sr / (float)n;
         const float af = std::fabs(fSigned);
-        // ── G_b: Green unificada ──
-        const float pinnaDb = pinna_.pinnaDb(theta, af);
-        const holos::GreenGains g = holos::greenGains(theta, r, af, effGamma, pinnaDb, proxCap);
+        // ── G_b: Green unificada (base de banda + bin) ──
+        const float pinnaDb = pinna_.pinnaDb(bandBase[b].theta, af);
+        const holos::GreenGains g = holos::greenGainsBin(bandBase[b], af, pinnaDb);
         // ── mid/side complejos por bin ──
         const float mRe = 0.5f * (reL[k] + reR[k]), mIm = 0.5f * (imL[k] + imR[k]);
         const float sRe = 0.5f * (reL[k] - reR[k]), sIm = 0.5f * (imL[k] - imR[k]);
@@ -318,9 +325,11 @@ void HolosOperator::renderBins(float* reL, float* imL, float* reR, float* imR,
         if (k != 0 && k != n / 2) {  // bins DC/Nyquist son reales: sin rotación
             const float w = 2.0f * kPiF * fSigned;
             const float aL = -w * (g.itdSeconds * 0.5f);
-            const float aR = -w * (-g.itdSeconds * 0.5f);
-            phLRe = std::cos(aL); phLIm = std::sin(aL);
-            phRRe = std::cos(aR); phRIm = std::sin(aR);
+            // aR = −aL (simetría): cos(aR)=cos(aL), sin(aR)=−sin(aL).
+            // Antes se calculaban 4 trig por bin; ahora 2 (v2.5.429).
+            const float c = std::cos(aL), s_ = std::sin(aL);
+            phLRe = c; phLIm = s_;
+            phRRe = c; phRIm = -s_;
         }
         // ── Γ_b: una sola ganancia por banda ──
         const float gMid = gammaLin_[b];

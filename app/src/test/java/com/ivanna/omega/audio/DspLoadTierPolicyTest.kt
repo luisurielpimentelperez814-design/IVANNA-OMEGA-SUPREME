@@ -55,24 +55,6 @@ class DspLoadTierPolicyTest {
         assertEquals(1, p.update(0.90f))
     }
 
-    @Test fun `sube a 3 bypass con carga mayor que 1_50 sostenida`() {
-        val p = DspLoadTierPolicy()
-        assertEquals(0, p.update(1.80f))
-        assertEquals(1, p.update(1.80f))
-        assertEquals(1, p.update(1.80f))
-        assertEquals(2, p.update(1.80f))
-        assertEquals(2, p.update(1.80f))
-        assertEquals(3, p.update(1.80f))
-    }
-
-    @Test fun `baja de 3 a 2 con carga moderada sostenida 4 ticks`() {
-        val p = DspLoadTierPolicy()
-        repeat(6) { p.update(1.80f) }
-        assertEquals(3, p.tier)
-        repeat(3) { assertEquals(3, p.update(0.90f)) }
-        assertEquals(2, p.update(0.90f))
-    }
-
     @Test fun `NaN se trata como carga 0`() {
         val p = DspLoadTierPolicy()
         assertEquals(0, p.update(Float.NaN))
