@@ -1,12 +1,17 @@
 name: build-ivanna-asrcd
-# Produce system/bin/ivanna_asrcd (aarch64) y lo publica en el release.
-# El entorno de trabajo no tiene cross-toolchain ni red: este job es la unica
-# via por la que el binario del daemon nuevo llega al telefono.
+# Produce magisk_module/system/bin/ivanna_asrcd (aarch64) y lo publica
+# como artefacto. El entorno de trabajo no tiene cross-toolchain ni red:
+# este job es la única vía por la que el binario del daemon nuevo llega
+# al teléfono (además del build.yml principal, que también lo compila y
+# lo stagea en el módulo — los dos usan el mismo engine/ y el mismo
+# conteo exacto 25/25, no se contradicen).
+# Rutas para el layout del repo: el engine vive en magisk_module/engine/
+# (no en engine/ a secas, como venía en el zip del agente).
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'engine/**'
+      - 'magisk_module/engine/**'
       - '.github/workflows/build-asrcd.yml'
 
 jobs:
@@ -24,28 +29,29 @@ jobs:
 
       - name: Compilar ivanna_asrcd (aarch64, API 29)
         run: |
+          mkdir -p magisk_module/system/bin
           aarch64-linux-android29-clang++ -O2 -std=c++17 -fPIE -pie \
             -static-libstdc++ \
-            -Iengine \
-            engine/asrc/ivanna_asrc_core.cpp \
-            engine/asrc/ivanna_asrc_ipc.cpp \
-            engine/asrcd/ivanna_servo.cpp \
-            engine/asrcd/ivanna_asrcd.cpp \
-            -o system/bin/ivanna_asrcd
-          chmod 0755 system/bin/ivanna_asrcd
-          file system/bin/ivanna_asrcd
-          sha256sum system/bin/ivanna_asrcd
+            -Imagisk_module/engine \
+            magisk_module/engine/asrc/ivanna_asrc_core.cpp \
+            magisk_module/engine/asrc/ivanna_asrc_ipc.cpp \
+            magisk_module/engine/asrcd/ivanna_servo.cpp \
+            magisk_module/engine/asrcd/ivanna_asrcd.cpp \
+            -o magisk_module/system/bin/ivanna_asrcd
+          chmod 0755 magisk_module/system/bin/ivanna_asrcd
+          file magisk_module/system/bin/ivanna_asrcd
+          sha256sum magisk_module/system/bin/ivanna_asrcd
 
       - name: Compilar y ejecutar la suite host (debe dar 25/25)
         run: |
-          g++ -O2 -std=c++17 -Iengine \
-            engine/asrc/ivanna_asrc_core.cpp engine/asrc/ivanna_asrc_ipc.cpp \
-            engine/asrcd/ivanna_servo.cpp engine/effect/ivanna_asrc_bridge.cpp \
-            tests/test_ivanna_asrc.cpp -o ivanna_asrc_tests
+          g++ -O2 -std=c++17 -Imagisk_module/engine \
+            magisk_module/engine/asrc/ivanna_asrc_core.cpp magisk_module/engine/asrc/ivanna_asrc_ipc.cpp \
+            magisk_module/engine/asrcd/ivanna_servo.cpp magisk_module/engine/effect/ivanna_asrc_bridge.cpp \
+            magisk_module/engine/tests/test_ivanna_asrc.cpp -o ivanna_asrc_tests
           ./ivanna_asrc_tests | tee suite.log
-          grep -q "0 fallan" suite.log
+          grep -q "RESULTADO: 25 pasan, 0 fallan" suite.log
 
       - uses: actions/upload-artifact@v4
         with:
           name: ivanna_asrcd-aarch64
-          path: system/bin/ivanna_asrcd
+          path: magisk_module/system/bin/ivanna_asrcd

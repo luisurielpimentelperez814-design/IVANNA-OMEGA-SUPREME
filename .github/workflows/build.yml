@@ -304,18 +304,16 @@ jobs:
           echo "ivanna_asrcd aarch64 estatico OK"
 
       # Tests host del motor ASRC (g++ del runner, x86-64). Resultado
-      # VERIFICADO (rectificación v2.5.397): 23 pasan, 0 fallan (núcleo
-      # RouteA + FIFO de bloque fijo; el core Genspark 18/5 queda legacy).
+      # VERIFICADO (núcleo Genspark v2.5.398): 25 pasan, 0 fallan (fase
+      # continua + lazo de nivel acotado a 0.1 ppm + barrido de riel).
       # El runner devuelve 0 si todo pasa, así que se exige rc==0 ADEMÁS
       # del conteo exacto (un cambio en el conteo = regresión o mejora, y
       # debe revisarse, no pasar en silencio).
-      - name: Run ivanna_asrcd host tests (expect 23 pass / 0 fail)
+      - name: Run ivanna_asrcd host tests (expect 25 pass / 0 fail)
         run: |
           set -euo pipefail
           g++ -O2 -std=c++17 -Imagisk_module/engine \
-            -Ihal_integration/moto_g85/pal_preload_probe \
             magisk_module/engine/asrc/ivanna_asrc_core.cpp \
-            magisk_module/engine/asrc/routea_core.cpp \
             magisk_module/engine/asrc/ivanna_asrc_ipc.cpp \
             magisk_module/engine/asrcd/ivanna_servo.cpp \
             magisk_module/engine/effect/ivanna_asrc_bridge.cpp \
@@ -326,9 +324,9 @@ jobs:
           TEST_RC=$?
           set -e
           tail -5 /tmp/asrc_tests_out.txt
-          grep -q "RESULTADO: 23 pasan, 0 fallan" /tmp/asrc_tests_out.txt || { echo "ERROR: el conteo de tests cambio (esperado 23 pasan, 0 fallan)"; echo "--- salida ---"; cat /tmp/asrc_tests_out.txt; exit 1; }
-          test "$TEST_RC" -eq 0 || { echo "ERROR: el runner devolvio $TEST_RC con 23/23 (inconsistente)"; exit 1; }
-          echo "host tests ivanna_asrcd: 23/23 (rectificacion v2.5.397)"
+          grep -q "RESULTADO: 25 pasan, 0 fallan" /tmp/asrc_tests_out.txt || { echo "ERROR: el conteo de tests cambio (esperado 25 pasan, 0 fallan)"; echo "--- salida ---"; cat /tmp/asrc_tests_out.txt; exit 1; }
+          test "$TEST_RC" -eq 0 || { echo "ERROR: el runner devolvio $TEST_RC con 25/25 (inconsistente)"; exit 1; }
+          echo "host tests ivanna_asrcd: 25/25 (nucleo Genspark v2.5.398)"
 
       # ── VALIDACIÓN ESTRICTA DEL BINARIO COMPILADO ──────────────────────
       - name: Validate daemon ELF (arm64 / AArch64 / PIE / hash)
