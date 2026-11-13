@@ -295,11 +295,17 @@ void OrbeBinaural::renderBins(float* reL, float* imL, float* reR, float* imR) {
         wRB[b] = wR;
         wLB[b] = 1.0f - wR;
     }
-    for (int k = 0; k < n; ++k) {
+    // NEU-Omega Fase 0 parte 2 (v2.5.431): semiespectro — render solo los
+    // 257 bins únicos (0..N/2) y espejar por simetría hermitiana. La
+    // entrada es hermitiana (señal real) y el render la preserva
+    // (ganancias reales + fase conjugada en N-k), así que la salida en
+    // N-k es el conjugado de la salida en k. Salida idéntica salvo ~1 ulp.
+    // El bucle por bin pasa de 512 a 257 iteraciones por frame.
+    for (int k = 0; k <= n / 2; ++k) {
         const int b = bandOfBin_[k];
         const float theta = thetaB[b];
         const float r = rB[b];
-        const float fSigned = (float)(k <= n / 2 ? k : k - n) * sr / (float)n;
+        const float fSigned = (float)k * sr / (float)n;
         const float af = std::fabs(fSigned);
         const float itd = itdB[b];
         const float ild = nearfield::ildDb(theta, r, af, headRadiusM());
@@ -332,10 +338,17 @@ void OrbeBinaural::renderBins(float* reL, float* imL, float* reR, float* imR) {
             phRRe = std::cos(aR); phRIm = std::sin(aR);
         }
         // outL = mid*gL*phL + side*diffuse ; outR = mid*gR*phR - side*diffuse
-        reL[k] = (mRe * gL * phLRe - mIm * gL * phLIm) + sRe * diffuse;
-        imL[k] = (mRe * gL * phLIm + mIm * gL * phLRe) + sIm * diffuse;
-        reR[k] = (mRe * gR * phRRe - mIm * gR * phRIm) - sRe * diffuse;
-        imR[k] = (mRe * gR * phRIm + mIm * gR * phRRe) - sIm * diffuse;
+        const float oLRe = (mRe * gL * phLRe - mIm * gL * phLIm) + sRe * diffuse;
+        const float oLIm = (mRe * gL * phLIm + mIm * gL * phLRe) + sIm * diffuse;
+        const float oRRe = (mRe * gR * phRRe - mIm * gR * phRIm) - sRe * diffuse;
+        const float oRIm = (mRe * gR * phRIm + mIm * gR * phRRe) - sIm * diffuse;
+        reL[k] = oLRe; imL[k] = oLIm;
+        reR[k] = oRRe; imR[k] = oRIm;
+        const int m = (n - k) % n;
+        if (m != k) {  // espejo hermitiano (DC y Nyquist no se espejan)
+            reL[m] = oLRe; imL[m] = -oLIm;
+            reR[m] = oRRe; imR[m] = -oRIm;
+        }
     }
 }
 

@@ -311,9 +311,14 @@ void HolosOperator::renderBins(float* reL, float* imL, float* reR, float* imR,
         const float theta = std::clamp(s.theta * s.coh - yaw, -kPiF, kPiF);
         bandBase[b] = holos::greenBandBase(theta, s.r, effGamma, proxCap);
     }
-    for (int k = 0; k < n; ++k) {
+    // NEU-Omega Fase 0 parte 2 (v2.5.431): semiespectro — render solo los
+    // 257 bins únicos (0..N/2) y espejar por simetría hermitiana. La
+    // entrada (directa y cola) es hermitiana y el render la preserva
+    // (ganancias reales + fase conjugada en N-k), así que la salida en
+    // N-k es el conjugado de la salida en k. Salida idéntica salvo ~1 ulp.
+    for (int k = 0; k <= n / 2; ++k) {
         const int b = bandOfBin[k];
-        const float fSigned = (float)(k <= n / 2 ? k : k - n) * sr / (float)n;
+        const float fSigned = (float)k * sr / (float)n;
         const float af = std::fabs(fSigned);
         // ── G_b: Green unificada (base de banda + bin) ──
         const float pinnaDb = pinna_.pinnaDb(bandBase[b].theta, af);
@@ -346,10 +351,17 @@ void HolosOperator::renderBins(float* reL, float* imL, float* reR, float* imR,
         const float dLIm = (midL * phLIm + midLi * phLRe) + sIm * wSide * sideDirect;
         const float dRRe = (midR * phRRe - midRi * phRIm) - sRe * wSide * sideDirect;
         const float dRIm = (midR * phRIm + midRi * phRRe) - sIm * wSide * sideDirect;
-        reL[k] = dLRe * gMid + reTL[k] * dTail * gMid;
-        imL[k] = dLIm * gMid + imTL[k] * dTail * gMid;
-        reR[k] = dRRe * gMid + reTR[k] * dTail * gMid;
-        imR[k] = dRIm * gMid + imTR[k] * dTail * gMid;
+        const float oLRe = dLRe * gMid + reTL[k] * dTail * gMid;
+        const float oLIm = dLIm * gMid + imTL[k] * dTail * gMid;
+        const float oRRe = dRRe * gMid + reTR[k] * dTail * gMid;
+        const float oRIm = dRIm * gMid + imTR[k] * dTail * gMid;
+        reL[k] = oLRe; imL[k] = oLIm;
+        reR[k] = oRRe; imR[k] = oRIm;
+        const int m = (n - k) % n;
+        if (m != k) {  // espejo hermitiano (DC y Nyquist no se espejan)
+            reL[m] = oLRe; imL[m] = -oLIm;
+            reR[m] = oRRe; imR[m] = -oRIm;
+        }
     }
 }
 
