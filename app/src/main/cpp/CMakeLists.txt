@@ -493,7 +493,7 @@ add_library(omega_effect SHARED
     # tenga exactamente la misma proteccion anti-clip que la app.
     dsp/SafetyLimiter.cpp
 
-    # ── ASRC del daemon (v2.5.399, magistral) ─────────────────────────────
+    # ── ASRC del daemon (v2.5.439, magistral) ─────────────────────────────
     # El puente ivanna_asrc_bridge::process se llama desde omega_process()
     # (a la entrada, antes de toda la cadena y del passthrough). Núcleo
     # Genspark v2.5.398 (25/25 en host: deriva ±0.01 ppm, THD+N -86 dB,
@@ -523,7 +523,7 @@ target_include_directories(omega_effect PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/spatial
     ${CMAKE_SOURCE_DIR}/experimental/adaptive_engine
-    # ASRC del daemon (v2.5.399): omega_effect.cpp incluye
+    # ASRC del daemon (v2.5.439): omega_effect.cpp incluye
     # "ivanna_asrc_bridge.h" (magisk_module/engine/effect/).
     ${CMAKE_SOURCE_DIR}/../../../../magisk_module/engine/effect
 )

@@ -37,7 +37,7 @@
 #include "include/punch_engine.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
-#include "ivanna_asrc_bridge.h"  // ASRC del daemon (v2.5.399, magistral): puente al efecto, init lazy + fail-closed. Include dir en CMakeLists (magisk_module/engine/effect/).
+#include "ivanna_asrc_bridge.h"  // ASRC del daemon (v2.5.439, magistral): puente al efecto, init lazy + fail-closed. Include dir en CMakeLists (magisk_module/engine/effect/).
 #include "include/omega_control_bus.h"
 #include <string.h>
 #include "security/ivanna_integrity.h"  // Anti-piratería v2.5.369: self-check de ruta de carga (Ruta B fail-closed).
@@ -1071,7 +1071,7 @@ static int32_t omega_process(effect_handle_t self,
     const int frames = (int)inBuf->frameCount;
     const uint8_t inFmt  = ctx->config.inputCfg.format;
     const uint8_t outFmt = (ctx->config.outputCfg.format != 0u) ? ctx->config.outputCfg.format : inFmt;
-    // ── ASRC del daemon (v2.5.399, magistral) ─────────────────────────────
+    // ── ASRC del daemon (v2.5.439, magistral) ─────────────────────────────
     // Corrección de deriva de reloj a la ENTRADA, antes de toda la cadena
     // y también en passthrough (la deriva es del stream, no del DSP: el
     // original y el procesado comparten el mismo reloj). El puente es de
