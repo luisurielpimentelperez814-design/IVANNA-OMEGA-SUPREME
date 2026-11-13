@@ -138,6 +138,7 @@ fun SaFCalibrationScreen(
                 params      = state.params,
                 iteration   = state.iteration,
                 converged   = state.converged,
+                subject     = state.hrtfSubject,
                 onRestart   = { engine.startCalibration() }
             )
         }
@@ -346,7 +347,7 @@ private fun CalibPanel(
 
 // ── DONE panel ────────────────────────────────────────────────────────────────
 @Composable
-private fun DonePanel(params: FloatArray, iteration: Int, converged: Boolean, onRestart: () -> Unit) {
+private fun DonePanel(params: FloatArray, iteration: Int, converged: Boolean, subject: String, onRestart: () -> Unit) {
     Surface(
         color  = ObsidianSoft,
         shape  = RoundedCornerShape(16.dp),
@@ -372,6 +373,18 @@ private fun DonePanel(params: FloatArray, iteration: Int, converged: Boolean, on
                 color     = TextSecondary,
                 fontSize  = 12.sp,
                 textAlign = TextAlign.Center
+            )
+            // v2.5.429 — el sujeto HRTF es la personalización binaural real
+            // en Ruta A (lo elige la geometría de pinna); el latente q de
+            // arriba refina el acoplamiento de sala. El HRTF es solo para
+            // auriculares; en bocina/USB aplica el acoplamiento de sala.
+            Text(
+                "Sujeto HRTF activo: $subject",
+                color      = AuroraCyan,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize   = 12.sp,
+                textAlign  = TextAlign.Center
             )
 
             // 7-D param values

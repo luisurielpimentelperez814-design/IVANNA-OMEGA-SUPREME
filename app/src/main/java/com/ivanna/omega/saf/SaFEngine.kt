@@ -49,7 +49,11 @@ data class SaFState(
     val modelLoaded : Boolean    = false,
     val stimulusReady: Boolean   = false,
     val message: String          = "",
-    val deliveryMessage: String  = "Ruta global sin confirmar"
+    // Sujeto HRTF activo en el ObjectRenderer en proceso (Ruta A).
+    // Lo elige la geometría de pinna (PinnaMetricsSection) o el arranque;
+    // la calibración de tonos refina el latente q, no el sujeto.
+    val hrtfSubject: String      = "kemar",
+    val deliveryMessage: String  = "Perfil SAF local; sin calibración aún"
 )
 
 // ── Engine ────────────────────────────────────────────────────────────────────
@@ -136,6 +140,7 @@ class SaFEngine(private val context: Context) {
                 modelLoaded = modelOk,
                 iteration   = iter,
                 params      = params,
+                hrtfSubject = currentSubject(),
                 deliveryMessage = publishProfile(params),
                 converged   = conv,
                 phase       = if (conv) SaFPhase.DONE else SaFPhase.IDLE
@@ -167,6 +172,7 @@ class SaFEngine(private val context: Context) {
                 _state.value = SaFState(
                     phase = SaFPhase.CALIBRATING, currentDir = SaFDirection.FRONT,
                     params = params, jniLoaded = true, modelLoaded = _state.value.modelLoaded,
+                    hrtfSubject = currentSubject(),
                     deliveryMessage = publishProfile(params)
                 )
                 publishLatestState()
@@ -179,19 +185,37 @@ class SaFEngine(private val context: Context) {
         }
     }
 
-    /** Existing bridge publishes to the local control bus and requests daemon delivery.
-     * Its Boolean is transport acknowledgement, never proof that audio used the profile. */
+    // v2.5.429 — entrega LOCAL en Ruta A, en cualquier ruta.
+    // ANTES: la puerta de auriculares (allowHeadphoneHrtf) bloqueaba TODO
+    // el envío. En bocina/USB (la ruta de Esse) el latente q NUNCA llegaba
+    // al DSP local: nativePushLocalSafLatent no corría, el acoplamiento SAF
+    // de sala no se aplicaba y la calibración no tenía ningún efecto audible.
+    // AHORA: el acoplamiento SAF local (RirConvolver, vía
+    // nativePushLocalSafLatent) es independiente de la ruta y se aplica
+    // SIEMPRE. La puerta de auriculares solo decide si el sujeto HRTF
+    // (binaural, solo para auriculares por diseño) está activo. El daemon
+    // está muerto (sin Magisk); el mensaje reporta la aplicación LOCAL, no
+    // el ack del daemon (que nunca llega y no significa nada).
     private fun publishProfile(params: FloatArray): String {
         val prefs = com.ivanna.omega.ui.SpatialAudioPrefs.load(context)
+        if (!prefs.safEnabled) return safDeliveryMessage(false, false, currentSubject())
         val route = com.ivanna.omega.audio.AudioRouteManager.detectOutputRoute()
-        if (!prefs.safEnabled || !com.ivanna.omega.audio.ExternalStereoPolicy.allowHeadphoneHrtf(
-                route, prefs.externalStereoLineOut, prefs.hrtfEnabled)) return "Perfil local; envío binaural global deshabilitado para esta configuración."
-        val accepted = runCatching {
+        // 1. Siempre: acoplamiento SAF local (sala) en Ruta A, en cualquier ruta.
+        // pushSafLatentQ hace el push nativo local Y el envío al daemon; el
+        // daemon no existe, su false se ignora — lo que importa es el push local.
+        runCatching {
             com.ivanna.omega.magisk.OmegaEngineBridge.pushSafLatentQ(params, prefs.safIntensity)
-        }.getOrDefault(false)
-        return if (accepted) "Perfil enviado al control global; aplicación acústica pendiente de comprobar."
-            else "Perfil local actualizado; el daemon no confirmó la entrega global."
+        }
+        // 2. Sujeto HRTF: solo activo en auriculares.
+        val hrtfActive = com.ivanna.omega.audio.ExternalStereoPolicy.allowHeadphoneHrtf(
+            route, prefs.externalStereoLineOut, prefs.hrtfEnabled)
+        return safDeliveryMessage(true, hrtfActive, currentSubject())
     }
+
+    /** Sujeto HRTF activo en el ObjectRenderer en proceso (Ruta A). */
+    private fun currentSubject(): String = runCatching {
+        com.ivanna.omega.spatial.IvannaSpatialManager.currentHrtfSubject()
+    }.getOrDefault("kemar")
 
     /** Replay does not count as feedback; only a completed track unlocks answers. */
     fun replayStimulus(direction: SaFDirection) {
@@ -296,6 +320,7 @@ class SaFEngine(private val context: Context) {
                 converged   = conv,
                 jniLoaded   = IvannaNativeLib.isLoaded,
                 modelLoaded = modelOk,
+                hrtfSubject = currentSubject(),
                 deliveryMessage = publishProfile(params)
             )
             publishLatestState()
@@ -361,5 +386,24 @@ class SaFEngine(private val context: Context) {
         val dir = File(context.filesDir, "saf")
         if (!dir.exists()) dir.mkdirs()
         return File(dir, "saf_calibration_state.txt").absolutePath
+    }
+}
+
+/**
+ * Mensaje de entrega del perfil SAF (v2.5.429) — función pura, testeable.
+ * Reporta la aplicación LOCAL en Ruta A, nunca el daemon (muerto).
+ * - safEnabled=false → el perfil queda guardado pero no se aplica.
+ * - hrtfActive=true (auriculares) → HRTF personalizado activo.
+ * - hrtfActive=false (bocina/USB) → solo el acoplamiento de sala; el HRTF
+ *   es binaural y solo aplica en auriculares por diseño.
+ */
+fun safDeliveryMessage(safEnabled: Boolean, hrtfActive: Boolean, subject: String): String {
+    // "none" = renderer sin HRTF cargado todavía; se muestra el default
+    // (kemar) porque es el sujeto que se cargará al estar listo.
+    val subj = if (subject.isBlank() || subject.trim().lowercase() == "none") "kemar" else subject.trim()
+    return when {
+        !safEnabled -> "SAF desactivado; el perfil queda guardado pero no se aplica."
+        hrtfActive  -> "Perfil SAF aplicado en Ruta A · HRTF personalizado ($subj) activo en auriculares."
+        else        -> "Perfil SAF aplicado en Ruta A (acoplamiento de sala) · HRTF ($subj) solo en auriculares."
     }
 }
