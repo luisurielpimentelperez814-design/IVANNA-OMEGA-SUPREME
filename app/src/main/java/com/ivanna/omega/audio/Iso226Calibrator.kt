@@ -97,11 +97,22 @@ object Iso226Calibrator {
     /**
      * Curva de compensación completa: ΔdB por cada una de las 10 bandas EQ.
      * gain[i] > 0 → boost; < 0 → cut.
+     *
+     * FIX v2.5.441 (signo invertido — causaba el sonido "bofo"): la fórmula
+     * anterior era lp(ref) - lp(listen), que da NEGATIVO en los extremos
+     * (-9.4 dB @31.5 Hz, -3.2 dB @12.5 kHz para 62→82 phon). Eso CORTABA
+     * graves y agudos justo cuando el oído, a nivel bajo, ya los percibe
+     * débiles. La compensación de loudness correcta es el BOOST:
+     * a 62 phon el grave suena ~10 dB más débil (relativo a 1 kHz) que a
+     * 82 phon, así que hay que REFORZARLO. La fórmula correcta es
+     * lp(listen) - lp(ref), normalizada a 1 kHz: +9.4 dB @31.5 Hz,
+     * +3.2 dB @12.5 kHz, ~0 dB @4 kHz. Verificado numéricamente contra
+     * ISO 226:2003 §A.1 (test Iso226CalibratorTest).
      */
     fun computeCompensation(listenPhon: Float, refPhon: Float): FloatArray {
         val raw = FloatArray(10) { i ->
             val idx = EQ_BAND_TO_ISO_IDX[i]
-            lp(idx, refPhon) - lp(idx, listenPhon)
+            lp(idx, listenPhon) - lp(idx, refPhon)
         }
         val offset = raw[5]
         for (i in 0 until 10) raw[i] -= offset
