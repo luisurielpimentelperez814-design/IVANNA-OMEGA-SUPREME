@@ -692,6 +692,18 @@ if(IVANNA_SAN_FLAGS)
   target_link_options(test_orbe_binaural PRIVATE ${IVANNA_SAN_FLAGS})
 endif()
 gtest_discover_tests(test_orbe_binaural)
+add_executable(test_neu_compiler
+  test_neu_compiler.cpp
+  ../spatial/OrbeBinaural.cpp
+)
+target_link_libraries(test_neu_compiler PRIVATE GTest::gtest_main ivanna_dsp_under_test)
+target_include_directories(test_neu_compiler PRIVATE .. ../include host_stubs)
+target_compile_options(test_neu_compiler PRIVATE -Wall -Wextra)
+if(IVANNA_SAN_FLAGS)
+  target_compile_options(test_neu_compiler PRIVATE ${IVANNA_SAN_FLAGS})
+  target_link_options(test_neu_compiler PRIVATE ${IVANNA_SAN_FLAGS})
+endif()
+gtest_discover_tests(test_neu_compiler)
 add_executable(test_orbe_chain
   test_orbe_chain.cpp
   ../spatial/OrbeBinaural.cpp

@@ -59,6 +59,15 @@ struct NeuMat2x2 {
     float a11r = 1.0f, a11i = 0.0f;
 };
 
+// Proveedor de matriz por bin (Fase 2): la matriz depende de la banda
+// Y de la frecuencia (el ILD, el estante de proximidad y la fase ITD
+// varían dentro de la banda). El compilador (NeuCompiler) la calcula
+// por bin desde los estados por banda; el núcleo solo la aplica.
+// Función C simple (puntero + contexto) para no pagar std::function
+// en el camino de audio en tiempo real.
+using NeuMatFn = NeuMat2x2 (*)(void* ctx, int band, float freqHz,
+                               float sampleRate) noexcept;
+
 class SpectralCore {
 public:
     static constexpr int kFftSize = 512;
@@ -101,11 +110,24 @@ public:
     void setMatrix(int band, const NeuMat2x2& m) noexcept {
         if (band < 0 || band >= kMaxBands) return;
         mat_[(size_t)band] = m;
+        hasStaticMatrix_ = true;
         matrixEnabled_ = true;
     }
     void setIdentity() noexcept {
         for (int b = 0; b < kMaxBands; ++b) mat_[(size_t)b] = NeuMat2x2{};
+        hasStaticMatrix_ = false;
         matrixEnabled_ = false;
+        matFn_ = nullptr;
+        matCtx_ = nullptr;
+    }
+    /// Proveedor por bin (Fase 2): la matriz se calcula por bin desde
+    /// (banda, frecuencia). Tiene prioridad sobre la matriz estática
+    /// por banda. Pasar fn=nullptr para volver a la matriz estática.
+    void setMatrixProvider(NeuMatFn fn, void* ctx) noexcept {
+        matFn_ = fn;
+        matCtx_ = ctx;
+        matrixEnabled_ = (fn != nullptr) || matrixEnabled_;
+        if (fn == nullptr && !hasStaticMatrix_) matrixEnabled_ = false;
     }
     bool matrixEnabled() const noexcept { return matrixEnabled_; }
 
@@ -235,8 +257,13 @@ private:
                 }
             }
             // Aplicar A_total por bin (0..N/2) y espejar por hermitiana.
+            // Si hay proveedor, la matriz se calcula por bin (banda, f);
+            // si no, se usa la matriz estática por banda.
             for (int k = 0; k <= n / 2; ++k) {
-                const NeuMat2x2& A = mat_[(size_t)bandOfBin_[(size_t)k]];
+                const int b = bandOfBin_[(size_t)k];
+                const NeuMat2x2 A = matFn_
+                    ? matFn_(matCtx_, b, (float)k * sr_ / (float)n, sr_)
+                    : mat_[(size_t)b];
                 const float lRe = reL_[(size_t)k], lIm = imL_[(size_t)k];
                 const float rRe = reR_[(size_t)k], rIm = imR_[(size_t)k];
                 // Y_L = a00·L + a01·R ; Y_R = a10·L + a11·R (complejo).
@@ -303,6 +330,9 @@ private:
     std::vector<float> reL_, imL_, reR_, imR_;  // desempaquetado (matriz)
     std::vector<int> bandOfBin_;               // por bin 0..fftSize-1
     NeuMat2x2 mat_[kMaxBands];                 // A_total por banda
+    NeuMatFn matFn_ = nullptr;                 // proveedor por bin (Fase 2)
+    void* matCtx_ = nullptr;
+    bool hasStaticMatrix_ = false;
     bool matrixEnabled_ = false;
     std::vector<float> wetQL_, wetQR_;
     int qCap_ = 0, qHead_ = 0, qTail_ = 0, qCount_ = 0;
