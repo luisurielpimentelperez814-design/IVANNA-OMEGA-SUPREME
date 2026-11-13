@@ -92,10 +92,32 @@ object ThermalGovernor {
         val headroom = if (android.os.Build.VERSION.SDK_INT >= 31)
             runCatching { pm.getThermalHeadroom(0) }.getOrDefault(Float.NaN)
         else Float.NaN
-        if (headroom.isNaN()) return  // HAL térmico no responde este ciclo
-        thermalApiAvailable = true
-        currentThermalLoad = headroom
-        applyThermalPolicy(headroom)
+        if (!headroom.isNaN()) {
+            thermalApiAvailable = true
+            currentThermalLoad = headroom
+            applyThermalPolicy(headroom)
+        }
+        // Carga del DSP (v2.5.426): el tier de HOLOS tambien responde al shed,
+        // no solo a la temperatura. Corre aunque el HAL termico no responda.
+        tickLoad()
+    }
+
+    /**
+     * Lee la fraccion de shed del gobernador de carga DSP y actualiza el tier
+     * de HOLOS por carga (DspLoadTierPolicy). Solo re-aplica la politica
+     * combinada cuando el tier de carga cambia (el dedup de lastHolosTier
+     * evita escrituras JNI de mas).
+     */
+    private fun tickLoad() {
+        if (!IvannaNativeLib.isLoaded) return
+        val shed = runCatching { IvannaNativeLib.nativeGetDspShed()?.getOrNull(0) }.getOrNull() ?: return
+        val loadTier = loadTierPolicy.update(shed)
+        if (loadTier != lastLoadTier) {
+            lastLoadTier = loadTier
+            Log.i(TAG, "DSP load: shed=${"%.3f".format(shed)} -> HOLOS load tier=$loadTier")
+            val thermalTier = if (thermalApiAvailable) ThermalTier.of(currentThermalLoad) else null
+            applyCombinedPolicy(thermalTier)
+        }
     }
 
     /**
@@ -157,15 +179,21 @@ object ThermalGovernor {
             // HOLOS / ORBE / NPE de la Ruta A: antes ningún componente les pasaba el nivel
             // térmico (solo la Ruta B lo hacía en omega_effect). Mismo mapa que allí:
             // LIMITED → Warm, PROTECTED → Limited; ORBE y NPE se apagan desde LIMITED.
-            val holosTier = when (tier) {
+            // v2.5.426: el tier de carga (por shed del DSP) se combina con el
+            // termico: manda el mas restrictivo. El spatialShed (apagar ORBE
+            // y NPE) sigue siendo solo termico: el tier de carga solo baja
+            // las bandas de HOLOS (24->12), sin apagar ORBE/NPE.
+            val thermalHolosTier = when (tier) {
                 ThermalTier.FULL, ThermalTier.REDUCED -> 0
                 ThermalTier.LIMITED -> 1
                 ThermalTier.PROTECTED -> 2
             }
+            val holosTier = maxOf(thermalHolosTier, lastLoadTier)
+            val spatialShed = thermalHolosTier >= 1
             if (holosTier != lastHolosTier) {
-                IvannaNativeLib.nativeSetHolosThermalTier(holosTier, holosTier >= 1)
+                IvannaNativeLib.nativeSetHolosThermalTier(holosTier, spatialShed)
                 lastHolosTier = holosTier
-                Log.i(TAG, "SAFMUS/DSP: HOLOS tier=$holosTier (tier=${tier.label})")
+                Log.i(TAG, "SAFMUS/DSP: HOLOS tier=$holosTier (tier=${tier.label}, loadTier=$lastLoadTier)")
             }
         }.onFailure { Log.w(TAG, "applyThermalPolicy: ${it.message}") }
     }
@@ -174,4 +202,8 @@ object ThermalGovernor {
     @Volatile private var lastSpatialCut = 0f
     @Volatile private var lastCompCut = 0f
     @Volatile private var lastHolosTier = 0
+
+    /** Tier de HOLOS por carga del DSP (v2.5.426) — ver DspLoadTierPolicy. */
+    private val loadTierPolicy = DspLoadTierPolicy()
+    @Volatile private var lastLoadTier = 0
 }
