@@ -876,6 +876,19 @@ jobs:
           H_ASRC_SRC=$(sha256sum magisk_module/system/vendor/lib64/libivanna_asrc_write_stage.so | awk '{print $1}')
           [ "$H_ASRC_ZIP" = "$H_ASRC_SRC" ] || { echo "ERROR FATAL: hash write-stage ASRC zip != hash write-stage compilado"; exit 1; }
           echo "INTEGRITY OK — write-stage ASRC v5: compilación → zip: hash idéntico ($H_ASRC_ZIP)"
+          # v2.5.440 — ivanna_asrcd DEBE llegar ejecutable: en la 439 el
+          # binario llegó al teléfono como -rw-r--r-- y service.sh lo marcó
+          # AUSENTE en boot (el [ -x ] falló). unzip restaura los permisos
+          # guardados en el zip, así que extraer y comprobar -x caza la
+          # regresión aquí, no en el teléfono.
+          rm -rf /tmp/zipcheck_asrcd && mkdir -p /tmp/zipcheck_asrcd
+          unzip -o -q "$ZIPNAME" system/bin/ivanna_asrcd -d /tmp/zipcheck_asrcd
+          [ -x /tmp/zipcheck_asrcd/system/bin/ivanna_asrcd ] || { echo "ERROR FATAL: ivanna_asrcd sin permiso +x dentro del zip (service.sh lo marcaría AUSENTE en boot)"; exit 1; }
+          H_ASRCD_ZIP=$(sha256sum /tmp/zipcheck_asrcd/system/bin/ivanna_asrcd | awk '{print $1}')
+          H_ASRCD_SRC=$(sha256sum ivanna_asrcd | awk '{print $1}')
+          [ "$H_ASRCD_ZIP" = "$H_ASRCD_SRC" ] || { echo "ERROR FATAL: hash ivanna_asrcd zip != hash ivanna_asrcd compilado"; exit 1; }
+          echo "INTEGRITY OK — ivanna_asrcd: ejecutable en el zip, hash idéntico ($H_ASRCD_ZIP)"
+          rm -rf /tmp/zipcheck_asrcd
           # overlay.d / ivanna_audio.rc (inyección LD_PRELOAD): los pone el
           # agente del módulo. Si existen en el árbol, DEBEN estar en el zip;
           # si no existen, se deja constancia y NO se bloquea (la .so viaja

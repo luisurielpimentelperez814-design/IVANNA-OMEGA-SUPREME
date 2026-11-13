@@ -22,16 +22,27 @@ mkdir -p "$STATE" || exit 1
 # cerebro ASRC.
 # ═══════════════════════════════════════════════════════════════════════════
 ASRCD_BIN="$MODDIR/system/bin/ivanna_asrcd"
+# v2.5.440 — cinturón y tirantes del permiso +x: el binario llegó a la 439
+# como -rw-r--r-- (el zip lo guardó sin el bit de ejecución pese al chmod
+# 755 de la CI) y el [ -x ] de abajo falló en boot ("ivanna_asrcd AUSENTE").
+# service.sh lo repara en cada arranque antes de comprobarlo; el chequeo
+# en el empaquetado de la CI (build.yml) también lo exige ahora.
+chmod 755 "$ASRCD_BIN" 2>/dev/null
 if [ -x "$ASRCD_BIN" ] && [ ! -f "$STATE/pal_asr.off" ]; then
     if pidof ivanna_asrcd >/dev/null 2>&1; then
         echo "$(date) ivanna_asrcd ya estaba corriendo (pid $(pidof ivanna_asrcd | awk '{print $1}'))" >> "$LOG"
         setprop persist.ivanna.asrcd.active 1 2>/dev/null
     else
-        setsid -f "$ASRCD_BIN" \
+        # v2.5.440 — setsid -f NO existe en el toybox de este teléfono
+        # ("Unknown option 'f'"): el supervisor intentó relanzar el asrcd
+        # a las 07:58:35 y falló por esto. Lanzamiento portable con nohup
+        # + fondo, mismo patrón que el supervisor de este mismo archivo
+        # (probado en vivo: arranca y sobrevive al cierre de la sesión).
+        nohup "$ASRCD_BIN" \
             --ratio "$STATE/asrc_ratio.bin" \
             --frames "$STATE/asrc_frames.bin" \
             --kill "$STATE/pal_asr.off" \
-            --period-ms 20 >> "$STATE/asrcd.log" 2>&1 < /dev/null
+            --period-ms 20 >> "$STATE/asrcd.log" 2>&1 < /dev/null &
         sleep 1
         if pidof ivanna_asrcd >/dev/null 2>&1; then
             echo "$(date) ivanna_asrcd ARRANCADO pid=$(pidof ivanna_asrcd | awk '{print $1}')" >> "$LOG"
