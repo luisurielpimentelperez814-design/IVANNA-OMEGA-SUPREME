@@ -37,10 +37,33 @@
 
 namespace ivanna::neu {
 
+namespace {
+inline float erbRate(float fHz) noexcept {
+    return 21.4f * std::log10(1.0f + 0.00437f * fHz);
+}
+inline float erbInverse(float rate) noexcept {
+    return (std::pow(10.0f, rate / 21.4f) - 1.0f) / 0.00437f;
+}
+}  // namespace
+
+// Matriz compleja 2x2 por banda (NEU·Ω Fase 2). Aplica sobre [L, R]:
+//   Y_L = a00·L + a01·R ; Y_R = a10·L + a11·R.
+// ORBE y HOLOS son matrices 2x2 COMPLETAS (no diagonales): la mezcla
+// mid/side con difuso/anchura acopla L y R. Ver
+// analysis-ivanna/NEU-Omega_Fase2_Matrices.md.
+struct NeuMat2x2 {
+    // a00, a01, a10, a11 como (re, im).
+    float a00r = 1.0f, a00i = 0.0f;
+    float a01r = 0.0f, a01i = 0.0f;
+    float a10r = 0.0f, a10i = 0.0f;
+    float a11r = 1.0f, a11i = 0.0f;
+};
+
 class SpectralCore {
 public:
     static constexpr int kFftSize = 512;
     static constexpr int kHop = 128;
+    static constexpr int kMaxBands = 24;
 
     void prepare(float sampleRate) noexcept {
         sr_ = (std::isfinite(sampleRate) && sampleRate > 8000.0f) ? sampleRate : 48000.0f;
@@ -53,8 +76,38 @@ public:
         }
         // COLA (Hann): Σ w² sobre los frames solapados = (N/hop)·0.375.
         colaInv_ = 1.0f / ((float)(n / kHop) * 0.375f);
+        // Bandas ERB (24, 60 Hz..fTop), igual que OrbeBinaural.
+        {
+            const float fTop = 0.5f * sr_;
+            const float rLo = erbRate(60.0f), rHi = erbRate(fTop);
+            float edgeHz[kMaxBands + 1];
+            for (int i = 0; i <= kMaxBands; ++i)
+                edgeHz[i] = erbInverse(rLo + (rHi - rLo) * (float)i / (float)kMaxBands);
+            bandOfBin_.assign((size_t)n, 0);
+            for (int k = 0; k < n; ++k) {
+                const float f = (float)k * sr_ / (float)n;
+                int b = 0;
+                while (b + 1 < kMaxBands && f >= edgeHz[b + 1]) ++b;
+                bandOfBin_[(size_t)k] = b;
+            }
+        }
+        setIdentity();
         reset();
     }
+
+    /// Matriz por banda (Fase 2). Activa el camino con matriz; con la
+    /// identidad en todas las bandas el resultado es el mismo que M=I
+    /// (E1), salvo ~1 ulp por el desempaquetado/re-empaquetado.
+    void setMatrix(int band, const NeuMat2x2& m) noexcept {
+        if (band < 0 || band >= kMaxBands) return;
+        mat_[(size_t)band] = m;
+        matrixEnabled_ = true;
+    }
+    void setIdentity() noexcept {
+        for (int b = 0; b < kMaxBands; ++b) mat_[(size_t)b] = NeuMat2x2{};
+        matrixEnabled_ = false;
+    }
+    bool matrixEnabled() const noexcept { return matrixEnabled_; }
 
     void reset() noexcept {
         ringL_.assign((size_t)kFftSize, 0.0f);
@@ -67,6 +120,10 @@ public:
         olaR_.assign((size_t)kFftSize, 0.0f);
         re_.assign((size_t)kFftSize, 0.0f);
         im_.assign((size_t)kFftSize, 0.0f);
+        reL_.assign((size_t)kFftSize, 0.0f);
+        imL_.assign((size_t)kFftSize, 0.0f);
+        reR_.assign((size_t)kFftSize, 0.0f);
+        imR_.assign((size_t)kFftSize, 0.0f);
         qCap_ = 2 * kFftSize + 2 * kHop;
         wetQL_.assign((size_t)qCap_, 0.0f);
         wetQR_.assign((size_t)qCap_, 0.0f);
@@ -157,9 +214,53 @@ private:
             }
         }
         fft_->forward(re_.data(), im_.data());
-        // M = I: el espectro empaquetado pasa tal cual (sin desempaquetar,
-        // sin render). El único IFFT empaquetado devuelve, por linealidad,
-        // re_ = y_L (tiempo) e im_ = y_R (tiempo).
+        if (matrixEnabled_) {
+            // Fase 2: desempaquetar L+jR → L/R, aplicar la matriz 2x2 por
+            // bin (según su banda), re-empaquetar para el único IFFT.
+            // Desempaquetado (patrón OrbeBinaural v2.5.380): X[k] =
+            // (Z[k]+conj(Z[N-k]))/2, Y[k] = (Z[k]−conj(Z[N-k]))/(2i).
+            for (int k = 0; k <= n / 2; ++k) {
+                const int m = (n - k) % n;
+                const float zkr = re_[(size_t)k], zki = im_[(size_t)k];
+                const float zmr = re_[(size_t)m], zmi = im_[(size_t)m];
+                reL_[(size_t)k] = 0.5f * (zkr + zmr);
+                imL_[(size_t)k] = 0.5f * (zki - zmi);
+                reR_[(size_t)k] = 0.5f * (zki + zmi);
+                imR_[(size_t)k] = 0.5f * (zmr - zkr);
+                if (m != k) {
+                    reL_[(size_t)m] = 0.5f * (zmr + zkr);
+                    imL_[(size_t)m] = 0.5f * (zmi - zki);
+                    reR_[(size_t)m] = 0.5f * (zmi + zki);
+                    imR_[(size_t)m] = 0.5f * (zkr - zmr);
+                }
+            }
+            // Aplicar A_total por bin (0..N/2) y espejar por hermitiana.
+            for (int k = 0; k <= n / 2; ++k) {
+                const NeuMat2x2& A = mat_[(size_t)bandOfBin_[(size_t)k]];
+                const float lRe = reL_[(size_t)k], lIm = imL_[(size_t)k];
+                const float rRe = reR_[(size_t)k], rIm = imR_[(size_t)k];
+                // Y_L = a00·L + a01·R ; Y_R = a10·L + a11·R (complejo).
+                const float yLRe = A.a00r * lRe - A.a00i * lIm + A.a01r * rRe - A.a01i * rIm;
+                const float yLIm = A.a00r * lIm + A.a00i * lRe + A.a01r * rIm + A.a01i * rRe;
+                const float yRRe = A.a10r * lRe - A.a10i * lIm + A.a11r * rRe - A.a11i * rIm;
+                const float yRIm = A.a10r * lIm + A.a10i * lRe + A.a11r * rIm + A.a11i * rRe;
+                reL_[(size_t)k] = yLRe; imL_[(size_t)k] = yLIm;
+                reR_[(size_t)k] = yRRe; imR_[(size_t)k] = yRIm;
+                const int m = (n - k) % n;
+                if (m != k) {
+                    reL_[(size_t)m] = yLRe;  imL_[(size_t)m] = -yLIm;
+                    reR_[(size_t)m] = yRRe;  imR_[(size_t)m] = -yRIm;
+                }
+            }
+            // Re-empaquetar Y_L + j·Y_R para el único IFFT.
+            for (int i = 0; i < n; ++i) {
+                re_[(size_t)i] = reL_[(size_t)i] - imR_[(size_t)i];
+                im_[(size_t)i] = imL_[(size_t)i] + reR_[(size_t)i];
+            }
+        }
+        // M = I (sin matriz): el espectro empaquetado pasa tal cual (sin
+        // desempaquetar, sin render). El único IFFT empaquetado devuelve,
+        // por linealidad, re_ = y_L (tiempo) e im_ = y_R (tiempo).
         fft_->inverse(re_.data(), im_.data());
         // 3) Overlap-add con ventana de síntesis.
         for (int i = 0; i < n; ++i) {
@@ -199,6 +300,10 @@ private:
     int pendCount_ = 0;
     std::vector<float> olaL_, olaR_;
     std::vector<float> re_, im_;
+    std::vector<float> reL_, imL_, reR_, imR_;  // desempaquetado (matriz)
+    std::vector<int> bandOfBin_;               // por bin 0..fftSize-1
+    NeuMat2x2 mat_[kMaxBands];                 // A_total por banda
+    bool matrixEnabled_ = false;
     std::vector<float> wetQL_, wetQR_;
     int qCap_ = 0, qHead_ = 0, qTail_ = 0, qCount_ = 0;
     int frameIndex_ = 0, skipEmit_ = 0;

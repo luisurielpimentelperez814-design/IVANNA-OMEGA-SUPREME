@@ -198,4 +198,67 @@ TEST(SpectralCore, E1ResetClearsPipeline) {
     CheckIdentity(inL, inR, outL, outR, kN - 512);
 }
 
+// ── Fase 2: matriz 2x2 por banda ────────────────────────────────────────────
+// Matriz diagonal con ganancia 2: la salida es la entrada ×2 (con la
+// latencia de 512). Verifica el camino desempaquetar → matriz →
+// re-empaquetar sin mezclar L/R.
+TEST(SpectralCore, MatrixDiagonalGain) {
+    ivanna::neu::SpectralCore core;
+    core.prepare(48000.0f);
+    ivanna::neu::NeuMat2x2 m;
+    m.a00r = 2.0f; m.a11r = 2.0f;
+    for (int b = 0; b < ivanna::neu::SpectralCore::kMaxBands; ++b)
+        core.setMatrix(b, m);
+    ASSERT_TRUE(core.matrixEnabled());
+    const auto inL = Sine(440.0f, 48000.0f, kN);
+    const auto inR = Sine(660.0f, 48000.0f, kN);
+    std::vector<float> outL, outR;
+    RunOnce(inL, inR, outL, outR, core);
+    EXPECT_EQ(core.totalOut(), (size_t)kN - 512u);
+    float maxErr = 0.0f;
+    for (int i = 0; i < kN - 512; ++i) {
+        maxErr = std::max(maxErr, std::fabs(outL[(size_t)i] - 2.0f * inL[(size_t)i]));
+        maxErr = std::max(maxErr, std::fabs(outR[(size_t)i] - 2.0f * inR[(size_t)i]));
+    }
+    EXPECT_LE(maxErr, 1e-5f) << "ganancia diagonal, error max " << maxErr;
+}
+
+// Matriz de intercambio L↔R (a01=a10=1, resto 0): outL = inR, outR = inL.
+// Verifica el camino fuera de la diagonal (mezcla L/R), que es lo que
+// ORBE/HOLOS necesitan (no son diagonales).
+TEST(SpectralCore, MatrixSwapLR) {
+    ivanna::neu::SpectralCore core;
+    core.prepare(48000.0f);
+    ivanna::neu::NeuMat2x2 m;
+    m.a00r = 0.0f; m.a01r = 1.0f;
+    m.a10r = 1.0f; m.a11r = 0.0f;
+    for (int b = 0; b < ivanna::neu::SpectralCore::kMaxBands; ++b)
+        core.setMatrix(b, m);
+    const auto inL = Sine(440.0f, 48000.0f, kN);
+    const auto inR = Sine(660.0f, 48000.0f, kN);
+    std::vector<float> outL, outR;
+    RunOnce(inL, inR, outL, outR, core);
+    float maxErr = 0.0f;
+    for (int i = 0; i < kN - 512; ++i) {
+        maxErr = std::max(maxErr, std::fabs(outL[(size_t)i] - inR[(size_t)i]));
+        maxErr = std::max(maxErr, std::fabs(outR[(size_t)i] - inL[(size_t)i]));
+    }
+    EXPECT_LE(maxErr, 1e-5f) << "intercambio L/R, error max " << maxErr;
+}
+
+// Matriz identidad explícita por banda: mismo resultado que M=I (E1),
+// salvo ~1 ulp por el desempaquetado/re-empaquetado.
+TEST(SpectralCore, MatrixIdentityMatchesNoMatrix) {
+    ivanna::neu::SpectralCore core;
+    core.prepare(48000.0f);
+    ivanna::neu::NeuMat2x2 m;  // identidad por defecto
+    for (int b = 0; b < ivanna::neu::SpectralCore::kMaxBands; ++b)
+        core.setMatrix(b, m);
+    const auto inL = Sine(440.0f, 48000.0f, kN);
+    const auto inR = Sine(660.0f, 48000.0f, kN);
+    std::vector<float> outL, outR;
+    RunOnce(inL, inR, outL, outR, core);
+    CheckIdentity(inL, inR, outL, outR, kN - 512);
+}
+
 }  // namespace
