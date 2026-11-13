@@ -677,6 +677,9 @@ gtest_discover_tests(test_intelligent_upmixer)
 # header-only; el núcleo STFT se compila directo (como
 # test_intelligent_upmixer) porque IvannaFusionCore no se enlaza en host.
 ivanna_add_test(test_near_field_head_model)
+# NEU·Ω Fase 1 (SpectralCore, header-only): núcleo mínimo con FFT
+# compartida L+jR, M=I, OLA único. Criterio de salida: E1 (identidad).
+ivanna_add_test(test_spectral_core)
 add_executable(test_orbe_binaural
   test_orbe_binaural.cpp
   ../spatial/OrbeBinaural.cpp
