@@ -110,7 +110,10 @@ public:
 
             auto knee = [](float x) {
                 const float a = std::fabs(x);
-                return a <= 0.8f ? x : std::copysign(0.8f + 0.2f * std::tanh((a - 0.8f) * 5.0f), x);
+                // Padé [5/4] tanh (ivanna::nho_tanh, |err|<2e-5) en vez de std::tanh:
+                // la rodilla se evalúa 2 veces por muestra y std::tanh es trascendental
+                // costoso; la aproximación es inaudible y quita presión al DSP.
+                return a <= 0.8f ? x : std::copysign(0.8f + 0.2f * ivanna::nho_tanh((a - 0.8f) * 5.0f), x);
             };
             yL = knee(yL); yR = knee(yR);
             if (!std::isfinite(yL)) yL = xL;
