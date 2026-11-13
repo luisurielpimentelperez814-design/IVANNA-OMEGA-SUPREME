@@ -389,12 +389,24 @@ void OrbeBinaural::runFrame() {
     }
     estimateBands(reL_.data(), imL_.data(), reR_.data(), imR_.data());
     renderBins(reL_.data(), imL_.data(), reR_.data(), imR_.data());
+    // NEU-Omega Fase 0 (v2.5.430): dos IFFT reales en una compleja.
+    // Empaquetar Y_L + j*Y_R en reL/imL y hacer UN solo IFFT (en vez de
+    // dos). Por linealidad: IFFT(Y_L + j*Y_R) = y_L + j*y_R, así que tras
+    // el IFFT reL_ = y_L (tiempo) e imL_ = y_R (tiempo). El resultado es
+    // el mismo salvo ~1 ulp. Ahorra una IFFT completa por frame.
+    // (El forward ya estaba empaquetado desde la v2.5.380; ORBE pasa de
+    // 3 a 2 FFTs por hop.)
+    for (int i = 0; i < n; ++i) {
+        const float yLre = reL_[i], yLim = imL_[i];
+        const float yRre = reR_[i], yRim = imR_[i];
+        reL_[i] = yLre - yRim;  // Re(Y_L + j*Y_R)
+        imL_[i] = yLim + yRre;  // Im(Y_L + j*Y_R)
+    }
     fft_->inverse(reL_.data(), imL_.data());
-    fft_->inverse(reR_.data(), imR_.data());
-    // 3) Overlap-add con ventana de síntesis.
+    // 3) Overlap-add con ventana de síntesis (reL_ = y_L, imL_ = y_R).
     for (int i = 0; i < n; ++i) {
         olaL_[i] += window_[i] * reL_[i];
-        olaR_[i] += window_[i] * reR_[i];
+        olaR_[i] += window_[i] * imL_[i];
     }
     // 4) Emitir un hop, salvo los primeros (N-hop)/hop frames (o los
     // primeros 3 tras un flush): sus ventanas empiezan en posiciones

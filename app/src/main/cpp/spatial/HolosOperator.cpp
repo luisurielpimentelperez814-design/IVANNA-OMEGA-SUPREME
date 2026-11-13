@@ -379,37 +379,75 @@ void HolosOperator::runFrame() {
         tailRingR_[tailRingPos_] = midR_[i];
         tailRingPos_ = (tailRingPos_ + 1) % n;
     }
+    // NEU-Omega Fase 0 (v2.5.430): dos FFT reales en una compleja (cola).
+    // Empaquetar tailL + j*tailR y hacer UNA forward FFT (en vez de dos).
+    // Mismo patrón que ORBE (v2.5.380). Ahorra una FFT por frame.
     for (int i = 0; i < n; ++i) {
         const int idx = (tailRingPos_ + i) % n;
-        tailReL_[i] = tailRingL_[idx] * window_[i];
-        tailImL_[i] = 0.0f;
-        tailReR_[i] = tailRingR_[idx] * window_[i];
-        tailImR_[i] = 0.0f;
+        tailReL_[i] = tailRingL_[idx] * window_[i];  // parte real = L
+        tailImL_[i] = tailRingR_[idx] * window_[i];  // parte imag = R
     }
     fft_->forward(tailReL_.data(), tailImL_.data());
-    fft_->forward(tailReR_.data(), tailImR_.data());
+    // Desempaquetar in situ (X_L, X_R desde Z = FFT(L + jR)).
+    for (int k = 0; k <= n / 2; ++k) {
+        const int m = (n - k) % n;
+        const float zkr = tailReL_[k], zki = tailImL_[k];
+        const float zmr = tailReL_[m], zmi = tailImL_[m];
+        tailReL_[k] = 0.5f * (zkr + zmr);
+        tailImL_[k] = 0.5f * (zki - zmi);
+        tailReR_[k] = 0.5f * (zki + zmi);
+        tailImR_[k] = 0.5f * (zmr - zkr);
+        if (m != k) {
+            tailReL_[m] = 0.5f * (zmr + zkr);
+            tailImL_[m] = 0.5f * (zmi - zki);
+            tailReR_[m] = 0.5f * (zmi + zki);
+            tailImR_[m] = 0.5f * (zkr - zmr);
+        }
+    }
     // 2) Ventana principal = anillo en orden cronológico.
+    // NEU-Omega Fase 0: mismo empaquetado L + jR (UNA forward FFT).
     for (int i = 0; i < n; ++i) {
         const int idx = (ringPos_ + i) % n;
-        reL_[i] = ringL_[idx] * window_[i];
-        imL_[i] = 0.0f;
-        reR_[i] = ringR_[idx] * window_[i];
-        imR_[i] = 0.0f;
+        reL_[i] = ringL_[idx] * window_[i];  // parte real = L
+        imL_[i] = ringR_[idx] * window_[i];  // parte imag = R
     }
     fft_->forward(reL_.data(), imL_.data());
-    fft_->forward(reR_.data(), imR_.data());
+    // Desempaquetar in situ.
+    for (int k = 0; k <= n / 2; ++k) {
+        const int m = (n - k) % n;
+        const float zkr = reL_[k], zki = imL_[k];
+        const float zmr = reL_[m], zmi = imL_[m];
+        reL_[k] = 0.5f * (zkr + zmr);
+        imL_[k] = 0.5f * (zki - zmi);
+        reR_[k] = 0.5f * (zki + zmi);
+        imR_[k] = 0.5f * (zmr - zkr);
+        if (m != k) {
+            reL_[m] = 0.5f * (zmr + zkr);
+            imL_[m] = 0.5f * (zmi - zki);
+            reR_[m] = 0.5f * (zmi + zki);
+            imR_[m] = 0.5f * (zkr - zmr);
+        }
+    }
     estimator_.setParams(distanceM_.load(std::memory_order_relaxed),
                          spread_.load(std::memory_order_relaxed));
     estimator_.estimate(reL_.data(), imL_.data(), reR_.data(), imR_.data(), n);
     computeBandGains();
     renderBins(reL_.data(), imL_.data(), reR_.data(), imR_.data(),
                tailReL_.data(), tailImL_.data(), tailReR_.data(), tailImR_.data());
+    // NEU-Omega Fase 0: dos IFFT reales en una compleja (UN solo IFFT).
+    // Empaquetar Y_L + j*Y_R en reL/imL; tras el IFFT, reL_ = y_L e
+    // imL_ = y_R. Ahorra una IFFT por frame. HOLOS pasa de 6 a 3 FFTs/hop.
+    for (int i = 0; i < n; ++i) {
+        const float yLre = reL_[i], yLim = imL_[i];
+        const float yRre = reR_[i], yRim = imR_[i];
+        reL_[i] = yLre - yRim;  // Re(Y_L + j*Y_R)
+        imL_[i] = yLim + yRre;  // Im(Y_L + j*Y_R)
+    }
     fft_->inverse(reL_.data(), imL_.data());
-    fft_->inverse(reR_.data(), imR_.data());
-    // 3) Overlap-add con ventana de síntesis.
+    // 3) Overlap-add con ventana de síntesis (reL_ = y_L, imL_ = y_R).
     for (int i = 0; i < n; ++i) {
         olaL_[i] += window_[i] * reL_[i];
-        olaR_[i] += window_[i] * reR_[i];
+        olaR_[i] += window_[i] * imL_[i];
     }
     // 4) Emitir un hop, salvo los primeros (N-hop)/hop frames (o los
     // primeros 3 tras un flush): misma regla que ORBE (ventanas con inicio
