@@ -17,10 +17,7 @@ import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.AudioClockTelemetry
 import com.ivanna.omega.audio.AudioEngine
 import com.ivanna.omega.audio.AudioTrackRouteReadback
-import com.ivanna.omega.audio.AsrcSoftwareState
-import com.ivanna.omega.audio.AsrcSoftwareTelemetry
 import com.ivanna.omega.audio.OmegaMetrics
-import com.ivanna.omega.audio.WriteStageAsrcTelemetry
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -46,8 +43,6 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
     var nativeHeap  by remember { mutableLongStateOf(0L) }
     var javaHeap    by remember { mutableLongStateOf(0L) }
     var effectClockTelemetry by remember { mutableStateOf(AudioClockTelemetry()) }
-    var asrcTelemetry by remember { mutableStateOf(AsrcSoftwareTelemetry()) }
-    var writeStageTelemetry by remember { mutableStateOf(WriteStageAsrcTelemetry()) }
     var routeSnapshot by remember { mutableStateOf(AudioTrackRouteReadback.current()) }
 
     // Todo lo de abajo es medición real: nada de cifras fijas ni modelos estimados.
@@ -68,12 +63,6 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             }
             effectClockTelemetry = withContext(Dispatchers.IO) {
                 AudioEngine.getClockTelemetryStatic()
-            }
-            asrcTelemetry = withContext(Dispatchers.IO) {
-                AudioEngine.getAsrcStateStatic()
-            }
-            writeStageTelemetry = withContext(Dispatchers.IO) {
-                AudioEngine.getWriteStageAsrcStatic()
             }
             routeSnapshot = AudioTrackRouteReadback.current()
             val cpu = android.os.Process.getElapsedCpuTime()
@@ -202,59 +191,67 @@ internal fun NeonProfilerPanel(modifier: Modifier = Modifier) {
             }
         }
 
+        // CORE ASRC SOFTWARE — cableado a Ruta A (v2.5.427). Antes leía el
+        // dump del daemon (AsrcSoftwareTelemetry, ruta Magisk/HAL), muerto
+        // tras los resets: siempre "no disponible". El servo que corre es
+        // el de Ruta A (AudioTrackBufferPll + RouteAAsrc) y sus valores ya
+        // viven en OmegaMetrics (los mismos que la tarjeta RELOJ DE AUDIO).
         GlassCard(
             "CORE ASRC SOFTWARE", PhosphorGreen,
-            "Servo software sobre el resampler (AsrcClockController, ruta Magisk); NO un actuador físico del DAC"
+            "Servo software sobre el resampler (Ruta A · BridgePlayer); NO un actuador físico del DAC"
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LiveRow(
                     "Estado",
-                    if (!asrcTelemetry.valid) "no disponible · daemon sin --hal-clock o Ruta A sin Magisk"
-                    else when (asrcTelemetry.state) {
-                        AsrcSoftwareState.TRACKING -> "corrigiendo activamente"
-                        AsrcSoftwareState.HOLD -> "en espera (muestra fuera de rango seguro)"
-                        AsrcSoftwareState.WAITING_FOR_SAMPLES -> "acumulando pares coherentes"
-                        AsrcSoftwareState.BYPASS -> "bypass (deshabilitado)"
-                        AsrcSoftwareState.FAULT -> "fallo (timestamp/rate inválido)"
-                        AsrcSoftwareState.INIT -> "inicializando"
-                        AsrcSoftwareState.UNKNOWN -> "desconocido"
+                    when {
+                        !metrics.clockTimestampAvailable -> "sin AudioTrack propio activo (reproductor puente inactivo)"
+                        metrics.clockServoLocked -> "corrigiendo activamente (Ruta A)"
+                        else -> "adquiriendo muestras"
                     }
                 )
                 LiveRow(
                     "Deriva medida",
-                    if (asrcTelemetry.valid) "%+.1f ppm".format(asrcTelemetry.driftPpm) else "—"
+                    if (metrics.clockServoLocked) "%+.1f ppm".format(metrics.clockMeasuredDriftPpm) else "—"
                 )
                 LiveRow(
                     "Corrección aplicada",
-                    if (asrcTelemetry.valid) "%+.1f ppm (ratio %.6f)".format(asrcTelemetry.targetPpm, asrcTelemetry.appliedRatio) else "—"
+                    if (metrics.clockServoLocked) "%+.1f ppm (ratio %.6f)".format(
+                        metrics.clockCorrectionPpm,
+                        1.0 + metrics.clockCorrectionPpm / 1_000_000.0
+                    ) else "—"
                 )
             }
         }
 
+        // WRITE-STAGE ASRC — repropósito a Ruta A (v2.5.427). El write-stage
+        // del HAL (v5, pal_stream_write) está retirado y no se resucita;
+        // la tarjeta ahora muestra el resampler de escritura de Ruta A
+        // (RouteAAsrc nativo: FIR 319 taps minimum-phase + Catmull-Rom +
+        // Ψ 64 taps/oído), alimentado por el mismo servo.
         GlassCard(
-            "WRITE-STAGE ASRC PAL (v5)", PhosphorGreen,
-            "Actuador real en la ruta viva: .so interpuesta en pal_stream_write del HAL (audio.service_64). El daemon releva su dump cada refresco; sin dump fresco y válido, 'no disponible'"
+            "WRITE-STAGE ASRC · RUTA A", PhosphorGreen,
+            "Resampler de escritura de Ruta A (RouteAAsrc nativo) en el BridgePlayer. El write-stage del HAL (v5) está retirado tras los resets; no se resucita."
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LiveRow(
                     "Estado",
-                    if (!writeStageTelemetry.valid) "no disponible · módulo principal sin write-stage, dump viejo o daemon parado"
-                    else if (!writeStageTelemetry.enabled) "apagado (kill-switch pal_asrc.off presente)"
-                    else if (writeStageTelemetry.saturated) "saturado en el clamp (±1000 ppm)"
-                    else "corrigiendo en la ruta viva (HAL pid ${writeStageTelemetry.pid})"
+                    when {
+                        !metrics.clockTimestampAvailable -> "sin AudioTrack propio activo (reproductor puente inactivo)"
+                        metrics.clockServoLocked -> "corrigiendo en la ruta viva (Ruta A)"
+                        else -> "adquiriendo muestras"
+                    }
                 )
                 LiveRow(
                     "Ratio / deriva",
-                    if (writeStageTelemetry.valid) "%.9f · %+.1f ppm (Kalman %+.1f ppm)".format(
-                        writeStageTelemetry.ratio, writeStageTelemetry.driftPpm, writeStageTelemetry.kalmanDriftPpm
+                    if (metrics.clockServoLocked) "%.9f · %+.1f ppm".format(
+                        1.0 + metrics.clockCorrectionPpm.toDouble() / 1_000_000.0,
+                        metrics.clockMeasuredDriftPpm
                     ) else "—"
                 )
                 LiveRow(
                     "Reloj / streams",
-                    if (writeStageTelemetry.valid) "%s · opens %d / ok %d · FIR %d taps · NEON %s · dump hace %d ms".format(
-                        writeStageTelemetry.clock, writeStageTelemetry.opens, writeStageTelemetry.ok,
-                        writeStageTelemetry.firTaps, if (writeStageTelemetry.neon) "sí" else "no",
-                        writeStageTelemetry.ageMs
+                    if (metrics.clockServoLocked) "%.2f Hz · FIR 319 taps · Catmull-Rom · Ψ 64 taps".format(
+                        metrics.clockMeasuredRateHz
                     ) else "—"
                 )
             }
