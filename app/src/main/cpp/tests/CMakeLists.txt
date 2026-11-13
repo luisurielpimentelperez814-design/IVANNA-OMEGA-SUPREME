@@ -695,6 +695,9 @@ gtest_discover_tests(test_orbe_binaural)
 add_executable(test_neu_compiler
   test_neu_compiler.cpp
   ../spatial/OrbeBinaural.cpp
+  ../spatial/HolosOperator.cpp
+  ../spatial/HolosVolterraKernel.cpp
+  ../spatial/RirConvolver.cpp
 )
 target_link_libraries(test_neu_compiler PRIVATE GTest::gtest_main ivanna_dsp_under_test)
 target_include_directories(test_neu_compiler PRIVATE .. ../include host_stubs)
