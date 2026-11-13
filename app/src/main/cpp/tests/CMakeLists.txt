@@ -236,6 +236,22 @@ target_compile_options(test_shm_lifecycle PRIVATE -Wall -Wextra)
 target_link_libraries(test_shm_lifecycle PRIVATE Threads::Threads)
 add_test(NAME test_shm_lifecycle COMMAND test_shm_lifecycle)
 
+# ── test_daemon_command_responder: regresión v2.5.440 (Ruta B muerta) ──────
+# El daemon v2 bindeaba @omega_daemon_socket pero nadie aceptaba: la app
+# preguntaba GET_STATUS y jamás recibía respuesta, así que el efecto omega
+# nunca se acoplaba a la sesión. Este test fija el contrato que repone
+# daemon/control/daemon_command_responder.h (HELLO + GET_STATUS + mapeo
+# beacon, y round-trip real por socket abstracto con un cliente que lee
+# hasta '}' balanceado, igual que OmegaEngineBridge.exchange()).
+add_executable(test_daemon_command_responder test_daemon_command_responder.cpp)
+target_include_directories(test_daemon_command_responder PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+target_compile_options(test_daemon_command_responder PRIVATE -Wall -Wextra)
+target_link_libraries(test_daemon_command_responder PRIVATE Threads::Threads)
+add_test(NAME test_daemon_command_responder COMMAND test_daemon_command_responder)
+
 # -- test_effect_beacon: senal REAL de que omega_effect procesa (Ruta A/B) ------
 # Contrato del beacon mmap (omega_effect_beacon.h): clasificacion pura, round-trip
 # escritor->lector, instancias multiples sin underflow y rechazo de magic invalido.
