@@ -45,6 +45,8 @@
 #include "../dsp/HeadphoneCrossfeed.hpp"
 #include "../spatial/HolosOperator.hpp"
 #include "../spatial/OrbeBinaural.hpp"
+#include "../spatial/SpectralCore.hpp"   // NEU·Ω Fase 6: núcleo espectral (Fase 1)
+#include "../spatial/NeuCompiler.hpp"   // NEU·Ω Fase 6: compilador A_ORBE/A_HOLOS (Fase 2)
 #include "../spatial/OmniField.hpp"  // IVANNA (v2.5.375): operador unificado de campo espacial
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
@@ -156,6 +158,14 @@ static ivanna::OrbeBinaural g_orbeRouteA;
 // en v2.5.369. La Ruta B usa su propia instancia (IvannaFusionEngine::m_holos)
 // en el proceso audioserver.
 static ivanna::HolosOperator g_holosRouteA;
+// NEU·Ω Fase 6 parte 1 (andamiaje, 2026-11-13): núcleo espectral + compilador
+// para la Ruta A. `g_neuEnabledA` OFF por defecto (fail-closed): con el flag
+// en false la cadena viva sigue siendo el serial ORBE→HOLOS, bit-idéntica.
+// El conmutador vivo llega en la parte 3; aquí solo existe la infraestructura
+// (instancias + prepare + setter JNI), sin tocar el camino de audio.
+static std::atomic<bool> g_neuEnabledA{false};
+static ivanna::neu::SpectralCore g_neuCoreRouteA;
+static ivanna::neu::NeuCompiler g_neuCompilerRouteA;
 // IVANNA (Operador Unificado de Campo Espacial, v2.5.375), Ruta A:
 // instancia propia del proceso app. BYPASS por defecto desde v2.5.410
 // (g_omni_amount=0.0; antes 1.0): medición host de la 410, residuo
@@ -1224,6 +1234,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_neuCoreRouteA.prepare((float)sr);  // NEU·Ω Fase 6: núcleo (OFF por defecto)
     g_omniRouteA.prepare((float)sr);
     g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
@@ -2743,6 +2754,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_crossfeed.setSampleRate((float)sr);
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
+    g_neuCoreRouteA.prepare((float)sr);  // NEU·Ω Fase 6: núcleo (OFF por defecto)
     g_omniRouteA.prepare((float)sr);
     g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
@@ -3274,6 +3286,21 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNpeLocal(
 JNIEXPORT void JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetEvolutionaryEqEnabled(JNIEnv*, jobject, jboolean enabled) {
     g_evoEqAEnabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
+}
+// NEU·Ω Fase 6 parte 1 (2026-11-13): bandera del compilador espectral.
+// OFF por defecto (fail-closed): la cadena viva sigue en serie ORBE→HOLOS.
+// Con ON, el camino NEU·Ω (SpectralCore + NeuCompiler) sustituye el serial
+// (parte 3). El cambio es por bloque; al apagar, el núcleo se resetea para
+// no arrastrar cola (su latencia es 512 muestras).
+JNIEXPORT void JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeSetNeuEnabled(JNIEnv*, jobject, jboolean enabled) {
+    const bool on = (enabled == JNI_TRUE);
+    const bool was = g_neuEnabledA.exchange(on, std::memory_order_relaxed);
+    if (was && !on) g_neuCoreRouteA.reset();
+}
+JNIEXPORT jboolean JNICALL
+Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsNeuEnabled(JNIEnv*, jobject) {
+    return g_neuEnabledA.load(std::memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 JNIEXPORT jboolean JNICALL
 Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsEvolutionaryEqActive(JNIEnv*, jobject) {
