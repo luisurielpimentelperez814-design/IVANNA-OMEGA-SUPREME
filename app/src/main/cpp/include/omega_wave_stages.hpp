@@ -1228,9 +1228,15 @@ public:
             // Re-normalización isométrica exacta de energía instantánea (M'^2 + S'^2 == M^2 + S^2)
             const float newPower = midSculpted * midSculpted + sideSculpted * sideSculpted;
             if (newPower > 1.0e-9f && origPower > 1.0e-9f) {
-                const float isoScale = std::clamp(std::sqrt(origPower / newPower), 0.82f, 1.15f);
-                midSculpted  *= isoScale;
-                sideSculpted *= isoScale;
+                // Si la potencia apenas cambió (<1%), isoScale ≈ 1.0 (error <0.5%, inaudible):
+                // se salta el sqrt+división, que es lo más caro por muestra de esta etapa.
+                // Solo se calcula el sqrt cuando la escultura realmente movió la energía.
+                const float diff = newPower - origPower;
+                if (diff < -0.01f * origPower || diff > 0.01f * origPower) {
+                    const float isoScale = std::clamp(std::sqrt(origPower / newPower), 0.82f, 1.15f);
+                    midSculpted  *= isoScale;
+                    sideSculpted *= isoScale;
+                }
             }
 
             float outL = midSculpted + sideSculpted;
