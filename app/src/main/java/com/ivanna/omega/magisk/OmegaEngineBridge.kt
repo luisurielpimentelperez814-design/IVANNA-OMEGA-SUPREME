@@ -747,6 +747,21 @@ object OmegaEngineBridge {
     @JvmStatic external fun nativeSetRirDataDir(dir: String): Boolean
     @JvmStatic external fun nativeSetLocalRoom(rt60S: Float, wet: Float, roomIdx: Int)
     @JvmStatic external fun nativePushLocalSafLatent(q: FloatArray, gain: Float)
+    // v2.5.428 — Fatigue Mitigator LOCAL: high-cut IIR 1er orden en Ruta A
+    // (ivanna_omega_jni.cpp). El slider de fatiga antes solo enviaba highCut
+    // al daemon (muerto); ahora el cutoff vive en el proceso de la app.
+    @JvmStatic external fun nativeSetFatigueHighCut(highCutHz: Float)
+
+    /**
+     * Aplica el high-cut de fatiga al DSP LOCAL de Ruta A (v2.5.428).
+     * Rango del panel: 16000–19500 Hz; se acepta 1000–24000.
+     * >=20000 Hz = transparente. No depende del daemon.
+     */
+    @JvmStatic
+    fun setFatigueHighCutLocal(highCutHz: Float): Boolean {
+        val cutoff = SafmusUniversalKernel.sanitizeControlValue(highCutHz, 1000f, 24000f) ?: return false
+        return runCatching { nativeSetFatigueHighCut(cutoff); true }.getOrDefault(false)
+    }
 
     /** Estado de la cola RIR local: -1 desconocido/no inicializada, 0 normal, 1 cola retrasada omitida por presupuesto. */
     @JvmStatic

@@ -48,6 +48,7 @@
 #include "../spatial/OmniField.hpp"  // IVANNA (v2.5.375): operador unificado de campo espacial
 #include "../include/GainStage.h"
 #include "../include/SafetyLimiter.h"
+#include "../include/fatigue_highcut.hpp"  // v2.5.428 — Fatigue Mitigator local (Ruta A)
 #include "../include/differential_reinjector.hpp"   // Ruta A: reinyeccion diferencial (v2.5.0)
 #include "../include/acoustic_unity_engine.hpp"      // Ruta A: coordinacion acustica medida (v2.5.15)
 #include "../spatial/RoomProbe.hpp"
@@ -322,6 +323,16 @@ static GainStage      g_gain;
 // Anti-ruido digital: DC-block + sanitizer NaN/Inf en el borde de salida.
 static ivanna::DcBlocker g_dcBlockL, g_dcBlockR;
 static SafetyLimiter  g_safety_limiter;
+// ── Fatigue Mitigator LOCAL (v2.5.428): high-cut IIR 1er orden en Ruta A ──
+// El slider de fatiga (TinyMlClassifierPanel) antes solo enviaba highCut al
+// daemon (muerto, sin Magisk): el DSP local nunca lo recibía. Ahora el
+// cutoff vive aquí, en el proceso de la app. El filtro (clase en
+// include/fatigue_highcut.hpp) solo lo toca el hilo de proceso, y
+// nativeProcess / nativeProcessBlock nunca corren a la vez
+// (g_dspProcessMutex), así que el estado plano es seguro. Default 19500 Hz
+// = prácticamente transparente.
+static std::atomic<float> g_fatigueHighCutHz{19500.0f};
+static ivanna::FatigueHighCut g_fatigueHighCut;
 // OMEGA PERCEPTUAL GUARD
 static OmegaPerceptualGuard g_perceptualGuard;
 
@@ -2520,6 +2531,9 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     // Cancelación de diafonía de la Cadena 4D (solo altavoces/AUX; identidad si está apagada):
     // va ANTES del limitador porque la cancelación puede subir picos y el limitador es el techo.
     ivanna::fourd::applyOutputPlanar(g_ats.pdOutL, g_ats.pdOutR, n);
+    // Fatigue Mitigator LOCAL (v2.5.428): high-cut IIR 1er orden antes del
+    // limitador — el limitador ve la señal ya suavizada en el agudo.
+    routeAApplyFatigueHighCut(g_ats.pdOutL, g_ats.pdOutR, n, static_cast<float>(g_params.sampleRate));
     g_safety_limiter.process(g_ats.pdOutL, g_ats.pdOutR, n);
     for (int i = 0; i < n; ++i) {
         g_ats.pdOutL[i] = g_dcBlockL.process(g_ats.pdOutL[i]);
@@ -5746,6 +5760,25 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativePushLocalSafLatent(
     if (Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire)) {
         conv->applySofaCoupling(g_localSafQ);
     }
+}
+
+// ── Fatigue Mitigator LOCAL (v2.5.428) ──────────────────────────────────────
+// El cutoff llega por el atómico (lo fija nativeSetFatigueHighCut desde
+// Kotlin); el filtro (include/fatigue_highcut.hpp) se actualiza por bloque
+// y conserva su estado entre bloques y cambios de cutoff (sin clics).
+static inline void routeAApplyFatigueHighCut(float* l, float* r, int n, float sr) {
+    g_fatigueHighCut.setCutoff(g_fatigueHighCutHz.load(std::memory_order_relaxed), sr);
+    g_fatigueHighCut.process(l, r, n);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativeSetFatigueHighCut(
+    JNIEnv*, jclass, jfloat highCutHz) {
+    // v2.5.428 — Fatigue Mitigator local: el cutoff vive en Ruta A.
+    // Rango del panel: 16000–19500 Hz; se acepta 1000–24000 (mismo
+    // saneamiento que sendPerceptualState). >=20000 = transparente.
+    if (!std::isfinite(highCutHz)) return;
+    g_fatigueHighCutHz.store(std::clamp(highCutHz, 1000.0f, 24000.0f), std::memory_order_relaxed);
 }
 
 

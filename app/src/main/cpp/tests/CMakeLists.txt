@@ -88,6 +88,8 @@ ivanna_add_test(gammatone_numerical_stability)
 ivanna_add_test(no_denormals_low_level)
 ivanna_add_test(test_phase_oracle_kalman)
 ivanna_add_test(dsp_core_stability)
+# Fatigue Mitigator local (v2.5.428): high-cut IIR 1er orden en Ruta A.
+ivanna_add_test(test_fatigue_highcut)
 # Paquete IVH2 de kernels Volterra + carga segura (coeficientes SINTÉTICOS; no calibra el Genezy).
 ivanna_add_test(test_volterra_kernel_package)
 # Kernel Volterra H1/H2 del Sony Genezi MHC-PZ1D (IVK1 GENEZY01, K=64,

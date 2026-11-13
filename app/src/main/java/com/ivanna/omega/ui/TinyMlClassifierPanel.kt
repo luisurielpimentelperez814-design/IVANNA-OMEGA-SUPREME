@@ -114,7 +114,7 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
         }
 
         GlassCard("ACOUSTIC FATIGUE MITIGATOR", AmberSignal,
-            subtitle = "Ajusta highCut IIR del daemon para sesiones largas") {
+            subtitle = "Ajusta highCut IIR local (Ruta A) para sesiones largas") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -128,6 +128,8 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                             // evento haya caído dentro de la ventana de throttle.
                             val v = fatigueIndex
                             val liveHighCut = (19500f - v * 3500f).coerceIn(16000f, 19500f)
+                            // v2.5.428 — Fatigue LOCAL: el high-cut va al DSP de Ruta A.
+                            runCatching { OmegaEngineBridge.setFatigueHighCutLocal(liveHighCut) }
                             val hg = exciterPrefs.getFloat("harmonicGain", 0.78f)
                             val ad = exciterPrefs.getFloat("antiDolby", 0.85f)
                             scope.launch(Dispatchers.IO) {
@@ -151,6 +153,10 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                             // Se recalcula highCut LOCAL con la 'v' actual.
                             val liveHighCut = (19500f - v * 3500f).coerceIn(16000f, 19500f)
                             prefs.edit().putFloat("fatigueIndex", v).apply()
+                            // v2.5.428 — Fatigue LOCAL: el high-cut va al DSP de Ruta A
+                            // (el daemon está muerto). El envío al daemon se conserva
+                            // por compatibilidad, pero el efecto real es este.
+                            runCatching { OmegaEngineBridge.setFatigueHighCutLocal(liveHighCut) }
                             val hg = exciterPrefs.getFloat("harmonicGain", 0.78f)
                             val ad = exciterPrefs.getFloat("antiDolby", 0.85f)
                             // Throttle 100 ms: arrastrar el slider disparaba un envío al daemon
@@ -182,17 +188,16 @@ internal fun TinyMlClassifierPanel(modifier: Modifier = Modifier) {
                         fontSize = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Button(onClick = {
+                    // v2.5.428 — el botón al daemon estaba muerto (sin daemon).
+                    // Ahora aplica el high-cut actual al DSP LOCAL de Ruta A.
                     scope.launch(Dispatchers.IO) {
-                        runCatching {
-                            OmegaEngineBridge.pushYamnetScores(speech, music, 0,
-                                maxOf(speech, music, bass))
-                        }
+                        runCatching { OmegaEngineBridge.setFatigueHighCutLocal(highCutHz) }
                     }
                 }, modifier = Modifier.fillMaxWidth().height(40.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = NeonMagenta.copy(0.12f), contentColor = NeonMagenta),
                     shape = RoundedCornerShape(8.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, NeonMagenta.copy(0.35f))) {
-                    Text("ENVIAR CLASIFICACIÓN AL DAEMON", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("APLICAR HIGH-CUT LOCAL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
