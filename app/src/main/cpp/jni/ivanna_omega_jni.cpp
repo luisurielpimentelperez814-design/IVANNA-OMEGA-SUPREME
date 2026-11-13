@@ -166,6 +166,15 @@ static ivanna::HolosOperator g_holosRouteA;
 static std::atomic<bool> g_neuEnabledA{false};
 static ivanna::neu::SpectralCore g_neuCoreRouteA;
 static ivanna::neu::NeuCompiler g_neuCompilerRouteA;
+// NEU·Ω Fase 6 parte 2: callback pre-render. Los atómicos g_orbe_*/
+// g_holos_* se declaran aquí (extern) porque el callback los usa y en
+// C++ un extern debe declararse ANTES de su uso — la 435 falló la CI
+// por esto (el callback estaba antes de los externs de más abajo).
+// (Declarar el mismo extern dos veces es legal en C++.)
+extern std::atomic<float> g_orbe_diffuse;
+extern std::atomic<float> g_orbe_proximity_db;
+extern std::atomic<float> g_holos_gamma;
+extern std::atomic<float> g_holos_proximity_db;
 // NEU·Ω Fase 6 parte 2: callback pre-render. El SpectralCore lo invoca
 // tras desempaquetar su espectro y antes de aplicar la matriz, para que
 // ORBE y HOLOS actualicen sus estados por banda sobre ESE espectro
