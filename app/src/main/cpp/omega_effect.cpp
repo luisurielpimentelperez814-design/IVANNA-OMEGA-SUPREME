@@ -37,6 +37,7 @@
 #include "include/punch_engine.hpp"
 #include <vector>
 #include "audio_effect_compat.h"
+#include "ivanna_asrc_bridge.h"  // ASRC del daemon (v2.5.399, magistral): puente al efecto, init lazy + fail-closed. Include dir en CMakeLists (magisk_module/engine/effect/).
 #include "include/omega_control_bus.h"
 #include <string.h>
 #include "security/ivanna_integrity.h"  // Anti-piratería v2.5.369: self-check de ruta de carga (Ruta B fail-closed).
@@ -1070,6 +1071,25 @@ static int32_t omega_process(effect_handle_t self,
     const int frames = (int)inBuf->frameCount;
     const uint8_t inFmt  = ctx->config.inputCfg.format;
     const uint8_t outFmt = (ctx->config.outputCfg.format != 0u) ? ctx->config.outputCfg.format : inFmt;
+    // ── ASRC del daemon (v2.5.399, magistral) ─────────────────────────────
+    // Corrección de deriva de reloj a la ENTRADA, antes de toda la cadena
+    // y también en passthrough (la deriva es del stream, no del DSP: el
+    // original y el procesado comparten el mismo reloj). El puente es de
+    // bloque fijo (sale = entra), in-place, init lazy (nothrow, un solo
+    // intento) y fail-closed (sin daemon o ratio inválido -> ratio 1.0 ->
+    // memcpy bit-exacto): si falla o no hay daemon, el audio SIGUE intacto
+    // y el efecto procesa `frames` como siempre (el retorno se ignora).
+    // Puerta de formato: solo PCM 16-bit estéreo (el bridge solo maneja
+    // int16 intercalado; cualquier otro formato sigue su camino normal
+    // sin ASRC). La máscara 0 = sin informar (tests) = estéreo.
+    if (inFmt == AUDIO_FORMAT_PCM_16_BIT) {
+        const uint32_t asrcChMask = ctx->config.inputCfg.channels & 0x3FFFFu;
+        const int asrcChCount = asrcChMask ? __builtin_popcount(asrcChMask) : 2;
+        if (asrcChCount == 2) {
+            (void)ivanna_asrc_bridge::process(
+                reinterpret_cast<int16_t*>(inBuf->raw), (size_t)frames, 2, 48000);
+        }
+    }
     // v2.5.380 — passthrough garantizado: este retorno temprano NO copiaba
     // input→output y callaba el hilo de salida; un efecto que no procesa
     // jamás debe silenciar el audio.

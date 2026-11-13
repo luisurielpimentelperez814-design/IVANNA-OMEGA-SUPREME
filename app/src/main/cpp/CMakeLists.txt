@@ -493,6 +493,18 @@ add_library(omega_effect SHARED
     # tenga exactamente la misma proteccion anti-clip que la app.
     dsp/SafetyLimiter.cpp
 
+    # ── ASRC del daemon (v2.5.399, magistral) ─────────────────────────────
+    # El puente ivanna_asrc_bridge::process se llama desde omega_process()
+    # (a la entrada, antes de toda la cadena y del passthrough). Núcleo
+    # Genspark v2.5.398 (25/25 en host: deriva ±0.01 ppm, THD+N -86 dB,
+    # underflow 0, lazo de nivel acotado a 0.1 ppm). Rutas relativas desde
+    # app/src/main/cpp/ hasta magisk_module/engine/ (raíz del repo).
+    # NO añadir a ivanna_omega: estos .cpp NO están en ese target (sin ODR);
+    # el RouteA de la app (ivanna_route_a_asrc.cpp) es otro resampleador.
+    ../../../../magisk_module/engine/asrc/ivanna_asrc_core.cpp
+    ../../../../magisk_module/engine/asrc/ivanna_asrc_ipc.cpp
+    ../../../../magisk_module/engine/effect/ivanna_asrc_bridge.cpp
+
     # Cadena 4D también en Ruta B: superficie global por proceso (audioserver). Con 4D apagado
     # (por defecto) no altera un solo bit.
     music_intelligence/FourDControlSurface.cpp
@@ -511,6 +523,9 @@ target_include_directories(omega_effect PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/spatial
     ${CMAKE_SOURCE_DIR}/experimental/adaptive_engine
+    # ASRC del daemon (v2.5.399): omega_effect.cpp incluye
+    # "ivanna_asrc_bridge.h" (magisk_module/engine/effect/).
+    ${CMAKE_SOURCE_DIR}/../../../../magisk_module/engine/effect
 )
 
 target_link_options(omega_effect PRIVATE
