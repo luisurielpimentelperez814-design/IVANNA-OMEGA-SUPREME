@@ -45,6 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
+| **v2.5.425** (716) | Fix cortes: umbral de bypass ORBE (amount <= 0.05 se salta entero; con 0.02 corria el 100% del FFT por un wet del 2%, p99 24 ms) + firma estable (keystore en secreto ANDROID_KEYSTORE_B64; la 425 exige desinstalar la 424, la ultima vez). CTest 978/978. Solo APK. Ruta B en pausa. |
 | **v2.5.424** (715) | Fix cortes: buffer del reproductor minBuf×4 → ×6 (la 423 no paró los cortes: xruns=3549, HOLOS p99 10.4 ms, cola llena occ 16522 vs objetivo 7696 — el cuello es el cómputo del DSP, no el hilo). CTest 978/978. Solo APK. Ruta B en pausa. |
 | **v2.5.423** (714) | Telemetría del servo completa: la línea ya trae `pll_tgt` y `pll_cap` (el objetivo y la capacidad ya no se adivinan del log). Diagnóstico del riel en captura: reloj sano, cola ~5600 por backlog de catch-up que el servo solo drena a 500 ppm. 1 test Kotlin nuevo. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |
 | **v2.5.423** (714) | Fix cortes: hilo de audio dedicado `IvannaAudio` con prioridad URGENT_AUDIO (HOLOS p99 15-23 ms por expropiación del sistema → underruns 834→1292 → silencio). Telemetría de cola: la línea ahora imprime `pll_tgt` y `pll_cap` (antes solo `pll_occ`, se adivinaba). Descargas DASH y prefetch verificados en vivo (no era la red). CTest 978/978. Solo APK. Ruta B en pausa. |

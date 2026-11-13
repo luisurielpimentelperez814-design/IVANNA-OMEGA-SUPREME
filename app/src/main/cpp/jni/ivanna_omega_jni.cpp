@@ -1894,7 +1894,14 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     {
         // ORBE primero.
         const float orbeAmount = g_orbe_amount.load(std::memory_order_relaxed);
-        if (orbeAmount > 0.0f) {
+        // v2.5.425: umbral de bypass ORBE. Con amount <= 0.05 el wet es
+        // <= 5% (inaudible) pero el coste es el 100% (24 bandas FFT; p99
+        // hasta 24 ms en vivo 2026-11-12 con amount 0.02). Por debajo del
+        // umbral la etapa se salta entera (passthrough bit-exacto, igual
+        // que amount=0). El default es 1.0, asi que ORBE sigue activo por
+        // directiva; solo se ahorra el computo cuando el usuario lo tiene
+        // practicamente apagado.
+        if (orbeAmount > 0.05f) {
             ivanna::OrbeParams op;
             op.amount = orbeAmount;
             op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
@@ -3023,7 +3030,14 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     {
         // ORBE primero.
         const float orbeAmount = g_orbe_amount.load(std::memory_order_relaxed);
-        if (orbeAmount > 0.0f) {
+        // v2.5.425: umbral de bypass ORBE. Con amount <= 0.05 el wet es
+        // <= 5% (inaudible) pero el coste es el 100% (24 bandas FFT; p99
+        // hasta 24 ms en vivo 2026-11-12 con amount 0.02). Por debajo del
+        // umbral la etapa se salta entera (passthrough bit-exacto, igual
+        // que amount=0). El default es 1.0, asi que ORBE sigue activo por
+        // directiva; solo se ahorra el computo cuando el usuario lo tiene
+        // practicamente apagado.
+        if (orbeAmount > 0.05f) {
             ivanna::OrbeParams op;
             op.amount = orbeAmount;
             op.distanceM = g_orbe_distance_m.load(std::memory_order_relaxed);
