@@ -45,7 +45,7 @@
 
 | Versión | Qué trae |
 |:---|:---|
-| **v2.5.427** (718) | Cableado ASRC a Ruta A: las tarjetas CORE ASRC y WRITE-STAGE del panel CEREBRO ya no leen el dump del daemon muerto; muestran el servo de Ruta A en vivo (deriva + corrección) y el resampler RouteAAsrc (FIR 319 taps). HAL v5 retirado, no se resucita. Solo UI. CTest 978/978. Solo APK. Ruta B en pausa. |
+| **v2.5.428** (719) | FotoHolo local refinado, sin Gemini: "Refinar escena" y "Crear entorno local · 3D" 100% locales (telemetría Bark + género + entorno); anillo espectral Bark de 32 barras que respira con la música; anchura/rotación al motor nativo. Gemini marcado legacy. 6 tests web nuevos. Lint + 11 tests web en verde. CTest 978/978. Solo APK. Ruta B en pausa. |
 | **v2.5.425** (716) | Fix cortes: umbral de bypass ORBE (amount <= 0.05 se salta entero; con 0.02 corria el 100% del FFT por un wet del 2%, p99 24 ms) + firma estable (keystore en secreto ANDROID_KEYSTORE_B64; la 425 exige desinstalar la 424, la ultima vez). CTest 978/978. Solo APK. Ruta B en pausa. |
 | **v2.5.424** (715) | Fix cortes: buffer del reproductor minBuf×4 → ×6 (la 423 no paró los cortes: xruns=3549, HOLOS p99 10.4 ms, cola llena occ 16522 vs objetivo 7696 — el cuello es el cómputo del DSP, no el hilo). CTest 978/978. Solo APK. Ruta B en pausa. |
 | **v2.5.423** (714) | Telemetría del servo completa: la línea ya trae `pll_tgt` y `pll_cap` (el objetivo y la capacidad ya no se adivinan del log). Diagnóstico del riel en captura: reloj sano, cola ~5600 por backlog de catch-up que el servo solo drena a 500 ppm. 1 test Kotlin nuevo. CTest 978/978 (medido por la CI). Solo APK. Ruta B en pausa. |

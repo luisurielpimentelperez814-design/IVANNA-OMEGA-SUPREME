@@ -6,9 +6,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Generación NATIVA de una imagen ilustrativa de un lugar, ambientada con el contexto musical.
+ * LEGACY (v2.5.428): generación NATIVA de una imagen ilustrativa de un lugar por Gemini.
+ * La UI ya NO la llama: FotoHolo compone el entorno LOCAL en la escena 3D
+ * (src/lib/fotoholoLocal.ts) sin Gemini, sin red y sin cuota. Se conserva el
+ * código (regla: nunca borrar, marcar legacy) por si se reactiva una vía de
+ * imagen en el futuro. No borrar.
  *
- * Por qué existe: el panel web llamaba a `/api/fotoholo/render-place` (server.ts), pero el WebView
+ * Por qué existía: el panel web llamaba a `/api/fotoholo/render-place` (server.ts), pero el WebView
  * del APK bloquea toda petición que no sea un asset empaquetado, así que en el teléfono esa ruta
  * nunca podía responder. Aquí se llama a Gemini directamente con la clave del asistente, con los
  * mismos límites y la misma salvedad de honestidad que el servidor.
@@ -16,6 +20,7 @@ import org.json.JSONObject
  * Privacidad: solo viaja TEXTO (lugar, detalles y contexto musical agregado). Nunca audio.
  * La imagen es un concepto generado por IA, no una reconstrucción verificada del lugar.
  */
+@Deprecated("Legacy v2.5.428: FotoHolo compone el entorno local en 3D (fotoholoLocal.ts); la UI ya no llama a este generador Gemini.")
 object FotoHoloPlaceImage {
     const val MAX_PLACE = 240
     const val MAX_DETAILS = 500

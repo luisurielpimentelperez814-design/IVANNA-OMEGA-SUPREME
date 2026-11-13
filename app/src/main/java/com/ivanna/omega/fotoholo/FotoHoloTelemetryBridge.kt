@@ -75,6 +75,10 @@ class FotoHoloTelemetryBridge(context: Context) {
      * Asynchronous, visual-only Gemini refinement for the bundled Android WebView.
      * The model never receives raw audio and cannot issue DSP commands from this API.
      */
+    // LEGACY (v2.5.428): la UI web ya NO llama a este endpoint. FotoHolo
+    // refina la escena LOCAL (src/lib/fotoholoLocal.ts) sin Gemini. Se
+    // conserva el método (regla: nunca borrar, marcar legacy) por si se
+    // reactiva una vía de refinación por IA en el futuro. No borrar.
     @JavascriptInterface
     fun requestVisualRefinement(requestId: String, sceneJson: String, telemetryJson: String) {
         if (!requestId.matches(Regex("[A-Za-z0-9_-]{1,64}")) || sceneJson.length > 2048 || telemetryJson.length > 2048) {
@@ -167,6 +171,10 @@ class FotoHoloTelemetryBridge(context: Context) {
      * La imagen se guarda en la caché privada y se sirve por `/place-images/` (ver SpatialAudioPanel).
      * El resultado llega por el evento 'ivanna-fotoholo-place-result'.
      */
+    // LEGACY (v2.5.428): la UI web ya NO llama a este endpoint. FotoHolo
+    // compone el entorno LOCAL en la escena 3D (src/lib/fotoholoLocal.ts)
+    // sin Gemini y sin generar imagen por IA. Se conserva el método (regla:
+    // nunca borrar, marcar legacy). No borrar.
     @JavascriptInterface
     fun requestPlaceRender(requestId: String, placeJson: String) {
         if (!requestId.matches(Regex("[A-Za-z0-9_-]{1,64}")) || placeJson.length > 4096) {
