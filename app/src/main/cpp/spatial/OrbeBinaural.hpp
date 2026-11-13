@@ -81,6 +81,15 @@ public:
     // bit-exacto (sin tocar los buffers).
     void process(float* l, float* r, int n) noexcept;
 
+    // NEU·Ω Fase 6 parte 2: estimar los estados por banda (azimut,
+    // distancia, coherencia) sobre un espectro YA transformado
+    // (reL/imL = L, reR/imR = R, n = fftSize). Solo lectura del
+    // espectro; no hace FFT ni render. Es lo que runFrame() hace tras
+    // su propia FFT; aquí lo hace el llamador (el SpectralCore, que ya
+    // tiene el espectro) para no pagar una segunda FFT.
+    void estimateBands(const float* reL, const float* imL,
+                       const float* reR, const float* imR);
+
     // Diagnóstico / tests.
     int fftSize() const noexcept { return fftSize_; }
     int latencySamples() const noexcept { return fftSize_; }
@@ -100,8 +109,6 @@ private:
 
     void rebuildBandTables();
     void runFrame();
-    void estimateBands(const float* reL, const float* imL,
-                       const float* reR, const float* imR);
     void renderBins(float* reL, float* imL, float* reR, float* imR);
     float thetaFromItd(float tauSeconds, float r) const noexcept;
     float thetaFromIld(float ildDbMeas, float r, float freqHz) const noexcept;

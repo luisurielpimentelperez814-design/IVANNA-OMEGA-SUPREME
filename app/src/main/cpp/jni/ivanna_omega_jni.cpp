@@ -166,6 +166,46 @@ static ivanna::HolosOperator g_holosRouteA;
 static std::atomic<bool> g_neuEnabledA{false};
 static ivanna::neu::SpectralCore g_neuCoreRouteA;
 static ivanna::neu::NeuCompiler g_neuCompilerRouteA;
+// NEU·Ω Fase 6 parte 2: callback pre-render. El SpectralCore lo invoca
+// tras desempaquetar su espectro y antes de aplicar la matriz, para que
+// ORBE y HOLOS actualicen sus estados por banda sobre ESE espectro
+// (sin hacer su propia FFT) y para sincronizar esos estados en el
+// compilador (que el proveedor de matriz leerá por bin). Solo lectura
+// del espectro. El yaw es 0 en Ruta A (nadie llama a setHeadPose()
+// sobre ORBE/HOLOS; HOLOS lo documenta en su header) y pinnaDb es 0
+// sin tabla cargada, igual que en el test E3/E4.
+static void neuPreRenderCallback(void*, const float* reL, const float* imL,
+                                 const float* reR, const float* imR,
+                                 int n) noexcept {
+    g_orbeRouteA.estimateBands(reL, imL, reR, imR);
+    g_holosRouteA.estimateSpectrum(reL, imL, reR, imR, n);
+    // Sincronizar los estados por banda en el compilador.
+    auto& comp = g_neuCompilerRouteA;
+    for (int b = 0; b < ivanna::neu::SpectralCore::kMaxBands; ++b) {
+        comp.orbe.azimuth[b] = g_orbeRouteA.bandAzimuth(b);
+        comp.orbe.distance[b] = g_orbeRouteA.bandDistance(b);
+        comp.orbe.coherence[b] = g_orbeRouteA.bandCoherence(b);
+        const auto& hs = g_holosRouteA.bandState(b);
+        comp.holos.theta[b] = hs.theta;
+        comp.holos.distance[b] = hs.r;
+        comp.holos.gammaLin[b] =
+            std::pow(10.0f, g_holosRouteA.bandGammaDb(b) / 20.0f);
+        comp.holos.wSide[b] = g_holosRouteA.bandWidthGain(b);
+        comp.holos.diffuseMix[b] = g_holosRouteA.bandDiffuseMix(b);
+    }
+    comp.orbe.diffuse = g_orbe_diffuse.load(std::memory_order_relaxed);
+    comp.orbe.proximityDb = g_orbe_proximity_db.load(std::memory_order_relaxed);
+    comp.orbe.headRadiusM = g_orbeRouteA.headRadiusM();
+    comp.orbe.yawRad = 0.0f;
+    comp.holos.gamma = g_holos_gamma.load(std::memory_order_relaxed);
+    comp.holos.proximityDb = g_holos_proximity_db.load(std::memory_order_relaxed);
+    comp.holos.yawRad = 0.0f;
+    comp.holos.pinnaDb = 0.0f;
+    // useOrbe/useHolos los fija la función de proceso (nativeProcess /
+    // nativeProcessBlock) desde los amounts, ANTES de llamar al núcleo
+    // (aquí no se conocen los amounts del bloque).
+    comp.fade = 1.0f;
+}
 // IVANNA (Operador Unificado de Campo Espacial, v2.5.375), Ruta A:
 // instancia propia del proceso app. BYPASS por defecto desde v2.5.410
 // (g_omni_amount=0.0; antes 1.0): medición host de la 410, residuo
@@ -1235,6 +1275,8 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeInit(JNIEnv*, jobject, jint sr) {
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
     g_neuCoreRouteA.prepare((float)sr);  // NEU·Ω Fase 6: núcleo (OFF por defecto)
+    g_neuCoreRouteA.setPreRenderCallback(neuPreRenderCallback, nullptr);  // Fase 6/2: estimadores sobre el espectro único
+    g_neuCoreRouteA.setMatrixProvider(ivanna::neu::NeuCompiler::provider, &g_neuCompilerRouteA);  // Fase 6/2: A_total por bin
     g_omniRouteA.prepare((float)sr);
     g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
@@ -1924,6 +1966,11 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
     const auto neuroAdjA = neuroLoopRouteAUpdate(
         g_ats.chL, g_ats.chR, n,
         static_cast<float>(std::max(g_params.sampleRate, 8000u)));
+    // NEU·Ω Fase 6 parte 3: con neu_enabled, ORBE+HOLOS se sustituyen por
+    // el núcleo espectral (una sola STFT). Los setParams de ORBE/HOLOS
+    // SIGUEN corriendo (sus estimadores necesitan los parámetros); solo
+    // sus renders se saltan, y el núcleo corre tras el bloque HOLOS.
+    const bool neuEnabled = g_neuEnabledA.load(std::memory_order_relaxed);
     {
         // ORBE primero.
         const float orbeAmount = g_orbe_amount.load(std::memory_order_relaxed);
@@ -1955,7 +2002,7 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
             // StageTimings (v2.5.414, paridad con nativeProcessBlock): sin estos
             // probes, IVANNA.StageTimings mostraba ceros en captura.
             const auto tOrbe0 = std::chrono::steady_clock::now();
-            g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
+            if (!neuEnabled) g_orbeRouteA.process(g_ats.chL, g_ats.chR, n);
             ivanna::stageRecord(ivanna::Stage::Orbe, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tOrbe0).count()));
         }
         // HOLOS después.
@@ -1993,9 +2040,21 @@ Java_com_ivanna_omega_dsp_DSPBridge_nativeProcess(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
             const auto tHolos0 = std::chrono::steady_clock::now();
-            g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
+            if (!neuEnabled) g_holosRouteA.process(g_ats.chL, g_ats.chR, n);
             ivanna::stageRecord(ivanna::Stage::Holos, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tHolos0).count()));
         }
+    }
+    // NEU·Ω Fase 6 parte 3: el núcleo espectral sustituye el serial
+    // ORBE→HOLOS (una sola STFT, 2 FFTs/hop en vez de 5). Los estimadores
+    // ya corrieron sobre este espectro (callback pre-render) y el
+    // compilador ya tiene los estados por banda. In-place (seguro: la
+    // salida va 512 muestras por detrás de la entrada).
+    if (neuEnabled) {
+        g_neuCompilerRouteA.useOrbe =
+            g_orbe_amount.load(std::memory_order_relaxed) > 0.05f;
+        g_neuCompilerRouteA.useHolos =
+            g_holos_amount.load(std::memory_order_relaxed) > 0.0f;
+        g_neuCoreRouteA.process(g_ats.chL, g_ats.chR, g_ats.chL, g_ats.chR, n);
     }
     // IVANNA (v2.5.375): tras HOLOS, antes de Φ (ver omniProcessRouteA).
     omniProcessRouteA(g_ats.chL, g_ats.chR, n);
@@ -2755,6 +2814,8 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeInitDSP(JNIEnv*, jobject, jint 
     g_orbeRouteA.prepare((float)sr);
     g_holosRouteA.prepare((float)sr);
     g_neuCoreRouteA.prepare((float)sr);  // NEU·Ω Fase 6: núcleo (OFF por defecto)
+    g_neuCoreRouteA.setPreRenderCallback(neuPreRenderCallback, nullptr);  // Fase 6/2: estimadores sobre el espectro único
+    g_neuCoreRouteA.setMatrixProvider(ivanna::neu::NeuCompiler::provider, &g_neuCompilerRouteA);  // Fase 6/2: A_total por bin
     g_omniRouteA.prepare((float)sr);
     g_hyperRouteA.prepare((float)sr);
     g_neuroLoopRouteA.prepare((float)sr, 128);
@@ -3064,6 +3125,9 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
     // ORBE/HOLOS — NeuroBandEq + deltas acotados sobre hp/op.
     const auto neuroAdjA = neuroLoopRouteAUpdate(
         oL, oR, n, static_cast<float>(std::max(g_params.sampleRate, 8000u)));
+    // NEU·Ω Fase 6 parte 3 (igual que nativeProcess): con neu_enabled,
+    // ORBE+HOLOS se sustituyen por el núcleo espectral.
+    const bool neuEnabled = g_neuEnabledA.load(std::memory_order_relaxed);
     {
         // ORBE primero.
         const float orbeAmount = g_orbe_amount.load(std::memory_order_relaxed);
@@ -3093,7 +3157,7 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
             g_orbeRouteA.setThermalShed(g_spatialShedA.load(std::memory_order_relaxed));
             g_orbeRouteA.setParams(op);
             const auto tOrbe0 = std::chrono::steady_clock::now();
-            g_orbeRouteA.process(oL, oR, n);
+            if (!neuEnabled) g_orbeRouteA.process(oL, oR, n);
             ivanna::stageRecord(ivanna::Stage::Orbe, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tOrbe0).count()));
         }
         // HOLOS después.
@@ -3131,9 +3195,18 @@ Java_com_ivanna_omega_core_IvannaNativeLib_nativeProcessBlock(
                 std::clamp(g_holosTierA.load(std::memory_order_relaxed), 0, 3)));
             g_holosRouteA.setParams(hp);
             const auto tHolos0 = std::chrono::steady_clock::now();
-            g_holosRouteA.process(oL, oR, n);
+            if (!neuEnabled) g_holosRouteA.process(oL, oR, n);
             ivanna::stageRecord(ivanna::Stage::Holos, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tHolos0).count()));
         }
+    }
+    // NEU·Ω Fase 6 parte 3: el núcleo espectral sustituye el serial
+    // ORBE→HOLOS (una sola STFT, 2 FFTs/hop en vez de 5). In-place.
+    if (neuEnabled) {
+        g_neuCompilerRouteA.useOrbe =
+            g_orbe_amount.load(std::memory_order_relaxed) > 0.05f;
+        g_neuCompilerRouteA.useHolos =
+            g_holos_amount.load(std::memory_order_relaxed) > 0.0f;
+        g_neuCoreRouteA.process(oL, oR, oL, oR, n);
     }
 
     // IVANNA (v2.5.375): tras HOLOS, antes de Φ (ver omniProcessRouteA).

@@ -304,6 +304,116 @@ TEST(NeuCompiler, E4OrbeHolos) {
     EXPECT_LE(dbR, -60.0f) << "E4 ORBE+HOLOS (R): " << dbR << " dB";
 }
 
+// E7 (NEU·Ω Fase 6 parte 2): estimadores sobre el espectro ÚNICO.
+// Los estimadores de ORBE/HOLOS corren sobre el espectro del SpectralCore
+// (vía el callback pre-render), NO sobre sus propias FFTs. La salida del
+// núcleo debe coincidir con el serial ORBE→HOLOS (≤ −60 dB, como E4).
+// Si el espectro del núcleo difiriera del de ORBE/HOLOS (ventana, anillo,
+// alineación), los estados por banda divergerían y E7 fallaría.
+TEST(NeuCompiler, E7LiveEstimators) {
+    const auto x = MonoTones(kWarmup + kWindow);
+    // Par serial de referencia (ORBE→HOLOS, sus propias FFTs).
+    ivanna::OrbeBinaural orbeRef;
+    orbeRef.prepare(kSr);
+    ivanna::OrbeParams op;
+    op.amount = 1.0f; op.diffuse = 0.5f; op.proximityDb = 3.0f; op.distanceM = 0.35f;
+    orbeRef.setParams(op);
+    orbeRef.setAmount(1.0f);
+    ivanna::HolosOperator holosRef;
+    holosRef.prepare(kSr);
+    ivanna::HolosParams hp;
+    hp.amount = 1.0f; hp.diffuse = 0.5f; hp.proximityDb = 3.0f;
+    hp.distanceM = 0.35f; hp.gamma = 1.0f; hp.harmonics = 0.0f;
+    holosRef.setParams(hp);
+    holosRef.setAmount(1.0f);
+
+    const int total = kWarmup + kWindow;
+    std::vector<float> l((size_t)total), r((size_t)total);
+    for (int i = 0; i < total; ++i) {
+        l[(size_t)i] = x[(size_t)(i % (int)x.size())];
+        r[(size_t)i] = x[(size_t)(i % (int)x.size())];
+    }
+    for (int off = 0; off < total; off += 128) {
+        const int n = std::min(128, total - off);
+        orbeRef.process(l.data() + off, r.data() + off, n);
+        holosRef.process(l.data() + off, r.data() + off, n);
+    }
+    std::vector<float> refL(l.begin() + kWarmup, l.end());
+    std::vector<float> refR(r.begin() + kWarmup, r.end());
+
+    // Par vivo: NO corre process(); solo estima vía el callback.
+    ivanna::OrbeBinaural orbe;
+    orbe.prepare(kSr);
+    orbe.setParams(op);
+    orbe.setAmount(1.0f);
+    ivanna::HolosOperator holos;
+    holos.prepare(kSr);
+    holos.setParams(hp);
+    holos.setAmount(1.0f);
+
+    ivanna::neu::NeuCompiler comp;
+    comp.useOrbe = true;
+    comp.useHolos = true;
+    comp.orbe.diffuse = 0.5f;
+    comp.orbe.proximityDb = 3.0f;
+    comp.orbe.headRadiusM = orbe.headRadiusM();
+    comp.orbe.yawRad = 0.0f;
+    comp.holos.gamma = 1.0f;
+    comp.holos.proximityDb = 3.0f;
+    comp.holos.yawRad = 0.0f;
+    comp.holos.pinnaDb = 0.0f;
+    comp.fade = 1.0f;
+
+    struct Ctx {
+        ivanna::OrbeBinaural* o;
+        ivanna::HolosOperator* h;
+        ivanna::neu::NeuCompiler* c;
+    };
+    Ctx ctx{&orbe, &holos, &comp};
+    // Lambda sin capturas (convertible a puntero a función C).
+    auto preRender = [](void* c, const float* reL, const float* imL,
+                        const float* reR, const float* imR, int n) noexcept {
+        auto* p = static_cast<Ctx*>(c);
+        p->o->estimateBands(reL, imL, reR, imR);
+        p->h->estimateSpectrum(reL, imL, reR, imR, n);
+        const int bands = ivanna::neu::SpectralCore::kMaxBands;
+        for (int b = 0; b < bands; ++b) {
+            p->c->orbe.azimuth[b] = p->o->bandAzimuth(b);
+            p->c->orbe.distance[b] = p->o->bandDistance(b);
+            p->c->orbe.coherence[b] = p->o->bandCoherence(b);
+            const auto& hs = p->h->bandState(b);
+            p->c->holos.theta[b] = hs.theta;
+            p->c->holos.distance[b] = hs.r;
+            p->c->holos.gammaLin[b] =
+                std::pow(10.0f, p->h->bandGammaDb(b) / 20.0f);
+            p->c->holos.wSide[b] = p->h->bandWidthGain(b);
+            p->c->holos.diffuseMix[b] = p->h->bandDiffuseMix(b);
+        }
+    };
+
+    ivanna::neu::SpectralCore core;
+    core.prepare(kSr);
+    core.setMatrixProvider(&ivanna::neu::NeuCompiler::provider, &comp);
+    core.setPreRenderCallback(preRender, &ctx);
+    // Warmup: el núcleo + los estimadores convergen sobre la señal.
+    {
+        std::vector<float> wL(x.begin(), x.begin() + kWarmup);
+        std::vector<float> wR = wL;
+        std::vector<float> tmpL((size_t)kWarmup), tmpR((size_t)kWarmup);
+        core.process(wL.data(), wR.data(), tmpL.data(), tmpR.data(), kWarmup);
+    }
+    std::vector<float> inL(x.begin() + kWarmup, x.end());
+    std::vector<float> inR = inL;
+    std::vector<float> outL((size_t)kWindow), outR((size_t)kWindow);
+    core.process(inL.data(), inR.data(), outL.data(), outR.data(), kWindow);
+
+    const int lo = 1024, hi = kWindow - 1024;
+    const float dbL = RmsDiffDbShift(outL, refL, lo, hi, 512);
+    const float dbR = RmsDiffDbShift(outR, refR, lo, hi, 512);
+    EXPECT_LE(dbL, -60.0f) << "E7 estimadores vivos (L): " << dbL << " dB";
+    EXPECT_LE(dbR, -60.0f) << "E7 estimadores vivos (R): " << dbR << " dB";
+}
+
 // E6: fades sin discontinuidad ni zipper (P4: M(w) = I + w·(M−I)).
 // Con un estado ORBE fijo: fade=0 → identidad, fade=1 → matriz
 // completa, fade=0.5 → punto medio exacto. Y al rampar el fade de 0

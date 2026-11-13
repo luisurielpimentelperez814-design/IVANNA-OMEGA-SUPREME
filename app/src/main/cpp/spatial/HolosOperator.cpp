@@ -365,6 +365,19 @@ void HolosOperator::renderBins(float* reL, float* imL, float* reR, float* imR,
     }
 }
 
+// NEU·Ω Fase 6 parte 2: estimar sobre un espectro ya transformado
+// (el del SpectralCore). Replica exacta de los pasos de estimación de
+// runFrame() (setParams + estimate + computeBandGains), sin FFT ni
+// render ni OLA. Solo lectura del espectro.
+void HolosOperator::estimateSpectrum(const float* reL, const float* imL,
+                                     const float* reR, const float* imR,
+                                     int n) {
+    estimator_.setParams(distanceM_.load(std::memory_order_relaxed),
+                         spread_.load(std::memory_order_relaxed));
+    estimator_.estimate(reL, imL, reR, imR, n);
+    computeBandGains();
+}
+
 void HolosOperator::runFrame() {
     const int n = fftSize_;
     // 1) Escribir el hop pendiente en el anillo (historia de N muestras).

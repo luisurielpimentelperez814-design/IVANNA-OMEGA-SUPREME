@@ -68,6 +68,16 @@ struct NeuMat2x2 {
 using NeuMatFn = NeuMat2x2 (*)(void* ctx, int band, float freqHz,
                                float sampleRate) noexcept;
 
+// Callback pre-render (NEU·Ω Fase 6 parte 2): se invoca tras desempaquetar
+// el espectro L/R y ANTES de aplicar la matriz, para que los estimadores
+// de ORBE y HOLOS actualicen sus estados por banda sobre ESE espectro
+// (el único del hop). Sin él, los estimadores harían su propia FFT y
+// el NEU·Ω no ahorraría nada. Función C simple (puntero + contexto),
+// solo lectura del espectro (const float*), sin alloc, camino RT.
+using NeuPreRenderFn = void (*)(void* ctx, const float* reL,
+                                const float* imL, const float* reR,
+                                const float* imR, int n) noexcept;
+
 class SpectralCore {
 public:
     static constexpr int kFftSize = 512;
@@ -130,6 +140,13 @@ public:
         if (fn == nullptr && !hasStaticMatrix_) matrixEnabled_ = false;
     }
     bool matrixEnabled() const noexcept { return matrixEnabled_; }
+    /// Callback pre-render (Fase 6 parte 2): actualiza los estimadores
+    /// sobre el espectro desempaquetado antes de aplicar la matriz.
+    /// Pasar fn=nullptr para quitarlo.
+    void setPreRenderCallback(NeuPreRenderFn fn, void* ctx) noexcept {
+        preRenderFn_ = fn;
+        preRenderCtx_ = ctx;
+    }
 
     void reset() noexcept {
         ringL_.assign((size_t)kFftSize, 0.0f);
@@ -256,6 +273,14 @@ private:
                     imR_[(size_t)m] = 0.5f * (zkr - zmr);
                 }
             }
+            // Fase 6 parte 2: actualizar los estimadores (ORBE/HOLOS) sobre
+            // este espectro ANTES de aplicar la matriz, que depende de sus
+            // estados por banda. Solo lectura del espectro; el proveedor
+            // (matFn_) leerá después los estados ya actualizados.
+            if (preRenderFn_ != nullptr) {
+                preRenderFn_(preRenderCtx_, reL_.data(), imL_.data(),
+                             reR_.data(), imR_.data(), n);
+            }
             // Aplicar A_total por bin (0..N/2) y espejar por hermitiana.
             // Si hay proveedor, la matriz se calcula por bin (banda, f);
             // si no, se usa la matriz estática por banda.
@@ -332,6 +357,8 @@ private:
     NeuMat2x2 mat_[kMaxBands];                 // A_total por banda
     NeuMatFn matFn_ = nullptr;                 // proveedor por bin (Fase 2)
     void* matCtx_ = nullptr;
+    NeuPreRenderFn preRenderFn_ = nullptr;     // callback pre-render (Fase 6/2)
+    void* preRenderCtx_ = nullptr;
     bool hasStaticMatrix_ = false;
     bool matrixEnabled_ = false;
     std::vector<float> wetQL_, wetQR_;

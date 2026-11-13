@@ -157,6 +157,16 @@ public:
     // bit-exacto (sin tocar los buffers).
     void process(float* l, float* r, int n) noexcept;
 
+    // NEU·Ω Fase 6 parte 2: estimar los estados por banda (θ, r, Γ,
+    // ancho, diffuseMix) sobre un espectro YA transformado
+    // (reL/imL = L, reR/imR = R, n = fftSize). Solo lectura del
+    // espectro; no hace FFT ni render. Equivale a lo que runFrame()
+    // hace tras su propia FFT (setParams + estimator_.estimate +
+    // computeBandGains); aquí lo hace el llamador (el SpectralCore,
+    // que ya tiene el espectro) para no pagar una segunda FFT.
+    void estimateSpectrum(const float* reL, const float* imL,
+                          const float* reR, const float* imR, int n);
+
     // Diagnóstico / tests.
     int fftSize() const noexcept { return fftSize_; }
     int latencySamples() const noexcept { return fftSize_; }
