@@ -21,7 +21,15 @@ while :; do
         rm -f "$STATE/supervisor.pid"
         exit 0
     fi
-    if pidof ivanna_daemon >/dev/null 2>&1 && grep -aq omega_daemon_socket /proc/net/unix 2>/dev/null; then
+    # asrcd (daemon ASRC nuevo, engine/): requerido solo si el binario
+    # existe y no hay kill switch. Si falta el binario (build aún en CI)
+    # o hay pal_asr.off, NO se exige (el módulo arranca igual, fail-soft).
+    ASRCD_OK=1
+    ASRCD_BIN="$MODDIR/system/bin/ivanna_asrcd"
+    if [ -x "$ASRCD_BIN" ] && [ ! -e "$STATE/pal_asr.off" ]; then
+        pidof ivanna_asrcd >/dev/null 2>&1 || ASRCD_OK=0
+    fi
+    if pidof ivanna_daemon >/dev/null 2>&1 && grep -aq omega_daemon_socket /proc/net/unix 2>/dev/null && [ "$ASRCD_OK" -eq 1 ]; then
         BACKOFF=5
         continue
     fi
@@ -33,7 +41,7 @@ while :; do
         rm -f "$STATE/supervisor.pid"
         exit 0
     fi
-    echo "$(date) supervisor: daemon caido o sin socket — relanzando (intento $FAILS)" >> "$LOG"
+    echo "$(date) supervisor: daemon/asrcd caido o sin socket — relanzando (intento $FAILS)" >> "$LOG"
     IVANNA_SUPERVISED=1 sh "$MODDIR/service.sh" >> "$LOG" 2>&1
     BACKOFF=$((BACKOFF * 2)); [ "$BACKOFF" -gt 60 ] && BACKOFF=60
 done

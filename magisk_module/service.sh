@@ -135,6 +135,43 @@ chmod 755 "$DAEMON" 2>/dev/null
 chmod 755 "$MODDIR/system/bin/ivanna_client" 2>/dev/null
 chmod 755 "$MODDIR/service.sh" 2>/dev/null
 
+# ─── DAEMON ASRC NUEVO (ivanna_asrcd, engine/, v2.5.396) ─────────────────────
+# El daemon NUEVO del ASRC (servo Theil-Sen + IPC pwrite/pread + seqlock +
+# CRC). Se arranca AQUÍ, ANTES del chequeo del daemon viejo, a propósito:
+# el script tiene salidas tempranas más abajo (daemon viejo ya activo →
+# exit 0; safe_mode → exit 0; veto → exit 0) y si este bloque estuviera al
+# final (como venía en el zip de Genspark) NUNCA se ejecutaría cuando el
+# daemon viejo ya está sano — ivanna_asrcd quedaría sin arrancar y el
+# supervisor (que solo miraba ivanna_daemon) jamás lo relanzaría.
+# Reglas del encargo: no .rc, no init, no LD_PRELOAD, no wrapper HAL.
+# Fail-soft: si el binario no está (build aún en CI), se registra y se
+# sigue — NUNCA se bloquea el arranque del módulo por esta pieza.
+# Respeta safe_mode (veto de emergencia del módulo) y el kill switch
+# pal_asr.off (apaga el ASRC sin reiniciar). El supervisor también vigila
+# ivanna_asrcd (ver supervisor.sh) y relanza service.sh si cae.
+ASRCD_BIN="$MODDIR/system/bin/ivanna_asrcd"
+ASRC_STATE="$STATE"
+if [ -f "$MODDIR/.safe_mode" ]; then
+    echo "$(date '+%F %T') service.sh: SAFE_MODE activo — ivanna_asrcd no arranca" >> "$LOG" 2>/dev/null
+elif [ ! -x "$ASRCD_BIN" ]; then
+    echo "$(date '+%F %T') service.sh: ivanna_asrcd AUSENTE (build pendiente) -> ASRC inactivo, todo lo demas intacto" >> "$LOG" 2>/dev/null
+    setprop persist.ivanna.asrcd.bin 0 2>/dev/null || true
+elif [ -e "$ASRC_STATE/pal_asr.off" ]; then
+    echo "$(date '+%F %T') service.sh: kill switch pal_asr.off presente -> ASRC no arranca" >> "$LOG" 2>/dev/null
+    setprop persist.ivanna.asrcd.bin 0 2>/dev/null || true
+elif pidof ivanna_asrcd >/dev/null 2>&1; then
+    echo "$(date '+%F %T') service.sh: ivanna_asrcd ya activo" >> "$LOG" 2>/dev/null
+    setprop persist.ivanna.asrcd.bin 1 2>/dev/null || true
+else
+    setsid -f "$ASRCD_BIN" \
+      --ratio "$ASRC_STATE/asrc_ratio.bin" \
+      --frames "$ASRC_STATE/asrc_frames.bin" \
+      --kill "$ASRC_STATE/pal_asr.off" \
+      --period-ms 20 >> "$ASRC_STATE/asrcd.log" 2>&1 < /dev/null
+    echo "$(date '+%F %T') service.sh: ivanna_asrcd lanzado" >> "$LOG" 2>/dev/null
+    setprop persist.ivanna.asrcd.bin 1 2>/dev/null || true
+fi
+
 if pidof ivanna_daemon >/dev/null 2>&1; then
     # FIX (síntoma exacto reportado: panel muestra DAEMON=CORRIENDO en verde
     # y SOCKET=DESCONECTADO en rojo al mismo tiempo): pidof solo confirma que

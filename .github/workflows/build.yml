@@ -282,6 +282,50 @@ jobs:
           cp ivanna_client magisk_module/system/bin/ivanna_client
           echo "ivanna_client OK"
 
+      # ── DAEMON ASRC NUEVO (ivanna_asrcd, magisk_module/engine/) ──────────
+      # Build aarch64 ESTÁTICO con el clang del NDK (el script acepta CC por
+      # entorno; por defecto usaría aarch64-linux-gnu-g++, que NO existe en
+      # CI). El binario estático no depende de libc++ del sistema y sobrevive
+      # a updates. service.sh lo arranca desde system/bin/ivanna_asrcd.
+      - name: Build ivanna_asrcd aarch64 (NDK clang, static)
+        run: |
+          set -euo pipefail
+          CXX="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang++"
+          test -x "$CXX" || { echo "ERROR: clang++ NDK no encontrado"; exit 1; }
+          test -f magisk_module/engine/build_aarch64.sh || { echo "ERROR: engine/build_aarch64.sh ausente"; exit 1; }
+          CC="$CXX" sh magisk_module/engine/build_aarch64.sh ./ivanna_asrcd
+          chmod 755 ./ivanna_asrcd
+          FILE_OUT="$(file ./ivanna_asrcd)"
+          echo "$FILE_OUT"
+          echo "$FILE_OUT" | grep -q "64-bit" || { echo "ERROR: ivanna_asrcd no es 64-bit"; exit 1; }
+          echo "$FILE_OUT" | grep -qiE "aarch64|arm64" || { echo "ERROR: ivanna_asrcd no es ARM64"; exit 1; }
+          echo "$FILE_OUT" | grep -qi "statically linked" || { echo "ERROR: ivanna_asrcd no es estatico (BUILD.md exige estatico)"; exit 1; }
+          sha256sum ./ivanna_asrcd
+          echo "ivanna_asrcd aarch64 estatico OK"
+
+      # Tests host del motor ASRC (g++ del runner, x86-64). Resultado
+      # VERIFICADO: 18 pasan, 5 fallan (los 5 del motor polifásico, §8).
+      # El runner devuelve 1 si hay fallos, así que se captura la salida
+      # y se comprueba el conteo exacto (un cambio en el conteo = regresión
+      # o mejora, y debe revisarse, no pasar en silencio).
+      - name: Run ivanna_asrcd host tests (expect 18 pass / 5 fail)
+        run: |
+          set -euo pipefail
+          g++ -O2 -std=c++17 -Imagisk_module/engine \
+            magisk_module/engine/asrc/ivanna_asrc_core.cpp \
+            magisk_module/engine/asrc/ivanna_asrc_ipc.cpp \
+            magisk_module/engine/asrcd/ivanna_servo.cpp \
+            magisk_module/engine/effect/ivanna_asrc_bridge.cpp \
+            magisk_module/engine/tests/test_ivanna_asrc.cpp \
+            -o /tmp/ivanna_asrc_tests
+          set +e
+          /tmp/ivanna_asrc_tests > /tmp/asrc_tests_out.txt 2>&1
+          TEST_RC=$?
+          set -e
+          tail -5 /tmp/asrc_tests_out.txt
+          grep -q "RESULTADO: 18 pasan, 5 fallan" /tmp/asrc_tests_out.txt || { echo "ERROR: el conteo de tests cambio (esperado 18 pasan, 5 fallan)"; echo "--- salida ---"; cat /tmp/asrc_tests_out.txt; exit 1; }
+          echo "host tests ivanna_asrcd: 18/5 (esperado, §8)"
+
       # ── VALIDACIÓN ESTRICTA DEL BINARIO COMPILADO ──────────────────────
       - name: Validate daemon ELF (arm64 / AArch64 / PIE / hash)
         run: |
@@ -491,6 +535,15 @@ jobs:
           mkdir -p magisk_module/system/bin
           cp ivanna_daemon magisk_module/system/bin/ivanna_daemon
           chmod 755 magisk_module/system/bin/ivanna_daemon
+          # ivanna_asrcd (daemon ASRC nuevo, engine/): obligatorio también.
+          # service.sh lo arranca desde system/bin/ivanna_asrcd; si falta,
+          # service.sh registra "AUSENTE" y sigue (fail-soft), pero el
+          # build debe producirlo siempre.
+          test -f ivanna_asrcd || { echo "ERROR: ivanna_asrcd no compilado"; exit 1; }
+          rm -f magisk_module/system/bin/ivanna_asrcd
+          cp ivanna_asrcd magisk_module/system/bin/ivanna_asrcd
+          chmod 755 magisk_module/system/bin/ivanna_asrcd
+          sha256sum magisk_module/system/bin/ivanna_asrcd
           # libomega_effect.so desde la salida de Gradle — obligatoria también
           EFFECT_SO=$(find app/build -path "*arm64-v8a*" -name "libomega_effect.so" | head -1)
           test -n "$EFFECT_SO" || { echo "ERROR: libomega_effect.so no encontrada en app/build"; exit 1; }
