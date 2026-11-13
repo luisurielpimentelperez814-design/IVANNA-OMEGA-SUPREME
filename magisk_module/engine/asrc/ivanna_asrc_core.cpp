@@ -1,14 +1,17 @@
 // ============================================================================
-// ivanna_asrc_core.cpp — FIFO + polifásico con bloque fijo. v2.5.396
+// ivanna_asrc_core.cpp — Núcleo RouteA + FIFO de bloque fijo. v2.5.397
+// (rectificación magistral; el core Genspark v2.5.396 queda como LEGACY en
+// ivanna_asrc_core_genspark_legacy.cpp y NO se compila.)
 //
-// El lazo de nivel del FIFO es la pieza que faltaba. Sin él, un ratio != 1
-// devuelve un número de frames distinto al de entrada y el bloque se desgarra
-// en cada frontera (medido en la v anterior: THD+N -29.98 dB). Con él:
-//   - sale siempre in_frames
-//   - la frecuencia sí se corrige (step = 1/ratio sobre las posiciones)
-//   - la corrección de nivel se reparte en el bloque (sin clic)
+// La frecuencia la fija el step = 1/ratio del núcleo RouteA (exacto, sin
+// lazo de nivel que la sesgue). El bloque fijo lo garantiza la FIFO de
+// salida: el resampleador produce N*ratio frames por bloque y la FIFO emite
+// exactamente N. El nivel de la FIFO deriva N*(ratio-1) por bloque (física:
+// es la diferencia de relojes acumulada) y se acota con priming (192
+// frames de ceros al arrancar) + slip de 1 frame en los watermarks.
 // ============================================================================
 #include "ivanna_asrc_core.h"
+#include "routea_core.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,38 +22,18 @@ namespace asrc {
 
 namespace {
 constexpr double kPi = 3.14159265358979323846;
-
-double sinc(double x) {
-    if (std::fabs(x) < 1e-12) return 1.0;
-    const double px = kPi * x;
-    return std::sin(px) / px;
-}
-
-double besselI0(double x) {
-    double sum = 1.0, term = 1.0;
-    const double q = (x * x) / 4.0;
-    for (int k = 1; k < 40; ++k) {
-        term *= q / (static_cast<double>(k) * static_cast<double>(k));
-        sum += term;
-        if (term < 1e-16 * sum) break;
-    }
-    return sum;
-}
-
-double kaiser(double u, double half, double beta) {
-    if (half <= 0.0) return 1.0;
-    const double r = u / half;
-    if (r < -1.0 || r > 1.0) return 0.0;
-    const double a = besselI0(beta);
-    if (a <= 0.0) return 1.0;
-    return besselI0(beta * std::sqrt(std::max(0.0, 1.0 - r * r))) / a;
-}
 }  // namespace
 
 bool ratioIsValid(double ratio) {
     if (!std::isfinite(ratio)) return false;
     return std::fabs((ratio - 1.0) * 1e6) <= kMaxPpm + 1e-9;
 }
+
+struct Core::PairResampler {
+    routea::Core core;
+    std::vector<float> in;   // estéreo intercalado, in_frames frames
+    std::vector<float> out;  // estéreo intercalado, capacidad de salida
+};
 
 Core::Core(const Config& c) : cfg_(c) {
     if (cfg_.taps % 2 == 0) cfg_.taps += 1;
@@ -63,54 +46,28 @@ Core::Core(const Config& c) : cfg_(c) {
 Core::~Core() = default;
 
 void Core::reset() {
-    // PRIMING. Un ASRC de bloque fijo necesita nacer con holgura: entre lo que
-    // se evalúa (read_pos_) y el final del buffer tiene que caber el FIR por
-    // delante (half) MÁS el margen de deriva de un bloque entero. Si nace justo
-    // (319 frames, como antes), en el primer bloque con step>1 se agota y el
-    // tramo final se rellena con CEROS: eso es un hueco de silencio por bloque
-    // y sonaba a -27 dB de THD+N. Medido, no supuesto.
-    const size_t taps = static_cast<size_t>(cfg_.taps);
-    const size_t half = (taps - 1) / 2;
-    //   latencia añadida   = read_pos_            (~taps + half = 478 muestras = 10 ms)
-    //   holgura disponible = buf_frames_ - read_pos_ - half  (~taps)
-    buf_.assign((2 * taps) * 2, 0.0f);
-    buf_frames_ = 2 * taps;
-    read_pos_ = static_cast<double>(taps + half);
+    for (auto& p : pairs_) p.core.reset();
+    primeFifo();
+    was_bypass_ = true;
+}
+
+void Core::primeFifo() {
+    // La FIFO se llena de ceros hasta el priming. Esos ceros son la
+    // latencia de arranque (4 ms, una sola vez): la salida real empieza
+    // tras ellos. En bypass (ratio 1.0) la FIFO no se toca (memcpy).
+    if (fifo_.size() < kFifoCapacityFrames * static_cast<size_t>(channels_))
+        fifo_.assign(kFifoCapacityFrames * static_cast<size_t>(channels_), 0.0f);
+    std::fill(fifo_.begin(), fifo_.end(), 0.0f);
+    fifo_head_ = 0;
+    fifo_frames_ = kFifoPrimeFrames;
 }
 
 bool Core::init() {
     if (inited_) return true;
-    const int T = cfg_.taps;
-    const int P = cfg_.phases;
-    coef_.assign(static_cast<size_t>(T) * P, 0.0f);
-
-    const double half = (T - 1) / 2.0;
-    for (int p = 0; p < P; ++p) {
-        const double d = static_cast<double>(p) / P;
-        double sum = 0.0;
-        for (int k = 0; k < T; ++k) {
-            const double u = (k - half) - d;
-            const double h = 2.0 * cfg_.cutoff * sinc(2.0 * cfg_.cutoff * u) *
-                             kaiser(u, half, cfg_.kaiser_beta);
-            coef_[static_cast<size_t>(p) * T + k] = static_cast<float>(h);
-            sum += h;
-        }
-        // Normalización por fase: DC exacto en todas las sub-fases. Sin esto el
-        // ratio fraccionario modularía el nivel (bombeo de amplitud).
-        if (std::fabs(sum) > 1e-12) {
-            const float inv = static_cast<float>(1.0 / sum);
-            for (int k = 0; k < T; ++k)
-                coef_[static_cast<size_t>(p) * T + k] *= inv;
-        }
-    }
-
-    psi_.assign(static_cast<size_t>(cfg_.psi_taps) * 2, 0.0f);
-    for (int ch = 0; ch < 2; ++ch)
-        psi_[static_cast<size_t>(ch) * cfg_.psi_taps + cfg_.psi_taps / 2] = 1.0f;
-
-    inited_ = true;
     channels_ = 2;
-    reset();
+    fifo_.assign(kFifoCapacityFrames * static_cast<size_t>(channels_), 0.0f);
+    primeFifo();
+    inited_ = true;
     return true;
 }
 
@@ -119,6 +76,7 @@ double Core::setRatio(double ratio) {
     double dev = (ratio - 1.0) * 1e6;
     dev = std::max(-kMaxPpm, std::min(kMaxPpm, dev));
     ratio_ = 1.0 + dev * 1e-6;
+    for (auto& p : pairs_) p.core.setRatio(ratio_);
     return ratio_;
 }
 
@@ -126,160 +84,106 @@ void Core::ensureInit(int channels) {
     if (!inited_) init();
     if (channels != channels_) {
         channels_ = channels;
-        reset();
-        if (buf_.size() % static_cast<size_t>(channels) != 0 || channels != 2) {
-            const size_t keep = buf_frames_;
-            buf_.assign(keep * static_cast<size_t>(channels), 0.0f);
-        }
+        pairs_.clear();
+        fifo_.assign(kFifoCapacityFrames * static_cast<size_t>(channels_), 0.0f);
+        primeFifo();
+        was_bypass_ = true;
     }
 }
 
-void Core::push(const float* inter, size_t frames, int ch) {
-    const size_t need = (buf_frames_ + frames) * static_cast<size_t>(ch);
-    if (buf_.size() < need) buf_.resize(need + static_cast<size_t>(cfg_.taps) * 2 * ch);
-    std::memcpy(buf_.data() + buf_frames_ * ch, inter, frames * ch * sizeof(float));
-    buf_frames_ += frames;
-}
-
-void Core::compact() {
-    // Se conserva el contexto necesario antes de read_pos_ (half muestras).
-    const double keep_from = std::floor(read_pos_) - (cfg_.taps - 1) / 2.0 - 2.0;
-    if (keep_from <= 0.0) return;
-    const size_t drop = static_cast<size_t>(keep_from);
-    if (drop >= buf_frames_) return;
+void Core::fifoPush(const float* inter, size_t frames) {
+    if (frames == 0 || !inter) return;
+    const size_t cap = kFifoCapacityFrames;
     const size_t ch = static_cast<size_t>(channels_);
-    std::memmove(buf_.data(), buf_.data() + drop * ch,
-                 (buf_frames_ - drop) * ch * sizeof(float));
-    buf_frames_ -= drop;
-    read_pos_ -= static_cast<double>(drop);
+    // Nunca debe desbordar (nivel máx ~5637 < 8192); si lo hiciera, se
+    // descarta lo más viejo (fail-closed: no se rompe el anillo).
+    if (fifo_frames_ + frames > cap) {
+        const size_t drop = (fifo_frames_ + frames) - cap;
+        fifoDrop(drop);
+        slips_total_ += drop;
+    }
+    size_t tail = (fifo_head_ + fifo_frames_) % cap;
+    const size_t first = std::min(frames, cap - tail);
+    std::memcpy(fifo_.data() + tail * ch, inter, first * ch * sizeof(float));
+    if (first < frames) {
+        std::memcpy(fifo_.data(), inter + first * ch,
+                    (frames - first) * ch * sizeof(float));
+    }
+    fifo_frames_ += frames;
 }
 
-ProcessStats Core::emitFixed(const float* in, size_t in_frames,
-                             float* out, size_t out_capacity, int ch) {
-    ProcessStats st;
-    st.in_frames = in_frames;
-    ensureInit(ch);
-
-    const int T = cfg_.taps;
-    const int P = cfg_.phases;
-    const int half = (T - 1) / 2;
-    const size_t N = std::min(in_frames, out_capacity);
-
-    // step base = 1/ratio. Con ratio>1 (reloj lento) se consumen MENOS muestras
-    // por muestra de salida -> la señal se estira -> la frecuencia baja a su
-    // valor nominal. Derivación completa en la cabecera.
-    const double base_step = 1.0 / ratio_;
-
-    // ── TEOREMA DEL BLOQUE FIJO ─────────────────────────────────────────────
-    // Un efecto de AudioFlinger devuelve SIEMPRE los mismos frames que recibe.
-    // Si sale N y entra N, y para corregir deriva se consumen N*step != N
-    // muestras, la holgura del FIFO TIENE que derivar: es aritmética, no un bug.
-    //
-    // Dos errores MEDIDOS en las iteraciones previas de este archivo, y cómo se
-    // corrigen aquí:
-    //
-    //  (a) Lazo proporcional "de nivel" calculado contra el objetivo:
-    //      corr = 0.5*err/N con err = holgura - N*step - objetivo. Como
-    //      err ~= N*(1-step), resulta corr ~= (1-step), es decir INVIERTE la
-    //      corrección: el test midió 999.5 Hz, error -500 ppm (el riel entero).
-    //      -> Prohibido. El término de nivel debe ser MUCHO menor que la
-    //      desviación de step, no comparable.
-    //
-    //  (b) Desliz de 1 frame repartido en UN bloque: 1/4096 = 244 ppm, cinco
-    //      veces el riel y 24x la corrección. El test lo midió: THD+N -27 dB
-    //      a +50 ppm (y no a -20 ppm, porque sólo el paso positivo desliza
-    //      hacia arriba). -> El desliz se reparte en MUCHOS bloques.
-    //
-    // Diseño final: step = 1/ratio EXACTO (aquí vive la corrección) + un
-    // término de nivel acotado a ±2 ppm. La corrección nominal es de decenas de
-    // ppm, así que el término de nivel no puede cancelarla ni de lejos; 2 ppm
-    // de modulación de fase es -90 dB de artefacto, por debajo del ruido de
-    // cuantización de 16 bits.
-    const int Tf = cfg_.taps;
-    const double half_f = (Tf - 1) / 2.0;
-    const double slack_now = static_cast<double>(buf_frames_) - read_pos_ - half_f;
-    const double slack_nominal = static_cast<double>(Tf);
-    double step = base_step;
-
-    // Cuánto cambia la holgura con este bloque (N == in_frames en operación).
-    const double slack_after = slack_now + static_cast<double>(N) * (1.0 - base_step);
-    const double slack_err = slack_after - slack_nominal;
-
-    // Ganancia del lazo de nivel: reparte el error en ~400 bloques (~34 s) y se
-    // satura en ±2 ppm. Con la ventana de 480 frames (10 ms) el término nunca
-    // supera el tope, así que es un desplazamiento lento, no una corrección.
-    double corr = slack_err / (static_cast<double>(N) * 400.0);
-    const double kCorrMax = 2e-6;   // 2 ppm
-    if (corr >  kCorrMax) corr =  kCorrMax;
-    if (corr < -kCorrMax) corr = -kCorrMax;
-    step += corr;
-
-    push(in, in_frames, ch);
-
-    const size_t avail = buf_frames_;
-    size_t o = 0;
-    while (o < N) {
-        const long long base = static_cast<long long>(std::floor(read_pos_));
-        const long long start = base - half;
-        if (start < 0 || start + T > static_cast<long long>(avail)) break;
-
-        const double frac = read_pos_ - static_cast<double>(base);
-        int ph = static_cast<int>(frac * P + 0.5);
-        if (ph >= P) ph = P - 1;
-        if (ph < 0) ph = 0;
-
-        const float* h = coef_.data() + static_cast<size_t>(ph) * T;
-        for (int c = 0; c < ch; ++c) {
-            const float* x = buf_.data() + static_cast<size_t>(start) * ch + c;
-            float acc = 0.0f;
-            for (int k = 0; k < T; ++k) {
-                acc += h[k] * x[static_cast<size_t>(k) * ch];
-            }
-            out[o * ch + c] = acc;
-        }
-        read_pos_ += step;
-        ++o;
-    }
-
-    // Relleno de emergencia: SÓLO si el priming falló o hubo un salto brusco
-    // de ratio. Se cuenta en la telemetría (underflow_frames) porque en
-    // operación normal debe ser exactamente 0. Se rellena REPITIENDO la última
-    // muestra válida, no con ceros: un cero es un hueco de silencio audible y
-    // además inyecta un escalón (eso era el -27 dB de THD+N).
-    if (o < N) {
-        st.underflow_frames = N - o;
-        for (size_t i = o; i < N; ++i) {
-            for (int c = 0; c < ch; ++c) {
-                out[i * ch + c] = (o > 0) ? out[(o - 1) * ch + c] : 0.0f;
-            }
-        }
-    }
-
-    st.out_frames = N;
-    st.step = step;
-    st.fifo_frames = static_cast<double>(buf_frames_) - read_pos_;
-    st.passthrough = false;
-    compact();
-    return st;
+void Core::fifoDrop(size_t frames) {
+    if (frames == 0) return;
+    if (frames > fifo_frames_) frames = fifo_frames_;
+    fifo_head_ = (fifo_head_ + frames) % kFifoCapacityFrames;
+    fifo_frames_ -= frames;
 }
 
-void Core::applyPsi(float* buf, size_t frames, int channels) {
-    if (!psi_enabled_ || psi_.empty()) return;
-    const int Np = cfg_.psi_taps;
-    std::vector<float> tmp(frames * channels, 0.0f);
-    for (int c = 0; c < channels; ++c) {
-        const float* co = psi_.data() + static_cast<size_t>(c) * Np;
-        for (size_t n = 0; n < frames; ++n) {
-            float acc = 0.0f;
-            for (int k = 0; k < Np; ++k) {
-                const long long idx = static_cast<long long>(n) - k;
-                if (idx < 0) break;
-                acc += co[k] * buf[static_cast<size_t>(idx) * channels + c];
-            }
-            tmp[n * channels + c] = acc;
+size_t Core::fifoPop(float* out, size_t frames) {
+    if (frames == 0 || !out) return 0;
+    const size_t take = std::min(frames, fifo_frames_);
+    if (take == 0) return 0;
+    const size_t cap = kFifoCapacityFrames;
+    const size_t ch = static_cast<size_t>(channels_);
+    const size_t first = std::min(take, cap - fifo_head_);
+    std::memcpy(out, fifo_.data() + fifo_head_ * ch, first * ch * sizeof(float));
+    if (first < take) {
+        std::memcpy(out + first * ch, fifo_.data(),
+                    (take - first) * ch * sizeof(float));
+    }
+    fifo_head_ = (fifo_head_ + take) % cap;
+    fifo_frames_ -= take;
+    return take;
+}
+
+size_t Core::resampleIntoFifo(const float* in, size_t in_frames, int ch) {
+    const size_t npairs = (static_cast<size_t>(ch) + 1) / 2;
+    if (pairs_.size() != npairs) {
+        pairs_.clear();
+        pairs_.resize(npairs);
+        for (auto& p : pairs_) p.core.setRatio(ratio_);
+    }
+    // Capacidad de salida del resampleador: N*ratio_max + margen.
+    const int capOut = static_cast<int>(in_frames * 1002 / 1000 + 64);
+    if (scratch_in_.size() < in_frames * 2)
+        scratch_in_.resize(in_frames * 2);
+    if (scratch_out_.size() < static_cast<size_t>(capOut) * 2)
+        scratch_out_.resize(static_cast<size_t>(capOut) * 2);
+    if (staging_.size() < in_frames * static_cast<size_t>(ch))
+        staging_.resize(in_frames * static_cast<size_t>(ch));
+
+    size_t produced_min = static_cast<size_t>(capOut) + 1;
+    // Por par: desintercalar, resamplear, guardar en el staging intercalado.
+    for (size_t p = 0; p < npairs; ++p) {
+        const int c0 = static_cast<int>(p * 2);
+        const int c1 = (c0 + 1 < ch) ? c0 + 1 : c0;  // canal impar: duplicado
+        auto& pr = pairs_[p];
+        if (pr.in.size() < in_frames * 2) pr.in.resize(in_frames * 2);
+        if (pr.out.size() < static_cast<size_t>(capOut) * 2)
+            pr.out.resize(static_cast<size_t>(capOut) * 2);
+        for (size_t i = 0; i < in_frames; ++i) {
+            pr.in[i * 2] = in[i * static_cast<size_t>(ch) + c0];
+            pr.in[i * 2 + 1] = in[i * static_cast<size_t>(ch) + c1];
+        }
+        const int produced = pr.core.process(pr.in.data(), static_cast<int>(in_frames),
+                                             pr.out.data(), capOut);
+        if (produced < 0) continue;
+        if (static_cast<size_t>(produced) < produced_min)
+            produced_min = static_cast<size_t>(produced);
+        // Intercalar este par en el staging (solo hasta produced_min se usa;
+        // se escribe el par completo y se recorta al meter en la FIFO).
+        for (int i = 0; i < produced; ++i) {
+            staging_[static_cast<size_t>(i) * static_cast<size_t>(ch) + c0] =
+                pr.out[static_cast<size_t>(i) * 2];
+            if (c1 != c0)
+                staging_[static_cast<size_t>(i) * static_cast<size_t>(ch) + c1] =
+                    pr.out[static_cast<size_t>(i) * 2 + 1];
         }
     }
-    std::memcpy(buf, tmp.data(), frames * channels * sizeof(float));
+    if (produced_min > static_cast<size_t>(capOut)) produced_min = 0;
+    if (produced_min == 0) return 0;
+    fifoPush(staging_.data(), produced_min);
+    return produced_min;
 }
 
 ProcessStats Core::processF32(const float* in, size_t in_frames,
@@ -288,23 +192,65 @@ ProcessStats Core::processF32(const float* in, size_t in_frames,
     st.in_frames = in_frames;
     if (!in || !out || in_frames == 0 || out_capacity == 0) return st;
 
+    ensureInit(channels);
+    const size_t ch = static_cast<size_t>(channels_);
+    const size_t N = std::min(in_frames, out_capacity);
+
+    // Camino rápido (identidad): memcpy bit-exacto. La FIFO no se toca y
+    // el resampleador NO se alimenta en sombra (el bypass debe ser barato;
+    // al volver al resampleo se arranca en frío, ver abajo).
     if (bypass_ || ratio_ == 1.0) {
-        const size_t n = std::min(in_frames, out_capacity);
-        std::memcpy(out, in, n * channels * sizeof(float));
-        if (psi_enabled_) applyPsi(out, n, channels);
-        st.out_frames = n;
-        st.passthrough = !psi_enabled_;
+        std::memcpy(out, in, N * ch * sizeof(float));
+        st.out_frames = N;
+        st.passthrough = true;
         st.step = 1.0;
-        st.fifo_frames = static_cast<double>(cfg_.taps);
-        // Mantener el contexto real aunque se esté en identidad: si luego se
-        // activa el ratio, el FIR debe tener historia de verdad, no ceros.
-        ensureInit(channels);
-        push(in, in_frames, channels);
-        read_pos_ += static_cast<double>(in_frames);
-        compact();
+        st.fifo_frames = static_cast<double>(fifo_frames_);
+        st.underflow_frames = 0;
+        st.slip_frames = 0;
+        was_bypass_ = true;
         return st;
     }
-    return emitFixed(in, in_frames, out, out_capacity, channels);
+
+    // Transición bypass -> resampleo: arranque en frío (fade-in del FIR,
+    // ~6 ms, sin click) y re-priming de la FIFO. El historial anterior es
+    // obsoleto (era de antes del bypass) y no se reutiliza.
+    if (was_bypass_) {
+        for (auto& p : pairs_) p.core.reset();
+        primeFifo();
+        was_bypass_ = false;
+    }
+
+    resampleIntoFifo(in, in_frames, channels_);
+
+    // Slip por watermark alto: el nivel post-emisión no debe superar el
+    // watermark. El exceso crece <=0.3 frames/bloque, así que como mucho
+    // cae 1 frame por llamada. El frame descartado es el más viejo (la
+    // salida salta 1 muestra: un slip raro, inaudible, contado).
+    size_t slips = 0;
+    while (fifo_frames_ > N + kFifoHighWatermark) {
+        fifoDrop(1);
+        ++slips;
+        ++slips_total_;
+    }
+
+    // Emitir exactamente N frames desde la FIFO.
+    const size_t take = fifoPop(out, N);
+    size_t underflow = 0;
+    if (take < N) {
+        underflow = N - take;
+        for (size_t i = take; i < N; ++i) {
+            for (size_t c = 0; c < ch; ++c)
+                out[i * ch + c] = (take > 0) ? out[(take - 1) * ch + c] : 0.0f;
+        }
+    }
+
+    st.out_frames = N;
+    st.passthrough = false;
+    st.step = 1.0 / ratio_;
+    st.fifo_frames = static_cast<double>(fifo_frames_);
+    st.underflow_frames = underflow;
+    st.slip_frames = slips;
+    return st;
 }
 
 ProcessStats Core::processS16(const int16_t* in, size_t in_frames,
@@ -322,29 +268,22 @@ ProcessStats Core::processS16(const int16_t* in, size_t in_frames,
         st.out_frames = n;
         st.passthrough = true;
         st.step = 1.0;
-        // La salida es bit-exacta (memcpy de arriba), pero el FIFO se mantiene
-        // VIVO y en fase: se empuja la entrada y se avanza read_pos_ lo mismo
-        // que entró. Así, si el ratio se activa en el bloque siguiente, el FIR
-        // tiene señal REAL detrás en vez de 10 ms de ceros (que sonarían como
-        // un hueco de silencio al arrancar la corrección).
-        ensureInit(channels);
-        std::vector<float> tmp(in_frames * channels);
-        for (size_t i = 0; i < in_frames * channels; ++i)
-            tmp[i] = static_cast<float>(in[i]) * (1.0f / 32768.0f);
-        push(tmp.data(), in_frames, channels);
-        read_pos_ += static_cast<double>(in_frames);
-        compact();
+        st.fifo_frames = static_cast<double>(fifo_frames_);
+        st.underflow_frames = 0;
+        st.slip_frames = 0;
+        was_bypass_ = true;
         return st;
     }
 
-    std::vector<float> fin(in_frames * channels);
-    for (size_t i = 0; i < in_frames * channels; ++i)
+    const size_t ch = static_cast<size_t>(channels);
+    std::vector<float> fin(in_frames * ch);
+    for (size_t i = 0; i < in_frames * ch; ++i)
         fin[i] = static_cast<float>(in[i]) * (1.0f / 32768.0f);
 
-    std::vector<float> fout(out_capacity * channels, 0.0f);
+    std::vector<float> fout(out_capacity * ch, 0.0f);
     st = processF32(fin.data(), in_frames, fout.data(), out_capacity, channels);
 
-    for (size_t i = 0; i < st.out_frames * channels; ++i) {
+    for (size_t i = 0; i < st.out_frames * ch; ++i) {
         float v = fout[i] * 32768.0f;
         v = std::max(-32768.0f, std::min(32767.0f, v));
         out[i] = static_cast<int16_t>(v);
