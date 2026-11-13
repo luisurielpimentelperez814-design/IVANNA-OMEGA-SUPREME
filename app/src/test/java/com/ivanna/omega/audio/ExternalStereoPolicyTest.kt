@@ -34,9 +34,16 @@ class ExternalStereoPolicyTest {
         assertFalse(ExternalStereoPolicy.allowTransauralXtc(OutputRoute.UNKNOWN, true, true))
     }
 
-    @Test fun phoneSpeakerAndUnknownRemainFailClosed() {
+    @Test fun phoneSpeakerGetsConservativeWetAndUnknownRemainsFailClosed() {
         assertEquals(0f, ExternalStereoPolicy.hrtfWetForRoute(OutputRoute.UNKNOWN, false, true), 0f)
-        assertEquals(0f, ExternalStereoPolicy.hrtfWetForRoute(OutputRoute.SPEAKER, false, true), 0f)
+        // v2.5.437 — la bocina lleva mezcla acotada 0.15 (igual que line-out
+        // externo), no 0: con wet=0 los efectos prendían y apagaban solos
+        // en captura según la ruta. UNKNOWN sí sigue en 0 (fail-closed).
+        assertEquals(
+            ExternalStereoPolicy.EXTERNAL_LINE_OUT_HRTF_WET,
+            ExternalStereoPolicy.hrtfWetForRoute(OutputRoute.SPEAKER, false, true),
+            0f
+        )
         assertFalse(ExternalStereoPolicy.allowHeadphoneHrtf(OutputRoute.UNKNOWN, false, true))
         assertFalse(ExternalStereoPolicy.allowHeadphoneHrtf(OutputRoute.SPEAKER, false, true))
     }

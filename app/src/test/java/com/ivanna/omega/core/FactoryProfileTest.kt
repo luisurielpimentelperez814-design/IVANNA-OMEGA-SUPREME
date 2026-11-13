@@ -39,7 +39,8 @@ class FactoryProfileTest {
 
     @Test fun espacialAddsOrbeAndHolosOnly() {
         val p = ParameterStore.PROFILE_ESPACIAL
-        assertEquals(0.5f, p.orbeAmount, 0f)
+        // v2.5.437 — directiva ORBE 1.0 / HOLOS 0.5 (antes ORBE 0.5).
+        assertEquals(1.0f, p.orbeAmount, 0f)
         assertEquals(0.5f, p.holosAmount, 0f)
         assertEquals(0.0f, p.holosHarmonics, 0f)
         assertEquals(0f, p.omniAmount, 0f)
@@ -70,7 +71,8 @@ class FactoryProfileTest {
 
     @Test fun freshStoreReturnsBootProfileDefaults() {
         val store = ParameterStore(context)
-        assertEquals(0.5f, store.getOrbeAmount(), 0f)
+        // v2.5.437 — BOOT_PROFILE = PROFILE_ESPACIAL, ORBE 1.0 (antes 0.5).
+        assertEquals(1.0f, store.getOrbeAmount(), 0f)
         assertEquals(0.5f, store.getHolosAmount(), 0f)
         assertEquals(0.0f, store.getHolosHarmonics(), 0f)
         assertEquals(0f, store.getOmniAmount(), 0f)
