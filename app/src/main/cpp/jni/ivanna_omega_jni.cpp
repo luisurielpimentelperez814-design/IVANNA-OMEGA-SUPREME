@@ -333,6 +333,17 @@ static SafetyLimiter  g_safety_limiter;
 // = prácticamente transparente.
 static std::atomic<float> g_fatigueHighCutHz{19500.0f};
 static ivanna::FatigueHighCut g_fatigueHighCut;
+
+// ── Fatigue Mitigator LOCAL (v2.5.428) ──────────────────────────────────────
+// El cutoff llega por el atómico (lo fija nativeSetFatigueHighCut desde
+// Kotlin); el filtro (include/fatigue_highcut.hpp) se actualiza por bloque
+// y conserva su estado entre bloques y cambios de cutoff (sin clics).
+// Definido aquí (junto a los estáticos) porque nativeProcess lo llama en
+// la línea ~2536, mucho antes de nativePushLocalSafLatent.
+static inline void routeAApplyFatigueHighCut(float* l, float* r, int n, float sr) {
+    g_fatigueHighCut.setCutoff(g_fatigueHighCutHz.load(std::memory_order_relaxed), sr);
+    g_fatigueHighCut.process(l, r, n);
+}
 // OMEGA PERCEPTUAL GUARD
 static OmegaPerceptualGuard g_perceptualGuard;
 
@@ -5760,15 +5771,6 @@ Java_com_ivanna_omega_magisk_OmegaEngineBridge_nativePushLocalSafLatent(
     if (Ivanna::RirConvolver* conv = g_rirConvolver.load(std::memory_order_acquire)) {
         conv->applySofaCoupling(g_localSafQ);
     }
-}
-
-// ── Fatigue Mitigator LOCAL (v2.5.428) ──────────────────────────────────────
-// El cutoff llega por el atómico (lo fija nativeSetFatigueHighCut desde
-// Kotlin); el filtro (include/fatigue_highcut.hpp) se actualiza por bloque
-// y conserva su estado entre bloques y cambios de cutoff (sin clics).
-static inline void routeAApplyFatigueHighCut(float* l, float* r, int n, float sr) {
-    g_fatigueHighCut.setCutoff(g_fatigueHighCutHz.load(std::memory_order_relaxed), sr);
-    g_fatigueHighCut.process(l, r, n);
 }
 
 extern "C" JNIEXPORT void JNICALL
