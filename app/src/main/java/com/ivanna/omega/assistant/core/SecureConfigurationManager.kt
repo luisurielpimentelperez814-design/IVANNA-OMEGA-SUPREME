@@ -29,6 +29,10 @@ object SecureConfigurationManager {
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val GCM_TAG_BITS = 128
     private const val KEY_GEMINI_API = "gemini_api_key"
+    // OmniRoute (2026-11-14, v2.5.443): key del gateway LLM gratis de la VM.
+    // Se guarda cifrada igual que la de Gemini; el flag/base URL/modelo
+    // (no secretos) viven en OmniRoutePrefs.
+    private const val KEY_OMNIROUTE_API = "omniroute_api_key"
 
     private var appContext: Context? = null
     private var securePrefs: SharedPreferences? = null
@@ -37,7 +41,7 @@ object SecureConfigurationManager {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    data class State(val isInitialized: Boolean = false, val isConfigured: Boolean = false, val isHealthy: Boolean = false, val isUsingFallback: Boolean = false, val lastError: String? = null)
+    data class State(val isInitialized: Boolean = false, val isConfigured: Boolean = false, val isHealthy: Boolean = false, val isUsingFallback: Boolean = false, val lastError: String? = null, val isOmniRouteConfigured: Boolean = false)
 
     @Synchronized
     fun initialize(context: Context) {
@@ -84,6 +88,48 @@ object SecureConfigurationManager {
         validateConfiguration()
     }
 
+    // ── API key OmniRoute (gateway LLM gratis de la VM) ──────────────────
+    // Mismo patrón cifrado que la key Gemini. La key de OmniRoute es un
+    // secreto generado en el dashboard del gateway (sin formato "AIza");
+    // se acepta cualquier string no vacío de ≥8 caracteres tras limpiar
+    // artefactos de pegado. El gateway por defecto acepta cualquier key;
+    // con REQUIRE_API_KEY=true exige la del dashboard (401 si no coincide).
+    fun setOmniRouteApiKey(rawKey: String) {
+        requireInitialized()
+        val key = rawKey.trim().trim('"', '\'', '`').filter { !it.isWhitespace() }
+        if (!isValidOmniRouteKeyFormat(key)) { Log.w(TAG, "Invalid OmniRoute API key format rejected"); return }
+        if (isUsingFallback) saveEncryptedFallback(KEY_OMNIROUTE_API, key)
+        else securePrefs?.edit()?.putString(KEY_OMNIROUTE_API, key)?.apply()
+        validateConfiguration()
+        Log.i(TAG, "OmniRoute API key stored securely")
+    }
+
+    fun getOmniRouteApiKey(): String {
+        requireInitialized()
+        return rawOmniRouteApiKey()
+    }
+
+    fun clearOmniRouteApiKey() {
+        requireInitialized()
+        if (isUsingFallback) getFallbackPrefs().edit().remove(KEY_OMNIROUTE_API).apply()
+        else securePrefs?.edit()?.remove(KEY_OMNIROUTE_API)?.apply()
+        validateConfiguration()
+    }
+
+    fun hasValidOmniRouteApiKey(): Boolean {
+        val key = getOmniRouteApiKey()
+        return key.isNotBlank() && isValidOmniRouteKeyFormat(key)
+    }
+
+    private fun rawOmniRouteApiKey(): String =
+        if (isUsingFallback) loadEncryptedFallback(KEY_OMNIROUTE_API) ?: "" else securePrefs?.getString(KEY_OMNIROUTE_API, "") ?: ""
+
+    private fun isValidOmniRouteKeyFormat(key: String): Boolean {
+        val ok = key.isNotBlank() && key.length >= 8
+        if (!ok) Log.w(TAG, "OmniRoute API key format rejected: len=${key.length}")
+        return ok
+    }
+
     fun hasValidApiKey(): Boolean {
         val key = getApiKey()
         return key.isNotBlank() && isValidKeyFormat(key)
@@ -94,10 +140,13 @@ object SecureConfigurationManager {
         if (isUsingFallback) { Log.w(TAG, "Cannot rotate key while using fallback"); return false }
         return runCatching {
             val currentKey = getApiKey()
+            val currentOmniKey = getOmniRouteApiKey()
             val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
             ks.deleteEntry(KEY_ALIAS)
             securePrefs = createEncryptedPrefs(appContext!!)
             if (currentKey.isNotBlank()) securePrefs?.edit()?.putString(KEY_GEMINI_API, currentKey)?.apply()
+            if (currentOmniKey.isNotBlank()) securePrefs?.edit()?.putString(KEY_OMNIROUTE_API, currentOmniKey)?.apply()
+            validateConfiguration()
             _state.value = _state.value.copy(isUsingFallback = false)
             Log.i(TAG, "Master key rotated successfully")
             true
@@ -159,7 +208,14 @@ object SecureConfigurationManager {
     }
 
     private fun getFallbackPrefs(): SharedPreferences = context().getSharedPreferences(FALLBACK_PREFS, Context.MODE_PRIVATE)
-    private fun validateConfiguration() { val key = rawApiKey(); _state.value = _state.value.copy(isConfigured = key.isNotBlank() && isValidKeyFormat(key)) }
+    private fun validateConfiguration() {
+        val key = rawApiKey()
+        val omniKey = rawOmniRouteApiKey()
+        _state.value = _state.value.copy(
+            isConfigured = key.isNotBlank() && isValidKeyFormat(key),
+            isOmniRouteConfigured = omniKey.isNotBlank() && isValidOmniRouteKeyFormat(omniKey)
+        )
+    }
     // FIX (key rechazada en silencio, 2026-09-04): Google AI Studio migro las
     // keys nuevas del prefijo "AIza" a un formato "AQ." (Authentication Key).
     // Muchas cuentas YA solo generan "AQ." — startsWith("AIza") las descartaba
