@@ -15,7 +15,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+/**
+ * Robolectric: routeBDiagnosisToJson usa org.json.JSONObject, que es un
+ * stub en el android.jar de los unit tests (sin él da NPE). Igual que
+ * TidalApiParsingTest y OmniRouteOrchestratorTest.
+ */
+@RunWith(RobolectricTestRunner::class)
 class RouteBDoctorTest {
 
     private fun baseEvidence(): RouteBEvidence = RouteBEvidence(

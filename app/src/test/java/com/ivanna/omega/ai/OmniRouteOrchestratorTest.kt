@@ -6,6 +6,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Tests del OmniRouteOrchestrator (v2.5.443).
@@ -13,7 +15,12 @@ import org.junit.Test
  * Solo funciones puras + transición del circuit breaker (sin red): el
  * camino vivo se verifica contra el gateway real de la VM por curl
  * (GET /v1/models y POST /v1/chat/completions con Pollinations).
+ *
+ * Robolectric: org.json.JSONObject es un stub en el android.jar de los
+ * unit tests (sin él, buildChatRequest da NPE y parseChatContent/
+ * parseSseDelta devuelven null). Igual que TidalApiParsingTest.
  */
+@RunWith(RobolectricTestRunner::class)
 class OmniRouteOrchestratorTest {
 
     // ── buildChatRequest ─────────────────────────────────────────────────

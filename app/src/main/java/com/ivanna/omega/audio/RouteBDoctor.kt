@@ -333,12 +333,17 @@ internal fun diagnoseRouteB(evidence: RouteBEvidence): RouteBDiagnosis {
                 "durante ${evidence.frozenCycles} ciclos mientras la música suena: huérfano (existe sin hilo de salida)."
         )
     }
-    // Habilitado pero sin bloques recientes.
-    if (evidence.effectState == DSPBridge.EffectState.ENABLED_IDLE && evidence.musicPlaying) {
+    // Habilitado pero sin bloques recientes. El beacon SÍ se ha visto antes
+    // (frames >= 0): si nunca apareció (frames < 0) no es EFFECT_IDLE sino
+    // UNKNOWN hasta el umbral de 3 ciclos (BEACON_NEVER_EXISTED). En pausa
+    // (musicPlaying=false) los frames congelados son lo esperado: tampoco
+    // es orfandad, es EFFECT_IDLE (el efecto está habilitado y quieto).
+    if (evidence.effectState == DSPBridge.EffectState.ENABLED_IDLE && evidence.beaconFrames >= 0) {
         return diag(
             RouteBGate.EFFECT_IDLE,
-            "El efecto está habilitado pero sin bloques recientes mientras suena: hueco transitorio o puerta silenciosa. " +
-                "Se sigue observando; si persiste se declara huérfano."
+            "El efecto está habilitado pero sin bloques recientes" +
+                (if (evidence.musicPlaying) " mientras suena: hueco transitorio o puerta silenciosa. Se sigue observando; si persiste se declara huérfano."
+                else " (música en pausa: los frames congelados son lo esperado, no es orfandad).")
         )
     }
     return diag(

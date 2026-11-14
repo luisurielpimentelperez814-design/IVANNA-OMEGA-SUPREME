@@ -177,8 +177,14 @@ class OmniRouteOrchestrator(
             nowMs: Long
         ): ModelHealth = if (success) {
             val total = current.totalRequests + 1
-            val newAvg = if (current.totalRequests == 0) latencyMs
-                else (current.averageLatencyMs * current.totalRequests + latencyMs) / total
+            // La latencia media es sobre peticiones EXITOSAS: los fallos no
+            // tienen latencia útil y sesgarían la media (2 fallos + 1 éxito
+            // a 250 ms → media 250, no 83). El nº de éxitos se deriva de
+            // totalRequests − totalFailures (no hay contador propio).
+            val successesBefore = current.totalRequests - current.totalFailures
+            val successesAfter = successesBefore + 1
+            val newAvg = if (successesBefore == 0) latencyMs
+                else (current.averageLatencyMs * successesBefore + latencyMs) / successesAfter
             current.copy(
                 isHealthy = true,
                 circuitState = ModelHealth.CircuitState.CLOSED,
