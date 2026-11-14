@@ -94,18 +94,25 @@ fun AuditoryExperienceScreen(
     }
 
     Column(
-        modifier = modifier.fillMaxSize().background(ObsidianVoid).padding(16.dp),
+        modifier = modifier.fillMaxSize().background(MagistralVoid).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(24.dp))
-        Text("EXPERIENCIA AUDITIVA", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+        Text("PERFILES DE ESCUCHA", color = MagistralGold, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text("EXPERIENCIA AUDITIVA", color = MagistralGoldHi, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, fontFamily = MagistralSerif, letterSpacing = 2.sp)
         Spacer(modifier = Modifier.height(8.dp))
-        Text("Hard Rock 70s • DSP + HRTF + Neuromorphic", color = TextSecondary, fontSize = 11.sp)
-        Spacer(modifier = Modifier.height(32.dp))
+        Text("Hard Rock 70s · DSP + HRTF + Neuromorphic — siete firmas medidas, una sola cadena magistral.", color = MagistralMuted, fontSize = 11.sp, textAlign = TextAlign.Center)
+        Spacer(modifier = Modifier.height(16.dp))
+        // Ficha plegable: la parrilla de vídeos es el contenido principal y la
+        // ficha expandida la dejaría con una sola fila visible en pantallas
+        // cortas; el contenido completo está a un toque.
+        CollapsibleScreenSpecCard(spec = ExperienceScreenSpec)
+        Spacer(modifier = Modifier.height(16.dp))
 
         if (videoFiles.isEmpty()) {
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text("No se encontraron videos en:\n$videoFolderPath", color = TextSecondary, textAlign = TextAlign.Center)
+                Text("No se encontraron videos en:\n$videoFolderPath", color = MagistralMuted, textAlign = TextAlign.Center)
             }
         } else {
             LazyVerticalGrid(
@@ -140,18 +147,20 @@ fun AuditoryExperienceScreen(
         Button(
             onClick = { picker.launch(arrayOf("video/*")) },
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = ObsidianGlass, contentColor = TextPrimary),
-            modifier = Modifier.fillMaxWidth().height(48.dp).border(1.dp, ObsidianEdge, RoundedCornerShape(12.dp))
+            colors = ButtonDefaults.buttonColors(containerColor = MagistralPanel, contentColor = MagistralText),
+            modifier = Modifier.fillMaxWidth().height(48.dp).border(1.dp, MagistralLineStrong, RoundedCornerShape(12.dp))
         ) { Text("ELEGIR VIDEO", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
         Spacer(modifier = Modifier.height(10.dp))
         Button(
             onClick = onEnterMotorClick,
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = ObsidianGlass, contentColor = TextPrimary),
-            modifier = Modifier.fillMaxWidth().height(60.dp).border(1.dp, AuroraCyan, RoundedCornerShape(12.dp))
+            colors = ButtonDefaults.buttonColors(containerColor = MagistralPanel, contentColor = MagistralGoldHi),
+            modifier = Modifier.fillMaxWidth().height(60.dp).border(1.5.dp, MagistralGold, RoundedCornerShape(12.dp))
         ) {
-            Text("ENTRAR AL MOTOR", fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text("ENTRAR AL MOTOR", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("El perfil elegido alimenta al motor en la siguiente pantalla", color = MagistralMuted, fontSize = 11.sp, textAlign = TextAlign.Center)
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
@@ -171,8 +180,8 @@ fun VideoThumbnailCard(file: File, isSelected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .aspectRatio(1.4f)
-            .background(ObsidianSoft, RoundedCornerShape(8.dp))
-            .border(1.dp, if (isSelected) AuroraCyan else ObsidianEdge, RoundedCornerShape(8.dp))
+            .background(MagistralPanel, RoundedCornerShape(8.dp))
+            .border(1.dp, if (isSelected) MagistralGold else MagistralLine, RoundedCornerShape(8.dp))
             .clickable { onClick() }
             .padding(2.dp),
         contentAlignment = Alignment.Center
@@ -184,11 +193,11 @@ fun VideoThumbnailCard(file: File, isSelected: Boolean, onClick: () -> Unit) {
             modifier = Modifier.fillMaxSize()
         )
         // Filtro oscuro encima de la miniatura para que el nombre se pueda leer
-        Box(modifier = Modifier.fillMaxSize().background(ObsidianVoid.copy(alpha = 0.6f)))
+        Box(modifier = Modifier.fillMaxSize().background(MagistralVoid.copy(alpha = 0.6f)))
 
         Text(
             text = file.nameWithoutExtension,
-            color = TextPrimary,
+            color = MagistralText,
             fontSize = 10.sp,
             textAlign = TextAlign.Center,
             lineHeight = 12.sp,
