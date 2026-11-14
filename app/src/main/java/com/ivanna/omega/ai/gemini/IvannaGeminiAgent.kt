@@ -106,6 +106,19 @@ class IvannaGeminiAgent(
         )
     }
 
+    // OmniRoute (2026-11-14, v2.5.443): gateway LLM gratis de la VM.
+    // Opt-in por flag en ajustes; Gemini sigue siendo el default. Se crea
+    // lazy igual que el de Gemini y SOLO se usa cuando el flag está activo
+    // — la ruta Gemini no cambia en absoluto. NO se toca
+    // IvannaDecisionAuthority ni IntegrityGate; los comandos DSP siguen
+    // pasando por VALID_DSP_COMMANDS.
+    private val omniRouteOrchestrator by lazy {
+        OmniRouteOrchestrator(
+            configProvider = { resolveOmniRouteConfig() },
+            scope = scope
+        )
+    }
+
     private val _agentState = MutableStateFlow(AgentState.IDLE)
     val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
 
@@ -151,7 +164,7 @@ class IvannaGeminiAgent(
         onPartialResponse: ((String) -> Unit)? = null
     ): AgentResponse = withContext(Dispatchers.IO) {
         _metrics.update { it.copy(totalRequests = it.totalRequests + 1) }
-        orchestrator.notifyRealActivity()
+        activeNotifyRealActivity()
 
         // 1. Verificar conectividad
         if (!isNetworkAvailable()) {
@@ -178,8 +191,12 @@ class IvannaGeminiAgent(
                 val latency = System.currentTimeMillis() - startTime
                 updateMetrics(success = result.isSuccess, latency = latency)
 
-                result.fold(
-                    onSuccess = { responseText ->
+                // FIX (v2.5.443): era result.fold() — sus lambdas NO son
+                // suspend y la rama de fallo de OmniRoute necesita leer la
+                // caché (getUserPreference es suspend). El if/else es el
+                // mismo flujo en contexto suspend.
+                if (result.isSuccess) {
+                    val responseText = result.getOrThrow()
                         _agentState.value = AgentState.RESPONDING
 
                         // Validación estricta de comandos DSP
@@ -232,15 +249,28 @@ class IvannaGeminiAgent(
                             text = cleanText,
                             commands = validatedCommands,
                             profileUsed = profile,
-                            modelUsed = orchestrator.state.value.activeModel
+                            modelUsed = activeModelName()
                         )
-                    },
-                    onFailure = { error ->
-                        _agentState.value = AgentState.ERROR
-                        Log.e(TAG, "Gemini generation failed", error)
-                        AgentResponse.Error(error.message ?: "Error desconocido")
-                    }
-                )
+                } else {
+                    val error = result.exceptionOrNull() ?: Exception("Error desconocido")
+                        // OmniRoute (v2.5.443): si el gateway falla o no
+                        // responde tras los reintentos, degradación a Offline
+                        // con la última respuesta en caché — mismo
+                        // comportamiento que sin red. La ruta Gemini no
+                        // cambia (Error).
+                        if (isOmniRouteActive()) {
+                            _agentState.value = AgentState.OFFLINE
+                            _metrics.update { it.copy(offlineFallbacks = it.offlineFallbacks + 1) }
+                            Log.w(TAG, "OmniRoute falló; degradando a Offline con caché: ${error.message}")
+                            AgentResponse.Offline(
+                                cachedResponse = memory.getUserPreference(LAST_GEMINI_RESPONSE_KEY)
+                            )
+                        } else {
+                            _agentState.value = AgentState.ERROR
+                            Log.e(TAG, "Gemini generation failed", error)
+                            AgentResponse.Error(error.message ?: "Error desconocido")
+                        }
+                }
             }
         } catch (e: TimeoutCancellationException) {
             _agentState.value = AgentState.ERROR
@@ -264,7 +294,7 @@ class IvannaGeminiAgent(
                 val sb = StringBuilder()
                 try {
                     withTimeout(STREAM_TIMEOUT_MS) {
-                        orchestrator.generateContentStream(prompt, profile).collect { partial ->
+                        activeGenerateContentStream(prompt, profile).collect { partial ->
                             sb.clear()
                             sb.append(partial)
                             onPartial(partial)
@@ -281,7 +311,7 @@ class IvannaGeminiAgent(
             } else {
                 try {
                     withTimeout(REQUEST_TIMEOUT_MS) {
-                        orchestrator.generateContent(prompt, profile)
+                        activeGenerateContent(prompt, profile)
                     }
                 } catch (e: TimeoutCancellationException) {
                     Result.failure(e)
@@ -447,6 +477,44 @@ class IvannaGeminiAgent(
         return secureConfig.getApiKey()
     }
 
+    // ── Selección de proveedor LLM (OmniRoute, v2.5.443) ─────────────────
+    /** true = el chat usa OmniRoute (opt-in en ajustes); false = Gemini (default). */
+    private fun isOmniRouteActive(): Boolean =
+        com.ivanna.omega.assistant.core.OmniRoutePrefs.isOmniRouteEnabled(appContext)
+
+    private fun resolveOmniRouteConfig(): OmniRouteOrchestrator.OmniRouteConfig {
+        if (!secureConfig.state.value.isInitialized) secureConfig.initialize(appContext)
+        return OmniRouteOrchestrator.OmniRouteConfig(
+            baseUrl = com.ivanna.omega.assistant.core.OmniRoutePrefs.getBaseUrl(appContext),
+            apiKey = secureConfig.getOmniRouteApiKey(),
+            model = com.ivanna.omega.assistant.core.OmniRoutePrefs.getModel(appContext),
+            enabled = isOmniRouteActive()
+        )
+    }
+
+    private fun activeNotifyRealActivity() {
+        if (isOmniRouteActive()) omniRouteOrchestrator.notifyRealActivity()
+        else orchestrator.notifyRealActivity()
+    }
+
+    private fun activeModelName(): String =
+        if (isOmniRouteActive()) omniRouteOrchestrator.state.value.activeModel
+        else orchestrator.state.value.activeModel
+
+    private suspend fun activeGenerateContent(
+        prompt: String,
+        profile: AdaptiveResponseEngine.ResponseProfile
+    ): Result<String> =
+        if (isOmniRouteActive()) omniRouteOrchestrator.generateContent(prompt, profile)
+        else orchestrator.generateContent(prompt, profile)
+
+    private fun activeGenerateContentStream(
+        prompt: String,
+        profile: AdaptiveResponseEngine.ResponseProfile
+    ): Flow<String> =
+        if (isOmniRouteActive()) omniRouteOrchestrator.generateContentStream(prompt, profile)
+        else orchestrator.generateContentStream(prompt, profile)
+
     private fun generateSessionId(): String = "sess_${System.currentTimeMillis()}"
 
     private fun updateMetrics(success: Boolean, latency: Long) {
@@ -465,6 +533,10 @@ class IvannaGeminiAgent(
     fun shutdown() {
         scope.cancel()
         orchestrator.shutdown()
+        // OmniRoute (v2.5.443): apagar su loop de health checks también.
+        // El scope ya está cancelado, así que si el lazy nunca se usó, su
+        // init no arranca el loop (launch sobre scope cancelado = no-op).
+        omniRouteOrchestrator.shutdown()
         // FIX (leak real): memory es una dependencia inyectada por constructor
         // que este agente es el único dueño funcional de aquí — antes solo se
         // cancelaba scope/orchestrator y la IvannaMemoryArchitecture inyectada
