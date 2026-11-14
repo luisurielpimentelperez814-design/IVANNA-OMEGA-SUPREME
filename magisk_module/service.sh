@@ -8,6 +8,45 @@ LOG="$STATE/daemon.log"
 
 mkdir -p "$STATE" || exit 1
 
+# ── HIPÓTESIS 2 /data/adb (v2.5.442) — DAC TRANSVERSAL, MÍNIMO ──────────
+# /data/adb es 0700 root en Magisk estándar: sin x en /data/adb, NINGÚN
+# proceso no-root (audioserver, app) llega a $STATE aunque los archivos
+# sean 0644 — open() falla con EACCES antes de mirar el archivo. Eso
+# explica el ratio fijo en 1.0 (el efecto no lee asrc_ratio.shm) y la
+# ausencia de asrc_frames (el efecto no puede crear/escribir el canal).
+# Fix mínimo, fail-soft (nunca aborta el arranque; todo se registra):
+#   * 0711 en /data/adb: solo TRÁNSITO (x) hacia rutas conocidas, SIN
+#     lectura ni listado (sin r): nadie enumera /data/adb ni lee nada que
+#     no conozca por nombre. NUNCA 0755 ni -R. Root y Magisk no se ven
+#     afectados (sus scripts corren como root).
+#   * 0711 en $STATE: mismo criterio (tránsito sin listado).
+#   * Pre-crear como root los dos archivos que audioserver debe ESCRIBIR,
+#     0666: asrc_frames.shm (Writer O_RDWR|O_CREAT del puente ASRC) y
+#     agent_memory.bin (FusionCore: O_RDWR|O_CREAT + mmap RW; lo escriben
+#     audioserver Y la app, sin grupo común — 0666 es el único DAC que
+#     cubre a ambos; mismo precedente que ivanna_fusion_state, que el
+#     daemon crea con 0666). touch NO trunca: la memoria existente se
+#     conserva (magic+CRC la validan; corrupta → init fresco, fail-closed).
+#   * asrc_ratio.shm lo crea el asrcd (root) 0644: solo se repara a 0644
+#     si ya existe con otro modo; nunca se pre-crea 0666 (nadie más que
+#     el asrcd lo escribe). pal_asr.off / pal_asrc.off NO se tocan: kill
+#     switches solo-root (el efecto solo hace stat(), que solo exige
+#     tránsito por los directorios).
+# NOTA SELinux (fuera de este archivo): sepolicy.rule da a audioserver
+# solo lectura sobre ivanna_data_file; la escritura del canal de frames
+# y el mmap RW de agent_memory.bin exigen además `write` (ver informe
+# 442). Sin esa línea, en enforcing el frames sigue sin publicarse y el
+# servo no tiene medida → ratio 1.0. Este bloque deja el DAC resuelto.
+if [ -d /data/adb ]; then
+    chmod 0711 /data/adb 2>/dev/null || echo "$(date) DAC-STATE: no se pudo chmod 0711 /data/adb (sigue 0700; audioserver sin tránsito)" >> "$LOG"
+else
+    echo "$(date) DAC-STATE: /data/adb no existe (inesperado en Magisk)" >> "$LOG"
+fi
+chmod 0711 "$STATE" 2>/dev/null || echo "$(date) DAC-STATE: no se pudo chmod 0711 $STATE" >> "$LOG"
+touch "$STATE/asrc_frames.shm" 2>/dev/null && chmod 0666 "$STATE/asrc_frames.shm" 2>/dev/null || echo "$(date) DAC-STATE: no se pudo pre-crear asrc_frames.shm 0666" >> "$LOG"
+touch "$STATE/agent_memory.bin" 2>/dev/null && chmod 0666 "$STATE/agent_memory.bin" 2>/dev/null || echo "$(date) DAC-STATE: no se pudo pre-crear agent_memory.bin 0666" >> "$LOG"
+[ -f "$STATE/asrc_ratio.shm" ] && chmod 0644 "$STATE/asrc_ratio.shm" 2>/dev/null
+
 # ═══════════════════════════════════════════════════════════════════════════
 # DAEMON ASRC (ivanna_asrcd) — v2.5.397
 #
@@ -38,9 +77,16 @@ if [ -x "$ASRCD_BIN" ] && [ ! -f "$STATE/pal_asr.off" ]; then
         # a las 07:58:35 y falló por esto. Lanzamiento portable con nohup
         # + fondo, mismo patrón que el supervisor de este mismo archivo
         # (probado en vivo: arranca y sobrevive al cierre de la sesión).
+        # v2.5.442 — los nombres .bin NO los lee nadie: los defaults
+        # compilados son asrc_ratio.shm / asrc_frames.shm
+        # (ivanna_asrc_ipc.h kDefaultShm; ivanna_asrc_bridge.cpp
+        # g_ratio_path/g_frames_path) y omega_effect.cpp nunca llama
+        # configure() — el asrcd escribía .bin que nadie leía y el efecto
+        # leía .shm que nadie escribía. Segunda causa independiente del
+        # ratio 1.0 y de la ausencia de frames (además del DAC 0700).
         nohup "$ASRCD_BIN" \
-            --ratio "$STATE/asrc_ratio.bin" \
-            --frames "$STATE/asrc_frames.bin" \
+            --ratio "$STATE/asrc_ratio.shm" \
+            --frames "$STATE/asrc_frames.shm" \
             --kill "$STATE/pal_asr.off" \
             --period-ms 20 >> "$STATE/asrcd.log" 2>&1 < /dev/null &
         sleep 1

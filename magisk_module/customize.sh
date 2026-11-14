@@ -79,6 +79,18 @@ SAF_STAGE="$SAF_DIR/.SAF_model.json.$$"
 ui_print "- Deploying Φ_SAF^∞ SAF_model.json..."
 [ -s "$SAF_SRC" ] || abort "ERROR: falta SAF_model.json válido en el módulo: $SAF_SRC"
 mkdir -p "$SAF_DIR" || abort "ERROR: no se pudo crear $SAF_DIR"
+# ── HIPÓTESIS 2 /data/adb (v2.5.442) — DAC TRANSVERSAL, MÍNIMO ──
+# /data/adb es 0700 root: sin x, la app/audioserver no llegan a los
+# datasets 0644 que este instalador despliega (RIR/HRTF/SOFA/SAF).
+# 0711 = solo tránsito a rutas conocidas, sin listado (nunca 0755/-R).
+# Fail-soft: un fallo aquí NO aborta la instalación (service.sh lo
+# reintenta en cada arranque); solo se avisa.
+if [ -d /data/adb ]; then
+    chmod 0711 /data/adb 2>/dev/null || ui_print "  ⚠ no se pudo chmod 0711 /data/adb (la app no podrá leer los datasets hasta el próximo arranque; ver service.sh DAC-STATE)"
+else
+    ui_print "  ⚠ /data/adb no existe (inesperado en Magisk)"
+fi
+chmod 0711 "$SAF_DIR" 2>/dev/null || ui_print "  ⚠ no se pudo chmod 0711 $SAF_DIR"
 rm -f "$SAF_STAGE"
 run_low_priority cp -f "$SAF_SRC" "$SAF_STAGE" || abort "ERROR: no se pudo copiar SAF_model.json"
 [ -s "$SAF_STAGE" ] && cmp -s "$SAF_SRC" "$SAF_STAGE" || abort "ERROR: SAF_model.json copiado incompleto o distinto al original"
