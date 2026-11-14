@@ -380,23 +380,31 @@ class OmniRouteOrchestrator(
             .apply { if (config.apiKey.isNotBlank()) header("Authorization", "Bearer ${config.apiKey}") }
             .build()
         val response = client.newCall(request).execute()
-        response.use { resp ->
-            if (!resp.isSuccessful) {
-                val rawBody = resp.body?.string().orEmpty()
-                throw IOException(explainError(parseError(resp.code, rawBody)))
+        // Sin `use {}`: el cuerpo se lee con emit() en el contexto suspend
+        // del flow, y `use` es un lambda no-suspend (emit ahí no compila).
+        // Se cierran respuesta/reader en finally.
+        if (!response.isSuccessful) {
+            val rawBody = response.body?.string().orEmpty()
+            runCatching { response.close() }
+            throw IOException(explainError(parseError(response.code, rawBody)))
+        }
+        val buffered = response.body?.charStream()?.let { java.io.BufferedReader(it) }
+            ?: run {
+                runCatching { response.close() }
+                throw IOException("OmniRoute stream sin cuerpo (modelo $model)")
             }
-            val reader = resp.body?.charStream()?.bufferedReader()
-                ?: throw IOException("OmniRoute stream sin cuerpo (modelo $model)")
-            reader.use { r ->
-                var line: String?
-                while (r.readLine().also { line = it } != null) {
-                    val current = line!!.trim()
-                    if (current.isEmpty()) continue
-                    if (isSseDone(current)) break
-                    val delta = parseSseDelta(current) ?: continue
-                    emit(delta)
-                }
+        try {
+            while (true) {
+                val line = buffered.readLine() ?: break
+                val current = line.trim()
+                if (current.isEmpty()) continue
+                if (isSseDone(current)) break
+                val delta = parseSseDelta(current) ?: continue
+                emit(delta)
             }
+        } finally {
+            runCatching { buffered.close() }
+            runCatching { response.close() }
         }
     }.flowOn(Dispatchers.IO)
 

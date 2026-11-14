@@ -531,7 +531,7 @@ class IvannaGeminiAgent(
         if (isOmniRouteActive()) omniRouteOrchestrator.generateContent(prompt, profile)
         else orchestrator.generateContent(prompt, profile)
 
-    private fun activeGenerateContentStream(
+    private suspend fun activeGenerateContentStream(
         prompt: String,
         profile: AdaptiveResponseEngine.ResponseProfile
     ): Flow<String> =
