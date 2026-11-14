@@ -49,8 +49,27 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.ivanna.omega.core.IvannaNativeLib
 import com.ivanna.omega.core.ParameterStore
-import com.ivanna.omega.ui.theme.ObsidianVoid
+import com.ivanna.omega.ui.theme.MagistralGoldHi
+import com.ivanna.omega.ui.theme.MagistralMuted
+import com.ivanna.omega.ui.theme.MagistralSerif
+import com.ivanna.omega.ui.theme.MagistralText
+import com.ivanna.omega.ui.theme.MagistralVoid
 import kotlin.math.roundToInt
+
+/**
+ * Ficha magistral — Pantalla VI · Spatial, módulo L (prototipo aprobado,
+ * texto exacto). Esta pantalla ES la rama "Medida" de la HRTF: la foto con
+ * tarjeta de referencia mide tu cabeza para el perfil propio. Sin
+ * equivalente exacto en el código: no existe aquí ningún selector
+ * Genérica / Medida / Firmas élite; el botón va junto al título.
+ */
+private val hrtfSpec = SpecInfo(
+    title = "HRTF · Función de tu cabeza",
+    what = "La HRTF describe cómo tu anatomía colorea el sonido según de dónde viene. Sin ella, el audio espacial suena a altavoz pegado a la oreja; con ella, las fuentes salen de tu cabeza y se colocan en el espacio. Genérica: promedio poblacional. Medida: tu perfil. Firmas élite: curvas de referencia medidas de productos insignia y la curva Harman.",
+    purpose = "Es la diferencia entre «ancho» y localizable: con la HRTF correcta distingues si una fuente está a 30 cm o a 2 m, delante o detrás, sin pensarlo.",
+    whenUse = "Con audífonos, siempre. Medida si tienes tu perfil; Firmas élite para comparar tu cadena contra las referencias de la industria; Genérica como punto de partida digno.",
+    whenAvoid = "Con bocinas la HRTF no aplica igual: ahí gobiernan sala y campo. Una HRTF ajena muy distinta a tu anatomía produce el efecto contrario: todo suena «dentro del cráneo» y con el timbre torcido."
+)
 
 /**
  * HeadMeasureScreen — "Medir mi cabeza" (v2.5.389).
@@ -137,31 +156,34 @@ fun HeadMeasureScreen(onBack: () -> Unit = {}) {
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(ObsidianVoid)
+        modifier = Modifier.fillMaxSize().background(MagistralVoid)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("MEDIR MI CABEZA", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("MEDIR MI CABEZA", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MagistralGoldHi, fontFamily = MagistralSerif, modifier = Modifier.weight(1f))
+            SpecInfoButton(hrtfSpec)
+        }
         Text(
             "IVANNA calcula el sonido 3D con el tamaño de tu cabeza. Sin medirla usa el estándar (8.75 cm de radio) y suena igual que siempre. Con tu medida, la posición de los sonidos se ajusta a ti.",
-            fontSize = 14.sp, color = Color(0xFFB0B0B0)
+            fontSize = 14.sp, color = MagistralMuted
         )
         Text(
             "Radio actual: %.1f cm %s".format(
                 appliedRadiusM * 100f,
                 if (appliedRadiusM == 0.0875f) "(estándar)" else "(tu medida)"
             ),
-            fontSize = 14.sp, color = Color.White
+            fontSize = 14.sp, color = MagistralText
         )
 
-        Text("CÓMO TOMAR LA FOTO", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("CÓMO TOMAR LA FOTO", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MagistralGoldHi, fontFamily = MagistralSerif)
         Text(
             "1. De frente, con buena luz, tu cabeza centrada y llenando la foto.\n" +
                 "2. Una tarjeta de crédito o débito pegada VERTICAL en tu frente o sien, a la misma distancia que tu cabeza. Es la regla: mide 8.56 cm.\n" +
                 "3. Que se vean tus dos orejas y la tarjeta completa.\n" +
                 "La foto no se guarda ni se sube a ningún lado: solo vive en esta pantalla.",
-            fontSize = 14.sp, color = Color(0xFFB0B0B0)
+            fontSize = 14.sp, color = MagistralMuted
         )
 
         Button(onClick = {
@@ -188,12 +210,12 @@ fun HeadMeasureScreen(onBack: () -> Unit = {}) {
             }
             Text(
                 "Verde = bordes de tu cabeza (de oreja a oreja). Ámbar = bordes de la tarjeta. Arrastra cada línea hasta su borde.",
-                fontSize = 13.sp, color = Color(0xFFB0B0B0)
+                fontSize = 13.sp, color = MagistralMuted
             )
             if (measuredWidthCm != null && measuredRadiusM != null) {
                 Text(
                     "Ancho medido: %.1f cm  →  radio: %.1f cm".format(measuredWidthCm, measuredRadiusM * 100f),
-                    fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White
+                    fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MagistralText
                 )
                 Button(onClick = { applyRadius(measuredRadiusM) }) { Text("APLICAR ESTA MEDIDA") }
             } else {
@@ -204,10 +226,10 @@ fun HeadMeasureScreen(onBack: () -> Unit = {}) {
             }
         }
 
-        Text("O ESCRIBE EL ANCHO A MANO", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("O ESCRIBE EL ANCHO A MANO", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MagistralGoldHi, fontFamily = MagistralSerif)
         Text(
             "Mídelo con una cinta, de oreja a oreja, en centímetros. Lo normal es entre 14 y 19 cm.",
-            fontSize = 14.sp, color = Color(0xFFB0B0B0)
+            fontSize = 14.sp, color = MagistralMuted
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -228,7 +250,7 @@ fun HeadMeasureScreen(onBack: () -> Unit = {}) {
         }
 
         OutlinedButton(onClick = { applyRadius(0.0875f) }) { Text("VOLVER AL ESTÁNDAR (8.75 cm)") }
-        if (status.isNotEmpty()) Text(status, fontSize = 14.sp, color = Color.White)
+        if (status.isNotEmpty()) Text(status, fontSize = 14.sp, color = MagistralText)
         OutlinedButton(onClick = onBack) { Text("VOLVER") }
     }
 }

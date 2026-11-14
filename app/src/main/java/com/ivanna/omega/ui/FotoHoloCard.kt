@@ -5,6 +5,7 @@ import com.ivanna.omega.fotoholo.RoomArCaptureActivity
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -40,6 +41,23 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import com.ivanna.omega.fotoholo.FotoHoloMath
 import com.ivanna.omega.ui.theme.*
+
+/**
+ * Ficha magistral — Pantalla VI · Spatial, módulo N (prototipo aprobado,
+ * texto exacto).
+ *
+ * Sin equivalente exacto en el código: no existe ningún botón con el texto
+ * "Capturar FotoHolo". El botón va junto al título de esta tarjeta, y el
+ * equivalente más cercano en la tarjeta es "ABRIR AR & ESCÁNER RP-88 ·
+ * CÁMARA 6-DoF", que abre la captura de la sala (RoomArCaptureActivity).
+ */
+private val fotoHoloSpec = SpecInfo(
+    title = "FotoHolo · Geometría desde una foto",
+    what = "Una estimación de la geometría acústica inicial de tu sala a partir de una foto: dimensiones aproximadas, esquinas dominantes y dónde están las bocinas respecto a tu punto de escucha.",
+    purpose = "Para que la corrección de sala y el campo ORBE no empiecen de cero: FotoHolo entrega el mapa inicial y la medición con micrófono (Control · B) lo convierte en medida.",
+    whenUse = "Primera puesta en marcha en un cuarto nuevo: foto amplia, con luz, desde tu punto de escucha, con ambas bocinas visibles.",
+    whenAvoid = "No lo uses como sustituto de la medición: es el mapa, no la medida. Fotos oscuras, recortadas o de un solo rincón producen una geometría falsa que contamina la corrección."
+)
 
 /**
  * FOTOHOLOGRAFÍA · NANOTOMIX — control + escena paramétrica.
@@ -83,14 +101,18 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
     Column(
         modifier
             .fillMaxWidth()
-            .background(AuroraCyan.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
+            .background(MagistralPanel, RoundedCornerShape(14.dp))
+            .border(1.dp, MagistralLine, RoundedCornerShape(14.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("FOTOHOLOGRAFÍA · NANOTOMIX", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("FOTOHOLOGRAFÍA · NANOTOMIX", color = MagistralGoldHi, fontFamily = MagistralSerif, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, modifier = Modifier.weight(1f))
+            SpecInfoButton(fotoHoloSpec)
+        }
         Text(
             "Escena 3D paramétrica de las 64 bandas Bark + modulación acotada del ancho estéreo. No es un holograma óptico.",
-            color = TextSecondary, fontSize = 11.sp
+            color = MagistralMuted, fontSize = 11.sp
         )
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -133,7 +155,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
         }
         if (geminiStatus.isNotEmpty()) Text(geminiStatus, color = TextSecondary, fontSize = 11.sp)
 
-        Canvas(Modifier.fillMaxWidth().height(if (subEnvironmentOpen) 340.dp else 170.dp).background(ObsidianDeep, RoundedCornerShape(10.dp))) {
+        Canvas(Modifier.fillMaxWidth().height(if (subEnvironmentOpen) 340.dp else 170.dp).background(MagistralVoid, RoundedCornerShape(10.dp))) {
             val cx = size.width / 2f
             val cy = size.height / 2f
             val half = minOf(size.width, size.height) * 0.48f
@@ -168,7 +190,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
         }
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Modular el ancho estéreo", color = TextPrimary, fontSize = 12.sp)
+            Text("Modular el ancho estéreo", color = MagistralText, fontSize = 12.sp)
             Switch(checked = enabled, onCheckedChange = { enabled = it; FotoHoloEngine.setEnabled(context, it) })
         }
         Text("Intensidad: ${(intensity * 100).toInt()} %  (±${(FotoHoloMath.MAX_OFFSET * intensity * 100).toInt()} % de ancho como máximo)", color = TextSecondary, fontSize = 11.sp)
@@ -178,7 +200,7 @@ fun FotoHoloCard(modifier: Modifier = Modifier) {
             valueRange = 0f..1f
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Bypass A/B (oír sin modular)", color = TextPrimary, fontSize = 12.sp)
+            Text("Bypass A/B (oír sin modular)", color = MagistralText, fontSize = 12.sp)
             Switch(checked = bypass, onCheckedChange = { bypass = it; FotoHoloEngine.setBypass(it) })
         }
 

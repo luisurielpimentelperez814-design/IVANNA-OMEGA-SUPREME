@@ -36,6 +36,39 @@ import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
 /**
+ * Fichas magistrales — Pantalla VI · Spatial (prototipo aprobado, texto exacto).
+ * L = HRTF, M = Head-Tracking · Parallax. La ficha N (FotoHolo) vive en
+ * FotoHoloCard, junto a su propio título, y se muestra dentro de este panel.
+ */
+private val spatialScreenSpec = SpecInfo(
+    title = "Spatial",
+    what = "El entorno de geometría del escenario: cómo tu cabeza filtra el sonido (HRTF), cómo el campo sigue tus movimientos (head-tracking con parallax) y cómo tu sala entra en el modelo (FotoHolo).",
+    purpose = "Control decide cuánto campo hay; Spatial decide dónde está cada cosa en ese campo. Sin esta capa bien configurada, ORBE coloca fuentes con la anatomía de otra persona o con la geometría de otro cuarto.",
+    whenUse = "Al estrenar audífonos (elige HRTF), al llegar a un cuarto nuevo (FotoHolo) y siempre que uses ORBE con movimiento de cabeza (head-tracking activo).",
+    whenAvoid = "No mezcles capas: HRTF es para audífonos; con bocinas gobiernan la corrección de sala y el campo ORBE·HOLOS. Forzar todo a la vez colorea el centro y deshace la imagen."
+)
+
+private val hrtfSpec = SpecInfo(
+    title = "HRTF · Función de tu cabeza",
+    what = "La HRTF describe cómo tu anatomía colorea el sonido según de dónde viene. Sin ella, el audio espacial suena a altavoz pegado a la oreja; con ella, las fuentes salen de tu cabeza y se colocan en el espacio. Genérica: promedio poblacional. Medida: tu perfil. Firmas élite: curvas de referencia medidas de productos insignia y la curva Harman.",
+    purpose = "Es la diferencia entre «ancho» y localizable: con la HRTF correcta distingues si una fuente está a 30 cm o a 2 m, delante o detrás, sin pensarlo.",
+    whenUse = "Con audífonos, siempre. Medida si tienes tu perfil; Firmas élite para comparar tu cadena contra las referencias de la industria; Genérica como punto de partida digno.",
+    whenAvoid = "Con bocinas la HRTF no aplica igual: ahí gobiernan sala y campo. Una HRTF ajena muy distinta a tu anatomía produce el efecto contrario: todo suena «dentro del cráneo» y con el timbre torcido."
+)
+
+// Sin equivalente exacto en el código: no existe ningún control de
+// head-tracking ni slider de parallax (65 %) en este panel. El botón va en
+// el equivalente más cercano, el Motor Híbrido Magistral, cuyos controles de
+// azimut y elevación virtual son la pose de las fuentes en el espacio.
+private val headTrackingSpec = SpecInfo(
+    title = "Head-Tracking · Parallax",
+    what = "El seguimiento de la orientación de tu cabeza para que las fuentes se queden quietas en el espacio cuando giras, como en la vida real. El parallax regula cuánto se separan las fuentes cercanas de las lejanas al moverte: es la cue de profundidad más fuerte que tiene el oído.",
+    purpose = "Sin tracking, el escenario entero gira contigo y el cerebro lo descarta como «efecto». Con tracking y pose predicha (PI-LSTM), el campo se vuelve un lugar: puedes «mirar» hacia una fuente y suena más presente.",
+    whenUse = "Con ORBE activo y sensor disponible. Parallax medio-alto (60–80 %) para fuentes de campo cercano (0.15–0.6 m): voces íntimas, instrumentos solistas.",
+    whenAvoid = "En transporte (el vehículo contamina la pose) o si tu dispositivo no ofrece sensor fiable: apágalo y el campo queda fijo y estable, que es mejor que un campo mareado."
+)
+
+/**
  * SpatialAudioPanel — control real de HRTF / RIR / SAF.
  * Ningún control decorativo: cada uno va Compose→Prefs→JNI/Bridge→DSP,
  * y el estado mostrado se LEE del motor (polling 1s), no se asume.
@@ -167,7 +200,7 @@ fun SpatialAudioPanel(
         }
     }
 
-    Column(modifier.fillMaxSize().background(ObsidianDeep).verticalScroll(rememberScrollState()).padding(16.dp),
+    Column(modifier.fillMaxSize().background(MagistralVoid).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         Row(
@@ -184,8 +217,11 @@ fun SpatialAudioPanel(
                 }
                 Spacer(modifier = Modifier.width(4.dp))
             }
-            Text("SPATIAL AUDIO · INVERSIÓN COCLEAR (PINN)", color = AuroraCyan, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
+            Text("SPATIAL AUDIO · INVERSIÓN COCLEAR (PINN)", color = MagistralGoldHi, fontFamily = MagistralSerif, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp)
         }
+
+        // ── Ficha del entorno · Spatial (Pantalla VI del prototipo) ────────
+        ScreenSpecCard(spatialScreenSpec)
 
         // ── Eje Supremo: Inversión Biomecánica Coclear (PINN) ──────────────
         CochlearInverseCard(
@@ -209,7 +245,8 @@ fun SpatialAudioPanel(
         // the native read-only telemetry bridge. No remote page receives this bridge.
         Text(
             "ESCENA WEBGL CON TELEMETRÍA NATIVA",
-            color = AuroraCyan,
+            color = MagistralGoldHi,
+            fontFamily = MagistralSerif,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.2.sp
@@ -364,7 +401,7 @@ fun SpatialAudioPanel(
         }
 
         // ── HRTF ──────────────────────────────────────────────────────────
-        SpatialCard("HRTF BINAURAL", "Dataset IHR1 medido · deploy Magisk con SHA256") {
+        SpatialCard("HRTF BINAURAL", "Dataset IHR1 medido · deploy Magisk con SHA256", spec = hrtfSpec) {
             RowSwitch("HRTF de auriculares solicitado", state.hrtfEnabled && !lineOutActive) { requested ->
                 val on = requested && !lineOutActive
                 update { it.copy(hrtfEnabled = on) }
@@ -449,9 +486,13 @@ fun SpatialAudioPanel(
         }
 
         // ── MOTOR HÍBRIDO MAGISTRAL (VBAP 3D + AMBISONICS + HRTF + SALA) ──
+        // Ficha M (Head-Tracking · Parallax) aquí: es el equivalente más
+        // cercano — azimut y elevación virtual son la pose de las fuentes —,
+        // porque en este panel no existe control de head-tracking ni parallax.
         SpatialCard(
             "MOTOR HÍBRIDO MAGISTRAL",
-            "VBAP 3D → Ambisonics 1er Orden → HRTF KEMAR 128-tap + Schroeder/Moorer"
+            "VBAP 3D → Ambisonics 1er Orden → HRTF KEMAR 128-tap + Schroeder/Moorer",
+            spec = headTrackingSpec
         ) {
             RowSwitch("Motor Híbrido Magistral Activo", hybridEnabled) { on ->
                 hybridEnabled = on
@@ -512,11 +553,18 @@ fun SpatialAudioPanel(
 }
 
 @Composable
-private fun SpatialCard(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(color = ObsidianRaised, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)) {
+private fun SpatialCard(title: String, subtitle: String, spec: SpecInfo? = null, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        color = MagistralPanel,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MagistralLine)
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = TextMuted, fontSize = 9.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = MagistralGoldHi, fontFamily = MagistralSerif, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (spec != null) SpecInfoButton(spec)
+            }
+            Text(subtitle, color = MagistralMuted, fontSize = 9.sp)
             content()
         }
     }
