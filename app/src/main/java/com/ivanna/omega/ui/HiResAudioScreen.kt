@@ -20,9 +20,11 @@ import androidx.compose.ui.unit.sp
 import com.ivanna.omega.audio.HiResAudioManager
 import com.ivanna.omega.ui.theme.AmberSignal
 import com.ivanna.omega.ui.theme.AuroraCyan
-import com.ivanna.omega.ui.theme.ObsidianVoid
-import com.ivanna.omega.ui.theme.TextPrimary
-import com.ivanna.omega.ui.theme.TextSecondary
+import com.ivanna.omega.ui.theme.MagistralGoldHi
+import com.ivanna.omega.ui.theme.MagistralMuted
+import com.ivanna.omega.ui.theme.MagistralSerif
+import com.ivanna.omega.ui.theme.MagistralText
+import com.ivanna.omega.ui.theme.MagistralVoid
 
 /**
  * Panel Audio Hi-Res: selectores DESPLEGABLES de sample rate y profundidad.
@@ -37,6 +39,35 @@ import com.ivanna.omega.ui.theme.TextSecondary
  * Ahora: fondo y colores explicitos, dos desplegables, y el estado mostrado es el
  * resultado REAL devuelto por HiResAudioManager (no una constante).
  */
+
+// ── Fichas magistrales · Entorno System (prototipo aprobado, Pantalla VII) ───
+// Texto exacto del prototipo; nada inventado.
+private val systemSpec = SpecInfo(
+    title = "System",
+    what = "El entorno de infraestructura: la ruta de audio (A dentro de la app, B en el mezclador del sistema), la salida Hi-Res por USB y el estado real de permisos y diagnóstico.",
+    purpose = "Para separar los problemas de sonido de los de sistema: la mitad de los «el efecto no suena» son una ruta equivocada, un permiso sin conceder o un daemon sin acoplar — no un fallo del DSP.",
+    whenUse = "Primera parada ante cualquier anomalía: verifica ruta, permisos y diagnóstico antes de tocar un solo control de los demás entornos.",
+    whenAvoid = "No cambies de ruta ni concedas superusuario en caliente tras un restablecimiento del teléfono: primero estabilidad durante días, después privilegios."
+)
+
+/** O · Ruta de audio · A / B. */
+private val routeABSpec = SpecInfo(
+    title = "O · Ruta de audio · A / B",
+    what = "Ruta A: el procesado vive dentro de la app (BridgePlayer con archivos y Tidal, o captura de la sesión). Solo procesa lo que IVANNA toca, pero un fallo suyo solo tumba la app. Ruta B: el efecto se inserta en el mezclador del sistema (AudioFlinger) vía módulo Magisk + daemon ivanna_asrcd: procesa todo el audio del teléfono, en el sitio, sin copia ni retardo.",
+    purpose = "Ruta A es la vía diaria y la de referencia (por BridgePlayer, los efectos son el 100 % de lo que oyes). Ruta B es la vía definitiva: llamadas, sistema y cualquier app, sin la copia con ~140 ms de retardo de la captura.",
+    whenUse = "Ruta B solo con el módulo instalado, teléfono estable durante días y recuperación a la mano (adb/recovery). Sin superusuario concedido, la Ruta B no se acopla: la app lo detecta y permanece en Ruta A.",
+    whenAvoid = "Ruta B jamás en un teléfono recién restablecido: un fallo suyo vive en el servicio de audio del sistema y puede impedir el arranque. Si hay cualquier duda de estabilidad, la respuesta correcta es Ruta A."
+)
+
+/** P · Salida Hi-Res · USB 192 kHz: esta pantalla ES el módulo P. */
+private val hiResSpec = SpecInfo(
+    title = "P · Salida Hi-Res · USB 192 kHz",
+    what = "La ruta de alta resolución por USB: entrega la cadena magistral a 192 kHz / 24-bit, la tasa nativa del DAC externo, en vez de la del teléfono. El remuestreo 48→192 ocurre dentro de IVANNA, antes de entregar el audio. Apagada por defecto.",
+    purpose = "Para DACs USB capaces (Genezi): que el DAC trabaje en su tasa y con su reloj, con el ASRC ya corregido, en lugar de recibir la tasa del teléfono remuestreada por el sistema.",
+    whenUse = "Solo con DAC USB conectado que acepte 192 kHz y contenido que lo aproveche (Hi-Res de Tidal por BridgePlayer). Verifica en el DAC que efectivamente negocia 192.",
+    whenAvoid = "Con Bluetooth o la bocina del teléfono no aplica. Y no crea información: un archivo de 44.1 kHz no gana detalle por salir a 192. Si tu DAC no soporta la tasa, forzarla produce silencio o cortes: déjala apagada."
+)
+
 @Composable
 fun HiResAudioScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
@@ -51,7 +82,7 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(ObsidianVoid)
+            .background(MagistralVoid)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -60,8 +91,27 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
             "◄ VOLVER", color = AuroraCyan, fontWeight = FontWeight.Bold,
             modifier = Modifier.clickable { onBack() }.padding(vertical = 8.dp)
         )
-        Text("AUDIO HI-RES", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        Text("Ruta activa: " + routeName + " — max real: " + khzLabel(routeMax) + " kHz", color = TextSecondary)
+
+        // Ficha del entorno · System (prototipo, Pantalla VII).
+        ScreenSpecCard(systemSpec)
+
+        // P · Salida Hi-Res · USB 192 kHz: esta pantalla es el módulo P.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "AUDIO HI-RES", color = MagistralGoldHi, fontFamily = MagistralSerif,
+                fontWeight = FontWeight.Bold, fontSize = 20.sp
+            )
+            SpecInfoButton(hiResSpec)
+        }
+        Text(
+            "El contrato acepta hasta 384 kHz / 32-bit con tasas nativas 48 · 96 · 192 · 384 sin remuestreo.",
+            color = MagistralMuted, fontSize = 12.sp
+        )
+        Text("Ruta activa: " + routeName + " — max real: " + khzLabel(routeMax) + " kHz", color = MagistralMuted)
 
         HiResDropdown(
             label = "Sample rate",
@@ -97,10 +147,23 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Reinyección 192 kHz (Ruta A)", color = TextPrimary, fontWeight = FontWeight.Bold)
+                // O · Ruta de audio · A / B: la reinyección es el control de
+                // Ruta A de esta pantalla; no existe un selector A/B literal.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Reinyección 192 kHz (Ruta A)", color = MagistralGoldHi,
+                        fontFamily = MagistralSerif, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SpecInfoButton(routeABSpec)
+                }
                 Text(
                     "Pista de salida a la tasa del DAC USB (máx. 192 kHz). Solo DAC USB; sin DAC, sigue a 48 kHz.",
-                    color = TextSecondary
+                    color = MagistralMuted
                 )
             }
             Switch(
@@ -118,9 +181,9 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
 
         Text(
             "Seleccionado: " + khzLabel(rate) + " kHz / " + depth + " bits",
-            color = TextPrimary, fontWeight = FontWeight.Bold
+            color = MagistralText, fontWeight = FontWeight.Bold
         )
-        if (status.isNotEmpty()) Text(status, color = TextSecondary)
+        if (status.isNotEmpty()) Text(status, color = MagistralMuted)
         if (rate > routeMax) {
             Text(
                 "La ruta actual limita a " + khzLabel(routeMax) + " kHz: la seleccion queda guardada y solo tendra efecto audible con una ruta que la soporte (USB-DAC).",
@@ -130,7 +193,7 @@ fun HiResAudioScreen(onBack: () -> Unit = {}) {
         Text(
             "384 kHz/32-bit bit-perfect solo por USB-DAC (via directa). Bluetooth limitado por el codec A2DP; bocina/cable pasan por el mixer de Android. " +
                 "La captura por software (Ruta A, sin Magisk) procesa a 48 kHz fijos; el selector gobierna el daemon/ruta de sistema.",
-            color = TextSecondary
+            color = MagistralMuted
         )
     }
 }
@@ -144,7 +207,7 @@ private fun HiResDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, color = TextSecondary)
+        Text(label, color = MagistralMuted)
         Box {
             OutlinedButton(
                 onClick = { expanded = true },

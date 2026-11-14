@@ -26,6 +26,35 @@ import com.ivanna.omega.dsp.DSPBridge
 import com.ivanna.omega.magisk.OmegaEngineBridge
 import com.ivanna.omega.ui.theme.*
 
+// ── Fichas magistrales · Entorno System (prototipo aprobado, Pantalla VII) ───
+// Texto exacto del prototipo; nada inventado. Cada ficha: QUÉ ES / PARA QUÉ
+// SIRVE / ÚSALO CUANDO / EVÍTALO CUANDO.
+private val systemSpec = SpecInfo(
+    title = "System",
+    what = "El entorno de infraestructura: la ruta de audio (A dentro de la app, B en el mezclador del sistema), la salida Hi-Res por USB y el estado real de permisos y diagnóstico.",
+    purpose = "Para separar los problemas de sonido de los de sistema: la mitad de los «el efecto no suena» son una ruta equivocada, un permiso sin conceder o un daemon sin acoplar — no un fallo del DSP.",
+    whenUse = "Primera parada ante cualquier anomalía: verifica ruta, permisos y diagnóstico antes de tocar un solo control de los demás entornos.",
+    whenAvoid = "No cambies de ruta ni concedas superusuario en caliente tras un restablecimiento del teléfono: primero estabilidad durante días, después privilegios."
+)
+
+/** O · Ruta de audio · A / B. */
+private val routeABSpec = SpecInfo(
+    title = "O · Ruta de audio · A / B",
+    what = "Ruta A: el procesado vive dentro de la app (BridgePlayer con archivos y Tidal, o captura de la sesión). Solo procesa lo que IVANNA toca, pero un fallo suyo solo tumba la app. Ruta B: el efecto se inserta en el mezclador del sistema (AudioFlinger) vía módulo Magisk + daemon ivanna_asrcd: procesa todo el audio del teléfono, en el sitio, sin copia ni retardo.",
+    purpose = "Ruta A es la vía diaria y la de referencia (por BridgePlayer, los efectos son el 100 % de lo que oyes). Ruta B es la vía definitiva: llamadas, sistema y cualquier app, sin la copia con ~140 ms de retardo de la captura.",
+    whenUse = "Ruta B solo con el módulo instalado, teléfono estable durante días y recuperación a la mano (adb/recovery). Sin superusuario concedido, la Ruta B no se acopla: la app lo detecta y permanece en Ruta A.",
+    whenAvoid = "Ruta B jamás en un teléfono recién restablecido: un fallo suyo vive en el servicio de audio del sistema y puede impedir el arranque. Si hay cualquier duda de estabilidad, la respuesta correcta es Ruta A."
+)
+
+/** Q · Permisos y diagnóstico. */
+private val permissionsSpec = SpecInfo(
+    title = "Q · Permisos y diagnóstico",
+    what = "La vista de salud del sistema: permisos vigentes, capacidad de acople de cada ruta y un chequeo guiado que recorre cadena, reloj y daemon en orden.",
+    purpose = "Para diagnosticar con evidencia en vez de con sospechas: cada «no suena» tiene aquí su primera respuesta antes de tocar código o controles.",
+    whenUse = "Tras instalar una release nueva, tras conceder un permiso y ante cualquier anomalía de audio. El diagnóstico es de solo lectura: no reinicia servicios ni toca el sistema de audio.",
+    whenAvoid = "No concedas superusuario a ciegas para «que todo diga verde»: cada permiso se concede cuando su función lo necesita y el teléfono está estable, no antes."
+)
+
 /**
  * SystemScreen — Sección SISTEMA unificada.
  * Reemplaza: MagiskStatusPanel + ProfileSelectorScreen + TelemetryDashboard
@@ -41,9 +70,9 @@ fun SystemScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("MAGISK", "PERFILES", "TELEMETRÍA", "RED")
 
-    Column(modifier = modifier.background(ObsidianDeep)) {
-        IvannaScreenHeader("SISTEMA", PhosphorGreen)
-        IvannaTabRow(tabs, selectedTab, { selectedTab = it }, PhosphorGreen)
+    Column(modifier = modifier.background(MagistralVoid)) {
+        IvannaScreenHeader("SISTEMA", MagistralGold)
+        IvannaTabRow(tabs, selectedTab, { selectedTab = it }, AuroraCyan)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -51,6 +80,8 @@ fun SystemScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Ficha del entorno · System (prototipo, Pantalla VII).
+            ScreenSpecCard(systemSpec)
             when (selectedTab) {
                 0 -> MagiskTab(onOpenMagisk)
                 1 -> ProfilesTab(onOpenProfiles)
@@ -63,7 +94,13 @@ fun SystemScreen(
 
 @Composable
 private fun MagiskTab(onOpenMagisk: () -> Unit) {
-    GlassCard("MÓDULO MAGISK", PhosphorGreen, "ivanna_omega · libomega_effect.so · daemon") {
+    // O · Ruta de audio · A / B: este tab es el lado Ruta B del entorno
+    // (módulo Magisk + daemon); no existe un selector A/B literal en el
+    // código, así que la ficha O vive junto al título del módulo.
+    GlassCard(
+        "MÓDULO MAGISK", MagistralGold, "ivanna_omega · libomega_effect.so · daemon",
+        rightSlot = { SpecInfoButton(routeABSpec) }
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // Bug A fix real: isLoaded es Boolean plano, no StateFlow.
             // derivedStateOf no disparaba recomposición porque la fuente
@@ -104,7 +141,7 @@ private fun MagiskTab(onOpenMagisk: () -> Unit) {
             OutlinedButton(
                 onClick = onOpenMagisk,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = PhosphorGreen)
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
             ) { Text("VER PANEL MAGISK COMPLETO", fontSize = 11.sp) }
         }
     }
@@ -130,7 +167,7 @@ private fun ProfilesTab(onOpenProfiles: () -> Unit) {
     var selected by remember {
         mutableStateOf(AdaptiveControlsPrefs.load(context).selectedPreset)
     }
-    GlassCard("PERFILES DE AUDIO", AuroraCyan, "Presets aplicados al DSP en tiempo real") {
+    GlassCard("PERFILES DE AUDIO", MagistralGold, "Presets aplicados al DSP en tiempo real") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 "CÁLIDO"   to "Graves realzados, agudos suaves",
@@ -202,7 +239,7 @@ private fun ProfilesTab(onOpenProfiles: () -> Unit) {
             OutlinedButton(
                 onClick = onOpenProfiles,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonMagenta)
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan)
             ) { Text("VER TODOS LOS PERFILES →", fontSize = 11.sp) }
         }
     }
@@ -289,7 +326,13 @@ private fun TelemetryTab() {
     Spacer(Modifier.height(8.dp))
 
     // ── Card de telemetría de audio ───────────────────────────────────────────
-    GlassCard("TELEMETRÍA EN VIVO", PhosphorGreen, "Motor adaptativo · refresco 2 s") {
+    // Q · Permisos y diagnóstico: no existe un panel de permisos ni un botón
+    // "Ejecutar diagnóstico" literal en el código; la vista de diagnóstico en
+    // vivo más cercana es esta telemetría, así que la ficha Q vive aquí.
+    GlassCard(
+        "TELEMETRÍA EN VIVO", MagistralGold, "Motor adaptativo · refresco 2 s",
+        rightSlot = { SpecInfoButton(permissionsSpec) }
+    ) {
         val labels = listOf("RMS","Peak","GR dB","Ganancia objetivo","Compresión","Reducción excitador","Ancho espacial","Margen seguridad","Protección de voz","Ajustes aplicados")
         val colors = listOf(AuroraCyan, CoralWarn, NeonMagenta, PhosphorGreen,
             AuroraCyan, NeonMagenta, AuroraCyan, PhosphorGreen, NeonMagenta, AuroraCyan)
@@ -362,7 +405,7 @@ private fun NetworkTab(onOpenNetwork: () -> Unit) {
     val agentLinked = secureState.isConfigured
     LaunchedEffect(Unit) { SecureConfigurationManager.initialize(ctx.applicationContext) }
 
-    GlassCard("RED & MOTOR GEMINI", AuroraCyan, "WiFi · Datos · API Key · Agente IVANNA") {
+    GlassCard("RED & MOTOR GEMINI", MagistralGold, "WiFi · Datos · API Key · Agente IVANNA") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 Triple("INTERNET",   hasInternet, if (hasInternet) "CONECTADO" else "SIN RED"),

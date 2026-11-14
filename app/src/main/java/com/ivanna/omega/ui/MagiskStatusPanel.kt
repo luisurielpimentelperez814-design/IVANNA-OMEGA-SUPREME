@@ -64,6 +64,34 @@ private fun isOlderVersion(installed: String, current: String): Boolean {
     return false
 }
 
+// ── Fichas magistrales · Entorno System (prototipo aprobado, Pantalla VII) ───
+// Texto exacto del prototipo; nada inventado.
+private val systemSpec = SpecInfo(
+    title = "System",
+    what = "El entorno de infraestructura: la ruta de audio (A dentro de la app, B en el mezclador del sistema), la salida Hi-Res por USB y el estado real de permisos y diagnóstico.",
+    purpose = "Para separar los problemas de sonido de los de sistema: la mitad de los «el efecto no suena» son una ruta equivocada, un permiso sin conceder o un daemon sin acoplar — no un fallo del DSP.",
+    whenUse = "Primera parada ante cualquier anomalía: verifica ruta, permisos y diagnóstico antes de tocar un solo control de los demás entornos.",
+    whenAvoid = "No cambies de ruta ni concedas superusuario en caliente tras un restablecimiento del teléfono: primero estabilidad durante días, después privilegios."
+)
+
+/** O · Ruta de audio · A / B: este panel ES el lado Ruta B del entorno. */
+private val routeABSpec = SpecInfo(
+    title = "O · Ruta de audio · A / B",
+    what = "Ruta A: el procesado vive dentro de la app (BridgePlayer con archivos y Tidal, o captura de la sesión). Solo procesa lo que IVANNA toca, pero un fallo suyo solo tumba la app. Ruta B: el efecto se inserta en el mezclador del sistema (AudioFlinger) vía módulo Magisk + daemon ivanna_asrcd: procesa todo el audio del teléfono, en el sitio, sin copia ni retardo.",
+    purpose = "Ruta A es la vía diaria y la de referencia (por BridgePlayer, los efectos son el 100 % de lo que oyes). Ruta B es la vía definitiva: llamadas, sistema y cualquier app, sin la copia con ~140 ms de retardo de la captura.",
+    whenUse = "Ruta B solo con el módulo instalado, teléfono estable durante días y recuperación a la mano (adb/recovery). Sin superusuario concedido, la Ruta B no se acopla: la app lo detecta y permanece en Ruta A.",
+    whenAvoid = "Ruta B jamás en un teléfono recién restablecido: un fallo suyo vive en el servicio de audio del sistema y puede impedir el arranque. Si hay cualquier duda de estabilidad, la respuesta correcta es Ruta A."
+)
+
+/** Q · Permisos y diagnóstico. */
+private val permissionsSpec = SpecInfo(
+    title = "Q · Permisos y diagnóstico",
+    what = "La vista de salud del sistema: permisos vigentes, capacidad de acople de cada ruta y un chequeo guiado que recorre cadena, reloj y daemon en orden.",
+    purpose = "Para diagnosticar con evidencia en vez de con sospechas: cada «no suena» tiene aquí su primera respuesta antes de tocar código o controles.",
+    whenUse = "Tras instalar una release nueva, tras conceder un permiso y ante cualquier anomalía de audio. El diagnóstico es de solo lectura: no reinicia servicios ni toca el sistema de audio.",
+    whenAvoid = "No concedas superusuario a ciegas para «que todo diga verde»: cada permiso se concede cuando su función lo necesita y el teléfono está estable, no antes."
+)
+
 @Composable
 fun MagiskStatusPanel(
     omegaBridge: OmegaEngineBridge,
@@ -120,7 +148,7 @@ fun MagiskStatusPanel(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(ObsidianVoid)
+            .background(MagistralVoid)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -144,14 +172,26 @@ fun MagiskStatusPanel(
             )
         }
 
-        Text(
-            "MÓDULO MAGISK",
-            color = AuroraCyan,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp,
-            letterSpacing = 2.sp
-        )
+        // Ficha del entorno · System (prototipo, Pantalla VII).
+        ScreenSpecCard(systemSpec)
+
+        // O · Ruta de audio · A / B: este panel es el lado Ruta B; no existe
+        // un selector A/B literal en el código.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "MÓDULO MAGISK",
+                color = MagistralGoldHi,
+                fontFamily = MagistralSerif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                letterSpacing = 2.sp
+            )
+            SpecInfoButton(routeABSpec)
+        }
 
         StatusRow("MÓDULO",  moduleActive, "ACTIVO", "NO INSTALADO")
         StatusRow("VERSIÓN",
@@ -208,8 +248,8 @@ fun MagiskStatusPanel(
 
         Text(
             "OMEGA DAEMON BRIDGE",
-            color = NeonMagenta,
-            fontFamily = FontFamily.Monospace,
+            color = MagistralGoldHi,
+            fontFamily = MagistralSerif,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
             letterSpacing = 2.sp
@@ -245,8 +285,21 @@ fun MagiskStatusPanel(
         Spacer(Modifier.height(6.dp))
         DividerGlow()
 
-        Text("ACCIONES", color = AuroraCyan, fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 2.sp)
+        // Q · Permisos y diagnóstico: no existe un botón "Ejecutar diagnóstico"
+        // literal en el código; el equivalente más cercano son estas acciones
+        // de diagnóstico (STATUS / TELEMETRY) y la sonda de superusuario
+        // (ROOT PING), así que la ficha Q vive junto al título ACCIONES.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "ACCIONES", color = MagistralGoldHi, fontFamily = MagistralSerif,
+                fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 2.sp
+            )
+            SpecInfoButton(permissionsSpec)
+        }
 
         // FIX (layout): 5 botones en un solo Row con spacedBy(8.dp) se
         // comprimían en pantallas angostas hasta que "ROOT PING" se apilaba
@@ -449,7 +502,7 @@ private fun DividerGlow() {
     Spacer(
         Modifier.fillMaxWidth().height(1.dp)
             .background(Brush.horizontalGradient(
-                listOf(Color.Transparent, ObsidianEdge, Color.Transparent)
+                listOf(Color.Transparent, MagistralLine, Color.Transparent)
             ))
     )
 }
