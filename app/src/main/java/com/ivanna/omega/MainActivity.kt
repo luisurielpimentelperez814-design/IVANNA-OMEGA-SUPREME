@@ -104,6 +104,7 @@ import com.ivanna.omega.ui.MainScaffold
 import com.ivanna.omega.ui.Bark64VisualizerPanel
 import com.ivanna.omega.audio.IvannaLabMonitor
 import com.ivanna.omega.ui.ScreenSpecCard
+import com.ivanna.omega.ui.CollapsibleScreenSpecCard
 import com.ivanna.omega.ui.SpecInfo
 import com.ivanna.omega.ui.SpecInfoButton
 import com.ivanna.omega.ui.theme.MagistralGold
