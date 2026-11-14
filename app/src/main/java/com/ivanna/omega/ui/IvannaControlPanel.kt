@@ -63,6 +63,139 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
+// ── Fichas magistrales · Control (prototipo aprobado, Pantalla III · Motor) ─
+// Texto exacto del prototipo; nada inventado. SpecInfo / ScreenSpecCard /
+// SpecInfoButton viven en SpecSheet.kt, mismo paquete. Los controles del
+// prototipo se anclan a su equivalente más cercano en este panel (ver notas):
+// «Etapa de graves» = tarjeta MODO AUX · ALTAVOCES; «Profundidad máxima» =
+// slider de profundidad del campo temporal 4D; «ORBE · Intensidad» /
+// «HOLOS · Intensidad» = sliders CANTIDAD ORBE / CANTIDAD HOLOS.
+
+/** Ficha del entorno · Control. */
+private val controlScreenSpec = SpecInfo(
+    title = "Control",
+    what = "El entorno de control directo de la cadena: graves, corrección de sala, dinámica espacial y el campo ORBE·HOLOS. Es la vista operativa diaria del motor.",
+    purpose = "Para ajustar lo que se oye aquí y ahora: la telemetría ASRC y el espectro confirman que la cadena está viva, y cada módulo actúa sobre una capa distinta sin pisar a las demás.",
+    whenUse = "Como punto de partida de cada sesión y tras cambiar de salida (bocina, audífonos, DAC): revisa primero el estado del motor y después toca módulos, de arriba hacia abajo.",
+    whenAvoid = "No ajustes todo a la vez: si mueves graves, sala y espacio en la misma escucha no sabrás qué causó qué. Un módulo por escucha, A/B contra su interruptor."
+)
+
+/** A · Etapa de graves — Frecuencia de cruce. */
+private val auxXoverSpec = SpecInfo(
+    title = "Frecuencia de cruce",
+    what = "La frecuencia a partir de la cual la etapa de graves de IVANNA deja de gestionar el grave y lo entrega a la cadena principal. Por debajo del cruce manda la gestión propia de IVANNA; por encima, el grave pasa sin ella.",
+    purpose = "Para que el grave tenga un solo dueño. Si tu receptor o amplificador también aplica su crossover, dos cruces en cascada abren un hueco o un bulto en el empalme que se oye como grave «bofo», inflado y desconectado del resto.",
+    whenUse = "Con bocinas o AUX y un receptor con crossover propio: iguala el valor al del receptor (lo típico es 80 Hz) o desactiva uno de los dos. Con bocinas pequeñas sube a 100–120 Hz para aliviarlas del grave profundo.",
+    whenAvoid = "Con audífonos o la bocina del teléfono no hay etapa externa: déjalo en 80 Hz. Evita los extremos salvo que tu sistema los pida: a 40 Hz el grave gestionado casi desaparece; a 160 Hz el grave se vuelve localizable y embarra la escena."
+)
+
+/** A · Etapa de graves — Coherencia de graves. */
+private val auxCoherenceSpec = SpecInfo(
+    title = "Coherencia de graves",
+    what = "El grado de consistencia temporal con que la etapa de graves entrega la baja frecuencia en ambos canales. Al 100 % el grave llega alineado y compacto; al bajarlo, la etapa relaja esa alineación y el grave se vuelve más difuso y envolvente.",
+    purpose = "Es la herramienta directa contra el grave «bofo»: un grave coherente se percibe seco, con golpe y con filo; uno incoherente se percibe grande pero sin definición. No cambia cuántos graves hay: cambia su orden.",
+    whenUse = "Déjalo en 100 % como punto de partida siempre. Bájalo solo con bocinas en sala pequeña, si el grave se concentra en un único punto y quieres repartirlo — en pasos de 10 % y comparando.",
+    whenAvoid = "Valores bajos con audífonos: el bombo pierde el centro y se desdibuja. Si al bajarlo el grave pierde definición en vez de ganar espacio, regresa a 100 %: no es un control de cantidad, es de coherencia."
+)
+
+/**
+ * B · Corrección acústica · Sala / Bocinas.
+ *
+ * SIN botón «Generar vista geométrica 3D 4K» con ese nombre exacto en el
+ * código: la vista geométrica es RoomGeometryPreviewPanel(), ya renderizada
+ * dentro de esta misma tarjeta. La ficha cubre el módulo completo
+ * (medición + vista geométrica + límites honestos del micrófono) y el botón
+ * se ancla a la tarjeta, junto a su interruptor.
+ */
+private val roomCorrectionSpec = SpecInfo(
+    title = "Corrección acústica · Sala / Bocinas",
+    what = "Una medición acústica con el micrófono del teléfono: emite un barrido de 50 Hz a 6 kHz, captura cómo tu sala y tus bocinas alteran el balance tonal y genera una corrección de balance amplio que lo compensa. La vista 3D 4K renderiza la geometría estimada de ese espacio.",
+    purpose = "La sala manda más que las bocinas: esquinas que inflan el grave (boom), paredes que se comen la presencia. La corrección aplana ese balance para que escuches la mezcla, no el cuarto.",
+    whenUse = "Escuchas por bocinas en un punto fijo: mide con el teléfono en tu punto de escucha, a la altura del oído, en silencio. Repite la medición si mueves bocinas, muebles o cambias de cuarto.",
+    whenAvoid = "Con audífonos no hay sala que corregir: déjala apagada. No apliques la corrección de un cuarto en otro, ni midas con el teléfono pegado a una pared. Y sin medición previa, el interruptor no aplica nada: el audio queda intacto."
+)
+
+/** C · Dinámica espacial · 4D — Profundidad máxima. */
+private val temporalDepthSpec = SpecInfo(
+    title = "Profundidad máxima",
+    what = "El techo de apertura de la dinámica espacial 4D: en cada golpe la imagen se enfoca hacia el centro y en las colas se abre, como máximo, hasta este porcentaje. El centro vocal y los graves quedan fuera de este movimiento.",
+    purpose = "Para que la escena respire con la música sin volverse inestable: los ataques quedan enfocados y los pasajes abiertos ganan escenario, sin que la imagen «nada» de un lado a otro.",
+    whenUse = "50–60 % es el punto magistral para rock, bocinas y audífonos abiertos. Sube a 70–80 % solo con grabaciones muy cerradas o mono antiguas que quieras abrir.",
+    whenAvoid = "Al 100 % con material ya muy espacial (binaural, directos con mucha sala) la imagen se deshace y el centro se adelgaza. Si la voz pierde cuerpo, baja 10 %."
+)
+
+/**
+ * D · ORBE · HOLOS — ORBE · Intensidad.
+ *
+ * El control se llama «CANTIDAD ORBE» en el código; es la cantidad de ORBE
+ * en la mezcla, es decir, su intensidad. No se renombra el control.
+ */
+private val orbeAmountSpec = SpecInfo(
+    title = "ORBE · Intensidad",
+    what = "ORBE es el campo binaural esférico de campo cercano: cada banda ERB —las bandas en que el oído divide el espectro— se coloca a un azimut y una distancia continuos entre 0.15 y 2.0 m, con parallax al mover la cabeza. Este control es su cantidad en la mezcla.",
+    purpose = "Para sacar el sonido de «dentro de la cabeza» y ponerlo frente a ti, a distancias reales: una voz a 40 cm no suena como una orquesta a 2 m, y ORBE respeta esa diferencia banda a banda.",
+    whenUse = "Al 100 %, su valor de diseño y el fijado por directiva del producto: es el modo completo. Baja a 60–80 % solo si una grabación concreta te resulta demasiado «fuera» y quieres acercarla.",
+    whenAvoid = "No lo apagues si buscas la experiencia IVANNA completa: sin ORBE la cadena suena plana y pegada al oído. Y no lo muevas canción a canción: el oído tarda unos segundos en asentarse en el campo."
+)
+
+/**
+ * D · ORBE · HOLOS — HOLOS · Intensidad.
+ *
+ * El control se llama «CANTIDAD HOLOS» en el código; es el peso de HOLOS
+ * en el campo, es decir, su intensidad. No se renombra el control.
+ */
+private val holosAmountSpec = SpecInfo(
+    title = "HOLOS · Intensidad",
+    what = "HOLOS es el operador único de campo acústico: en vez de sumar efectos por separado, mantiene un solo vector de estado por banda (STFT hop 128 / FFT 512) y gobierna el campo completo de forma coherente. Este control es su peso en el campo.",
+    purpose = "Para que el espacio no sea una suma de efectos peleando entre sí: una sola física decide el campo, con THD+N de −94 dB a 1 kHz — coherencia sin distorsión añadida.",
+    whenUse = "Al 50 %, su punto retuneado de fábrica (armónicos en 0.0): es el equilibrio medido entre presencia del campo y transparencia total.",
+    whenAvoid = "Por encima de 70 % el campo empieza a imponerse sobre material delicado (clásica, acústico íntimo). Si en A/B no notas mejora en tu sala, déjalo en 50 %: más no es mejor, es otro balance."
+)
+
+/**
+ * J · Kernel Volterra · Pre-distorsión (prototipo aprobado, Pantalla V ·
+ * Adaptive). El selector PZ1D/Genezi vive aquí (SingleChoiceSegmentedButtonRow
+ * "KERNEL VOLTERRA"); la ficha J de AdaptiveEngineScreen quedó anclada a
+ * "Modo adaptativo" como equivalente, y aquí va en su sitio exacto.
+ */
+private val volterraKernelSpec = SpecInfo(
+    title = "Kernel Volterra · Pre-distorsión",
+    what = "El kernel Volterra modela la no-linealidad real de tu salida (cómo el DAC y el transductor deforman la señal, empezando por el segundo armónico, H2) y aplica la pre-distorsión inversa: la señal sale torcida en sentido contrario para llegar recta a tu oído. El control regula cuánta de esa inversa se aplica.",
+    purpose = "Para quitar la aspereza y el «velo» que no vienen de la grabación sino de tu propio hardware reproduciéndola. Es corrección a la medida del dispositivo, no un efecto de sabor.",
+    whenUse = "Elige el kernel que corresponde a tu salida física y cambia con la música sonando: el fundido de ~18 ms hace la comparación A/B inmediata y honesta. Nivel H2 moderado (30–40 %) como punto de partida.",
+    whenAvoid = "No fuerces el kernel de un DAC sobre otro: la pre-distorsión equivocada añade exactamente la distorsión que debía quitar. Si no sabes qué DAC tienes conectado, PZ1D Refinado es la opción segura."
+)
+
+/**
+ * Interruptor con acento dorado magistral (v2.5.442): misma semántica que
+ * Switch — reenvía checked / enabled / onCheckedChange sin tocar el
+ * cableado — con pista dorada en ON y pulgar oscuro, según el lenguaje
+ * visual del prototipo (dorado con jerarquía; cian solo donde se toca o
+ * donde algo está vivo).
+ */
+@Composable
+private fun MagistralSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = MagistralVoid,
+            checkedTrackColor = MagistralGold,
+            checkedBorderColor = MagistralGold,
+            uncheckedThumbColor = MagistralMuted,
+            uncheckedTrackColor = Color.Transparent,
+            uncheckedBorderColor = MagistralLineStrong
+        )
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IvannaControlPanel(
@@ -684,8 +817,8 @@ fun IvannaControlPanel(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            ObsidianSoft.copy(alpha = 0.65f),
-                            ObsidianVoid.copy(alpha = 0.92f)
+                            MagistralPanel.copy(alpha = 0.65f),
+                            MagistralVoid.copy(alpha = 0.92f)
                         ),
                         radius = 1400f
                     )
@@ -698,8 +831,8 @@ fun IvannaControlPanel(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            ObsidianSoft.copy(alpha = 0.65f),
-                            ObsidianVoid.copy(alpha = 0.92f)
+                            MagistralPanel.copy(alpha = 0.65f),
+                            MagistralVoid.copy(alpha = 0.92f)
                         ),
                         radius = 1400f
                     )
@@ -708,6 +841,9 @@ fun IvannaControlPanel(
         },
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Ficha del entorno · Control (prototipo aprobado, Pantalla III · Motor)
+        ScreenSpecCard(spec = controlScreenSpec)
+
         RouteModeBanner()
         OmniHeroHeader(
             omegaMode = omegaMode,
@@ -736,10 +872,10 @@ fun IvannaControlPanel(
         )
 
         // ── NAEL / ISO 226:2023 — Equal Loudness Compensation ─────────
-        SectionLabel("NAEL · EQUAL LOUDNESS ISO 226:2023", AuroraCyan)
+        SectionLabel("NAEL · EQUAL LOUDNESS ISO 226:2023", MagistralGold)
         NaelCard()
 
-        SectionLabel("ANTI-DOLBY TinyML & SPSC LOCK-FREE KERNEL", AuroraCyan)
+        SectionLabel("ANTI-DOLBY TinyML & SPSC LOCK-FREE KERNEL", MagistralGold)
         GlassCard(
             title = "MOTOR ANTI-DOLBY SUPREME (TinyML ConvNeXt)",
             accent = AuroraCyan,
@@ -866,7 +1002,18 @@ fun IvannaControlPanel(
             // de silencio / detección de pausa (sin clics); si falla, el
             // kernel anterior sigue sonando y el selector vuelve a él.
             // La elección persiste y el arranque siguiente carga el mismo.
-            Text("KERNEL VOLTERRA", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "KERNEL VOLTERRA",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.weight(1f)
+                )
+                SpecInfoButton(spec = volterraKernelSpec)
+            }
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 listOf(
                     IvannaNativeLib.VOLTERRA_KERNEL_PZ1D to "PZ1D REFINADO",
@@ -949,10 +1096,10 @@ fun IvannaControlPanel(
         }
 
         // ── Eje Supremo: Inversión Biomecánica Coclear (PINN) ──────────────
-        SectionLabel("INVERSIÓN BIOMECÁNICA COCLEAR (PINN)", AuroraCyan)
+        SectionLabel("INVERSIÓN BIOMECÁNICA COCLEAR (PINN)", MagistralGold)
         CochlearInverseCard()
 
-        SectionLabel("ADAPTIVE ENGINE", AuroraCyan)
+        SectionLabel("ADAPTIVE ENGINE", MagistralGold)
 
         com.ivanna.omega.ui.AdaptiveEngineStatusCard(telemetry = adaptiveTelemetry)
 
@@ -982,7 +1129,7 @@ fun IvannaControlPanel(
             onOpenMagisk = onOpenMagisk
         )
 
-        SectionLabel("CADENA DSP", AuroraCyan)
+        SectionLabel("CADENA DSP", MagistralGold)
 
         GlassCard(
             title = "MOTOR OPE",
@@ -1157,7 +1304,7 @@ fun IvannaControlPanel(
             }
         }
 
-        SectionLabel("ESPACIAL Y NEUROMÓRFICO", NeonMagenta)
+        SectionLabel("ESPACIAL Y NEUROMÓRFICO", MagistralGold)
         
         GlassCard(
             title = "INTELIGENCIA ESPACIAL (HOA → BINAURAL)",
@@ -1176,35 +1323,58 @@ fun IvannaControlPanel(
             }
         }
 
+        // A · Etapa de graves (prototipo, Pantalla III · Motor): la tarjeta
+        // MODO AUX es el equivalente en código de la etapa de graves.
         GlassCard(
             title = "MODO AUX · ALTAVOCES",
-            accent = PhosphorGreen,
+            accent = MagistralGold,
             subtitle = if (auxEnabled)
                 "Activo: graves en fase y misma presión en ambos lados · HRTF, HOA y WFS binaurales en pausa"
             else
                 "Para salida por AUX/amplificador: graves coherentes (Linkwitz-Riley 4º orden). Apagado = audio intacto",
             rightSlot = {
-                Switch(auxEnabled, onCheckedChange = {
+                MagistralSwitch(checked = auxEnabled, onCheckedChange = {
                     auxEnabled = it
                     onAuxFieldChange(it, auxXover, auxCoherence)
                 })
             }
         ) {
-            AuroraSlider("CRUCE DE GRAVES", auxXover, 60f..200f, unit = " Hz",
-                displayValue = { "${(60 + 20 * Math.round((it - 60f) / 20f)).coerceIn(60, 200)} Hz" }) {
-                auxXover = it
-                onAuxFieldChange(auxEnabled, it, auxCoherence)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    AuroraSlider("CRUCE DE GRAVES", auxXover, 60f..200f, unit = " Hz",
+                        displayValue = { "${(60 + 20 * Math.round((it - 60f) / 20f)).coerceIn(60, 200)} Hz" }) {
+                        auxXover = it
+                        onAuxFieldChange(auxEnabled, it, auxCoherence)
+                    }
+                }
+                SpecInfoButton(spec = auxXoverSpec)
             }
-            AuroraSlider("COHERENCIA DE GRAVES", auxCoherence, 0f..1f,
-                displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
-                auxCoherence = it
-                onAuxFieldChange(auxEnabled, auxXover, it)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    AuroraSlider("COHERENCIA DE GRAVES", auxCoherence, 0f..1f,
+                        displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
+                        auxCoherence = it
+                        onAuxFieldChange(auxEnabled, auxXover, it)
+                    }
+                }
+                SpecInfoButton(spec = auxCoherenceSpec)
             }
         }
 
+        // B · Corrección acústica · Sala / Bocinas (prototipo, Pantalla III ·
+        // Motor): medición de sala + vista geométrica 3D (RoomGeometryPreviewPanel
+        // dentro de esta tarjeta) + nota de límites honestos.
         GlassCard(
             title = "CORRECCIÓN ACÚSTICA · SALA / BOCINAS",
-            accent = AuroraCyan,
+            accent = MagistralGold,
             subtitle = when {
                 roomBusy -> "Midiendo… no hables ni te muevas. Tonos de prueba por tus bocinas (~35 s)"
                 roomGains == null -> "Mide tu sala con el micrófono del teléfono y corrige el balance tonal de 50 Hz a 6 kHz. Sin medición = audio intacto"
@@ -1212,7 +1382,13 @@ fun IvannaControlPanel(
                 else -> "Medición guardada, corrección apagada"
             },
             rightSlot = {
-                Switch(roomEnabled, enabled = roomGains != null && !roomBusy, onCheckedChange = { onRoomToggle(it) })
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SpecInfoButton(spec = roomCorrectionSpec)
+                    MagistralSwitch(checked = roomEnabled, enabled = roomGains != null && !roomBusy, onCheckedChange = { onRoomToggle(it) })
+                }
             }
         ) {
             if (roomBusy) {
@@ -1240,29 +1416,39 @@ fun IvannaControlPanel(
             }
             com.ivanna.omega.spatial.RoomGeometryPreviewPanel()
             Text(
-                "Límites: el micrófono del teléfono no está calibrado; corrige el balance amplio (boom, caída de graves, presencia), no modos estrechos ni la fase, y mide el punto donde está el teléfono.",
+                "Límites honestos: el micrófono del teléfono no está calibrado; corrige el balance amplio (boom, caída de graves, presencia), no modos estrechos ni la fase, y mide el punto donde está el teléfono.",
                 style = MaterialTheme.typography.labelSmall, color = TextSecondary
             )
         }
 
+        // C · Dinámica espacial · 4D (prototipo, Pantalla III · Motor).
         GlassCard(
             title = "DINÁMICA ESPACIAL · 4D",
-            accent = PhosphorGreen,
+            accent = MagistralGold,
             subtitle = if (temporalEnabled)
                 "Activo: en cada golpe la imagen se enfoca; en las colas se abre · el centro no cambia, los graves tampoco"
             else
                 "La cuarta dimensión es el tiempo: el ancho lateral respira con la música (golpe = enfoque, cola = apertura). Apagado = audio intacto",
             rightSlot = {
-                Switch(temporalEnabled, onCheckedChange = {
+                MagistralSwitch(checked = temporalEnabled, onCheckedChange = {
                     temporalEnabled = it
                     onTemporalFieldChange(it, temporalAmount, temporalAdaptive)
                 })
             }
         ) {
-            AuroraSlider(if (temporalAdaptive) "PROFUNDIDAD MÁXIMA" else "PROFUNDIDAD TEMPORAL", temporalAmount, 0f..1f,
-                displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
-                temporalAmount = it
-                onTemporalFieldChange(temporalEnabled, it, temporalAdaptive)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    AuroraSlider(if (temporalAdaptive) "PROFUNDIDAD MÁXIMA" else "PROFUNDIDAD TEMPORAL", temporalAmount, 0f..1f,
+                        displayValue = { "${Math.round(it * 7f) * 100 / 7} %" }) {
+                        temporalAmount = it
+                        onTemporalFieldChange(temporalEnabled, it, temporalAdaptive)
+                    }
+                }
+                SpecInfoButton(spec = temporalDepthSpec)
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1274,7 +1460,7 @@ fun IvannaControlPanel(
                     style = MaterialTheme.typography.labelSmall, color = TextSecondary,
                     modifier = Modifier.weight(1f)
                 )
-                Switch(temporalAdaptive, onCheckedChange = {
+                MagistralSwitch(checked = temporalAdaptive, onCheckedChange = {
                     temporalAdaptive = it
                     onTemporalFieldChange(temporalEnabled, temporalAmount, it)
                 })
@@ -1381,18 +1567,30 @@ fun IvannaControlPanel(
             )
         }
 
+        // D · ORBE · HOLOS (prototipo, Pantalla III · Motor): «ORBE ·
+        // Intensidad» y «HOLOS · Intensidad» son los sliders CANTIDAD ORBE /
+        // CANTIDAD HOLOS de estas dos tarjetas.
         GlassCard(
             title = "ORBE · CAMPO CERCANO",
-            accent = NeonMagenta,
+            accent = MagistralGold,
             subtitle = if (orbeAmount > 0f)
                 "Activo: cada banda suena a ${"%.2f".format(orbeDistanceM)} m, con ILD de campo cercano y parallax de cabeza · +10.7 ms de latencia"
             else
                 "Binaural esférico de campo cercano: las fuentes se acercan a 0.15–2.0 m en vez de quedarse a 1 m. Apagado = audio intacto (bypass exacto)"
         ) {
-            AuroraSlider("CANTIDAD ORBE", orbeAmount, 0f..1f,
-                displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
-                orbeAmount = it
-                onOrbeChange(it, orbeDistanceM, orbeSpread, orbeProximityDb, orbeDiffuse, orbeHeadTracking)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    AuroraSlider("CANTIDAD ORBE", orbeAmount, 0f..1f,
+                        displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
+                        orbeAmount = it
+                        onOrbeChange(it, orbeDistanceM, orbeSpread, orbeProximityDb, orbeDiffuse, orbeHeadTracking)
+                    }
+                }
+                SpecInfoButton(spec = orbeAmountSpec)
             }
             AuroraSlider("DISTANCIA", orbeDistanceM, 0.15f..2.0f,
                 displayValue = { "${"%.2f".format(it)} m" }) {
@@ -1420,7 +1618,7 @@ fun IvannaControlPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("SEGUIMIENTO DE CABEZA", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Switch(orbeHeadTracking, onCheckedChange = {
+                MagistralSwitch(checked = orbeHeadTracking, onCheckedChange = {
                     orbeHeadTracking = it
                     onOrbeChange(orbeAmount, orbeDistanceM, orbeSpread, orbeProximityDb, orbeDiffuse, it)
                 })
@@ -1442,16 +1640,25 @@ fun IvannaControlPanel(
 
         GlassCard(
             title = "HOLOS · CAMPO UNIFICADO",
-            accent = NeonMagenta,
+            accent = MagistralGold,
             subtitle = if (holosAmount > 0f)
                 "Activo: un solo operador (Green + Volterra + ganancia) por banda ERB · +10.7 ms de latencia"
             else
                 "Doce funciones en un solo operador: campo, armónicos y dinámica evaluados de una vez por banda. Apagado = audio intacto (bypass exacto)"
         ) {
-            AuroraSlider("CANTIDAD HOLOS", holosAmount, 0f..1f,
-                displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
-                holosAmount = it
-                onHolosChange(it, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    AuroraSlider("CANTIDAD HOLOS", holosAmount, 0f..1f,
+                        displayValue = { if (it <= 0f) "Apagado" else "${Math.round(it * 100f)} %" }) {
+                        holosAmount = it
+                        onHolosChange(it, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
+                    }
+                }
+                SpecInfoButton(spec = holosAmountSpec)
             }
             AuroraSlider("DISTANCIA", holosDistanceM, 0.15f..2.0f,
                 displayValue = { "${"%.2f".format(it)} m" }) {
@@ -1509,7 +1716,7 @@ fun IvannaControlPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("SEGUIMIENTO DE CABEZA", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Switch(holosHeadTracking, onCheckedChange = {
+                MagistralSwitch(checked = holosHeadTracking, onCheckedChange = {
                     holosHeadTracking = it
                     onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, it, holosBandCount)
                 })
@@ -1520,7 +1727,7 @@ fun IvannaControlPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("12 BANDAS (AHORRO CPU)", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Switch(holosBandCount == 12, onCheckedChange = {
+                MagistralSwitch(checked = holosBandCount == 12, onCheckedChange = {
                     holosBandCount = if (it) 12 else 24
                     onHolosChange(holosAmount, holosDistanceM, holosSpread, holosProximityDb, holosDiffuse, holosHarmonics, holosWarmth, holosDynamics, holosWidth, holosGamma, holosRoomRt60, holosHeadTracking, holosBandCount)
                 })
@@ -1886,7 +2093,7 @@ fun IvannaControlPanel(
             )
         }
 
-        SectionLabel("KERNEL EVOLUTIVO", AmberSignal)
+        SectionLabel("KERNEL EVOLUTIVO", MagistralGold)
 
         GlassCard(
             title = "KERNEL EVOLUTIVO",
@@ -1973,7 +2180,7 @@ fun IvannaControlPanel(
             }
         }
 
-        SectionLabel("5 EJES DE SUPREMACÍA CUÁNTICO-NEUROMÓRFICA", PhosphorGreen)
+        SectionLabel("5 EJES DE SUPREMACÍA CUÁNTICO-NEUROMÓRFICA", MagistralGold)
         GlassCard(
             title = "CENTRO MAESTRO · 5 EJES DE SUPREMACÍA C++23",
             accent = PhosphorGreen,
@@ -2001,7 +2208,7 @@ fun IvannaControlPanel(
             }
         }
 
-        SectionLabel("ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE", AuroraCyan)
+        SectionLabel("ACOUSTIC REALITY RECONSTRUCTION HYPERENGINE", MagistralGold)
         AcousticRealityReconstructionCard()
 
         // Guía transversal: explica los controles de CONTROL, SOUND, BRAIN,
@@ -2366,7 +2573,8 @@ private fun SectionLabel(text: String, accent: Color) {
         Text(
             text,
             style = MaterialTheme.typography.titleSmall,
-            color = accent,
+            color = MagistralGoldHi,
+            fontFamily = MagistralSerif,
             fontWeight = FontWeight.Bold
         )
         Spacer(
