@@ -42,7 +42,9 @@
 #include <cstdint>
 #include <cstring>
 
-#if !defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__)
+// cppcheck no define __BYTE_ORDER__ (analiza, no compila): el #error solo
+// aplica a compiladores reales (v2.5.442, Fase 0 de tests-host).
+#if !defined(__CPPCHECK__) && (!defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__))
 #error "IVK1 requiere plataforma little-endian (arm64/x86_64)"
 #endif
 

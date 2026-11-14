@@ -146,7 +146,7 @@ jobs:
           run_check arcore_manifest       python3 scripts/check_arcore_manifest.py
           run_check magisk_install        python3 scripts/check_magisk_install.py
           if command -v cppcheck >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck; }; then
-            run_check cppcheck cppcheck --error-exitcode=1 --quiet --suppress=missingIncludeSystem \
+            run_check cppcheck cppcheck --error-exitcode=1 --quiet --platform=unix64 --suppress=missingIncludeSystem \
               app/src/main/cpp/omega_effect.cpp \
               app/src/main/cpp/IvannaFusionCore.cpp
           else
