@@ -91,15 +91,30 @@ class OmniRouteOrchestrator(
                 .toString()
         }
 
-        /** Extrae choices[0].message.content de una respuesta no-stream. */
-        fun parseChatContent(responseBody: String): String? = runCatching {
-            val root = JSONObject(responseBody)
-            root.optJSONArray("choices")
-                ?.optJSONObject(0)
-                ?.optJSONObject("message")
-                ?.optString("content")
-                ?.takeIf { it.isNotEmpty() }
-        }.getOrNull()
+        /** Extrae choices[0].message.content de una respuesta no-stream.
+         *  Robusto a dos formatos: JSON directo (lo normal sin header
+         *  Accept) y cuerpo SSE (algunos proveedores del gateway devuelven
+         *  `data:` aunque no se pida stream) — en ese caso se concatenan
+         *  los deltas. */
+        fun parseChatContent(responseBody: String): String? {
+            // 1. JSON directo.
+            val direct = runCatching {
+                JSONObject(responseBody)
+                    .optJSONArray("choices")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("message")
+                    ?.optString("content")
+                    ?.takeIf { it.isNotEmpty() }
+            }.getOrNull()
+            if (direct != null) return direct
+            // 2. Cuerpo SSE: concatenar los deltas de cada línea data:.
+            if (!responseBody.contains("data:")) return null
+            val acc = StringBuilder()
+            for (line in responseBody.lines()) {
+                parseSseDelta(line.trim())?.let { acc.append(it) }
+            }
+            return acc.toString().takeIf { it.isNotEmpty() }
+        }
 
         /** true si la línea SSE es el terminador `data: [DONE]`. */
         fun isSseDone(line: String): Boolean =

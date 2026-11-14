@@ -63,6 +63,16 @@ class OmniRouteOrchestratorTest {
         assertNull(OmniRouteOrchestrator.parseChatContent("no-json"))
     }
 
+    @Test fun chatContentFallsBackToSseBody() {
+        // Algunos proveedores del gateway devuelven SSE aunque no se pida
+        // stream: el contenido se reconstruye concatenando los deltas.
+        val sseBody = "data: {\"id\":\"chatcmpl-keepalive\",\"object\":\"chat.completion.chunk\",\"choices\":[]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"content\":\"2\"}}]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"content\":\"+2 es 4\"}}]}\n\n" +
+            "data: [DONE]\n"
+        assertEquals("2+2 es 4", OmniRouteOrchestrator.parseChatContent(sseBody))
+    }
+
     // ── SSE ──────────────────────────────────────────────────────────────
 
     @Test fun sseDeltaExtractsContent() {
