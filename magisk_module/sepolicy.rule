@@ -40,8 +40,12 @@ allow untrusted_app_34 ivanna_data_file dir { search getattr open read }
 allow untrusted_app_35 ivanna_data_file file { read write open getattr map }
 allow untrusted_app_35 ivanna_data_file dir { search getattr open read }
 
-# audioserver (HAL/efecto): solo lectura del snapshot/SHM.
-allow audioserver ivanna_data_file file { read open getattr map }
+# audioserver (HAL/efecto): lee el snapshot/SHM y ESCRIBE el canal de frames
+# (Writer O_RDWR) y agent_memory.bin (mmap RW). Sin `write`, SELinux deniega
+# la escritura aunque el DAC lo permita (0666): el servo del asrcd nunca ve
+# frames ("sin telemetria de frames -> ratio 1.0") y el ratio queda en 1.0.
+# v2.5.442. Los archivos los pre-crea service.sh (0666, magic+CRC validados).
+allow audioserver ivanna_data_file file { read write open getattr map }
 allow audioserver ivanna_data_file dir { search getattr open read }
 
 # Daemon (su/magisk) y shell (health_check.sh): lectura/escritura y lectura.
