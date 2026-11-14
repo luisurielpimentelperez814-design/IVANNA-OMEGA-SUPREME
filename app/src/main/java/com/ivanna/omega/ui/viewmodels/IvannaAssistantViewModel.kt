@@ -68,7 +68,16 @@ data class AssistantPanelState(
     // ── API key Gemini (cableado FASE final) ─────────────────────────────
     val geminiApiKey: String = "",
     val geminiAvailable: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+
+    // ── OmniRoute (gateway LLM gratis, v2.5.443, opt-in) ─────────────────
+    // Gemini sigue siendo el default; OmniRoute solo se usa con el flag
+    // activo. La key vive cifrada en SecureConfigurationManager.
+    val omniRouteEnabled: Boolean = false,
+    val omniRouteApiKey: String = "",
+    val omniRouteAvailable: Boolean = false,
+    val omniRouteBaseUrl: String = com.ivanna.omega.assistant.core.OmniRoutePrefs.DEFAULT_BASE_URL,
+    val omniRouteModel: String = com.ivanna.omega.assistant.core.OmniRoutePrefs.DEFAULT_MODEL
 )
 
 // ── ViewModel ─────────────────────────────────────────────────────────────────
@@ -133,11 +142,56 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
         _panel.value = _panel.value.copy(geminiApiKey = key.trim(), geminiAvailable = avail)
     }
 
+    // ── OmniRoute (gateway LLM gratis, v2.5.443) ──────────────────────────
+    /** Enciende/apaga OmniRoute como cerebro del chat (Gemini = default). */
+    fun setOmniRouteEnabled(enabled: Boolean) {
+        com.ivanna.omega.assistant.core.OmniRoutePrefs.setOmniRouteEnabled(getApplication(), enabled)
+        _panel.value = _panel.value.copy(omniRouteEnabled = enabled)
+    }
+
+    /** Guarda la API key de OmniRoute cifrada (mismo patrón que Gemini). */
+    fun setOmniRouteApiKey(key: String) {
+        runCatching {
+            com.ivanna.omega.assistant.core.SecureConfigurationManager.initialize(getApplication())
+            com.ivanna.omega.assistant.core.SecureConfigurationManager.setOmniRouteApiKey(key.trim())
+        }
+        val avail = runCatching { com.ivanna.omega.assistant.core.SecureConfigurationManager.state.value.isOmniRouteConfigured }.getOrDefault(false)
+        _panel.value = _panel.value.copy(omniRouteApiKey = key.trim(), omniRouteAvailable = avail)
+    }
+
+    /** Base URL del gateway (incluye /v1). Default: VM por Tailscale. */
+    fun setOmniRouteBaseUrl(url: String) {
+        com.ivanna.omega.assistant.core.OmniRoutePrefs.setBaseUrl(getApplication(), url)
+        _panel.value = _panel.value.copy(
+            omniRouteBaseUrl = com.ivanna.omega.assistant.core.OmniRoutePrefs.getBaseUrl(getApplication())
+        )
+    }
+
+    /** Modelo o combo del gateway (default: `ivanna-free`). */
+    fun setOmniRouteModel(model: String) {
+        com.ivanna.omega.assistant.core.OmniRoutePrefs.setModel(getApplication(), model)
+        _panel.value = _panel.value.copy(
+            omniRouteModel = com.ivanna.omega.assistant.core.OmniRoutePrefs.getModel(getApplication())
+        )
+    }
+
     init {
         // 0. Reflejar disponibilidad Gemini al abrir (key persistida o BuildConfig)
         runCatching {
             val avail = com.ivanna.omega.assistant.core.SecureConfigurationManager.state.value.isConfigured
             if (avail) _panel.value = _panel.value.copy(geminiAvailable = true)
+        }
+        // 0b. Reflejar ajustes OmniRoute persistidos al abrir (flag, base
+        // URL, modelo). omniRouteAvailable queda en false hasta que el
+        // usuario pulse "Probar": configurado ≠ conectado (misma lección
+        // que el test de Gemini, 2026-09-04).
+        runCatching {
+            val app = getApplication<android.app.Application>()
+            _panel.value = _panel.value.copy(
+                omniRouteEnabled = com.ivanna.omega.assistant.core.OmniRoutePrefs.isOmniRouteEnabled(app),
+                omniRouteBaseUrl = com.ivanna.omega.assistant.core.OmniRoutePrefs.getBaseUrl(app),
+                omniRouteModel = com.ivanna.omega.assistant.core.OmniRoutePrefs.getModel(app)
+            )
         }
         // 1. Observar el estado de IvannaAssistant (ui + speech + voice)
         viewModelScope.launch {
@@ -405,6 +459,53 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
                 statusLine = if (ok) "IVANNA: ✅ conectada a Gemini"
                              else      "Toca el micrófono y habla con IVANNA.",
                 errorMessage = if (ok) null else "IVANNA no conectó — $detail"
+            )
+        }
+    }
+
+    /**
+     * Prueba la conexión con OmniRoute: GET {baseUrl}/models real.
+     * 200 = el gateway responde (y la key, si hay, es aceptada);
+     * 401 = key rechazada; otro = red o endpoint. No se envía audio ni
+     * datos del usuario — solo se lista el catálogo de modelos.
+     */
+    fun testOmniRouteConnection() {
+        viewModelScope.launch {
+            _panel.value = _panel.value.copy(
+                statusLine   = "Probando conexión real a OmniRoute…",
+                errorMessage = null
+            )
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val app = getApplication<android.app.Application>()
+                    val baseUrl = com.ivanna.omega.assistant.core.OmniRoutePrefs.getBaseUrl(app)
+                    val key = runCatching { com.ivanna.omega.assistant.core.SecureConfigurationManager.getOmniRouteApiKey() }.getOrDefault("")
+                    val url = java.net.URL("$baseUrl/models")
+                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 8000; readTimeout = 8000
+                        requestMethod = "GET"
+                        if (key.isNotBlank()) setRequestProperty("Authorization", "Bearer $key")
+                    }
+                    var errBody = ""
+                    val code = try {
+                        conn.responseCode.also { c ->
+                            if (c !in 200..299) errBody = conn.errorStream?.bufferedReader()?.readText().orEmpty()
+                        }
+                    } finally { conn.disconnect() }
+                    when (code) {
+                        200 -> Pair(true, "OK")
+                        401 -> Pair(false, "OmniRoute rechazó la API key (HTTP 401) — revisa la key en ajustes")
+                        404 -> Pair(false, "OmniRoute no expone /v1/models en esa URL (HTTP 404) — revisa la base URL")
+                        else -> Pair(false, "Sin respuesta válida (HTTP $code) — revisa la red y la base URL")
+                    }
+                }.getOrElse { Pair(false, "Error de red: ${it.message}") }
+            }
+            val (ok, detail) = result
+            _panel.value = _panel.value.copy(
+                omniRouteAvailable = ok,
+                statusLine = if (ok) "IVANNA: ✅ conectada a OmniRoute (gratis)"
+                             else "Toca el micrófono y habla con IVANNA.",
+                errorMessage = if (ok) null else "OmniRoute no conectó — $detail"
             )
         }
     }

@@ -138,6 +138,132 @@ fun IvannaAssistantScreen(
                 )
             }
         )
+
+        // ── OmniRoute · cerebro gratis (v2.5.443, opt-in) ─────────────────
+        // Gemini sigue siendo el default. Al activar el switch, el chat usa
+        // el gateway OmniRoute de la VM (Tailscale) con el combo ivanna-free.
+        // Si el gateway falla, el agente degrada a Offline con caché.
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            color = ObsidianSoft,
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                (if (panelState.omniRouteEnabled) PhosphorGreen else AmberSignal).copy(alpha = 0.40f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "OMNIROUTE · CEREBRO GRATIS",
+                            color = if (panelState.omniRouteEnabled) PhosphorGreen else AmberSignal,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp
+                        )
+                        Text(
+                            text = if (panelState.omniRouteEnabled)
+                                if (panelState.omniRouteAvailable) "✅ Conectado al gateway de la VM"
+                                else "Activo — pulsa Probar para verificar"
+                            else "Apagado — Gemini sigue siendo el cerebro",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Switch(
+                        checked = panelState.omniRouteEnabled,
+                        onCheckedChange = { vm.setOmniRouteEnabled(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = PhosphorGreen,
+                            checkedTrackColor = PhosphorGreen.copy(alpha = 0.35f)
+                        )
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Gateway de IA gratis en tu VM (Tailscale). Sin cuentas de " +
+                            "pago: el combo ivanna-free usa los proveedores gratuitos " +
+                            "conectados. Si el gateway no responde, IVANNA sigue en " +
+                            "modo offline con su inteligencia local.",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (panelState.omniRouteEnabled) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = panelState.omniRouteApiKey,
+                        onValueChange = { vm.setOmniRouteApiKey(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("API Key de OmniRoute (dashboard del gateway)") },
+                        placeholder = { Text("Pega la key del gateway") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PhosphorGreen,
+                            unfocusedBorderColor = ObsidianEdge,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextSecondary,
+                            cursorColor = PhosphorGreen
+                        )
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = panelState.omniRouteBaseUrl,
+                        onValueChange = { vm.setOmniRouteBaseUrl(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Base URL del gateway") },
+                        placeholder = { Text("http://100.71.103.19:20128/v1") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PhosphorGreen,
+                            unfocusedBorderColor = ObsidianEdge,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextSecondary,
+                            cursorColor = PhosphorGreen
+                        )
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = panelState.omniRouteModel,
+                        onValueChange = { vm.setOmniRouteModel(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Modelo o combo") },
+                        placeholder = { Text("ivanna-free") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PhosphorGreen,
+                            unfocusedBorderColor = ObsidianEdge,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextSecondary,
+                            cursorColor = PhosphorGreen
+                        )
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { vm.testOmniRouteConnection() },
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PhosphorGreen.copy(alpha = 0.5f)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Probar OmniRoute", color = PhosphorGreen,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                    val omniError = panelState.errorMessage
+                    if (omniError != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = omniError,
+                            color = CoralWarn,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+        }
             Spacer(Modifier.height(16.dp))
 
             // ── Orb de estado ─────────────────────────────────────────────
