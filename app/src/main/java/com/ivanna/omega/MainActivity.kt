@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -102,6 +103,20 @@ import com.ivanna.omega.ui.SpatialControlPanel
 import com.ivanna.omega.ui.MainScaffold
 import com.ivanna.omega.ui.Bark64VisualizerPanel
 import com.ivanna.omega.audio.IvannaLabMonitor
+import com.ivanna.omega.ui.ScreenSpecCard
+import com.ivanna.omega.ui.SpecInfo
+import com.ivanna.omega.ui.SpecInfoButton
+import com.ivanna.omega.ui.theme.MagistralGold
+import com.ivanna.omega.ui.theme.MagistralGoldHi
+import com.ivanna.omega.ui.theme.MagistralLine
+import com.ivanna.omega.ui.theme.MagistralLineStrong
+import com.ivanna.omega.ui.theme.MagistralMuted
+import com.ivanna.omega.ui.theme.MagistralPanel
+import com.ivanna.omega.ui.theme.MagistralPanel2
+import com.ivanna.omega.ui.theme.MagistralSerif
+import com.ivanna.omega.ui.theme.MagistralText
+import com.ivanna.omega.ui.theme.MagistralVoid
+import com.ivanna.omega.ui.theme.magistralGoldBrush
 
 // ── Palette (Aurora Obsidiana v3.0 — alineada con ui/theme/IvannaTheme.kt) ──
 // Mismos nombres de variable (drop-in, sin tocar los ~50 usos internos) pero
@@ -931,9 +946,42 @@ fun OmegaApp() {
     }
 }
 
+// ── Fichas magistrales v2.5.442 (texto del prototipo aprobado) ─────────────
+// Cada ficha tiene las cuatro partes: QUÉ ES / PARA QUÉ SIRVE / ÚSALO
+// CUANDO / EVÍTALO CUANDO. Nada vago, nada inventado.
+// Nota: en la ficha de Portada el prototipo escribía "versión vigente
+// (v2.5.441)"; se omite el número entre paréntesis para no volver a
+// hardcodear una versión: la vigente la muestra BuildConfig.VERSION_NAME.
+/** Ficha de la Portada (Pantalla I del prototipo). */
+private val portadaSpec = SpecInfo(
+    title = "Portada",
+    what = "La puerta de entrada del producto: identidad, versión vigente y el aviso legal que aceptas antes de que la cadena de audio se active.",
+    purpose = "Para dejar constancia de la propiedad del software y de que IVANNA puede modificar el pipeline de audio del sistema con permisos específicos. Sin aceptación no hay acceso al motor.",
+    whenUse = "En la primera apertura y tras cada actualización de versión o de términos: lee el aviso y pulsa Aceptar e iniciar.",
+    whenAvoid = "No aceptes a ciegas tras reinstalar o restablecer el teléfono: confirma primero que la versión mostrada coincide con la release instalada."
+)
+
+/** Ficha de la Experiencia Auditiva (Pantalla II del prototipo). */
+private val experienciaSpec = SpecInfo(
+    title = "Experiencia Auditiva",
+    what = "El selector de perfiles de escucha: siete firmas medidas de bandas de hard rock 70s. No es un ecualizador: cada perfil es una curva completa de destino para la cadena DSP + HRTF + Neuromorphic.",
+    purpose = "Para decirle al motor cómo debe sonar el material antes de tocar un solo control: el perfil fija el carácter (pegada, aire, filo, espacio) y los entornos siguientes lo ejecutan.",
+    whenUse = "Elige el perfil de la banda que vas a escuchar, o el más cercano en carácter si es otra música: Rush para precisión y transitorios, Steve Miller para el campo más abierto, Grand Funk para potencia con cuerpo.",
+    whenAvoid = "No cambies de perfil a mitad de canción para \"arreglar\" una mezcla: el oído necesita unos segundos para asentarse. Y no uses un perfil de filo (Budgie) con grabaciones ya ásperas: suma aspereza."
+)
+
+/** Ficha del entorno Control (Pantalla III del prototipo). */
+private val controlSpec = SpecInfo(
+    title = "Control",
+    what = "El entorno de control directo de la cadena: graves, corrección de sala, dinámica espacial y el campo ORBE·HOLOS. Es la vista operativa diaria del motor.",
+    purpose = "Para ajustar lo que se oye aquí y ahora: la telemetría ASRC y el espectro confirman que la cadena está viva, y cada módulo actúa sobre una capa distinta sin pisar a las demás.",
+    whenUse = "Como punto de partida de cada sesión y tras cambiar de salida (bocina, audífonos, DAC): revisa primero el estado del motor y después toca módulos, de arriba hacia abajo.",
+    whenAvoid = "No ajustes todo a la vez: si mueves graves, sala y espacio en la misma escucha no sabrás qué causó qué. Un módulo por escucha, A/B contra su interruptor."
+)
+
 @Composable
 fun SplashScreen(onAccept: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars),
+    Box(Modifier.fillMaxSize().background(MagistralVoid).windowInsetsPadding(WindowInsets.systemBars),
         contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 28.dp)) {
@@ -945,36 +993,56 @@ fun SplashScreen(onAccept: () -> Unit) {
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
             )
             Spacer(Modifier.height(12.dp))
-            Text("GORE TNS · LUPP-OR9 · IVANNA OMEGA SUPREME v2.5.72", color = CyanGlow,
-                fontSize = 10.sp, letterSpacing = 1.5.sp)
+            // Wordmark magistral: serif dorada con degradado (prototipo).
+            Text("IVANNA OMEGA SUPREME",
+                style = TextStyle(
+                    brush = magistralGoldBrush(),
+                    fontFamily = MagistralSerif,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 20.sp,
+                    letterSpacing = 2.sp
+                ),
+                textAlign = TextAlign.Center)
+            Spacer(Modifier.height(8.dp))
+            // FIX (v2.5.442): la versión NUNCA más se hardcodea — antes decía
+            // v2.5.72 aquí. BuildConfig.VERSION_NAME es del mismo paquete
+            // com.ivanna.omega, sin import.
+            Text("GORE TNS · LUPP-OR9 · IVANNA OMEGA SUPREME v" + BuildConfig.VERSION_NAME,
+                color = MagistralGold,
+                fontSize = 10.sp, letterSpacing = 1.5.sp, textAlign = TextAlign.Center)
             Spacer(Modifier.height(6.dp))
             Text("PI-LSTM Milenio · Neuro-Cochlear · Volterra H2 · Ω-Atlas",
-                color = GoldGlow, fontSize = 9.sp, letterSpacing = 1.sp,
+                color = MagistralGold, fontSize = 9.sp, letterSpacing = 1.sp,
                 textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
             Box(Modifier.height(1.dp).width(260.dp).background(
-                Brush.horizontalGradient(listOf(Color.Transparent, CyanGlow, Color.Transparent))))
+                Brush.horizontalGradient(listOf(Color.Transparent, MagistralGold, Color.Transparent))))
             Spacer(Modifier.height(36.dp))
-            Column(Modifier.fillMaxWidth().border(1.dp, Border1, RoundedCornerShape(12.dp))
-                .background(Surface2, RoundedCornerShape(12.dp)).padding(16.dp)) {
-                Text("AVISO LEGAL", color = CyanGlow, fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Column(Modifier.fillMaxWidth().border(1.dp, MagistralLineStrong, RoundedCornerShape(12.dp))
+                .background(MagistralPanel2, RoundedCornerShape(12.dp)).padding(16.dp)) {
+                Row(Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("AVISO LEGAL", color = MagistralGold, fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    SpecInfoButton(spec = portadaSpec)
+                }
                 Spacer(Modifier.height(10.dp))
                 Text("© 2025–2026 Luis Uriel Pimentel Pérez · GORE TNS. " +
                     "IVANNA OMEGA SUPREME es un producto propietario; todos los derechos sobre el código propio quedan reservados. Consulta NOTICE para los avisos de terceros; " +
                     "los componentes y datasets de terceros conservan sus propias licencias. " +
                     "La aplicación puede modificar el pipeline de audio del sistema y requiere permisos específicos. " +
                     "Revisa los permisos y usa el producto bajo tu responsabilidad.",
-                    color = TextMid, fontSize = 12.sp, lineHeight = 18.sp,
+                    color = MagistralMuted, fontSize = 12.sp, lineHeight = 18.sp,
                     textAlign = TextAlign.Justify)
             }
             Spacer(Modifier.height(32.dp))
             Button(onClick = onAccept,
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                border = BorderStroke(2.dp, CyanGlow),
+                border = BorderStroke(2.dp, MagistralGold),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                Text("ACEPTAR E INICIAR", color = TextPri,
+                Text("ACEPTAR E INICIAR", color = MagistralGoldHi,
                     fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
             }
         }
@@ -984,12 +1052,21 @@ fun SplashScreen(onAccept: () -> Unit) {
 @Composable
 fun IntroVideoScreen(onContinue: () -> Unit) {
     val context = LocalContext.current
-    Column(Modifier.fillMaxSize().background(Carbon)
+    Column(Modifier.fillMaxSize().background(MagistralVoid)
         .windowInsetsPadding(WindowInsets.systemBars),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
-        Text("IVANNA OMEGA SUPREME", color = CyanGlow, fontSize = 13.sp,
-            fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+        // Tratamiento magistral mínimo (v2.5.442): título serif dorado.
+        // El VideoView y su lógica (auto-salto, SALTAR) no se tocan.
+        Text("IVANNA OMEGA SUPREME",
+            style = TextStyle(
+                brush = magistralGoldBrush(),
+                fontFamily = MagistralSerif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                letterSpacing = 2.sp
+            ),
+            textAlign = TextAlign.Center)
         Spacer(Modifier.height(12.dp))
         AndroidView(
             modifier = Modifier
@@ -1010,7 +1087,7 @@ fun IntroVideoScreen(onContinue: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         TextButton(onClick = onContinue,
             modifier = Modifier.padding(vertical = 8.dp)) {
-            Text("SALTAR →", color = TextSec, fontSize = 12.sp, letterSpacing = 1.sp)
+            Text("SALTAR →", color = CyanGlow, fontSize = 12.sp, letterSpacing = 1.sp)
         }
     }
 }
@@ -1025,15 +1102,51 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
         "Budgie" to "budgie",
         "Steve Miller Band" to "steve_miller"
     )
-    var selectedBand by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize().background(Carbon)
+    // Refinamiento magistral (v2.5.442): Rush preseleccionado por defecto,
+    // como en el prototipo ("Perfil activo III / VII Rush"). El mapa
+    // bandProfileIds y el flujo onEnter no se tocan.
+    var selectedBand by remember { mutableStateOf<String?>("Rush") }
+    // Solo Rush tiene descripción de perfil en el prototipo; de las demás
+    // bandas no hay texto y no se inventa ninguno.
+    val rushDescription =
+        "Transitorios de tarola con filo, armónicos de bajo presentes y escena progresiva amplia. El perfil de precisión de la casa."
+    val romanNumerals = listOf("I", "II", "III", "IV", "V", "VI", "VII")
+    Column(Modifier.fillMaxSize().background(MagistralVoid)
         .windowInsetsPadding(WindowInsets.systemBars).padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(28.dp))
-        Text("EXPERIENCIA AUDITIVA", color = TextPri, fontSize = 18.sp,
-            fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
+        Text("EXPERIENCIA AUDITIVA",
+            style = TextStyle(
+                brush = magistralGoldBrush(),
+                fontFamily = MagistralSerif,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 20.sp,
+                letterSpacing = 1.5.sp
+            ),
+            textAlign = TextAlign.Center)
         Spacer(Modifier.height(4.dp))
-        Text("Hard Rock 70s · DSP + HRTF + Neuromorphic", color = TextSec, fontSize = 10.sp)
+        Text("Hard Rock 70s · DSP + HRTF + Neuromorphic", color = MagistralMuted, fontSize = 10.sp)
+        Spacer(Modifier.height(12.dp))
+        // Perfil activo (prototipo: "Perfil activo III / VII Rush").
+        if (selectedBand != null) {
+            Text(
+                "PERFIL ACTIVO ${romanNumerals[bands.indexOf(selectedBand)]} / VII · ${selectedBand!!.uppercase()}",
+                color = MagistralGold, fontSize = 11.sp,
+                fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
+                textAlign = TextAlign.Center
+            )
+            if (selectedBand == "Rush") {
+                Spacer(Modifier.height(4.dp))
+                Text(rushDescription, color = MagistralMuted, fontSize = 12.sp,
+                    lineHeight = 17.sp, textAlign = TextAlign.Center)
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        // Ficha de la pantalla (prototipo, Pantalla II · Experiencia).
+        // Plegable: la rejilla de bandas es el contenido principal y la ficha
+        // expandida la dejaría con una sola fila visible; el contenido
+        // completo está a un toque.
+        CollapsibleScreenSpecCard(spec = experienciaSpec)
         Spacer(Modifier.height(16.dp))
         LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1042,9 +1155,9 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
                 val hasProfile = bandProfileIds.containsKey(band)
                 val isSelected = band == selectedBand
                 Box(Modifier.aspectRatio(16f/9f).shadow(6.dp, RoundedCornerShape(8.dp))
-                    .background(Surface2, RoundedCornerShape(8.dp))
+                    .background(MagistralPanel2, RoundedCornerShape(8.dp))
                     .border(if (isSelected) 2.dp else 1.dp,
-                        if (isSelected) NeonMagenta else CyanDim, RoundedCornerShape(8.dp))
+                        if (isSelected) MagistralGold else MagistralLine, RoundedCornerShape(8.dp))
                     .then(
                         if (hasProfile) Modifier.clickable {
                             selectedBand = if (isSelected) null else band
@@ -1054,13 +1167,13 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(
                             when {
-                                isSelected -> NeonMagenta
+                                isSelected -> MagistralGold
                                 hasProfile -> CyanGlow
                                 else -> CyanGlow.copy(alpha = 0.5f)
                             }
                         ))
                         Spacer(Modifier.height(4.dp))
-                        Text(band, color = if (isSelected) TextPri else TextSec, fontSize = 8.sp,
+                        Text(band, color = if (isSelected) MagistralText else MagistralMuted, fontSize = 8.sp,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 4.dp), lineHeight = 11.sp)
                     }
@@ -1070,11 +1183,11 @@ fun IntroScreen(onEnter: (String?) -> Unit) {
         Spacer(Modifier.height(16.dp))
         Button(onClick = { onEnter(selectedBand?.let { bandProfileIds[it] }) },
             modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = CyanDim),
-            border = BorderStroke(2.dp, CyanGlow), shape = RoundedCornerShape(12.dp)) {
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+            border = BorderStroke(2.dp, MagistralGold), shape = RoundedCornerShape(12.dp)) {
             Text(
                 if (selectedBand != null) "ENTRAR CON ${selectedBand!!.uppercase()}" else "ENTRAR AL MOTOR",
-                color = TextPri, fontSize = 16.sp,
+                color = MagistralGoldHi, fontSize = 16.sp,
                 fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
         }
         Spacer(Modifier.height(16.dp))
@@ -1297,7 +1410,7 @@ fun DashboardScreen(
         ActivityResultContracts.GetMultipleContents()
     ) { uris -> if (uris.isNotEmpty()) { queue = uris; queueIdx = 0; currentUri = uris.first() } }
 
-    Column(Modifier.fillMaxSize().background(Carbon).windowInsetsPadding(WindowInsets.systemBars)) {
+    Column(Modifier.fillMaxSize().background(MagistralVoid).windowInsetsPadding(WindowInsets.systemBars)) {
         if (!DSPBridge.isLoaded) {
             Box(Modifier.fillMaxWidth().background(Color(0xFF330000)).padding(8.dp),
                 contentAlignment = Alignment.Center) {
@@ -1305,14 +1418,22 @@ fun DashboardScreen(
                     color = Color(0xFFFF4444), fontSize = 11.sp)
             }
         }
-        Row(Modifier.fillMaxWidth().background(Surface2)
+        Row(Modifier.fillMaxWidth().background(MagistralPanel)
             .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween) {
             Column {
-                Text("IVANNA-OMEGA-SUPREME", color = TextPri, fontWeight = FontWeight.ExtraBold,
-                    fontSize = 12.sp, letterSpacing = 1.2.sp)
-                Text("GORE TNS · v1.0", color = CyanGlow, fontSize = 9.sp, letterSpacing = 1.sp)
+                Text("IVANNA-OMEGA-SUPREME",
+                    style = TextStyle(
+                        brush = magistralGoldBrush(),
+                        fontFamily = MagistralSerif,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.sp,
+                        letterSpacing = 1.2.sp
+                    ))
+                // FIX (v2.5.442): segundo literal de versión del archivo —
+                // antes decía "GORE TNS · v1.0". La versión NUNCA se hardcodea.
+                Text("GORE TNS · v" + BuildConfig.VERSION_NAME, color = MagistralGold, fontSize = 9.sp, letterSpacing = 1.sp)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 StatusDot(DSPBridge.isLoaded, "DSP")
@@ -1339,7 +1460,7 @@ fun DashboardScreen(
                 OutlinedButton(
                     onClick = { nav.navigate(route) },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanGlow),
-                    border = BorderStroke(1.dp, Border1),
+                    border = BorderStroke(1.dp, MagistralLine),
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) { Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
@@ -1359,6 +1480,13 @@ fun DashboardScreen(
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
+            // Ficha del entorno Control (prototipo, Pantalla III · Motor),
+            // al inicio del contenido con scroll, sin tocar el layout: el
+            // panel y la tarjeta del reproductor quedan debajo, como antes.
+            ScreenSpecCard(
+                spec = controlSpec,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
             val routeState by com.ivanna.omega.audio.IvannaUnifiedPipeline.state.collectAsState()
             IvannaControlPanel(
                 scrollable = false,
