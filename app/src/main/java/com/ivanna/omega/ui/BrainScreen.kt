@@ -23,6 +23,87 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+// ── Fichas magistrales · Brain (prototipo aprobado, Pantalla IV) ────────────
+// Texto exacto del prototipo; nada inventado. SpecInfo / ScreenSpecCard /
+// SpecInfoButton viven en SpecSheet.kt, mismo paquete.
+
+/** Ficha del entorno · Brain. */
+private val BrainScreenSpec = SpecInfo(
+    title = "Brain",
+    what = "El entorno neural de IVANNA: el hiper-operador Φ, la predicción PI-LSTM Milenio, el modelo Neuro-Cochlear y la gestión de fatiga. Todo lo que adapta la cadena a tu sistema nervioso, no solo a tu equipo.",
+    purpose = "Para cerrar el bucle entre señal, transductor y oyente: la cadena deja de ser una lista de efectos y pasa a ser un solo organismo que anticipa, siente la respuesta del altavoz y protege tu oído en sesiones largas.",
+    whenUse = "Déjalo en sus valores de directiva (Φ al 50 %, predicción activa) como configuración permanente. Entra aquí para comparar A/B o para ajustar la fatiga según la duración de tus sesiones.",
+    whenAvoid = "No apagues capas neurales para «ganar pureza» mientras diagnosticas otro problema: primero aísla la causa en System. Brain apagado a medias (Φ sí, predicción no) es el estado menos coherente de todos."
+)
+
+/**
+ * E · Hiper-Operador de Estado Φ.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: el control «Intensidad Φ» (50 %)
+ * vive en ControlTabScreen.kt / IvannaControlPanel.kt, fuera del alcance de
+ * esta tarea. El botón se ancla a la tarjeta del núcleo neural
+ * («Sistema nervioso superior · Fases 9–15»), el equivalente más cercano
+ * dentro de BrainScreen; no se inventa ningún control nuevo.
+ */
+private val PhiSpec = SpecInfo(
+    title = "Hiper-Operador de Estado Φ",
+    what = "Φ fusiona en un solo operador el bucle cerrado neural, los campos de onda continuos, la pre-distorsión Volterra, el sensado Back-EMF (la señal que el propio altavoz devuelve) y el flujo Zero-PCM, con tres vectores continuos: S_neuro(t), Z_EMF(t) y W_acústico(r,θ). Este control es su cantidad.",
+    purpose = "Para que la corrección no llegue tarde: al operar muestra a muestra sobre el estado completo —señal, transductor y oyente— anticipa lo que el sistema va a hacer en vez de reaccionar un bloque después. Sensor: el micrófono del teléfono; componente neuro: el NPE del propio dispositivo, sin hardware externo.",
+    whenUse = "Activo siempre, al 50 %, su valor de directiva. Es parte del sonido de la casa: la cadena magistral se afinó con Φ presente.",
+    whenAvoid = "Apágalo solo para comparar A/B o diagnosticar: Φ apagado + NEU·Ω solo es la referencia limpia. No lo lleves al 100 % junto con todos los demás módulos al máximo: la cadena se vuelve impredecible y el A/B deja de decirte algo."
+)
+
+/**
+ * F · PI-LSTM Milenio · Predicción neural.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: no hay panel PI-LSTM con ese
+ * nombre aquí (el panel del predictor vive en AdaptiveEngineLivePanel.kt,
+ * fuera del alcance de esta tarea). El botón se ancla a «Modo adaptativo»
+ * (Motor A · Decisión en tiempo real), al que la predicción alimenta; no se
+ * inventa ningún control nuevo.
+ */
+private val PiLstmSpec = SpecInfo(
+    title = "PI-LSTM Milenio · Predicción neural",
+    what = "Una red neuronal recurrente (LSTM) informada por la física del sistema que predice la evolución inmediata de la señal y del estado acústico, en vez de limitarse a reaccionar a lo que ya pasó.",
+    purpose = "Alimenta a Φ y a NEU·Ω con la pose y la señal predichas al instante de emisión: lo que oyes corresponde a donde está tu cabeza ahora, no a donde estaba hace un bloque de procesado.",
+    whenUse = "Siempre activo si usas ORBE o head-tracking: la predicción es lo que hace que el campo se sienta pegado al mundo real al moverte.",
+    whenAvoid = "Solo se apaga en diagnóstico. Sin predicción, con el campo espacial activo, notarás un «arrastre» del escenario al girar la cabeza: es el retardo que este módulo existe para eliminar."
+)
+
+/**
+ * G · Neuro-Cochlear · Firma biológica.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: el control «Sensibilidad
+ * neuro-coclear» (60 %) no existe aquí; el slider «Neural Adaptation» vive
+ * en PerceptualBrainDashboard.kt (el otro archivo de esta tarea). El botón
+ * se ancla a «Telemetría perceptual», la vista de la percepción que el
+ * modelo corrige; no se inventa ningún control nuevo.
+ */
+private val NeuroCochlearSpec = SpecInfo(
+    title = "Neuro-Cochlear · Firma biológica",
+    what = "Un modelo de tu cóclea y tu percepción que compensa la señal según tu firma biológica única. La sensibilidad regula cuánto de esa compensación personal se aplica sobre la señal estándar.",
+    purpose = "Dos oyentes no oyen igual la misma señal. Este modelo busca cero distorsión perceptiva individual: que el equilibrio que tú percibes sea el de la mezcla, no el de tu oído sin corregir.",
+    whenUse = "Tras completar tu perfil de escucha, empieza en 50–60 % y ajusta en pasos pequeños durante varios días, no en una sola sesión: la adaptación perceptiva es lenta.",
+    whenAvoid = "No uses el perfil de otra persona: la firma es individual y la compensación ajena empeora la tuya. Y no subas al 100 % esperando «más efecto»: sobrecompensa y colorea."
+)
+
+/**
+ * H · Gestión de fatiga auditiva.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: el control «Protección contra
+ * fatiga» (40 %) no existe aquí; el slider «Fatigue Index» vive dentro de
+ * TinyMlClassifierPanel (TinyMlClassifierPanel.kt, fuera del alcance de esta
+ * tarea). El botón se ancla al encabezado que precede a ese panel en el tab
+ * Perceptual; no se inventa ningún control nuevo.
+ */
+private val FatigueSpec = SpecInfo(
+    title = "Gestión de fatiga auditiva",
+    what = "Un vigilante de dosis sonora: sigue la energía acumulada en las bandas que más fatigan (presencia agresiva, picos repetidos) y suaviza los micro-picos que la disparan, sin bajar el volumen percibido de la música.",
+    purpose = "Para terminar sesiones largas sin el oído «ardido»: la fatiga no avisa durante la escucha, se nota al final — y arruina la siguiente.",
+    whenUse = "Sesiones de más de 45 minutos o escucha a volumen serio. 40 % es el punto discreto: protege sin que notes su mano.",
+    whenAvoid = "En escucha crítica corta (juzgar una mezcla, comparar masters) apágalo: toca la micro-dinámica y eso es justo lo que estás evaluando."
+)
+
 /**
  * BrainScreen — Sección CEREBRO unificada.
  *
@@ -55,9 +136,9 @@ fun BrainScreen(
         AdaptiveControlsPrefs.save(context, prefs)
     }
 
-    Column(modifier = modifier.background(ObsidianDeep)) {
-        IvannaScreenHeader("CEREBRO", NeonMagenta)
-        IvannaTabRow(tabs, selectedTab, { selectedTab = it }, NeonMagenta)
+    Column(modifier = modifier.background(MagistralVoid)) {
+        IvannaScreenHeader("CEREBRO", MagistralGold)
+        IvannaTabRow(tabs, selectedTab, { selectedTab = it }, MagistralGold)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -65,9 +146,40 @@ fun BrainScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Ficha del entorno · Brain (prototipo aprobado, Pantalla IV)
+            Text(
+                "CAPA NEURAL",
+                color = MagistralGold,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 2.sp
+            )
+            Text(
+                "La señal se optimiza para el cerebro que la recibe, no para un estándar industrial: cero distorsión perceptiva individual.",
+                color = MagistralMuted,
+                fontSize = 12.sp
+            )
+            ScreenSpecCard(spec = BrainScreenSpec)
             when (selectedTab) {
                 0 -> AdaptiveTab(adaptiveBack)
-                1 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { PerceptualTab(); TinyMlClassifierPanel() }
+                1 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                    PerceptualTab()
+                    // H · Gestión de fatiga auditiva: el slider «Fatigue Index»
+                    // vive dentro de TinyMlClassifierPanel (otro archivo); la
+                    // ficha se ancla a este encabezado que lo precede.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Gestión de fatiga auditiva",
+                            color = MagistralGoldHi,
+                            fontFamily = MagistralSerif,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        SpecInfoButton(spec = FatigueSpec)
+                    }
+                    TinyMlClassifierPanel()
+                }
                 2 -> CognitiveEvolutionTab()
                 3 -> Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) { EvolutionTab(prefs, ::updatePrefs); CmaEsFitnessPanel() }
                 4 -> LabTab()
@@ -83,7 +195,14 @@ private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null)
     val context = LocalContext.current
     val audioState by AudioStateManager.audioState.collectAsState()
 
-    GlassCard("MODO ADAPTATIVO", NeonMagenta, "Motor A · Decisión en tiempo real") {
+    // F · PI-LSTM Milenio: sin panel PI-LSTM en este archivo; la ficha se
+    // ancla a «Modo adaptativo», al que la predicción alimenta.
+    GlassCard(
+        "MODO ADAPTATIVO",
+        MagistralGold,
+        "Motor A · Decisión en tiempo real",
+        rightSlot = { SpecInfoButton(spec = PiLstmSpec) }
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -98,8 +217,8 @@ private fun AdaptiveTab(backend: com.ivanna.omega.audio.AdaptiveBackend? = null)
                                 runCatching { IvannaNativeLib.nativeSetAdaptiveControls(mode.ordinal, audioState.adaptiveIntensity * 100f) }
                         },
                         colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (sel) NeonMagenta.copy(alpha = 0.25f) else ObsidianEdge,
-                            contentColor   = if (sel) NeonMagenta else TextMuted
+                            containerColor = if (sel) MagistralGold.copy(alpha = 0.25f) else ObsidianEdge,
+                            contentColor   = if (sel) MagistralGoldHi else TextMuted
                         )
                     ) { Text(mode.label, fontSize = 11.sp) }
                 }
@@ -196,7 +315,15 @@ private fun PerceptualTab() {
         }
     }
 
-    GlassCard("TELEMETRÍA PERCEPTUAL", NeonMagenta, "Motor adaptativo · 10 Hz") {
+    // G · Neuro-Cochlear: sin control «Sensibilidad neuro-coclear» en este
+    // archivo; la ficha se ancla a la telemetría de la percepción que el
+    // modelo corrige.
+    GlassCard(
+        "TELEMETRÍA PERCEPTUAL",
+        MagistralGold,
+        "Motor adaptativo · 10 Hz",
+        rightSlot = { SpecInfoButton(spec = NeuroCochlearSpec) }
+    ) {
         val data = rows
         if (data == null) {
             Text("Motor nativo sin datos — activa el procesamiento para ver la telemetría.",
@@ -209,13 +336,13 @@ private fun PerceptualTab() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(label, color = TextSecondary, fontSize = 11.sp)
-                    Text(text, color = NeonMagenta, fontSize = 11.sp,
+                    Text(text, color = AuroraCyan, fontSize = 11.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier.fillMaxWidth().height(3.dp),
-                    color = NeonMagenta,
+                    color = AuroraCyan,
                     trackColor = ObsidianEdge
                 )
             }
@@ -306,7 +433,7 @@ private fun EvolutionTab(
                         }
                     },
                     enabled = isRunning,
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonMagenta.copy(alpha = 0.2f), contentColor = NeonMagenta),
+                    colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan.copy(alpha = 0.2f), contentColor = AuroraCyan),
                     modifier = Modifier.weight(1f)
                 ) { Text("PASO", fontSize = 11.sp) }
             }
@@ -349,7 +476,7 @@ private fun LabTab() {
         }
     }
 
-    GlassCard("IVANNA LAB", NeonMagenta, "Medición · Análisis · Reporte") {
+    GlassCard("IVANNA LAB", MagistralGold, "Medición · Análisis · Reporte") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -434,7 +561,7 @@ private fun LabTab() {
                         if (i < m.size) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(lbl, color = TextSecondary, fontSize = 10.sp)
-                                Text(if (m[i] == -1f) "—" else "%.3f".format(m[i]), color = NeonMagenta, fontSize = 10.sp,
+                                Text(if (m[i] == -1f) "—" else "%.3f".format(m[i]), color = AuroraCyan, fontSize = 10.sp,
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                             }
                         }
@@ -467,7 +594,7 @@ private fun LabTab() {
                             }.onFailure { reportText = "Error: ${it.message}" }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonMagenta.copy(alpha = 0.2f), contentColor = NeonMagenta),
+                    colors = ButtonDefaults.buttonColors(containerColor = AuroraCyan.copy(alpha = 0.2f), contentColor = AuroraCyan),
                     modifier = Modifier.weight(1f)
                 ) { Text("MEDIR", fontSize = 11.sp) }
 
@@ -530,10 +657,13 @@ private fun CognitiveEvolutionTab() {
     val realPct: (Int) -> Float? = { i -> realityTele?.getOrNull(i)?.takeIf { it.isFinite() } }
     val fmtPct: (Float?) -> String = { v -> v?.let { "%.1f %%".format(it * 100f) } ?: "—" }
 
+    // E · Hiper-Operador de Estado Φ: sin control «Intensidad Φ» en este
+    // archivo; la ficha se ancla a la tarjeta del núcleo neural.
     GlassCard(
         "SISTEMA NERVIOSO SUPERIOR · FASES 9–15",
-        AuroraCyan,
-        "AcousticCognitiveCore · Specialist Network · ExecutiveBrain · Memory · Homeostasis · DigitalTwin"
+        MagistralGold,
+        "AcousticCognitiveCore · Specialist Network · ExecutiveBrain · Memory · Homeostasis · DigitalTwin",
+        rightSlot = { SpecInfoButton(spec = PhiSpec) }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -580,7 +710,7 @@ private fun CognitiveEvolutionTab() {
 
     GlassCard(
         "FASE 9 & 10 · PRIORIDADES COGNITIVAS Y RED DE ESPECIALISTAS",
-        NeonMagenta,
+        MagistralGold,
         "Spatial · Room · MicroReality · HumanPerception Judge"
     ) {
         val metrics: List<Pair<String, Float?>> = listOf(
@@ -603,7 +733,7 @@ private fun CognitiveEvolutionTab() {
                     Text(label, color = TextSecondary, fontSize = 11.sp)
                     Text(
                         fmtPct(value),
-                        color = NeonMagenta,
+                        color = AuroraCyan,
                         fontSize = 11.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
@@ -611,7 +741,7 @@ private fun CognitiveEvolutionTab() {
                 LinearProgressIndicator(
                     progress = { (value ?: 0f).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(3.dp),
-                    color = NeonMagenta,
+                    color = AuroraCyan,
                     trackColor = ObsidianEdge
                 )
             }
@@ -620,7 +750,7 @@ private fun CognitiveEvolutionTab() {
 
     GlassCard(
         "FASES 11–15 · EXECUTIVE BRAIN, MEMORIA, HOMEOSTASIS Y GEMELO DIGITAL",
-        PhosphorGreen,
+        MagistralGold,
         "Arbitraje de Conflictos · Rush Xanadu Memory · PID Homeostático · CMA-ES + Q-Learning"
     ) {
         val r6 = realPct(6)
@@ -671,7 +801,7 @@ private fun IvannaSliderRowBrain(
     Column {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, color = TextSecondary, fontSize = 11.sp)
-            Text("${"%.2f".format(value)} $unit", color = NeonMagenta, fontSize = 11.sp,
+            Text("${"%.2f".format(value)} $unit", color = AuroraCyan, fontSize = 11.sp,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
         }
         Slider(
@@ -681,7 +811,7 @@ private fun IvannaSliderRowBrain(
                     .sanitizeControlValue(proposed, min, max)?.let(onValueChange)
             },
             valueRange = min..max,
-            colors = SliderDefaults.colors(thumbColor = NeonMagenta, activeTrackColor = NeonMagenta, inactiveTrackColor = ObsidianEdge)
+            colors = SliderDefaults.colors(thumbColor = AuroraCyan, activeTrackColor = AuroraCyan, inactiveTrackColor = ObsidianEdge)
         )
         ControlHelpText(label)
     }

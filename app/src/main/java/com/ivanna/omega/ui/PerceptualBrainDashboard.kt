@@ -26,6 +26,88 @@ import com.ivanna.omega.ui.theme.*
 import com.ivanna.omega.ai.PerceptualSnapshot
 import com.ivanna.omega.preferences.PerceptualBrainPrefs
 
+// ── Fichas magistrales · Brain (prototipo aprobado, Pantalla IV) ────────────
+// Texto exacto del prototipo; nada inventado. SpecInfo / ScreenSpecCard /
+// SpecInfoButton viven en SpecSheet.kt, mismo paquete.
+
+/** Ficha del entorno · Brain. */
+private val BrainScreenSpec = SpecInfo(
+    title = "Brain",
+    what = "El entorno neural de IVANNA: el hiper-operador Φ, la predicción PI-LSTM Milenio, el modelo Neuro-Cochlear y la gestión de fatiga. Todo lo que adapta la cadena a tu sistema nervioso, no solo a tu equipo.",
+    purpose = "Para cerrar el bucle entre señal, transductor y oyente: la cadena deja de ser una lista de efectos y pasa a ser un solo organismo que anticipa, siente la respuesta del altavoz y protege tu oído en sesiones largas.",
+    whenUse = "Déjalo en sus valores de directiva (Φ al 50 %, predicción activa) como configuración permanente. Entra aquí para comparar A/B o para ajustar la fatiga según la duración de tus sesiones.",
+    whenAvoid = "No apagues capas neurales para «ganar pureza» mientras diagnosticas otro problema: primero aísla la causa en System. Brain apagado a medias (Φ sí, predicción no) es el estado menos coherente de todos."
+)
+
+/**
+ * E · Hiper-Operador de Estado Φ.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: el control «Intensidad Φ» (50 %)
+ * vive en ControlTabScreen.kt / IvannaControlPanel.kt, fuera del alcance de
+ * esta tarea. El botón se ancla al «Panel DSP Cortex & Field Spatial», que
+ * alberga el estado del NPE —el componente neuro de Φ según el prototipo—;
+ * no se inventa ningún control nuevo.
+ */
+private val PhiSpec = SpecInfo(
+    title = "Hiper-Operador de Estado Φ",
+    what = "Φ fusiona en un solo operador el bucle cerrado neural, los campos de onda continuos, la pre-distorsión Volterra, el sensado Back-EMF (la señal que el propio altavoz devuelve) y el flujo Zero-PCM, con tres vectores continuos: S_neuro(t), Z_EMF(t) y W_acústico(r,θ). Este control es su cantidad.",
+    purpose = "Para que la corrección no llegue tarde: al operar muestra a muestra sobre el estado completo —señal, transductor y oyente— anticipa lo que el sistema va a hacer en vez de reaccionar un bloque después. Sensor: el micrófono del teléfono; componente neuro: el NPE del propio dispositivo, sin hardware externo.",
+    whenUse = "Activo siempre, al 50 %, su valor de directiva. Es parte del sonido de la casa: la cadena magistral se afinó con Φ presente.",
+    whenAvoid = "Apágalo solo para comparar A/B o diagnosticar: Φ apagado + NEU·Ω solo es la referencia limpia. No lo lleves al 100 % junto con todos los demás módulos al máximo: la cadena se vuelve impredecible y el A/B deja de decirte algo."
+)
+
+/**
+ * F · PI-LSTM Milenio · Predicción neural.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: no hay control PI-LSTM con ese
+ * nombre aquí (el panel del predictor vive en AdaptiveEngineLivePanel.kt,
+ * fuera del alcance de esta tarea). El botón se ancla al «Panel TinyML»,
+ * el panel de predicción/clasificación neural de este dashboard; no se
+ * inventa ningún control nuevo.
+ */
+private val PiLstmSpec = SpecInfo(
+    title = "PI-LSTM Milenio · Predicción neural",
+    what = "Una red neuronal recurrente (LSTM) informada por la física del sistema que predice la evolución inmediata de la señal y del estado acústico, en vez de limitarse a reaccionar a lo que ya pasó.",
+    purpose = "Alimenta a Φ y a NEU·Ω con la pose y la señal predichas al instante de emisión: lo que oyes corresponde a donde está tu cabeza ahora, no a donde estaba hace un bloque de procesado.",
+    whenUse = "Siempre activo si usas ORBE o head-tracking: la predicción es lo que hace que el campo se sienta pegado al mundo real al moverte.",
+    whenAvoid = "Solo se apaga en diagnóstico. Sin predicción, con el campo espacial activo, notarás un «arrastre» del escenario al girar la cabeza: es el retardo que este módulo existe para eliminar."
+)
+
+/**
+ * G · Neuro-Cochlear · Firma biológica.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: el control «Sensibilidad
+ * neuro-coclear» (60 %) no existe aquí; el slider más cercano, «Neural
+ * Adaptation», es un control distinto y no se renombra. El botón se ancla
+ * al «Panel Humano Auditivo (Psychoacoustics)» —bandas Bark/Mel,
+ * enmascaramiento—, el modelo auditivo más cercano a la cóclea en este
+ * dashboard; no se inventa ningún control nuevo.
+ */
+private val NeuroCochlearSpec = SpecInfo(
+    title = "Neuro-Cochlear · Firma biológica",
+    what = "Un modelo de tu cóclea y tu percepción que compensa la señal según tu firma biológica única. La sensibilidad regula cuánto de esa compensación personal se aplica sobre la señal estándar.",
+    purpose = "Dos oyentes no oyen igual la misma señal. Este modelo busca cero distorsión perceptiva individual: que el equilibrio que tú percibes sea el de la mezcla, no el de tu oído sin corregir.",
+    whenUse = "Tras completar tu perfil de escucha, empieza en 50–60 % y ajusta en pasos pequeños durante varios días, no en una sola sesión: la adaptación perceptiva es lenta.",
+    whenAvoid = "No uses el perfil de otra persona: la firma es individual y la compensación ajena empeora la tuya. Y no subas al 100 % esperando «más efecto»: sobrecompensa y colorea."
+)
+
+/**
+ * H · Gestión de fatiga auditiva.
+ *
+ * SIN EQUIVALENTE EXACTO en este archivo: el control «Protección contra
+ * fatiga» (40 %) no existe aquí; el slider «Fatigue Index» vive en
+ * TinyMlClassifierPanel.kt, fuera del alcance de esta tarea. El botón se
+ * ancla a la tarjeta «Estado del cerebro perceptual», que alberga la
+ * métrica FATIGUE INDEX en vivo; no se inventa ningún control nuevo.
+ */
+private val FatigueSpec = SpecInfo(
+    title = "Gestión de fatiga auditiva",
+    what = "Un vigilante de dosis sonora: sigue la energía acumulada en las bandas que más fatigan (presencia agresiva, picos repetidos) y suaviza los micro-picos que la disparan, sin bajar el volumen percibido de la música.",
+    purpose = "Para terminar sesiones largas sin el oído «ardido»: la fatiga no avisa durante la escucha, se nota al final — y arruina la siguiente.",
+    whenUse = "Sesiones de más de 45 minutos o escucha a volumen serio. 40 % es el punto discreto: protege sin que notes su mano.",
+    whenAvoid = "En escucha crítica corta (juzgar una mezcla, comparar masters) apágalo: toca la micro-dinámica y eso es justo lo que estás evaluando."
+)
+
 
 @Composable
 fun PerceptualBrainDashboard(
@@ -61,7 +143,7 @@ fun PerceptualBrainDashboard(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(ObsidianVoid)
+            .background(MagistralVoid)
             .padding(horizontal = 16.dp)
             .verticalScroll(scrollState)
     ) {
@@ -76,22 +158,23 @@ fun PerceptualBrainDashboard(
             Column {
                 Text(
                     text = "PERCEPTUAL BRAIN CORTEX v4.0",
-                    color = TextPrimary,
+                    color = MagistralGoldHi,
+                    fontFamily = MagistralSerif,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 1.2.sp
                 )
                 Text(
                     text = "IVANNA OMEGA SUPREME · NEURO-ACOUSTIC BRAIN",
-                    color = AuroraCyan,
+                    color = MagistralMuted,
                     fontSize = 9.sp,
                     letterSpacing = 1.sp
                 )
             }
             OutlinedButton(
                 onClick = onBack,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberSignal),
-                border = BorderStroke(1.dp, AmberSignal),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraCyan),
+                border = BorderStroke(1.dp, AuroraCyan),
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
             ) {
@@ -100,6 +183,11 @@ fun PerceptualBrainDashboard(
         }
 
         Spacer(Modifier.height(16.dp))
+
+        // Ficha del entorno · Brain (prototipo aprobado, Pantalla IV)
+        ScreenSpecCard(spec = BrainScreenSpec)
+
+        Spacer(Modifier.height(12.dp))
 
         // --- Section 1: Perceptual Brain Status ---
         BrainStatusCard(snapshot)
@@ -133,8 +221,8 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
-        border = BorderStroke(1.dp, ObsidianEdge)
+        colors = CardDefaults.cardColors(containerColor = MagistralPanel),
+        border = BorderStroke(1.dp, MagistralLine)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -144,11 +232,17 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
             ) {
                 Text(
                     text = "ESTADO DEL CEREBRO PERCEPTUAL",
-                    color = AmberSignal,
+                    color = MagistralGoldHi,
+                    fontFamily = MagistralSerif,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.weight(1f)
                 )
+                // H · Gestión de fatiga auditiva: sin control «Protección
+                // contra fatiga» en este archivo; la ficha se ancla a la
+                // tarjeta que alberga la métrica FATIGUE INDEX en vivo.
+                SpecInfoButton(spec = FatigueSpec)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -193,14 +287,14 @@ private fun BrainStatusCard(snapshot: PerceptualSnapshot) {
                 MetricProgressBlock(
                     label = "IMMERSION",
                     value = snapshot.immersion,
-                    color = NeonMagenta,
+                    color = AuroraCyan,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
                 MetricProgressBlock(
                     label = "ATTENTION",
                     value = snapshot.attention,
-                    color = AmberSignal,
+                    color = AuroraCyan,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -231,17 +325,28 @@ private fun HumanAuditoryPanel(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
-        border = BorderStroke(1.dp, ObsidianEdge)
+        colors = CardDefaults.cardColors(containerColor = MagistralPanel),
+        border = BorderStroke(1.dp, MagistralLine)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "PANEL HUMANO AUDITIVO (PSYCHOACOUSTICS)",
-                color = AuroraCyan,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PANEL HUMANO AUDITIVO (PSYCHOACOUSTICS)",
+                    color = MagistralGoldHi,
+                    fontFamily = MagistralSerif,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                // G · Neuro-Cochlear: sin control «Sensibilidad
+                // neuro-coclear» en este archivo; la ficha se ancla al
+                // panel del modelo auditivo (Bark/Mel, enmascaramiento).
+                SpecInfoButton(spec = NeuroCochlearSpec)
+            }
             Spacer(Modifier.height(10.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -263,7 +368,7 @@ private fun HumanAuditoryPanel(snapshot: PerceptualSnapshot) {
             TextValueItem(
                 label = "Dynamic Range Perception",
                 value = "%.1f dB".format(snapshot.dynamicRangeDb),
-                color = AmberSignal
+                color = MagistralGoldHi
             )
         }
     }
@@ -274,17 +379,27 @@ private fun TinyMlClassifierPanel(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
-        border = BorderStroke(1.dp, ObsidianEdge)
+        colors = CardDefaults.cardColors(containerColor = MagistralPanel),
+        border = BorderStroke(1.dp, MagistralLine)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "PANEL TINYML (CONVNEXT INT8 CLASSIFIER)",
-                color = NeonMagenta,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PANEL TINYML (CONVNEXT INT8 CLASSIFIER)",
+                    color = MagistralGoldHi,
+                    fontFamily = MagistralSerif,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                // F · PI-LSTM Milenio: sin control PI-LSTM en este archivo;
+                // la ficha se ancla al panel de predicción neural.
+                SpecInfoButton(spec = PiLstmSpec)
+            }
             Spacer(Modifier.height(10.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -303,7 +418,7 @@ private fun TinyMlClassifierPanel(snapshot: PerceptualSnapshot) {
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextValueItem(label = "Dominant Class", value = snapshot.dominantClassLabel, color = TextPrimary)
-                TextValueItem(label = "Class Confidence", value = "%.1f%%".format(snapshot.convNextConfidence * 100f), color = AmberSignal)
+                TextValueItem(label = "Class Confidence", value = "%.1f%%".format(snapshot.convNextConfidence * 100f), color = MagistralGoldHi)
             }
         }
     }
@@ -314,17 +429,28 @@ private fun DspCortexPanel(snapshot: PerceptualSnapshot) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
-        border = BorderStroke(1.dp, ObsidianEdge)
+        colors = CardDefaults.cardColors(containerColor = MagistralPanel),
+        border = BorderStroke(1.dp, MagistralLine)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "PANEL DSP CORTEX & FIELD SPATIAL",
-                color = AmberSignal,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PANEL DSP CORTEX & FIELD SPATIAL",
+                    color = MagistralGoldHi,
+                    fontFamily = MagistralSerif,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                // E · Hiper-Operador de Estado Φ: sin control «Intensidad Φ»
+                // en este archivo; la ficha se ancla al panel que alberga
+                // el estado del NPE, componente neuro de Φ.
+                SpecInfoButton(spec = PhiSpec)
+            }
             Spacer(Modifier.height(10.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -355,13 +481,14 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = ObsidianSoft),
-        border = BorderStroke(1.dp, ObsidianEdge)
+        colors = CardDefaults.cardColors(containerColor = MagistralPanel),
+        border = BorderStroke(1.dp, MagistralLine)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Text(
                 text = "CONTROLES DE INTELIGENCIA PERCEPTUAL",
-                color = TextPrimary,
+                color = MagistralGoldHi,
+                fontFamily = MagistralSerif,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.sp
@@ -383,7 +510,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Neural Adaptation",
                 value = snapshot.neuralAdaptation,
-                color = PhosphorGreen,
+                color = AuroraCyan,
                 onValueChange = {
                     engine.setNeuralAdaptation(it)
                     PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(neuralAdaptation = it))
@@ -395,7 +522,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Spatial Immersion",
                 value = snapshot.spatialImmersion,
-                color = NeonMagenta,
+                color = AuroraCyan,
                 onValueChange = {
                     engine.setSpatialImmersion(it)
                     PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(spatialImmersion = it))
@@ -407,7 +534,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Harmonic Reconstruction",
                 value = snapshot.harmonicReconstruction,
-                color = AmberSignal,
+                color = AuroraCyan,
                 onValueChange = {
                     engine.setHarmonicReconstruction(it)
                     PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(harmonicReconstruction = it))
@@ -431,7 +558,7 @@ private fun PerceptualSlidersCard(snapshot: PerceptualSnapshot, engine: Perceptu
             PerceptualSliderRow(
                 label = "Human Loudness Comp.",
                 value = snapshot.humanLoudnessCompensation,
-                color = PhosphorGreen,
+                color = AuroraCyan,
                 onValueChange = {
                     engine.setHumanLoudnessCompensation(it)
                     PerceptualBrainPrefs.save(context, PerceptualBrainPrefs.load(context).copy(humanLoudnessCompensation = it))
@@ -451,7 +578,7 @@ private fun MetricProgressBlock(
 ) {
     Column(
         modifier = modifier
-            .background(ObsidianGlass, RoundedCornerShape(8.dp))
+            .background(MagistralPanel2, RoundedCornerShape(8.dp))
             .padding(8.dp)
     ) {
         Row(
@@ -473,7 +600,7 @@ private fun MetricProgressBlock(
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp)),
             color = if (dataAvailable) color else TextMuted,
-            trackColor = ObsidianEdge
+            trackColor = MagistralLine
         )
     }
 }
@@ -508,7 +635,7 @@ private fun PerceptualSliderRow(
             colors = SliderDefaults.colors(
                 thumbColor = color,
                 activeTrackColor = color,
-                inactiveTrackColor = ObsidianEdge
+                inactiveTrackColor = MagistralLine
             ),
             modifier = Modifier.height(24.dp)
         )
