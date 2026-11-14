@@ -26,6 +26,23 @@ import kotlinx.coroutines.launch
 // Frecuencias de las 10 bandas EQ (etiquetas para la curva)
 private val BAND_LABELS = listOf("31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "12.5k")
 
+// ── Ficha magistral · Adaptive (prototipo aprobado, Pantalla V, módulo K) ───
+// Texto exacto del prototipo; nada inventado. SpecInfo / SpecInfoButton
+// viven en SpecSheet.kt, mismo paquete.
+//
+// SIN EQUIVALENTE EXACTO del control «Intensidad de compensación» (70 %)
+// del prototipo: este panel calibra por Phon — «Nivel de escucha»
+// [40, 85] Phon y «Nivel de referencia» [70, 90] Phon — con preview de
+// curva y botón APLICAR. Los sliders, rangos y callbacks se conservan tal
+// cual; el botón «i» se ancla al título del módulo, que sí es el ISO 226.
+private val Iso226Spec = SpecInfo(
+    title = "Compensación ISO 226 · Sonoridad",
+    what = "A volumen bajo, tu oído pierde graves y agudos (curvas de igual sonoridad ISO 226): la misma mezcla se oye delgada. Esta compensación restaura ese balance dentro de la cadena, escalada por este control. Ojo: el signo importa — una compensación invertida produce exactamente el sonido «bofo» contrario.",
+    purpose = "Para que la mezcla suene igual de mezclada en voz baja que en alto: escucha nocturna completa, sin subir el volumen y sin perder el cuerpo del grave ni el aire.",
+    whenUse = "Escucha nocturna o a volumen bajo-medio: intensidad alta (70–100 %) si tu volumen habitual es bajo. Es el primer control que tocar antes de culpar a la etapa de graves.",
+    whenAvoid = "A volumen alto la compensación sobra: engorda el grave y carga los agudos — bájala o apágala. Y nunca la uses para «arreglar» una grabación mal mezclada: corrige tu oído, no la mezcla."
+)
+
 /**
  * Iso226CalibratorPanel — Calibrador perceptual ISO 226:2003 con UI completa.
  *
@@ -87,12 +104,13 @@ fun Iso226CalibratorPanel(
         )
     }
 
-    // Colores del tema (realineado a Aurora Obsidiana — antes grises planos
-    // 0D0D0F/111114/888899 que rompían la coherencia con las demás pantallas)
-    val panelBg    = ObsidianVoid
-    val cardBg     = ObsidianSoft
-    val borderCol  = AuroraCyan.copy(alpha = 0.18f)
-    val textMuted  = TextMuted
+    // Colores del tema magistral (oro con jerarquía sobre fondo oscuro
+    // profundo; el cian queda solo para lo interactivo / vivo: sliders,
+    // botón APLICAR y curva en vivo, que conservan su cian).
+    val panelBg    = MagistralVoid
+    val cardBg     = MagistralPanel
+    val borderCol  = MagistralLine
+    val textMuted  = MagistralMuted
 
     Column(
         modifier = modifier
@@ -103,19 +121,22 @@ fun Iso226CalibratorPanel(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // ── Header ─────────────────────────────────────────────────────────────
+        // K · Compensación ISO 226 · Sonoridad: botón «i» junto al título del
+        // módulo (ver Iso226Spec: el control «Intensidad de compensación»
+        // del prototipo no existe con ese nombre en este panel).
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "ISO 226:2003  EQUAL-LOUDNESS",
-                    color = AuroraCyan,
+                    color = MagistralGoldHi,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = MagistralSerif
                 )
                 Text(
                     "Compensación perceptual · 29 frecuencias · 3 capas",
@@ -124,6 +145,7 @@ fun Iso226CalibratorPanel(
                     fontFamily = FontFamily.Monospace
                 )
             }
+            SpecInfoButton(spec = Iso226Spec)
             Switch(
                 checked = naelActive,
                 onCheckedChange = { en ->

@@ -25,6 +25,28 @@ import kotlin.math.log10
 import kotlin.math.max
 import java.util.Locale
 
+// ── Fichas magistrales · Adaptive (prototipo aprobado, Pantalla V) ──────────
+// Texto exacto del prototipo; nada inventado. SpecInfo / ScreenSpecCard /
+// SpecInfoButton viven en SpecSheet.kt, mismo paquete.
+
+/** Ficha del entorno · Adaptive. */
+private val AdaptiveScreenSpec = SpecInfo(
+    title = "Adaptive",
+    what = "El entorno de auto-corrección continua: el ASRC magistral que doma la deriva de reloj, el kernel Volterra que pre-distorciona contra la no-linealidad real de tu salida, y la compensación ISO 226 que restaura el balance a volumen bajo.",
+    purpose = "Para eliminar las tres causas invisibles de que algo «suene mal sin saber por qué»: relojes que no coinciden (micro-cortes), transductores que deforman (aspereza) y un oído que a bajo volumen pierde graves y agudos (sonido delgado).",
+    whenUse = "Como capa siempre activa. Tu trabajo aquí es elegir el kernel correcto para tu DAC y el nivel de ISO 226 según tu volumen habitual; el servo ASRC no tiene perilla porque trabaja solo.",
+    whenAvoid = "No «corrijas» a mano lo que esta capa ya corrige: subir graves en Control para compensar una escucha nocturna es duplicar el trabajo de ISO 226 y terminar con un grave bofo."
+)
+
+/** I · ASRC Magistral · Corrección de reloj. */
+private val AsrcSpec = SpecInfo(
+    title = "ASRC Magistral · Corrección de reloj",
+    what = "El remuestreador asíncrono que corrige la diferencia entre el reloj de la fuente y el del DAC. Un servo PLL (estimador Theil-Sen, ±500 ppm) mide la deriva real y un FIR de 319 taps la absorbe de forma continua sin cambiar el pitch. Derivas medidas en el Moto G85: ≈ −13 ppm por bocina, ≈ −70 ppm por USB.",
+    purpose = "Dos relojes nunca coinciden: sin corrección, el búfer se llena o se vacía hasta que el audio truena o se corta. El ASRC convierte esa diferencia en un ajuste continuo e inaudible. Es invisible cuando trabaja bien — y esa es su función.",
+    whenUse = "Siempre activo. Vigila su telemetría: debe rondar los ppm de tu salida y moverse ligeramente. Esa deriva viva y corregida es la firma de que está midiendo de verdad.",
+    whenAvoid = "No lo apagues salvo diagnóstico: sin él, la reproducción depende de que los relojes casen por suerte. Y desconfía de una telemetría clavada en 0.0 ppm durante minutos: un ASRC que no mide no está corrigiendo, está en passthrough."
+)
+
 /**
  * AdaptiveDashboard — pantalla de telemetría real del AdaptiveDecisionEngine.
  *
@@ -59,11 +81,14 @@ fun AdaptiveDashboard(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(ObsidianVoid)
+            .background(MagistralVoid)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Ficha del entorno · Adaptive (prototipo aprobado, Pantalla V)
+        ScreenSpecCard(spec = AdaptiveScreenSpec)
+
         // ── Header ───────────────────────────────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -72,8 +97,8 @@ fun AdaptiveDashboard(
             PulseDot(active = t != null && (t.getOrElse(9) { 0f } > 0f))
             Text(
                 "ADAPTIVE ENGINE",
-                color = AuroraCyan,
-                fontFamily = FontFamily.Monospace,
+                color = MagistralGoldHi,
+                fontFamily = MagistralSerif,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
                 letterSpacing = 2.sp
@@ -96,7 +121,14 @@ fun AdaptiveDashboard(
         }
 
         // ── Signal meters ─────────────────────────────────────────────────
-        GlassCard(title = "SEÑAL", accent = AuroraCyan.copy(alpha = 0.25f)) {
+        // I · ASRC Magistral: este tablero es solo telemetría de lectura (sin
+        // controles ASRC); la tarjeta de señal es el equivalente más cercano
+        // y su telemetría se conserva tal cual en datos.
+        GlassCard(
+            title = "SEÑAL",
+            accent = AuroraCyan.copy(alpha = 0.25f),
+            rightSlot = { SpecInfoButton(spec = AsrcSpec) }
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
