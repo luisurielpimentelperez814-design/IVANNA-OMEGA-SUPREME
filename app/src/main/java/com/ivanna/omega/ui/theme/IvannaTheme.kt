@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -52,6 +53,32 @@ val NeonMagentaGlow  = Color(0x55FF3E86)
 val AmberSignalGlow  = Color(0x55F7B733)
 val PhosphorGreenGlow= Color(0x5523F09A)
 val OmniGoldCore     = Color(0xFFFFD976)  // núcleo del anillo OMNI (estado supremo)
+
+// ── Refinamiento magistral v2.5.442 (lenguaje del prototipo aprobado) ────────
+// Oro con jerarquía sobre fondo oscuro profundo; el cian solo donde se toca
+// o donde algo está vivo. Aditivo: no se toca nada de lo anterior.
+val MagistralGold       = Color(0xFFD9B76C)
+val MagistralGoldHi     = Color(0xFFF6E7B2)
+val MagistralGoldLo     = Color(0xFF8F743D)
+val MagistralGoldDeep   = Color(0xFF5C4718)
+val MagistralVoid       = Color(0xFF020208)
+val MagistralPanel      = Color(0xFF0A0F1F)
+val MagistralPanel2     = Color(0xFF0D1428)
+val MagistralPanel3     = Color(0xFF121C38)
+val MagistralLine       = Color(0x2194B2FF)  // rgba(148,178,255,.13)
+val MagistralLineStrong = Color(0x4294B2FF)  // rgba(148,178,255,.26)
+val MagistralText       = Color(0xFFF0F3FA)
+val MagistralMuted      = Color(0xFFA3B0C6)
+val MagistralMuted2     = Color(0xFF71809B)
+val MagistralViolet     = Color(0xFFC9A8FF)
+
+/** Serif del wordmark y los titulares ceremoniales (Cormorant en web; serif del sistema en la app). */
+val MagistralSerif = FontFamily.Serif
+
+/** Degradado dorado del wordmark (prototipo: #8f743d → #d9b76c → #fdf3c8 → #d9b76c → #a8843f). */
+fun magistralGoldBrush(): Brush = Brush.horizontalGradient(
+    listOf(MagistralGoldLo, MagistralGold, MagistralGoldHi, MagistralGold, MagistralGoldLo)
+)
 
 private val IvannaDarkColors = darkColorScheme(
     primary            = AuroraCyan,
