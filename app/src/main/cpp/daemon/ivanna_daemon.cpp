@@ -52,7 +52,9 @@
 
 #include "control/daemon_command_responder.h"
 #include "daemon/session_discovery.hpp"
+#include "effect_local_files.h"
 #include "include/omega_control_bus.h"
+#include "include/omega_effect_beacon.h"
 #include "include/psi_core.h"
 #include "include/ivanna_fusion_state.h"
 
@@ -288,6 +290,25 @@ int main() {
 
     ::mkdir("/data/adb/ivanna_omega", 0771);
     ::mkdir("/data/vendor/ivanna_audio", 0771);
+
+    // v2.5.443 — Pre-crear los archivos locales de Ruta B (beacon + bus de
+    // control). El efecto (audioserver, UID no-root) NO PUEDE crearlos en
+    // /data/local/tmp (0771 root:shell); sin ellos el beacon nunca existe,
+    // el detector de huérfanos queda ciego y la app no ve si Ruta B procesa.
+    // precreateLocalFile existe y está testeado (test_effect_local_files)
+    // pero NADIE lo llamaba: el daemon es root y es quien debe hacerlo en
+    // cada arranque. Solo existencia + 0666 + tamaño; el efecto inicializa
+    // el magic al mapearlos. No es fatal si falla (se loguea y se sigue).
+    {
+        const auto beacon = ivanna::precreateLocalFile(
+            ivanna::OMEGA_EFFECT_BEACON_PATH, ivanna::OMEGA_EFFECT_BEACON_SIZE);
+        logLine((std::string("local-files: beacon ") +
+            (beacon.ok ? "OK (" + beacon.detail + ")" : "FALLO (" + beacon.detail + ")")).c_str());
+        const auto ctrl = ivanna::precreateLocalFile(
+            ivanna::OMEGA_EFFECT_LOCAL_BUS_PATH, ivanna::OmegaControlBus::REGION_SIZE);
+        logLine((std::string("local-files: ctrl ") +
+            (ctrl.ok ? "OK (" + ctrl.detail + ")" : "FALLO (" + ctrl.detail + ")")).c_str());
+    }
 
     // Kill switch del daemon: si existe, no arrancar.
     if (fileExists("/data/adb/ivanna_omega/ivanna_daemon.off")) return 0;
