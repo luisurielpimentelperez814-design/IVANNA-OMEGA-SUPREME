@@ -7,6 +7,7 @@
 // E4: ORBE+HOLOS estacionario ≤ −60 dB RMS. E6: fades sin clicks.
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -85,6 +86,59 @@ void RunOrbe(ivanna::OrbeBinaural& orbe, const std::vector<float>& x,
     outR.assign(r.begin() + kWarmup, r.end());
 }
 
+// Pseudo-música estéreo de banda ancha: 48 parciales log-espaciados
+// 80 Hz..14 kHz, fases fijas pseudo-aleatorias (LCG de semilla fija —
+// bit-reproducible), ILD SUAVE en log-f y SIN ITD (con retardo, la fase
+// envolvería en las bandas ERB altas y el azimut volvería a oscilar).
+// Todas las bandas ERB tienen energía y el azimut por banda estimado es
+// suave y estable en el tiempo: el E2 de tonos aislados NO es válido
+// porque las bandas sin energía dan azimuts oscilantes en el estimador
+// en vivo y el serial diverge del estado congelado que se da al
+// compilador. Con ITD=0 el IPD es 0 (bandas <700 Hz centradas y
+// estables) y por encima de 700 Hz manda el ILD suave.
+struct StereoSignal {
+    std::vector<float> l, r;
+};
+StereoSignal StereoBroadbandPseudoMusic(int n) {
+    StereoSignal s;
+    s.l.assign((size_t)n, 0.0f);
+    s.r.assign((size_t)n, 0.0f);
+    constexpr int kPartials = 48;
+    constexpr float kPi = 3.14159265358979323846f;
+    uint32_t rng = 0x12345678u;  // semilla fija: determinista
+    for (int k = 0; k < kPartials; ++k) {
+        const float f = 80.0f * std::pow(2.0f, (float)k * std::log2(14000.0f / 80.0f) / (float)(kPartials - 1));
+        rng = rng * 1664525u + 1013904223u;
+        const float phase = (float)(rng >> 8) * (2.0f * kPi / 16777216.0f);
+        const float gR = 0.85f + 0.10f * std::sin(2.0f * kPi * std::log2(f / 80.0f) / 3.0f);
+        for (int i = 0; i < n; ++i) {
+            const float v = 0.02f * std::sin(2.0f * kPi * f * (float)i / kSr + phase);
+            s.l[(size_t)i] += v;
+            s.r[(size_t)i] += gR * v;
+        }
+    }
+    return s;
+}
+
+// Corre ORBE (in-place) sobre xL/xR estéreo y devuelve la salida.
+void RunOrbeStereo(ivanna::OrbeBinaural& orbe, const std::vector<float>& xL,
+                   const std::vector<float>& xR,
+                   std::vector<float>& outL, std::vector<float>& outR) {
+    const int total = kWarmup + kWindow;
+    std::vector<float> l((size_t)total), r((size_t)total);
+    for (int i = 0; i < total; ++i) {
+        l[(size_t)i] = xL[(size_t)(i % (int)xL.size())];
+        r[(size_t)i] = xR[(size_t)(i % (int)xR.size())];
+    }
+    // Procesar en bloques de 128 (el hop) para emular el vivo.
+    for (int off = 0; off < total; off += 128) {
+        const int n = std::min(128, total - off);
+        orbe.process(l.data() + off, r.data() + off, n);
+    }
+    outL.assign(l.begin() + kWarmup, l.end());
+    outR.assign(r.begin() + kWarmup, r.end());
+}
+
 }  // namespace
 
 // E2: ORBE solo vía NEU·Ω (SpectralCore + compilador) vs ORBE serial.
@@ -144,6 +198,65 @@ TEST(NeuCompiler, E2OrbeSolo) {
     const float dbR = RmsDiffDb(refR, outR, lo, hi);
     EXPECT_LE(dbL, -80.0f) << "E2 ORBE solo (L): " << dbL << " dB";
     EXPECT_LE(dbR, -80.0f) << "E2 ORBE solo (R): " << dbR << " dB";
+}
+
+// E2 de banda ancha (NEU·Ω 442): ORBE solo vía NEU·Ω vs ORBE serial con
+// pseudo-música estéreo. Los tonos aislados NO son un E2 válido: las
+// bandas ERB sin energía dan azimuts oscilantes en el estimador en vivo
+// y el serial diverge del estado congelado. Con banda ancha el azimut
+// por banda es suave y estable y la equivalencia es medible. Mismo
+// umbral que E2/E3: ≤ −80 dB RMS. El fix fTop no cambia los E2/E3 mono.
+TEST(NeuCompiler, E2BroadbandNoise) {
+    const auto sig = StereoBroadbandPseudoMusic(kWarmup + kWindow);
+    ivanna::OrbeBinaural orbe;
+    orbe.prepare(kSr);
+    ivanna::OrbeParams p;
+    p.amount = 1.0f;
+    p.diffuse = 0.5f;
+    p.proximityDb = 3.0f;
+    p.distanceM = 0.35f;
+    orbe.setParams(p);
+    orbe.setAmount(1.0f);
+
+    std::vector<float> refL, refR;
+    RunOrbeStereo(orbe, sig.l, sig.r, refL, refR);
+
+    // Estado por banda convergido de ORBE → compilador.
+    ivanna::neu::NeuCompiler comp;
+    const int bands = ivanna::neu::SpectralCore::kMaxBands;
+    for (int b = 0; b < bands; ++b) {
+        comp.orbe.azimuth[b] = orbe.bandAzimuth(b);
+        comp.orbe.distance[b] = orbe.bandDistance(b);
+        comp.orbe.coherence[b] = orbe.bandCoherence(b);
+    }
+    comp.orbe.diffuse = 0.5f;
+    comp.orbe.proximityDb = 3.0f;
+    comp.orbe.headRadiusM = orbe.headRadiusM();
+    comp.orbe.yawRad = 0.0f;
+
+    // NEU·Ω: mismo segmento de entrada que la ventana de ORBE.
+    ivanna::neu::SpectralCore core;
+    core.prepare(kSr);
+    core.setMatrixProvider(&ivanna::neu::NeuCompiler::provider, &comp);
+    std::vector<float> inL(sig.l.begin() + kWarmup, sig.l.end());
+    std::vector<float> inR(sig.r.begin() + kWarmup, sig.r.end());
+    std::vector<float> outL((size_t)kWindow), outR((size_t)kWindow);
+    // Calentar el núcleo con el mismo warmup (para alinear la latencia
+    // y el OLA), luego procesar la ventana.
+    {
+        std::vector<float> wL(sig.l.begin(), sig.l.begin() + kWarmup);
+        std::vector<float> wR(sig.r.begin(), sig.r.begin() + kWarmup);
+        std::vector<float> tmpL((size_t)kWarmup), tmpR((size_t)kWarmup);
+        core.process(wL.data(), wR.data(), tmpL.data(), tmpR.data(), kWarmup);
+    }
+    core.process(inL.data(), inR.data(), outL.data(), outR.data(), kWindow);
+
+    // Comparar en la zona estacionaria (tras la latencia de 512).
+    const int lo = 1024, hi = kWindow - 512;
+    const float dbL = RmsDiffDb(refL, outL, lo, hi);
+    const float dbR = RmsDiffDb(refR, outR, lo, hi);
+    EXPECT_LE(dbL, -80.0f) << "E2 banda ancha ORBE solo (L): " << dbL << " dB";
+    EXPECT_LE(dbR, -80.0f) << "E2 banda ancha ORBE solo (R): " << dbR << " dB";
 }
 
 // Corre HOLOS (in-place) sobre x (L=R) y devuelve la salida.
