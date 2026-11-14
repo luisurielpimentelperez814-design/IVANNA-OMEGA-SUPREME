@@ -213,6 +213,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
 
+    // OmniRoute (2026-11-14, v2.5.443): cliente HTTP del gateway LLM gratis
+    // (endpoint OpenAI-compatible). OkHttp por su streaming SSE limpio.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-auth")
