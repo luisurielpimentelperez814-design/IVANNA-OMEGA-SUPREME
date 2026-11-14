@@ -356,7 +356,7 @@ fun SystemHubScreen(
                             value = diagnosticEndpoint,
                             onValueChange = { diagnosticEndpoint = it },
                             label = { Text("URL HTTPS completa") },
-                            placeholder = { Text("https://servidor/v1/diagnostics") },
+                            placeholder = { Text(LiveDiagnosticConnector.DEFAULT_ENDPOINT) },
                             singleLine = true
                         )
                         OutlinedTextField(
@@ -374,7 +374,7 @@ fun SystemHubScreen(
                             diagnosticMessage = "Solicitando análisis de la última telemetría…"
                             LiveDiagnosticConnector.requestAnalysis(context) { diagnosticMessage = it }
                         }, enabled = diagnosticEnabled) {
-                            Text("Analizar último diagnóstico con IA")
+                            Text("Analizar último diagnóstico")
                         }
                         if (diagnosticMessage.isNotBlank()) Text(diagnosticMessage, color = MaterialTheme.colorScheme.error)
                     }

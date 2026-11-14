@@ -28,6 +28,35 @@ object LiveDiagnosticConnector {
     private const val KEY_ENDPOINT = "endpoint"
     private const val KEY_TOKEN = "token"
     private const val PERIOD_MS = 15_000L
+
+    // v2.5.443 — Puente de diagnóstico en Floot (verificado 2026-11-14):
+    // https://ivanna-diagnostic-bridge.floot.app — el prefijo /_api es
+    // obligatorio. El contrato es EL MISMO que el puente de Render (mismo
+    // body, mismas respuestas): GET /_api/healthz, POST /_api/v1/diagnostics
+    // (Bearer si hay token), GET /_api/v1/diagnostics/latest,
+    // GET /_api/v1/diagnostics/recent, POST /_api/v1/diagnostics/analyze.
+    // El análisis en Floot es por REGLAS en español (no LLM; Pollinations
+    // no responde a tiempo desde Floot).
+    const val DEFAULT_ENDPOINT: String =
+        "https://ivanna-diagnostic-bridge.floot.app/_api/v1/diagnostics"
+    // URL vieja de Render (el puente vivía en el plan free de Render).
+    // Si un teléfono la tiene guardada, se migra sola a Floot (ver
+    // resolveEndpoint): Esse no tiene que re-escribir nada.
+    const val LEGACY_RENDER_ENDPOINT: String =
+        "https://ivanna-diagnostic-bridge.onrender.com/v1/diagnostics"
+
+    /**
+     * Resuelve el endpoint efectivo. Pura (testeable en host).
+     *   - vacío/nulo → el default de Floot.
+     *   - la URL vieja de Render → el default de Floot (migración automática).
+     *   - cualquier otra → la guardada (sin barra final).
+     */
+    fun resolveEndpoint(stored: String?): String {
+        val normalized = stored?.trim()?.trimEnd('/') ?: ""
+        if (normalized.isEmpty()) return DEFAULT_ENDPOINT
+        if (normalized == LEGACY_RENDER_ENDPOINT) return DEFAULT_ENDPOINT
+        return normalized
+    }
     private val sequence = AtomicLong(0)
     @Volatile private var started = false
     private var scope: CoroutineScope? = null
@@ -56,7 +85,9 @@ object LiveDiagnosticConnector {
     fun configure(context: Context, enabled: Boolean, endpoint: String, bearerToken: String): Boolean {
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val effectiveToken = bearerToken.ifBlank { prefs.getString(KEY_TOKEN, "") ?: "" }
-        val normalized = endpoint.trim().trimEnd('/')
+        // v2.5.443 — si se guarda la URL vieja de Render, se guarda Floot
+        // en su lugar (migración; el contrato es el mismo).
+        val normalized = resolveEndpoint(endpoint.trim().trimEnd('/'))
         val valid = runCatching {
             val url = URL(normalized)
             url.protocol.equals("https", ignoreCase = true) &&
@@ -75,8 +106,12 @@ object LiveDiagnosticConnector {
     fun isEnabled(context: Context): Boolean =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
 
+    /** Endpoint efectivo (resuelto: default Floot si no hay nada o si era Render). */
     fun configuredEndpoint(context: Context): String =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ENDPOINT, "") ?: ""
+        resolveEndpoint(
+            context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_ENDPOINT, null)
+        )
 
     fun disable(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -90,10 +125,7 @@ object LiveDiagnosticConnector {
             onResult("Activa primero el envío remoto de diagnósticos.")
             return
         }
-        val endpoint = prefs.getString(KEY_ENDPOINT, null) ?: run {
-            onResult("Falta configurar el endpoint de diagnóstico.")
-            return
-        }
+        val endpoint = resolveEndpoint(prefs.getString(KEY_ENDPOINT, null))
         val token = prefs.getString(KEY_TOKEN, null) ?: run {
             onResult("Falta configurar el token de diagnóstico.")
             return
@@ -121,9 +153,9 @@ object LiveDiagnosticConnector {
                     if (status in 200..299) json?.optString("analysis")?.takeIf { it.isNotBlank() }
                         ?: "El servicio no devolvió un análisis legible."
                     else when (json?.optString("error")) {
-                        "ai_not_configured" -> "El servidor aún no tiene configurada la clave de OpenAI."
+                        "ai_not_configured" -> "El servidor no tiene disponible el análisis por reglas."
                         "no_snapshot_yet" -> "Todavía no hay una telemetría recibida; espera un ciclo de envío."
-                        else -> "No se pudo obtener análisis IA (HTTP $status)."
+                        else -> "No se pudo obtener el análisis (HTTP $status)."
                     }
                 } finally {
                     connection.disconnect()
@@ -136,7 +168,7 @@ object LiveDiagnosticConnector {
     private fun uploadIfConfigured() {
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(KEY_ENABLED, false)) return
-        val endpoint = prefs.getString(KEY_ENDPOINT, null) ?: return
+        val endpoint = resolveEndpoint(prefs.getString(KEY_ENDPOINT, null))
         val token = prefs.getString(KEY_TOKEN, null) ?: return
         if (!endpoint.startsWith("https://") || token.length < 32) return
 
