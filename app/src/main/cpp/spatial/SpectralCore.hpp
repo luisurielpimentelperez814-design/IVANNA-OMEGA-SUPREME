@@ -95,9 +95,11 @@ public:
         }
         // COLA (Hann): Σ w² sobre los frames solapados = (N/hop)·0.375.
         colaInv_ = 1.0f / ((float)(n / kHop) * 0.375f);
-        // Bandas ERB (24, 60 Hz..fTop), igual que OrbeBinaural.
+        // Bandas ERB (24, 60 Hz..fTop), igual que OrbeBinaural/Holos/
+        // RealAcousticSensor/HyperStateOperator/EliteTargetCurves:
+        // fTop = min(16000, 0.45*sr) = 16 kHz a 48 kHz (nunca Nyquist).
         {
-            const float fTop = 0.5f * sr_;
+            const float fTop = std::min(16000.0f, 0.45f * sr_);
             const float rLo = erbRate(60.0f), rHi = erbRate(fTop);
             float edgeHz[kMaxBands + 1];
             for (int i = 0; i <= kMaxBands; ++i)
