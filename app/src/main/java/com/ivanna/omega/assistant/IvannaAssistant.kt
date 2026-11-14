@@ -204,7 +204,12 @@ class IvannaAssistant(
             // FIX (CI rojo): processQuery() devuelve AgentResponse (sealed class),
             // no un Pair — el destructuring y el 2º argumento String no existen.
             // Se extrae texto y primer comando DSP validado desde Success.
-            val agentResponse = geminiAgent.processQuery(text)
+            // v2.5.443 — Streaming vivo: el onPartial muestra la respuesta
+            // creciendo en statusLine mientras llega (SSE por OmniRoute o
+            // Gemini). Sin onPartial el stream jamás se usaba (código muerto).
+            val agentResponse = geminiAgent.processQuery(text) { partial ->
+                _ui.value = _ui.value.copy(statusLine = partial)
+            }
             val agentReply: String? = when (agentResponse) {
                 is com.ivanna.omega.ai.gemini.IvannaGeminiAgent.AgentResponse.Success -> agentResponse.text
                 // No reutilizar una respuesta vieja como si contestara a la
