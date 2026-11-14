@@ -2,6 +2,7 @@ package com.ivanna.omega.ui
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -28,7 +29,28 @@ import com.ivanna.omega.ui.theme.*
  *
  * API v1: seleccionar archivo, play/pause, stop, indicador de estado.
  * Sin seek, sin cola, sin media-session. Todo eso se agrega encima.
+ *
+ * Refinamiento magistral v2.5.442: módulo T del prototipo aprobado
+ * (Pantalla VIII · Tidal — BridgePlayer · Reproductor propio), con su ficha
+ * completa; dorado con jerarquía sobre fondo oscuro profundo; cian solo
+ * donde se toca o donde algo está vivo (estado PLAYING).
  */
+/** T · BridgePlayer, reproductor propio (texto exacto del prototipo). */
+private val bridgePlayerCardSpec = SpecInfo(
+    title = "BridgePlayer · Reproductor propio",
+    what = "El reproductor propio de IVANNA: reproduce Tidal y tus archivos locales " +
+        "dentro de la app, sin redirigir al reproductor del sistema, pasando el 100 % " +
+        "del audio por la cadena magistral.",
+    purpose = "Es la única vía donde los efectos son el 100 % de lo que oyes. En captura, " +
+        "el original sigue sonando a nivel pleno y la copia procesada llega ~140 ms " +
+        "tarde mezclada: por eso en captura todo se siente sutil y con eco de fondo.",
+    whenUse = "Siempre que puedas: es la ruta de referencia para juzgar cualquier ajuste " +
+        "de esta interfaz. Si un cambio no se nota aquí, no se nota en ningún sitio.",
+    whenAvoid = "Para lo que la app no puede reproducir —llamadas, audio del sistema, " +
+        "otras apps— BridgePlayer no aplica: eso es territorio de la Ruta B " +
+        "(System · O), con sus condiciones."
+)
+
 @Composable
 fun BridgePlayerCard(
     playerState: IvannaBridgePlayer.State,
@@ -69,8 +91,9 @@ fun BridgePlayerCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        color = ObsidianDeep,
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .border(1.dp, MagistralLine, RoundedCornerShape(14.dp)),
+        color = MagistralPanel,
         shape = RoundedCornerShape(14.dp),
         tonalElevation = 4.dp
     ) {
@@ -78,12 +101,13 @@ fun BridgePlayerCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "IVANNA BRIDGE PLAYER",
-                    color = AuroraCyan,
-                    fontFamily = FontFamily.Monospace,
+                    color = MagistralGoldHi,
+                    fontFamily = MagistralSerif,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontSize = 16.sp,
                     modifier = Modifier.weight(1f)
                 )
+                SpecInfoButton(bridgePlayerCardSpec)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -102,14 +126,19 @@ fun BridgePlayerCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "Motor completo (NHO + Spatial + Kernel Evo) sonando con archivo real",
-                color = TextMuted,
+                color = MagistralMuted,
+                fontSize = 10.sp
+            )
+            Text(
+                text = "Tidal y archivos locales dentro de IVANNA · 100 % por la cadena magistral",
+                color = MagistralMuted,
                 fontSize = 10.sp
             )
 
             Spacer(Modifier.height(8.dp))
             Text(
                 text = currentUri?.lastPathSegment ?: "Ningún archivo seleccionado",
-                color = TextPrimary,
+                color = MagistralText,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp
             )
@@ -118,7 +147,7 @@ fun BridgePlayerCard(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "Pista ${(queueIndex + 1).coerceAtLeast(1)} de ${queue.size}",
-                    color = TextMuted,
+                    color = MagistralMuted,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp
                 )
