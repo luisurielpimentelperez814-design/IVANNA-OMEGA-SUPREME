@@ -88,14 +88,40 @@ void RunOrbe(ivanna::OrbeBinaural& orbe, const std::vector<float>& x,
 
 // Pseudo-música estéreo de banda ancha: 48 parciales log-espaciados
 // 80 Hz..14 kHz, fases fijas pseudo-aleatorias (LCG de semilla fija —
-// bit-reproducible), ILD SUAVE en log-f y SIN ITD (con retardo, la fase
-// envolvería en las bandas ERB altas y el azimut volvería a oscilar).
+// bit-reproducible), ILD CONSTANTE en todas las bandas (gR = 0.85 en
+// todos los parciales) y SIN ITD (con retardo, la fase envolvería en
+// las bandas ERB altas y el azimut volvería a oscilar).
 // Todas las bandas ERB tienen energía y el azimut por banda estimado es
 // suave y estable en el tiempo: el E2 de tonos aislados NO es válido
 // porque las bandas sin energía dan azimuts oscilantes en el estimador
 // en vivo y el serial diverge del estado congelado que se da al
 // compilador. Con ITD=0 el IPD es 0 (bandas <700 Hz centradas y
-// estables) y por encima de 700 Hz manda el ILD suave.
+// estables) y por encima de 700 Hz manda el ILD.
+//
+// POR QUÉ EL ILD DEBE SER CONSTANTE (causa raíz del fallo −39.6 dB de
+// la v2.5.442, medido en host): la versión anterior usaba un ILD
+// sinusoidal en log-f (gR = 0.85 + 0.10·sin(...)), distinto en cada
+// parcial. Entonces R NO era una copia escalada de L: en las bandas
+// bajas varios parciales comparten bins (separación ~9–30 Hz << ancho
+// de bin 93.75 Hz) y su batido hacía oscilar el IPD/ILD medido hop a
+// hop; el azimut estimado vagaba en las bandas 0–8 (banda 0: std
+// 0.063 rad, rango −0.149…+0.216 rad; banda 3: −0.196…+0.030 rad)
+// mientras las bandas 9–23 ya eran estables a 1e-4 rad. El serial
+// renderiza con esa matriz que vaga hop a hop y NINGÚN estado congelado
+// puede igualarlo (congelado-en-warmup: −40.2 dB; congelado-final:
+// −39.6 dB; estado medio: −41.0 dB). La matriz del compilador NO tiene
+// bug: alimentada con la trayectoria por hop del estimador serial, el
+// compilado iguala al serial a −140.5/−140.0 dB. Con gR constante,
+// R = 0.85·L muestra a muestra ⇒ cada bin cumple R_bin = 0.85·L_bin
+// exacto ⇒ IPD = 0 e ILD = −1.41 dB constantes en todo tiempo, el
+// azimut converge a un valor fijo por banda (std 0.00000 rad en la
+// ventana; 0 en bandas 0–6 por ITD, −0.283…−0.034 rad en bandas 7–23
+// por ILD, que sigue variando POR BANDA) y el E2 congelado mide
+// −137.7/−137.6 dB. El test sigue siendo un E2 válido y estricto: la
+// matriz varía por bin (θ por banda, ILD/shelf/ITD por frecuencia) y
+// un error de mapeo banda→bin seguiría viéndose; lo que se elimina es
+// solo la no-estacionariedad del estimador, que ningún compilado
+// congelado puede representar por construcción.
 struct StereoSignal {
     std::vector<float> l, r;
 };
@@ -110,7 +136,7 @@ StereoSignal StereoBroadbandPseudoMusic(int n) {
         const float f = 80.0f * std::pow(2.0f, (float)k * std::log2(14000.0f / 80.0f) / (float)(kPartials - 1));
         rng = rng * 1664525u + 1013904223u;
         const float phase = (float)(rng >> 8) * (2.0f * kPi / 16777216.0f);
-        const float gR = 0.85f + 0.10f * std::sin(2.0f * kPi * std::log2(f / 80.0f) / 3.0f);
+        const float gR = 0.85f;  // ILD CONSTANTE: R = 0.85·L exacto (ver comentario arriba).
         for (int i = 0; i < n; ++i) {
             const float v = 0.02f * std::sin(2.0f * kPi * f * (float)i / kSr + phase);
             s.l[(size_t)i] += v;
@@ -201,11 +227,17 @@ TEST(NeuCompiler, E2OrbeSolo) {
 }
 
 // E2 de banda ancha (NEU·Ω 442): ORBE solo vía NEU·Ω vs ORBE serial con
-// pseudo-música estéreo. Los tonos aislados NO son un E2 válido: las
-// bandas ERB sin energía dan azimuts oscilantes en el estimador en vivo
-// y el serial diverge del estado congelado. Con banda ancha el azimut
-// por banda es suave y estable y la equivalencia es medible. Mismo
-// umbral que E2/E3: ≤ −80 dB RMS. El fix fTop no cambia los E2/E3 mono.
+// pseudo-música estéreo de ILD CONSTANTE (gR = 0.85). Los tonos aislados
+// NO son un E2 válido: las bandas ERB sin energía dan azimuts oscilantes
+// en el estimador en vivo y el serial diverge del estado congelado. Con
+// banda ancha e ILD constante el azimut por banda es suave y estable
+// (R = 0.85·L exacto ⇒ IPD = 0, ILD = −1.41 dB constantes; medido:
+// std 0.00000 rad por banda en la ventana) y la equivalencia es medible.
+// Un ILD variable por parcial NO vale: el batido entre parciales que
+// comparten bins hace vagar el azimut en las bandas bajas y ningún
+// estado congelado iguala al serial (−39.6 dB en la 442; ver comentario
+// de StereoBroadbandPseudoMusic). Mismo umbral que E2/E3: ≤ −80 dB RMS.
+// El fix fTop no cambia los E2/E3 mono.
 TEST(NeuCompiler, E2BroadbandNoise) {
     const auto sig = StereoBroadbandPseudoMusic(kWarmup + kWindow);
     ivanna::OrbeBinaural orbe;
