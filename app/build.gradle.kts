@@ -197,7 +197,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    implementation("com.google.android.material:material:1.11.0")
+    implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.media:media:1.8.0")
 
     implementation("androidx.security:security-crypto-ktx:1.1.0")
