@@ -79,22 +79,29 @@ El entregable de cada propuesta es `tools/evolution/proposals/<id>/`:
   (1.09091) antes/después.
 - **Validación:** ver `validation.json` (tests nuevos 6/6 + suite completa).
 
-## 6. Qué falta para la autonomía completa
+## 6. Qué falta para la autonomía completa (actualizado 2026-11-14)
 
-1. **Generación por LLM:** conectar Gemini (API key en Secure Vault) para que
-   redacte el parche desde `knowledge.json` sin analista. Hoy la redacción
-   es del analista; la detección y validación ya son automáticas.
-2. **Telemetría del teléfono → conocimiento:** ingestar logs del daemon y
+1. ~~**Generación por LLM**~~ — HECHO (motor completo 2026-11-14):
+   `tools/evolution/llm_client.py` (OmniRoute, modelo `ivanna-free`, key
+   solo en `~/.omniroute/ivanna-app-key`) + `draft_patch()` /
+   `--draft` / `--evolve` en `evolution_engine.py`. Ver `PIPELINE.md`.
+2. ~~**Validación en scratch**~~ — HECHO: `validate_proposal` ya no toca
+   el árbol (git worktree desechable + overlay `git diff HEAD` + copia de
+   archivos sin seguir; `tree_untouched` verificado). Propuestas 0002 y
+   0003 validadas (0003 en scratch, VERDE).
+3. **Telemetría del teléfono → conocimiento:** ingestar logs del daemon y
    métricas DSP como candidatos (el teléfono propone el síntoma).
-3. **Índice semántico del codebase:** qué hace cada módulo, para proponer
+4. **Índice semántico del codebase:** qué hace cada módulo, para proponer
    mejoras de diseño y no solo guardas.
-4. **Auto-aplicación con aprobación de Esse:** el flujo commit/push/CI ya
+5. **Auto-aplicación con aprobación de Esse:** el flujo commit/push/CI ya
    existe (lo usa el release 370); falta el gate de aprobación explícito
    por propuesta.
-5. **Rollback automático en dispositivo:** si la versión instalada reporta
+6. **Rollback automático en dispositivo:** si la versión instalada reporta
    regresión (telemetría), revertir al release anterior.
-6. **Más detectores:** tests que faltan por módulo, duplicación de código,
-   funciones con complejidad alta, TODOs/FIXMEs reales.
+7. **Más detectores:** tests que faltan por módulo, duplicación de código,
+   funciones con complejidad alta. Añadidos 2026-11-14: `host_checks_red`
+   (los 6 chequeos de Fase 0, hoy 6/6 en rojo) y `todo_fixme` (28).
+   Pendiente: afinar `dead_functions` (lento, falsos positivos/negativos).
 
 ## 7. Uso
 
@@ -102,6 +109,16 @@ El entregable de cada propuesta es `tools/evolution/proposals/<id>/`:
 # Solo analizar (no toca el árbol):
 python3 tools/evolution/evolution_engine.py --scan
 
-# Ciclo completo de una propuesta (aplica, valida, revierte):
+# Ciclo completo de una propuesta (valida en scratch, no aplica):
 python3 tools/evolution/evolution_engine.py --proposal 0001 --validate
+
+# Redactar un draft con el LLM (sin validar) y ciclo completo:
+python3 tools/evolution/evolution_engine.py --draft 0004 --finding '{...}'
+python3 tools/evolution/evolution_engine.py --evolve 0004 --finding '{...}'
+
+# Unit tests del motor:
+python3 -m unittest discover -s tools/evolution/tests -v
 ```
+
+El pipeline completo (detectores, redacción LLM, gates en orden, lecciones)
+está en `tools/evolution/PIPELINE.md`.

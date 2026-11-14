@@ -1,0 +1,19 @@
+# Cron de vigilancia de IVANNA — INACTIVO por defecto.
+#
+# NO activar hasta que el puente de diagnóstico esté desplegado en Render
+# (URL pública + token). Sin puente, el watcher sale en silencio y el cron
+# solo generaría ruido en los logs.
+#
+# Activación (la hace el agente principal; el token NUNCA se escribe aquí):
+#   1. El agente principal crea el cron con cron.add, pasando
+#      IVANNA_BRIDGE_URL e IVANNA_DIAGNOSTIC_TOKEN por el flujo seguro
+#      (el token vive con Esse / en el flujo seguro, no en archivos).
+#   2. O, con crontab clásico (solo si el token ya está en el entorno):
+#        */5 * * * * /usr/bin/python3 /home/hatch/workspace/ivanna/tools/autorepair/watcher.py --once >> /tmp/ivanna-autorepair-watcher.log 2>&1
+#
+# La línea de abajo es la misma, comentada para que NO se active por error:
+# */5 * * * * /usr/bin/python3 /home/hatch/workspace/ivanna/tools/autorepair/watcher.py --once >> /tmp/ivanna-autorepair-watcher.log 2>&1
+#
+# Desactivar: borrar la línea del crontab (o el cron de cron.add).
+# Ver el estado: python3 ../autorepair/run_fix.py pending
+# Probar sin puente: python3 ../autorepair/watcher.py --self-test

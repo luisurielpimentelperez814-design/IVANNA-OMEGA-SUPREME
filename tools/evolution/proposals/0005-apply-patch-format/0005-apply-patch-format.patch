@@ -1,0 +1,232 @@
+--- a/tools/evolution/llm_client.py
++++ b/tools/evolution/llm_client.py
+@@ -215,26 +215,122 @@
+ _FENCE_RE = re.compile(r"```(?:diff|patch)\n(.*?)```", re.S)
+ 
+ 
+-def extract_patch(text: str):
++def _apply_patch_to_unified(text: str, base_dir):
++    """Convierte un parche estilo `*** Begin Patch` (formato apply_patch)
++    a unified diff. El pool 'ivanna-free' emite este formato a menudo
++    (medido 2026-11-14: 2 respuestas vacías `*** End Patch` y 1 completa
++    `*** Begin Patch` con `*** Update File:`) aunque se le pida unified
++    diff: rechazarlo dejaba el draft inservible.
++
++    Reglas fail-closed: cada hunk `@@` (sin números de línea) se ubica por
++    coincidencia EXACTA de su contexto (líneas ` ` + `-`) en el archivo
++    actual; si el contexto no aparece exactamente 1 vez, o el archivo no
++    existe, o hay `*** Delete File:`, devuelve None (no se inventa nada).
++    `*** Add File:` crea el archivo (old = /dev/null)."""
++    import re as _re
++    lines = text.splitlines()
++    # Localizar el bloque apply_patch (con o sin valla ```diff).
++    start = next((i for i, l in enumerate(lines)
++                  if l.strip() == "*** Begin Patch"), None)
++    if start is None:
++        return None
++    end = next((i for i, l in enumerate(lines[start:], start)
++                if l.strip() == "*** End Patch"), len(lines))
++    body = lines[start + 1:end]
++    sections = []
++    current = None
++    for line in body:
++        m = _re.match(r"\*\*\* (Update|Add) File: (.+)$", line.strip())
++        if m:
++            current = {"op": m.group(1), "path": m.group(2).strip(),
++                       "hunks": []}
++            sections.append(current)
++            continue
++        if line.strip().startswith("*** Delete File:"):
++            return None
++        if line.strip() == "@@":
++            if current is None:
++                return None
++            current["hunks"].append([])
++            continue
++        if current is not None and current["hunks"]:
++            if line[:1] in (" ", "+", "-"):
++                current["hunks"][-1].append(line)
++            elif line == "":
++                current["hunks"][-1].append(" ")
++            else:
++                return None  # línea fuera de formato: no adivinar
++    if not sections:
++        return None
++    out = []
++    for sec in sections:
++        path = sec["path"]
++        if sec["op"] == "Add":
++            new_lines = [h[1:] for hunk in sec["hunks"] for h in hunk
++                         if h.startswith("+")]
++            if not new_lines or any(not h.startswith("+")
++                                    for hunk in sec["hunks"] for h in hunk):
++                return None
++            out.append(f"diff --git a/{path} b/{path}\n")
++            out.append("new file mode 100644\n")
++            out.append("--- /dev/null\n")
++            out.append(f"+++ b/{path}\n")
++            out.append(f"@@ -0,0 +1,{len(new_lines)} @@\n")
++            out.extend(f"+{l}\n" for l in new_lines)
++            continue
++        fpath = Path(base_dir) / path
++        if not fpath.exists():
++            return None
++        old_lines = fpath.read_text(errors="ignore").splitlines()
++        for hunk in sec["hunks"]:
++            old_seq = [h[1:] for h in hunk if h.startswith((" ", "-"))]
++            new_seq = [h[1:] for h in hunk if h.startswith((" ", "+"))]
++            if not old_seq and not new_seq:
++                return None
++            # Buscar la secuencia vieja (contexto + eliminadas) en el archivo.
++            hits = [i for i in range(len(old_lines) - len(old_seq) + 1)
++                    if old_lines[i:i + len(old_seq)] == old_seq]
++            if len(hits) != 1:
++                return None  # 0 = contexto inexistente; >1 = ambiguo
++            s0 = hits[0]
++            out.append(f"diff --git a/{path} b/{path}\n")
++            out.append(f"--- a/{path}\n")
++            out.append(f"+++ b/{path}\n")
++            out.append(f"@@ -{s0 + 1},{len(old_seq)} +{s0 + 1},{len(new_seq)} @@\n")
++            out.extend(h + "\n" for h in hunk)
++            old_lines = old_lines[:s0] + new_seq + old_lines[s0 + len(old_seq):]
++    return "".join(out) or None
++
++
++def extract_patch(text: str, base_dir=None):
+     """Extrae un unified diff de la respuesta del LLM.
+ 
+-    Acepta: bloque ```diff / ```patch, o texto que ya empieza por
+-    "diff --git". Devuelve None si no hay diff (el llamador debe
+-    tratarlo como fallo de redacción, no inventar un parche)."""
++    Acepta, en orden: bloque ```diff / ```patch con `diff --git`, texto que
++    ya empieza por "diff --git", y parche estilo `*** Begin Patch`
++    (convertido a unified diff por contexto; ver _apply_patch_to_unified).
++    Devuelve None si no hay diff utilizable (el llamador debe tratarlo
++    como fallo de redacción, no inventar un parche)."""
+     if not text:
+         return None
+     m = _FENCE_RE.search(text)
+     if m:
+         patch = m.group(1).strip()
+-        return patch if patch.startswith("diff --git") else None
++        if patch.startswith("diff --git"):
++            return patch
++        if "*** Begin Patch" in patch:
++            return _apply_patch_to_unified(
++                patch, base_dir or Path.cwd())
++        return None
+     stripped = text.strip()
+     if stripped.startswith("diff --git"):
+         return stripped
++    if "*** Begin Patch" in text:
++        return _apply_patch_to_unified(text, base_dir or Path.cwd())
+     return None
+ 
+ 
+ def draft_rewrite(system_prompt: str, user_prompt: str, model=None,
+-                  max_tokens=8192):
++                  max_tokens=8192, base_dir=None):
+     """Redacta una reescritura y devuelve (texto_completo, patch_o_None).
+ 
+     El read timeout del draft es 240 s (no 60 s): medido 2026-11-14, una
+@@ -244,4 +340,4 @@
+     text = chat([{"role": "system", "content": system_prompt},
+                  {"role": "user", "content": user_prompt}],
+                 model=model, max_tokens=max_tokens, read_timeout_s=240)
+-    return text, extract_patch(text)
++    return text, extract_patch(text, base_dir=base_dir)
+--- a/tools/evolution/evolution_engine.py
++++ b/tools/evolution/evolution_engine.py
+@@ -678,7 +678,7 @@
+         "y añade su test unitario. Devuelve SOLO el bloque ```diff.")
+     import time
+     t0 = time.monotonic()
+-    text, patch = llm.draft_rewrite(system, user)
++    text, patch = llm.draft_rewrite(system, user, base_dir=REPO)
+     latency = time.monotonic() - t0
+     if patch is None:
+         # Plan B: pedir el contenido completo por archivo y reconstruir el
+--- /dev/null	2026-11-14 18:09:47.340561881 +0000
++++ b/tools/evolution/tests/test_llm_client_apply_patch.py
+@@ -0,0 +1,81 @@
++"""Tests del conversor apply_patch -> unified diff (propuesta 0005).
++
++El pool 'ivanna-free' emite a menudo parches estilo `*** Begin Patch`
++aunque se le pida unified diff (medido 2026-11-14: 2 vacíos y 1 completo).
++El conversor es fail-closed: contexto inexistente o ambiguo, archivo
++ausente o `*** Delete File:` devuelven None.
++"""
++import subprocess
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++import llm_client  # noqa: E402
++
++
++class TestApplyPatchToUnified(unittest.TestCase):
++    def setUp(self):
++        self._tmp = tempfile.TemporaryDirectory()
++        self.repo = Path(self._tmp.name)
++        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
++        (self.repo / "tools" / "evolution").mkdir(parents=True)
++        (self.repo / "tools" / "evolution" / "llm_client.py").write_text(
++            "def extract_patch(text: str):\n"
++            "    if not text:\n"
++            "        return None\n",
++            encoding="utf-8")
++
++    def tearDown(self):
++        self._tmp.cleanup()
++
++    def _apply_check(self, patch):
++        r = subprocess.run(["git", "apply", "--check", "--unsafe-paths", "-"],
++                           input=patch, capture_output=True, text=True,
++                           cwd=self.repo)
++        return r.returncode == 0, r.stderr.strip()
++
++    def test_converts_update_file_patch(self):
++        text = ("```diff\n*** Begin Patch\n"
++                "*** Update File: tools/evolution/llm_client.py\n@@\n"
++                " def extract_patch(text: str):\n"
++                '+    """Si el LLM no devuelve un diff utilizable, el llamador debe fallar, no inventar un parche."""\n'
++                "     if not text:\n"
++                "         return None\n"
++                "*** End Patch\n```\n")
++        patch = llm_client.extract_patch(text, base_dir=self.repo)
++        self.assertIsNotNone(patch)
++        self.assertIn("diff --git a/tools/evolution/llm_client.py", patch)
++        self.assertIn("@@ -1,3 +1,4 @@", patch)
++        ok, err = self._apply_check(patch)
++        self.assertTrue(ok, err)
++
++    def test_ambiguous_context_returns_none(self):
++        (self.repo / "a.txt").write_text("same\nsame\n", encoding="utf-8")
++        text = ("*** Begin Patch\n*** Update File: a.txt\n@@\n"
++                " same\n+new\n*** End Patch\n")
++        self.assertIsNone(llm_client.extract_patch(text, base_dir=self.repo))
++
++    def test_missing_file_and_delete_return_none(self):
++        text = ("*** Begin Patch\n*** Update File: noexiste.txt\n@@\n"
++                " x\n+y\n*** End Patch\n")
++        self.assertIsNone(llm_client.extract_patch(text, base_dir=self.repo))
++        text2 = ("*** Begin Patch\n*** Delete File: a.txt\n*** End Patch\n")
++        (self.repo / "a.txt").write_text("x\n", encoding="utf-8")
++        self.assertIsNone(llm_client.extract_patch(text2, base_dir=self.repo))
++
++    def test_add_file(self):
++        text = ("*** Begin Patch\n*** Add File: nuevo.txt\n@@\n"
++                "+hola\n+mundo\n*** End Patch\n")
++        patch = llm_client.extract_patch(text, base_dir=self.repo)
++        self.assertIsNotNone(patch)
++        self.assertIn("--- /dev/null", patch)
++        self.assertIn("+++ b/nuevo.txt", patch)
++        ok, err = self._apply_check(patch)
++        self.assertTrue(ok, err)
++
++
++if __name__ == "__main__":
++    unittest.main()

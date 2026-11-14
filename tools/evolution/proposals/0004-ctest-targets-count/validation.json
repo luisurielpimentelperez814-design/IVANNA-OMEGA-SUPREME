@@ -1,0 +1,32 @@
+{
+  "proposal": "0004-ctest-targets-count",
+  "patch": "0004-ctest-targets-count.patch",
+  "files": [
+    "tools/evolution/evolution_engine.py",
+    "tools/evolution/tests/test_count_ctest_targets.py"
+  ],
+  "scratch": {
+    "mode": "worktree",
+    "removed": true,
+    "worktree": "/home/hatch/workspace/ivanna-evo-zfrj84l8/wt"
+  },
+  "applied": true,
+  "full_suite": {
+    "skipped": true,
+    "reason": "el parche no toca C++"
+  },
+  "python_checks": {
+    "unittest": {
+      "passed": true,
+      "tail": "test_counts_helper_invocations_and_direct_add_tests (test_count_ctest_targets.TestCountCtestTargets.test_counts_helper_invocations_and_direct_add_tests) ... ok\ntest_deduplicates_repeated_names (test_count_ctest_targets.TestCountCtestTargets.test_deduplicates_repeated_names) ... ok\ntest_ignores_helper_definition_and_comments (test_count_ctest_targets.TestCountCtestTargets.test_ignores_helper_definition_and_comments) ... ok\ntest_scan_saf_guards_filters_false_positives_and_deduplicates (test_scan_saf_guards.TestScanSafGuards.test_scan_saf_guards_filters_false_positives_and_deduplicates) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.003s\n\nOK\n"
+    },
+    "scan": {
+      "passed": true,
+      "tail": "\n        {\n          \"file\": \"app/src/main/cpp/tests/CMakeLists.txt\",\n          \"line\": 188,\n          \"tag\": \"TODO\",\n          \"text\": \"# archivo: buscan \\\"FALLARON\\\"/\\\"FAIL\\\" como subcadena en TODO el stdout+stderr\"\n        },\n        {\n          \"file\": \"app/src/main/cpp/tests/test_punch_engine.cpp\",\n          \"line\": 126,\n          \"tag\": \"TODO\",\n          \"text\": \"for (size_t i = 0; i < in.l.size(); ++i) {                                   // TODO el contenido con el mismo paneo 0.7\"\n        },\n        {\n          \"file\": \"app/src/main/cpp/usb_audio_pro_manager.cpp\",\n          \"line\": 36,\n          \"tag\": \"TODO\",\n          \"text\": \"// Sustituye por completo los dos TODO (\\\"motor asíncrono real\\\" / \\\"detención\"\n        }\n      ],\n      \"total\": 28,\n      \"truncated\": false\n    }\n  }\n}\n",
+      "knowledge_json": true
+    }
+  },
+  "built": [],
+  "new_tests": {},
+  "tree_untouched": true
+}

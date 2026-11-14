@@ -1,0 +1,135 @@
+--- a/tools/evolution/evolution_engine.py
++++ b/tools/evolution/evolution_engine.py
+@@ -7,11 +7,15 @@
+   2. CONOCIMIENTO construye tools/evolution/knowledge/knowledge.json:
+      índice del codebase, patrón SAF_GUARD de referencia, candidatos.
+   3. DETECTAR   reglas deterministas (sin LLM): funciones SAF sin guardas,
+-     funciones muertas (definidas, nunca llamadas), módulos sin test.
++     funciones muertas (definidas, nunca llamadas), módulos sin test,
++     chequeos host de Fase 0 en rojo (scripts/check_*.py, 0003) y
++     TODO/FIXME en el C++ nativo (0003; --scan ~30 s con los 6 chequeos).
+   4. PROPONER   emite la propuesta (parche + justificación) para el candidato.
+-  5. VALIDAR    aplica el parche en el working tree, compila el/los tests,
+-     corre la suite host completa, registra el resultado y REVIERTE el
+-     working tree. El entregable es el diff + reporte, no el cambio aplicado.
++  5. VALIDAR    valida el parche en un git worktree desechable (scratch):
++     compila el/los tests, corre la suite host completa (o las auto-pruebas
++     del motor si el parche no toca C++), registra el resultado y ELIMINA
++     el scratch. El árbol real nunca se toca. El entregable es el diff +
++     validation.json + REPORT.md, no el cambio aplicado.
+   6. REPORTE    tools/evolution/proposals/<id>/REPORT.md + validation.json.
+ 
+ Dónde vive el motor (decisión de arquitectura, ver README.md):
+@@ -197,6 +201,93 @@
+     return out
+ 
+ 
++def scan_host_checks_red():
++    """Ejecuta los 6 chequeos de Fase 0 (scripts/check_*.py) y resume cuáles
++    están en rojo. Evidencia medida 2026-11-14 (HEAD 8ac65b9d): los 6 fallan
++    con exit 1 (~27 s en total: jni_wiring 12 hallazgos, kotlin_wrapper_wiring,
++    header_wiring, rt_safety, docs_claims con README 978/978 vs telemetry
++    974/974, datasets_deploy con 239 hallazgos SOFA). Antes de este detector
++    el --scan era ciego a todos ellos.
++
++    DETECTAR no es ARREGLAR: los fixes de scripts/ quedan fuera del ámbito
++    del motor (los propone, no los aplica). Ningún chequeo puede tumbar el
++    scan: timeout (120 s), script ausente o error se registran y se sigue.
++    """
++    checks = (
++        "check_jni_wiring",
++        "check_kotlin_wrapper_wiring",
++        "check_header_wiring",
++        "check_rt_safety",
++        "check_docs_claims",
++        "check_datasets_deploy",
++    )
++    results = []
++    for name in checks:
++        script = REPO / "scripts" / f"{name}.py"
++        finding_lines = []
++        exit_code = None
++        ok = False
++        error = None
++        try:
++            if not script.exists():
++                raise FileNotFoundError(f"no existe: {script.name}")
++            proc = run(["python3", str(script)], cwd=REPO, timeout=120)
++            exit_code = proc.returncode
++            ok = exit_code == 0
++            for line in (proc.stdout or "").splitlines() + (proc.stderr or "").splitlines():
++                # Hallazgos: "  - ..." en casi todos; datasets_deploy usa
++                # "  [FAIL] ..." (si solo se contaran los "  - ", sus 239
++                # hallazgos contarían como 0).
++                if line.startswith("  -") or line.startswith("  [FAIL]"):
++                    finding_lines.append(line)
++            if not ok and not finding_lines:
++                error = ((proc.stderr or proc.stdout or f"exit {exit_code}")
++                         .strip().splitlines()[0][:120])
++        except Exception as exc:  # noqa: BLE001 - ningún chequeo tumba el scan
++            error = str(exc).strip().splitlines()[0][:120] if str(exc).strip() else "error"
++            exit_code = None
++            ok = False
++        results.append({
++            "check": name,
++            "ok": ok,
++            "exit_code": exit_code,
++            "findings": len(finding_lines),
++            "sample": finding_lines[:3],
++            "error": error,
++        })
++    return results
++
++
++def scan_todo_fixme():
++    """Inventario TODO/FIXME en el C++ nativo (git grep, tope 50 entradas).
++
++    El detector reporta; el analista decide (no filtra por antigüedad:
++    un TODO viejo puede seguir siendo deuda real). Si git grep no encuentra
++    nada (exit 1 de grep) el total es 0, no un error.
++    """
++    # third_party (googletest vendoreado) excluido: sus TODOs no son deuda
++    # de IVANNA y ahogaban el inventario (medido: varios de los 41).
++    proc = run(["git", "grep", "-n", "-E", "TODO|FIXME", "--",
++                "app/src/main/cpp", ":!app/src/main/cpp/tests/third_party"])
++    pattern = re.compile(r"^(?P<file>.*?):(?P<line>\d+):(.*?\b(?P<tag>TODO|FIXME)\b.*)$")
++    items = []
++    for line in (proc.stdout or "").splitlines():
++        m = pattern.match(line)
++        if not m:
++            continue
++        items.append({
++            "file": m.group("file"),
++            "line": int(m.group("line")),
++            "tag": m.group("tag"),
++            "text": m.group(3).strip()[:120],
++        })
++    total = len(items)
++    truncated = total > 50
++    if truncated:
++        items = items[:50]
++    return {"items": items, "total": total, "truncated": truncated}
++
++
+ def build_knowledge():
+     state = repo_state()
+     knowledge = {
+@@ -215,6 +306,8 @@
+             "saf_without_guards": scan_saf_guards(),
+             "dead_functions": scan_dead_functions(),
+             "untested_top_level_modules": scan_untested_modules(),
++            "host_checks_red": scan_host_checks_red(),
++            "todo_fixme": scan_todo_fixme(),
+         },
+     }
+     KNOWLEDGE.parent.mkdir(parents=True, exist_ok=True)
+@@ -263,9 +356,6 @@
+     tmpdir = None
+     wt = None
+     try:
+-        # El scratch vive JUNTO al repo, no en /tmp: /tmp es un tmpfs de
+-        # 512 MB y el repo pesa 1.5 GB — el `worktree add` fallaba a mitad
+-        # con "unable to write file" (medido 2026-11-14, propuesta 0003).
+         tmpdir = tempfile.mkdtemp(prefix="ivanna-evo-", dir=str(REPO.parent))
+         wt = Path(tmpdir) / "wt"
+         scratch["worktree"] = str(wt)

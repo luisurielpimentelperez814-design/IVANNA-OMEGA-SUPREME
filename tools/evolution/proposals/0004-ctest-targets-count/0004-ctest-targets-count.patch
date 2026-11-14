@@ -1,0 +1,137 @@
+--- a/tools/evolution/evolution_engine.py
++++ b/tools/evolution/evolution_engine.py
+@@ -98,10 +98,71 @@
+             or "PAT" in rel)
+ 
+ 
++def _strip_cmake_comments(text: str) -> str:
++    """Quita comentarios `#` de CMake sin tocar el contenido entre comillas.
++
++    Basta para los escaneos por regex: un `#` dentro de comillas no es
++    comentario y un `#` fuera corta la línea.
++    """
++    out = []
++    for line in text.splitlines():
++        buf = []
++        in_quote = False
++        escaped = False
++        for ch in line:
++            if escaped:
++                buf.append(ch)
++                escaped = False
++                continue
++            if ch == "\\":
++                buf.append(ch)
++                escaped = True
++                continue
++            if ch == '"':
++                in_quote = not in_quote
++                buf.append(ch)
++                continue
++            if ch == "#" and not in_quote:
++                break
++            buf.append(ch)
++        out.append("".join(buf))
++    return "\n".join(out)
++
++
++def _count_ctest_targets(cmake_text: str) -> int:
++    """Cuenta los targets CTest registrados en tests/CMakeLists.txt.
++
++    El conteo viejo (`add_test\\(NAME`) daba 36 cuando el total real es
++    ~104: los tests se registran sobre todo con el helper
++    `ivanna_add_test(name)` (que usa `gtest_discover_tests`), no con
++    `add_test(NAME ...)` directo. Se cuentan los nombres únicos de:
++      - invocaciones `ivanna_add_test(<nombre>)` (sin la definición de la
++        función: la línea `function(ivanna_add_test name)` casa el regex
++        con el nombre `name` y hay que excluirla explícitamente);
++      - `add_test(NAME <nombre> ...)` directos.
++    Los comentarios se quitan antes (una línea `# ivanna_add_test(fake)`
++    no registra nada).
++    """
++    text = _strip_cmake_comments(cmake_text)
++    names = set()
++    for m in re.finditer(r"\bivanna_add_test\s*\(\s*([A-Za-z0-9_./:-]+)", text):
++        line_start = text.rfind("\n", 0, m.start()) + 1
++        line = text[line_start:text.find("\n", m.start())]
++        if line.strip().startswith("function("):
++            continue  # la definición del helper, no un registro
++        names.add(m.group(1))
++    for m in re.finditer(r"\badd_test\s*\(\s*NAME\s+([A-Za-z0-9_./:-]+)",
++                         text, flags=re.IGNORECASE):
++        names.add(m.group(1))
++    return len(names)
++
++
++# ── Fase 1: estado ──────────────────────────────────────────────────────────
+ def repo_state():
+     log = run(["git", "log", "--oneline", "-5"], check=True).stdout.strip()
+     status = run(["git", "status", "--short"]).stdout.strip()
+-    n_tests = len(re.findall(r"add_test\(NAME", (REPO / "app/src/main/cpp/tests/CMakeLists.txt").read_text()))
++    cmake_text = (REPO / "app/src/main/cpp/tests/CMakeLists.txt").read_text(errors="ignore")
++    n_tests = _count_ctest_targets(cmake_text)
+     return {"head": log.splitlines(), "dirty": status.splitlines(), "ctest_targets": n_tests}
+ 
+ 
+--- /dev/null	2026-11-14 18:09:47.340561881 +0000
++++ b/tools/evolution/tests/test_count_ctest_targets.py
+@@ -0,0 +1,59 @@
++"""Tests de _count_ctest_targets (propuesta 0004).
++
++Correcciones al draft del LLM al integrar (su 1ª pasada dio ROJO en el
++validador scratch: `git apply --check` falló con "corrupt patch", y su
++código tenía 3 defectos que su propio test no habría cazado):
++- El contador incluía el nombre fantasma `name` de la línea de definición
++  `function(ivanna_add_test name)` (el regex lo casa); se excluyen las
++  líneas que empiezan por `function(`.
++- El test usaba funciones sueltas estilo pytest, que `unittest discover`
++  no recoge (0 tests); se reescribió como `unittest.TestCase`.
++- El test cargaba el motor con `parents[2]` (eso es `tools/`, no la raíz)
++  e importaba `shlex` sin usarlo; se usa el patrón de
++  test_scan_saf_guards.py (sys.path a `tools/evolution/`, import top-level).
++"""
++import sys
++import unittest
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++import evolution_engine  # noqa: E402
++
++
++class TestCountCtestTargets(unittest.TestCase):
++    def test_counts_helper_invocations_and_direct_add_tests(self):
++        cmake = """
++    function(ivanna_add_test name)
++      add_test(NAME ${name} COMMAND $<TARGET_FILE:${name}>)
++      gtest_discover_tests(${name})
++    endfunction()
++
++    ivanna_add_test(foo)
++    ivanna_add_test(bar)
++    add_test(NAME direct_one COMMAND direct_one)
++    add_test(NAME direct_two COMMAND direct_two)
++    """
++        self.assertEqual(evolution_engine._count_ctest_targets(cmake), 4)
++
++    def test_ignores_helper_definition_and_comments(self):
++        cmake = """
++    # ivanna_add_test(fake)
++    function(ivanna_add_test name)
++      # add_test(NAME commented COMMAND ignored)
++      gtest_discover_tests(${name})
++    endfunction()
++    """
++        self.assertEqual(evolution_engine._count_ctest_targets(cmake), 0)
++
++    def test_deduplicates_repeated_names(self):
++        cmake = """
++    ivanna_add_test(foo)
++    ivanna_add_test(foo)
++    add_test(NAME foo COMMAND foo)
++    """
++        self.assertEqual(evolution_engine._count_ctest_targets(cmake), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()

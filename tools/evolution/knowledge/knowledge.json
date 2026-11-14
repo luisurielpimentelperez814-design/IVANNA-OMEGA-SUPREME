@@ -2,27 +2,37 @@
   "generated_by": "tools/evolution/evolution_engine.py --scan",
   "repo_state": {
     "head": [
-      "408dc11e fix(voice): el router lexico en espanol por fin tiene caller",
-      "6d65160d fix(build): generateSoHashes no declara la .so strippeada como input",
-      "4897a362 fix(security): IntegrityGate ya no bloquea falsamente instalaciones release",
-      "9a7e49c6 fix(capture): YouTube Music y Amazon Music ya no se excluyen del loopback",
-      "e5ca8b2d fix(app): IvannaControlLoop arranca en Application.onCreate (loop detenido)"
+      "b6678e9d feat(diagnostics): puente de diagnóstico en Floot (migración automática desde Render)",
+      "d799d632 feat(audio): cablear el doctor en el watchdog de Ruta B + seam LLM",
+      "d33120b9 fix(daemon): pre-crear beacon y bus de control al arrancar (nadie llamaba a precreateLocalFile)",
+      "af32c109 feat(doctor): RouteBDoctor — diagnóstico de puertas de Ruta B + reparaciones runtime",
+      "8ac65b9d chore(release): bump a v2.5.443 / vc 734 (OmniRoute)"
     ],
     "dirty": [
-      "M app/src/main/cpp/saf_phi_infinity.cpp",
-      " M app/src/main/cpp/tests/CMakeLists.txt",
-      " A app/src/main/cpp/tests/test_saf_phi_infinity.cpp",
-      " M app/src/main/java/com/ivanna/omega/agent/SelfHealingAgent.kt",
-      " M app/src/main/java/com/ivanna/omega/ai/gemini/IvannaGeminiAgent.kt",
-      " M app/src/main/java/com/ivanna/omega/ui/AdaptiveEngineScreen.kt",
-      "?? app/src/main/java/com/ivanna/omega/agent/BehaviorEvolution.kt",
-      "?? app/src/main/java/com/ivanna/omega/agent/IvannaDecisionAuthority.kt",
-      "?? app/src/main/java/com/ivanna/omega/assistant/IvannaPreferenceLearner.kt",
-      "?? app/src/test/java/com/ivanna/omega/agent/BehaviorEvolutionTest.kt",
-      "?? app/src/test/java/com/ivanna/omega/assistant/IvannaPreferenceLearnerTest.kt",
-      "?? tools/evolution/"
+      "M tools/evolution/README.md",
+      " M tools/evolution/evolution_engine.py",
+      " M tools/evolution/knowledge/knowledge.json",
+      "?? app/src/main/cpp/daemon/ivanna_daemon_v1_legacy.cpp.bak",
+      "?? hal_integration/moto_g85/pal_preload_probe/ATTR_PROBE_EXPERIMENT.md",
+      "?? hal_integration/moto_g85/pal_preload_probe/build_attr_probe.sh",
+      "?? hal_integration/moto_g85/pal_preload_probe/host_test_attr/",
+      "?? hal_integration/moto_g85/pal_preload_probe/ivanna_asrc_write_stage_v5_backup.c",
+      "?? hal_integration/moto_g85/pal_preload_probe/ivanna_pal_attr_probe.c",
+      "?? hal_integration/moto_g85/pal_preload_probe/out/",
+      "?? hal_integration/moto_g85/pal_preload_probe/validate_asrc_stage.py",
+      "?? hal_integration/moto_g85/pal_preload_probe/validate_attr_probe.py",
+      "?? magisk_module_fusion/",
+      "?? monetization/",
+      "?? tools/autorepair/",
+      "?? tools/evolution/PIPELINE.md",
+      "?? tools/evolution/llm_client.py",
+      "?? tools/evolution/proposals/0002-saf-guards-false-positives/",
+      "?? tools/evolution/proposals/0003-new-detectors/",
+      "?? tools/evolution/proposals/0004-ctest-targets-count/",
+      "?? tools/evolution/proposals/0005-apply-patch-format/",
+      "?? tools/evolution/tests/"
     ],
-    "ctest_targets": 32
+    "ctest_targets": 104
   },
   "reference_pattern": {
     "name": "SAF_GUARD (2026-09-17)",
@@ -36,32 +46,59 @@
   "detectors": {
     "saf_without_guards": [
       {
-        "file": "app/src/main/cpp/jni/saf_stimulus_jni.cpp",
-        "functions": [],
-        "has_isfinite_guard": false
-      },
-      {
         "file": "app/src/main/cpp/saf_latent_bridge.cpp",
         "functions": [
-          "ivanna_saf_apply_latent",
           "ivanna_saf_apply_latent"
         ],
-        "has_isfinite_guard": false
-      },
-      {
-        "file": "app/src/main/cpp/saf_runtime.cpp",
-        "functions": [],
-        "has_isfinite_guard": false
+        "has_isfinite_guard": false,
+        "guard_source": "none",
+        "header_checked": null
       }
     ],
     "dead_functions": [
       {
-        "function": "SAF_LoadModel",
+        "function": "SAF_IsModelLoaded",
         "file": "app/src/main/cpp/saf_runtime.cpp"
       },
       {
-        "function": "SAF_IsModelLoaded",
-        "file": "app/src/main/cpp/saf_runtime.cpp"
+        "function": "DriveEta",
+        "file": "app/src/main/cpp/tests/test_5d_phase0.cpp"
+      },
+      {
+        "function": "Pearson",
+        "file": "app/src/main/cpp/tests/test_5d_phase0.cpp"
+      },
+      {
+        "function": "RmsDiffDb",
+        "file": "app/src/main/cpp/tests/test_neu_compiler.cpp"
+      },
+      {
+        "function": "RmsDiffDbShift",
+        "file": "app/src/main/cpp/tests/test_neu_compiler.cpp"
+      },
+      {
+        "function": "RunOrbe",
+        "file": "app/src/main/cpp/tests/test_neu_compiler.cpp"
+      },
+      {
+        "function": "RunOrbeStereo",
+        "file": "app/src/main/cpp/tests/test_neu_compiler.cpp"
+      },
+      {
+        "function": "RunHolos",
+        "file": "app/src/main/cpp/tests/test_neu_compiler.cpp"
+      },
+      {
+        "function": "FillHolosState",
+        "file": "app/src/main/cpp/tests/test_neu_compiler.cpp"
+      },
+      {
+        "function": "RunOnce",
+        "file": "app/src/main/cpp/tests/test_spectral_core.cpp"
+      },
+      {
+        "function": "CheckIdentity",
+        "file": "app/src/main/cpp/tests/test_spectral_core.cpp"
       }
     ],
     "untested_top_level_modules": [
@@ -73,14 +110,265 @@
       "app/src/main/cpp/hyper_controls_bridge.cpp",
       "app/src/main/cpp/hyper_globals_effect.cpp",
       "app/src/main/cpp/ivanna_benchmark_jni.cpp",
+      "app/src/main/cpp/ivanna_route_a_asrc_test.cpp",
       "app/src/main/cpp/omega_daemon_bridge.cpp",
       "app/src/main/cpp/omega_effect.cpp",
+      "app/src/main/cpp/omni_controls_bridge.cpp",
+      "app/src/main/cpp/omni_globals_effect.cpp",
       "app/src/main/cpp/orbe_controls_bridge.cpp",
       "app/src/main/cpp/orbe_globals_effect.cpp",
       "app/src/main/cpp/pi_lstm_bridge_jni.cpp",
       "app/src/main/cpp/upmixing_controls_bridge.cpp",
       "app/src/main/cpp/usb_audio_pro_manager.cpp",
       "app/src/main/cpp/wfs_globals_effect.cpp"
-    ]
+    ],
+    "host_checks_red": [
+      {
+        "check": "check_jni_wiring",
+        "ok": false,
+        "exit_code": 1,
+        "findings": 12,
+        "sample": [
+          "  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:4219 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetOmniState [en CMake]",
+          "  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:4202 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeGetOmniTelemetry [en CMake]",
+          "  - app/src/main/cpp/jni/ivanna_omega_jni.cpp:3384 -> Java_com_ivanna_omega_core_IvannaNativeLib_nativeIsNeuEnabled [en CMake]"
+        ],
+        "error": null
+      },
+      {
+        "check": "check_kotlin_wrapper_wiring",
+        "ok": false,
+        "exit_code": 1,
+        "findings": 13,
+        "sample": [
+          "  - app/src/main/java/com/ivanna/omega/audio/RealAcousticSensor.kt:203 -> com.ivanna.omega.audio.RealAcousticSensor.setTarget (invoca: IvannaNativeLib.nativeSensorSetTarget)",
+          "  - app/src/main/java/com/ivanna/omega/audio/RealAcousticSensor.kt:213 -> com.ivanna.omega.audio.RealAcousticSensor.setEliteTarget (invoca: IvannaNativeLib.nativeSensorSetEliteTarget)",
+          "  - app/src/main/java/com/ivanna/omega/audio/RealAcousticSensor.kt:219 -> com.ivanna.omega.audio.RealAcousticSensor.setBassTrimDb (invoca: IvannaNativeLib.nativeSensorSetBassTrimDb)"
+        ],
+        "error": null
+      },
+      {
+        "check": "check_header_wiring",
+        "ok": false,
+        "exit_code": 1,
+        "findings": 20,
+        "sample": [
+          "  - dsp/asrc_clock_controller.hpp",
+          "  - evolutionary_adapter.hpp",
+          "  - evolutionary_adapter_enhanced.hpp"
+        ],
+        "error": null
+      },
+      {
+        "check": "check_rt_safety",
+        "ok": false,
+        "exit_code": 1,
+        "findings": 6,
+        "sample": [
+          "  - app/src/main/cpp/omega_effect.cpp:1068 [RT entry: omega_process] (android_log): `LOGI(                                                                                  );`",
+          "  - app/src/main/cpp/omega_effect.cpp:1172 [RT entry: omega_process] (android_log): `LOGI(                                                      );`",
+          "  - app/src/main/cpp/omega_effect.cpp:1174 [RT entry: omega_process] (android_log): `LOGE(                                                                     );`"
+        ],
+        "error": null
+      },
+      {
+        "check": "check_docs_claims",
+        "ok": false,
+        "exit_code": 1,
+        "findings": 18,
+        "sample": [
+          "  - README.md:50 conteo CTest '978/978' no coincide con telemetry/ctest_summary.json ('974/974')",
+          "  - README.md:61 conteo CTest '52/52' no coincide con telemetry/ctest_summary.json ('974/974')",
+          "  - README.md:62 conteo CTest '52/52' no coincide con telemetry/ctest_summary.json ('974/974')"
+        ],
+        "error": null
+      },
+      {
+        "check": "check_datasets_deploy",
+        "ok": false,
+        "exit_code": 1,
+        "findings": 46,
+        "sample": [
+          "  - sofa: 239 en APK / 239 en módulo",
+          "  - hrtf: 12 en APK / 12 en módulo",
+          "  - rir: 200 en APK / 200 en módulo"
+        ],
+        "error": null
+      }
+    ],
+    "todo_fixme": {
+      "items": [
+        {
+          "file": "app/src/main/cpp/CMakeLists.txt",
+          "line": 145,
+          "tag": "TODO",
+          "text": "# nativeSaFSaveState/nativeSaFLoadState/etc — verificado con grep en TODO"
+        },
+        {
+          "file": "app/src/main/cpp/IvannaFusionCore.hpp",
+          "line": 38,
+          "tag": "TODO",
+          "text": "// TODO el audio al final del FusionCore. Soft-knee C1: identidad exacta hasta"
+        },
+        {
+          "file": "app/src/main/cpp/audio_control_plane.cpp",
+          "line": 7,
+          "tag": "TODO",
+          "text": "// del proyecto (ver control_frame.hpp) exige que TODO cambio de"
+        },
+        {
+          "file": "app/src/main/cpp/audio_control_plane.hpp",
+          "line": 21,
+          "tag": "TODO",
+          "text": "* TODO corre en audio thread (FIFO RT-safe, lock-free)."
+        },
+        {
+          "file": "app/src/main/cpp/daemon/control/command_server.cpp",
+          "line": 257,
+          "tag": "TODO",
+          "text": "// handleTextCommand respondia {\"ok\":true,\"text_echo\":...} a TODO lo que no fuera"
+        },
+        {
+          "file": "app/src/main/cpp/daemon/ivanna_daemon.cpp",
+          "line": 21,
+          "tag": "TODO",
+          "text": "//      (lee /data/adb/ivanna_omega/fusion_fx.conf; por defecto TODO apagado)."
+        },
+        {
+          "file": "app/src/main/cpp/daemon/ivanna_daemon.cpp",
+          "line": 95,
+          "tag": "TODO",
+          "text": "// fusion_active=1 cuando el veredicto es LOADED (el HAL procesa TODO el"
+        },
+        {
+          "file": "app/src/main/cpp/daemon/ivanna_daemon.cpp",
+          "line": 223,
+          "tag": "TODO",
+          "text": "// volterra, supreme, npe, reality, eq, limiter (0/1). Por defecto TODO 0"
+        },
+        {
+          "file": "app/src/main/cpp/daemon/ivanna_daemon.cpp",
+          "line": 505,
+          "tag": "TODO",
+          "text": "// El músculo las aplica a TODO el audio. El campo solo actúa cuando"
+        },
+        {
+          "file": "app/src/main/cpp/dsp/SafetyLimiter.cpp",
+          "line": 129,
+          "tag": "TODO",
+          "text": "// El bloque ES el lookahead: la ganancia se decide con el peak de TODO el"
+        },
+        {
+          "file": "app/src/main/cpp/dsp/SafetyLimiter.cpp",
+          "line": 199,
+          "tag": "TODO",
+          "text": "// frame con gain no finito propaga NaN a TODO el resto del bloque via el"
+        },
+        {
+          "file": "app/src/main/cpp/hexagon/ivanna_fastrpc_client.cpp",
+          "line": 127,
+          "tag": "TODO",
+          "text": "// fallido. El cleanup libera TODO lo parcialmente adquirido."
+        },
+        {
+          "file": "app/src/main/cpp/include/ivanna_fusion_state.h",
+          "line": 99,
+          "tag": "TODO",
+          "text": "// TODO 0 (neutro): el músculo solo hace ASRC (y ni eso si no hay ratio)."
+        },
+        {
+          "file": "app/src/main/cpp/include/ivanna_fusion_state.h",
+          "line": 117,
+          "tag": "TODO",
+          "text": "// músculo aplica a TODO el audio. Las ganancias por banda (L/R, 32 bandas"
+        },
+        {
+          "file": "app/src/main/cpp/include/nlohmann/json.hpp",
+          "line": 10997,
+          "tag": "TODO",
+          "text": "get();  // TODO(niels): may we ignore N here?"
+        },
+        {
+          "file": "app/src/main/cpp/include/omega_control_bus.h",
+          "line": 219,
+          "tag": "TODO",
+          "text": "// ya usa y sabe si el HAL está procesando TODO el audio (fusion_active=1),"
+        },
+        {
+          "file": "app/src/main/cpp/include/omega_control_bus.h",
+          "line": 621,
+          "tag": "TODO",
+          "text": "//   está procesando TODO el audio); 0 = fusión inactiva / bypass."
+        },
+        {
+          "file": "app/src/main/cpp/include/omega_effect_beacon.h",
+          "line": 327,
+          "tag": "TODO",
+          "text": "// RT-safe: un bloque pasó por TODO el DSP."
+        },
+        {
+          "file": "app/src/main/cpp/include/psi_core.h",
+          "line": 28,
+          "tag": "TODO",
+          "text": "// ganancias por banda (L/R) que el músculo aplica a TODO el audio en el HAL."
+        },
+        {
+          "file": "app/src/main/cpp/jni/ivanna_omega_jni.cpp",
+          "line": 1759,
+          "tag": "TODO",
+          "text": "// TODO(route-arbiter-v2): cuando PlaybackCapture y omega_effect coexistan,"
+        },
+        {
+          "file": "app/src/main/cpp/jni/ivanna_omega_jni.cpp",
+          "line": 2732,
+          "tag": "TODO",
+          "text": "// fusion_active=1, la Ruta A cede (el HAL ya procesa TODO el audio)."
+        },
+        {
+          "file": "app/src/main/cpp/music_intelligence/FourDControlSurface.hpp",
+          "line": 15,
+          "tag": "TODO",
+          "text": "//   · TODO APAGADO POR DEFECTO: con enabled==false no se altera un solo bit (identidad"
+        },
+        {
+          "file": "app/src/main/cpp/omega_effect.cpp",
+          "line": 2002,
+          "tag": "TODO",
+          "text": "// Beacon (RT-safe): un bloque paso por TODO el DSP. Es la unica senal que la app puede"
+        },
+        {
+          "file": "app/src/main/cpp/spatial/HRTFDatabase.cpp",
+          "line": 106,
+          "tag": "TODO",
+          "text": "// Validar TODO lo que se va a leer antes de tocar la tabla compartida."
+        },
+        {
+          "file": "app/src/main/cpp/spatial/PsiField.hpp",
+          "line": 159,
+          "tag": "TODO",
+          "text": "// ajuste por regresión sobre CIPIC debe reemplazarlos (ver TODO)."
+        },
+        {
+          "file": "app/src/main/cpp/tests/CMakeLists.txt",
+          "line": 188,
+          "tag": "TODO",
+          "text": "# archivo: buscan \"FALLARON\"/\"FAIL\" como subcadena en TODO el stdout+stderr"
+        },
+        {
+          "file": "app/src/main/cpp/tests/test_punch_engine.cpp",
+          "line": 126,
+          "tag": "TODO",
+          "text": "for (size_t i = 0; i < in.l.size(); ++i) {                                   // TODO el contenido con el mismo paneo 0.7"
+        },
+        {
+          "file": "app/src/main/cpp/usb_audio_pro_manager.cpp",
+          "line": 36,
+          "tag": "TODO",
+          "text": "// Sustituye por completo los dos TODO (\"motor asíncrono real\" / \"detención"
+        }
+      ],
+      "total": 28,
+      "truncated": false
+    }
   }
 }

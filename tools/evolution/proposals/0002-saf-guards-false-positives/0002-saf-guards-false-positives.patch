@@ -1,0 +1,159 @@
+--- a/tools/evolution/evolution_engine.py
++++ b/tools/evolution/evolution_engine.py
+@@ -108,19 +108,72 @@
+ 
+ # ── Fase 2+3: conocimiento + detección ──────────────────────────────────────
+ def scan_saf_guards():
+-    """Detecta funciones SAF sin las guardas del patrón SAF_GUARD (2026-09-17).
++    """Detecta módulos SAF sin guarda isfinite con trazabilidad de origen.
+ 
+-    Referencia: SAFUpdate en app/src/main/cpp/include/saf_runtime.h tiene
+-    guarda NaN (isfinite) + denominador degenerado. Cualquier función del
+-    mismo módulo sin isfinite es candidata.
++    Reglas corregidas tras falsos positivos medidos el 2026-11-14
++    (propuesta 0002, redactada por el LLM vía OmniRoute):
++    1) Un archivo sin funciones detectadas no es hit, aunque tampoco tenga
++       guarda (saf_stimulus_jni.cpp: solo JNIEXPORT jboolean, el regex no
++       casa ninguna función; antes se listaba con "functions": []).
++    2) Los nombres de función se deduplican preservando el orden de aparición
++       (ivanna_saf_apply_latent salía dos veces: declaración + definición).
++    3) Para cada saf_*.cpp se revisa el header hermano
++       app/src/main/cpp/include/<base>.h y, junto al .cpp, <base>.h / <base>.hpp.
++       Si el .cpp o cualquiera de esos headers contiene "isfinite", el módulo
++       se considera guardado y no es hit (saf_runtime.cpp: su guarda vive en
++       include/saf_runtime.h, donde está SAFUpdate, el patrón de referencia).
++    4) Cada hit incluye "guard_source" ("cpp" | "header" | "none") y
++       "header_checked" (ruta relativa del header donde se encontró la
++       guarda, o del header existente revisado; null si no existe ningún
++       header hermano), además de conservar "file", "functions" y
++       "has_isfinite_guard".
+     """
+     hits = []
+-    for path in sorted((REPO / "app/src/main/cpp").rglob("saf_*.cpp")):
++    cpp_root = REPO / "app/src/main/cpp"
++    func_re = re.compile(r"(?:double|float|void|int)\s+(\w+)\s*\(")
++    for path in sorted(cpp_root.rglob("saf_*.cpp")):
+         src = path.read_text(errors="ignore")
+-        if "isfinite" not in src:
+-            funcs = re.findall(r"(?:double|float|void|int)\s+(\w+)\s*\(", src)
+-            hits.append({"file": str(path.relative_to(REPO)),
+-                         "functions": funcs, "has_isfinite_guard": False})
++        funcs = []
++        seen = set()
++        for name in func_re.findall(src):
++            if name not in seen:
++                seen.add(name)
++                funcs.append(name)
++        if not funcs:
++            continue
++
++        base = path.stem
++        header_candidates = [
++            cpp_root / "include" / f"{base}.h",
++            path.with_suffix(".h"),
++            path.with_suffix(".hpp"),
++        ]
++        header_checked = None
++        guard_source = "none"
++        has_isfinite_guard = False
++        if "isfinite" in src:
++            has_isfinite_guard = True
++            guard_source = "cpp"
++        else:
++            for header in header_candidates:
++                if not header.exists():
++                    continue
++                header_checked = str(header.relative_to(REPO))
++                if "isfinite" in header.read_text(errors="ignore"):
++                    has_isfinite_guard = True
++                    guard_source = "header"
++                    break
++
++        if has_isfinite_guard:
++            continue
++
++        hits.append({
++            "file": str(path.relative_to(REPO)),
++            "functions": funcs,
++            "has_isfinite_guard": False,
++            "guard_source": guard_source,
++            "header_checked": header_checked,
++        })
+     return hits
+ 
+ 
+--- /dev/null	2026-11-14 18:09:47.340561881 +0000
++++ b/tools/evolution/tests/test_scan_saf_guards.py
+@@ -0,0 +1,72 @@
++"""Tests de scan_saf_guards (propuesta 0002, redactada por el LLM vía OmniRoute).
++
++Corrección del draft del LLM al integrar: el import original
++(`tools.evolution.evolution_engine`) fallaba con `python3 -m unittest
++discover -s tools/evolution/tests` porque la raíz del repo no está en
++sys.path y tools/ no es un paquete. Se importa como módulo top-level
++con la raíz del repo insertada en sys.path; el test hace monkeypatch de
++evolution_engine.REPO al árbol falso y lo restaura en tearDown.
++
++Casos (falsos positivos medidos 2026-11-14):
++- .cpp sin funciones y sin guarda -> NO es hit (regla 1).
++- .cpp con función, sin guarda en el .cpp pero con isfinite en el header
++  hermano -> NO es hit (regla 3).
++- .cpp con función repetida (declaración + definición), sin guarda en .cpp
++  ni header -> UN solo hit, función una sola vez (reglas 1-4).
++"""
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++import evolution_engine  # noqa: E402
++
++
++class TestScanSafGuards(unittest.TestCase):
++    def setUp(self):
++        self._old_repo = evolution_engine.REPO
++        self._tmp = tempfile.TemporaryDirectory()
++        self.repo = Path(self._tmp.name)
++        (self.repo / "app/src/main/cpp/include").mkdir(parents=True, exist_ok=True)
++        evolution_engine.REPO = self.repo
++
++    def tearDown(self):
++        evolution_engine.REPO = self._old_repo
++        self._tmp.cleanup()
++
++    def test_scan_saf_guards_filters_false_positives_and_deduplicates(self):
++        (self.repo / "app/src/main/cpp/saf_empty.cpp").write_text(
++            "int x = 0;\n", encoding="utf-8"
++        )
++
++        (self.repo / "app/src/main/cpp/saf_header_guard.cpp").write_text(
++            "void guarded(void) {\n  return;\n}\n", encoding="utf-8"
++        )
++        (self.repo / "app/src/main/cpp/include/saf_header_guard.h").write_text(
++            "#pragma once\ninline bool safe_header() { return std::isfinite(1.0); }\n",
++            encoding="utf-8",
++        )
++
++        (self.repo / "app/src/main/cpp/saf_latent_bridge.cpp").write_text(
++            "void ivanna_saf_apply_latent();\n"
++            "void ivanna_saf_apply_latent() {\n"
++            "  int a = 1;\n"
++            "}\n",
++            encoding="utf-8",
++        )
++
++        hits = evolution_engine.scan_saf_guards()
++
++        self.assertEqual(len(hits), 1)
++        hit = hits[0]
++        self.assertEqual(hit["file"], "app/src/main/cpp/saf_latent_bridge.cpp")
++        self.assertEqual(hit["functions"], ["ivanna_saf_apply_latent"])
++        self.assertFalse(hit["has_isfinite_guard"])
++        self.assertEqual(hit["guard_source"], "none")
++        self.assertIsNone(hit["header_checked"])
++
++
++if __name__ == "__main__":
++    unittest.main()
