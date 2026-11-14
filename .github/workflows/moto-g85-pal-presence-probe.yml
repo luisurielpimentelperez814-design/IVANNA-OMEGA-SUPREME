@@ -56,14 +56,14 @@ jobs:
           cd ../..
           unzip -t out/Omega_PAL_Presence_Probe_MotoG85.zip
       - name: Upload installable diagnostic ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Omega_PAL_Presence_Probe_MotoG85
           path: out/Omega_PAL_Presence_Probe_MotoG85.zip
           if-no-files-found: error
           retention-days: 30
       - name: Upload ELF verification
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Omega_PAL_Presence_Probe_ELF_Verification
           path: |
