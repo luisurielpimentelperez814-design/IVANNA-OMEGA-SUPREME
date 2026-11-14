@@ -193,6 +193,15 @@ class IvannaAssistantViewModel(app: Application) : AndroidViewModel(app) {
                 omniRouteModel = com.ivanna.omega.assistant.core.OmniRoutePrefs.getModel(app)
             )
         }
+        // 0c. Doctor de Ruta B (v2.5.443): registrar el LLM del agente como
+        // asesor del doctor (solo datos de diagnóstico, nunca código fuente).
+        // El doctor es 100% determinista sin él; con él, las puertas UNKNOWN
+        // reciben un consejo (advisory, solo ejecuta la whitelist).
+        runCatching {
+            com.ivanna.omega.audio.RouteBDoctorLlmProvider.advise = { prompt ->
+                geminiAgent.diagnoseWithLlm(prompt)
+            }
+        }
         // 1. Observar el estado de IvannaAssistant (ui + speech + voice)
         viewModelScope.launch {
             assistant.ui.collect { ui ->

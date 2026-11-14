@@ -501,6 +501,29 @@ class IvannaGeminiAgent(
         if (isOmniRouteActive()) omniRouteOrchestrator.state.value.activeModel
         else orchestrator.state.value.activeModel
 
+    /**
+     * v2.5.443 — Diagnóstico por LLM para el doctor de Ruta B (RouteBDoctor).
+     * Llama al orquestador ACTIVO (OmniRoute si está habilitado, si no
+     * Gemini) con el snapshot de diagnóstico — SOLO datos de diagnóstico
+     * (logs, telemetría, estado, códigos de error), NUNCA código fuente.
+     * No pasa por el chat (sin memoria, sin comandos DSP, sin historial):
+     * es una consulta cruda de diagnóstico. Devuelve el texto del LLM o
+     * null si falla (el doctor es 100% determinista sin él). El prompt ya
+     * viene formado por el doctor (routeBDoctorLlmPrompt).
+     */
+    suspend fun diagnoseWithLlm(diagnosticPrompt: String): String? {
+        return runCatching {
+            withTimeout(REQUEST_TIMEOUT_MS) {
+                activeGenerateContent(
+                    diagnosticPrompt,
+                    AdaptiveResponseEngine.ResponseProfile.NORMAL
+                ).getOrNull()
+            }
+        }.onFailure {
+            Log.w(TAG, "diagnoseWithLlm falló: ${it.message}")
+        }.getOrNull()
+    }
+
     private suspend fun activeGenerateContent(
         prompt: String,
         profile: AdaptiveResponseEngine.ResponseProfile

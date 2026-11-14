@@ -550,6 +550,10 @@ class IvannaGlobalEffectManager(
     @Volatile private var orphanBeaconState: OrphanBeaconState = OrphanBeaconState(-1, 0)
     @Volatile private var lastOrphanRecreateMs: Long = 0L
     private val orphanRecreateMinIntervalMs: Long = 30_000L
+    // v2.5.443 — Doctor de Ruta B (RouteBDoctor): diagnostica la puerta
+    // exacta que corta el procesado y decide reparaciones runtime con
+    // whitelist. Lo llama el watchdog cada 3 s (runRouteBDoctorCycle).
+    private val routeBDoctor = RouteBDoctor()
     // v2.5.380 — throttle 1/30 s para los logs de diagnóstico de acople
     // (tryAttachDiscoveredSession corre cada 3 s desde el watchdog; sin
     // throttle el logcat se llenaría de la misma línea).
@@ -786,6 +790,12 @@ class IvannaGlobalEffectManager(
                     // frames mientras la música suena (huérfano), se destruye
                     // y el próximo ciclo lo re-acopla en la misma sesión.
                     runCatching { checkAttachedEffectOrphan() }.onFailure { Log.w(TAG, "watchdog orphan: ${it.message}") }
+                    // v2.5.443 — Doctor de Ruta B: diagnostica la puerta exacta
+                    // que corta el procesado (log IvannaOmegaEffect + beacon +
+                    // fusión + GET_STATUS) y aplica reparaciones runtime con
+                    // whitelist (ver RouteBDoctor). Fail-closed: si no puede
+                    // diagnosticar o reparar con seguridad, solo reporta.
+                    runCatching { runRouteBDoctorCycle() }.onFailure { Log.w(TAG, "watchdog doctor: ${it.message}") }
                     // v2.5.375 — Vida del omega global (sesión 0): si audioserver
                     // murió, el objeto queda muerto y hay que liberarlo para que
                     // el sondeo reintente (por sesión o global).
@@ -1123,6 +1133,120 @@ class IvannaGlobalEffectManager(
         // el attach anterior demostró no funcionar, así que el próximo ciclo
         // de watchdog re-acopla INMEDIATO (sin esperar el delay de reintento).
         return true
+    }
+
+    // ── v2.5.443 — Doctor de Ruta B (RouteBDoctor) ──────────────────────────
+    // Ciclo del doctor (cada 3 s, tras checkAttachedEffectOrphan): construye
+    // la evidencia, diagnostica la puerta exacta y ejecuta la reparación de
+    // la whitelist. Todo es fail-closed: si no hay nada que reparar, no se
+    // toca nada; si la reparación no se puede verificar, se reporta.
+    @Synchronized
+    internal fun runRouteBDoctorCycle() {
+        val evidence = buildRouteBEvidence()
+        // Sin sesión descubierta ni acoplada no hay nada que diagnosticar
+        // (el doctor no crea efectos sin sesión: fail-closed).
+        if (evidence.attachedSessionId <= 0 && evidence.discoveredSessionId <= 0) return
+        val outcome = routeBDoctor.runCycle(evidence)
+        val diagnosis = outcome.diagnosis
+        if (outcome.repairVerified) {
+            Log.i(TAG, "Doctor Ruta B: reparación verificada — ${diagnosis.gate} resuelto, efecto procesa")
+        }
+        if (outcome.repairFailed) {
+            Log.w(TAG, "Doctor Ruta B: reparación FALLÓ — puerta ${diagnosis.gate}: ${diagnosis.explanation} " +
+                "Se reporta; no se reintenta en bucle.")
+        }
+        when (outcome.repair) {
+            RouteBRepair.NONE -> Unit
+            RouteBRepair.REPORT_ONLY -> {
+                Log.w(TAG, "Doctor Ruta B: puerta ${diagnosis.gate} — ${diagnosis.explanation}")
+            }
+            else -> executeRouteBRepair(outcome.repair, evidence)
+        }
+    }
+
+    /** Construye la evidencia del ciclo desde el estado del manager + DSP + daemon. */
+    @Synchronized
+    internal fun buildRouteBEvidence(): RouteBEvidence {
+        val attached = discoveredAttachedSessionId
+        val discovered = lastDiscoveredSessionId
+        val evidence = runCatching {
+            com.ivanna.omega.magisk.OmegaEngineBridge.requestControlPlaneEvidence()
+        }.getOrNull()
+        val fusion = runCatching { com.ivanna.omega.dsp.DSPBridge.fusionState() }.getOrNull()
+        return RouteBEvidence(
+            attachedSessionId = attached,
+            discoveredSessionId = if (discovered > 0) discovered else (evidence?.discoveredSessionId ?: 0),
+            daemonReachable = evidence != null,
+            effectAttached = attached > 0 && activeSessions[attached]?.omega != null,
+            beaconFrames = runCatching { com.ivanna.omega.dsp.DSPBridge.effectBeaconFrames() }.getOrDefault(-1L),
+            effectState = runCatching { com.ivanna.omega.dsp.DSPBridge.effectState() }
+                .getOrDefault(com.ivanna.omega.dsp.DSPBridge.EffectState.UNAVAILABLE),
+            beaconFileExists = runCatching {
+                java.io.File(RouteBDoctor.BEACON_PATH).exists()
+            }.getOrDefault(false),
+            fusionActive = fusion?.active,
+            psiActive = fusion?.psiActive,
+            ratio = fusion?.ratio,
+            musicPlaying = runCatching { audioManager?.isMusicActive }.getOrDefault(false) == true,
+            logGates = emptySet(),
+            lastAttachFailure = lastOmegaFailureKind,
+            beaconNeverSeenCycles = routeBDoctor.currentNeverSeenCycles,
+            frozenCycles = routeBDoctor.currentFrozenCycles
+        )
+    }
+
+    /**
+     * Ejecuta una reparación de la whitelist del doctor (SOLO runtime).
+     * PRECREATE_BEACON incluye recrear el efecto: un efecto ya creado no
+     * re-abre el beacon (open() solo corre en onEnable), así que tras
+     * pre-crear el archivo hay que soltarlo para que la instancia nueva lo
+     * mapee. RECREATE_ORPHAN resetea el detector de huérfanos (punto ciego:
+     * beacon nunca existió).
+     */
+    @Synchronized
+    internal fun executeRouteBRepair(repair: RouteBRepair, evidence: RouteBEvidence) {
+        val session = evidence.attachedSessionId
+        when (repair) {
+            RouteBRepair.PRECREATE_BEACON -> {
+                val ok = routeBDoctor.precreateBeaconFile()
+                if (!ok) {
+                    Log.w(TAG, "Doctor Ruta B: no se pudo pre-crear el beacon (sin root o /data/local/tmp no escribible) — se reporta")
+                    return
+                }
+                if (session > 0) {
+                    closeSession(session)
+                    discoveredAttachedSessionId = 0
+                    orphanBeaconState = OrphanBeaconState(-1, 0)
+                    routeBDoctor.resetOrphanCounters()
+                    Log.i(TAG, "Doctor Ruta B: beacon pre-creado; efecto de sesión $session soltado para que la instancia nueva lo mapee")
+                }
+                routeBDoctor.noteRepairExecuted(RouteBRepair.PRECREATE_BEACON, session)
+            }
+            RouteBRepair.RECREATE_ORPHAN -> {
+                if (session <= 0) return
+                closeSession(session)
+                discoveredAttachedSessionId = 0
+                orphanBeaconState = OrphanBeaconState(-1, 0)
+                routeBDoctor.resetOrphanCounters()
+                Log.w(TAG, "Doctor Ruta B: efecto huérfano de sesión $session soltado — el próximo ciclo lo re-acopla en la sesión real")
+                routeBDoctor.noteRepairExecuted(RouteBRepair.RECREATE_ORPHAN, session)
+            }
+            RouteBRepair.RETRY_ATTACH -> {
+                val discovered = evidence.discoveredSessionId
+                if (discovered <= 0) return
+                omegaRetryAttempts.remove(discovered)
+                omegaLastAttemptMs.remove(discovered)
+                val attached = tryAttachDiscoveredSession()
+                if (attached) routeBDoctor.noteRepairExecuted(RouteBRepair.RETRY_ATTACH, discovered)
+                else Log.w(TAG, "Doctor Ruta B: reintento de acople a sesión $discovered falló (backoff; se reintentará)")
+            }
+            RouteBRepair.RESET_ORPHAN_DETECTOR -> {
+                orphanBeaconState = OrphanBeaconState(-1, 0)
+                routeBDoctor.resetOrphanCounters()
+                Log.i(TAG, "Doctor Ruta B: detector de huérfanos reseteado (línea base nueva)")
+            }
+            RouteBRepair.NONE, RouteBRepair.REPORT_ONLY -> Unit
+        }
     }
 
     @Synchronized
