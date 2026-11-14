@@ -18,7 +18,7 @@ jobs:
   validate-collector:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate shell syntax
         run: sh -n hal_integration/moto_g85/pal_preload/collect_init_boot_evidence.sh
       - name: Validate read-only collection contract

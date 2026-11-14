@@ -22,7 +22,7 @@ jobs:
   migration-test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate shell syntax
         run: |
           sh -n magisk_module/audio_unify.sh
